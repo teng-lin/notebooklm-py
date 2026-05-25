@@ -101,9 +101,13 @@ def _default_decode_response() -> Callable[..., Any]:
     :class:`Session` is constructed without an explicit
     ``decode_response=`` kwarg.
 
-    Imported lazily so the lookup goes through
+    The function is invoked **eagerly** (once per ``Session()`` call)
+    and captures its result immediately. The ``import`` inside the body
+    is deferred so the attribute lookup goes through
     ``notebooklm.rpc.decode_response`` at construction time — the
-    canonical monkeypatch surface documented in ADR-007.
+    canonical monkeypatch surface documented in ADR-007. This is NOT
+    a late-binding wrapper — see ``docs/improvement.md`` §4.1 for the
+    contrast with the retired ``_decode_response_late_bound``.
     """
     from .rpc import decode_response
 
@@ -115,9 +119,13 @@ def _default_is_auth_error() -> Callable[[Exception], bool]:
     :class:`Session` is constructed without an explicit
     ``is_auth_error=`` kwarg.
 
-    Imported lazily so the lookup goes through
+    The function is invoked **eagerly** (once per ``Session()`` call)
+    and captures its result immediately. The ``import`` inside the body
+    is deferred so the attribute lookup goes through
     ``notebooklm._session_helpers.is_auth_error`` at construction
     time — the canonical monkeypatch surface documented in ADR-007.
+    This is NOT a late-binding wrapper — see ``docs/improvement.md``
+    §4.1 for the contrast with the retired ``_live_is_auth_error``.
     """
     from ._session_helpers import is_auth_error
 
@@ -358,7 +366,6 @@ class Session:
             on_rpc_event=on_rpc_event,
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
-            record_lock_wait=self._record_lock_wait,
         )
         self._metrics_obj = collaborators.metrics
         self._drain_tracker = collaborators.drain_tracker

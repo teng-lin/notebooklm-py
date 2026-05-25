@@ -1,44 +1,29 @@
 """Construction-time helpers extracted from :class:`Session.__init__`.
 
-This module is a mechanical decomposition of ``Session.__init__`` (see
-``docs/improvement.md`` §3.1). The constructor was the single
-highest-navigation-cost block in the codebase: it interleaved three
-distinct concerns — argument validation, collaborator construction with a
-load-bearing dependency order, and middleware-chain wiring. Each concern
-now lives in its own helper here, with the dependency-ordering and
-seam-resolution comments preserved verbatim from the original site so
-future readers still see *why* the construction order matters.
+Mechanical decomposition of ``Session.__init__`` (``docs/improvement.md``
+§3.1) into three concerns:
+:func:`validate_constructor_args` (kwarg validation + normalization),
+:func:`build_collaborators` (the 8 collaborators in dependency order),
+and :func:`wire_middleware_chain` (the seven-middleware ADR-009 chain).
+Behavior is bit-for-bit identical to the pre-extraction ``__init__``;
+dependency-ordering and seam-resolution comments are preserved verbatim
+inside the helpers so future readers see *why* the order matters.
 
-The helpers are deliberately pure functions (no hidden state), and the
-three containers (:class:`ValidatedSessionConfig`,
-:class:`SessionCollaborators`, :class:`WiredMiddleware`) are plain
-dataclass-style records — they exist only to give the three phases a
-clean intra-``__init__`` hand-off shape; no production code (and no
-test) is expected to depend on them as a public surface.
+Builds on the constructor-DI work in #1027 (``36dcc634`` —
+"refactor(session): constructor DI for late-bound test seams; drop
+http_client.setter"), which eliminated the late-binding wrappers and
+the ``Kernel.http_client.setter`` and made ``decode_response`` /
+``sleep`` / ``is_auth_error`` / ``async_client_factory`` the canonical
+injection seams.
 
-The split is purely structural: behavior is bit-for-bit identical to
-the pre-extraction ``__init__`` (the AST guards in
-``tests/unit/test_concurrency_refresh_race.py`` inspect collaborator
-methods, not the constructor body, so they continue to pass without
-modification).
-
-This extraction builds on the constructor-DI work in #1027
-(``36dcc634`` — "refactor(session): constructor DI for late-bound test
-seams; drop http_client.setter"), which is what eliminated the
-late-binding wrappers and the ``Kernel.http_client.setter`` and made
-the ``decode_response`` / ``sleep`` / ``is_auth_error`` /
-``async_client_factory`` kwargs the canonical injection seams.
-
-**Seam-resolution boundary**: the resolution of ``None`` defaults for
-``sleep`` (→ ``asyncio.sleep``) and ``async_client_factory`` (→
-``httpx.AsyncClient``) MUST stay in :mod:`notebooklm._session` so that
-the documented monkeypatch paths
-``notebooklm._session.asyncio.sleep`` and
+**Seam-resolution boundary**: ``None``-default resolution for ``sleep``
+(→ ``asyncio.sleep``) and ``async_client_factory`` (→
+``httpx.AsyncClient``) MUST stay in :mod:`notebooklm._session` so the
+documented monkeypatch paths ``notebooklm._session.asyncio.sleep`` and
 ``notebooklm._session.httpx.AsyncClient`` keep steering the seam at
-construction time. The helpers here therefore accept already-resolved
-seam callables; the caller (``Session.__init__``) is responsible for the
-``sleep or asyncio.sleep`` / ``async_client_factory or httpx.AsyncClient``
-dance against its OWN module bindings.
+construction time. The helpers here accept already-resolved seam
+callables; the caller (``Session.__init__``) owns the
+``X if X is not None else <module-attr>`` dance against its own bindings.
 """
 
 from __future__ import annotations
@@ -64,10 +49,16 @@ from ._session_helpers import _resolve_keepalive_interval
 from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
 from ._transport_drain import TransportDrainTracker
 from .auth import AuthTokens
-from .types import ConnectionLimits, RpcTelemetryEvent
+
+if TYPE_CHECKING:
+    # Runtime import of ``ConnectionLimits`` is deferred to
+    # :func:`validate_constructor_args` to keep the long-standing
+    # defensive guard against the ``types.py`` → session cycle (see the
+    # inline comment in the function body).
+    from .types import ConnectionLimits, RpcTelemetryEvent
 
 
-@dataclass
+@dataclass(frozen=True)
 class ValidatedSessionConfig:
     """Validated + normalized scalar configuration produced by
     :func:`validate_constructor_args`.
@@ -95,7 +86,7 @@ class ValidatedSessionConfig:
     async_client_factory: Callable[..., httpx.AsyncClient]
 
 
-@dataclass
+@dataclass(frozen=True)
 class SessionCollaborators:
     """Constructed-collaborator bundle produced by
     :func:`build_collaborators`.
@@ -116,7 +107,7 @@ class SessionCollaborators:
     poll_registry: PollRegistry
 
 
-@dataclass
+@dataclass(frozen=True)
 class WiredMiddleware:
     """Wired middleware chain produced by :func:`wire_middleware_chain`."""
 
@@ -162,15 +153,29 @@ def validate_constructor_args(
             ``keepalive`` / ``keepalive_min_interval`` is not a positive
             finite number.
     """
-    _resolved_limits = limits if limits is not None else ConnectionLimits()
+    if limits is not None:
+        _resolved_limits = limits
+    else:
+        # Lazy import — defensive guard against the ``types.py`` →
+        # session cycle (preserved from the pre-extraction
+        # ``Session.__init__`` comment "Lazy import to break the
+        # types.py -> _core.py cycle").
+        from .types import ConnectionLimits
+
+        _resolved_limits = ConnectionLimits()
 
     if rate_limit_max_retries < 0:
         raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
     if server_error_max_retries < 0:
         raise ValueError(f"server_error_max_retries must be >= 0, got {server_error_max_retries}")
 
-    # Keep fail-fast validation for private Session callers, but the
-    # actual upload semaphore state is owned by ``SourceUploadPipeline``.
+    # Fail-fast validation for ``max_concurrent_uploads``. The value is
+    # NOT propagated into :class:`ValidatedSessionConfig` because the
+    # actual upload semaphore state is owned by
+    # ``SourceUploadPipeline`` (not ``Session``); this call exists
+    # solely for the ``ValueError``-raising side effect on the
+    # constructor's behalf — same shape as the inline check it
+    # replaced.
     normalize_max_concurrent_uploads(max_concurrent_uploads)
 
     # RPC-fanout throttle. ``None`` means "no
@@ -222,24 +227,21 @@ def build_collaborators(
     on_rpc_event: Callable[[RpcTelemetryEvent], object] | None,
     cookie_saver: CookieSaver | None,
     cookie_rotator: CookieRotator | None,
-    record_lock_wait: Callable[[float], None],
 ) -> SessionCollaborators:
     """Construct the eight extracted collaborators in dependency order.
 
     The order mirrors the pre-extraction ``Session.__init__`` exactly so
     the load-bearing inter-collaborator wiring stays obvious to future
     readers: metrics is built first because it absorbs the optional
-    ``on_rpc_event`` callback used by other collaborators; the drain
-    tracker / reqid counter / auth coordinator follow because they are
-    leaf collaborators with no inter-helper dependencies; ``Kernel`` is
+    ``on_rpc_event`` callback AND because the lock-wait metric callback
+    captured by ``ReqidCounter`` is its bound method (so ``metrics``
+    MUST exist before ``ReqidCounter`` is constructed — otherwise the
+    counter would close over an attribute that has not yet been set,
+    re-introducing the pre-PR-8 ordering trap); the drain tracker /
+    reqid counter / auth coordinator follow because they are leaf
+    collaborators with no inter-helper dependencies; ``Kernel`` is
     built next because ``ClientLifecycle`` holds a reference to it;
     ``CookiePersistence`` and ``PollRegistry`` close out the bundle.
-
-    ``record_lock_wait`` is the lock-wait metric callback that the
-    :class:`ReqidCounter` invokes when its lazy lock contends; it
-    forwards into ``metrics.record_lock_wait``. We accept it as an
-    explicit callable rather than capturing the metrics object so the
-    counter retains the same construction shape it had inline.
     """
     # Observability counters + telemetry callback. ``metrics_snapshot``
     # remains the lock-safe read path; helper-level tests that need
@@ -254,10 +256,13 @@ def build_collaborators(
     # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
     # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
     # Access ``self._reqid.value`` / ``self._reqid._lock`` directly.
-    # The ``on_lock_wait`` hook keeps the
-    # cumulative ``lock_wait_seconds_*`` metrics ticking inside
-    # ``self._metrics_obj`` even though the counter is now extracted.
-    reqid = ReqidCounter(on_lock_wait=record_lock_wait)
+    # The ``on_lock_wait`` hook keeps the cumulative
+    # ``lock_wait_seconds_*`` metrics ticking inside ``metrics`` — we
+    # pass the bound method of the metrics object we just built so the
+    # counter cannot capture an unbound seam (which is what would happen
+    # if we forwarded ``Session._record_lock_wait`` before
+    # ``self._metrics_obj`` was assigned in the outer ``__init__``).
+    reqid = ReqidCounter(on_lock_wait=metrics.record_lock_wait)
     # Auth refresh coordination — single-flight refresh task, snapshot
     # serialization, and cookie-jar sync. The coordinator owns
     # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
