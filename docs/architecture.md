@@ -97,10 +97,11 @@ surface. `RpcOwner` in
 the kernel plus the methods the executor still calls; timeout,
 refresh-callback, and retry-delay values are supplied through constructor
 providers. The middleware terminal now calls `Kernel.post` directly
-through `Session._authed_post_chain_terminal`; `_authed_transport.py`
-contains request/exception types plus streaming helpers, not a host
-Protocol. This keeps feature APIs on narrow capability Protocols while
-avoiding a near-`Session` structural contract inside the RPC stack.
+through `Session._authed_post_chain_terminal`; request types, transport
+errors, and streaming helpers live in separate owning Modules instead of
+one catch-all transport helper. This keeps feature APIs on narrow capability
+Protocols while avoiding a near-`Session` structural contract inside the
+RPC stack.
 
 ## Post-refactor `Session` collaborator graph
 
@@ -151,8 +152,9 @@ Exec  Ref    Life    Chain Drain   Tracker Coun  Pers
 | `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `await core.next_reqid()`. |
 | `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Cookie-jar persistence + `__Secure-1PSIDTS` rotation. |
 | `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor.execute()` consults it to resolve `effective_disable_internal_retries` and to inject client tokens for `CLIENT_TOKEN_DEDUPE` methods (most entries are currently `UNCLASSIFIED`, a behaviour-neutral default). Not Session-owned, but part of the RPC dispatch path. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
-| `_authed_transport` | [`_authed_transport.py`](../src/notebooklm/_authed_transport.py) | Transport request types, transport-level exceptions, `Retry-After` parsing, and the streaming POST helper with the response-size cap. |
-| `_transport_errors` | [`_transport_errors.py`](../src/notebooklm/_transport_errors.py) | Maps raw `Kernel.post` `httpx` failures into the transport exceptions consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
+| `_request_types` | [`_request_types.py`](../src/notebooklm/_request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
+| `_transport_errors` | [`_transport_errors.py`](../src/notebooklm/_transport_errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
+| `_streaming_post` | [`_streaming_post.py`](../src/notebooklm/_streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
 | `Kernel` | [`_kernel.py`](../src/notebooklm/_kernel.py) | Pure transport core. Owns the `httpx.AsyncClient` and cookie jar; exposes `post()`, the `cookies` property, and `aclose()` (the close path wraps it in `asyncio.shield` from `ClientLifecycle.close()`). Concrete class behind the `Kernel` Protocol in `_session_contracts.py`; constructed by `Session.__init__()` at `_session.py:393`; current middleware-chain leaf is `Session._authed_post_chain_terminal → Kernel.post`. |
 
 ## Domain-service collaborators

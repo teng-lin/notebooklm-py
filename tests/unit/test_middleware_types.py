@@ -315,11 +315,11 @@ def test_auth_snapshot_round_trip() -> None:
     )
 
 
-def test_auth_snapshot_export_is_same_object_as_transport_export() -> None:
-    """``AuthSnapshot`` re-exports the transport snapshot dataclass."""
-    from notebooklm._authed_transport import AuthSnapshot as TransportAuthSnapshot
+def test_auth_snapshot_export_is_same_object_as_request_types_export() -> None:
+    """``AuthSnapshot`` is owned by the request-types Module."""
+    from notebooklm._request_types import AuthSnapshot as RequestTypesAuthSnapshot
 
-    assert AuthSnapshot is TransportAuthSnapshot
+    assert AuthSnapshot is RequestTypesAuthSnapshot
 
 
 def test_build_request_alias_is_callable_type() -> None:
@@ -341,11 +341,11 @@ def test_build_request_alias_is_callable_type() -> None:
     assert headers == {"X-Goog-AuthUser": "0"}
 
 
-def test_build_request_export_is_same_object_as_transport_export() -> None:
-    """``BuildRequest`` re-exports the transport callable type."""
-    from notebooklm._authed_transport import BuildRequest as TransportBuildRequest
+def test_build_request_export_is_same_object_as_request_types_export() -> None:
+    """``BuildRequest`` is owned by the request-types Module."""
+    from notebooklm._request_types import BuildRequest as RequestTypesBuildRequest
 
-    assert BuildRequest is TransportBuildRequest
+    assert BuildRequest is RequestTypesBuildRequest
 
 
 def test_build_request_result_value_semantics() -> None:

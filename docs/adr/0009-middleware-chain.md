@@ -383,13 +383,11 @@ cross-cutting work it's supposed to. Tests that want different middleware
 lists construct different `Session` instances.
 
 **Inline the dataclass definitions in `_middleware.py` and skip
-`_request_types.py`.** Rejected. The `AuthSnapshot` and `BuildRequest`
-aliases are not chain-specific — they describe types that already live in
-`_authed_transport.py` and are read by `_chat.py`, `_chat_transport.py`, and
-`_rpc_executor.py`. Promoting them into a sibling module (`_request_types.py`)
-keeps `_middleware.py` focused on the chain envelope shape and gives
-non-chain callers a stable import path that survives PR 12.9's underscore
-removal.
+`_request_types.py`.** Initially rejected while the transport leaf was still
+being extracted. The later architecture cleanup accepted the promotion:
+`AuthSnapshot` and `BuildRequest` are not chain-specific, and owning them in
+`_request_types.py` keeps `_middleware.py` focused on the chain envelope shape
+while giving non-chain callers a stable import path.
 
 **Use `httpx.Request` / `httpx.Response` directly instead of
 `RpcRequest` / `RpcResponse` dataclasses.** Rejected for the request side;

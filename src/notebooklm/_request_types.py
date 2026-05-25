@@ -1,12 +1,10 @@
-"""Request-shape exports for the Tier-12 middleware chain.
+"""Request-shape types for the shared authed POST pipeline.
 
 This module gathers the shared request-construction types used by the
-middleware chain. ``AuthSnapshot`` and ``BuildRequest`` are defined in
-``_authed_transport.py`` and re-exported here for call sites that prefer the
-request-types namespace; ``BuildRequestResult`` is owned here because it is the
-named dataclass shape used by auth-refresh request rebuilding.
+middleware chain. It owns the request Interface that RPC, chat, auth refresh,
+and the chain terminal share.
 
-Three names live here:
+Five names live here:
 
 - :data:`AuthSnapshot` — point-in-time view of auth headers used to build
   one HTTP attempt. ADR-009 pins this as the public input type of the
@@ -16,6 +14,8 @@ Three names live here:
   the materialized ``RpcRequest`` fields directly; the callable remains in
   ``RpcRequest.context["build_request"]`` so auth refresh and terminal
   freshness checks can rebuild the envelope from a new snapshot.
+- :data:`PostBody` — body type accepted by the legacy tuple-return
+  ``BuildRequest`` shape and by the low-level streaming POST helper.
 - :class:`BuildRequestResult` — the *named* dataclass form of the same
   ``(url, body, headers)`` triple, introduced for PR 12.8's
   ``AuthRefreshMiddleware.build_request_factory`` callback. The dataclass
@@ -23,8 +23,8 @@ Three names live here:
   at construction) over the legacy tuple return. Existing callers continue
   to use the tuple shape until they migrate.
 - :func:`materialize_build_request` — bridge from the legacy tuple callback
-  to ``BuildRequestResult``. This is the contract the later middleware-chain
-  leaf rewrite will use before handing a request envelope to ``Kernel.post``.
+  to ``BuildRequestResult``. This is the contract used before handing a request
+  envelope to ``Kernel.post``.
 
 See ``docs/adr/0009-middleware-chain.md`` for the full chain contract and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` section 2 for the
@@ -33,10 +33,32 @@ PR sequence.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from ._authed_transport import AuthSnapshot, BuildRequest
+
+@dataclass(frozen=True)
+class AuthSnapshot:
+    """Point-in-time view of auth headers used to build a single request.
+
+    Captured once per HTTP attempt by ``_perform_authed_post`` and passed
+    into the caller-supplied ``build_request`` factory so the URL/body are
+    consistent for that attempt. On retry, a *new* snapshot is taken so
+    refreshed credentials are picked up before the rebuild.
+    """
+
+    csrf_token: str
+    session_id: str
+    authuser: int
+    account_email: str | None
+
+
+# Build-request factory: receives a fresh ``AuthSnapshot`` and returns the
+# triple (url, body, extra_headers) for one HTTP attempt. The chain terminal
+# invokes this once per materialization so refreshed snapshots are picked up
+# after auth refresh.
+PostBody = str | bytes
+BuildRequest = Callable[[AuthSnapshot], tuple[str, PostBody, dict[str, str] | None]]
 
 
 @dataclass(frozen=True)
@@ -91,5 +113,6 @@ __all__ = [
     "AuthSnapshot",
     "BuildRequest",
     "BuildRequestResult",
+    "PostBody",
     "materialize_build_request",
 ]

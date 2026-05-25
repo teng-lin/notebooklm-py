@@ -74,7 +74,7 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
 
     # ``_build_url`` consumes an ``AuthSnapshot`` so callers
     # outside ``_perform_authed_post`` must build one inline.
-    from notebooklm._authed_transport import AuthSnapshot
+    from notebooklm._request_types import AuthSnapshot
 
     snapshot = AuthSnapshot(
         csrf_token=core.auth.csrf_token,

@@ -13,7 +13,8 @@ the time of this ADR, `src/notebooklm/` contains 13 public-named modules
 `migration.py`, `notebooklm_cli.py`, `paths.py`, `research.py`,
 `types.py`, `urls.py`, `utils.py`) and roughly 50 underscore-prefixed
 seam modules (`_session.py`, `_kernel.py`,
-`_session_contracts.py`, `_session_*`, `_authed_transport.py`,
+`_session_contracts.py`, `_session_*`, `_request_types.py`,
+`_transport_errors.py`, `_streaming_post.py`,
 `_rpc_executor.py`, `_artifacts.py`, `_artifact_*.py`, `_chat.py`,
 `_chat_*.py`, `_middleware_*.py`, the `_auth/` subpackage, etc.).
 The seam modules carry the bulk of the implementation; the
@@ -27,7 +28,9 @@ more concerns out of `_core.py` (or out of a feature module like
 re-export from the parent module preserved for one cycle and then
 removed. Tier 13 retired the lifted `_core_*` file names in favor of
 ownership names: `_session_config.py` (knobs), `_session_helpers.py`
-(pure utilities), `_authed_transport.py` (HTTP), `_rpc_executor.py`
+(pure utilities), `_request_types.py` (request construction),
+`_transport_errors.py` (transport error mapping), `_streaming_post.py` (HTTP),
+`_rpc_executor.py`
 (RPC dispatch), and so on. The same pattern applies inside
 `_artifact_*.py` and `_chat_*.py`.
 
@@ -126,7 +129,9 @@ src/notebooklm/
 ├── _session_contracts.py        # Session/Kernel Protocols (Tier-13)
 ├── _kernel.py                   # Kernel concrete (Tier-13)
 ├── _session_*.py                # session helpers/config/lifecycle/auth
-├── _authed_transport.py         # authed POST leaf
+├── _request_types.py            # authed POST request construction types
+├── _transport_errors.py         # transport exceptions + POST error mapping
+├── _streaming_post.py           # streaming POST helper
 ├── _rpc_executor.py             # RPC dispatch executor
 ├── _transport_drain.py          # in-flight transport drain state
 ├── _client_metrics.py           # metrics state and callbacks

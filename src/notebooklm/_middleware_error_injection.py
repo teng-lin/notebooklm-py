@@ -89,14 +89,14 @@ from collections.abc import Callable
 import httpx
 
 from . import _error_injection
-from ._authed_transport import (
+from ._error_injection import ERROR_INJECT_ENV_VAR
+from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._session_config import CORE_LOGGER_NAME
+from ._transport_errors import (
     TransportRateLimited,
     TransportServerError,
     parse_retry_after,
 )
-from ._error_injection import ERROR_INJECT_ENV_VAR
-from ._middleware import NextCall, RpcRequest, RpcResponse
-from ._session_config import CORE_LOGGER_NAME
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` — keep

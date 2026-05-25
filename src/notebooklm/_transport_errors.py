@@ -1,20 +1,101 @@
-"""Error mapping for the ``Kernel.post`` terminal."""
+"""Transport-level exceptions and error mapping for the POST pipeline."""
 
 from __future__ import annotations
 
-__all__ = ["raise_mapped_post_error"]
+__all__ = [
+    "MAX_RETRY_AFTER_SECONDS",
+    "TransportAuthExpired",
+    "TransportRateLimited",
+    "TransportServerError",
+    "parse_retry_after",
+    "raise_mapped_post_error",
+]
 
 import logging
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import NoReturn
 
 import httpx
 
-from ._authed_transport import (
-    TransportRateLimited,
-    TransportServerError,
-    parse_retry_after,
-)
+# Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
+# so a malicious or buggy server can't force a multi-hour pause.
+MAX_RETRY_AFTER_SECONDS = 300
+
+
+def parse_retry_after(value: str | None) -> int | None:
+    """Parse RFC 7231 Retry-After: integer-seconds OR HTTP-date.
+
+    Returns seconds-until-retry as a non-negative int, clamped to
+    ``MAX_RETRY_AFTER_SECONDS``. Returns ``None`` for empty or unparseable input.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    # Integer-seconds form (most common)
+    try:
+        return min(MAX_RETRY_AFTER_SECONDS, max(0, int(value)))
+    except ValueError:
+        pass
+    # HTTP-date form (RFC 7231 section 7.1.1.1)
+    try:
+        dt = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    delta = (dt - datetime.now(timezone.utc)).total_seconds()
+    return min(MAX_RETRY_AFTER_SECONDS, max(0, int(delta)))
+
+
+class TransportAuthExpired(Exception):
+    """Raised when auth refresh fails during an auth recovery attempt.
+
+    ``original`` is the transport-layer ``httpx.HTTPStatusError`` that
+    triggered the refresh attempt. The refresh callback's error is attached via
+    ``__cause__``.
+    """
+
+    def __init__(self, message: str, *, original: Exception):
+        super().__init__(message)
+        self.original = original
+
+
+class TransportRateLimited(Exception):
+    """Raised when the 429 retry budget is exhausted."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after: int | None,
+        response: httpx.Response,
+        original: httpx.HTTPStatusError,
+    ):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.response = response
+        self.original = original
+
+
+class TransportServerError(Exception):
+    """Raised when the server-error retry budget is exhausted."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        original: Exception,
+        response: httpx.Response | None = None,
+        status_code: int | None = None,
+    ):
+        super().__init__(message)
+        self.original = original
+        self.response = response
+        self.status_code = status_code
 
 
 def raise_mapped_post_error(

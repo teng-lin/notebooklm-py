@@ -31,11 +31,11 @@ import httpx
 import pytest
 
 from _fixtures.chain import make_request
-from notebooklm._authed_transport import TransportServerError
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._middleware_retry import RetryMiddleware
 from notebooklm._session_helpers import is_auth_error, resolve_sleep
+from notebooklm._transport_errors import TransportServerError
 
 # ---------------------------------------------------------------------------
 # Direct unit tests for resolve_sleep

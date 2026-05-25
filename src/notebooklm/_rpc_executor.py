@@ -16,14 +16,6 @@ import httpx
 if TYPE_CHECKING:
     from ._kernel import Kernel
 
-from ._authed_transport import (
-    AuthSnapshot,
-    BuildRequest,
-    TransportAuthExpired,
-    TransportRateLimited,
-    TransportServerError,
-    parse_retry_after,
-)
 from ._env import get_default_language
 from ._idempotency import (
     IDEMPOTENCY_REGISTRY,
@@ -31,6 +23,16 @@ from ._idempotency import (
     resolve_effective_disable_internal_retries,
 )
 from ._logging import get_request_id, reset_request_id, set_request_id
+from ._request_types import (
+    AuthSnapshot,
+    BuildRequest,
+)
+from ._transport_errors import (
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
+    parse_retry_after,
+)
 from .auth import format_authuser_value
 from .rpc import (
     ClientError,

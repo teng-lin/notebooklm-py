@@ -31,15 +31,15 @@ import httpx
 import pytest
 
 from conftest import install_post_as_stream
-from notebooklm._authed_transport import (
-    AuthSnapshot,
+from notebooklm._logging import get_request_id
+from notebooklm._middleware import RpcRequest, RpcResponse
+from notebooklm._request_types import AuthSnapshot
+from notebooklm._session import Session
+from notebooklm._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
-from notebooklm._logging import get_request_id
-from notebooklm._middleware import RpcRequest, RpcResponse
-from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -1083,7 +1083,7 @@ async def test_streamed_response_size_cap(monkeypatch):
     """
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import stream_post_with_size_cap
+    from notebooklm._streaming_post import stream_post_with_size_cap
     from notebooklm.exceptions import RPCResponseTooLargeError
 
     cap = 1024  # 1 KiB cap so the test stays fast and small.
@@ -1139,7 +1139,7 @@ async def test_normal_response_below_cap_works(monkeypatch):
     """A normal-sized response decodes through the streaming wrapper unchanged."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import stream_post_with_size_cap
+    from notebooklm._streaming_post import stream_post_with_size_cap
 
     payload = b"hello world" * 1000  # ~11 KB, well under the 50 MiB default
 
@@ -1186,7 +1186,7 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
     auth-refresh / 429 / 5xx branches see the same error they always did."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import stream_post_with_size_cap
+    from notebooklm._streaming_post import stream_post_with_size_cap
 
     chunk_reads = 0
 
@@ -1269,7 +1269,7 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
         pytest.importorskip("zstandard")
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import stream_post_with_size_cap
+    from notebooklm._streaming_post import stream_post_with_size_cap
 
     # Realistic batchexecute prefix; only the bytes matter, not the framing.
     decoded_payload = b')]}\'\n\n[["wrb.fr",null,"[1]",null,null,null,"generic"]]'
@@ -1325,11 +1325,9 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
         await client.aclose()
 
 
-def test_max_rpc_response_bytes_constant_lives_in_transport_module():
-    """Constant is owned by ``_authed_transport`` (not ``_core``) to avoid an
-    import cycle — ``_core`` already imports from ``_authed_transport``."""
-    from notebooklm import _authed_transport
+def test_transport_constants_live_in_owning_modules():
+    """Transport constants live with the modules that enforce them."""
+    from notebooklm import _streaming_post, _transport_errors
 
-    assert _authed_transport.MAX_RPC_RESPONSE_BYTES == 50 * 1024 * 1024
-    # Sanity: it sits next to the other transport-layer constant.
-    assert _authed_transport.MAX_RETRY_AFTER_SECONDS == 300
+    assert _streaming_post.MAX_RPC_RESPONSE_BYTES == 50 * 1024 * 1024
+    assert _transport_errors.MAX_RETRY_AFTER_SECONDS == 300

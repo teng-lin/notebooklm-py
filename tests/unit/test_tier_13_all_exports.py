@@ -6,7 +6,7 @@ that lacked one so the surface they expose to first-party callers (and test
 suites) is machine-checkable.
 
 These pins guard against silent surface drift (e.g. someone exports a new
-helper from ``_authed_transport`` without updating ``__all__`` or the
+helper from a collaborator module without updating ``__all__`` or the
 migration doc). They are NOT public-API contracts — see
 ``docs/stability.md`` for the public surface — but they pin the documented
 internal surface listed in ``docs/refactor-history.md``.
@@ -14,26 +14,34 @@ internal surface listed in ``docs/refactor-history.md``.
 
 from __future__ import annotations
 
-import notebooklm._authed_transport as authed_transport_module
 import notebooklm._conversation_cache as conversation_cache_module
 import notebooklm._cookie_persistence as cookie_persistence_module
+import notebooklm._request_types as request_types_module
 import notebooklm._rpc_executor as rpc_executor_module
+import notebooklm._streaming_post as streaming_post_module
 import notebooklm._transport_errors as transport_errors_module
 
-EXPECTED_AUTHED_TRANSPORT_ALL: list[str] = [
-    "MAX_RETRY_AFTER_SECONDS",
-    "MAX_RPC_RESPONSE_BYTES",
+EXPECTED_REQUEST_TYPES_ALL: list[str] = [
     "AuthSnapshot",
     "BuildRequest",
+    "BuildRequestResult",
     "PostBody",
+    "materialize_build_request",
+]
+
+EXPECTED_STREAMING_POST_ALL: list[str] = [
+    "MAX_RPC_RESPONSE_BYTES",
+    "stream_post_with_size_cap",
+]
+
+EXPECTED_TRANSPORT_ERRORS_ALL: list[str] = [
+    "MAX_RETRY_AFTER_SECONDS",
     "TransportAuthExpired",
     "TransportRateLimited",
     "TransportServerError",
     "parse_retry_after",
-    "stream_post_with_size_cap",
+    "raise_mapped_post_error",
 ]
-
-EXPECTED_TRANSPORT_ERRORS_ALL: list[str] = ["raise_mapped_post_error"]
 
 EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor", "RpcOwner"]
 
@@ -64,11 +72,19 @@ def _check_module_all(module: object, expected: list[str], label: str) -> None:
         )
 
 
-def test_authed_transport_helpers_all_pinned() -> None:
+def test_request_types_all_pinned() -> None:
     _check_module_all(
-        authed_transport_module,
-        EXPECTED_AUTHED_TRANSPORT_ALL,
-        "notebooklm._authed_transport",
+        request_types_module,
+        EXPECTED_REQUEST_TYPES_ALL,
+        "notebooklm._request_types",
+    )
+
+
+def test_streaming_post_all_pinned() -> None:
+    _check_module_all(
+        streaming_post_module,
+        EXPECTED_STREAMING_POST_ALL,
+        "notebooklm._streaming_post",
     )
 
 

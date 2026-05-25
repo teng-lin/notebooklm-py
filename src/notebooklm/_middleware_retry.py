@@ -54,11 +54,11 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from ._authed_transport import TransportRateLimited, TransportServerError, parse_retry_after
 from ._backoff import compute_backoff_delay
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._session_config import CORE_LOGGER_NAME
 from ._session_helpers import resolve_sleep
+from ._transport_errors import TransportRateLimited, TransportServerError, parse_retry_after
 
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics

@@ -1036,7 +1036,7 @@ class TestBuildUrlAuthuser:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._authed_transport import AuthSnapshot
+        from notebooklm._request_types import AuthSnapshot
 
         return AuthSnapshot(
             csrf_token=core.auth.csrf_token,

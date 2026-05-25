@@ -68,10 +68,11 @@ from typing import TYPE_CHECKING, cast
 
 import httpx
 
-from ._authed_transport import AuthSnapshot, BuildRequest, TransportAuthExpired
 from ._middleware import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
+from ._request_types import AuthSnapshot, BuildRequest
 from ._session_config import CORE_LOGGER_NAME
 from ._session_helpers import resolve_sleep
+from ._transport_errors import TransportAuthExpired
 
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics

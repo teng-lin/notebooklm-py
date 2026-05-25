@@ -110,8 +110,9 @@ a Protocol-shim host interface so it can be unit-tested against a stub
 | `_session_auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
 | `_session_lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
 | `_rpc_executor.py` | `RpcExecutor` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols. |
-| `_authed_transport.py` | `AuthSnapshot`, transport exceptions, streaming helpers | Transport request types and low-level POST helpers. |
-| `_transport_errors.py` | `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
+| `_request_types.py` | `AuthSnapshot`, `BuildRequest`, request materialization | Shared request construction Interface. |
+| `_transport_errors.py` | transport exceptions, `parse_retry_after`, `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
+| `_streaming_post.py` | `stream_post_with_size_cap` | Low-level POST streaming and response-size guard. |
 | `_conversation_cache.py` | `ConversationCache` | Per-instance LRU conversation cache for `ChatAPI` continuity. |
 | `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
 | `_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
@@ -590,7 +591,7 @@ Need network?
 
 ### Credential redaction
 
-The package handler installed by `configure_logging()` has a `RedactingFilter` attached. It runs for every record reaching the handler, including records originating in child loggers (`notebooklm._session`, `notebooklm._authed_transport`, `notebooklm._chat`, etc.) via Python logging's default propagation. The filter scrubs:
+The package handler installed by `configure_logging()` has a `RedactingFilter` attached. It runs for every record reaching the handler, including records originating in child loggers (`notebooklm._session`, `notebooklm._transport_errors`, `notebooklm._chat`, etc.) via Python logging's default propagation. The filter scrubs:
 
 - CSRF tokens (`at=...`)
 - Session IDs (`f.sid=...`)
