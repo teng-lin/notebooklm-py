@@ -198,6 +198,62 @@ deprecation policy in `docs/stability.md`: one release of
 `DeprecationWarning` from the public module, then removal in the next
 minor (0.x) or major (post-1.0) bump.
 
+### Demotion / consolidation rule
+
+The promotion rule above governs only the public-surface boundary
+(seam → public re-export). It says nothing about motion *within* the
+seam tier — and without a symmetric rule the prefix convention becomes
+a one-way ratchet toward more files. The Tier-7 through Tier-13 arc
+biased toward *splitting* seams because every refactor that produced a
+new `_<domain>_*.py` sibling was self-justifying ("this concern now has
+a name"), while collapses had no named policy backing them. The result
+is structural drift: seams that were extracted for a single Tier's
+purpose accumulate even after their original consumers are gone.
+
+To balance the ratchet, two seam-tier consolidation triggers apply:
+
+1. **Sibling fold.** When two `_<domain>_*.py` siblings each have
+   <300 LOC and import only each other plus shared deps (no other
+   `notebooklm._*` seam imports either of them by name), they are
+   **candidates to fold** into a single `_<domain>.py` (or
+   `_<domain>_<concern>.py`, picking whichever name remains
+   self-describing).
+2. **Capability demotion.** When a capability that was previously
+   promoted to a shared Protocol (per
+   [ADR-013](0013-composable-session-capabilities.md) §1, the ≥2
+   feature-consumer rule) has dropped back to **zero remaining second
+   consumers** — i.e. exactly one feature still types against it —
+   that capability is a **candidate to demote** back into its sole
+   consumer as a feature-local Protocol, mirroring the
+   `ChatRuntime` / `ArtifactsRuntime` / `UploadRuntime` pattern in
+   ADR-013 §3.
+
+Both triggers are *candidates*, not mandates: a reviewer may decline
+the fold/demotion (e.g. when the two siblings have meaningfully
+different audiences, when an imminent third consumer is in flight, or
+when keeping the shared Protocol clarifies a domain boundary). The
+rule exists to make consolidation a normal motion that doesn't need a
+fresh justification each time — not to force collapses against
+reviewer judgement.
+
+**Demotion does not require an ADR update.** It is the symmetric
+counterpart to ADR-013's promotion rule (also a standing rule that
+applies per-PR, not per-ADR). A demotion or sibling fold is a normal
+refactor PR; it references this section as its policy basis, the same
+way a new shared Protocol references ADR-013 §1. Only a change to the
+*criteria themselves* (the <300-LOC threshold, the second-consumer
+count, or the mutual-isolation condition on cross-seam imports)
+requires an ADR amendment.
+
+This rule is paired with the underscore-prefix convention rather than
+with ADR-013 because the rule's *evidence* is module-level
+(file sizes, file-to-file imports inside `src/notebooklm/`) and the
+rule's *target* is the seam-tier file layout this ADR pins. The two
+ADRs read as a paired policy: ADR-013 §1 governs when a
+single-consumer capability becomes shared; this section governs when
+a previously-shared capability or an over-decomposed file pair
+collapses back.
+
 ## Consequences
 
 **Wanted:**
