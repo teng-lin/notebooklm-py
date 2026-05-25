@@ -23,7 +23,9 @@ whose allowlist is empty.
 Tier 8/9/10 extracted the cross-cutting concerns into named seam modules. As of HEAD the seams are:
 
 ```text
-_authed_transport.py            authed-POST path + retry loops
+_request_types.py               authed-POST request construction types
+_transport_errors.py            transport exceptions + POST error mapping
+_streaming_post.py              size-capped streaming POST helper
 _rpc_executor.py                  RPC dispatch executor (DecodeResponse, RpcOwner protocols)
 _session_auth.py                 AuthRefreshCoordinator + auth-snapshot lock
 _transport_drain.py                TransportDrainTracker + _TransportOperationToken

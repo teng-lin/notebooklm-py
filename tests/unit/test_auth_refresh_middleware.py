@@ -43,16 +43,16 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._authed_transport import (
-    AuthSnapshot,
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
+from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+from notebooklm._request_types import AuthSnapshot
+from notebooklm._session_helpers import is_auth_error
+from notebooklm._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
-from notebooklm._client_metrics import ClientMetrics
-from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
-from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
-from notebooklm._session_helpers import is_auth_error
 
 
 def _recording_sleep() -> tuple[Callable[[float], Awaitable[None]], list[float]]:

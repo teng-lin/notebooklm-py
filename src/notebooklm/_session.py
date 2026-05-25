@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
-from ._authed_transport import AuthSnapshot, BuildRequest
 from ._client_metrics import ClientMetrics
 from ._cookie_persistence import CookiePersistence
 from ._error_injection import _refuse_synthetic_error_outside_test_context
@@ -30,6 +29,7 @@ from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
 from ._polling_registry import PollRegistry
 from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
 from ._reqid_counter import ReqidCounter
+from ._request_types import AuthSnapshot, BuildRequest
 from ._rpc_executor import RpcExecutor
 from ._session_auth import AuthRefreshCoordinator
 from ._session_config import (

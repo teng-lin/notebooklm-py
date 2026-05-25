@@ -37,7 +37,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # (relative source path, extra fully-qualified module names also banned).
 # ``notebooklm._core`` and its variants are always banned.
 GUARDED_MODULES: list[tuple[str, frozenset[str]]] = [
-    ("src/notebooklm/_authed_transport.py", frozenset()),
+    ("src/notebooklm/_request_types.py", frozenset()),
+    ("src/notebooklm/_streaming_post.py", frozenset()),
+    ("src/notebooklm/_transport_errors.py", frozenset()),
     ("src/notebooklm/_rpc_executor.py", frozenset()),
     ("src/notebooklm/_auth/session.py", frozenset({"notebooklm.client", "client"})),
     ("src/notebooklm/_cookie_persistence.py", frozenset()),

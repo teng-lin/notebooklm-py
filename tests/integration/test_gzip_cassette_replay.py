@@ -29,7 +29,7 @@ import httpx
 import pytest
 import vcr
 
-from notebooklm._authed_transport import stream_post_with_size_cap
+from notebooklm._streaming_post import stream_post_with_size_cap
 
 # Required by the tier-enforcement rule in :mod:`tests.integration.conftest`
 # — every integration test must carry ``@pytest.mark.vcr``, be decorated

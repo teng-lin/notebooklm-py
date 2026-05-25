@@ -35,8 +35,8 @@ restructured the **private** core layer of `notebooklm-py`:
   orchestrator) and `Kernel` (the pure transport core — owns the
   `httpx.AsyncClient` and the cookie jar). It also renamed every
   `_core_*` module out of the legacy `_core` namespace into final
-  homes (`_session_auth`, `_session_lifecycle`, `_authed_transport`,
-  `_rpc_executor`, and so on).
+  homes (`_session_auth`, `_session_lifecycle`, `_request_types`,
+  `_transport_errors`, `_streaming_post`, `_rpc_executor`, and so on).
 - The **capability refactor** that followed (ADR-013) replaced the
   broad `Session` Protocol that Tier 13 originally shipped with a
   composable set of narrow capability Protocols
@@ -122,7 +122,7 @@ right:
 | `notebooklm._core_polling` | `notebooklm._polling_registry` |
 | `notebooklm._core_reqid` | `notebooklm._reqid_counter` |
 | `notebooklm._core_rpc` | `notebooklm._rpc_executor` |
-| `notebooklm._core_transport` | `notebooklm._authed_transport` |
+| `notebooklm._core_transport` | `notebooklm._request_types` / `notebooklm._transport_errors` / `notebooklm._streaming_post` |
 
 `notebooklm._core` itself has been deleted.
 
@@ -135,7 +135,7 @@ not change, only their home module did.
 | Tier 12 symbol | Tier 13 home | Notes |
 |---|---|---|
 | `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` was retired. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-013. |
-| `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._authed_transport.MAX_RETRY_AFTER_SECONDS` | No longer re-exported via `_session` or `_core`. |
+| `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._transport_errors.MAX_RETRY_AFTER_SECONDS` | No longer re-exported via `_session` or `_core`. |
 | `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._session_config.DEFAULT_*` | |
 | `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._session_helpers` | |
 | `notebooklm._core.ERROR_INJECT_ENV_VAR` | `notebooklm._error_injection.ERROR_INJECT_ENV_VAR` | |
@@ -147,7 +147,7 @@ not change, only their home module did.
 | `notebooklm._core.CookiePersistence` | `notebooklm._cookie_persistence.CookiePersistence` | Same. |
 | `notebooklm._core.ClientLifecycle` | `notebooklm._session_lifecycle.ClientLifecycle` | Same. |
 | `notebooklm._core.RpcExecutor` | `notebooklm._rpc_executor.RpcExecutor` | Same. |
-| `notebooklm._core` authed transport helpers | `notebooklm._authed_transport` + `notebooklm._transport_errors` | The interim authed-transport Adapter was later retired; request types/exceptions/streaming helpers remain in `_authed_transport`, and terminal error mapping lives in `_transport_errors`. |
+| `notebooklm._core` authed transport helpers | `notebooklm._request_types` + `notebooklm._transport_errors` + `notebooklm._streaming_post` | The interim authed-transport Adapter and catch-all helper module were retired; request types, transport errors, and streaming POST behavior now have separate owning modules. |
 
 #### New modules introduced by Tier 12 / 13
 
@@ -167,7 +167,8 @@ These modules did not exist before Tier 12 began:
 | `notebooklm._middleware_semaphore` | Tier 12 PR 12.9 — global RPC concurrency cap. |
 | `notebooklm._chat_transport` | Chat-domain consumer-side error mapping over the shared authed POST pipeline. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
 | `notebooklm._transport_errors` | Terminal `Kernel.post` error mapping into transport exceptions consumed by retry/auth middleware. |
-| `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction. Re-exports `AuthSnapshot` and `BuildRequest` from `_authed_transport`, plus the `BuildRequestResult` dataclass. |
+| `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction: `AuthSnapshot`, `BuildRequest`, `PostBody`, and `BuildRequestResult`. |
+| `notebooklm._streaming_post` | Size-capped streaming POST helper used by `Kernel.post`. |
 
 #### Deleted symbols and changed defaults
 

@@ -31,12 +31,12 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from notebooklm._authed_transport import (
+from notebooklm._chat_transport import chat_aware_authed_post
+from notebooklm._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
-from notebooklm._chat_transport import chat_aware_authed_post
 from notebooklm.exceptions import ChatError, NetworkError
 
 # ---------------------------------------------------------------------------

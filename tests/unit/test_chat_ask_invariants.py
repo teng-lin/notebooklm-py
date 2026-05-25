@@ -30,8 +30,8 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
-from notebooklm._authed_transport import AuthSnapshot
 from notebooklm._chat import ChatAPI
+from notebooklm._request_types import AuthSnapshot
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 

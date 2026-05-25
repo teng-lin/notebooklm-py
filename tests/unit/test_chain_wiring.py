@@ -28,7 +28,6 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from notebooklm._authed_transport import TransportServerError
 from notebooklm._middleware import (
     Middleware,
     NextCall,
@@ -37,6 +36,7 @@ from notebooklm._middleware import (
     build_chain,
 )
 from notebooklm._session import Session
+from notebooklm._transport_errors import TransportServerError
 
 
 def _make_core() -> Session:

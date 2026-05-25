@@ -50,8 +50,8 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
-from ._authed_transport import AuthSnapshot
 from ._loop_affinity import assert_bound_loop
+from ._request_types import AuthSnapshot
 from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 

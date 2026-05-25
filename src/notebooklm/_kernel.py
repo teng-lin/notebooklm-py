@@ -6,7 +6,8 @@ from collections.abc import Callable, Mapping
 
 import httpx
 
-from ._authed_transport import PostBody, stream_post_with_size_cap
+from ._request_types import PostBody
+from ._streaming_post import stream_post_with_size_cap
 from .auth import AuthTokens, build_cookie_jar
 from .types import ConnectionLimits
 

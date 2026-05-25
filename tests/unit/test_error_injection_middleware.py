@@ -47,10 +47,10 @@ import pytest
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
 from cassette_patterns import build_synthetic_error_response
-from notebooklm._authed_transport import TransportRateLimited, TransportServerError
 from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
+from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 
 
 def _static_terminal(response: httpx.Response) -> NextCall:

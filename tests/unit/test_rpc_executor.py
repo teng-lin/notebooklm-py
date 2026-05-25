@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._authed_transport import AuthSnapshot
+from notebooklm._request_types import AuthSnapshot
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens

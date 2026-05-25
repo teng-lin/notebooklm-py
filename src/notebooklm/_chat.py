@@ -12,7 +12,6 @@ from typing import Any, Protocol
 
 import httpx
 
-from ._authed_transport import AuthSnapshot
 from ._chat_notes import save_chat_answer_as_note
 from ._chat_protocol import (
     build_streaming_chat_request,
@@ -29,7 +28,7 @@ from ._chat_transport import chat_aware_authed_post
 from ._conversation_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._notebook_metadata import NotebookSourceIdProvider
-from ._request_types import BuildRequest
+from ._request_types import AuthSnapshot, BuildRequest
 from ._session_contracts import LoopGuard, RpcCaller
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (

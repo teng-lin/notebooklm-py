@@ -574,9 +574,9 @@ and kernel collaborator modules such as `notebooklm._rpc_executor`,
 `notebooklm._transport_drain`, and `notebooklm._transport_errors`. The
 split is internal — module-level constants and helpers live in canonical
 seam modules (`_session_config`, `_session_helpers`, `_error_injection`,
-`_authed_transport`, `_transport_errors`) and are imported from those
-modules directly. The historical `notebooklm._core` compatibility shim
-was removed in v0.5.0.
+`_request_types`, `_transport_errors`, `_streaming_post`) and are imported
+from those modules directly. The historical `notebooklm._core`
+compatibility shim was removed in v0.5.0.
 
 | Module | Owns | Notes |
 |---|---|---|
@@ -594,8 +594,9 @@ was removed in v0.5.0.
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts and the legacy `Session._pending_polls` compatibility bridge. |
 | `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
 | `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
-| `_authed_transport` | Transport request types, transport-level exceptions, `Retry-After` parsing, and the streaming POST helper with the response-size cap. | Owns `TransportAuthExpired` / `TransportRateLimited` / `TransportServerError`; retry loops (429 + 5xx) live in `RetryMiddleware`. |
-| `_transport_errors` | Maps raw `Kernel.post` `httpx` failures into transport-level exceptions. | Keeps terminal error mapping out of `Session` and lets the middleware chain consume a narrow exception Interface. |
+| `_request_types` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the chain terminal. |
+| `_transport_errors` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Session` and lets the middleware chain consume a narrow exception Interface. |
+| `_streaming_post` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
 
 Feature APIs depend on narrow per-capability Protocols defined in
 `notebooklm._session_contracts` (and feature-local runtime Protocols
@@ -609,7 +610,8 @@ If you previously imported from `notebooklm._core` modules, see
 Tier 12 → Tier 13 rename table. The `notebooklm._core` compatibility
 shim was removed in v0.5.0; first-party callers should import directly
 from the canonical seam modules (`_session_config`, `_session_helpers`,
-`_authed_transport`, `_error_injection`, `_transport_drain`, etc.).
+`_request_types`, `_transport_errors`, `_streaming_post`, `_error_injection`,
+`_transport_drain`, etc.).
 
 ---
 
