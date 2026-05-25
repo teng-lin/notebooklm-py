@@ -327,7 +327,7 @@ class ArtifactDownloadService:
 
         try:
             app_data = _extract_app_data(html_content)
-        except (ValueError, json.JSONDecodeError) as e:
+        except json.JSONDecodeError as e:
             raise ArtifactParseError(
                 artifact_type, details=f"Failed to parse content: {e}", cause=e
             ) from e
