@@ -123,31 +123,35 @@ async def test_perform_authed_post_populates_request_envelope_for_chain() -> Non
             {"X-Test": "yes"},
         )
 
-    response = await core._perform_authed_post(
-        build_request=build,
-        log_label="RPC LIST_NOTEBOOKS",
-        disable_internal_retries=True,
-        rpc_method="LIST_NOTEBOOKS",
-    )
+    await core.open()
+    try:
+        response = await core._perform_authed_post(
+            build_request=build,
+            log_label="RPC LIST_NOTEBOOKS",
+            disable_internal_retries=True,
+            rpc_method="LIST_NOTEBOOKS",
+        )
 
-    assert response.status_code == 200
-    assert len(captured) == 1
-    request = captured[0]
-    assert request.url == "https://example.test/x?authuser=0"
-    assert request.headers == {"X-Test": "yes"}
-    assert request.body == b"payload"
-    assert request.context["log_label"] == "RPC LIST_NOTEBOOKS"
-    assert request.context["disable_internal_retries"] is True
-    assert request.context["rpc_method"] == "LIST_NOTEBOOKS"
-    assert len(calls) == 1
-    assert calls[0].csrf_token == "CSRF_OLD"
-    cached_build_request = request.context["build_request"]
-    assert cached_build_request is not build
-    assert cached_build_request(calls[0]) == (
-        "https://example.test/x?authuser=0",
-        "payload",
-        {"X-Test": "yes"},
-    )
+        assert response.status_code == 200
+        assert len(captured) == 1
+        request = captured[0]
+        assert request.url == "https://example.test/x?authuser=0"
+        assert request.headers == {"X-Test": "yes"}
+        assert request.body == b"payload"
+        assert request.context["log_label"] == "RPC LIST_NOTEBOOKS"
+        assert request.context["disable_internal_retries"] is True
+        assert request.context["rpc_method"] == "LIST_NOTEBOOKS"
+        assert len(calls) == 1
+        assert calls[0].csrf_token == "CSRF_OLD"
+        cached_build_request = request.context["build_request"]
+        assert cached_build_request is not build
+        assert cached_build_request(calls[0]) == (
+            "https://example.test/x?authuser=0",
+            "payload",
+            {"X-Test": "yes"},
+        )
+    finally:
+        await core.close()
 
 
 @pytest.mark.asyncio
