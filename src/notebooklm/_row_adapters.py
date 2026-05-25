@@ -300,7 +300,13 @@ class NoteRow:
     # Wrapped row; ``repr=False`` so logs don't explode with the entire
     # batchexecute payload when a NoteRow appears in a stack trace.
     _raw: list[Any] = field(repr=False)
-    _method_id: str = RPCMethod.GET_NOTES_AND_MIND_MAPS.value
+    # ``method_id`` is intentionally a public extension point (matching
+    # :class:`ArtifactRow`'s post-#1026 convention): callers wrapping a
+    # row that came from a non-default method override it so
+    # ``safe_index`` drift diagnostics point at the correct RPC. No
+    # leading underscore — see the related test
+    # ``TestNoteRowMethodIdField::test_custom_method_id_can_be_supplied``.
+    method_id: str = RPCMethod.GET_NOTES_AND_MIND_MAPS.value
 
     # ---- Position constants (the canary contract) ------------------------
     # These are ClassVar so the frozen dataclass treats them as class-level
@@ -398,7 +404,7 @@ class NoteRow:
             value = safe_index(
                 slot,
                 self._INNER_CONTENT_POS,
-                method_id=self._method_id,
+                method_id=self.method_id,
                 source="NoteRow.content",
             )
             return value if isinstance(value, str) else None
@@ -437,7 +443,7 @@ class NoteRow:
         value = safe_index(
             slot,
             self._INNER_TITLE_POS,
-            method_id=self._method_id,
+            method_id=self.method_id,
             source="NoteRow.title",
         )
         return value if isinstance(value, str) else ""

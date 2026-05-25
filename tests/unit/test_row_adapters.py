@@ -786,8 +786,9 @@ class TestNoteRowImmutability:
 
 
 class TestNoteRowMethodIdField:
-    """The adapter exposes ``_method_id`` for callers that need to tag
-    diagnostics with the RPC the row came from.
+    """The adapter exposes ``method_id`` for callers that need to tag
+    diagnostics with the RPC the row came from. Public (no leading
+    underscore) to mirror :class:`ArtifactRow`'s post-#1026 convention.
 
     Drift-triggering inputs cannot be synthesised through the
     content / title descents (length-guards short-circuit before
@@ -798,11 +799,11 @@ class TestNoteRowMethodIdField:
     def test_default_method_id_is_get_notes_and_mind_maps(self) -> None:
         row = NoteRow(["id", "body"])
         # ``GET_NOTES_AND_MIND_MAPS.value`` per ``rpc/types.py``.
-        assert row._method_id == "cFji9"
+        assert row.method_id == "cFji9"
 
     def test_custom_method_id_can_be_supplied(self) -> None:
         """Callers wrapping a row that came from a non-default RPC can
-        override ``_method_id`` so any future drift diagnostics name
+        override ``method_id`` so any future drift diagnostics name
         the correct method."""
-        row = NoteRow(["id", "body"], _method_id="custom_note_rpc")
-        assert row._method_id == "custom_note_rpc"
+        row = NoteRow(["id", "body"], method_id="custom_note_rpc")
+        assert row.method_id == "custom_note_rpc"
