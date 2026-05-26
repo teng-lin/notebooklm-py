@@ -104,13 +104,15 @@ class _ContextLiteralVisitor(ast.NodeVisitor):
             isinstance(func, ast.Attribute)
             and func.attr == "update"
             and self._is_context_expression(func.value)
-            and node.args
-            and isinstance(node.args[0], ast.Dict)
         ):
-            for key_node in node.args[0].keys:
-                key = _literal_string(key_node)
-                if key is not None:
-                    self._record_key(key, node.lineno)
+            if node.args and isinstance(node.args[0], ast.Dict):
+                for key_node in node.args[0].keys:
+                    key = _literal_string(key_node)
+                    if key is not None:
+                        self._record_key(key, node.lineno)
+            for keyword in node.keywords:
+                if keyword.arg is not None:
+                    self._record_key(keyword.arg, node.lineno)
 
         self.generic_visit(node)
 
@@ -154,6 +156,21 @@ def test_allowed_rpc_context_keys_match_adr_vocabulary() -> None:
         RPC_CONTEXT_AUTH_REFRESHED,
         RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
     } == ALLOWED_RPC_CONTEXT_KEYS
+
+
+def test_context_literal_visitor_records_update_keyword_keys() -> None:
+    tree = ast.parse(
+        """
+async def call(request):
+    context = request.context
+    context.update(ad_hoc=True, **{})
+"""
+    )
+    visitor = _ContextLiteralVisitor(ROOT / "src/notebooklm/_middleware.py")
+
+    visitor.visit(tree)
+
+    assert visitor.violations == ["src/notebooklm/_middleware.py:4: 'ad_hoc'"]
 
 
 def test_production_context_literal_keys_stay_in_allowed_vocabulary() -> None:
