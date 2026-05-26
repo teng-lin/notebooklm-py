@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._row_adapters import ArtifactRow
 from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
 from notebooklm.types import ArtifactNotReadyError
 
@@ -135,6 +136,24 @@ class TestSelectArtifactFiltering:
         )
 
         assert result[0] == "ok"
+
+    def test_adapter_selector_returns_artifact_row(self, api: ArtifactsAPI) -> None:
+        """New internal selector returns the adapter while preserving raw selector behavior."""
+        candidates = [
+            _artifact("old", ArtifactTypeCode.AUDIO, ArtifactStatus.COMPLETED, 100),
+            _artifact("newest", ArtifactTypeCode.AUDIO, ArtifactStatus.COMPLETED, 999),
+        ]
+
+        result = api._listing.select_completed_artifact_row(
+            candidates,
+            artifact_id=None,
+            type_name="Audio",
+            no_result_error_key="audio",
+            type_code=ArtifactTypeCode.AUDIO,
+        )
+
+        assert isinstance(result, ArtifactRow)
+        assert result.id == "newest"
 
 
 class TestSelectArtifactExplicitId:

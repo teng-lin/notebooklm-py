@@ -31,6 +31,19 @@ _ARTIFACT_TYPE_CODES_BY_KIND = {
 _KNOWN_ARTIFACT_TYPE_CODES = frozenset(_ARTIFACT_TYPE_CODES_BY_KIND.values())
 
 
+def iter_artifact_rows(candidates: Sequence[Any]) -> list[ArtifactRow]:
+    """Wrap raw list-shaped artifact candidates in ``ArtifactRow`` adapters."""
+    return [ArtifactRow(candidate) for candidate in candidates if isinstance(candidate, list)]
+
+
+def find_artifact_row_by_id(candidates: Sequence[Any], artifact_id: str) -> ArtifactRow | None:
+    """Find any artifact row by ID without filtering by completion status."""
+    for row in iter_artifact_rows(candidates):
+        if row.id == artifact_id:
+            return row
+    return None
+
+
 def _matches_artifact_type(artifact: Artifact, artifact_type: ArtifactType | None) -> bool:
     """Return whether ``artifact`` matches ``artifact_type`` without noisy kind warnings."""
     if artifact_type is None:
@@ -137,32 +150,38 @@ class ArtifactListingService:
         derive the key from ``type_name`` while empty-filter results use
         ``no_result_error_key`` verbatim.
 
-        Returns the **raw row** (not an :class:`ArtifactRow`) so downstream
-        extractors (audio, video, infographic, slide-deck URL helpers)
-        keep their existing list-positional input shape.
+        Returns the **raw row** (not an :class:`ArtifactRow`) to preserve
+        the historical private helper contract. New internal callers that
+        need typed access should use :meth:`select_completed_artifact_row`.
         """
-        # Wrap candidates once; the adapter is a thin frozen view so this
-        # is cheap. ``rows`` keeps the (raw, row) pairing so we can
-        # return the original raw list back to downstream extractors.
-        # No explicit length-guard against short rows: ``ArtifactRow``
-        # already returns sensible defaults (``status=0``) for missing
-        # positions, and ``matches_type(completed_only=True)`` rejects
-        # those defaults naturally — keeping the adapter's encapsulation
-        # contract intact.
-        rows: list[tuple[Any, ArtifactRow]] = [
-            (a, ArtifactRow(a)) for a in candidates if isinstance(a, list)
-        ]
-        filtered: list[tuple[Any, ArtifactRow]] = [
-            (raw, row) for raw, row in rows if row.matches_type(type_code, completed_only=True)
-        ]
+        return self.select_completed_artifact_row(
+            candidates,
+            artifact_id,
+            type_name,
+            no_result_error_key,
+            type_code=type_code,
+        ).raw
+
+    def select_completed_artifact_row(
+        self,
+        candidates: Sequence[Any],
+        artifact_id: str | None,
+        type_name: str,
+        no_result_error_key: str,
+        *,
+        type_code: ArtifactTypeCode,
+    ) -> ArtifactRow:
+        """Select a completed artifact row by ID or latest timestamp."""
+        rows = iter_artifact_rows(candidates)
+        filtered = [row for row in rows if row.matches_type(type_code, completed_only=True)]
 
         if artifact_id:
-            match = next(((raw, row) for raw, row in filtered if row.id == artifact_id), None)
+            match = next((row for row in filtered if row.id == artifact_id), None)
             if not match:
                 raise ArtifactNotReadyError(
                     type_name.lower().replace(" ", "_"), artifact_id=artifact_id
                 )
-            return match[0]
+            return match
 
         if not filtered:
             raise ArtifactNotReadyError(no_result_error_key)
@@ -172,8 +191,8 @@ class ArtifactListingService:
         # historical ``(a[15][0] or 0)`` falsy-coerce trick that pinned
         # the ``test_handles_none_at_timestamp_position_without_typeerror``
         # contract).
-        filtered.sort(key=lambda pair: pair[1].created_at_raw or 0, reverse=True)
-        return filtered[0][0]
+        filtered.sort(key=lambda row: row.created_at_raw or 0, reverse=True)
+        return filtered[0]
 
     def _filter_studio_artifacts(
         self,

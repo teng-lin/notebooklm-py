@@ -56,14 +56,35 @@ class TestPositionContract:
     def test_type_position_is_2(self) -> None:
         assert ArtifactRow._TYPE_POS == 2
 
+    def test_error_text_position_is_3(self) -> None:
+        assert ArtifactRow._ERROR_TEXT_POS == 3
+
     def test_status_position_is_4(self) -> None:
         assert ArtifactRow._STATUS_POS == 4
+
+    def test_error_payload_position_is_5(self) -> None:
+        assert ArtifactRow._ERROR_PAYLOAD_POS == 5
+
+    def test_audio_metadata_position_is_6(self) -> None:
+        assert ArtifactRow._AUDIO_METADATA_POS == 6
+
+    def test_report_markdown_position_is_7(self) -> None:
+        assert ArtifactRow._REPORT_MARKDOWN_POS == 7
+
+    def test_video_metadata_position_is_8(self) -> None:
+        assert ArtifactRow._VIDEO_METADATA_POS == 8
 
     def test_options_position_is_9(self) -> None:
         assert ArtifactRow._OPTIONS_POS == 9
 
     def test_timestamp_position_is_15(self) -> None:
         assert ArtifactRow._TIMESTAMP_POS == 15
+
+    def test_slide_deck_metadata_position_is_16(self) -> None:
+        assert ArtifactRow._SLIDE_DECK_METADATA_POS == 16
+
+    def test_data_table_payload_position_is_18(self) -> None:
+        assert ArtifactRow._DATA_TABLE_PAYLOAD_POS == 18
 
     def test_all_positions_at_once(self) -> None:
         """A single dict pin so a sweeping reshape (e.g. all positions
@@ -73,10 +94,17 @@ class TestPositionContract:
             ArtifactRow._ID_POS,
             ArtifactRow._TITLE_POS,
             ArtifactRow._TYPE_POS,
+            ArtifactRow._ERROR_TEXT_POS,
             ArtifactRow._STATUS_POS,
+            ArtifactRow._ERROR_PAYLOAD_POS,
+            ArtifactRow._AUDIO_METADATA_POS,
+            ArtifactRow._REPORT_MARKDOWN_POS,
+            ArtifactRow._VIDEO_METADATA_POS,
             ArtifactRow._OPTIONS_POS,
             ArtifactRow._TIMESTAMP_POS,
-        ) == (0, 1, 2, 4, 9, 15)
+            ArtifactRow._SLIDE_DECK_METADATA_POS,
+            ArtifactRow._DATA_TABLE_PAYLOAD_POS,
+        ) == (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 18)
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +294,127 @@ class TestTimestampDescent:
         assert row.created_at_raw is None
 
 
+class TestArtifactPayloadAccessors:
+    """Artifact URL/content/error accessors owned by ``ArtifactRow``."""
+
+    def test_audio_url_prefers_audio_mp4(self) -> None:
+        raw = _full_row(type_code=ArtifactTypeCode.AUDIO)
+        raw[ArtifactRow._AUDIO_METADATA_POS] = [
+            None,
+            None,
+            None,
+            None,
+            None,
+            [
+                ["https://example.com/fallback.bin", None, "application/octet-stream"],
+                ["https://example.com/audio.mp4", None, "audio/mp4"],
+            ],
+        ]
+
+        assert ArtifactRow(raw).audio_url == "https://example.com/audio.mp4"
+
+    def test_video_url_prefers_primary_video_mp4(self) -> None:
+        raw = _full_row(type_code=ArtifactTypeCode.VIDEO)
+        raw[ArtifactRow._VIDEO_METADATA_POS] = [
+            [
+                ["https://example.com/preview.mp4", 2, "video/mp4"],
+                ["https://example.com/video.mp4", 4, "video/mp4"],
+            ]
+        ]
+
+        assert ArtifactRow(raw).video_url == "https://example.com/video.mp4"
+
+    def test_infographic_url_scans_url_bearing_content_blocks(self) -> None:
+        raw = _full_row(type_code=ArtifactTypeCode.INFOGRAPHIC)
+        raw[ArtifactRow._OPTIONS_POS] = [
+            None,
+            None,
+            [["ignored", ["https://example.com/infographic.png"]]],
+        ]
+
+        assert ArtifactRow(raw).infographic_url == "https://example.com/infographic.png"
+
+    def test_slide_deck_urls_are_named_separately(self) -> None:
+        raw = _full_row(type_code=ArtifactTypeCode.SLIDE_DECK)
+        raw.append(
+            [
+                ["config"],
+                "Slides",
+                [["slide"]],
+                "https://example.com/slides.pdf",
+                "https://example.com/slides.pptx",
+            ]
+        )
+
+        row = ArtifactRow(raw)
+        assert row.slide_deck_pdf_url == "https://example.com/slides.pdf"
+        assert row.slide_deck_pptx_url == "https://example.com/slides.pptx"
+
+    def test_report_markdown_accepts_wrapper_and_direct_string(self) -> None:
+        wrapped = _full_row(type_code=ArtifactTypeCode.REPORT)
+        wrapped[ArtifactRow._REPORT_MARKDOWN_POS] = ["# Wrapped"]
+        direct = _full_row(type_code=ArtifactTypeCode.REPORT)
+        direct[ArtifactRow._REPORT_MARKDOWN_POS] = "# Direct"
+
+        assert ArtifactRow(wrapped).report_markdown == "# Wrapped"
+        assert ArtifactRow(direct).report_markdown == "# Direct"
+
+    def test_data_table_raw_payload_returns_payload(self) -> None:
+        payload = [[[[["table"]]]]]
+        raw = _full_row(type_code=ArtifactTypeCode.DATA_TABLE)
+        raw.extend([None, None, payload])
+
+        assert ArtifactRow(raw).data_table_raw_payload is payload
+
+    def test_failed_error_text_prefers_plain_error_over_nested_payload(self) -> None:
+        raw = _full_row(status=ArtifactStatus.FAILED)
+        raw[ArtifactRow._ERROR_TEXT_POS] = " Primary "
+        raw[ArtifactRow._ERROR_PAYLOAD_POS] = ["Secondary"]
+
+        assert ArtifactRow(raw).failed_error_text == "Primary"
+
+    def test_failed_error_text_falls_back_to_nested_payload(self) -> None:
+        raw = _full_row(status=ArtifactStatus.FAILED)
+        raw[ArtifactRow._ERROR_PAYLOAD_POS] = [["Nested quota limit"]]
+
+        assert ArtifactRow(raw).failed_error_text == "Nested quota limit"
+
+    def test_artifact_url_dispatches_by_type(self) -> None:
+        raw = _full_row(type_code=ArtifactTypeCode.AUDIO)
+        raw[ArtifactRow._AUDIO_METADATA_POS] = [
+            None,
+            None,
+            None,
+            None,
+            None,
+            [["https://example.com/audio.mp4", None, "audio/mp4"]],
+        ]
+
+        assert ArtifactRow(raw).artifact_url(ArtifactTypeCode.AUDIO.value) == (
+            "https://example.com/audio.mp4"
+        )
+
+    def test_media_readiness_requires_url_for_media_only(self) -> None:
+        audio = ArtifactRow(_full_row(type_code=ArtifactTypeCode.AUDIO))
+        report = ArtifactRow(_full_row(type_code=ArtifactTypeCode.REPORT))
+
+        assert audio.is_media_ready() is False
+        assert report.is_media_ready() is True
+
+    def test_short_row_soft_degrades_for_new_positions(self) -> None:
+        row = ArtifactRow(["art_minimal", "Audio", ArtifactTypeCode.AUDIO, None, 3])
+
+        assert row.audio_url is None
+        assert row.video_url is None
+        assert row.infographic_url is None
+        assert row.slide_deck_pdf_url is None
+        assert row.slide_deck_pptx_url is None
+        assert row.report_markdown is None
+        assert row.data_table_raw_payload is None
+        assert row.failed_error_text is None
+        assert row.artifact_url(ArtifactTypeCode.AUDIO.value, suppress_drift=True) is None
+
+
 class TestStrictModeOnDeepDrift:
     """When a present position has a *malformed inner shape*, strict mode raises."""
 
@@ -291,6 +440,46 @@ class TestStrictModeOnDeepDrift:
         row = ArtifactRow(raw)
         with pytest.warns(DeprecationWarning):
             assert row.variant is None
+
+    def test_audio_metadata_with_missing_media_list_raises_strict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+        raw = _full_row(type_code=ArtifactTypeCode.AUDIO)
+        raw[ArtifactRow._AUDIO_METADATA_POS] = [None]
+
+        with pytest.raises(UnknownRPCMethodError):
+            _ = ArtifactRow(raw).audio_url
+
+    def test_audio_metadata_with_missing_media_list_can_soft_degrade(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+        raw = _full_row(type_code=ArtifactTypeCode.AUDIO)
+        raw[ArtifactRow._AUDIO_METADATA_POS] = [None]
+
+        with pytest.warns(DeprecationWarning):
+            assert ArtifactRow(raw).audio_url is None
+
+    def test_slide_deck_metadata_with_missing_pdf_url_raises_strict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+        raw = _full_row(type_code=ArtifactTypeCode.SLIDE_DECK)
+        raw.append(["config", "title", []])
+
+        with pytest.raises(UnknownRPCMethodError):
+            _ = ArtifactRow(raw).slide_deck_pdf_url
+
+    def test_report_wrapper_with_missing_markdown_raises_strict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+        raw = _full_row(type_code=ArtifactTypeCode.REPORT)
+        raw[ArtifactRow._REPORT_MARKDOWN_POS] = []
+
+        with pytest.raises(UnknownRPCMethodError):
+            _ = ArtifactRow(raw).report_markdown
 
 
 # ---------------------------------------------------------------------------

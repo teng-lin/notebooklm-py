@@ -99,90 +99,26 @@ def _is_valid_artifact_url(value: Any) -> bool:
 
 
 def _extract_audio_artifact_url(data: list[Any]) -> str | None:
-    if len(data) <= 6 or not isinstance(data[6], list) or len(data[6]) <= 5:
-        return None
-
-    media_list = data[6][5]
-    if not isinstance(media_list, list):
-        return None
-
-    for item in media_list:
-        if (
-            isinstance(item, list)
-            and len(item) > 2
-            and item[2] == "audio/mp4"
-            and _is_valid_artifact_url(item[0])
-        ):
-            return item[0]
-
-    for item in media_list:
-        if isinstance(item, list) and item and _is_valid_artifact_url(item[0]):
-            return item[0]
-
-    return None
+    return ArtifactRow(data).artifact_url(ArtifactTypeCode.AUDIO.value, suppress_drift=True)
 
 
 def _extract_video_artifact_url(data: list[Any]) -> str | None:
-    if len(data) <= 8 or not isinstance(data[8], list):
-        return None
-
-    fallback_url = None
-    for media_list in data[8]:
-        if not isinstance(media_list, list):
-            continue
-        for item in media_list:
-            if not isinstance(item, list) or not item or not _is_valid_artifact_url(item[0]):
-                continue
-            if fallback_url is None:
-                fallback_url = item[0]
-            if len(item) > 2 and item[2] == "video/mp4":
-                if len(item) > 1 and item[1] == 4:
-                    return item[0]
-                fallback_url = item[0]
-
-    return fallback_url
+    return ArtifactRow(data).artifact_url(ArtifactTypeCode.VIDEO.value, suppress_drift=True)
 
 
 def _extract_infographic_artifact_url(data: list[Any]) -> str | None:
-    for item in data:
-        if not isinstance(item, list) or len(item) <= 2:
-            continue
-        content = item[2]
-        if not isinstance(content, list) or not content:
-            continue
-        first_content = content[0]
-        if not isinstance(first_content, list) or len(first_content) <= 1:
-            continue
-        img_data = first_content[1]
-        if isinstance(img_data, list) and img_data and _is_valid_artifact_url(img_data[0]):
-            return img_data[0]
-    return None
+    return ArtifactRow(data).artifact_url(ArtifactTypeCode.INFOGRAPHIC.value, suppress_drift=True)
 
 
 def _extract_slide_deck_artifact_url(data: list[Any]) -> str | None:
     """Extract the slide-deck PDF URL. The PPTX URL at ``data[16][4]`` is not
     surfaced — callers wanting PPTX should use ``download_slide_deck(output_format="pptx")``."""
-    if (
-        len(data) > 16
-        and isinstance(data[16], list)
-        and len(data[16]) > 3
-        and _is_valid_artifact_url(data[16][3])
-    ):
-        return data[16][3]
-    return None
+    return ArtifactRow(data).artifact_url(ArtifactTypeCode.SLIDE_DECK.value, suppress_drift=True)
 
 
 def _extract_artifact_url(data: list[Any], artifact_type: int | None) -> str | None:
     """Extract a public download URL from known artifact response shapes."""
-    if artifact_type == ArtifactTypeCode.AUDIO.value:
-        return _extract_audio_artifact_url(data)
-    if artifact_type == ArtifactTypeCode.VIDEO.value:
-        return _extract_video_artifact_url(data)
-    if artifact_type == ArtifactTypeCode.INFOGRAPHIC.value:
-        return _extract_infographic_artifact_url(data)
-    if artifact_type == ArtifactTypeCode.SLIDE_DECK.value:
-        return _extract_slide_deck_artifact_url(data)
-    return None
+    return ArtifactRow(data).artifact_url(artifact_type, suppress_drift=True)
 
 
 @dataclass
@@ -236,18 +172,17 @@ class Artifact:
         the raw row in an adapter and reads through its typed properties,
         so any wire-shape change touches the adapter constants only.
 
-        URL extraction stays inline because it dispatches on
-        ``type_code`` to a family of type-specific extractors and
-        operates on the full row — those extractors will be folded into
-        the adapter family in a follow-up PR.
+        URL extraction reads through :class:`ArtifactRow`; the private
+        ``_extract_artifact_url`` helper remains only as a compatibility
+        shim for downstream private imports.
         """
         row = ArtifactRow(data)
         artifact_type = row.type_code
         # ``row.type_code`` is statically typed ``int`` and normalises
-        # non-ints to ``0``; ``_extract_artifact_url`` then falls through
-        # to ``None`` for unrecognised codes — no separate ``isinstance``
+        # non-ints to ``0``; ``row.artifact_url`` then falls through to
+        # ``None`` for unrecognised codes — no separate ``isinstance``
         # guard is needed here.
-        url = _extract_artifact_url(data, artifact_type)
+        url = row.artifact_url(artifact_type, suppress_drift=True)
 
         return cls(
             id=row.id,

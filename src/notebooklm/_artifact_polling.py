@@ -8,9 +8,11 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ._artifact_listing import find_artifact_row_by_id
 from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
 from ._polling_registry import PollRegistry
+from ._row_adapters import ArtifactRow
 from ._session_contracts import AsyncWorkRuntime
 from .rpc import (
     ArtifactStatus,
@@ -20,22 +22,12 @@ from .rpc import (
     ServerError,
     artifact_status_to_str,
 )
-from .types import GenerationStatus, _extract_artifact_url
+from .types import GenerationStatus
 
 logger = logging.getLogger(__name__)
 
 # Maximum number of retries for transient errors during artifact polling.
 POLL_MAX_RETRIES = 3
-
-# Media artifact types that require URL availability before reporting completion.
-_MEDIA_ARTIFACT_TYPES = frozenset(
-    {
-        ArtifactTypeCode.AUDIO.value,
-        ArtifactTypeCode.VIDEO.value,
-        ArtifactTypeCode.INFOGRAPHIC.value,
-        ArtifactTypeCode.SLIDE_DECK.value,
-    }
-)
 
 ListRawCallback = Callable[[str], Awaitable[builtins.list[Any]]]
 PollStatusCallback = Callable[[str, str], Awaitable[GenerationStatus]]
@@ -87,41 +79,38 @@ class ArtifactPollingService:
         """Poll the status of a generation task."""
         # List all artifacts and find by ID (no poll-by-ID RPC exists).
         artifacts_data = await list_raw(notebook_id)
-        for art in artifacts_data:
-            if len(art) > 0 and art[0] == task_id:
-                status_code = art[4] if len(art) > 4 else 0
-                artifact_type = art[2] if len(art) > 2 else 0
+        row = find_artifact_row_by_id(artifacts_data, task_id)
+        if row is not None:
+            status_code = row.status
+            artifact_type = row.type_code
 
-                # For media artifacts, verify URL availability before reporting completion.
-                # The API may set status=COMPLETED before media URLs are populated.
-                if status_code == ArtifactStatus.COMPLETED:
-                    if not is_media_ready(art, artifact_type):
-                        type_name = get_artifact_type_name(artifact_type)
-                        logger.debug(
-                            "Artifact %s (type=%s) status=COMPLETED but media not ready, "
-                            "continuing poll",
-                            task_id,
-                            type_name,
-                        )
-                        # Downgrade to PROCESSING to continue polling.
-                        status_code = ArtifactStatus.PROCESSING
+            # For media artifacts, verify URL availability before reporting completion.
+            # The API may set status=COMPLETED before media URLs are populated.
+            if status_code == ArtifactStatus.COMPLETED:
+                if not is_media_ready(row.raw, artifact_type):
+                    type_name = get_artifact_type_name(artifact_type)
+                    logger.debug(
+                        "Artifact %s (type=%s) status=COMPLETED but media not ready, "
+                        "continuing poll",
+                        task_id,
+                        type_name,
+                    )
+                    # Downgrade to PROCESSING to continue polling.
+                    status_code = ArtifactStatus.PROCESSING
 
-                status = artifact_status_to_str(status_code)
+            status = artifact_status_to_str(status_code)
 
-                # Extract error details from failed artifacts. The API may
-                # embed an error reason string at art[3] when the artifact
-                # fails (e.g. daily quota exceeded).
-                error_msg: str | None = None
-                if status == "failed":
-                    error_msg = extract_artifact_error(art)
-                url = _extract_artifact_url(art, artifact_type)
+            error_msg: str | None = None
+            if status == "failed":
+                error_msg = extract_artifact_error(row.raw)
+            url = row.artifact_url(artifact_type, suppress_drift=True)
 
-                return GenerationStatus(
-                    task_id=task_id,
-                    status=status,
-                    url=url,
-                    error=error_msg,
-                )
+            return GenerationStatus(
+                task_id=task_id,
+                status=status,
+                url=url,
+                error=error_msg,
+            )
 
         # Artifact not found in the list. Use a distinct status so
         # wait_for_completion can differentiate from genuine "pending".
@@ -388,30 +377,14 @@ class ArtifactPollingService:
 def _extract_artifact_error(art: builtins.list[Any]) -> str | None:
     """Try to extract a human-readable error from a failed artifact."""
     try:
-        # art[3] — simple string error reason.
-        if len(art) > 3 and isinstance(art[3], str) and art[3].strip():
-            return art[3].strip()
-
-        # art[5] — nested structure that may contain error text. This
-        # position is protocol-dependent and may change without notice.
-        if len(art) > 5 and isinstance(art[5], list):
-            logger.debug(
-                "Falling back to art[5] for error extraction (art[3]=%r)",
-                art[3] if len(art) > 3 else "<missing>",
-            )
-            for item in art[5]:
-                if isinstance(item, str) and item.strip():
-                    return item.strip()
-                if isinstance(item, list):
-                    for sub in item:
-                        if isinstance(sub, str) and sub.strip():
-                            return sub.strip()
-
-        return None
+        if not isinstance(art, list):
+            return None
+        return ArtifactRow(art).failed_error_text
     except Exception:
+        preview = art[:6] if isinstance(art, list) else art
         logger.warning(
             "Failed to extract error from artifact data: %r",
-            art[:6] if len(art) > 6 else art,
+            preview,
             exc_info=True,
         )
         return None
@@ -428,17 +401,14 @@ def _get_artifact_type_name(artifact_type: int) -> str:
 def _is_media_ready(art: builtins.list[Any], artifact_type: int) -> bool:
     """Check if media artifact has URLs populated."""
     try:
-        if artifact_type in _MEDIA_ARTIFACT_TYPES:
-            return _extract_artifact_url(art, artifact_type) is not None
-
-        # Non-media artifacts (Report, Quiz, Flashcard, Data Table, Mind Map):
-        # Status code alone is sufficient for these types.
-        return True
+        if not isinstance(art, list):
+            return artifact_type not in ArtifactRow._MEDIA_ARTIFACT_TYPES
+        return ArtifactRow(art).is_media_ready(artifact_type)
 
     except (IndexError, TypeError) as e:
         # Defensive: if structure is unexpected, be conservative for media
         # types. Media types need URLs, so return False to continue polling.
-        is_media = artifact_type in _MEDIA_ARTIFACT_TYPES
+        is_media = artifact_type in ArtifactRow._MEDIA_ARTIFACT_TYPES
         logger.debug(
             "Unexpected artifact structure for type %s (media=%s): %s",
             artifact_type,
