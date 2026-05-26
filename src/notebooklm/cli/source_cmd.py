@@ -233,6 +233,7 @@ def _render_source_stale_result(result: SourceStaleResult, *, json_output: bool)
             }
         )
         exit_with_code(0 if result.stale else 1)
+        return
 
     if result.is_fresh:
         console.print("[green]✓ Source is fresh[/green]")

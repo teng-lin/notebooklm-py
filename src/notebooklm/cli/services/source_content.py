@@ -107,10 +107,15 @@ async def execute_source_guide(
         guide = {}
     summary = guide.get("summary", "")
     keywords = guide.get("keywords", [])
+    keyword_strings = (
+        [keyword for keyword in keywords if isinstance(keyword, str)]
+        if isinstance(keywords, list)
+        else []
+    )
     return SourceGuideResult(
         source_id=plan.source_id,
         summary=summary if isinstance(summary, str) else "",
-        keywords=keywords if isinstance(keywords, list) else [],
+        keywords=keyword_strings,
     )
 
 

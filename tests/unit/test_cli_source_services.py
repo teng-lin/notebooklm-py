@@ -10,7 +10,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from notebooklm.cli.services import source_mutations, source_research, source_wait
-from notebooklm.cli.services.source_content import SourceFulltextPlan, execute_source_fulltext
+from notebooklm.cli.services.source_content import (
+    SourceFulltextPlan,
+    SourceGuidePlan,
+    execute_source_fulltext,
+    execute_source_guide,
+)
 from notebooklm.cli.services.source_mutations import (
     SourceDeletePlan,
     SourceRenamePlan,
@@ -147,6 +152,42 @@ async def test_source_fulltext_service_returns_fetched_content() -> None:
     assert result.fulltext.title == "Paper"
     assert result.fulltext.content == "full content"
     assert result.fulltext.char_count == 12
+
+
+@pytest.mark.asyncio
+async def test_source_guide_service_normalizes_untrusted_backend_payload() -> None:
+    client = SimpleNamespace(
+        sources=SimpleNamespace(
+            get_guide=AsyncMock(
+                return_value={
+                    "summary": 42,
+                    "keywords": ["alpha", 7, "", None, "beta"],
+                }
+            )
+        )
+    )
+
+    result = await execute_source_guide(
+        client,
+        SourceGuidePlan(notebook_id="nb_1", source_id="src_1"),
+    )
+
+    assert result.source_id == "src_1"
+    assert result.summary == ""
+    assert result.keywords == ["alpha", "", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_source_guide_service_treats_non_mapping_payload_as_empty() -> None:
+    client = SimpleNamespace(sources=SimpleNamespace(get_guide=AsyncMock(return_value=None)))
+
+    result = await execute_source_guide(
+        client,
+        SourceGuidePlan(notebook_id="nb_1", source_id="src_1"),
+    )
+
+    assert result.source_id == "src_1"
+    assert result.is_empty
 
 
 @pytest.mark.asyncio
