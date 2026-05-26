@@ -67,7 +67,7 @@ def has_use_cassette_decorator(item: object) -> bool:
 
 def collect_items() -> list[ItemRecord]:
     recorder = CollectionRecorder()
-    args = ["--collect-only", "-q", "-o", "addopts=", "tests"]
+    args = ["--collect-only", "-q", "-o", "addopts=", str(TESTS_DIR)]
     stdout = io.StringIO()
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
@@ -108,10 +108,8 @@ def logical_module_key(path: str) -> str:
 def normalized_identity(record: ItemRecord, move_map: dict[str, str] | None = None) -> str:
     if move_map and record.nodeid in move_map:
         return move_map[record.nodeid]
-    suffix = record.nodeid[len(record.path) :]
-    if suffix.startswith("::"):
-        suffix = suffix[2:]
-    if not suffix:
+    _, separator, suffix = record.nodeid.partition("::")
+    if not separator:
         suffix = "<module>"
     return f"{logical_module_key(record.path)}::{suffix}"
 
@@ -278,7 +276,8 @@ def rendered_outputs(records: list[ItemRecord]) -> dict[Path, str]:
 def write_outputs(outputs: dict[Path, str]) -> None:
     for path, content in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        with path.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
 
 
 def check_outputs(outputs: dict[Path, str]) -> int:
