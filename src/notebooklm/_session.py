@@ -660,12 +660,20 @@ class Session:
         return await self._transport.refresh_request_for_current_auth(request)
 
     async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
-        """Forward to :meth:`SessionTransport.terminal` (body moved in
-        move #4c). The production chain is wired around
-        ``transport.terminal`` directly; this forward is reached only by
-        the direct-call tests in :mod:`tests.unit.test_chain_wiring` and
-        :mod:`tests.unit.test_observability`. AST guard inspects
-        :meth:`SessionTransport.terminal` directly.
+        """Middleware chain leaf — forwards to :meth:`SessionTransport.terminal`.
+
+        The body moved to the collaborator in move #4c
+        (``docs/improvement.md`` §3.1). :meth:`Session.__init__` wires
+        this method as the chain leaf (``wire_middleware_chain`` receives
+        ``self._authed_post_chain_terminal``), so this forward IS the
+        live chain leaf — not a test-only entry point. Routing through
+        the Session forward (rather than directly to
+        :meth:`SessionTransport.terminal`) preserves the canonical seam:
+        a subclass override or fixture-time class-level monkeypatch of
+        this method keeps steering the live chain leaf. AST guard
+        (:func:`tests.unit.test_concurrency_refresh_race.test_kernel_post_terminal_has_no_await_before_post_per_attempt`)
+        inspects :meth:`SessionTransport.terminal` directly because the
+        forward carries no try/await structure.
         """
         return await self._transport.terminal(request)
 
