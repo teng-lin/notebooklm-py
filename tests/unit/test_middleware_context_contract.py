@@ -17,6 +17,11 @@ from notebooklm._middleware_context import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+# Keep this list to modules that intentionally own ``RpcRequest.context``:
+# middleware implementations plus the transport entry/leaf that seeds and
+# consumes context for the chain. ``_session.py`` and ``_rpc_executor.py``
+# are intentionally absent; after the transport/middleware extraction they
+# should not read or write request context directly.
 PRODUCTION_CONTEXT_FILES = [
     *sorted((ROOT / "src/notebooklm").glob("_middleware*.py")),
     ROOT / "src/notebooklm/_session_transport.py",
@@ -34,7 +39,14 @@ def _subscript_key(node: ast.AST) -> ast.AST:
 
 
 class _ContextLiteralVisitor(ast.NodeVisitor):
-    """Find literal-key access against request context aliases."""
+    """Find literal-key access against simple request-context aliases.
+
+    This guard is intentionally narrow: it blocks accidental ad-hoc string
+    keys on ``request.context`` and ``context = {...}`` literals in the
+    modules above. It is not a whole-program data-flow analysis; if context
+    ownership moves to another module, add that module to
+    ``PRODUCTION_CONTEXT_FILES``.
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = path

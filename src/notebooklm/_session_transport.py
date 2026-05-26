@@ -262,7 +262,7 @@ class SessionTransport:
         # AND keeps Metrics timing the queue wait, while still bounding
         # the retry-and-refresh cohort to one slot per logical RPC.
         # The middleware writes the queue-wait duration to
-        # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` so the recorder
+        # ``request.context[RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS]`` so the recorder
         # below can forward it to ``ClientMetrics`` without giving the
         # middleware an opinionated ``ClientMetrics`` dependency.
         #
@@ -288,7 +288,7 @@ class SessionTransport:
             # (RetryMiddleware budget exhaustion, AuthRefreshMiddleware
             # refresh failure, etc.) MUST still surface the queue-wait
             # latency. ``SemaphoreMiddleware`` writes the duration to
-            # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` after the
+            # ``request.context[RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS]`` after the
             # semaphore is acquired; absence of the key means the slot
             # was never acquired and there's nothing to record (gemini
             # PR 12.9 finding).
