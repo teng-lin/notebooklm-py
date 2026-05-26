@@ -1072,7 +1072,7 @@ class TestBuildUrlAuthuser:
             session_id="sess",
         )
         core = Session(auth=auth)
-        url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser" not in url
 
     def test_non_default_authuser_added(self):
@@ -1083,7 +1083,7 @@ class TestBuildUrlAuthuser:
             authuser=2,
         )
         core = Session(auth=auth)
-        url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=2" in url
 
     def test_account_email_preferred_over_authuser_index(self):
@@ -1095,6 +1095,6 @@ class TestBuildUrlAuthuser:
             account_email="bob@example.com",
         )
         core = Session(auth=auth)
-        url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=bob%40example.com" in url
         assert "authuser=2" not in url

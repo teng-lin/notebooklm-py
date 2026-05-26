@@ -110,12 +110,12 @@ async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthT
     release = asyncio.Event()
 
     async def in_flight() -> None:
-        operation_token = await core._begin_transport_post("test")
+        operation_token = await core._drain_tracker.begin_transport_post("test")
         started.set()
         try:
             await release.wait()
         finally:
-            await core._finish_transport_post(operation_token)
+            await core._drain_tracker.finish_transport_post(operation_token)
 
     task = asyncio.create_task(in_flight())
     await started.wait()
@@ -125,7 +125,7 @@ async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthT
 
     assert not drain_task.done()
     with pytest.raises(RuntimeError, match="draining"):
-        await core._begin_transport_post("new")
+        await core._drain_tracker.begin_transport_post("new")
 
     release.set()
     await drain_task
@@ -137,17 +137,17 @@ async def test_drain_allows_nested_work_inside_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:
     core = Session(auth_tokens)
-    outer_token = await core._begin_transport_post("source upload")
+    outer_token = await core._drain_tracker.begin_transport_post("source upload")
     try:
         drain_task = asyncio.create_task(core.drain(timeout=1.0))
         await asyncio.sleep(0)
 
-        nested_token = await core._begin_transport_post("RPC ADD_SOURCE")
-        await core._finish_transport_post(nested_token)
+        nested_token = await core._drain_tracker.begin_transport_post("RPC ADD_SOURCE")
+        await core._drain_tracker.finish_transport_post(nested_token)
 
         assert not drain_task.done()
     finally:
-        await core._finish_transport_post(outer_token)
+        await core._drain_tracker.finish_transport_post(outer_token)
 
     await drain_task
 
@@ -171,19 +171,19 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:
     core = Session(auth_tokens)
-    outer_token = await core._begin_transport_post("source upload")
+    outer_token = await core._drain_tracker.begin_transport_post("source upload")
     try:
         drain_task = asyncio.create_task(core.drain(timeout=1.0))
         await asyncio.sleep(0)
 
         async def child_work() -> None:
-            child_token = await core._begin_transport_post("child task")
-            await core._finish_transport_post(child_token)
+            child_token = await core._drain_tracker.begin_transport_post("child task")
+            await core._drain_tracker.finish_transport_post(child_token)
 
         with pytest.raises(RuntimeError, match="draining"):
             await asyncio.create_task(child_work())
     finally:
-        await core._finish_transport_post(outer_token)
+        await core._drain_tracker.finish_transport_post(outer_token)
 
     await drain_task
 
@@ -203,7 +203,7 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
 
     async def fake_poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         nonlocal poll_count
-        operation_token = await core._begin_transport_post("poll_status")
+        operation_token = await core._drain_tracker.begin_transport_post("poll_status")
         try:
             poll_count += 1
             if poll_count == 1:
@@ -212,7 +212,7 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
                 return GenerationStatus(task_id=task_id, status="in_progress")
             return GenerationStatus(task_id=task_id, status="completed")
         finally:
-            await core._finish_transport_post(operation_token)
+            await core._drain_tracker.finish_transport_post(operation_token)
 
     api.poll_status = fake_poll_status  # type: ignore[method-assign]
 

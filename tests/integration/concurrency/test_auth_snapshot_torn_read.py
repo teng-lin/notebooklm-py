@@ -198,14 +198,15 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
         """One-shot synthetic refresh: bump the generation and atomically
         rewrite csrf/sid/cookies under ``_auth_snapshot_lock``.
 
-        Acquires via the production accessor (``_get_auth_snapshot_lock``)
-        rather than the raw private attribute so the lazy-init path is
-        exercised on this side too — keeps the test in lockstep with how
+        Acquires via the production accessor
+        (``AuthRefreshCoordinator.get_auth_snapshot_lock``) rather than
+        the raw private attribute so the lazy-init path is exercised on
+        this side too — keeps the test in lockstep with how
         ``NotebookLMClient.refresh_auth`` acquires the lock.
         """
         nonlocal current_gen
         new_gen = next(gen_iter)
-        async with core._get_auth_snapshot_lock():
+        async with core._auth_coord.get_auth_snapshot_lock():
             core.auth.csrf_token = f"CSRF_{new_gen}"
             core.auth.session_id = f"SID_{new_gen}"
             # Update the live httpx cookie jar synchronously — this is
@@ -237,7 +238,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
         # instance. Without this priming, the lazy-init's "first caller
         # wins" check-then-assign would race the parallel coroutines and
         # potentially create two distinct Lock instances.
-        core._get_auth_snapshot_lock()
+        core._auth_coord.get_auth_snapshot_lock()
 
         # Fan out 50 RPCs and one refresh concurrently. ``asyncio.gather``
         # schedules them together; the handler's ``asyncio.sleep(0)``

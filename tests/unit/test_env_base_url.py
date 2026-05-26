@@ -72,7 +72,7 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
     core = Session(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
-    # ``_build_url`` consumes an ``AuthSnapshot`` so callers
+    # ``RpcExecutor.build_url`` consumes an ``AuthSnapshot`` so callers
     # outside ``_perform_authed_post`` must build one inline.
     from notebooklm._request_types import AuthSnapshot
 
@@ -82,7 +82,7 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
         authuser=core.auth.authuser,
         account_email=core.auth.account_email,
     )
-    url = core._build_url(RPCMethod.LIST_NOTEBOOKS, snapshot)
+    url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, snapshot)
 
     assert url.startswith("https://notebooklm.cloud.google.com/_/LabsTailwindUi/data/")
 

@@ -529,8 +529,9 @@ def _build_rpc_executor() -> Any:
     owner._refresh_retry_delay = 0.0
     owner._perform_authed_post = AsyncMock(side_effect=_fake_perform_authed_post)
     owner._await_refresh = AsyncMock()
-    owner._begin_transport_post = AsyncMock(return_value=object())
-    owner._finish_transport_post = AsyncMock()
+    owner._drain_tracker = MagicMock()
+    owner._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
+    owner._drain_tracker.finish_transport_post = AsyncMock()
     owner._increment_metrics = MagicMock()
     owner._emit_rpc_event = AsyncMock()
     owner.rpc_call = AsyncMock()

@@ -452,13 +452,17 @@ async def test_first_terminal_attempt_rebuilds_when_snapshot_changed(monkeypatch
             ]
         )
 
-        async def fake_snapshot() -> AuthSnapshot:
+        async def fake_snapshot(_host: object) -> AuthSnapshot:
             try:
                 return next(snapshots)
             except StopIteration:
                 pytest.fail("unexpected extra auth snapshot")
 
-        core._snapshot = fake_snapshot  # type: ignore[method-assign]
+        # PR #4b inlined ``Session._snapshot``; the production call
+        # sites now read ``self._auth_coord.snapshot(self)`` directly,
+        # so this test swaps the canonical coordinator method instead
+        # of the (now-deleted) Session delegate.
+        core._auth_coord.snapshot = fake_snapshot  # type: ignore[method-assign]
         calls: list[AuthSnapshot] = []
 
         def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:

@@ -260,7 +260,7 @@ def build_collaborators(
     # ``lock_wait_seconds_*`` metrics ticking inside ``metrics`` — we
     # pass the bound method of the metrics object we just built so the
     # counter cannot capture an unbound seam (which is what would happen
-    # if we forwarded ``Session._record_lock_wait`` before
+    # if we forwarded a Session-level thin wrapper before
     # ``self._metrics_obj`` was assigned in the outer ``__init__``).
     reqid = ReqidCounter(on_lock_wait=metrics.record_lock_wait)
     # Auth refresh coordination — single-flight refresh task, snapshot
@@ -268,7 +268,11 @@ def build_collaborators(
     # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
     # ``_auth_snapshot_lock``. Tests and internal callers that need
     # implementation state read the coordinator directly. The live auth
-    # snapshot lock is reachable via :meth:`_get_auth_snapshot_lock`.
+    # snapshot lock is reachable via
+    # :meth:`AuthRefreshCoordinator.get_auth_snapshot_lock` (the
+    # Session-level ``_get_auth_snapshot_lock`` thin wrapper was
+    # inlined in PR #4b — callers now address the coordinator directly
+    # through ``self._auth_coord``).
     # The auth snapshot lock is intentionally distinct from
     # ``_refresh_lock`` — mixing them would re-introduce the
     # reentrancy ambiguity that snapshot-side serialization was added
@@ -370,7 +374,7 @@ def wire_middleware_chain(
         server_error_max_retries_provider=lambda: host._server_error_max_retries,
         refresh_retry_delay_provider=lambda: host._refresh_retry_delay,
         refresh_callable=host._await_refresh,
-        auth_snapshot_provider=host._snapshot,
+        auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(host),
         is_auth_error=config.is_auth_error,
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
     )

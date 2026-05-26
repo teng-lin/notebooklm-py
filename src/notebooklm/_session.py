@@ -7,7 +7,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -36,7 +36,6 @@ from ._session_init import (
     wire_middleware_chain,
 )
 from ._session_lifecycle import CookieRotator, CookieSaver
-from ._transport_drain import _TransportOperationToken
 from ._transport_errors import raise_mapped_post_error
 from .auth import (
     AuthTokens,
@@ -74,16 +73,22 @@ logger = logging.getLogger(__name__)
 
 # Auth-snapshot canonical implementation lives on
 # :class:`AuthRefreshCoordinator` (``_session_auth.py`` —
-# ``AuthRefreshCoordinator.snapshot`` / ``.update_auth_tokens``). The
-# :class:`Session` methods of the same name (``Session._snapshot`` /
-# ``Session.update_auth_tokens``) are thin delegates that forward through
-# ``self._auth_coord``; PR 8 collapsed their pre-PR-8 real bodies. The AST
-# guards in ``tests/unit/test_concurrency_refresh_race.py``
+# ``AuthRefreshCoordinator.snapshot`` / ``.update_auth_tokens``). PR 8
+# first collapsed the previously real-bodied ``Session._snapshot`` /
+# ``Session.update_auth_tokens`` into thin delegates that forwarded
+# through ``self._auth_coord``. PR #4b of the session-refactor arc
+# then inlined ``Session._snapshot`` entirely — every site that needs
+# an :class:`AuthSnapshot` now reads ``self._auth_coord.snapshot(self)``
+# directly. ``Session.update_auth_tokens`` is retained as a delegate
+# because :class:`RefreshAuthCore` in ``_auth/session.py`` is the
+# structural Protocol used by ``refresh_auth_session`` and still
+# requires that method on the core. The AST guards in
+# ``tests/unit/test_concurrency_refresh_race.py``
 # (``test_snapshot_acquires_auth_snapshot_lock`` /
-# ``test_update_auth_tokens_has_no_await_inside_mutation_block``) inspect
-# the coordinator's source via ``inspect.getsource(...)`` + AST parsing —
-# changes to auth-snapshot invariants must be applied to the coordinator
-# (not the delegates here).
+# ``test_update_auth_tokens_has_no_await_inside_mutation_block``)
+# inspect the coordinator's source via ``inspect.getsource(...)`` +
+# AST parsing — changes to auth-snapshot invariants must be applied to
+# the coordinator (not the surviving ``update_auth_tokens`` delegate).
 
 
 # Three previously module-level test seams (one each for RPC response
@@ -411,9 +416,6 @@ class Session:
     def _increment_metrics(self, **increments: int | float) -> None:
         self._metrics_obj.increment(**increments)
 
-    def _record_rpc_queue_wait(self, wait_seconds: float) -> None:
-        self._metrics_obj.record_rpc_queue_wait(wait_seconds)
-
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         """Record time spent waiting for the upload semaphore."""
         self._metrics_obj.record_upload_queue_wait(wait_seconds)
@@ -461,44 +463,20 @@ class Session:
         """Raise if this core is used from a loop other than its open-time loop."""
         assert_bound_loop(self.bound_loop)
 
-    def _record_lock_wait(self, wait_seconds: float) -> None:
-        self._metrics_obj.record_lock_wait(wait_seconds)
-
     async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
         """Invoke the optional telemetry callback without affecting RPC behavior."""
         await self._metrics_obj.emit_rpc_event(event)
-
-    def _get_drain_condition(self) -> asyncio.Condition:
-        return self._drain_tracker.get_drain_condition()
-
-    def _current_operation_depth(self, task: asyncio.Task[Any] | None) -> int:
-        return self._drain_tracker.current_operation_depth(task)
-
-    async def _begin_transport_post(self, log_label: str) -> _TransportOperationToken:
-        """Reject new top-level transport work once graceful drain has started."""
-        return await self._drain_tracker.begin_transport_post(log_label)
-
-    async def _begin_transport_task(
-        self,
-        task: asyncio.Task[Any],
-        log_label: str,
-    ) -> _TransportOperationToken:
-        """Admit an internally-spawned task as part of the current operation."""
-        return await self._drain_tracker.begin_transport_task(task, log_label)
-
-    async def _finish_transport_post(self, token: _TransportOperationToken) -> None:
-        await self._drain_tracker.finish_transport_post(token)
 
     def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
         """Return a drain-tracked operation scope for feature-owned work."""
 
         @asynccontextmanager
         async def scope() -> AsyncIterator[None]:
-            token = await self._begin_transport_post(label)
+            token = await self._drain_tracker.begin_transport_post(label)
             try:
                 yield None
             finally:
-                await self._finish_transport_post(token)
+                await self._drain_tracker.finish_transport_post(token)
 
         return scope()
 
@@ -637,80 +615,22 @@ class Session:
         """
         self._auth_coord.update_auth_headers(self)
 
-    def _get_auth_snapshot_lock(self) -> asyncio.Lock:
-        """Return the lazily-initialised auth-snapshot lock.
-
-        Delegates to :meth:`AuthRefreshCoordinator.get_auth_snapshot_lock`.
-        The check-then-assign there is safe without an outer lock because
-        asyncio is single-threaded — no other coroutine can execute between
-        the ``is None`` check and the assignment unless we ``await`` (and
-        the accessor does not).
-        """
-        return self._auth_coord.get_auth_snapshot_lock()
-
-    def _get_refresh_lock(self) -> asyncio.Lock:
-        """Return the lazily-initialised refresh lock.
-
-        Delegates to :meth:`AuthRefreshCoordinator.get_refresh_lock`. Every
-        concurrent caller resolves to the *same* lock instance because the
-        check-then-assign is race-free in a single-threaded asyncio loop,
-        so the single-flight refresh dedupe in :meth:`_await_refresh` is
-        preserved.
-        """
-        return self._auth_coord.get_refresh_lock()
-
-    async def _snapshot(self) -> AuthSnapshot:
-        """Delegate to :meth:`AuthRefreshCoordinator.snapshot`.
-
-        Body lived here pre-PR-8 so the AST guard at
-        ``tests/unit/test_concurrency_refresh_race.py::test_snapshot_acquires_auth_snapshot_lock``
-        could inspect ``Session._snapshot`` via ``inspect.getsource(...)``
-        + ``ast.parse(...)`` for the lock acquire. PR 8 moved the guard
-        to inspect :meth:`AuthRefreshCoordinator.snapshot` (the canonical
-        implementation), so the body collapses to a delegate here.
-
-        The coordinator's body has the same semantic shape (lock acquire
-        → four scalar reads → return) but routes the lock-wait metric
-        through ``host._metrics_obj`` directly rather than via the
-        ``_record_lock_wait`` facade. Whole-request atomicity for
-        ``(csrf, sid, cookies)`` on the wire depends on the terminal's
-        freshness check and no-await invariant; the related AST guards live in
-        ``tests/unit/test_concurrency_refresh_race.py``.
-        """
-        return await self._auth_coord.snapshot(self)
-
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
         """Delegate to :meth:`AuthRefreshCoordinator.update_auth_tokens`.
 
-        Body lived here pre-PR-8 so the AST guard at
-        ``tests/unit/test_concurrency_refresh_race.py::test_update_auth_tokens_has_no_await_inside_mutation_block``
-        could inspect ``Session.update_auth_tokens`` via
-        ``inspect.getsource(...)`` + ``ast.parse(...)`` for the no-await
-        invariant inside the csrf/session_id mutation block. PR 8 moved
-        the guard to inspect
-        :meth:`AuthRefreshCoordinator.update_auth_tokens` (the canonical
-        implementation), so the body collapses to a delegate here. The
-        coordinator's body has the same semantic shape (lock acquire →
-        two scalar writes inside ``try``/``finally``) but routes the
-        lock-wait metric through ``host._metrics_obj`` directly rather
-        than via the ``_record_lock_wait`` facade.
+        Retained on Session because the :class:`RefreshAuthCore`
+        Protocol in ``_auth/session.py`` (consumed by
+        :func:`refresh_auth_session`) structurally requires this method
+        on the core. PR 8 collapsed the previously real body into a
+        delegate that forwards through ``self._auth_coord``; PR #4b of
+        the session-refactor arc inlined sibling delegates but kept
+        this one for the Protocol caller. The coordinator routes the
+        lock-wait metric through ``host._metrics_obj`` directly. The
+        AST guard for the no-await mutation-block invariant now lives
+        on :meth:`AuthRefreshCoordinator.update_auth_tokens`
+        (``test_concurrency_refresh_race.test_update_auth_tokens_has_no_await_inside_mutation_block``).
         """
         await self._auth_coord.update_auth_tokens(self, csrf, session_id)
-
-    def _build_url(
-        self,
-        rpc_method: RPCMethod,
-        snapshot: AuthSnapshot,
-        source_path: str = "/",
-        rpc_id_override: str | None = None,
-    ) -> str:
-        """Compatibility wrapper around :class:`RpcExecutor` URL building."""
-        return self._get_rpc_executor().build_url(
-            rpc_method,
-            snapshot,
-            source_path,
-            rpc_id_override=rpc_id_override,
-        )
 
     async def _refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
         """Rebuild the envelope if auth changed before the terminal POST.
@@ -727,7 +647,7 @@ class Session:
         if not isinstance(request_snapshot, AuthSnapshot) or build_request is None:
             return request
 
-        current_snapshot = await self._snapshot()
+        current_snapshot = await self._auth_coord.snapshot(self)
         if current_snapshot == request_snapshot:
             return request
 
@@ -812,7 +732,7 @@ class Session:
             "disable_internal_retries": disable_internal_retries,
             "rpc_method": rpc_method,
         }
-        snapshot = await self._snapshot()
+        snapshot = await self._auth_coord.snapshot(self)
 
         request = materialize_rpc_request(
             build_request=build_request,
@@ -844,7 +764,7 @@ class Session:
             # PR 12.9 finding).
             queue_wait = request.context.get(RPC_QUEUE_WAIT_CONTEXT_KEY)
             if queue_wait is not None:
-                self._record_rpc_queue_wait(queue_wait)
+                self._metrics_obj.record_rpc_queue_wait(queue_wait)
 
     async def transport_post(
         self,
@@ -929,44 +849,6 @@ class Session:
             source_path,
             allow_null,
             _is_retry,
-            disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-        )
-
-    def _raise_rpc_error_from_http_status(
-        self,
-        exc: httpx.HTTPStatusError,
-        method: RPCMethod,
-    ) -> NoReturn:
-        """Compatibility wrapper around :class:`RpcExecutor`."""
-        self._get_rpc_executor().raise_rpc_error_from_http_status(exc, method)
-
-    def _raise_rpc_error_from_request_error(
-        self,
-        exc: httpx.RequestError,
-        method: RPCMethod,
-    ) -> NoReturn:
-        """Compatibility wrapper around :class:`RpcExecutor`."""
-        self._get_rpc_executor().raise_rpc_error_from_request_error(exc, method)
-
-    async def _try_refresh_and_retry(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str,
-        allow_null: bool,
-        original_error: Exception,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any | None:
-        """Compatibility wrapper around :class:`RpcExecutor`."""
-        return await self._get_rpc_executor().try_refresh_and_retry(
-            method,
-            params,
-            source_path,
-            allow_null,
-            original_error,
             disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
         )

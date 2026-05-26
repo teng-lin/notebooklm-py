@@ -1,6 +1,9 @@
 """Refresh state-machine regression tests.
 
-Pins three behaviors of ``Session._try_refresh_and_retry``:
+Pins three behaviors of ``RpcExecutor.try_refresh_and_retry`` (the
+canonical implementation; ``Session._try_refresh_and_retry`` was
+inlined in PR #4b and callers now reach the executor through
+``core._get_rpc_executor()``):
 
 1. Concurrent callers share the same in-flight refresh task (single-flight).
 2. Refresh failures propagate to all waiters with chained ``__cause__``.
@@ -35,8 +38,8 @@ EVENT_TIMEOUT_S = 5.0
 
 
 async def _trigger_refresh(core):
-    """Drive ``_try_refresh_and_retry`` with throwaway args."""
-    return await core._try_refresh_and_retry(
+    """Drive ``RpcExecutor.try_refresh_and_retry`` with throwaway args."""
+    return await core._get_rpc_executor().try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/",

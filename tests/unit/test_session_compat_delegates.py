@@ -1,20 +1,26 @@
 """Pin: Session compat methods that the RpcOwner Protocol or test suite
 reach are present on Session AND remain delegates (not real-body code).
 
-Phase 4 / PR 10 will delete the property-bridge layer; without this pin
-that surgery could accidentally re-inline executor / coordinator logic
-into Session.  The eight methods locked here are:
+Phase 4 / PR 10 deleted the property-bridge layer; without this pin
+that surgery could have accidentally re-inlined executor / coordinator
+logic into Session. The pin still guards against the reverse direction
+(real logic creeping back into Session) for the delegates that remain.
 
-    six RpcExecutor-adjacent delegates
-        _build_url
+PR #4b of the session-refactor arc (inline-pure-delegates) deleted
+most of the previously-pinned delegates entirely — every caller now
+talks to the canonical collaborator directly
+(``core._auth_coord.snapshot(self)``, ``core._get_rpc_executor().build_url(...)``,
+``core._drain_tracker.begin_transport_post(...)``, etc.). The
+surviving delegates retained on Session are kept because each has a
+structural protocol caller, a Protocol-imposed call site, or an
+established test-seam swap point that would require its own follow-up
+to migrate:
+
+    Protocol-locked (``RpcOwner`` in ``_rpc_executor.py``)
         _await_refresh
         _rpc_call_impl
-        _raise_rpc_error_from_http_status
-        _raise_rpc_error_from_request_error
-        _try_refresh_and_retry
 
-    two AuthRefreshCoordinator-adjacent delegates collapsed in PR 8
-        _snapshot
+    External Protocol surface (``RefreshAuthCore`` in ``_auth/session.py``)
         update_auth_tokens
 
 A delegate body must be at most three top-level statements with at
@@ -37,17 +43,16 @@ import pytest
 
 from notebooklm._session import Session
 
-# Six RpcExecutor-adjacent delegates + two AST-guard-relocated delegates
-# (after PR 8 collapses them).
+# Delegates that MUST stay on Session because an external protocol or
+# load-bearing test seam still resolves them. See module docstring for
+# the per-method rationale; the deleted ones (``_build_url``,
+# ``_raise_rpc_error_from_http_status``, ``_raise_rpc_error_from_request_error``,
+# ``_try_refresh_and_retry``, ``_snapshot``) were inlined when their
+# external callers migrated to the canonical collaborator method.
 _DELEGATE_METHODS = [
-    "_build_url",
     "_await_refresh",
     "_rpc_call_impl",
-    "_raise_rpc_error_from_http_status",
-    "_raise_rpc_error_from_request_error",
-    "_try_refresh_and_retry",
-    "_snapshot",  # post-PR-8 delegate to AuthRefreshCoordinator.snapshot
-    "update_auth_tokens",  # post-PR-8 delegate to AuthRefreshCoordinator.update_auth_tokens
+    "update_auth_tokens",
 ]
 
 # AST node classes that indicate real logic, not delegation.
@@ -164,14 +169,34 @@ def test_session_satisfies_rpc_owner_protocol_members() -> None:
         assert callable(getattr(Session, name)), f"Session.{name} not callable"
 
 
-def test_session_keeps_transport_wrappers() -> None:
-    """The three ``_ensure_observability_state()`` + ``_drain_tracker``
-    wrappers must stay — the ``__new__``-fixture path relies on them
-    for lazy observability init.
+def test_session_keeps_drain_tracker_seam() -> None:
+    """The ``_drain_tracker`` collaborator must remain reachable as an
+    attribute on Session so feature code and tests can address it
+    directly. The ``_begin_transport_post`` / ``_begin_transport_task``
+    / ``_finish_transport_post`` thin wrappers that previously lived
+    here were inlined in PR #4b (inline-pure-delegates); every caller
+    now talks to ``core._drain_tracker.begin_transport_post(...)`` and
+    friends. This pin protects the underlying attribute seam — both
+    that Session exposes ``_drain_tracker`` and that the tracker has
+    the methods the inlined call sites now reach for.
     """
-    for name in (
-        "_begin_transport_post",
-        "_begin_transport_task",
-        "_finish_transport_post",
+    from notebooklm._transport_drain import TransportDrainTracker
+    from notebooklm.auth import AuthTokens
+
+    core = Session(
+        AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="sid"),
+    )
+    assert isinstance(core._drain_tracker, TransportDrainTracker), (
+        "Session must expose ``_drain_tracker`` as a ``TransportDrainTracker`` "
+        "instance — feature code and tests address the tracker through this "
+        "attribute now that the Session-level wrappers are gone."
+    )
+    for method in (
+        "begin_transport_post",
+        "begin_transport_task",
+        "finish_transport_post",
     ):
-        assert callable(getattr(Session, name)), f"Session.{name} missing"
+        assert hasattr(core._drain_tracker, method), (
+            f"TransportDrainTracker.{method} missing — Session call sites "
+            f"that were inlined in PR #4b now resolve to this method."
+        )

@@ -89,10 +89,13 @@ def test_construct_outside_event_loop_with_callback() -> None:
 
 
 async def _trigger_refresh(core: Session) -> object:
-    """Drive ``_try_refresh_and_retry`` with throwaway args (matches the
-    helper in ``test_refresh_state_machine.py`` so this test pins the same
-    code path)."""
-    return await core._try_refresh_and_retry(
+    """Drive ``RpcExecutor.try_refresh_and_retry`` with throwaway args
+    (matches the helper in ``test_refresh_state_machine.py`` so this
+    test pins the same code path). The Session-level
+    ``_try_refresh_and_retry`` delegate was inlined in PR #4b — callers
+    now reach the executor through ``core._get_rpc_executor()``.
+    """
+    return await core._get_rpc_executor().try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/",

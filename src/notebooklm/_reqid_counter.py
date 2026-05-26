@@ -29,8 +29,9 @@ Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` an
 * Optional ``on_lock_wait`` callback receives the seconds spent blocked on
   :attr:`_lock`. Decouples the counter from
   :class:`notebooklm._client_metrics.ClientMetrics` so this class is unit-
-  testable in isolation; ``Session`` wires it up to
-  ``self._record_lock_wait`` at construction.
+  testable in isolation; the Session-init helper wires it up to
+  ``ClientMetrics.record_lock_wait`` at construction (see
+  ``_session_init.build_collaborators``).
 """
 
 from __future__ import annotations
@@ -188,8 +189,8 @@ class ReqidCounter:
             self._lock.release()
         # Lock is released; safe to invoke arbitrary user-supplied
         # telemetry. Exceptions from the callback propagate to the caller
-        # (the existing contract — ``Session._record_lock_wait`` can't
-        # raise, but the API surface keeps this defensive).
+        # (the existing contract — ``ClientMetrics.record_lock_wait``
+        # can't raise, but the API surface keeps this defensive).
         self._on_lock_wait(time.perf_counter() - wait_start)
         return new_value
 

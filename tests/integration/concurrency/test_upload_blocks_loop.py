@@ -108,8 +108,9 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     core.auth.cookie_jar = MagicMock(name="auth_cookie_jar")
     core.get_http_client.return_value.cookies = MagicMock(name="live_cookie_jar")
     core.kernel = core
-    core._begin_transport_post = AsyncMock(return_value=object())
-    core._finish_transport_post = AsyncMock()
+    core._drain_tracker = MagicMock()
+    core._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
+    core._drain_tracker.finish_transport_post = AsyncMock()
     core.operation_scope = MagicMock()
 
     def operation_scope(_label):

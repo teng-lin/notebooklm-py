@@ -53,8 +53,9 @@ def mock_core():
     core.authuser_header = MagicMock(
         side_effect=lambda: _authuser_header(core.auth.authuser, core.auth.account_email)
     )
-    core._begin_transport_post = AsyncMock(return_value=object())
-    core._finish_transport_post = AsyncMock()
+    core._drain_tracker = MagicMock()
+    core._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
+    core._drain_tracker.finish_transport_post = AsyncMock()
     core.operation_scope = MagicMock()
 
     def operation_scope(_label):

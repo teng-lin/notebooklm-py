@@ -146,7 +146,16 @@ def _executor(
 
 
 @pytest.mark.asyncio
-async def test_client_rpc_executor_wrappers_delegate_to_rpc_executor(monkeypatch) -> None:
+async def test_session_rpc_call_impl_delegates_to_rpc_executor(monkeypatch) -> None:
+    """``Session._rpc_call_impl`` remains a delegate (per the ``RpcOwner``
+    Protocol) and routes into :meth:`RpcExecutor.execute`. The other
+    executor-adjacent Session wrappers (``_build_url``,
+    ``_raise_rpc_error_from_http_status`` /
+    ``_raise_rpc_error_from_request_error``, ``_try_refresh_and_retry``)
+    were inlined in PR #4b — callers that need those reach the canonical
+    method on :class:`RpcExecutor` directly via
+    ``core._get_rpc_executor().<name>``.
+    """
     core = Session(_auth_tokens())
     snapshot = AuthSnapshot(
         csrf_token="csrf",
@@ -191,22 +200,28 @@ async def test_client_rpc_executor_wrappers_delegate_to_rpc_executor(monkeypatch
         )
         == "executed"
     )
-    assert core._build_url(RPCMethod.LIST_NOTEBOOKS, snapshot, "/source") == "url"
+    assert (
+        core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, snapshot, "/source")
+        == "url"
+    )
     with pytest.raises(RuntimeError, match="http status"):
-        core._raise_rpc_error_from_http_status(_status_error(500), RPCMethod.LIST_NOTEBOOKS)
+        core._get_rpc_executor().raise_rpc_error_from_http_status(
+            _status_error(500), RPCMethod.LIST_NOTEBOOKS
+        )
     with pytest.raises(RuntimeError, match="request error"):
-        core._raise_rpc_error_from_request_error(
+        core._get_rpc_executor().raise_rpc_error_from_request_error(
             httpx.ConnectError("boom"),
             RPCMethod.LIST_NOTEBOOKS,
         )
     assert (
-        await core._try_refresh_and_retry(
+        await core._get_rpc_executor().try_refresh_and_retry(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
             False,
             RPCError("auth"),
             disable_internal_retries=True,
+            operation_variant=None,
         )
         == "retried"
     )
@@ -222,7 +237,7 @@ async def test_client_rpc_executor_wrappers_delegate_to_rpc_executor(monkeypatch
         "disable_internal_retries": True,
         "operation_variant": None,
     }
-    assert calls[1][2] == {"rpc_id_override": None}
+    assert calls[1][2] == {}
     assert calls[-1][2] == {
         "disable_internal_retries": True,
         "operation_variant": None,
@@ -450,7 +465,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     monkeypatch.setattr(core, "_await_refresh", fake_await_refresh)
     monkeypatch.setattr(core, "rpc_call", fake_rpc_call)
 
-    result = await core._try_refresh_and_retry(
+    result = await executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         ["param"],
         "/notebook/abc",

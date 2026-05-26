@@ -517,12 +517,15 @@ class TestCrossDomainCookiePreservation:
 
 
 class TestBuildUrlHL:
-    """_build_url() must thread NOTEBOOKLM_HL into the batchexecute URL.
+    """``RpcExecutor.build_url()`` must thread NOTEBOOKLM_HL into the
+    batchexecute URL.
 
     This is the load-bearing site for setting the interface language on
-    every RPC call.
+    every RPC call. The Session-level ``_build_url`` thin wrapper was
+    inlined in PR #4b — callers reach the canonical method through
+    ``core._get_rpc_executor().build_url(...)``.
 
-    ``_build_url`` now requires an ``AuthSnapshot`` (consumes
+    ``RpcExecutor.build_url`` requires an ``AuthSnapshot`` (consumes
     ``session_id`` / ``authuser`` / ``account_email`` from it rather
     than reading ``self.auth`` live). Tests construct a snapshot inline
     from the fixture's ``AuthTokens`` so the URL-construction logic is
@@ -543,17 +546,17 @@ class TestBuildUrlHL:
     def test_build_url_defaults_hl_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_HL", raising=False)
         core = Session(auth_tokens)
-        url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url
 
     def test_build_url_includes_hl_from_env(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
         core = Session(auth_tokens)
-        url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=ja" in url
 
     def test_build_url_empty_env_falls_back_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "")
         core = Session(auth_tokens)
-        url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url
