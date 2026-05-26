@@ -136,11 +136,12 @@ class NotFoundError(NotebookLMError):
 
     .. note::
 
-        Today, only :class:`NotebookNotFoundError` also inherits from
-        :class:`RPCError`. :class:`SourceNotFoundError` and
-        :class:`ArtifactNotFoundError` do not — a known asymmetry that
-        is *not* addressed by this umbrella and is deferred to a future
-        release with explicit migration notes.
+        As of v0.6.0, all three concrete subclasses also mix in
+        :class:`RPCError`, so ``except RPCError`` catches each of them
+        uniformly. See the v0.6.0 BREAKING-CHANGE entry in CHANGELOG.md
+        for migration guidance (the broad ``except RPCError`` clause now
+        intercepts a missing source / artifact that previously fell
+        through to the specific ``*NotFoundError`` handler).
     """
 
 
@@ -193,14 +194,24 @@ class RPCError(NotebookLMError):
     """Base for RPC-specific failures after connection established.
 
     Note:
-        A small number of domain-level exceptions also inherit from
-        :class:`RPCError` so that ``except RPCError`` keeps catching them at
-        transport-level call sites. Currently :class:`NotebookNotFoundError`
-        is one such case — the underlying RPC call succeeded but returned a
-        degenerate payload, and historic callers relied on ``except RPCError``
-        to handle it. When writing new ``except RPCError`` clauses, be aware
-        these domain errors may also flow through; catch the specific domain
-        type first if you want to handle it differently.
+        Domain-level "not found" exceptions — :class:`NotebookNotFoundError`,
+        :class:`SourceNotFoundError`, :class:`ArtifactNotFoundError` — inherit
+        from :class:`RPCError` so that ``except RPCError`` keeps catching them
+        at transport-level call sites. The underlying RPC call succeeded but
+        returned a degenerate / empty payload identifying the resource as
+        missing. When writing ``except RPCError`` clauses, be aware these
+        domain errors may also flow through; catch the specific domain type
+        BEFORE the broad ``except RPCError`` clause if you want to handle them
+        differently.
+
+        **v0.6.0 BREAKING CHANGE:** before v0.6.0, only
+        :class:`NotebookNotFoundError` mixed in :class:`RPCError`;
+        :class:`SourceNotFoundError` and :class:`ArtifactNotFoundError` did
+        not. v0.6.0 restores symmetry by adding :class:`RPCError` to both.
+        Code that catches ``RPCError`` *before* the specific
+        ``except SourceNotFoundError`` / ``except ArtifactNotFoundError``
+        clauses will now intercept what previously fell through. Reorder your
+        ``except`` clauses to put the more specific exceptions first.
 
     Attributes:
         method_id: The RPC method ID (e.g., "abc123") for debugging.
@@ -754,26 +765,54 @@ class SourceAddError(SourceError):
         super().__init__(msg)
 
 
-class SourceNotFoundError(NotFoundError, SourceError):
+class SourceNotFoundError(NotFoundError, RPCError, SourceError):
     """Source not found in notebook.
 
-    Inherits from :class:`NotFoundError` (cross-domain umbrella) and
-    :class:`SourceError` (domain base). Existing ``except SourceError`` and
-    ``except SourceNotFoundError`` clauses continue to work unchanged.
+    Inherits from :class:`NotFoundError` (cross-domain umbrella),
+    :class:`RPCError` (transport-level catchability), and :class:`SourceError`
+    (domain base). The RPC base is what ``client.sources.get_fulltext`` raises
+    (and what ``client.sources.wait_until_ready`` raises during polling when
+    the source disappears) when the server returns an empty / degenerate
+    payload for a missing source ID, so ``except RPCError`` keeps working at
+    call sites that handle transport-level failures. ``except SourceError``
+    continues to work at domain-level call sites that don't care about the
+    RPC layer. ``except NotFoundError`` catches it alongside
+    :class:`NotebookNotFoundError` and :class:`ArtifactNotFoundError`.
+
+    Note that ``client.sources.get`` returns ``None`` for a missing source
+    rather than raising — only the workflows that need a concrete source to
+    proceed (e.g. ``get_fulltext``, ``wait_until_ready``) surface the missing
+    source as an exception.
 
     .. note::
-
-        Unlike :class:`NotebookNotFoundError`, this class does not inherit
-        from :class:`RPCError`. That asymmetry is intentional for this
-        release (no behavior change); see the note on :class:`NotFoundError`.
+       **v0.6.0 BREAKING CHANGE:** prior to v0.6.0, :class:`SourceNotFoundError`
+       did NOT inherit from :class:`RPCError`. Code that catches ``RPCError``
+       *before* a more specific ``except SourceNotFoundError`` clause may now
+       intercept what previously fell through to the specific handler. Reorder
+       your ``except`` clauses to put the more specific exceptions first. This
+       restores symmetry with :class:`NotebookNotFoundError`, which has
+       inherited from :class:`RPCError` since the 0.5.x series.
 
     Attributes:
         source_id: The ID that was not found.
+        method_id: The RPC method ID (inherited from :class:`RPCError`).
+        raw_response: First 80 chars of the raw response, if any
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
     """
 
-    def __init__(self, source_id: str):
+    def __init__(
+        self,
+        source_id: str,
+        *,
+        method_id: str | None = None,
+        raw_response: str | None = None,
+    ):
         self.source_id = source_id
-        super().__init__(f"Source not found: {source_id}")
+        super().__init__(
+            f"Source not found: {source_id}",
+            method_id=method_id,
+            raw_response=raw_response,
+        )
 
 
 class SourceProcessingError(SourceError):
@@ -822,29 +861,51 @@ class ArtifactError(NotebookLMError):
     """Base for artifact operations."""
 
 
-class ArtifactNotFoundError(NotFoundError, ArtifactError):
+class ArtifactNotFoundError(NotFoundError, RPCError, ArtifactError):
     """Artifact not found.
 
-    Inherits from :class:`NotFoundError` (cross-domain umbrella) and
-    :class:`ArtifactError` (domain base). Existing ``except ArtifactError``
-    and ``except ArtifactNotFoundError`` clauses continue to work unchanged.
+    Inherits from :class:`NotFoundError` (cross-domain umbrella),
+    :class:`RPCError` (transport-level catchability), and :class:`ArtifactError`
+    (domain base). The RPC base is what artifact-download paths raise when the
+    listed artifacts do not include the requested ID, so ``except RPCError``
+    keeps working at call sites that handle transport-level failures.
+    ``except ArtifactError`` continues to work at domain-level call sites that
+    don't care about the RPC layer. ``except NotFoundError`` catches it
+    alongside :class:`NotebookNotFoundError` and :class:`SourceNotFoundError`.
 
     .. note::
-
-        Unlike :class:`NotebookNotFoundError`, this class does not inherit
-        from :class:`RPCError`. That asymmetry is intentional for this
-        release (no behavior change); see the note on :class:`NotFoundError`.
+       **v0.6.0 BREAKING CHANGE:** prior to v0.6.0, :class:`ArtifactNotFoundError`
+       did NOT inherit from :class:`RPCError`. Code that catches ``RPCError``
+       *before* a more specific ``except ArtifactNotFoundError`` clause may now
+       intercept what previously fell through to the specific handler. Reorder
+       your ``except`` clauses to put the more specific exceptions first. This
+       restores symmetry with :class:`NotebookNotFoundError`, which has
+       inherited from :class:`RPCError` since the 0.5.x series.
 
     Attributes:
         artifact_id: The ID that was not found.
         artifact_type: The type of artifact (e.g., "audio", "video").
+        method_id: The RPC method ID (inherited from :class:`RPCError`).
+        raw_response: First 80 chars of the raw response, if any
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
     """
 
-    def __init__(self, artifact_id: str, artifact_type: str | None = None):
+    def __init__(
+        self,
+        artifact_id: str,
+        artifact_type: str | None = None,
+        *,
+        method_id: str | None = None,
+        raw_response: str | None = None,
+    ):
         self.artifact_id = artifact_id
         self.artifact_type = artifact_type
         type_info = f" {artifact_type}" if artifact_type else ""
-        super().__init__(f"{type_info.capitalize()} artifact {artifact_id} not found")
+        super().__init__(
+            f"{type_info.capitalize()} artifact {artifact_id} not found",
+            method_id=method_id,
+            raw_response=raw_response,
+        )
 
 
 class ArtifactNotReadyError(ArtifactError):

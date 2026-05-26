@@ -84,6 +84,9 @@ RPCError, AuthError, RateLimitError, RPCTimeoutError, ServerError
 NetworkError, DecodingError, UnknownRPCMethodError
 ClientError, ConfigurationError, ValidationError
 # Domain-specific
+# Note: *NotFoundError classes mix in RPCError (catchable as either RPCError
+# or the domain base). v0.6.0 restored this symmetry across all three "not
+# found" types — see docs/python-api.md#error-handling for migration prose.
 SourceError, SourceAddError, SourceProcessingError, SourceTimeoutError, SourceNotFoundError
 NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError

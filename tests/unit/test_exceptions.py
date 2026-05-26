@@ -103,6 +103,78 @@ class TestExceptionHierarchy:
         assert issubclass(ArtifactParseError, ArtifactError)
         assert issubclass(ArtifactDownloadError, ArtifactError)
 
+    def test_not_found_errors_are_rpc_errors(self):
+        """All ``*NotFoundError`` classes mix in :class:`RPCError`.
+
+        v0.6.0 restored symmetry across the three "not found" error types so
+        ``except RPCError`` catches all of them at transport-level call sites.
+        Before v0.6.0, only :class:`NotebookNotFoundError` mixed in
+        :class:`RPCError`; :class:`SourceNotFoundError` and
+        :class:`ArtifactNotFoundError` did not. This test pins the symmetry so
+        a regression cannot silently re-introduce the asymmetry.
+        """
+        assert issubclass(NotebookNotFoundError, RPCError)
+        assert issubclass(SourceNotFoundError, RPCError)
+        assert issubclass(ArtifactNotFoundError, RPCError)
+
+    def test_not_found_errors_have_canonical_mro(self):
+        """The MRO ordering ``(<self>, NotFoundError, RPCError, <domain-error>,
+        ...)`` is load-bearing — it ensures the cross-domain umbrella matches
+        first, the RPCError-keyed catches see the ``*NotFoundError`` types
+        before the domain-error base does, and ``isinstance(e, RPCError)``
+        short-circuits via the RPC parent chain. Pinning the order guards
+        against accidentally swapping bases in a future refactor.
+        """
+        assert NotebookNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, NotebookError)
+        assert SourceNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, SourceError)
+        assert ArtifactNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, ArtifactError)
+
+    def test_not_found_errors_caught_by_except_rpc_error(self):
+        """End-to-end ``try/except RPCError`` exercise — a direct regression
+        pin for the stated v0.6.0 contract that ``except RPCError`` catches
+        each of the three "not found" types. ``issubclass`` is sufficient for
+        MRO inspection, but a real ``raise``/``except`` round-trip exercises
+        the runtime catch path and is what the BREAKING CHANGE migration
+        guidance actually promises users."""
+        with pytest.raises(RPCError):
+            raise NotebookNotFoundError("nb_x")
+        with pytest.raises(RPCError):
+            raise SourceNotFoundError("src_x")
+        with pytest.raises(RPCError):
+            raise ArtifactNotFoundError("art_x")
+
+    def test_source_not_found_is_rpc_error(self):
+        """``SourceNotFoundError`` is catchable as ``RPCError`` (v0.6.0).
+
+        Restores symmetry with :class:`NotebookNotFoundError` (which has
+        inherited from :class:`RPCError` since the 0.5.x series). This is a
+        v0.6.0 BREAKING CHANGE for code that catches ``RPCError`` before
+        ``SourceNotFoundError``.
+        """
+        assert issubclass(SourceNotFoundError, RPCError)
+        err = SourceNotFoundError("src_x", method_id="rwIQyf")
+        assert err.source_id == "src_x"
+        assert err.method_id == "rwIQyf"
+        # Catchable as both RPCError and SourceError.
+        assert isinstance(err, RPCError)
+        assert isinstance(err, SourceError)
+
+    def test_artifact_not_found_is_rpc_error(self):
+        """``ArtifactNotFoundError`` is catchable as ``RPCError`` (v0.6.0).
+
+        Restores symmetry with :class:`NotebookNotFoundError`. This is a
+        v0.6.0 BREAKING CHANGE for code that catches ``RPCError`` before
+        ``ArtifactNotFoundError``.
+        """
+        assert issubclass(ArtifactNotFoundError, RPCError)
+        err = ArtifactNotFoundError("art_x", artifact_type="audio", method_id="abc")
+        assert err.artifact_id == "art_x"
+        assert err.artifact_type == "audio"
+        assert err.method_id == "abc"
+        # Catchable as both RPCError and ArtifactError.
+        assert isinstance(err, RPCError)
+        assert isinstance(err, ArtifactError)
+
     def test_notebook_limit_error_is_exported_from_package(self):
         """NotebookLimitError is available from the public package namespace."""
         assert notebooklm.NotebookLimitError is NotebookLimitError
@@ -132,13 +204,15 @@ class TestNotFoundErrorUmbrella:
         assert issubclass(NotFoundError, NotebookLMError)
 
     def test_not_found_error_itself_is_not_an_rpc_error(self):
-        """The umbrella must NOT inherit from RPCError.
+        """The umbrella class itself must NOT inherit from RPCError.
 
-        Pairs with ``test_source_not_found_does_not_gain_rpc_error`` and
-        ``test_artifact_not_found_does_not_gain_rpc_error`` — together
-        these guard that the RPCError asymmetry (only
-        :class:`NotebookNotFoundError` inherits from :class:`RPCError`)
-        is preserved end-to-end, including at the umbrella level.
+        The umbrella sits next to (not under) :class:`RPCError` in the
+        hierarchy — it catches "missing resource" regardless of whether the
+        underlying signal was an RPC degenerate-payload (the three concrete
+        subclasses also mix in :class:`RPCError` as of v0.6.0) or a future
+        non-RPC source of missing-resource signals. Pinning ``RPCError not
+        in NotFoundError.__mro__`` guards against accidentally collapsing
+        the umbrella into the RPC subtree.
         """
         assert not issubclass(NotFoundError, RPCError)
         assert RPCError not in NotFoundError.__mro__
@@ -181,24 +255,16 @@ class TestNotFoundErrorUmbrella:
         with pytest.raises(ArtifactError):
             raise ArtifactNotFoundError("art-1", "audio")
 
-    def test_source_not_found_does_not_gain_rpc_error(self):
-        """Asymmetry is preserved: SourceNotFoundError MUST NOT be an RPCError.
-
-        Adding RPCError to SourceNotFoundError is a behavior change (would
-        suddenly broaden `except RPCError:` clauses at every domain call
-        site) and is explicitly deferred to a future release.
-        """
-        assert not issubclass(SourceNotFoundError, RPCError)
-        assert RPCError not in SourceNotFoundError.__mro__
-
-    def test_artifact_not_found_does_not_gain_rpc_error(self):
-        """Asymmetry is preserved: ArtifactNotFoundError MUST NOT be an RPCError.
-
-        See ``test_source_not_found_does_not_gain_rpc_error`` for the
-        reasoning — same constraint applies here.
-        """
-        assert not issubclass(ArtifactNotFoundError, RPCError)
-        assert RPCError not in ArtifactNotFoundError.__mro__
+    # Note: prior tests `test_source_not_found_does_not_gain_rpc_error` and
+    # `test_artifact_not_found_does_not_gain_rpc_error` (added with the
+    # NotFoundError umbrella) explicitly pinned the asymmetry where only
+    # NotebookNotFoundError inherits from RPCError. v0.6.0 deliberately
+    # widened the symmetry — see ``TestExceptionHierarchy.
+    # test_not_found_errors_are_rpc_errors`` and
+    # ``test_not_found_errors_have_canonical_mro`` (positive-assertion
+    # replacements) plus the ``TestDomainExceptions.
+    # test_source_not_found_is_rpc_error`` /
+    # ``test_artifact_not_found_is_rpc_error`` instance-level proofs.
 
     def test_not_found_error_is_exported_from_package(self):
         """NotFoundError is reachable via ``from notebooklm import NotFoundError``."""
@@ -410,6 +476,16 @@ class TestDomainExceptions:
         assert e.source_id == "src_456"
         assert "src_456" in str(e)
 
+    def test_source_not_found_accepts_rpc_metadata(self):
+        """SourceNotFoundError can carry ``method_id`` / ``raw_response`` for
+        callsites that wrap a degenerate RPC payload (v0.6.0)."""
+        e = SourceNotFoundError("src_xyz", method_id="getSourceXYZ", raw_response="[]")
+        assert e.source_id == "src_xyz"
+        assert e.method_id == "getSourceXYZ"
+        assert e.raw_response == "[]"
+        # Default empty list from RPCError parent.
+        assert e.found_ids == []
+
     def test_source_processing_error_has_status(self):
         """SourceProcessingError stores source_id and status."""
         e = SourceProcessingError("src_789", status=3)
@@ -435,6 +511,21 @@ class TestDomainExceptions:
         e = ArtifactNotFoundError("art_123", artifact_type="audio")
         assert e.artifact_id == "art_123"
         assert e.artifact_type == "audio"
+
+    def test_artifact_not_found_accepts_rpc_metadata(self):
+        """ArtifactNotFoundError can carry ``method_id`` / ``raw_response`` for
+        callsites that wrap a degenerate RPC payload (v0.6.0)."""
+        e = ArtifactNotFoundError(
+            "art_xyz",
+            artifact_type="video",
+            method_id="listArtifacts",
+            raw_response="[[]]",
+        )
+        assert e.artifact_id == "art_xyz"
+        assert e.artifact_type == "video"
+        assert e.method_id == "listArtifacts"
+        assert e.raw_response == "[[]]"
+        assert e.found_ids == []
 
     def test_artifact_not_ready_has_status(self):
         """ArtifactNotReadyError stores artifact_type, artifact_id, status."""

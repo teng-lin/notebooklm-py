@@ -5,11 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - Unreleased
+
+### Breaking changes
+
+> **⚠ BREAKING — exception hierarchy symmetry restored.**
+>
+> `SourceNotFoundError` and `ArtifactNotFoundError` now inherit from `RPCError`
+> in addition to their respective domain bases (`SourceError`,
+> `ArtifactError`), restoring symmetry with `NotebookNotFoundError` which has
+> mixed in `RPCError` since the 0.5.x series. Combined with the new
+> `NotFoundError` umbrella (see **Added** below), the class declarations are
+> now:
+>
+> ```python
+> class NotebookNotFoundError(NotFoundError, RPCError, NotebookError): ...
+> class SourceNotFoundError(NotFoundError, RPCError, SourceError): ...        # new RPCError mixin in 0.6.0
+> class ArtifactNotFoundError(NotFoundError, RPCError, ArtifactError): ...    # new RPCError mixin in 0.6.0
+> ```
+>
+> **Migration.** Code that catches the broad `RPCError` *before* a more
+> specific `SourceNotFoundError` / `ArtifactNotFoundError` clause now routes
+> "not found" through the broad branch instead of falling through to the
+> specific one. Reorder your `except` clauses so the more specific exceptions
+> come first.
+>
+> The example below uses `client.sources.get_fulltext(...)`, which raises
+> `SourceNotFoundError` for a missing source. (`client.sources.get(...)`
+> returns `None` and does not raise, so it doesn't demonstrate the change.)
+>
+> ```python
+> # BEFORE — in 0.5.x this layout worked: SourceNotFoundError was NOT an
+> # RPCError, so it fell through the broad `except RPCError` to the specific
+> # handler. In 0.6.0 the broad handler catches it first, leaving the
+> # specific `except SourceNotFoundError` clause unreachable.
+> try:
+>     fulltext = await client.sources.get_fulltext(notebook_id, source_id)
+> except RPCError as e:        # ← in 0.6.0 this also catches SourceNotFoundError
+>     handle_rpc_failure(e)
+> except SourceNotFoundError:  # ← in 0.6.0 this branch becomes unreachable
+>     handle_missing_source()
+>
+> # AFTER — put the specific exception first so the broad branch only sees
+> # other RPC failures.
+> try:
+>     fulltext = await client.sources.get_fulltext(notebook_id, source_id)
+> except SourceNotFoundError:
+>     handle_missing_source()
+> except RPCError as e:
+>     handle_rpc_failure(e)
+> ```
+>
+> Code that catches `SourceNotFoundError` / `ArtifactNotFoundError` directly,
+> or catches via the domain bases (`SourceError`, `ArtifactError`), or via the
+> shared `NotebookLMError` base, continues to behave exactly as before. Only
+> the `RPCError`-before-specific ordering is affected.
+>
+> `SourceNotFoundError.__init__` and `ArtifactNotFoundError.__init__` also
+> now accept keyword-only `method_id` / `raw_response` parameters (forwarded
+> to the `RPCError` parent), matching the `NotebookNotFoundError` signature.
+> All positional call sites remain source-compatible.
 
 ### Added
 
-- **`NotFoundError` cross-domain umbrella exception.** Catch `NotFoundError` to handle any "resource not found" case across notebooks, sources, and artifacts in one `except` clause — replacing `except (NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError):`. `NotebookNotFoundError`, `SourceNotFoundError`, and `ArtifactNotFoundError` now also inherit from `NotFoundError`. This is **additive** and does **not** change any existing catch semantics: each `*NotFoundError` keeps its existing type-specific bases (`NotebookNotFoundError` is still an `RPCError` and `NotebookError`; `SourceNotFoundError` is still a `SourceError`; `ArtifactNotFoundError` is still an `ArtifactError`). The known asymmetry where `SourceNotFoundError`/`ArtifactNotFoundError` do not also inherit from `RPCError` is intentionally preserved for this release.
+- **`NotFoundError` cross-domain umbrella exception.** Catch `NotFoundError` to handle any "resource not found" case across notebooks, sources, and artifacts in one `except` clause — replacing `except (NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError):`. `NotebookNotFoundError`, `SourceNotFoundError`, and `ArtifactNotFoundError` all inherit from `NotFoundError`. The umbrella itself is additive; the asymmetric inheritance noted on its original introduction has been resolved in the same release — all three subclasses also mix in `RPCError` (see **Breaking changes** above for the `except`-ordering migration).
 
 ## [0.5.0] - 2026-05-23
 

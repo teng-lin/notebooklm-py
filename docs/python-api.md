@@ -217,10 +217,32 @@ except RPCError as e:
     # - Invalid parameters
 ```
 
-#### Catching any "not found" across domains
+#### Exception hierarchy at a glance
 
-`NotFoundError` is a cross-domain umbrella that catches every
-`*NotFoundError` (notebook, source, artifact) in one `except` clause:
+All library exceptions inherit from `NotebookLMError`. RPC/protocol-level
+failures live under `RPCError`; per-domain failures live under
+`NotebookError`, `SourceError`, `ArtifactError`, etc. (`NetworkError` is
+deliberately outside `RPCError` — it represents transport-level failures
+that happen before any RPC is dispatched.) The three "not found" exceptions
+sit at the intersection — they're catchable as **any** of `NotFoundError`
+(cross-domain umbrella), `RPCError`, or the domain base:
+
+| Exception | Catchable as |
+|---|---|
+| `NotebookNotFoundError` | `NotFoundError`, `RPCError`, `NotebookError`, `NotebookLMError` |
+| `SourceNotFoundError` | `NotFoundError`, `RPCError`, `SourceError`, `NotebookLMError` |
+| `ArtifactNotFoundError` | `NotFoundError`, `RPCError`, `ArtifactError`, `NotebookLMError` |
+
+Use the table to pick the right level of catch. `client.sources.get(...)`
+returns `None` for a missing source rather than raising; the workflows that
+do raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
+`client.sources.wait_until_ready(...)`. Artifact-download workflows raise
+`ArtifactNotFoundError` when a requested artifact ID is not in the listing.
+
+##### Catching any "not found" across domains
+
+`NotFoundError` is the cross-domain umbrella. Catch it to handle any
+"resource not found" case uniformly:
 
 ```python
 from notebooklm import NotFoundError
@@ -235,21 +257,43 @@ except NotFoundError as e:
     print(f"Missing resource: {e}")
 ```
 
-Each `*NotFoundError` keeps its existing type-specific bases — for example,
-`SourceNotFoundError` is still a `SourceError`, and `NotebookNotFoundError`
-is still an `RPCError` *and* a `NotebookError`. The umbrella is purely
-additive and does not change existing catch semantics.
-
-Note: only `NotebookNotFoundError` also inherits from `RPCError` today.
-`SourceNotFoundError` and `ArtifactNotFoundError` do not — a known
-asymmetry preserved for now and revisited in a future release with
-explicit migration notes.
-
 Methods that *raise* (rather than return `None`) on not-found include
-`client.notebooks.get`, `client.sources.wait_until_ready`, and the artifact
-download / content paths. `client.sources.get` and `client.artifacts.get`
-return `None` on missing IDs; use those when you want a lookup that does
-*not* trigger the umbrella.
+`client.notebooks.get`, `client.sources.get_fulltext`,
+`client.sources.wait_until_ready`, and the artifact download paths.
+`client.sources.get` and `client.artifacts.get` return `None` on missing
+IDs; use those when you want a lookup that does *not* trigger the umbrella.
+
+##### Ordering matters
+
+Python checks `except` clauses top to bottom. To get distinct handlers for
+"missing resource" vs other RPC failures, list the specific subclass first:
+
+```python
+from notebooklm import (
+    ArtifactNotFoundError,
+    NotebookNotFoundError,
+    RPCError,
+    SourceNotFoundError,
+)
+
+try:
+    fulltext = await client.sources.get_fulltext(notebook_id, source_id)
+except SourceNotFoundError:
+    # Specific handler runs first.
+    ...
+except RPCError:
+    # Catches every other RPC failure: auth, rate limit, decode, etc.
+    ...
+```
+
+> **v0.6.0 BREAKING CHANGE.** Before v0.6.0, only `NotebookNotFoundError`
+> mixed in `RPCError`; `SourceNotFoundError` and `ArtifactNotFoundError` did
+> not. In 0.5.x, `except RPCError` did NOT catch a missing source or
+> artifact, so a downstream `except SourceNotFoundError` / `except
+> ArtifactNotFoundError` clause caught it instead. In 0.6.0, `except
+> RPCError` now catches all three uniformly — if it's listed first, any
+> downstream `*NotFoundError` clauses become unreachable. Reorder your
+> `except` clauses to put the specific exceptions first.
 
 ### Authentication & Token Refresh
 
