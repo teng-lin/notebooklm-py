@@ -557,6 +557,50 @@ class TestImportSourcesWithVerification:
         mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_pre_existing_url_does_not_prove_report_entry_committed(self):
+        """Pre-existing URLs de-dupe URL entries but must not drop no-URL reports.
+
+        A URL visible before the timed-out request is not proof that this
+        request committed the preceding report entry. Only a requested URL
+        newly observed after the attempt may suppress no-URL report retries.
+        """
+        existing_src = MagicMock(id="src_existing", title="Old", url="https://example.com")
+        report_entry = {
+            "title": "Research Report",
+            "report_markdown": "# Findings\n...",
+            "result_type": 5,
+        }
+        research, _, mock_source_lister = _make_research()
+        mock_source_lister.list = AsyncMock(
+            side_effect=[
+                [existing_src],  # baseline already has the requested URL
+                [existing_src],  # post-timeout: no newly committed URL
+            ]
+        )
+        research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_report", "title": "Research Report"}],
+            ]
+        )
+
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            imported = await research.import_sources_with_verification(
+                "nb_123",
+                "task_123",
+                [
+                    report_entry,
+                    {"url": "https://example.com", "title": "Old (request)"},
+                ],
+                initial_delay=5,
+            )
+
+        assert imported == [{"id": "src_report", "title": "Research Report"}]
+        assert research.import_sources.await_count == 2
+        assert research.import_sources.await_args_list[1].args[2] == [report_entry]
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
     async def test_returned_list_includes_non_url_sources_like_research_reports(self):
         """When the request includes a research-report entry (no URL, only
         title + ``report_markdown``), the verified-success return value must

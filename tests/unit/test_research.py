@@ -835,6 +835,38 @@ class TestResearch:
         ]
 
     @pytest.mark.asyncio
+    async def test_import_sources_skips_public_report_without_string_title(self, auth_tokens):
+        """Public report dicts still need an explicit string title to import."""
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources(
+                notebook_id="nb_123",
+                task_id="report_123",
+                sources=[{"result_type": 5, "report_markdown": "# Deep report body"}],
+            )
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_import_sources_imports_public_report_with_empty_title(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """Empty-string report titles preserve the legacy public dict behavior."""
+        response_body = build_rpc_response(RPCMethod.IMPORT_RESEARCH, [[[["report_src_001"], ""]]])
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources(
+                notebook_id="nb_123",
+                task_id="report_123",
+                sources=[{"title": "", "result_type": 5, "report_markdown": "# Deep report body"}],
+            )
+
+        assert result == [{"id": "report_src_001", "title": ""}]
+        request = httpx_mock.get_request()
+        params = _extract_request_params(request)
+        assert params[4][0][1] == ["", "# Deep report body"]
+
+    @pytest.mark.asyncio
     async def test_import_sources_none_sources_returns_empty(self, auth_tokens):
         """Defensive legacy guard: falsy non-iterable sources do not coerce."""
         async with NotebookLMClient(auth_tokens) as client:

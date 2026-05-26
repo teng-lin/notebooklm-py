@@ -101,6 +101,20 @@ def _coerce_research_sources(sources: Sequence[ResearchSourceInput]) -> list[Res
     return [_coerce_research_source(source) for source in sources]
 
 
+def _is_importable_report_source(
+    source_input: ResearchSourceInput,
+    source: ResearchSource,
+) -> bool:
+    """Preserve the public-dict report predicate from the legacy importer."""
+    if not source.is_report or not source.report_markdown:
+        return False
+    if isinstance(source_input, ResearchSource):
+        return isinstance(source.title, str)
+    return isinstance(source_input.get("title"), str) and isinstance(
+        source_input.get("report_markdown"), str
+    )
+
+
 def _imported_source_entry(source: Source) -> dict[str, str]:
     return {"id": source.id, "title": source.title or source.url or ""}
 
@@ -504,7 +518,8 @@ class ResearchAPI:
         """
         if not sources:
             return []
-        source_models = _coerce_research_sources(sources)
+        source_inputs: list[ResearchSourceInput] = list(sources)
+        source_models = _coerce_research_sources(source_inputs)
         logger.debug(
             "Importing %d research sources into notebook %s",
             len(source_models),
@@ -534,16 +549,18 @@ class ResearchAPI:
             )
         effective_task_id = next(iter(research_task_ids), task_id)
 
-        report_sources = [
-            source
-            for source in source_models
-            if source.is_report and source.title and source.report_markdown
-        ]
-        # Use identity because report_sources are objects selected from the
-        # same source_models list; ResearchSource equality is value-based.
-        report_source_ids = {id(source) for source in report_sources}
+        report_source_indexes = {
+            index
+            for index, (source_input, source) in enumerate(
+                zip(source_inputs, source_models, strict=True)
+            )
+            if _is_importable_report_source(source_input, source)
+        }
+        report_sources = [source_models[index] for index in sorted(report_source_indexes)]
         valid_sources = [
-            source for source in source_models if source.url and id(source) not in report_source_ids
+            source
+            for index, source in enumerate(source_models)
+            if source.url and index not in report_source_indexes
         ]
         skipped_count = len(source_models) - len(valid_sources) - len(report_sources)
         if skipped_count > 0:
@@ -697,6 +714,7 @@ class ResearchAPI:
                             for src in current
                             if src.url
                         }
+                        committed_urls_norm = requested_urls_norm & new_urls_norm
                         if baseline_ids is not None and requested_urls_norm.issubset(new_urls_norm):
                             logger.warning(
                                 "IMPORT_RESEARCH timed out for notebook %s but "
@@ -731,25 +749,23 @@ class ResearchAPI:
                                 source_inputs, source_models, strict=True
                             )
                         ]
-                        removed_urls_norm = {
-                            url
-                            for _, _, url in source_norms
-                            if url is not None and url in current_urls_norm
-                        }
                         # Filter for retry: drop already-present URLs.
                         # Additionally, when *any* URL was verified
                         # committed, drop no-URL entries (deep-research
                         # reports): reports are appended FIRST in the
                         # IMPORT_RESEARCH payload (see
                         # ``_build_report_import_entry`` usage in
-                        # ``import_sources``), so a committed URL implies
-                        # the report committed too. Without this guard,
+                        # ``import_sources``), so a URL newly observed after
+                        # this attempt implies the report committed too.
+                        # Pre-existing URLs only de-dupe URL entries; they do
+                        # not prove this request committed no-URL reports.
+                        # Without this guard,
                         # each retry duplicates the report server-side.
                         # When no URL committed, keep no-URL entries —
                         # the report's fate is unknown and the
                         # report-only attempt cap further down bounds
                         # the worst case.
-                        drop_no_url_entries = bool(removed_urls_norm)
+                        drop_no_url_entries = bool(committed_urls_norm)
                         filtered_source_pairs = [
                             (source_input, source)
                             for source_input, source, url in source_norms
@@ -762,7 +778,7 @@ class ResearchAPI:
                                 if (
                                     src.url
                                     and _normalize_import_verification_url(src.url)
-                                    in removed_urls_norm
+                                    in committed_urls_norm
                                     and src.id not in verified_imported_ids
                                 ):
                                     verified_imported.append(_imported_source_entry(src))
