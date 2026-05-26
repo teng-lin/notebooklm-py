@@ -1,9 +1,6 @@
 """CLI tests for local-only session commands — status / clear / auth logout.
 
-These commands never make network calls, so they need no VCR cassette. The
-tests run under ``tests/integration/`` (not ``cli_vcr/``) because they still
-exercise the full CLI surface; ``@pytest.mark.allow_no_vcr`` opts out of the
-tier-enforcement hook landing alongside this work.
+These commands never make network calls, so they need no VCR cassette.
 
 Commands covered:
 
@@ -21,11 +18,6 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-
-# Opt out of the future tier-enforcement hook — if the marker has not
-# landed yet pytest will still collect and run these tests, the unknown marker
-# is harmless on its own.
-pytestmark = pytest.mark.allow_no_vcr
 
 
 @pytest.fixture

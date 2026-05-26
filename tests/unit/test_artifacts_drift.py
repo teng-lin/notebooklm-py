@@ -14,7 +14,7 @@ These tests pin down the contract that PR establishes:
   can detect that Google's response shape moved out from under us.
 
 Real-shape happy-path coverage for the wire-level flow already exists in
-``tests/integration/test_artifacts.py::TestParseGenerationResult`` (CREATE_ARTIFACT)
+``tests/integration/test_artifacts_integration.py::TestParseGenerationResult``
 and elsewhere. Here we exercise the parser directly with constructed dicts
 because the soft/strict mode toggle is a runtime concern that doesn't depend on
 HTTP plumbing — a VCR cassette would only add ceremony without exercising the
@@ -30,10 +30,6 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
-
-# mock-only drift tests; no HTTP, no cassette. Opt out of the
-# tier-enforcement hook in tests/integration/conftest.py.
-pytestmark = pytest.mark.allow_no_vcr
 
 
 @pytest.fixture

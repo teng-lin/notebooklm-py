@@ -1,4 +1,4 @@
-"""Integration tests for multi-artifact download functionality.
+"""Tests for multi-artifact download helper functionality.
 
 Note: These tests focus on the core download logic rather than the CLI interface
 to avoid asyncio event loop conflicts with pytest-asyncio.
@@ -7,10 +7,6 @@ to avoid asyncio event loop conflicts with pytest-asyncio.
 import pytest
 
 from notebooklm.cli.download_helpers import artifact_title_to_filename, select_artifact
-
-# pure helper-logic tests; no HTTP, no cassette. Opt out of the
-# tier-enforcement hook in tests/integration/conftest.py.
-pytestmark = pytest.mark.allow_no_vcr
 
 
 class TestArtifactSelection:

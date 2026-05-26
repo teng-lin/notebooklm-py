@@ -1533,7 +1533,7 @@ class TestReviseSlide:
         Soft-mode opt-out (post-PR 13.9a default is strict): pins the legacy
         warn-and-failed-GenerationStatus contract for null RPC results.
         Strict-mode coverage of the same shape lives in
-        ``tests/integration/test_artifacts_drift.py``.
+        ``tests/unit/test_artifacts_drift.py``.
         """
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         # Build a null response (allow_null=True path)
@@ -2218,7 +2218,7 @@ class TestParseGenerationResult:
         # Soft-mode opt-out (post-PR 13.9a default is strict): this class pins
         # the legacy GenerationStatus(failed, "") sentinel that downstream
         # callers handle. Strict-mode coverage of the same inputs lives in
-        # tests/integration/test_artifacts_drift.py.
+        # tests/unit/test_artifacts_drift.py.
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,

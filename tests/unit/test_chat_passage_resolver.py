@@ -1,4 +1,4 @@
-"""Integration test for ``resolve_chat_reference_passage``.
+"""Tests for ``resolve_chat_reference_passage``.
 
 End-to-end exercise of the top-level helper that resolves a
 :class:`ChatReference` to its surrounding source-text passage. The
@@ -8,12 +8,8 @@ the full round-trip: a synthesized chat reference with a real cited
 substring lands on a non-empty surrounding passage containing that
 substring.
 
-Marked ``allow_no_vcr`` because the test exercises only one RPC
-(``GET_SOURCE``) and the value comes from asserting on the helper's
-slice-and-search behaviour over a deterministic fulltext payload — a
-real cassette of an unrelated cited-text/source pair would not make
-the test more honest, and recording one would need live auth that
-isn't available to the polish/CI environment.
+The GET_SOURCE response is deterministic and served by ``pytest_httpx``;
+no live API or cassette is needed for this coverage.
 """
 
 from __future__ import annotations
@@ -25,8 +21,6 @@ from notebooklm import NotebookLMClient, resolve_chat_reference_passage
 from notebooklm.exceptions import ChatResponseParseError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ChatReference
-
-pytestmark = [pytest.mark.allow_no_vcr]
 
 
 def _build_fulltext_response(

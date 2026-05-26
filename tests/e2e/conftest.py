@@ -152,6 +152,16 @@ GENERATION_TEST_DELAY = 15.0
 
 # Delay between chat tests (seconds) to avoid API rate limits from rapid ask() calls
 CHAT_TEST_DELAY = 5.0
+E2E_TEST_DIR = Path(__file__).resolve().parent
+
+
+def _is_path_under(path: Path, directory: Path) -> bool:
+    """Return True when path resolves under directory."""
+    try:
+        path.resolve().relative_to(directory.resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def assert_generation_started(result, artifact_type: str = "Artifact") -> None:
@@ -236,6 +246,12 @@ def pytest_unconfigure(config):
         os.environ["NOTEBOOKLM_PROFILE"] = prev
     else:
         os.environ.pop("NOTEBOOKLM_PROFILE", None)
+
+
+def pytest_itemcollected(item):
+    """Mark every item under tests/e2e as E2E before marker deselection."""
+    if _is_path_under(Path(item.path), E2E_TEST_DIR):
+        item.add_marker(pytest.mark.e2e)
 
 
 def _skip_reason(report) -> str:

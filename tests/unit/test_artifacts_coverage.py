@@ -337,7 +337,7 @@ class TestParseGenerationResult:
         the missing artifact_id descent. The "GenerationStatus(failed, '')"
         sentinel is the legacy fallback this test pins, so opt back into
         soft mode explicitly. Strict-mode coverage of the same input lives
-        in ``tests/integration/test_artifacts_drift.py``.
+        in ``tests/unit/test_artifacts_drift.py``.
         """
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         api, _ = mock_artifacts_api

@@ -591,7 +591,7 @@ class TestNotebookEdgeCases:
         Soft-mode opt-out (post-PR 13.9a default is strict): pins the legacy
         warn-and-return-"" behavior that the CLI's truthiness check relies
         on at ``cli/notebook.py``. Strict-mode coverage of the same drift
-        shape lives in ``tests/integration/test_get_summary_drift.py``.
+        shape lives in ``tests/unit/test_get_summary_drift.py``.
         """
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.SUMMARIZE, [])

@@ -30,6 +30,43 @@ def _make_config(profile: str | None) -> SimpleNamespace:
     return SimpleNamespace(getoption=lambda name: profile if name == "--profile" else None)
 
 
+class _FakeItem:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.markers: list[object] = []
+
+    def add_marker(self, marker: object) -> None:
+        self.markers.append(marker)
+
+
+class TestE2EMarkerContract:
+    """E2E files are marked before pytest applies -m deselection."""
+
+    def test_item_under_e2e_directory_gets_e2e_marker(self):
+        conftest = _load_e2e_conftest()
+        item = _FakeItem(conftest.E2E_TEST_DIR / "test_chat.py")
+
+        conftest.pytest_itemcollected(item)
+
+        assert [marker.name for marker in item.markers] == ["e2e"]
+
+    def test_item_outside_e2e_directory_is_not_marked(self):
+        conftest = _load_e2e_conftest()
+        item = _FakeItem(Path(__file__))
+
+        conftest.pytest_itemcollected(item)
+
+        assert item.markers == []
+
+    def test_path_helper_uses_resolved_containment(self):
+        conftest = _load_e2e_conftest()
+
+        assert conftest._is_path_under(
+            conftest.E2E_TEST_DIR / "test_chat.py", conftest.E2E_TEST_DIR
+        )
+        assert not conftest._is_path_under(Path(__file__), conftest.E2E_TEST_DIR)
+
+
 class TestProfileOptionLifecycle:
     """pytest_configure + pytest_unconfigure round-trip."""
 
