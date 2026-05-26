@@ -171,14 +171,25 @@ def test_research_api_backward_compat_classmethod_delegates():
     assert isinstance(result, CitedSourceSelection)
 
 
-def test_research_api_extract_report_urls_backward_compat_classmethod_delegates():
+def test_research_api_extract_report_urls_backward_compat_classmethod_delegates(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """notebooklm._research.ResearchAPI.extract_report_urls still works."""
+    import notebooklm.research as research_module
     from notebooklm._research import ResearchAPI
-    from notebooklm.research import extract_report_urls
 
     report = "See [Example](https://Example.com/path/)."
+    sentinel = {"delegated"}
+    calls: list[str] = []
 
-    assert ResearchAPI.extract_report_urls(report) == extract_report_urls(report)
+    def fake_extract_report_urls(value: str) -> set[str]:
+        calls.append(value)
+        return sentinel
+
+    monkeypatch.setattr(research_module, "extract_report_urls", fake_extract_report_urls)
+
+    assert ResearchAPI.extract_report_urls(report) is sentinel
+    assert calls == [report]
 
 
 def test_research_api_reexports_cited_source_selection_for_back_compat():
