@@ -19,6 +19,7 @@ the broader stability policy (semver promise, supported Python versions, the
 | `notebooklm source add --mime-type` (file sources) | Omit `--mime-type`; Drive-source `--mime-type` remains live | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/cli/source_cmd.py:437` |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_artifact_polling.py:154` |
 | `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_notes.py:192` |
+
 ## Removed in v0.6.0
 
 | Removed | Replacement | Deprecated since | Removed in | Notes |

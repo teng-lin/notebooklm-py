@@ -717,9 +717,8 @@ class NotebookLMClient:
 
 `RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
 `typing.Any`. The default-shape call (`client.rpc_call(method, params)`)
-forwards to the underlying `Session.rpc_call` with that method's
-canonical defaults (`source_path="/"`, `_is_retry=False`,
-`operation_variant=None`).
+forwards to the underlying `Session.rpc_call` with its canonical
+defaults.
 
 > **Removed in v0.6.0.** The three previously-deprecated kwargs
 > (`source_path`, `_is_retry`, `operation_variant`) were removed after
