@@ -161,7 +161,7 @@ async def test_source_guide_service_normalizes_untrusted_backend_payload() -> No
             get_guide=AsyncMock(
                 return_value={
                     "summary": 42,
-                    "keywords": ["alpha", 7, "", None, "beta"],
+                    "keywords": [" alpha ", 7, "", "   ", None, "beta"],
                 }
             )
         )
@@ -174,7 +174,7 @@ async def test_source_guide_service_normalizes_untrusted_backend_payload() -> No
 
     assert result.source_id == "src_1"
     assert result.summary == ""
-    assert result.keywords == ["alpha", "", "beta"]
+    assert result.keywords == ("alpha", "beta")
 
 
 @pytest.mark.asyncio

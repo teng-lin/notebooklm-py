@@ -90,7 +90,7 @@ class SourceGuideResult:
 
     source_id: str
     summary: str
-    keywords: list[str]
+    keywords: tuple[str, ...]
 
     @property
     def is_empty(self) -> bool:
@@ -108,9 +108,11 @@ async def execute_source_guide(
     summary = guide.get("summary", "")
     keywords = guide.get("keywords", [])
     keyword_strings = (
-        [keyword for keyword in keywords if isinstance(keyword, str)]
+        tuple(
+            keyword.strip() for keyword in keywords if isinstance(keyword, str) and keyword.strip()
+        )
         if isinstance(keywords, list)
-        else []
+        else ()
     )
     return SourceGuideResult(
         source_id=plan.source_id,
