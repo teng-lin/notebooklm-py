@@ -188,6 +188,10 @@ lets mypy flag keyword-name typos at the call site.
 > override seam. Ordinary constructor-injected feature services should use
 > `RpcCaller`.
 
+This convention is guarded by
+`tests/_lint/test_no_legacy_rpc_callable_aliases.py`: `RpcCall` and `ShareRpc`
+must stay deleted, and `RpcCallback` must stay local to `_source_upload.py`.
+
 ---
 
 ## 3. Metrics method verbs (CC5)
