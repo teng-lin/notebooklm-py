@@ -156,7 +156,7 @@ class ArtifactDownloadService:
 
     async def _list_raw(self, notebook_id: str) -> list[Any]:
         """List raw artifacts through the injected listing service."""
-        return await self._listing.list_raw(notebook_id, rpc_call=self._runtime.rpc_call)
+        return await self._listing.list_raw(notebook_id, rpc=self._runtime)
 
     async def _list_mind_maps(self, notebook_id: str) -> list[Any]:
         """List mind-map artifacts through the injected mind-map service."""

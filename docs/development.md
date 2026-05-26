@@ -179,7 +179,7 @@ The architecture tests encode the current layer contract:
 **Naming conventions.** See [`docs/conventions.md`](./conventions.md) for the
 canonical tiebreakers on waiting/polling verbs (`poll_X` / `wait_for_X` /
 `wait_until_X` / `await_X` / `_wait_for_X`), RPC-callable Protocol names
-(`NextCall` / `RpcCall` / `RpcCallback` / `ShareRpc` / `RpcCaller`), and
+(`NextCall` / `RpcCallback` / `RpcCaller`), and
 metrics method verbs (`record_X` vs `emit_X`). New code should pick names
 from those catalogues rather than introducing parallel patterns.
 

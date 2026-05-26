@@ -1,26 +1,12 @@
 """Legacy notebook share-link composition."""
 
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import quote
 
 from ._env import get_base_url
+from ._session_contracts import RpcCaller
 from .rpc import RPCMethod
-
-
-class ShareRpc(Protocol):
-    """RPC surface needed by the legacy notebook share manager."""
-
-    async def __call__(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> Any: ...
 
 
 def build_share_url(base_url: str, notebook_id: str, artifact_id: str | None = None) -> str:
@@ -41,7 +27,7 @@ class ShareManager:
 
     def __init__(
         self,
-        rpc: ShareRpc,
+        rpc: RpcCaller,
         base_url_provider: Callable[[], str] = get_base_url,
     ) -> None:
         self._rpc = rpc
@@ -56,7 +42,7 @@ class ShareManager:
         if artifact_id:
             params.append(artifact_id)
 
-        await self._rpc(
+        await self._rpc.rpc_call(
             RPCMethod.SHARE_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -74,4 +60,4 @@ class ShareManager:
         return build_share_url(self._base_url_provider(), notebook_id, artifact_id)
 
 
-__all__ = ["ShareManager", "ShareRpc", "build_share_url"]
+__all__ = ["ShareManager", "build_share_url"]

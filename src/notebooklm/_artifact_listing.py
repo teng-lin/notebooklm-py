@@ -9,12 +9,12 @@ from typing import Any
 import httpx
 
 from ._row_adapters import ArtifactRow
+from ._session_contracts import RpcCaller
 from .rpc import ArtifactTypeCode, RPCError, RPCMethod
 from .types import Artifact, ArtifactNotReadyError, ArtifactType
 
 logger = logging.getLogger(__name__)
 
-RpcCall = Callable[..., Awaitable[Any]]
 ListRawCallback = Callable[[str], Awaitable[list[Any]]]
 ListMindMapsCallback = Callable[[str], Awaitable[list[Any]]]
 ListArtifactsCallback = Callable[[str], Awaitable[list[Artifact]]]
@@ -68,10 +68,10 @@ def _matches_artifact_type(artifact: Artifact, artifact_type: ArtifactType | Non
 class ArtifactListingService:
     """List, filter, and select artifacts without depending on the facade."""
 
-    async def list_raw(self, notebook_id: str, *, rpc_call: RpcCall) -> list[Any]:
+    async def list_raw(self, notebook_id: str, *, rpc: RpcCaller) -> list[Any]:
         """Get raw studio artifact rows from NotebookLM."""
         params = [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
-        result = await rpc_call(
+        result = await rpc.rpc_call(
             RPCMethod.LIST_ARTIFACTS,
             params,
             source_path=f"/notebook/{notebook_id}",

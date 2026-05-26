@@ -21,7 +21,7 @@ class RecordingRpc:
         self.response = response
         self.calls: list[dict[str, Any]] = []
 
-    async def __call__(
+    async def rpc_call(
         self,
         method: RPCMethod,
         params: list[Any],
@@ -147,7 +147,7 @@ async def test_add_text_uses_exact_rpc_shape_and_wait_hook(
         "content",
         wait=True,
         wait_timeout=9.0,
-        rpc_call=rpc,
+        rpc=rpc,
         wait_until_ready=wait_until_ready,
         logger=logger,
     )
@@ -183,7 +183,7 @@ async def test_add_text_refuses_idempotent_flag(
             "Title",
             "content",
             idempotent=True,
-            rpc_call=AsyncMock(),
+            rpc=SimpleNamespace(rpc_call=AsyncMock()),
             wait_until_ready=AsyncMock(),
             logger=logger,
         )
@@ -205,7 +205,7 @@ async def test_add_drive_uses_exact_rpc_shape_and_wait_hook(
         mime_type="application/pdf",
         wait=True,
         wait_timeout=7.0,
-        rpc_call=rpc,
+        rpc=rpc,
         list_sources=AsyncMock(return_value=[]),
         wait_until_ready=wait_until_ready,
         logger=logger,
@@ -258,7 +258,7 @@ async def test_add_drive_raises_source_add_error_on_null_result(
             "nb_1",
             "drive_file",
             "Drive Doc",
-            rpc_call=RecordingRpc(None),
+            rpc=RecordingRpc(None),
             list_sources=AsyncMock(return_value=[]),
             wait_until_ready=AsyncMock(),
             logger=logger,
@@ -283,7 +283,7 @@ async def test_add_drive_preserves_rpc_error_propagation(
             "nb_1",
             "drive_file",
             "Drive Doc",
-            rpc_call=AsyncMock(side_effect=rpc_error),
+            rpc=SimpleNamespace(rpc_call=AsyncMock(side_effect=rpc_error)),
             list_sources=AsyncMock(return_value=[]),
             wait_until_ready=AsyncMock(),
             logger=logger,
@@ -334,8 +334,8 @@ def test_extract_youtube_video_id_parse_error_returns_none(
 async def test_raw_url_helpers_disable_internal_retries(service: SourceAddService) -> None:
     rpc = RecordingRpc(source_response("url", "URL"))
 
-    await service.add_url_source("nb_1", "https://example.com", rpc_call=rpc)
-    await service.add_youtube_source("nb_1", "https://youtu.be/video", rpc_call=rpc)
+    await service.add_url_source("nb_1", "https://example.com", rpc=rpc)
+    await service.add_youtube_source("nb_1", "https://youtu.be/video", rpc=rpc)
 
     assert rpc.calls[0]["disable_internal_retries"] is True
     assert rpc.calls[0]["params"][0][0][2] == ["https://example.com"]

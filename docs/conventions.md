@@ -11,7 +11,7 @@ to need a written tiebreaker:
 1. [Waiting / polling verbs](#1-waiting--polling-verbs-cc2) — `poll_X` vs
    `wait_for_X` vs `wait_until_X` vs `await_X` vs `_wait_for_X`.
 2. [RPC-callable Protocol names](#2-rpc-callable-protocol-names-cc3) —
-   `NextCall` / `RpcCall` / `RpcCallback` / `ShareRpc` / `RpcCaller`.
+   `NextCall` / `RpcCallback` / `RpcCaller`.
 3. [Metrics method verbs](#3-metrics-method-verbs-cc5) — `record_X` vs `emit_X`.
 
 Examples below cite **symbol names only** (no file:line refs). Use
@@ -130,46 +130,45 @@ four verbs above.
 
 ## 2. RPC-callable Protocol names (CC3)
 
-Several feature modules type their RPC dependency against a **local** Protocol
-instead of importing `RpcCaller` from `_session_contracts`. The local Protocols
-are NOT interchangeable with each other or with the shared one — the divergence
-is structural, not stylistic. This section explains what each name signals so
-new code picks the right shape.
+Most feature modules type their RPC dependency as the shared
+`RpcCaller` object Protocol from `_session_contracts`. Only middleware-chain
+callables and upload's keyword-injected registration callback keep local
+callable shapes. These names are NOT interchangeable — the divergence is
+structural, not stylistic. This section explains what each name signals so new
+code picks the right shape.
 
-### The five names in use
+### The three names in use
 
 | Name | Defined in | Protocol shape | Used by |
 |---|---|---|---|
 | `NextCall` | `_middleware.py` | **type alias**, not a class: `Callable[[RpcRequest], Awaitable[RpcResponse]]` | Every `Middleware.__call__` — the "call the next link" function passed into around-style middlewares |
-| `RpcCall` | `_source_listing.py` (and `_source_content.py`) | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceLister`, `SourceContentRenderer` — feature services that take the RPC entrypoint positionally at construction time |
 | `RpcCallback` | `_source_upload.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceUploadPipeline.register_file_source` — RPC entrypoint passed as a **keyword argument** at call time |
-| `ShareRpc` | `_sharing_manager.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | Legacy share-link manager — name signals the narrow ad-hoc use site |
-| `RpcCaller` | `_session_contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs (`NotesAPI`, `SettingsAPI`, etc.) |
+| `RpcCaller` | `_session_contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs and helper services (`NotesAPI`, `SourceLister`, `ShareManager`, etc.) |
 
 ### Why they diverge
 
 Two axes do the actual work:
 
-1. **Callable Protocol vs Object Protocol.** `NextCall`, `RpcCall`,
-   `RpcCallback`, `ShareRpc` are all *callable* shapes — the conformer is
-   itself directly invokable (`rpc(method, params)`). `RpcCaller` is an
+1. **Callable Protocol vs Object Protocol.** `NextCall` and `RpcCallback` are
+   *callable* shapes — the conformer is itself directly invokable
+   (`rpc(method, params)`). `RpcCaller` is an
    *object* shape — the conformer exposes an `.rpc_call(...)` method
    (`session.rpc_call(method, params)`).
    These are NOT interchangeable to mypy: a callable Protocol matches a bare
    function or `__call__`, while `RpcCaller` requires the named method. A
    `Session` instance satisfies `RpcCaller` because it defines `rpc_call`; the
-   bound method `session.rpc_call` satisfies `RpcCall` / `RpcCallback` /
-   `ShareRpc` because they are callable Protocols.
+   bound method `session.rpc_call` satisfies `RpcCallback` because it is a
+   callable Protocol.
 2. **Type alias vs Protocol class.** `NextCall` is a `Callable[...]` alias, not
    a class. It exists because the middleware chain is built from a list of
    wrapped callables (`functools.reduce`-style composition); a Protocol class
    would not buy anything over the alias and would make the middleware
    constructor signatures noisier.
 
-The third reason `RpcCallback` exists separately from `RpcCall` is documented
-on its own docstring: it is a **keyword-only callback** passed into
-`register_file_source`, and keeping it as a structural Protocol (instead of a
-bare `Callable[...]` alias) lets mypy flag keyword-name typos at the call site.
+`RpcCallback` exists separately from `RpcCaller` for one remaining reason:
+it is a **keyword-only callback** passed into `register_file_source`, and
+keeping it as a structural Protocol (instead of a bare `Callable[...]` alias)
+lets mypy flag keyword-name typos at the call site.
 
 ### Choosing a name in new code
 
@@ -179,26 +178,15 @@ bare `Callable[...]` alias) lets mypy flag keyword-name typos at the call site.
   catalogue. Concrete `Session` satisfies it structurally.
 - New middleware? Use **`NextCall`** from `_middleware.py` for the chain
   callable — do not invent a new alias.
-- New feature that takes the RPC entrypoint **positionally** (constructor
-  param) and the upstream `RpcCaller` object is unwieldy? Define a local
-  callable Protocol named **`RpcCall`** in your module. Conformers will pass
-  in `session.rpc_call` (the bound method).
 - New feature that takes the RPC entrypoint as a **keyword argument** at call
   time? Define a local Protocol named **`RpcCallback`** so the keyword-typo
   detection kicks in at every call site.
-- One-off, narrow, legacy use site? An ad-hoc local Protocol named after the
-  feature (`ShareRpc`-style) is acceptable, but prefer reusing one of the four
-  above unless the shape genuinely diverges.
 
-> **Why not collapse them all?** The audit (CC3) considered it. The blockers
-> are: `RpcCaller` is an object Protocol used as a constructor-arg type for
-> *many* feature APIs and structurally tied to `Session.rpc_call`'s method
-> name; `RpcCall` / `RpcCallback` / `ShareRpc` are callable Protocols, often
-> with subtly different keyword arguments (`_is_retry`, `allow_null`,
-> `disable_internal_retries`) that the call-site happens to use. A future
-> consolidation pass is tracked in the architecture-audit follow-ups; until
-> then this section is the authoritative tiebreaker for choosing among the
-> existing names.
+> **Why not collapse the last callback too?** `SourceUploadPipeline` accepts
+> `rpc_call=` as a keyword override inside `register_file_source(...)`; keeping
+> a callable Protocol there preserves mypy's keyword-name checking at the
+> override seam. Ordinary constructor-injected feature services should use
+> `RpcCaller`.
 
 ---
 

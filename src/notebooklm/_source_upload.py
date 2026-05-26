@@ -283,7 +283,7 @@ class SourceUploadPipeline:
         self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
-        self._lister = SourceLister(self._runtime.rpc_call)
+        self._lister = SourceLister(self._runtime)
         self._poller = SourcePoller()
         self._get_source_limit = get_source_limit
 

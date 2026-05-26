@@ -8,7 +8,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
-from ._source_listing import RpcCall as SourceListingRpcCall
+from ._session_contracts import RpcCaller
 from ._source_listing import SourceLister as SourceListingService
 from .types import Notebook, NotebookMetadata, Source, SourceSummary
 
@@ -22,8 +22,8 @@ class NotebookSourceLister(Protocol):
     Consumed by :class:`NotebookMetadataService` for metadata composition
     and by :meth:`ResearchAPI.import_sources_with_verification` for
     snapshot/probe around ``IMPORT_RESEARCH`` (issue #315). Implementations
-    are constructed via :func:`create_default_source_lister` from a bare
-    ``RpcCall`` callable, so feature APIs don't need to depend on
+    are constructed via :func:`create_default_source_lister` from a
+    ``RpcCaller`` object, so feature APIs don't need to depend on
     ``SourcesAPI`` itself.
     """
 
@@ -41,9 +41,9 @@ class NotebookSourceIdProvider(Protocol):
 NotebookGetter = Callable[[str], Awaitable[Notebook]]
 
 
-def create_default_source_lister(rpc_call: SourceListingRpcCall) -> NotebookSourceLister:
+def create_default_source_lister(rpc: RpcCaller) -> NotebookSourceLister:
     """Build the direct-construction source lister without constructing SourcesAPI."""
-    return SourceListingService(rpc_call)
+    return SourceListingService(rpc)
 
 
 class NotebookMetadataService:

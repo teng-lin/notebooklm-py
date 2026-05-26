@@ -4,37 +4,24 @@ from __future__ import annotations
 
 import builtins
 import logging
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
+from ._session_contracts import RpcCaller
 from .rpc import RPCMethod
 from .types import SourceFulltext, SourceNotFoundError, _extract_source_url
-
-
-class RpcCall(Protocol):
-    async def __call__(
-        self,
-        method: RPCMethod,
-        params: builtins.list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> Any:
-        """Call a NotebookLM RPC method."""
 
 
 class SourceContentRenderer:
     """Render source guide and fulltext content from source RPC responses."""
 
-    def __init__(self, rpc_call: RpcCall, logger: logging.Logger | None = None) -> None:
-        self._rpc_call = rpc_call
+    def __init__(self, rpc: RpcCaller, logger: logging.Logger | None = None) -> None:
+        self._rpc = rpc
         self._logger = logger or logging.getLogger(__name__)
 
     async def get_guide(self, notebook_id: str, source_id: str) -> dict[str, Any]:
         """Get AI-generated summary and keywords for a specific source."""
         params = [[[[source_id]]]]
-        result = await self._rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_SOURCE_GUIDE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -78,7 +65,7 @@ class SourceContentRenderer:
 
         params = [[source_id], [3], [3]] if output_format == "markdown" else [[source_id], [2], [2]]
 
-        result = await self._rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",

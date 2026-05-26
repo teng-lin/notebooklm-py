@@ -260,9 +260,6 @@ async def test_share_sends_exact_share_artifact_payload_and_returns_deep_link(
         [[1], "nb_123", "art_456"],
         source_path="/notebook/nb_123",
         allow_null=True,
-        _is_retry=False,
-        disable_internal_retries=False,
-        operation_variant=None,
     )
 
 
@@ -282,9 +279,6 @@ async def test_share_private_sends_disable_payload_and_returns_no_url(
         [[0], "nb_123"],
         source_path="/notebook/nb_123",
         allow_null=True,
-        _is_retry=False,
-        disable_internal_retries=False,
-        operation_variant=None,
     )
 
 

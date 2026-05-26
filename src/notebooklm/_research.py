@@ -171,7 +171,7 @@ class ResearchAPI:
                 dependency.
         """
         self._rpc = rpc
-        self._source_lister = source_lister or create_default_source_lister(self._rpc_call)
+        self._source_lister = source_lister or create_default_source_lister(self._rpc)
 
     async def _rpc_call(
         self,
@@ -186,9 +186,9 @@ class ResearchAPI:
     ) -> Any:
         """Delegate through the current RPC caller for late-bound overrides.
 
-        Mirrors :meth:`NotebooksAPI._rpc_call` so the default source-lister
-        built in ``__init__`` picks up post-construction ``rpc`` swaps
-        (advanced tests / instrumentation).
+        Mirrors :meth:`NotebooksAPI._rpc_call` so direct ResearchAPI RPC paths
+        pick up post-construction changes to the underlying caller's
+        ``rpc_call`` method (advanced tests / instrumentation).
         """
         return await self._rpc.rpc_call(
             method,

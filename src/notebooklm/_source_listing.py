@@ -5,9 +5,10 @@ from __future__ import annotations
 import builtins
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any
 
 from ._row_adapters import SourceRow
+from ._session_contracts import RpcCaller
 from .rpc import RPCError, RPCMethod
 from .types import Source
 
@@ -16,33 +17,19 @@ from .types import Source
 logger = logging.getLogger("notebooklm").getChild("_sources")
 
 
-class RpcCall(Protocol):
-    async def __call__(
-        self,
-        method: RPCMethod,
-        params: builtins.list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> Any:
-        """Call a NotebookLM RPC method."""
-
-
 SourceListHook = Callable[[str], Awaitable[builtins.list[Source]]]
 
 
 class SourceLister:
     """List and parse notebook sources from GET_NOTEBOOK responses."""
 
-    def __init__(self, rpc_call: RpcCall) -> None:
-        self._rpc_call = rpc_call
+    def __init__(self, rpc: RpcCaller) -> None:
+        self._rpc = rpc
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> builtins.list[Source]:
         """List all sources in a notebook."""
         params = [notebook_id, None, [2], None, 0]
-        notebook = await self._rpc_call(
+        notebook = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",

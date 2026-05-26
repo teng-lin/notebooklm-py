@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from ._idempotency import idempotent_create
+from ._session_contracts import RpcCaller
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -20,7 +21,6 @@ from .exceptions import (
 from .rpc import RPCError, RPCMethod
 from .types import Source
 
-RpcCall = Callable[..., Awaitable[Any]]
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
 RawSourceAdder = Callable[[str, str], Awaitable[Any]]
@@ -122,7 +122,7 @@ class SourceAddService:
         wait: bool = False,
         wait_timeout: float = 120.0,
         idempotent: bool = False,
-        rpc_call: RpcCall,
+        rpc: RpcCaller,
         wait_until_ready: WaitUntilReady,
         logger: logging.Logger,
     ) -> Source:
@@ -144,7 +144,7 @@ class SourceAddService:
             None,
         ]
         try:
-            result = await rpc_call(
+            result = await rpc.rpc_call(
                 RPCMethod.ADD_SOURCE,
                 params,
                 source_path=f"/notebook/{notebook_id}",
@@ -176,7 +176,7 @@ class SourceAddService:
         mime_type: str = "application/vnd.google-apps.document",
         wait: bool = False,
         wait_timeout: float = 120.0,
-        rpc_call: RpcCall,
+        rpc: RpcCaller,
         list_sources: ListSources,
         wait_until_ready: WaitUntilReady,
         logger: logging.Logger,
@@ -218,7 +218,7 @@ class SourceAddService:
             # exceptions must propagate so idempotent_create can catch them
             # and run the probe.
             try:
-                result = await rpc_call(
+                result = await rpc.rpc_call(
                     RPCMethod.ADD_SOURCE,
                     params,
                     source_path=f"/notebook/{notebook_id}",
@@ -346,7 +346,7 @@ class SourceAddService:
         notebook_id: str,
         url: str,
         *,
-        rpc_call: RpcCall,
+        rpc: RpcCaller,
     ) -> Any:
         """Add a YouTube video as a source."""
         params = [
@@ -355,7 +355,7 @@ class SourceAddService:
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
-        return await rpc_call(
+        return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -369,7 +369,7 @@ class SourceAddService:
         notebook_id: str,
         url: str,
         *,
-        rpc_call: RpcCall,
+        rpc: RpcCaller,
     ) -> Any:
         """Add a regular URL as a source."""
         params = [
@@ -379,7 +379,7 @@ class SourceAddService:
             None,
             None,
         ]
-        return await rpc_call(
+        return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",

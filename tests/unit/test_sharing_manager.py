@@ -17,7 +17,9 @@ def _make_rpc() -> AsyncMock:
 
 def _make_manager() -> tuple[ShareManager, AsyncMock]:
     rpc = _make_rpc()
-    return ShareManager(rpc, base_url_provider=lambda: BASE_URL), rpc
+    core = MagicMock()
+    core.rpc_call = rpc
+    return ShareManager(core, base_url_provider=lambda: BASE_URL), rpc
 
 
 def test_build_share_url_without_artifact() -> None:
@@ -142,9 +144,6 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
         [[1], "nb_123", "art_456"],
         source_path="/notebook/nb_123",
         allow_null=True,
-        _is_retry=False,
-        disable_internal_retries=False,
-        operation_variant=None,
     )
 
 

@@ -143,8 +143,8 @@ class SourcesAPI:
         # attributes for callers that introspect the instance.
         self._rpc = rpc
         self._adder = SourceAddService()
-        self._content = SourceContentRenderer(self._rpc_call, logger=logger)
-        self._lister = SourceLister(self._rpc_call)
+        self._content = SourceContentRenderer(self._rpc, logger=logger)
+        self._lister = SourceLister(self._rpc)
         self._poller = SourcePoller()
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
@@ -454,7 +454,7 @@ class SourcesAPI:
             wait=wait,
             wait_timeout=wait_timeout,
             idempotent=idempotent,
-            rpc_call=self._rpc_call,
+            rpc=self._rpc,
             wait_until_ready=self.wait_until_ready,
             logger=logger,
         )
@@ -609,7 +609,7 @@ class SourcesAPI:
             mime_type=mime_type,
             wait=wait,
             wait_timeout=wait_timeout,
-            rpc_call=self._rpc_call,
+            rpc=self._rpc,
             list_sources=self.list,
             wait_until_ready=self.wait_until_ready,
             logger=logger,
@@ -851,7 +851,7 @@ class SourcesAPI:
         return await self._adder.add_youtube_source(
             notebook_id,
             url,
-            rpc_call=self._rpc_call,
+            rpc=self._rpc,
         )
 
     async def _add_url_source(self, notebook_id: str, url: str) -> Any:
@@ -863,7 +863,7 @@ class SourcesAPI:
         return await self._adder.add_url_source(
             notebook_id,
             url,
-            rpc_call=self._rpc_call,
+            rpc=self._rpc,
         )
 
     async def _register_file_source(self, notebook_id: str, filename: str) -> str:

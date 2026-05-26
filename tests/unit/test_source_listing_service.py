@@ -18,7 +18,7 @@ class RecordingRpc:
         self.response = response
         self.calls: list[tuple[RPCMethod, list[Any], str | None]] = []
 
-    async def __call__(
+    async def rpc_call(
         self,
         method: RPCMethod,
         params: list[Any],
@@ -27,6 +27,7 @@ class RecordingRpc:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         self.calls.append((method, params, source_path))
         return self.response

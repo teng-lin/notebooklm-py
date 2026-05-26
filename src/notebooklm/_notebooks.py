@@ -159,14 +159,14 @@ class NotebooksAPI:
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
         """
         self._rpc = rpc
-        self._sources = sources_api or create_default_source_lister(self._rpc_call)
+        self._sources = sources_api or create_default_source_lister(self._rpc)
         self._metadata_service = metadata_service or NotebookMetadataService(
             # Keep notebook lookup late-bound so tests and advanced callers that
             # replace ``api.get`` after construction still affect get_metadata().
             get_notebook=lambda notebook_id: self.get(notebook_id),
             source_lister=self._sources,
         )
-        self._share_manager = share_manager or ShareManager(self._rpc_call)
+        self._share_manager = share_manager or ShareManager(self._rpc)
 
     async def _rpc_call(
         self,
