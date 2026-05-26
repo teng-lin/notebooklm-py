@@ -354,10 +354,7 @@ class ArtifactRow:
                     continue
                 if fallback_url is None:
                     fallback_url = item[self._MEDIA_URL_POS]
-                if (
-                    len(item) > self._MEDIA_MIME_POS
-                    and item[self._MEDIA_MIME_POS] == "video/mp4"
-                ):
+                if len(item) > self._MEDIA_MIME_POS and item[self._MEDIA_MIME_POS] == "video/mp4":
                     if (
                         len(item) > self._MEDIA_KIND_POS
                         and item[self._MEDIA_KIND_POS] == self._VIDEO_PREFERRED_KIND
