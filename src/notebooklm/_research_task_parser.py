@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from .rpc import RPCMethod, safe_index
@@ -13,14 +14,14 @@ logger = logging.getLogger(__name__)
 _POLL_SOURCE = "_research.poll"
 _POLL_METHOD_ID = RPCMethod.POLL_RESEARCH.value
 
-_RESEARCH_RESULT_TYPE_ALIASES = {
-    "web": 1,
-    "drive": 2,
-    "report": 5,
-}
 RESEARCH_RESULT_TYPE_WEB = 1
 RESEARCH_RESULT_TYPE_DRIVE = 2
 RESEARCH_RESULT_TYPE_REPORT = 5
+_RESEARCH_RESULT_TYPE_ALIASES = {
+    "web": RESEARCH_RESULT_TYPE_WEB,
+    "drive": RESEARCH_RESULT_TYPE_DRIVE,
+    "report": RESEARCH_RESULT_TYPE_REPORT,
+}
 
 ResearchResultType = int | str
 ResearchStatus = Literal["in_progress", "completed", "failed"]
@@ -37,7 +38,7 @@ class ResearchSource:
     report_markdown: str = ""
 
     @classmethod
-    def from_public_dict(cls, source: dict[str, Any]) -> ResearchSource:
+    def from_public_dict(cls, source: Mapping[str, Any]) -> ResearchSource:
         """Normalize a public source dictionary into the internal model."""
         url_raw = source.get("url", "")
         title_raw = source.get("title", "Untitled")
@@ -46,7 +47,7 @@ class ResearchSource:
 
         return cls(
             url=url_raw if isinstance(url_raw, str) else "",
-            title=title_raw if isinstance(title_raw, str) else "",
+            title=title_raw if isinstance(title_raw, str) else "Untitled",
             result_type=parse_result_type(source.get("result_type", RESEARCH_RESULT_TYPE_WEB)),
             research_task_id=research_task_id_raw
             if isinstance(research_task_id_raw, str)
@@ -79,7 +80,7 @@ class ResearchTask:
     task_id: str
     status: ResearchStatus
     query: str = ""
-    sources: tuple[ResearchSource, ...] = field(default_factory=tuple)
+    sources: tuple[ResearchSource, ...] = ()
     summary: str = ""
     report: str = ""
 
@@ -281,13 +282,7 @@ def _parse_source_row(
     if not report and not report_found:
         report = extract_legacy_report_chunks(src)
     if report and parsed_source is not None:
-        parsed_source = ResearchSource(
-            url=parsed_source.url,
-            title=parsed_source.title,
-            result_type=parsed_source.result_type,
-            research_task_id=parsed_source.research_task_id,
-            report_markdown=report,
-        )
+        parsed_source = replace(parsed_source, report_markdown=report)
 
     return parsed_source, report
 

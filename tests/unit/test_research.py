@@ -835,6 +835,30 @@ class TestResearch:
         ]
 
     @pytest.mark.asyncio
+    async def test_import_sources_none_sources_returns_empty(self, auth_tokens):
+        """Defensive legacy guard: falsy non-iterable sources do not coerce."""
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources(
+                notebook_id="nb_123",
+                task_id="task_123",
+                sources=None,  # type: ignore[arg-type]
+            )
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_import_sources_with_verification_none_sources_returns_empty(self, auth_tokens):
+        """Retry wrapper keeps the same defensive empty-input behavior."""
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources_with_verification(
+                notebook_id="nb_123",
+                task_id="task_123",
+                sources=None,  # type: ignore[arg-type]
+            )
+
+        assert result == []
+
+    @pytest.mark.asyncio
     async def test_import_sources_rejects_mixed_research_task_ids(self, auth_tokens):
         """Test that import_sources rejects batches spanning multiple research tasks.
 

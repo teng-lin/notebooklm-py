@@ -94,7 +94,7 @@ def _no_import_verification_url_entry_count(sources: Sequence[ResearchSource]) -
 def _coerce_research_source(source: ResearchSourceInput) -> ResearchSource:
     if isinstance(source, ResearchSource):
         return source
-    return ResearchSource.from_public_dict(dict(source))
+    return ResearchSource.from_public_dict(source)
 
 
 def _coerce_research_sources(sources: Sequence[ResearchSourceInput]) -> list[ResearchSource]:
@@ -502,14 +502,14 @@ class ResearchAPI:
             To reliably verify imports, check the notebook's source list using
             `client.sources.list(notebook_id)` after calling this method.
         """
+        if not sources:
+            return []
         source_models = _coerce_research_sources(sources)
         logger.debug(
             "Importing %d research sources into notebook %s",
             len(source_models),
             notebook_id,
         )
-        if not source_models:
-            return []
 
         # Per-source ``research_task_id`` must match the caller's
         # ``task_id`` when both are present. A mismatch is the wire-crossing
@@ -539,6 +539,8 @@ class ResearchAPI:
             for source in source_models
             if source.is_report and source.title and source.report_markdown
         ]
+        # Use identity because report_sources are objects selected from the
+        # same source_models list; ResearchSource equality is value-based.
         report_source_ids = {id(source) for source in report_sources}
         valid_sources = [
             source for source in source_models if source.url and id(source) not in report_source_ids
@@ -636,9 +638,9 @@ class ResearchAPI:
         Raises:
             RPCTimeoutError: If retries exhaust the ``max_elapsed`` budget.
         """
-        source_models = _coerce_research_sources(sources)
-        if not source_models:
+        if not sources:
             return []
+        source_models = _coerce_research_sources(sources)
 
         started_at = time.monotonic()
         delay = initial_delay
