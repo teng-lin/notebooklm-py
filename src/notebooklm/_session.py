@@ -467,18 +467,14 @@ class Session:
         """Invoke the optional telemetry callback without affecting RPC behavior."""
         await self._metrics_obj.emit_rpc_event(event)
 
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+    @asynccontextmanager
+    async def operation_scope(self, label: str) -> AsyncIterator[None]:
         """Return a drain-tracked operation scope for feature-owned work."""
-
-        @asynccontextmanager
-        async def scope() -> AsyncIterator[None]:
-            token = await self._drain_tracker.begin_transport_post(label)
-            try:
-                yield None
-            finally:
-                await self._drain_tracker.finish_transport_post(token)
-
-        return scope()
+        token = await self._drain_tracker.begin_transport_post(label)
+        try:
+            yield None
+        finally:
+            await self._drain_tracker.finish_transport_post(token)
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new client operations and wait for in-flight ones to finish.
