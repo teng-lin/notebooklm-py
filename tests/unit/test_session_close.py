@@ -49,7 +49,7 @@ async def test_active_tasks_returns_pending_leader_tasks() -> None:
 
     task = asyncio.create_task(_never())
     try:
-        registry.pending[("nb_1", "task_1")] = (future, task)
+        registry.register(("nb_1", "task_1"), future, task)
 
         assert registry.active_tasks() == [task]
     finally:
@@ -72,7 +72,7 @@ async def test_active_tasks_excludes_already_done_tasks() -> None:
     task = asyncio.create_task(_quick())
     await task  # task is now done
 
-    registry.pending[("nb_1", "task_1")] = (future, task)
+    registry.register(("nb_1", "task_1"), future, task)
 
     assert registry.active_tasks() == []
 
@@ -121,7 +121,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     # cancel arrives before the task body has run and our
     # ``except CancelledError`` handler never executes.
     await asyncio.sleep(0)
-    artifacts._poll_registry.pending[("nb_1", "task_1")] = (future, task)
+    artifacts._poll_registry.register(("nb_1", "task_1"), future, task)
 
     # Real-time deadline so a regression that fails to cancel surfaces as a
     # 1s timeout rather than hanging the suite.

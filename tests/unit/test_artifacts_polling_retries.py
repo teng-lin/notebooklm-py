@@ -223,9 +223,10 @@ async def test_polling_service_registers_pending_before_transport_begin_complete
         )
     )
     follower: asyncio.Task[GenerationStatus] | None = None
+    key = ("nb1", "task1")
     try:
         await asyncio.wait_for(provider.begin_started.wait(), timeout=1.0)
-        assert ("nb1", "task1") in provider.poll_registry.pending
+        assert provider.poll_registry.get(key) is not None
 
         follower = asyncio.create_task(
             service.wait_for_completion(
@@ -247,7 +248,7 @@ async def test_polling_service_registers_pending_before_transport_begin_complete
         assert follower_result.status == "completed"
         assert poll_call_count == 1
         await asyncio.wait_for(provider.finish_finished.wait(), timeout=1.0)
-        assert provider.poll_registry.pending == {}
+        assert provider.poll_registry.get(key) is None
     finally:
         begin_release.set()
         cleanup_tasks = [
@@ -390,7 +391,7 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
 
     assert len(provider.begin_tasks) == 1
     assert provider.begin_tasks[0].done()
-    assert provider.poll_registry.pending == {}
+    assert provider.poll_registry.get(("nb1", "task1")) is None
     assert not provider.finish_started.is_set()
     assert provider.finish_tokens == []
 
@@ -430,11 +431,11 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     try:
         await asyncio.wait_for(poll_started.wait(), timeout=test_timeout)
         for _ in range(10):
-            if key in api._poll_registry.pending:
+            if api._poll_registry.get(key) is not None:
                 break
             await asyncio.sleep(0)
 
-        assert key in api._poll_registry.pending
+        assert api._poll_registry.get(key) is not None
 
         follower = asyncio.create_task(api.wait_for_completion("nb1", "task1", timeout=60.0))
         await asyncio.sleep(0)
@@ -443,7 +444,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
             await asyncio.wait_for(follower, timeout=test_timeout)
 
         assert not leader.done()
-        assert key in api._poll_registry.pending
+        assert api._poll_registry.get(key) is not None
         assert poll_call_count == 1
 
         later_waiter = asyncio.create_task(api.wait_for_completion("nb1", "task1", timeout=60.0))
@@ -453,7 +454,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
         assert await asyncio.wait_for(leader, timeout=test_timeout) == status_ready
         assert await asyncio.wait_for(later_waiter, timeout=test_timeout) == status_ready
         assert poll_call_count == 1
-        assert api._poll_registry.pending == {}
+        assert api._poll_registry.get(key) is None
     finally:
         release_poll.set()
         cleanup_tasks = []

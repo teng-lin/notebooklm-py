@@ -148,10 +148,9 @@ class ArtifactPollingService:
             )
             initial_interval = poll_interval
 
-        pending = self._poll_registry.pending
         key = (notebook_id, task_id)
 
-        existing = pending.get(key)
+        existing = self._poll_registry.get(key)
         if existing is not None:
             # Follower path. ``asyncio.shield`` ensures that *this* caller's
             # cancellation does not propagate into the shared future; the
@@ -193,13 +192,13 @@ class ArtifactPollingService:
             ),
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
-        pending[key] = (future, poll_task)
+        self._poll_registry.register(key, future, poll_task)
 
         def _resolve_poll(task: asyncio.Task[GenerationStatus]) -> None:
             # Pop the registry entry before resolving the future so a waiter
             # arriving concurrently with completion either attaches to this
             # result or starts a fresh poll for a later generation.
-            pending.pop(key, None)
+            self._poll_registry.pop(key)
             if future.done():
                 raise RuntimeError("BUG: future resolved before poll task done-callback")
             if task.cancelled():

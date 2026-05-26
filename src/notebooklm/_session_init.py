@@ -323,10 +323,8 @@ def build_collaborators(
     # constructs its own :class:`PollRegistry` and threads it into
     # :class:`ArtifactPollingService` (``src/notebooklm/_artifact_polling.py``).
     # This ``self.poll_registry`` is currently unused by production code;
-    # the tests in ``tests/integration/concurrency/test_artifact_poll_dedupe.py``
-    # observe it directly. Migrating those tests to
-    # ``client.artifacts._polling.poll_registry.pending`` — and dropping
-    # this attribute — is tracked as a follow-up audit.
+    # retain it only as a legacy collaborator until the session facade can
+    # drop the attribute in a separate compatibility cleanup.
     poll_registry = PollRegistry()
 
     return SessionCollaborators(

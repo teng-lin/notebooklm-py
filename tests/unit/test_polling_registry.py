@@ -24,41 +24,56 @@ async def _never() -> None:
     await asyncio.Event().wait()
 
 
-def test_poll_registry_owns_pending_mapping() -> None:
+def test_poll_registry_starts_empty() -> None:
     registry = PollRegistry()
+    key = ("notebook-1", "task-1")
 
-    assert registry.pending == {}
+    assert registry.get(key) is None
+    assert registry.pop(key) is None
+    assert registry.active_tasks() == []
 
 
-def test_poll_registry_preserves_seeded_pending_mapping_identity() -> None:
+@pytest.mark.asyncio
+async def test_poll_registry_preserves_seeded_pending_mapping_identity() -> None:
     pending: PendingPolls = {}
     registry = PollRegistry(pending)
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[Any] = loop.create_future()
+    task = asyncio.create_task(_never())
+    key = ("notebook-1", "task-1")
 
-    assert registry.pending is pending
+    try:
+        registry.register(key, future, task)
+
+        assert pending[key] == (future, task)
+        assert registry.get(key) == (future, task)
+        assert registry.pop(key) == (future, task)
+        assert key not in pending
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 def test_session_exposes_poll_registry() -> None:
     core = Session(_auth_tokens())
 
     assert isinstance(core.poll_registry, PollRegistry)
-    assert core.poll_registry.pending == {}
+    assert core.poll_registry.get(("notebook-1", "task-1")) is None
+    assert core.poll_registry.active_tasks() == []
 
 
-def test_session_poll_registry_pending_can_be_swapped() -> None:
+def test_session_poll_registry_identity_is_stable() -> None:
     core = Session(_auth_tokens())
     registry = core.poll_registry
-    pending: PendingPolls = {}
-
-    # The ``_pending_polls`` compat bridge was retired in the
-    # session-shrink arc; write on the collaborator directly.
-    core.poll_registry.pending = pending
 
     assert core.poll_registry is registry
-    assert core.poll_registry.pending is pending
 
 
 @pytest.mark.asyncio
-async def test_session_poll_registry_preserves_entry_shape() -> None:
+async def test_session_poll_registry_preserves_entry_shape_through_methods() -> None:
     core = Session(_auth_tokens())
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
@@ -66,9 +81,9 @@ async def test_session_poll_registry_preserves_entry_shape() -> None:
     key = ("notebook-1", "task-1")
 
     try:
-        core.poll_registry.pending[key] = (future, task)
+        core.poll_registry.register(key, future, task)
 
-        assert core.poll_registry.pending[key] == (future, task)
+        assert core.poll_registry.get(key) == (future, task)
     finally:
         task.cancel()
         try:
