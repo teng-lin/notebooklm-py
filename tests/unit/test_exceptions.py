@@ -192,11 +192,14 @@ class TestNotFoundErrorUmbrella:
     """The NotFoundError umbrella catches every *NotFoundError across domains.
 
     Catch semantics for the existing per-type bases (NotebookError /
-    SourceError / ArtifactError / RPCError) MUST remain unchanged — this is
-    an additive change. The asymmetry where SourceNotFoundError and
-    ArtifactNotFoundError do not inherit from RPCError is intentionally
-    preserved here; widening that is a separate (breaking) change deferred
-    to a future release.
+    SourceError / ArtifactError) MUST remain unchanged — adding the umbrella
+    itself was purely additive in the original PR #1035. v0.6.0 then
+    restored RPCError symmetry across all three concrete subclasses (see
+    ``TestExceptionHierarchy.test_not_found_errors_are_rpc_errors`` and
+    ``TestDomainExceptions.test_source_not_found_is_rpc_error`` /
+    ``test_artifact_not_found_is_rpc_error``); the umbrella class itself
+    deliberately stays OUT of the RPCError subtree (see
+    ``test_not_found_error_itself_is_not_an_rpc_error``).
     """
 
     def test_not_found_error_is_subclass_of_notebooklm_error(self):
