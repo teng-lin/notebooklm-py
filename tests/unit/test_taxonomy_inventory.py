@@ -123,3 +123,136 @@ def test_collect_items_uses_repo_absolute_tests_path(monkeypatch: pytest.MonkeyP
     assert inventory.collect_items() == []
     assert captured["args"][-1] == str(inventory.TESTS_DIR)
     assert Path(captured["args"][-1]).is_absolute()
+
+
+def test_allowlist_entries_from_text_ignores_comments_and_rationales() -> None:
+    inventory = _load_inventory_script()
+
+    entries = inventory.allowlist_entries_from_text(
+        "\n"
+        "# comment\n"
+        "tests/integration/test_a.py # reviewed reason\n"
+        "tests/integration/test_b.py #reviewed reason without spacing\n"
+        "tests/integration/test_c.py  # reviewed reason with extra spacing\n"
+        "tests/integration/test_hash#name.py # reviewed reason\n"
+    )
+
+    assert entries == [
+        "tests/integration/test_a.py",
+        "tests/integration/test_b.py",
+        "tests/integration/test_c.py",
+        "tests/integration/test_hash#name.py",
+    ]
+
+
+def test_taxonomy_policy_is_file_level_not_nodeid_level() -> None:
+    inventory = _load_inventory_script()
+    records = [
+        inventory.ItemRecord(
+            nodeid="tests/integration/test_mock.py::test_renamed",
+            path="tests/integration/test_mock.py",
+            markers=frozenset({"allow_no_vcr"}),
+        ),
+        inventory.ItemRecord(
+            nodeid="tests/e2e/test_live.py::test_live",
+            path="tests/e2e/test_live.py",
+            markers=frozenset({"e2e"}),
+        ),
+    ]
+
+    violations = inventory.taxonomy_policy_violations(
+        records,
+        allow_no_vcr_files=["tests/integration/test_mock.py"],
+    )
+
+    assert violations == []
+
+
+def test_taxonomy_policy_flags_new_allow_no_vcr_files() -> None:
+    inventory = _load_inventory_script()
+    records = [
+        inventory.ItemRecord(
+            nodeid="tests/integration/test_new_mock.py::test_mock_only",
+            path="tests/integration/test_new_mock.py",
+            markers=frozenset({"allow_no_vcr"}),
+        ),
+    ]
+
+    violations = inventory.taxonomy_policy_violations(records, allow_no_vcr_files=[])
+
+    assert len(violations) == 1
+    assert "tests/integration/test_new_mock.py" in violations[0]
+
+
+def test_taxonomy_policy_flags_e2e_items_without_marker() -> None:
+    inventory = _load_inventory_script()
+    records = [
+        inventory.ItemRecord(
+            nodeid="tests/e2e/test_live.py::test_live",
+            path="tests/e2e/test_live.py",
+            markers=frozenset(),
+        ),
+    ]
+
+    violations = inventory.taxonomy_policy_violations(records, allow_no_vcr_files=[])
+
+    assert len(violations) == 1
+    assert "tests/e2e/test_live.py::test_live" in violations[0]
+
+
+def test_taxonomy_policy_flags_cassette_without_vcr_marker() -> None:
+    inventory = _load_inventory_script()
+    records = [
+        inventory.ItemRecord(
+            nodeid="tests/integration/test_live.py::test_live",
+            path="tests/integration/test_live.py",
+            markers=frozenset(),
+            has_use_cassette=True,
+        ),
+    ]
+
+    violations = inventory.taxonomy_policy_violations(records, allow_no_vcr_files=[])
+
+    assert len(violations) == 1
+    assert "tests/integration/test_live.py::test_live" in violations[0]
+
+
+def test_taxonomy_policy_flags_stale_allow_no_vcr_files() -> None:
+    inventory = _load_inventory_script()
+
+    violations = inventory.taxonomy_policy_violations(
+        [],
+        allow_no_vcr_files=["tests/integration/test_old_mock.py"],
+    )
+
+    assert len(violations) == 1
+    assert "tests/integration/test_old_mock.py" in violations[0]
+
+
+def test_rendered_baseline_outputs_excludes_audit_report() -> None:
+    inventory = _load_inventory_script()
+
+    outputs = inventory.rendered_baseline_outputs([])
+
+    assert inventory.DEFAULT_REPORT_PATH not in outputs
+    assert set(outputs) == {
+        inventory.ALLOW_NO_VCR_FILES_PATH,
+        inventory.ALLOW_NO_VCR_NODEIDS_PATH,
+        inventory.VCR_ALLOW_NO_VCR_NODEIDS_PATH,
+    }
+
+
+def test_main_rejects_conflicting_actions() -> None:
+    inventory = _load_inventory_script()
+
+    with pytest.raises(SystemExit):
+        inventory.main(["--check", "--write-report"])
+
+
+def test_main_rejects_report_path_without_write_report(tmp_path: Path) -> None:
+    inventory = _load_inventory_script()
+
+    with pytest.raises(SystemExit) as exc_info:
+        inventory.main(["--report-path", str(tmp_path / "taxonomy.md")])
+
+    assert exc_info.value.code == 2
