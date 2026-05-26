@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import random  # noqa: F401 - tests patch this for _backoff jitter
-import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
@@ -17,11 +16,9 @@ from ._loop_affinity import assert_bound_loop
 from ._middleware import (
     RpcRequest,
     RpcResponse,
-    materialize_rpc_request,
 )
-from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
 from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
-from ._request_types import AuthSnapshot, BuildRequest
+from ._request_types import BuildRequest
 from ._rpc_executor import RpcExecutor
 from ._session_config import (
     DEFAULT_CONNECT_TIMEOUT,
@@ -32,11 +29,12 @@ from ._session_config import (
 )
 from ._session_init import (
     build_collaborators,
+    build_session_transport,
     validate_constructor_args,
     wire_middleware_chain,
 )
 from ._session_lifecycle import CookieRotator, CookieSaver
-from ._transport_errors import raise_mapped_post_error
+from ._session_transport import SessionTransport
 from .auth import (
     AuthTokens,
 )
@@ -383,6 +381,32 @@ class Session:
         self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
         self._rpc_executor: RpcExecutor | None = None
 
+        # The authed POST hot path (chain terminal, freshness rebuild,
+        # and ``_perform_authed_post`` entry) lives on
+        # :class:`SessionTransport` (move #4c — ``docs/improvement.md``
+        # §3.1). Build the transport BEFORE :func:`wire_middleware_chain`
+        # so the chain leaf can route through :class:`Session`; the
+        # transport reaches the chain itself through a live-binding
+        # ``chain_provider`` closure that reads
+        # ``self._authed_post_chain`` (set just below), which preserves
+        # the long-standing test pattern of reassigning
+        # ``core._authed_post_chain = fake_chain`` post-construction.
+        # The transport receives :data:`logger` (this module's logger,
+        # ``notebooklm._session``) so transport-error log lines stay in
+        # the historical namespace rather than acquiring a new
+        # ``notebooklm._session_transport`` namespace.
+        self._transport: SessionTransport = build_session_transport(
+            collaborators, host=self, logger=logger
+        )
+
+        # The chain leaf wires to the :class:`Session`-side forward
+        # (:meth:`_authed_post_chain_terminal`), not directly to
+        # :meth:`SessionTransport.terminal`. The forward is the canonical
+        # seam: a subclass override or fixture-time class-level
+        # monkeypatch of ``Session._authed_post_chain_terminal`` keeps
+        # steering the live chain leaf, matching pre-extraction
+        # behavior. The forward adds one bound-method dispatch hop per
+        # chain leaf invocation — negligible overhead.
         wired = wire_middleware_chain(
             config,
             collaborators,
@@ -629,58 +653,21 @@ class Session:
         await self._auth_coord.update_auth_tokens(self, csrf, session_id)
 
     async def _refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
-        """Rebuild the envelope if auth changed before the terminal POST.
-
-        ``Session._perform_authed_post`` materializes the request before the
-        outer chain runs, so the request may wait behind Drain/Semaphore before
-        the leaf sends it. Compare the materialization snapshot to a fresh
-        snapshot immediately before ``Kernel.post``; if auth moved, rebuild the
-        envelope synchronously from ``context["build_request"]``.
+        """Forward to :meth:`SessionTransport.refresh_request_for_current_auth`
+        (body moved in move #4c — ``docs/improvement.md`` §3.1; AST guard
+        now inspects the collaborator method directly).
         """
-        context = request.context
-        request_snapshot = context.get("auth_snapshot")
-        build_request = context.get("build_request")
-        if not isinstance(request_snapshot, AuthSnapshot) or build_request is None:
-            return request
-
-        current_snapshot = await self._auth_coord.snapshot(self)
-        if current_snapshot == request_snapshot:
-            return request
-
-        context["auth_snapshot"] = current_snapshot
-        return materialize_rpc_request(
-            build_request=build_request,
-            snapshot=current_snapshot,
-            context=context,
-        )
+        return await self._transport.refresh_request_for_current_auth(request)
 
     async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
-        """Chain leaf — sends the populated ``RpcRequest`` via ``Kernel.post``.
-
-        The chain interface now carries the actual HTTP request. The terminal
-        reads ``RpcRequest.url`` / ``headers`` / ``body``
-        directly, maps raw ``Kernel.post`` errors into the transport
-        exception shapes consumed by Retry/AuthRefresh middleware, and wraps
-        the returned :class:`httpx.Response` in :class:`RpcResponse`.
+        """Forward to :meth:`SessionTransport.terminal` (body moved in
+        move #4c). The production chain is wired around
+        ``transport.terminal`` directly; this forward is reached only by
+        the direct-call tests in :mod:`tests.unit.test_chain_wiring` and
+        :mod:`tests.unit.test_observability`. AST guard inspects
+        :meth:`SessionTransport.terminal` directly.
         """
-        request = await self._refresh_request_for_current_auth(request)
-        context = request.context
-        log_label = context.get("log_label", "<unknown-chain-call>")
-        start = time.perf_counter()
-        try:
-            response = await self._kernel.post(
-                request.url,
-                headers=request.headers,
-                body=request.body,
-            )
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            raise_mapped_post_error(
-                log_label=log_label,
-                exc=exc,
-                start=start,
-                logger=logger,
-            )
-        return RpcResponse(response=response, context=context)
+        return await self._transport.terminal(request)
 
     async def _perform_authed_post(
         self,
@@ -690,77 +677,20 @@ class Session:
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
     ) -> httpx.Response:
-        """Authed POST entry point — routes through the middleware chain.
-
-        Compatibility surface preserved so ``RpcExecutor.execute``
-        (``_rpc_executor.py:275``), ``_chat_transport`` (``_chat_transport.py:64``),
-        and direct callers (``client._session._perform_authed_post(...)``) keep
-        the same keyword-only signature. The body now builds an
-        :class:`RpcRequest` with the three keyword-only args stashed into
-        ``context`` and dispatches into :attr:`_authed_post_chain`.
-        Middlewares land one per PR in 12.3–12.8; the wiring shape stays
-        unchanged.
-
-        ``rpc_method`` (new in PR 12.4) is the resolved method name string
-        (``RPCMethod.name``) for RPC callers and ``None`` for the chat
-        streaming path. ``MetricsMiddleware`` reads it from
-        ``request.context["rpc_method"]`` to populate
-        :attr:`RpcTelemetryEvent.method` and to decide whether to fire the
-        emission at all — chat-side callers that pass ``None`` skip emission,
-        matching the pre-chain behavior (where ``_chat_transport`` never
-        called ``_emit_rpc_event``).
-
-        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body`` are
-        populated through :func:`materialize_rpc_request` before the chain sees
-        the request. ``context["build_request"]`` remains as the bounded
-        rebuild recipe for auth-refresh and pre-terminal freshness checks.
+        """Forward to :meth:`SessionTransport.perform_authed_post` (body
+        moved in move #4c — ``docs/improvement.md`` §3.1). Kept on
+        :class:`Session` because the :class:`RpcOwner` Protocol in
+        :mod:`notebooklm._rpc_executor` structurally requires the method
+        here (``RpcExecutor.execute`` reaches it via ``self._owner``).
+        ``_chat_transport`` and ``client._session._perform_authed_post(...)``
+        direct callers keep the same keyword-only signature.
         """
-        # Event-loop affinity guard. The check lives here so it fires once
-        # per chain invocation rather than once per leaf attempt.
-        # ``assert_bound_loop`` is a no-op when ``bound_loop``
-        # is ``None`` (pre-open / fresh fixture); it raises only when the
-        # currently-running loop differs from the one captured at
-        # ``open()``-time.
-        self.assert_bound_loop()
-        context = {
-            "build_request": build_request,
-            "log_label": log_label,
-            "disable_internal_retries": disable_internal_retries,
-            "rpc_method": rpc_method,
-        }
-        snapshot = await self._auth_coord.snapshot(self)
-
-        request = materialize_rpc_request(
+        return await self._transport.perform_authed_post(
             build_request=build_request,
-            snapshot=snapshot,
-            context=context,
+            log_label=log_label,
+            disable_internal_retries=disable_internal_retries,
+            rpc_method=rpc_method,
         )
-        context["auth_snapshot"] = snapshot
-
-        # The ``max_concurrent_rpcs`` slot is acquired by
-        # :class:`SemaphoreMiddleware` (chain position 2, between Metrics
-        # and Retry) — that placement keeps Drain admitting queued tasks
-        # AND keeps Metrics timing the queue wait, while still bounding
-        # the retry-and-refresh cohort to one slot per logical RPC.
-        # The middleware writes the queue-wait duration to
-        # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` so the recorder
-        # below can forward it to ``ClientMetrics`` without giving the
-        # middleware an opinionated ``ClientMetrics`` dependency.
-        try:
-            result = await self._authed_post_chain(request)
-            return result.response
-        finally:
-            # Record queue wait even if the chain raised. A failed chain
-            # (RetryMiddleware budget exhaustion, AuthRefreshMiddleware
-            # refresh failure, etc.) MUST still surface the queue-wait
-            # latency. ``SemaphoreMiddleware`` writes the duration to
-            # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` after the
-            # semaphore is acquired; absence of the key means the slot
-            # was never acquired and there's nothing to record (gemini
-            # PR 12.9 finding).
-            queue_wait = request.context.get(RPC_QUEUE_WAIT_CONTEXT_KEY)
-            if queue_wait is not None:
-                self._metrics_obj.record_rpc_queue_wait(queue_wait)
 
     async def transport_post(
         self,

@@ -71,8 +71,8 @@ import pytest
 
 from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._session import Session
 from notebooklm._session_auth import AuthRefreshCoordinator
+from notebooklm._session_transport import SessionTransport
 from notebooklm.rpc import RPCMethod
 
 _UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
@@ -98,8 +98,15 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     await is the actual ``Kernel.post`` send. An await in that try prologue
     would let a concurrent refresh change the cookie jar between request
     rebuild and wire send.
+
+    The terminal body lives on :meth:`SessionTransport.terminal` after
+    move #4c — ``Session._authed_post_chain_terminal`` is now a one-line
+    forward to it, so the AST guard must inspect the collaborator method
+    that carries the actual body. The error messages still mention
+    ``Session._authed_post_chain_terminal`` as the conceptual entry point
+    because that is still where chain-leaf callers reach the behavior.
     """
-    src = textwrap.dedent(inspect.getsource(Session._authed_post_chain_terminal))
+    src = textwrap.dedent(inspect.getsource(SessionTransport.terminal))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -204,8 +211,15 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
 
 
 def test_terminal_freshness_check_has_no_await_after_materialization():
-    """Freshness rebuild must not yield after materializing a new envelope."""
-    src = textwrap.dedent(inspect.getsource(Session._refresh_request_for_current_auth))
+    """Freshness rebuild must not yield after materializing a new envelope.
+
+    The freshness-rebuild body lives on
+    :meth:`SessionTransport.refresh_request_for_current_auth` after move
+    #4c — ``Session._refresh_request_for_current_auth`` is now a one-line
+    forward to it, so the AST guard must inspect the collaborator method
+    that carries the actual body.
+    """
+    src = textwrap.dedent(inspect.getsource(SessionTransport.refresh_request_for_current_auth))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 

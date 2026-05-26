@@ -28,6 +28,7 @@ callables; the caller (``Session.__init__``) owns the
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -47,6 +48,7 @@ from ._session_auth import AuthRefreshCoordinator
 from ._session_config import normalize_max_concurrent_uploads
 from ._session_helpers import _resolve_keepalive_interval
 from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
+from ._session_transport import SessionTransport
 from ._transport_drain import TransportDrainTracker
 from .auth import AuthTokens
 
@@ -343,6 +345,54 @@ if TYPE_CHECKING:
     from ._session import Session
 
 
+def build_session_transport(
+    collaborators: SessionCollaborators,
+    *,
+    host: Session,
+    logger: logging.Logger,
+) -> SessionTransport:
+    """Construct the :class:`SessionTransport` collaborator.
+
+    Built **after** :func:`build_collaborators` and **before**
+    :func:`wire_middleware_chain`, because the wired chain is built
+    around ``transport.terminal``. The transport reaches the chain
+    through a live-binding ``chain_provider`` closure that reads
+    ``host._authed_post_chain`` on every authed POST; that attribute is
+    assigned by :class:`Session.__init__` immediately after
+    :func:`wire_middleware_chain` returns. Using a provider closure
+    (rather than a frozen reference) preserves the pre-extraction
+    behavior where tests reassign ``core._authed_post_chain = fake_chain``
+    to install a fake chain and expect the next call to honor it.
+
+    The ``snapshot_provider`` closure captures ``host`` so the transport
+    never needs a direct back-reference to :class:`Session`. The
+    ``bound_loop_check`` lambda re-reads ``host.assert_bound_loop`` on
+    every call rather than freezing the bound method at construction
+    time, so a test that reassigns ``core.assert_bound_loop = mock``
+    after construction still steers the live check — preserving the
+    pre-extraction behavior where the call site read
+    ``self.assert_bound_loop`` live. The lookup goes through
+    ``host.assert_bound_loop`` rather than the lifecycle's
+    ``_bound_loop`` directly so a Mock-based Session fixture (which
+    sets ``_lifecycle`` to a MagicMock) still short-circuits the guard.
+
+    The ``logger`` is forwarded as-is — typically the module logger of
+    ``notebooklm._session`` — so transport-error log lines keep
+    appearing under the historical ``notebooklm._session`` namespace
+    rather than acquiring a new ``notebooklm._session_transport``
+    namespace that callers' log filters / ``caplog`` selectors would
+    not yet recognise.
+    """
+    return SessionTransport(
+        kernel=collaborators.kernel,
+        snapshot_provider=lambda: collaborators.auth_coord.snapshot(host),
+        chain_provider=lambda: getattr(host, "_authed_post_chain", None),
+        metrics=collaborators.metrics,
+        bound_loop_check=lambda: host.assert_bound_loop(),
+        logger=logger,
+    )
+
+
 def wire_middleware_chain(
     config: ValidatedSessionConfig,
     collaborators: SessionCollaborators,
@@ -395,6 +445,7 @@ __all__ = [
     "ValidatedSessionConfig",
     "WiredMiddleware",
     "build_collaborators",
+    "build_session_transport",
     "validate_constructor_args",
     "wire_middleware_chain",
 ]
