@@ -22,11 +22,15 @@ The adapters sit **on top of** :func:`notebooklm.rpc.safe_index`:
   ``Artifact.from_api_response`` / ``Source.from_api_response`` contract
   that accepts short rows.
 * Deep descent into a present position (``data[9][1][0]``,
-  ``data[15][0]``, ``data[1][1]``, ``data[1][4]``, ``metadata[7][0]``,
+  ``data[15][0]``, ``data[16][3]``, ``data[16][4]``,
+  ``data[1][1]``, ``data[1][4]``, ``metadata[7][0]``,
   ``metadata[2][0]``) flows through :func:`safe_index`. Soft mode
   returns ``None`` on drift, strict mode raises
   :class:`notebooklm.exceptions.UnknownRPCMethodError` — the desired
   ADR-011 signal for genuine Google-side reshape.
+  ``data[6][5]`` is the historical audio URL envelope and remains
+  compatibility-permissive when that media list is absent so download
+  APIs preserve their public "could not extract URL" parse error.
 
 Wire-shape variants:
 
@@ -310,6 +314,8 @@ class ArtifactRow:
         if audio_block is None:
             return None
 
+        if len(audio_block) <= self._AUDIO_MEDIA_LIST_POS:
+            return None
         media_list = safe_index(
             audio_block,
             self._AUDIO_MEDIA_LIST_POS,

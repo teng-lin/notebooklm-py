@@ -441,15 +441,14 @@ class TestStrictModeOnDeepDrift:
         with pytest.warns(DeprecationWarning):
             assert row.variant is None
 
-    def test_audio_metadata_with_missing_media_list_raises_strict(
+    def test_audio_metadata_with_missing_media_list_returns_none_strict(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
         raw = _full_row(type_code=ArtifactTypeCode.AUDIO)
         raw[ArtifactRow._AUDIO_METADATA_POS] = [None]
 
-        with pytest.raises(UnknownRPCMethodError):
-            _ = ArtifactRow(raw).audio_url
+        assert ArtifactRow(raw).audio_url is None
 
     def test_audio_metadata_with_missing_media_list_can_soft_degrade(
         self, monkeypatch: pytest.MonkeyPatch
@@ -458,8 +457,7 @@ class TestStrictModeOnDeepDrift:
         raw = _full_row(type_code=ArtifactTypeCode.AUDIO)
         raw[ArtifactRow._AUDIO_METADATA_POS] = [None]
 
-        with pytest.warns(DeprecationWarning):
-            assert ArtifactRow(raw).audio_url is None
+        assert ArtifactRow(raw).audio_url is None
 
     def test_slide_deck_metadata_with_missing_pdf_url_raises_strict(
         self, monkeypatch: pytest.MonkeyPatch
