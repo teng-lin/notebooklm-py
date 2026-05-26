@@ -340,7 +340,7 @@ class ArtifactDownloadService:
         json_module = _artifact_seams().json
         try:
             app_data = _artifact_seams()._extract_app_data(html_content)
-        except (ValueError, json_module.JSONDecodeError) as e:
+        except json_module.JSONDecodeError as e:
             raise ArtifactParseError(
                 artifact_type, details=f"Failed to parse content: {e}", cause=e
             ) from e

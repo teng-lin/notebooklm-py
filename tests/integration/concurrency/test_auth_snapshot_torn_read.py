@@ -1,25 +1,30 @@
 """atomic ``(csrf, sid, cookies)`` snapshot during refresh.
 
-The race fixed here is a torn read of the auth-headers triple
-``(csrf_token, session_id, cookies)`` while a refresh runs concurrently
-with in-flight RPCs. Today's ``Session._snapshot()`` reads the four
-scalar fields off ``self.auth`` without holding any lock, and
-``_build_url()`` reads ``session_id``/``authuser``/``account_email``
-directly off ``self.auth`` (not the snapshot). A concurrent ``refresh_auth``
-mutates ``csrf_token`` and ``session_id`` in two separate Python statements
-— there's no asyncio yield between them in production today, but the
-moment any maintainer introduces an ``await`` in that prologue, an RPC
-can observe one field from the OLD generation and another from the NEW
-generation. The fix introduces a dedicated ``_auth_snapshot_lock`` that:
+The race this test guards against is a torn read of the auth-headers
+triple ``(csrf_token, session_id, cookies)`` while a refresh runs
+concurrently with in-flight RPCs. The pre-fix hazard was: a snapshot
+that read the four scalar fields off ``self.auth`` without holding any
+lock could observe one field from the OLD refresh generation and
+another from the NEW generation if any ``await`` slipped into the
+mutation prologue, and a URL builder that read
+``session_id`` / ``authuser`` / ``account_email`` directly off
+``self.auth`` rather than off a frozen snapshot could put the body's
+CSRF and the URL's ``f.sid`` from different generations on the wire.
 
-1. ``_snapshot()`` acquires under ``async with`` to read all scalars
-   atomically.
+The fix, which is what the current code implements, introduces a
+dedicated ``_auth_snapshot_lock`` and routes the two critical read/build
+steps through the canonical implementations:
+
+1. ``AuthRefreshCoordinator.snapshot()`` acquires the lock to read all
+   scalars atomically into an :class:`AuthSnapshot`
+   (``src/notebooklm/_session_auth.py:182-207``).
 2. The refresh-side mutation block in ``client.refresh_auth`` writes
    ``csrf_token`` + ``session_id`` under the same lock — tiny critical
    section, no awaits inside.
-3. ``_build_url()`` consumes the resulting ``AuthSnapshot`` rather than
-   re-reading ``self.auth`` live, so the URL is built from the same
-   generation the body was.
+3. ``RpcExecutor.build_url()`` consumes the resulting
+   :class:`AuthSnapshot` rather than re-reading ``self.auth`` live, so
+   the URL is built from the same generation the body was
+   (``src/notebooklm/_rpc_executor.py:366-387``).
 
 This test stresses that contract by spawning 50 RPC tasks AND one
 refresh task into a single ``asyncio.gather`` — they all schedule
@@ -30,14 +35,13 @@ under the lock, so the assertion is purely "for every captured request,
 the three observed generation tags must match".
 
 Test scope (honest framing): this is the *runtime smoke proof* that
-the new design composes correctly under concurrent load. It does not,
-on its own, surface a pre-fix torn read against an unfixed code base —
-the actual hazard ``_build_url`` reading ``self.auth`` live only
-materializes if a yield point slips into ``_perform_authed_post``'s
-prologue between snapshot capture and request build, which is what the
-AST guards in ``tests/unit/test_concurrency_refresh_race.py`` lock
-down statically. Together the AST guards and this runtime check form
-the regression net for the auth-snapshot atomicity contract.
+the design composes correctly under concurrent load. It does not, on
+its own, surface a pre-fix torn read against an unfixed code base —
+the original hazard only materializes if a yield point slips into the
+request prologue between snapshot capture and request build. The AST
+guards in ``tests/unit/test_concurrency_refresh_race.py`` lock that
+down statically, and this runtime check verifies the concurrent
+composition.
 """
 
 from __future__ import annotations
@@ -142,14 +146,15 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
     ``(body's CSRF, URL's f.sid, Cookie header's SID)`` must agree.
 
     Scope honestly: this test verifies the *new design works end-to-end
-    under concurrent load* — the lock serializes ``_snapshot()`` reads
-    with the refresh writes, the snapshot consumer in ``_build_url``
-    makes URL + body share the same generation, and 50 concurrent RPCs
-    + 1 refresh produce 50 coherent captured triples. It does NOT, on
-    its own, surface the pre-fix torn read against an unfixed code
-    base — that requires a yield point between snapshot capture and
-    request build (introduced via a future ``await`` slipping into the
-    prologue), which the AST guards
+    under concurrent load* — the lock serializes
+    ``AuthRefreshCoordinator.snapshot()`` reads with the refresh writes,
+    the snapshot consumer in ``RpcExecutor.build_url()`` makes URL +
+    body share the same generation, and 50 concurrent RPCs + 1 refresh
+    produce 50 coherent captured triples. It does NOT, on its own,
+    surface the pre-fix torn read against an unfixed code base — that
+    requires a yield point between snapshot capture and request build
+    (introduced via a future ``await`` slipping into the prologue),
+    which the AST guards
     (``test_perform_authed_post_has_no_await_before_post_per_iteration``,
     ``test_build_url_does_not_read_self_auth``,
     ``test_snapshot_acquires_auth_snapshot_lock``) catch statically.

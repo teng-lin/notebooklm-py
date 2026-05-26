@@ -93,6 +93,18 @@ class TestClassifyRow:
         row = ["note_1", "This is a regular note body."]
         assert service.classify_row(row) == NoteRowKind.NOTE
 
+    def test_plain_note_with_mind_map_key_text_classifies_as_note(
+        self, service: NoteService
+    ) -> None:
+        row = ["note_1", 'My "children": Alice and Bob']
+        assert service.classify_row(row) == NoteRowKind.NOTE
+
+    def test_non_object_json_with_mind_map_key_text_classifies_as_note(
+        self, service: NoteService
+    ) -> None:
+        row = ["note_1", '["children": []]']
+        assert service.classify_row(row) == NoteRowKind.NOTE
+
     def test_nested_note_shape_classifies_as_note(self, service: NoteService) -> None:
         row = ["note_2", ["note_2", "Nested body", None, None, "Nested Title"]]
         assert service.classify_row(row) == NoteRowKind.NOTE

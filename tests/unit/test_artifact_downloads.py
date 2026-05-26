@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from notebooklm import _artifacts as artifacts_module
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import (
     ArtifactDownloadError,
@@ -50,6 +51,41 @@ def mock_artifacts_api():
         note_service=note_service,
     )
     return api, mock_core
+
+
+class TestDownloadInteractiveArtifact:
+    """Test shared quiz/flashcard download parsing behavior."""
+
+    @pytest.mark.asyncio
+    async def test_extract_app_data_value_error_propagates(
+        self, mock_artifacts_api, monkeypatch, tmp_path
+    ):
+        """Bare ValueError from helper internals is not converted to parse drift."""
+        api, _mock_core = mock_artifacts_api
+        artifact = MagicMock(
+            id="quiz_001",
+            title="My Quiz",
+            is_completed=True,
+            created_at=None,
+        )
+        monkeypatch.setattr(api, "list_quizzes", AsyncMock(return_value=[artifact]))
+        monkeypatch.setattr(
+            api,
+            "_get_artifact_content",
+            AsyncMock(return_value='<html data-app-data="{&quot;quiz&quot;:[]}"></html>'),
+        )
+        format_content = MagicMock(return_value="unused")
+        monkeypatch.setattr(api, "_format_interactive_content", format_content)
+        monkeypatch.setattr(
+            artifacts_module,
+            "_extract_app_data",
+            MagicMock(side_effect=ValueError("implementation bug")),
+        )
+
+        with pytest.raises(ValueError, match="implementation bug"):
+            await api.download_quiz("nb_123", str(tmp_path / "quiz.json"))
+
+        format_content.assert_not_called()
 
 
 class TestDownloadAudio:

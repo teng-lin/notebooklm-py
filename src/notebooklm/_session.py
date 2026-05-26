@@ -542,18 +542,14 @@ class Session:
     async def _finish_transport_post(self, token: _TransportOperationToken) -> None:
         await self._drain_tracker.finish_transport_post(token)
 
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+    @asynccontextmanager
+    async def operation_scope(self, label: str) -> AsyncIterator[None]:
         """Return a drain-tracked operation scope for feature-owned work."""
-
-        @asynccontextmanager
-        async def scope() -> AsyncIterator[None]:
-            token = await self._begin_transport_post(label)
-            try:
-                yield None
-            finally:
-                await self._finish_transport_post(token)
-
-        return scope()
+        token = await self._begin_transport_post(label)
+        try:
+            yield None
+        finally:
+            await self._finish_transport_post(token)
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new client operations and wait for in-flight ones to finish.

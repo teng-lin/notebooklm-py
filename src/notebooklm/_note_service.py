@@ -122,7 +122,7 @@ class NoteService:
         * deleted: ``["id", None, 2]`` — content is ``None`` and slot[2]
           is the soft-delete sentinel.
         * mind-map: content payload (string at ``row[1]`` or
-          ``row[1][1]``) parses as JSON with ``"children":`` or
+          ``row[1][1]``) is a JSON object with ``"children":`` or
           ``"nodes":`` keys.
         * saved-chat: a plain note row whose metadata flags chat mode.
           That metadata is not reliably present on the wire, so when we
@@ -170,7 +170,12 @@ class NoteService:
 
     @staticmethod
     def _is_mind_map_content(content: str | None) -> bool:
-        return bool(content and ('"children":' in content or '"nodes":' in content))
+        if not content:
+            return False
+        stripped = content.strip()
+        if not (stripped.startswith("{") and stripped.endswith("}")):
+            return False
+        return '"children":' in stripped or '"nodes":' in stripped
 
     # ------------------------------------------------------------------
     # CRUD

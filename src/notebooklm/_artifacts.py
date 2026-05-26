@@ -48,6 +48,7 @@ from .rpc import (
     SlideDeckLength,
     VideoFormat,
     VideoStyle,
+    safe_index,
 )
 from .types import (
     Artifact,
@@ -675,12 +676,14 @@ class ArtifactsAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        # Response is wrapped: result[0] contains the artifact data
-        if result and isinstance(result, list) and len(result) > 0:
-            data = result[0]
-            if isinstance(data, list) and len(data) > 9 and data[9]:
-                return data[9][0]  # HTML content
-        return None
+        return safe_index(
+            result,
+            0,
+            9,
+            0,
+            method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+            source="_artifacts._get_artifact_content",
+        )
 
     async def _download_interactive_artifact(
         self,
