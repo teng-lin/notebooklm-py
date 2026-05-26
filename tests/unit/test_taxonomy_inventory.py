@@ -22,7 +22,9 @@ def _load_inventory_script():
 def test_logical_module_key_strips_migration_suffixes() -> None:
     inventory = _load_inventory_script()
 
-    assert inventory.logical_module_key("tests/integration/test_sources_integration.py") == "sources"
+    assert (
+        inventory.logical_module_key("tests/integration/test_sources_integration.py") == "sources"
+    )
     assert inventory.logical_module_key("tests/unit/test_source_characterization.py") == "source"
     assert inventory.logical_module_key("tests/unit/test_artifacts_vcr.py") == "artifacts"
     assert inventory.logical_module_key("tests/unit/test_notes_mock.py") == "notes"

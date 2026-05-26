@@ -166,9 +166,7 @@ def render_inventory(records: list[ItemRecord]) -> str:
         record for record in integration if {"vcr", "allow_no_vcr"} <= record.markers
     ]
     cassette_only = [
-        record
-        for record in integration
-        if record.has_use_cassette and "vcr" not in record.markers
+        record for record in integration if record.has_use_cassette and "vcr" not in record.markers
     ]
 
     marker_counts = Counter(marker for record in records for marker in record.markers)
