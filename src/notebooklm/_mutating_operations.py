@@ -87,7 +87,7 @@ for (method, variant), policy in MUTATING_OPERATION_POLICIES.items():
 
 
 def iter_mutating_operation_policies() -> Iterator[MutatingOperationPolicy]:
-    """Yield registered mutating operation recovery policies."""
+    """Return an iterator over registered mutating operation recovery policies."""
     return iter(MUTATING_OPERATION_POLICIES.values())
 
 

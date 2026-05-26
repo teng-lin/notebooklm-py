@@ -380,7 +380,7 @@ class IdempotencyRegistry:
         return default
 
     def iter_entries(self) -> Iterator[tuple[RPCMethod, str | None, IdempotencyEntry]]:
-        """Yield a snapshot of ``(method, variant, entry)`` rows."""
+        """Return an iterator over a snapshot of ``(method, variant, entry)`` rows."""
         snapshot: list[tuple[RPCMethod, str | None, IdempotencyEntry]] = []
         for method, method_entries in self._entries.items():
             for variant, entry in method_entries.items():
