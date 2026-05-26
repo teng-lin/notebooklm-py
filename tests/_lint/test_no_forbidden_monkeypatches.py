@@ -190,9 +190,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_notebook_api.py",
         "tests/unit/test_notes_unit.py",
         "tests/unit/test_public_shims.py",
-        # ``tests/unit/test_rpc_call_public_surface.py`` was removed in
-        # v0.6.0 alongside the deprecated public-client ``rpc_call``
-        # kwargs it pinned; its allowlist entry would now be stale.
         "tests/unit/test_quota_failure_detection.py",
         "tests/unit/test_rpc_overrides.py",
         "tests/unit/test_select_artifact.py",
