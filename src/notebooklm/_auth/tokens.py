@@ -152,7 +152,7 @@ class AuthTokens:
             # Load from a specific profile
             auth = await AuthTokens.from_storage(profile="work")
         """
-        if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
+        if path is None and (profile is not None or not os.environ.get("NOTEBOOKLM_AUTH_JSON")):
             path = get_storage_path(profile=profile)
 
         if path is None:
