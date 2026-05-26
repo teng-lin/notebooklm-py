@@ -640,6 +640,7 @@ class ResearchAPI:
         """
         if not sources:
             return []
+        source_inputs: list[ResearchSourceInput] = list(sources)
         source_models = _coerce_research_sources(sources)
 
         started_at = time.monotonic()
@@ -672,7 +673,7 @@ class ResearchAPI:
 
         while True:
             try:
-                imported = await self.import_sources(notebook_id, task_id, source_models)
+                imported = await self.import_sources(notebook_id, task_id, source_inputs)
                 return _merge_imported_sources(imported, verified_imported, verified_imported_ids)
             except RPCTimeoutError:
                 elapsed = time.monotonic() - started_at
@@ -721,12 +722,18 @@ class ResearchAPI:
                                 timeout_verified, verified_imported, verified_imported_ids
                             )
                         source_norms = [
-                            (source, _source_import_verification_url(source))
-                            for source in source_models
+                            (
+                                source_input,
+                                source,
+                                _source_import_verification_url(source),
+                            )
+                            for source_input, source in zip(
+                                source_inputs, source_models, strict=True
+                            )
                         ]
                         removed_urls_norm = {
                             url
-                            for _, url in source_norms
+                            for _, _, url in source_norms
                             if url is not None and url in current_urls_norm
                         }
                         # Filter for retry: drop already-present URLs.
@@ -743,14 +750,14 @@ class ResearchAPI:
                         # report-only attempt cap further down bounds
                         # the worst case.
                         drop_no_url_entries = bool(removed_urls_norm)
-                        filtered_sources = [
-                            source
-                            for source, url in source_norms
+                        filtered_source_pairs = [
+                            (source_input, source)
+                            for source_input, source, url in source_norms
                             if url not in current_urls_norm
                             and not (drop_no_url_entries and url is None)
                         ]
-                        if len(filtered_sources) != len(source_models):
-                            removed_count = len(source_models) - len(filtered_sources)
+                        if len(filtered_source_pairs) != len(source_models):
+                            removed_count = len(source_models) - len(filtered_source_pairs)
                             for src in new_sources:
                                 if (
                                     src.url
@@ -760,7 +767,10 @@ class ResearchAPI:
                                 ):
                                     verified_imported.append(_imported_source_entry(src))
                                     verified_imported_ids.add(src.id)
-                            source_models = filtered_sources
+                            source_inputs = [
+                                source_input for source_input, _ in filtered_source_pairs
+                            ]
+                            source_models = [source for _, source in filtered_source_pairs]
                             requested_urls_norm = _requested_import_verification_urls(source_models)
                             requested_no_url_count = _no_import_verification_url_entry_count(
                                 source_models
