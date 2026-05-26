@@ -77,6 +77,15 @@ MUTATING_OPERATION_POLICIES: dict[tuple[RPCMethod, str | None], MutatingOperatio
 }
 
 
+for (method, variant), policy in MUTATING_OPERATION_POLICIES.items():
+    if (policy.method, policy.variant) != (method, variant):
+        raise ValueError(
+            "MUTATING_OPERATION_POLICIES key does not match policy payload: "
+            f"key=({method}, {variant!r}), "
+            f"payload=({policy.method}, {policy.variant!r})"
+        )
+
+
 def iter_mutating_operation_policies() -> Iterator[MutatingOperationPolicy]:
     """Yield registered mutating operation recovery policies."""
     return iter(MUTATING_OPERATION_POLICIES.values())

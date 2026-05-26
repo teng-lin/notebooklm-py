@@ -381,8 +381,8 @@ class IdempotencyRegistry:
 
     def iter_entries(self) -> Iterator[tuple[RPCMethod, str | None, IdempotencyEntry]]:
         """Yield a snapshot of ``(method, variant, entry)`` rows."""
-        for method, method_entries in self._entries.items():
-            for variant, entry in method_entries.items():
+        for method, method_entries in tuple(self._entries.items()):
+            for variant, entry in tuple(method_entries.items()):
                 yield method, variant, entry
 
     def _seed_defaults(self) -> None:
