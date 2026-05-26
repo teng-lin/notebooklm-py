@@ -900,9 +900,14 @@ class ArtifactNotFoundError(NotFoundError, RPCError, ArtifactError):
     ):
         self.artifact_id = artifact_id
         self.artifact_type = artifact_type
-        type_info = f" {artifact_type}" if artifact_type else ""
+        # ``str.capitalize()`` on a string with a leading space returns the
+        # string unchanged (the first character has no uppercase equivalent),
+        # so capitalize ``artifact_type`` first and then build the label —
+        # this matches the ``ArtifactNotReadyError`` pattern on this file and
+        # the ``SourceNotFoundError`` / ``NotebookNotFoundError`` messages.
+        type_label = f"{artifact_type.capitalize()} artifact" if artifact_type else "Artifact"
         super().__init__(
-            f"{type_info.capitalize()} artifact {artifact_id} not found",
+            f"{type_label} not found: {artifact_id}",
             method_id=method_id,
             raw_response=raw_response,
         )

@@ -507,10 +507,31 @@ class TestDomainExceptions:
         assert e.cause is cause
 
     def test_artifact_not_found_has_artifact_id(self):
-        """ArtifactNotFoundError stores artifact_id and artifact_type."""
+        """ArtifactNotFoundError stores artifact_id and artifact_type, and the
+        message is well-formatted (no leading space; ``artifact_type``
+        capitalized; ``artifact_id`` appears in the string).
+        """
         e = ArtifactNotFoundError("art_123", artifact_type="audio")
         assert e.artifact_id == "art_123"
         assert e.artifact_type == "audio"
+        # Format pin (regression-guard for the pre-existing leading-space /
+        # capitalize-on-leading-space bug fixed in PR #1037):
+        assert str(e) == "Audio artifact not found: art_123"
+        # And specifically: ID must be in the string (RPCError has no
+        # __str__ override, so the message text is the entire string repr).
+        assert "art_123" in str(e)
+        assert not str(e).startswith(" "), "no leading space in message"
+
+    def test_artifact_not_found_without_type_has_clean_message(self):
+        """When ``artifact_type`` is omitted, the message starts with
+        ``Artifact`` (no leading space) and still includes the ID. Regression
+        guard for the pre-existing message-formatting bug fixed in PR #1037.
+        """
+        e = ArtifactNotFoundError("art_xyz")
+        assert e.artifact_id == "art_xyz"
+        assert e.artifact_type is None
+        assert str(e) == "Artifact not found: art_xyz"
+        assert not str(e).startswith(" ")
 
     def test_artifact_not_found_accepts_rpc_metadata(self):
         """ArtifactNotFoundError can carry ``method_id`` / ``raw_response`` for
