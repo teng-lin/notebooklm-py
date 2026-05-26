@@ -9,7 +9,7 @@ pieces of the authed POST hot path that used to live on :class:`Session`:
   raw transport errors into the ``Transport*`` exception shapes consumed
   by ``RetryMiddleware`` / ``AuthRefreshMiddleware``.
 * :meth:`SessionTransport.refresh_request_for_current_auth` — re-builds
-  the envelope from ``context["build_request"]`` if a concurrent refresh
+  the envelope from ``RPC_CONTEXT_BUILD_REQUEST`` if a concurrent refresh
   moved the auth snapshot between materialization and the terminal POST.
 * :meth:`SessionTransport.perform_authed_post` — the entry point the
   RPC executor / chat path / ``Session.transport_post`` call. Runs the
@@ -70,7 +70,14 @@ from ._middleware import (
     RpcResponse,
     materialize_rpc_request,
 )
-from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
+from ._middleware_context import (
+    RPC_CONTEXT_AUTH_SNAPSHOT,
+    RPC_CONTEXT_BUILD_REQUEST,
+    RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
+    RPC_CONTEXT_LOG_LABEL,
+    RPC_CONTEXT_RPC_METHOD,
+    RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
+)
 from ._request_types import AuthSnapshot, BuildRequest
 from ._transport_errors import raise_mapped_post_error
 
@@ -136,7 +143,7 @@ class SessionTransport:
         before the leaf sends it. Compare the materialization snapshot to
         a fresh snapshot immediately before :meth:`Kernel.post`; if auth
         moved, rebuild the envelope synchronously from
-        ``context["build_request"]``.
+        ``RPC_CONTEXT_BUILD_REQUEST``.
 
         AST guarded — see
         :func:`tests.unit.test_concurrency_refresh_race.test_terminal_freshness_check_has_no_await_after_materialization`
@@ -146,8 +153,8 @@ class SessionTransport:
         must be produced together with no suspension point between them.
         """
         context = request.context
-        request_snapshot = context.get("auth_snapshot")
-        build_request = context.get("build_request")
+        request_snapshot = context.get(RPC_CONTEXT_AUTH_SNAPSHOT)
+        build_request = context.get(RPC_CONTEXT_BUILD_REQUEST)
         if not isinstance(request_snapshot, AuthSnapshot) or build_request is None:
             return request
 
@@ -155,7 +162,7 @@ class SessionTransport:
         if current_snapshot == request_snapshot:
             return request
 
-        context["auth_snapshot"] = current_snapshot
+        context[RPC_CONTEXT_AUTH_SNAPSHOT] = current_snapshot
         return materialize_rpc_request(
             build_request=build_request,
             snapshot=current_snapshot,
@@ -181,7 +188,7 @@ class SessionTransport:
         """
         request = await self.refresh_request_for_current_auth(request)
         context = request.context
-        log_label = context.get("log_label", "<unknown-chain-call>")
+        log_label = context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         start = time.perf_counter()
         try:
             response = await self._kernel.post(
@@ -216,7 +223,7 @@ class SessionTransport:
 
         ``RpcRequest.url`` / ``headers`` / ``body`` are populated through
         :func:`materialize_rpc_request` before the chain sees the
-        request. ``context["build_request"]`` remains as the bounded
+        request. ``RPC_CONTEXT_BUILD_REQUEST`` remains as the bounded
         rebuild recipe for auth-refresh and pre-terminal freshness
         checks.
 
@@ -235,10 +242,10 @@ class SessionTransport:
         # from the one captured at ``open()``-time.
         self._bound_loop_check()
         context = {
-            "build_request": build_request,
-            "log_label": log_label,
-            "disable_internal_retries": disable_internal_retries,
-            "rpc_method": rpc_method,
+            RPC_CONTEXT_BUILD_REQUEST: build_request,
+            RPC_CONTEXT_LOG_LABEL: log_label,
+            RPC_CONTEXT_DISABLE_INTERNAL_RETRIES: disable_internal_retries,
+            RPC_CONTEXT_RPC_METHOD: rpc_method,
         }
         snapshot = await self._snapshot_provider()
 
@@ -247,7 +254,7 @@ class SessionTransport:
             snapshot=snapshot,
             context=context,
         )
-        context["auth_snapshot"] = snapshot
+        context[RPC_CONTEXT_AUTH_SNAPSHOT] = snapshot
 
         # The ``max_concurrent_rpcs`` slot is acquired by
         # :class:`SemaphoreMiddleware` (chain position 2, between Metrics
@@ -285,7 +292,7 @@ class SessionTransport:
             # semaphore is acquired; absence of the key means the slot
             # was never acquired and there's nothing to record (gemini
             # PR 12.9 finding).
-            queue_wait = request.context.get(RPC_QUEUE_WAIT_CONTEXT_KEY)
+            queue_wait = request.context.get(RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS)
             if queue_wait is not None:
                 self._metrics.record_rpc_queue_wait(queue_wait)
 

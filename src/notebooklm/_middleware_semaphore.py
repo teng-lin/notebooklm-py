@@ -47,13 +47,14 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._middleware_context import RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 
 # ``RpcRequest.context`` key used to communicate the per-call queue-wait
 # duration from this middleware up to ``Session._perform_authed_post``
 # (which forwards it to ``ClientMetrics.record_rpc_queue_wait``). Kept as a
-# named constant so the chain's metadata vocabulary in ADR-009 §"RpcRequest
-# .context keys" can reference it precisely.
-RPC_QUEUE_WAIT_CONTEXT_KEY = "rpc_queue_wait_seconds"
+# compatibility alias for older internal imports; new code should use the
+# centralized ``RPC_CONTEXT_*`` vocabulary from ``_middleware_context``.
+RPC_QUEUE_WAIT_CONTEXT_KEY = RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 
 
 class SemaphoreMiddleware:
@@ -92,8 +93,14 @@ class SemaphoreMiddleware:
     ) -> RpcResponse:
         queue_wait_start = time.perf_counter()
         async with self._semaphore_factory():
-            request.context[RPC_QUEUE_WAIT_CONTEXT_KEY] = time.perf_counter() - queue_wait_start
+            request.context[RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS] = (
+                time.perf_counter() - queue_wait_start
+            )
             return await next_call(request)
 
 
-__all__ = ["RPC_QUEUE_WAIT_CONTEXT_KEY", "SemaphoreMiddleware"]
+__all__ = [
+    "RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS",
+    "RPC_QUEUE_WAIT_CONTEXT_KEY",
+    "SemaphoreMiddleware",
+]

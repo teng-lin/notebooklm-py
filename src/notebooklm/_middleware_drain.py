@@ -12,8 +12,8 @@ Pure observer of the transport leg with bookkeeping side-effects: brackets
 and :meth:`TransportDrainTracker.finish_transport_post`, propagating the
 ``log_label`` from ``request.context`` as the tracker label. The chain
 caller (``Session._perform_authed_post``) always populates ``log_label``,
-so the middleware reads it via ``context["log_label"]`` and falls back to
-a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
+so the middleware reads it via ``RPC_CONTEXT_LOG_LABEL`` and falls back
+to a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
 This PR lifts the drain bookkeeping from
 ``RpcExecutor.execute_with_telemetry`` (which previously bracketed
@@ -55,6 +55,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._middleware_context import RPC_CONTEXT_LOG_LABEL
 
 if TYPE_CHECKING:
     from ._transport_drain import TransportDrainTracker
@@ -101,7 +102,7 @@ class DrainMiddleware:
         ``_chat_transport.send_authed_post`` both let
         ``_begin_transport_post`` errors propagate without catching.
         """
-        log_label = request.context.get("log_label", "<unknown-chain-call>")
+        log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         token = await self._drain_tracker.begin_transport_post(log_label)
         try:
             return await next_call(request)

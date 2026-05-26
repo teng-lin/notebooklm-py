@@ -69,6 +69,12 @@ from typing import TYPE_CHECKING, cast
 import httpx
 
 from ._middleware import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
+from ._middleware_context import (
+    RPC_CONTEXT_AUTH_REFRESHED,
+    RPC_CONTEXT_AUTH_SNAPSHOT,
+    RPC_CONTEXT_BUILD_REQUEST,
+    RPC_CONTEXT_LOG_LABEL,
+)
 from ._request_types import AuthSnapshot, BuildRequest
 from ._session_config import CORE_LOGGER_NAME
 from ._session_helpers import resolve_sleep
@@ -163,7 +169,7 @@ class AuthRefreshMiddleware:
         sentinel fallback matches DrainMiddleware / RetryMiddleware /
         ErrorInjectionMiddleware).
 
-        Tracks ``context["auth_refreshed"]`` to enforce **at most one
+        Tracks ``RPC_CONTEXT_AUTH_REFRESHED`` to enforce **at most one
         refresh per logical call** even when ``RetryMiddleware`` (outside
         this middleware) re-invokes the chain on a 429/5xx that fires
         after a successful refresh. Without this flag the sequence
@@ -183,25 +189,25 @@ class AuthRefreshMiddleware:
            ``is_auth_error(exc)`` returns True AND no prior refresh.
         2. Call ``refresh_callable()`` (coalesced single-flight via
            :class:`AuthRefreshCoordinator`).
-        3. Mark ``context["auth_refreshed"] = True`` on success.
+        3. Mark ``RPC_CONTEXT_AUTH_REFRESHED`` on success.
         4. If the refresh callable itself raises, wrap in
            ``TransportAuthExpired(original=exc)`` and propagate.
         5. Optional post-refresh sleep (``refresh_retry_delay``).
         6. Increment ``rpc_auth_retries`` metric.
         7. Rebuild the request envelope when a ``snapshot_provider`` and
-           ``context["build_request"]`` are available.
+           ``RPC_CONTEXT_BUILD_REQUEST`` are available.
         8. Re-invoke ``next_call(retry_request)`` — exactly once. If the
            retry also raises, propagate unchanged (no second refresh,
            no recursion).
         """
-        log_label = request.context.get("log_label", "<unknown-chain-call>")
+        log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         try:
             return await next_call(request)
         except httpx.HTTPStatusError as exc:
             if (
                 not self._refresh_callback_enabled()
                 or not self._is_auth_error(exc)
-                or request.context.get("auth_refreshed")
+                or request.context.get(RPC_CONTEXT_AUTH_REFRESHED)
             ):
                 raise
 
@@ -221,7 +227,7 @@ class AuthRefreshMiddleware:
             # Mark BEFORE the retry so a 429 thrown by the retry then
             # caught by ``RetryMiddleware`` (outside us) doesn't trigger
             # a second refresh when it re-enters our chain leg.
-            request.context["auth_refreshed"] = True
+            request.context[RPC_CONTEXT_AUTH_REFRESHED] = True
 
             delay = self._refresh_retry_delay()
             if delay > 0:
@@ -249,7 +255,7 @@ class AuthRefreshMiddleware:
         if self._snapshot_provider is None:
             return request
 
-        raw_build_request = request.context.get("build_request")
+        raw_build_request = request.context.get(RPC_CONTEXT_BUILD_REQUEST)
         if raw_build_request is None:
             return request
 
@@ -257,7 +263,7 @@ class AuthRefreshMiddleware:
         snapshot = await self._snapshot_provider()
         # Keep ``auth_snapshot`` and the rebuilt envelope paired in one
         # synchronous block; see ``test_concurrency_refresh_race``.
-        request.context["auth_snapshot"] = snapshot
+        request.context[RPC_CONTEXT_AUTH_SNAPSHOT] = snapshot
         return materialize_rpc_request(
             build_request=build_request,
             snapshot=snapshot,

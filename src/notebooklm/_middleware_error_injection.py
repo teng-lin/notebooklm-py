@@ -91,6 +91,7 @@ import httpx
 from . import _error_injection
 from ._error_injection import ERROR_INJECT_ENV_VAR
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._middleware_context import RPC_CONTEXT_LOG_LABEL
 from ._session_config import CORE_LOGGER_NAME
 from ._transport_errors import (
     TransportRateLimited,
@@ -223,7 +224,7 @@ class ErrorInjectionMiddleware:
         #   Returning a plain ``RpcResponse`` here would
         #   skip ``AuthRefreshMiddleware`` entirely (codex iter-1 catch
         #   on PR 12.7 (429/5xx) + PR 12.8 (400)).
-        log_label = request.context.get("log_label", "<unknown-chain-call>")
+        log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         original = httpx.HTTPStatusError(
             f"HTTP {status_code}",
             request=synthetic_request,

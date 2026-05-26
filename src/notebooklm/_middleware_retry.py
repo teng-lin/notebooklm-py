@@ -33,9 +33,9 @@ Behavior preservation (vs. pre-PR-12.7):
   ``rpc_server_error_retries`` are incremented per retry attempt, same as
   the legacy code.
 - **Same disable_internal_retries gate** — read from
-  ``request.context["disable_internal_retries"]`` (post-resolution bool
-  produced by ``_idempotency.resolve_effective_disable_internal_retries``
-  before chain entry; see ADR-009 §"Per-request behavior").
+  ``RPC_CONTEXT_DISABLE_INTERNAL_RETRIES`` (post-resolution bool produced
+  by ``_idempotency.resolve_effective_disable_internal_retries`` before
+  chain entry; see ADR-009 §"Per-request behavior").
 - **Same exception types on exhaustion** —
   :class:`TransportRateLimited` /
   :class:`TransportServerError` re-raised verbatim so
@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING
 
 from ._backoff import compute_backoff_delay
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._middleware_context import RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, RPC_CONTEXT_LOG_LABEL
 from ._session_config import CORE_LOGGER_NAME
 from ._session_helpers import resolve_sleep
 from ._transport_errors import TransportRateLimited, TransportServerError, parse_retry_after
@@ -148,9 +149,11 @@ class RetryMiddleware:
         — the production path always populates it from
         :func:`_idempotency.resolve_effective_disable_internal_retries`.
         """
-        log_label = request.context.get("log_label", "<unknown-chain-call>")
+        log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         # Post-resolution bool — see ADR-009 §"Per-request behavior".
-        disable_internal_retries = bool(request.context.get("disable_internal_retries", False))
+        disable_internal_retries = bool(
+            request.context.get(RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, False)
+        )
 
         rate_limit_retries = 0
         server_error_retries = 0

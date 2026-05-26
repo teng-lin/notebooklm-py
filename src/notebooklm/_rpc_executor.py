@@ -47,7 +47,6 @@ from .rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
-from .types import RpcTelemetryEvent
 
 logger = logging.getLogger(__name__)
 
@@ -73,20 +72,6 @@ class RpcOwner(Protocol):
         rpc_method: str | None = None,
     ) -> httpx.Response: ...
 
-    async def _await_refresh(self) -> None: ...
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any: ...
-
     async def _rpc_call_impl(
         self,
         method: RPCMethod,
@@ -101,7 +86,19 @@ class RpcOwner(Protocol):
 
     def _increment_metrics(self, **increments: int | float) -> None: ...
 
-    async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None: ...
+    async def _await_refresh(self) -> None: ...
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+    ) -> Any: ...
 
 
 class RpcExecutor:

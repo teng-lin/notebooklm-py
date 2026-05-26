@@ -20,7 +20,8 @@ per logical RPC:
   :class:`RpcTelemetryEvent` so application-level ``on_rpc_event``
   callbacks fire (Prometheus exporter, OTEL bridge, custom logger, …).
 
-The emit fires only when ``request.context["rpc_method"]`` is present.
+The emit fires only when ``RPC_CONTEXT_RPC_METHOD`` is present in
+``request.context``.
 Other code paths through the chain (e.g. the chat streaming path in
 ``_chat_transport.send_authed_post``, which calls
 ``Session._perform_authed_post`` directly without minting an
@@ -67,6 +68,7 @@ from typing import TYPE_CHECKING
 
 from ._logging import get_request_id
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._middleware_context import RPC_CONTEXT_RPC_METHOD
 from ._types.common import RpcTelemetryEvent
 
 if TYPE_CHECKING:
@@ -103,7 +105,7 @@ class MetricsMiddleware:
         the pre-PR-12.4 behavior. When present, the value flows into
         :attr:`RpcTelemetryEvent.method`.
         """
-        rpc_method = request.context.get("rpc_method")
+        rpc_method = request.context.get(RPC_CONTEXT_RPC_METHOD)
         # ``perf_counter`` is monotonic and clock-jump-safe. The reading
         # happens here (not inside the success/failure branches) so the
         # elapsed accounting is identical across paths and trivially

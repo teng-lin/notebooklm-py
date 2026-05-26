@@ -33,6 +33,16 @@ from typing import Any, Protocol
 
 import httpx
 
+from ._middleware_context import (
+    ALLOWED_RPC_CONTEXT_KEYS,
+    RPC_CONTEXT_AUTH_REFRESHED,
+    RPC_CONTEXT_AUTH_SNAPSHOT,
+    RPC_CONTEXT_BUILD_REQUEST,
+    RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
+    RPC_CONTEXT_LOG_LABEL,
+    RPC_CONTEXT_RPC_METHOD,
+    RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
+)
 from ._request_types import AuthSnapshot, BuildRequest, materialize_build_request
 
 # ---------------------------------------------------------------------------
@@ -81,14 +91,13 @@ class RpcRequest:
     """Encoded ``batchexecute`` body bytes for this attempt."""
 
     context: dict[str, Any] = field(default_factory=dict)
-    """RPC-level metadata the chain reads (e.g. ``rpc_method``,
-    ``operation_variant``, ``disable_internal_retries``, ``build_request``,
-    ``log_label``). Read by middlewares; populated by the caller of the
-    chain (typically ``Session.rpc_call`` after PR 13.x lands).
+    """RPC-level metadata the chain reads.
 
-    Until PR 12.2 wires the chain in, no production code reads or writes
-    this dict; the contract is fixed here so middleware PRs 12.3–12.8 do
-    not re-spec it per extraction.
+    The allowed vocabulary is exported as
+    :data:`ALLOWED_RPC_CONTEXT_KEYS` and mirrored in ADR-009. Middlewares
+    and the transport terminal use the ``RPC_CONTEXT_*`` constants for
+    lookups and writes; adding a key requires updating this module, ADR-009,
+    and the lint-style unit test that guards the vocabulary.
     """
 
 
@@ -117,8 +126,8 @@ class RpcResponse:
 
     context: dict[str, Any] = field(default_factory=dict)
     """Propagated metadata. Typically the same dict as
-    :attr:`RpcRequest.context` (so a tracing middleware that wrote
-    ``request.context['trace_id']`` can read it back here) plus any
+    :attr:`RpcRequest.context` (so a middleware that wrote an allowed
+    ``RPC_CONTEXT_*`` key can read it back here) plus any
     response-side additions a middleware made.
     """
 
@@ -215,9 +224,9 @@ def build_chain(
     ``C.__call__(request, →T)``.
 
     This matches the chain ordering documented in ADR-009: ``[Drain,
-    Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` — Drain at
-    index 0 is the outermost wrapper, Tracing at index 5 is the innermost
-    wrapper around the terminal.
+    Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]`` —
+    Drain at index 0 is the outermost wrapper, Tracing at index 6 is the
+    innermost wrapper around the terminal.
 
     Implementation: wrap in reverse, so the last middleware in the sequence
     is composed first (it becomes the innermost wrapper, with ``terminal``
@@ -250,8 +259,16 @@ def build_chain(
 
 
 __all__ = [
+    "ALLOWED_RPC_CONTEXT_KEYS",
     "Middleware",
     "NextCall",
+    "RPC_CONTEXT_AUTH_REFRESHED",
+    "RPC_CONTEXT_AUTH_SNAPSHOT",
+    "RPC_CONTEXT_BUILD_REQUEST",
+    "RPC_CONTEXT_DISABLE_INTERNAL_RETRIES",
+    "RPC_CONTEXT_LOG_LABEL",
+    "RPC_CONTEXT_RPC_METHOD",
+    "RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS",
     "RpcRequest",
     "RpcResponse",
     "build_chain",

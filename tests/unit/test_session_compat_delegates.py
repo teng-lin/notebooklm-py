@@ -151,11 +151,10 @@ def test_session_delegate_calls_collaborator(name: str) -> None:
 
 def test_session_satisfies_rpc_owner_protocol_members() -> None:
     """RpcOwner requires ``_rpc_call_impl``, ``_await_refresh``,
-    ``_perform_authed_post``, ``rpc_call``, ``_increment_metrics`` and
-    ``_emit_rpc_event`` as methods (per ``src/notebooklm/_rpc_executor.py``
-    lines 54-97).  All must be present and callable; only the first two
-    are checked for delegate-shape because the others are facade
-    methods with legitimate logic bodies.
+    ``_perform_authed_post``, ``rpc_call`` and ``_increment_metrics`` as
+    methods (per ``src/notebooklm/_rpc_executor.py``). All must be present
+    and callable; only the first two are checked for delegate-shape because
+    the others are facade methods with legitimate logic bodies.
     """
     for name in (
         "_rpc_call_impl",
@@ -163,7 +162,6 @@ def test_session_satisfies_rpc_owner_protocol_members() -> None:
         "_perform_authed_post",
         "rpc_call",
         "_increment_metrics",
-        "_emit_rpc_event",
     ):
         assert hasattr(Session, name), f"Session missing RpcOwner member: {name}"
         assert callable(getattr(Session, name)), f"Session.{name} not callable"

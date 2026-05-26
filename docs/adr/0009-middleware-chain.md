@@ -210,7 +210,7 @@ Per-position rationale:
 | `log_label` | `str` | `Session._perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `Session._authed_post_chain_terminal` |
 | `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh, **before** the retry leg) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry on the post-refresh leg cannot drive a second refresh on a fresh 401) |
-| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_QUEUE_WAIT_CONTEXT_KEY` in `_middleware_semaphore.py`) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
+| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` from `_middleware_context.py`; `RPC_QUEUE_WAIT_CONTEXT_KEY` remains a compatibility alias in `_middleware_semaphore.py`) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
 
 Middlewares are forbidden from inventing new keys without an ADR update.
 The dict is mutable by reference (deliberately, per master plan
@@ -286,19 +286,12 @@ than deferred to a future arc):
   on the middleware instance or in a `contextvars.ContextVar` scoped to
   the call. Context keys are for cross-middleware contract.
 
-**Follow-up (not implemented here, tracked separately):** an
-`ast.NodeVisitor`-based lint (run under `ruff`'s plugin surface, a
-project-local hook, or a `pytest` collector) that scans
-`src/notebooklm/_middleware*.py` and `src/notebooklm/_session.py` for
-`request.context[<literal>]` reads/writes and `context.get(<literal>)`
-calls, and fails CI when a literal key is encountered that is not in the
-table above. This closes the "the table drifts behind the code" failure
-mode the table alone cannot prevent — the `auth_snapshot` key landed in
-PR #1018 (`b856e01`) without an ADR update; this arc-1 amendment is what
-backfills the table row, and the lint follow-up is what would have
-caught the gap automatically. Until the lint lands, the policy is
-enforced by reviewer attention; treat any `request.context["…"]`
-literal in a diff as a load-bearing review checkpoint.
+The vocabulary is also centralized in
+`_middleware_context.ALLOWED_RPC_CONTEXT_KEYS`, and
+`tests/unit/test_middleware_context_contract.py` scans production
+middleware and transport code for non-approved literal context keys.
+Adding a key must update this table, `_middleware_context.py`, and the
+guard test in the same PR.
 
 ### AuthRefreshMiddleware constructor signature (Tier-13 target, NOT shipped in Tier-12)
 
@@ -493,7 +486,7 @@ are documented here so Tier-13 callers have an authoritative reference.
 The `max_concurrent_rpcs` slot is acquired by `SemaphoreMiddleware`,
 which sits between `MetricsMiddleware` and `RetryMiddleware` in the
 chain. The middleware writes the per-call queue-wait duration to
-`request.context["rpc_queue_wait_seconds"]` and
+`RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` and
 `Session._perform_authed_post` forwards that value to
 `ClientMetrics.record_rpc_queue_wait` after the chain returns.
 
@@ -550,7 +543,7 @@ build_request_factory: Callable[[AuthSnapshot], BuildRequestResult]
 PR 12.8 shipped a simpler `AuthRefreshMiddleware` that catches
 `httpx.HTTPStatusError`, drives the coalesced refresh via
 `AuthRefreshCoordinator.await_refresh`, marks
-`request.context["auth_refreshed"] = True`, and re-invokes `next_call`
+`RPC_CONTEXT_AUTH_REFRESHED`, and re-invokes `next_call`
 **with the same `RpcRequest`** — the terminal re-reads the now-refreshed
 `AuthSnapshot` from the coordinator and rebuilds headers/url/body before
 calling `Kernel.post`, preserving the pre-Tier-12 semantics.
