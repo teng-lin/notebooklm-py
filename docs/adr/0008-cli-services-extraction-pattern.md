@@ -51,6 +51,12 @@ Service modules must:
 - Keep presentation concerns out of the module — return structured results, let the caller decide how to render.
 - Live next to their consumers — one service module per domain, *not* a `cli/services/utils.py` grab-bag.
 
+During staged migrations, transitional service modules may appear in the
+`tests/unit/cli/test_services_boundary.py` inventory with exact documented
+violations. That inventory is not an approval to add new rendering or Click
+reach-ins; it is the burn-down list for moving output, confirmation, and exit
+policy back to command modules.
+
 The pattern is deliberately *light*: there is no service-layer base class, no DI container, no plugin system. Service modules are plain Python modules with plain functions.
 
 ## Consequences

@@ -2,7 +2,9 @@
 
 This file scans ``cli/services/listing.py`` for forbidden imports — top-level
 ``click`` and relative imports from sibling presentation/runtime modules
-(``..rendering``, ``..error_handler``, ``..runtime``).
+(``..rendering``, ``..error_handler``, ``..runtime``). It also inventories the
+Stage-3 transitional exceptions for the workflow services still being migrated
+out of rendering/exit ownership.
 
 Scope: only ``cli/services/listing.py`` is enforced here. The audit (I0) also
 flagged ``cli/services/login.py``, but between the audit and this PR landing,
@@ -14,9 +16,10 @@ unrelated ~1500-2000 lines of refactor work. See
 ``.sisyphus/drafts/pr-c-migration-map.md`` for the scope decision.
 
 The guard is a single source of truth — to extend it to the ``login/``
-package, add the module paths to ``GUARDED_PATHS`` and the existing
-``test_login_package_boundary`` skeleton becomes the entry point. The two
-helper functions below stay agnostic of which file is being scanned.
+package, add the module paths to ``GUARDED_PATHS`` once clean, or to
+``TRANSITIONAL_GUARDED_PATHS`` with exact violations while a migration is in
+flight. The two helper functions below stay agnostic of which file is being
+scanned.
 """
 
 from __future__ import annotations
@@ -42,6 +45,37 @@ FORBIDDEN_RELATIVE_PARENTS = {"rendering", "error_handler", "runtime"}
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 GUARDED_PATHS = {
     "cli/services/listing.py": REPO_ROOT / "src" / "notebooklm" / "cli" / "services" / "listing.py",
+}
+
+SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
+
+# Stage 3 migration inventory. These modules currently own presentation and/or
+# exit policy, which the architecture plan moves back to the command layer.
+# Keep this list exact: adding a new violation should fail this test; removing
+# one should update the expected list in the same PR.
+TRANSITIONAL_GUARDED_PATHS = {
+    "cli/services/artifact_generation.py": (
+        SERVICES_ROOT / "artifact_generation.py",
+        [
+            "artifact_generation.py:9: forbidden relative import: '..error_handler'",
+            "artifact_generation.py:10: forbidden relative import: '..rendering'",
+        ],
+    ),
+    "cli/services/source_content.py": (
+        SERVICES_ROOT / "source_content.py",
+        [
+            "source_content.py:18: forbidden relative import: '..error_handler'",
+            "source_content.py:19: forbidden relative import: '..rendering'",
+        ],
+    ),
+    "cli/services/source_mutations.py": (
+        SERVICES_ROOT / "source_mutations.py",
+        [
+            "source_mutations.py:18: forbidden top-level import: 'click'",
+            "source_mutations.py:21: forbidden relative import: '..error_handler'",
+            "source_mutations.py:22: forbidden relative import: '..rendering'",
+        ],
+    ),
 }
 
 
@@ -132,6 +166,24 @@ def test_services_boundary_no_forbidden_imports(logical_name, path):
     violations = _boundary_violations(path)
     assert not violations, f"{logical_name} violates ADR-008 boundary:\n  " + "\n  ".join(
         violations
+    )
+
+
+@pytest.mark.parametrize(
+    "logical_name,path,expected_violations",
+    sorted((name, *entry) for name, entry in TRANSITIONAL_GUARDED_PATHS.items()),
+)
+def test_transitional_services_boundary_violations_are_documented(
+    logical_name, path, expected_violations
+):
+    """Stage-3 service migrations must not grow new presentation/runtime reach-ins."""
+    assert path.exists(), f"Expected guarded service module at {path}"
+    violations = _boundary_violations(path)
+    assert violations == expected_violations, (
+        f"{logical_name} ADR-008 boundary inventory changed.\n"
+        "If this removes a violation, update the expected list in the same PR.\n"
+        "If this adds a violation, move rendering/exit policy back to the command layer.\n"
+        "Current violations:\n  " + "\n  ".join(violations)
     )
 
 
