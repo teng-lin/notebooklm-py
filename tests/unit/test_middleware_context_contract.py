@@ -142,7 +142,7 @@ class _ContextLiteralVisitor(ast.NodeVisitor):
     def _record_key(self, key: str, lineno: int) -> None:
         if key in ALLOWED_RPC_CONTEXT_KEYS:
             return
-        relpath = self.path.relative_to(ROOT)
+        relpath = self.path.relative_to(ROOT).as_posix()
         self.violations.append(f"{relpath}:{lineno}: {key!r}")
 
 
