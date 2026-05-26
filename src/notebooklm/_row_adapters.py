@@ -418,6 +418,8 @@ class ArtifactRow:
         metadata = self._list_at_top_level(self._SLIDE_DECK_METADATA_POS)
         if metadata is None:
             return None
+        if len(metadata) <= self._SLIDE_DECK_PPTX_URL_POS:
+            return None
         url = safe_index(
             metadata,
             self._SLIDE_DECK_PPTX_URL_POS,

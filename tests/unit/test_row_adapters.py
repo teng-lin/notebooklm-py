@@ -350,6 +350,17 @@ class TestArtifactPayloadAccessors:
         assert row.slide_deck_pdf_url == "https://example.com/slides.pdf"
         assert row.slide_deck_pptx_url == "https://example.com/slides.pptx"
 
+    def test_slide_deck_missing_optional_pptx_url_returns_none_strict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+        raw = _full_row(type_code=ArtifactTypeCode.SLIDE_DECK)
+        raw.append([["config"], "Slides", [["slide"]], "https://example.com/slides.pdf"])
+
+        row = ArtifactRow(raw)
+        assert row.slide_deck_pdf_url == "https://example.com/slides.pdf"
+        assert row.slide_deck_pptx_url is None
+
     def test_report_markdown_accepts_wrapper_and_direct_string(self) -> None:
         wrapped = _full_row(type_code=ArtifactTypeCode.REPORT)
         wrapped[ArtifactRow._REPORT_MARKDOWN_POS] = ["# Wrapped"]
