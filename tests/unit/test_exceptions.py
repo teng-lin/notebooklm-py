@@ -131,6 +131,18 @@ class TestNotFoundErrorUmbrella:
         """NotFoundError lives under the top-level NotebookLMError umbrella."""
         assert issubclass(NotFoundError, NotebookLMError)
 
+    def test_not_found_error_itself_is_not_an_rpc_error(self):
+        """The umbrella must NOT inherit from RPCError.
+
+        Pairs with ``test_source_not_found_does_not_gain_rpc_error`` and
+        ``test_artifact_not_found_does_not_gain_rpc_error`` — together
+        these guard that the RPCError asymmetry (only
+        :class:`NotebookNotFoundError` inherits from :class:`RPCError`)
+        is preserved end-to-end, including at the umbrella level.
+        """
+        assert not issubclass(NotFoundError, RPCError)
+        assert RPCError not in NotFoundError.__mro__
+
     def test_not_found_error_catches_notebook_not_found(self):
         """`except NotFoundError` catches NotebookNotFoundError."""
         assert issubclass(NotebookNotFoundError, NotFoundError)

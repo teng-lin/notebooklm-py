@@ -114,13 +114,19 @@ class NotFoundError(NotebookLMError):
     and artifacts in one ``except`` clause::
 
         try:
-            await client.notebooks.get(nb_id)
-            await client.sources.get(nb_id, src_id)
-            await client.artifacts.get(nb_id, art_id)
+            notebook = await client.notebooks.get(nb_id)
+            source = await client.sources.wait_until_ready(nb_id, src_id)
+            await client.artifacts.download_audio(nb_id, dest, audio_id)
         except NotFoundError as e:
             # Catches NotebookNotFoundError, SourceNotFoundError,
             # and ArtifactNotFoundError uniformly.
             handle_missing_resource(e)
+
+    The example uses methods that *raise* a ``*NotFoundError`` on missing
+    IDs (:meth:`NotebooksAPI.get`, :meth:`SourcesAPI.wait_until_ready`,
+    the artifact download / content paths). :meth:`SourcesAPI.get` and
+    :meth:`ArtifactsAPI.get` instead return ``None`` for missing IDs — use
+    them when you want a lookup that does not trigger the umbrella.
 
     Subclasses retain their existing type-specific bases — for example,
     :class:`SourceNotFoundError` is still a :class:`SourceError`, and

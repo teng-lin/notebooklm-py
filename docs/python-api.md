@@ -228,7 +228,7 @@ from notebooklm import NotFoundError
 try:
     notebook = await client.notebooks.get(nb_id)
     source = await client.sources.wait_until_ready(nb_id, src_id)
-    await client.artifacts.download_audio(nb_id, audio_id, dest)
+    await client.artifacts.download_audio(nb_id, dest, audio_id)
 except NotFoundError as e:
     # Catches NotebookNotFoundError, SourceNotFoundError,
     # and ArtifactNotFoundError uniformly.
