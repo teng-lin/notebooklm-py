@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
@@ -379,6 +379,12 @@ class IdempotencyRegistry:
             raise KeyError(f"IdempotencyRegistry has no (method, None) default for {method.name!r}")
         return default
 
+    def iter_entries(self) -> Iterator[tuple[RPCMethod, str | None, IdempotencyEntry]]:
+        """Yield a snapshot of ``(method, variant, entry)`` rows."""
+        for method, method_entries in self._entries.items():
+            for variant, entry in method_entries.items():
+                yield method, variant, entry
+
     def _seed_defaults(self) -> None:
         """Populate every :class:`~notebooklm.rpc.RPCMethod` with the
         UNCLASSIFIED placeholder at ``variant=None``.
@@ -590,10 +596,17 @@ IDEMPOTENCY_REGISTRY.register(
 # Wave 2 classifications (P0-3 side-effects + P1-2 notebooks)
 # ----------------------------------------------------------------------------
 #
-# These entries replace the UNCLASSIFIED placeholders for the five mutating
-# RPCs whose side-effect semantics are well-understood and stable. The full
+# These entries replace the UNCLASSIFIED placeholders for mutating RPCs whose
+# side-effect semantics are well-understood and stable. The full
 # audit decision matrix lives in ADR-005
 # (``docs/adr/0005-idempotency-taxonomy.md``); the short version follows.
+#
+# CREATE_NOTEBOOK
+#   Mutating create with an executable wrapper in ``NotebooksAPI.create``:
+#   the caller captures a title/baseline probe before issuing the RPC and
+#   retries only after probing for a committed notebook. Classification:
+#   ``PROBE_THEN_CREATE`` so raw ``rpc_call(CREATE_NOTEBOOK, ...)`` disables
+#   blind transport retries too.
 #
 # DELETE_NOTEBOOK / DELETE_SOURCE / DELETE_ARTIFACT
 #   Server-side delete is idempotent: replaying the request after a 5xx /
@@ -621,6 +634,15 @@ IDEMPOTENCY_REGISTRY.register(
 #   re-issuing. Wave-2 scope is the classification (which suppresses the
 #   blind retry today); the caller-side probe-then-create wrapper is a
 #   follow-up.
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.CREATE_NOTEBOOK,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    notes=(
+        "notebook create has an executable title/baseline probe wrapper in "
+        "NotebooksAPI.create; raw rpc_call paths must also suppress blind "
+        "transport retries to avoid duplicate notebooks on commit-lost errors"
+    ),
+)
 IDEMPOTENCY_REGISTRY.register(
     RPCMethod.DELETE_NOTEBOOK,
     IdempotencyPolicy.IDEMPOTENT_SET_OP,
