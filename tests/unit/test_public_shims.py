@@ -171,6 +171,16 @@ def test_research_api_backward_compat_classmethod_delegates():
     assert isinstance(result, CitedSourceSelection)
 
 
+def test_research_api_extract_report_urls_backward_compat_classmethod_delegates():
+    """notebooklm._research.ResearchAPI.extract_report_urls still works."""
+    from notebooklm._research import ResearchAPI
+    from notebooklm.research import extract_report_urls
+
+    report = "See [Example](https://Example.com/path/)."
+
+    assert ResearchAPI.extract_report_urls(report) == extract_report_urls(report)
+
+
 def test_research_api_reexports_cited_source_selection_for_back_compat():
     """notebooklm._research.CitedSourceSelection continues to resolve."""
     from notebooklm._research import CitedSourceSelection as Legacy

@@ -10,7 +10,7 @@ import pytest
 import notebooklm._research as research_module
 from notebooklm import NotebookLMClient
 from notebooklm._research import ResearchAPI
-from notebooklm.research import normalize_citation_url
+from notebooklm.research import extract_report_urls, normalize_citation_url, select_cited_sources
 from notebooklm.rpc import RPCMethod
 
 
@@ -68,14 +68,14 @@ class TestCitedSourceSelection:
         )
 
     def test_extract_report_urls_normalizes_markdown_and_bare_urls(self):
-        urls = ResearchAPI.extract_report_urls(
+        urls = extract_report_urls(
             "See [Example](https://Example.com/a/) and https://example.com/b."
         )
 
         assert urls == {"https://example.com/a", "https://example.com/b"}
 
     def test_extract_report_urls_keeps_balanced_parentheses(self):
-        urls = ResearchAPI.extract_report_urls(
+        urls = extract_report_urls(
             "See [Function](https://en.wikipedia.org/wiki/Function_(mathematics)) "
             "and https://example.com/Topic_(research)."
         )
@@ -86,7 +86,7 @@ class TestCitedSourceSelection:
         }
 
     def test_extract_report_urls_ignores_markdown_images(self):
-        urls = ResearchAPI.extract_report_urls(
+        urls = extract_report_urls(
             "![chart](https://example.com/chart_(v2).png) and "
             '![titled](https://example.com/titled.png "Chart title") '
             "![](https://example.com/empty.png) "
@@ -107,7 +107,7 @@ class TestCitedSourceSelection:
             {"title": "No URL"},
         ]
 
-        selection = ResearchAPI.select_cited_sources(
+        selection = select_cited_sources(
             sources,
             "Final report cites [the source](https://example.com/cited).",
         )
@@ -128,7 +128,7 @@ class TestCitedSourceSelection:
             "url": "https://example.com/report",
         }
 
-        selection = ResearchAPI.select_cited_sources(
+        selection = select_cited_sources(
             [report_source],
             "Final report cites https://example.com/report",
         )
@@ -140,7 +140,7 @@ class TestCitedSourceSelection:
         sources = [{"title": "Source", "url": "https://example.com/source"}]
 
         with caplog.at_level(logging.WARNING, logger="notebooklm.research"):
-            selection = ResearchAPI.select_cited_sources(sources, "# Report without links")
+            selection = select_cited_sources(sources, "# Report without links")
 
         assert selection.used_fallback is True
         assert selection.sources == sources
@@ -150,7 +150,7 @@ class TestCitedSourceSelection:
         sources = [{"title": "Source", "url": "https://example.com/source"}]
 
         with caplog.at_level(logging.WARNING, logger="notebooklm.research"):
-            selection = ResearchAPI.select_cited_sources(
+            selection = select_cited_sources(
                 sources,
                 "Report cites https://example.com/other",
             )
