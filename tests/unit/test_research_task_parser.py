@@ -5,12 +5,15 @@ import logging
 import pytest
 
 from notebooklm._research_task_parser import (
+    ResearchSource,
+    ResearchTask,
     _extract_query_text,
     _extract_sources_and_summary,
     _extract_status_code,
     _extract_task_id,
     _extract_task_info,
     extract_legacy_report_chunks,
+    parse_research_task_models,
     parse_research_tasks,
     parse_result_type,
 )
@@ -265,6 +268,35 @@ class TestParseResearchTasks:
                 "report": "",
             }
         ]
+
+    def test_parse_research_task_models_returns_typed_models(self):
+        sources = [["https://example.com", "Example", "desc", "web"]]
+        task_info = [None, ["query"], None, [sources, "Summary"], 2]
+
+        tasks = parse_research_task_models([[["task_123", task_info]]])
+
+        assert len(tasks) == 1
+        assert isinstance(tasks[0], ResearchTask)
+        assert isinstance(tasks[0].sources[0], ResearchSource)
+        assert tasks[0].task_id == "task_123"
+        assert tasks[0].status == "completed"
+        assert tasks[0].sources[0].result_type == 1
+        assert tasks[0].to_public_dict() == parse_research_tasks([[["task_123", task_info]]])[0]
+
+    def test_research_source_public_dict_preserves_unknown_result_type(self):
+        source = ResearchSource(
+            url="https://example.com/video",
+            title="Video",
+            result_type="video",
+            research_task_id="task_123",
+        )
+
+        assert source.to_public_dict() == {
+            "url": "https://example.com/video",
+            "title": "Video",
+            "result_type": "video",
+            "research_task_id": "task_123",
+        }
 
     def test_current_deep_research_report_source(self):
         sources = [[None, ["Deep Report", "# Report"], None, 1]]

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 from .rpc import RPCMethod, safe_index
 
@@ -17,15 +18,90 @@ _RESEARCH_RESULT_TYPE_ALIASES = {
     "drive": 2,
     "report": 5,
 }
+RESEARCH_RESULT_TYPE_WEB = 1
+RESEARCH_RESULT_TYPE_DRIVE = 2
+RESEARCH_RESULT_TYPE_REPORT = 5
+
+ResearchResultType = int | str
+ResearchStatus = Literal["in_progress", "completed", "failed"]
 
 
-def parse_result_type(value: Any) -> int | str:
+@dataclass(frozen=True)
+class ResearchSource:
+    """Typed internal representation of one parsed research source."""
+
+    url: str
+    title: str
+    result_type: ResearchResultType = RESEARCH_RESULT_TYPE_WEB
+    research_task_id: str | None = None
+    report_markdown: str = ""
+
+    @classmethod
+    def from_public_dict(cls, source: dict[str, Any]) -> ResearchSource:
+        """Normalize a public source dictionary into the internal model."""
+        url_raw = source.get("url", "")
+        title_raw = source.get("title", "Untitled")
+        research_task_id_raw = source.get("research_task_id")
+        report_markdown_raw = source.get("report_markdown", "")
+
+        return cls(
+            url=url_raw if isinstance(url_raw, str) else "",
+            title=title_raw if isinstance(title_raw, str) else "",
+            result_type=parse_result_type(source.get("result_type", RESEARCH_RESULT_TYPE_WEB)),
+            research_task_id=research_task_id_raw
+            if isinstance(research_task_id_raw, str)
+            else None,
+            report_markdown=report_markdown_raw if isinstance(report_markdown_raw, str) else "",
+        )
+
+    @property
+    def is_report(self) -> bool:
+        return self.result_type == RESEARCH_RESULT_TYPE_REPORT
+
+    def to_public_dict(self) -> dict[str, Any]:
+        """Return the compatibility dictionary shape exposed by public APIs."""
+        public: dict[str, Any] = {
+            "url": self.url,
+            "title": self.title,
+            "result_type": self.result_type,
+        }
+        if self.research_task_id is not None:
+            public["research_task_id"] = self.research_task_id
+        if self.report_markdown:
+            public["report_markdown"] = self.report_markdown
+        return public
+
+
+@dataclass(frozen=True)
+class ResearchTask:
+    """Typed internal representation of one POLL_RESEARCH task."""
+
+    task_id: str
+    status: ResearchStatus
+    query: str = ""
+    sources: tuple[ResearchSource, ...] = field(default_factory=tuple)
+    summary: str = ""
+    report: str = ""
+
+    def to_public_dict(self) -> dict[str, Any]:
+        """Return the compatibility dictionary shape exposed by public APIs."""
+        return {
+            "task_id": self.task_id,
+            "status": self.status,
+            "query": self.query,
+            "sources": [source.to_public_dict() for source in self.sources],
+            "summary": self.summary,
+            "report": self.report,
+        }
+
+
+def parse_result_type(value: Any) -> ResearchResultType:
     """Normalize known research source type tags while preserving unknown tags."""
     if isinstance(value, int):
         return value
     if isinstance(value, str):
         return _RESEARCH_RESULT_TYPE_ALIASES.get(value.lower(), value)
-    return 1
+    return RESEARCH_RESULT_TYPE_WEB
 
 
 def extract_legacy_report_chunks(src: list[Any]) -> str:
@@ -145,7 +221,7 @@ def _extract_sources_and_summary(task_info: Any) -> tuple[list[Any], str | None]
     return sources_data, summary
 
 
-def _status_from_code(status_code: int | None) -> str:
+def _status_from_code(status_code: int | None) -> ResearchStatus:
     # Research: 1=in_progress, 2=completed, 6=completed (deep research).
     # Unknown non-null codes are terminal failures so wait loops do not spin
     # until timeout after the backend rejects a task.
@@ -158,7 +234,7 @@ def _status_from_code(status_code: int | None) -> str:
 
 def _parse_source_row(
     src: Any, *, task_id: str, report_found: bool = False
-) -> tuple[dict[str, Any] | None, str]:
+) -> tuple[ResearchSource | None, str]:
     if not isinstance(src, list) or len(src) < 2:
         return None, ""
 
@@ -170,7 +246,7 @@ def _parse_source_row(
     # Deep research (legacy): [None, title, None, type, ..., [report_markdown]]
     # Deep research (current): [None, [title, report_markdown], None, type, ...]
     # src[3] is the authoritative result_type when present.
-    result_type = parse_result_type(src[3]) if len(src) > 3 else 1
+    result_type = parse_result_type(src[3]) if len(src) > 3 else RESEARCH_RESULT_TYPE_WEB
     if src[0] is None and len(src) > 1:
         if (
             isinstance(src[1], list)
@@ -181,31 +257,37 @@ def _parse_source_row(
             title = src[1][0]
             source_report = src[1][1]
             url = ""
-            if result_type == 1:
-                result_type = 5
+            if result_type == RESEARCH_RESULT_TYPE_WEB:
+                result_type = RESEARCH_RESULT_TYPE_REPORT
         elif isinstance(src[1], str):
             title = src[1]
             url = ""
-            if result_type == 1:
-                result_type = 5
+            if result_type == RESEARCH_RESULT_TYPE_WEB:
+                result_type = RESEARCH_RESULT_TYPE_REPORT
     elif isinstance(src[0], str) or len(src) >= 3:
         url = src[0] if isinstance(src[0], str) else ""
         title = src[1] if len(src) > 1 and isinstance(src[1], str) else ""
 
     parsed_source = None
     if title or url:
-        parsed_source = {
-            "url": url,
-            "title": title,
-            "result_type": result_type,
-            "research_task_id": task_id,
-        }
+        parsed_source = ResearchSource(
+            url=url,
+            title=title,
+            result_type=result_type,
+            research_task_id=task_id,
+        )
 
     report = source_report
     if not report and not report_found:
         report = extract_legacy_report_chunks(src)
     if report and parsed_source is not None:
-        parsed_source["report_markdown"] = report
+        parsed_source = ResearchSource(
+            url=parsed_source.url,
+            title=parsed_source.title,
+            result_type=parsed_source.result_type,
+            research_task_id=parsed_source.research_task_id,
+            report_markdown=report,
+        )
 
     return parsed_source, report
 
@@ -218,9 +300,9 @@ def _unwrap_poll_result(result: Any) -> list[Any]:
     return result
 
 
-def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
-    """Parse a raw ``POLL_RESEARCH`` result into task dictionaries."""
-    parsed_tasks: list[dict[str, Any]] = []
+def parse_research_task_models(result: Any) -> list[ResearchTask]:
+    """Parse a raw ``POLL_RESEARCH`` result into typed task models."""
+    parsed_tasks: list[ResearchTask] = []
     for task_data in _unwrap_poll_result(result):
         if not isinstance(task_data, list):
             continue
@@ -234,7 +316,7 @@ def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
         sources_data, summary_opt = _extract_sources_and_summary(task_info)
         status_code = _extract_status_code(task_info)
 
-        parsed_sources = []
+        parsed_sources: list[ResearchSource] = []
         report = ""
         for src in sources_data:
             parsed_source, source_report = _parse_source_row(
@@ -246,14 +328,19 @@ def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
                 report = source_report
 
         parsed_tasks.append(
-            {
-                "task_id": task_id,
-                "status": _status_from_code(status_code),
-                "query": query_text,
-                "sources": parsed_sources,
-                "summary": summary_opt or "",
-                "report": report,
-            }
+            ResearchTask(
+                task_id=task_id,
+                status=_status_from_code(status_code),
+                query=query_text,
+                sources=tuple(parsed_sources),
+                summary=summary_opt or "",
+                report=report,
+            )
         )
 
     return parsed_tasks
+
+
+def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
+    """Parse a raw ``POLL_RESEARCH`` result into compatibility dictionaries."""
+    return [task.to_public_dict() for task in parse_research_task_models(result)]

@@ -11,15 +11,10 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from ._research_task_parser import RESEARCH_RESULT_TYPE_REPORT, parse_result_type
 from .types import CitedSourceSelection
 
 logger = logging.getLogger(__name__)
-
-_RESEARCH_RESULT_TYPE_ALIASES = {
-    "web": 1,
-    "drive": 2,
-    "report": 5,
-}
 
 _URL_RE = r"https?://(?:[^\s<>\]\(\)\"']+|\([^\s<>\]\(\)\"']*\))+"
 _URL_PATTERN = re.compile(_URL_RE)
@@ -28,7 +23,7 @@ _MARKDOWN_LINK_PATTERN = re.compile(rf"(?<!!)\[[^\]]+\]\(({_URL_RE})\)")
 _TRAILING_URL_PUNCTUATION = ".,;:!?"
 
 
-def normalize_url(url: str) -> str:
+def normalize_citation_url(url: str) -> str:
     """Normalize source/report URLs for citation matching."""
     parsed = urlsplit(url.rstrip(_TRAILING_URL_PUNCTUATION))
     return urlunsplit(
@@ -42,6 +37,14 @@ def normalize_url(url: str) -> str:
     )
 
 
+def normalize_url(url: str) -> str:
+    """Normalize source/report URLs for citation matching.
+
+    Backward-compatible alias for :func:`normalize_citation_url`.
+    """
+    return normalize_citation_url(url)
+
+
 def extract_report_urls(report: str) -> set[str]:
     """Extract normalized URLs from research report markdown/text."""
     if not report:
@@ -49,10 +52,12 @@ def extract_report_urls(report: str) -> set[str]:
 
     # Collect URL-like references from both markdown links and bare text,
     # then subtract markdown images because embedded assets are not citations.
-    urls = {normalize_url(match.group(1)) for match in _MARKDOWN_LINK_PATTERN.finditer(report)}
-    urls.update(normalize_url(match.group(0)) for match in _URL_PATTERN.finditer(report))
+    urls = {
+        normalize_citation_url(match.group(1)) for match in _MARKDOWN_LINK_PATTERN.finditer(report)
+    }
+    urls.update(normalize_citation_url(match.group(0)) for match in _URL_PATTERN.finditer(report))
     image_urls = {
-        normalize_url(match.group(1)) for match in _MARKDOWN_IMAGE_PATTERN.finditer(report)
+        normalize_citation_url(match.group(1)) for match in _MARKDOWN_IMAGE_PATTERN.finditer(report)
     }
     urls.difference_update(image_urls)
     return {url for url in urls if url.startswith(("http://", "https://"))}
@@ -84,7 +89,7 @@ def select_cited_sources(
     report_sources = [
         source
         for source in sources
-        if source.get("result_type") == _RESEARCH_RESULT_TYPE_ALIASES["report"]
+        if parse_result_type(source.get("result_type")) == RESEARCH_RESULT_TYPE_REPORT
         and source.get("report_markdown")
     ]
     report_source_ids = {id(source) for source in report_sources}
@@ -93,7 +98,7 @@ def select_cited_sources(
         for source in sources
         if id(source) not in report_source_ids
         and isinstance(source.get("url"), str)
-        and normalize_url(source["url"]) in cited_urls
+        and normalize_citation_url(source["url"]) in cited_urls
     ]
 
     if not matched_url_sources:
@@ -115,4 +120,9 @@ def select_cited_sources(
     )
 
 
-__all__ = ["extract_report_urls", "normalize_url", "select_cited_sources"]
+__all__ = [
+    "extract_report_urls",
+    "normalize_citation_url",
+    "normalize_url",
+    "select_cited_sources",
+]

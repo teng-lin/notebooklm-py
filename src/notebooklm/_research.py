@@ -10,12 +10,13 @@ import asyncio
 import logging
 import time
 import warnings
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
-from ._research_task_parser import parse_research_tasks
+from ._research_task_parser import ResearchSource, ResearchTask, parse_research_task_models
 from ._session_contracts import RpcCaller
 from .exceptions import (
     NetworkError,
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 __all__ = ["CitedSourceSelection", "ResearchAPI"]
 
 logger = logging.getLogger(__name__)
+
+ResearchSourceInput = ResearchSource | Mapping[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -52,12 +55,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _normalize_import_url(url: str) -> str:
+def _normalize_import_verification_url(url: str) -> str:
     """Lowercase scheme + host and strip a trailing slash for comparison.
 
-    Distinct from ``notebooklm.research.normalize_url`` (used for matching
-    URLs cited inside report markdown): this variant drops the URL fragment
-    because the server stores fragments stripped, and skips the
+    Distinct from ``notebooklm.research.normalize_citation_url`` (used for
+    matching URLs cited inside report markdown): this variant drops the URL
+    fragment because the server stores fragments stripped, and skips the
     trailing-punctuation strip because these URLs come from a structured
     ``sources.list`` payload rather than free-form markdown.
     """
@@ -73,19 +76,29 @@ def _normalize_import_url(url: str) -> str:
     )
 
 
-def _source_url_norm(source: dict[str, Any]) -> str | None:
-    url = source.get("url")
-    if not isinstance(url, str) or not url:
+def _source_import_verification_url(source: ResearchSource) -> str | None:
+    url = source.url
+    if not url:
         return None
-    return _normalize_import_url(url)
+    return _normalize_import_verification_url(url)
 
 
-def _requested_urls_norm(sources: list[dict[str, Any]]) -> set[str]:
-    return {url for source in sources if (url := _source_url_norm(source))}
+def _requested_import_verification_urls(sources: Sequence[ResearchSource]) -> set[str]:
+    return {url for source in sources if (url := _source_import_verification_url(source))}
 
 
-def _no_url_entry_count(sources: list[dict[str, Any]]) -> int:
-    return sum(1 for source in sources if _source_url_norm(source) is None)
+def _no_import_verification_url_entry_count(sources: Sequence[ResearchSource]) -> int:
+    return sum(1 for source in sources if _source_import_verification_url(source) is None)
+
+
+def _coerce_research_source(source: ResearchSourceInput) -> ResearchSource:
+    if isinstance(source, ResearchSource):
+        return source
+    return ResearchSource.from_public_dict(dict(source))
+
+
+def _coerce_research_sources(sources: Sequence[ResearchSourceInput]) -> list[ResearchSource]:
+    return [_coerce_research_source(source) for source in sources]
 
 
 def _imported_source_entry(source: Source) -> dict[str, str]:
@@ -214,6 +227,57 @@ class ResearchAPI:
         """
         return _research_pub.select_cited_sources(sources, report)
 
+    async def _poll_task_models(self, notebook_id: str) -> list[ResearchTask]:
+        params = [None, None, notebook_id]
+        result = await self._rpc.rpc_call(
+            RPCMethod.POLL_RESEARCH,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+        )
+        return parse_research_task_models(result)
+
+    @staticmethod
+    def _select_polled_tasks(
+        parsed_tasks: list[ResearchTask],
+        *,
+        notebook_id: str,
+        task_id: str | None,
+        warn_on_ambiguous: bool,
+    ) -> list[ResearchTask]:
+        # Task-id discriminator: when supplied, filter parsed_tasks down to
+        # the matched task so callers iterating ``tasks`` don't see siblings.
+        # When omitted but multiple tasks are in flight, surface the latent
+        # cross-wire hazard via a DeprecationWarning while preserving legacy
+        # latest-task selection.
+        if task_id is not None:
+            return [task for task in parsed_tasks if task.task_id == task_id]
+        if warn_on_ambiguous and len(parsed_tasks) > 1:
+            warnings.warn(
+                (
+                    f"ResearchAPI.poll(notebook_id={notebook_id!r}) returned "
+                    f"{len(parsed_tasks)} in-flight tasks but no task_id "
+                    f"discriminator was supplied. The latest task is "
+                    f"returned for back-compat, but this is ambiguous and "
+                    f"may surface results for the wrong task. Pass "
+                    f"task_id=<id> (from research.start) to select "
+                    f"explicitly. The None default will be removed in a "
+                    f"future major release."
+                ),
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        return parsed_tasks
+
+    @staticmethod
+    def _public_poll_result(
+        selected_task: ResearchTask,
+        parsed_tasks: list[ResearchTask],
+    ) -> dict[str, Any]:
+        return {
+            **selected_task.to_public_dict(),
+            "tasks": [task.to_public_dict() for task in parsed_tasks],
+        }
+
     async def start(
         self,
         notebook_id: str,
@@ -329,45 +393,15 @@ class ResearchAPI:
             shape as the empty-poll case.
         """
         logger.debug("Polling research status for notebook %s", notebook_id)
-        params = [None, None, notebook_id]
-        result = await self._rpc.rpc_call(
-            RPCMethod.POLL_RESEARCH,
-            params,
-            source_path=f"/notebook/{notebook_id}",
+        parsed_tasks = self._select_polled_tasks(
+            await self._poll_task_models(notebook_id),
+            notebook_id=notebook_id,
+            task_id=task_id,
+            warn_on_ambiguous=True,
         )
 
-        parsed_tasks = parse_research_tasks(result)
-
-        # Task-id discriminator: when supplied, filter parsed_tasks
-        # down to the matched task so callers iterating ``tasks`` don't see
-        # un-asked-for siblings. When omitted but multiple tasks are in
-        # flight, surface the latent cross-wire hazard via a
-        # DeprecationWarning — old behavior (return latest) is preserved to
-        # avoid breaking legacy single-task callers.
-        if task_id is not None:
-            parsed_tasks = [t for t in parsed_tasks if t.get("task_id") == task_id]
-        elif len(parsed_tasks) > 1:
-            warnings.warn(
-                (
-                    f"ResearchAPI.poll(notebook_id={notebook_id!r}) returned "
-                    f"{len(parsed_tasks)} in-flight tasks but no task_id "
-                    f"discriminator was supplied. The latest task is "
-                    f"returned for back-compat, but this is ambiguous and "
-                    f"may surface results for the wrong task. Pass "
-                    f"task_id=<id> (from research.start) to select "
-                    f"explicitly. The None default will be removed in a "
-                    f"future major release."
-                ),
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         if parsed_tasks:
-            selected_task = parsed_tasks[0]
-            return {
-                **selected_task,
-                "tasks": parsed_tasks,
-            }
+            return self._public_poll_result(parsed_tasks[0], parsed_tasks)
 
         return {"status": "no_research", "tasks": []}
 
@@ -415,17 +449,21 @@ class ResearchAPI:
         pinned_task_id = task_id
 
         while True:
-            status = await self.poll(notebook_id, task_id=pinned_task_id)
-            if pinned_task_id is None:
-                discovered_task_id = status.get("task_id")
-                if isinstance(discovered_task_id, str) and discovered_task_id:
-                    pinned_task_id = discovered_task_id
+            parsed_tasks = self._select_polled_tasks(
+                await self._poll_task_models(notebook_id),
+                notebook_id=notebook_id,
+                task_id=pinned_task_id,
+                warn_on_ambiguous=pinned_task_id is None,
+            )
+            selected_task = parsed_tasks[0] if parsed_tasks else None
+            if pinned_task_id is None and selected_task is not None:
+                pinned_task_id = selected_task.task_id
 
-            status_val = status.get("status", "unknown")
-            if status_val in ("completed", "failed"):
-                return status
+            status_val = selected_task.status if selected_task is not None else "no_research"
+            if selected_task is not None and status_val in ("completed", "failed"):
+                return self._public_poll_result(selected_task, parsed_tasks)
             if status_val == "no_research" and pinned_task_id is None:
-                return status
+                return {"status": "no_research", "tasks": []}
 
             elapsed = loop.time() - start
             if elapsed >= timeout:
@@ -443,7 +481,7 @@ class ResearchAPI:
         self,
         notebook_id: str,
         task_id: str,
-        sources: list[dict[str, Any]],
+        sources: Sequence[ResearchSourceInput],
     ) -> list[dict[str, str]]:
         """Import selected research sources into the notebook.
 
@@ -464,8 +502,13 @@ class ResearchAPI:
             To reliably verify imports, check the notebook's source list using
             `client.sources.list(notebook_id)` after calling this method.
         """
-        logger.debug("Importing %d research sources into notebook %s", len(sources), notebook_id)
-        if not sources:
+        source_models = _coerce_research_sources(sources)
+        logger.debug(
+            "Importing %d research sources into notebook %s",
+            len(source_models),
+            notebook_id,
+        )
+        if not source_models:
             return []
 
         # Per-source ``research_task_id`` must match the caller's
@@ -474,19 +517,16 @@ class ResearchAPI:
         # provenance. We do this scan BEFORE the multi-task batch check so
         # callers get the precise diagnostic (which mismatched source +
         # which task) instead of the generic "multiple tasks" message.
-        for source in sources:
-            source_task_id = source.get("research_task_id")
-            if isinstance(source_task_id, str) and source_task_id and source_task_id != task_id:
+        for source in source_models:
+            source_task_id = source.research_task_id
+            if source_task_id and source_task_id != task_id:
                 raise ResearchTaskMismatchError(
                     task_id=task_id,
                     source_research_task_id=source_task_id,
                 )
 
         research_task_ids = {
-            research_task_id
-            for source in sources
-            if isinstance((research_task_id := source.get("research_task_id")), str)
-            and research_task_id
+            source.research_task_id for source in source_models if source.research_task_id
         }
         if len(research_task_ids) > 1:
             raise ValidationError(
@@ -496,15 +536,14 @@ class ResearchAPI:
 
         report_sources = [
             source
-            for source in sources
-            if source.get("result_type") == 5
-            and isinstance(source.get("title"), str)
-            and isinstance(source.get("report_markdown"), str)
-            and source.get("report_markdown")
+            for source in source_models
+            if source.is_report and source.title and source.report_markdown
         ]
         report_source_ids = {id(source) for source in report_sources}
-        valid_sources = [s for s in sources if s.get("url") and id(s) not in report_source_ids]
-        skipped_count = len(sources) - len(valid_sources) - len(report_sources)
+        valid_sources = [
+            source for source in source_models if source.url and id(source) not in report_source_ids
+        ]
+        skipped_count = len(source_models) - len(valid_sources) - len(report_sources)
         if skipped_count > 0:
             logger.warning(
                 "Skipping %d source(s) that cannot be imported (missing URLs or report entries)",
@@ -517,12 +556,12 @@ class ResearchAPI:
         for report_source in report_sources:
             source_array.append(
                 self._build_report_import_entry(
-                    report_source["title"], report_source["report_markdown"]
+                    report_source.title,
+                    report_source.report_markdown,
                 )
             )
         source_array.extend(
-            self._build_web_import_entry(src["url"], src.get("title", "Untitled"))
-            for src in valid_sources
+            self._build_web_import_entry(src.url, src.title) for src in valid_sources
         )
 
         params = [None, [1], effective_task_id, notebook_id, source_array]
@@ -557,7 +596,7 @@ class ResearchAPI:
         self,
         notebook_id: str,
         task_id: str,
-        sources: list[dict[str, Any]],
+        sources: Sequence[ResearchSourceInput],
         *,
         max_elapsed: float = 1800,
         initial_delay: float = 5,
@@ -597,7 +636,8 @@ class ResearchAPI:
         Raises:
             RPCTimeoutError: If retries exhaust the ``max_elapsed`` budget.
         """
-        if not sources:
+        source_models = _coerce_research_sources(sources)
+        if not source_models:
             return []
 
         started_at = time.monotonic()
@@ -606,11 +646,11 @@ class ResearchAPI:
         verified_imported: list[dict[str, str]] = []
         verified_imported_ids: set[str] = set()
 
-        requested_urls_norm = _requested_urls_norm(sources)
+        requested_urls_norm = _requested_import_verification_urls(source_models)
         # Track how many non-URL entries (research reports, pasted text) the
         # request includes so concurrent no-URL additions cannot inflate the
         # synthesized return after a timeout.
-        requested_no_url_count = _no_url_entry_count(sources)
+        requested_no_url_count = _no_import_verification_url_entry_count(source_models)
 
         # Anchor verified-success on URLs of *new* sources (not on a
         # baseline→current URL delta) so concurrent additions from another
@@ -630,7 +670,7 @@ class ResearchAPI:
 
         while True:
             try:
-                imported = await self.import_sources(notebook_id, task_id, sources)
+                imported = await self.import_sources(notebook_id, task_id, source_models)
                 return _merge_imported_sources(imported, verified_imported, verified_imported_ids)
             except RPCTimeoutError:
                 elapsed = time.monotonic() - started_at
@@ -645,10 +685,14 @@ class ResearchAPI:
                             else []
                         )
                         new_urls_norm = {
-                            _normalize_import_url(src.url) for src in new_sources if src.url
+                            _normalize_import_verification_url(src.url)
+                            for src in new_sources
+                            if src.url
                         }
                         current_urls_norm = {
-                            _normalize_import_url(src.url) for src in current if src.url
+                            _normalize_import_verification_url(src.url)
+                            for src in current
+                            if src.url
                         }
                         if baseline_ids is not None and requested_urls_norm.issubset(new_urls_norm):
                             logger.warning(
@@ -664,7 +708,8 @@ class ResearchAPI:
                             for src in new_sources:
                                 if (
                                     src.url
-                                    and _normalize_import_url(src.url) in requested_urls_norm
+                                    and _normalize_import_verification_url(src.url)
+                                    in requested_urls_norm
                                 ):
                                     timeout_verified.append(_imported_source_entry(src))
                                 elif not src.url and remaining_no_url > 0:
@@ -673,7 +718,10 @@ class ResearchAPI:
                             return _merge_imported_sources(
                                 timeout_verified, verified_imported, verified_imported_ids
                             )
-                        source_norms = [(source, _source_url_norm(source)) for source in sources]
+                        source_norms = [
+                            (source, _source_import_verification_url(source))
+                            for source in source_models
+                        ]
                         removed_urls_norm = {
                             url
                             for _, url in source_norms
@@ -699,20 +747,23 @@ class ResearchAPI:
                             if url not in current_urls_norm
                             and not (drop_no_url_entries and url is None)
                         ]
-                        if len(filtered_sources) != len(sources):
-                            removed_count = len(sources) - len(filtered_sources)
+                        if len(filtered_sources) != len(source_models):
+                            removed_count = len(source_models) - len(filtered_sources)
                             for src in new_sources:
                                 if (
                                     src.url
-                                    and _normalize_import_url(src.url) in removed_urls_norm
+                                    and _normalize_import_verification_url(src.url)
+                                    in removed_urls_norm
                                     and src.id not in verified_imported_ids
                                 ):
                                     verified_imported.append(_imported_source_entry(src))
                                     verified_imported_ids.add(src.id)
-                            sources = filtered_sources
-                            requested_urls_norm = _requested_urls_norm(sources)
-                            requested_no_url_count = _no_url_entry_count(sources)
-                            if not sources:
+                            source_models = filtered_sources
+                            requested_urls_norm = _requested_import_verification_urls(source_models)
+                            requested_no_url_count = _no_import_verification_url_entry_count(
+                                source_models
+                            )
+                            if not source_models:
                                 logger.warning(
                                     "IMPORT_RESEARCH timed out for notebook %s "
                                     "but sources.list shows all requested URLs "
@@ -729,7 +780,7 @@ class ResearchAPI:
                                 "retrying with %d remaining source(s)",
                                 notebook_id,
                                 removed_count,
-                                len(sources),
+                                len(source_models),
                             )
                     except (NetworkError, RPCError) as probe_exc:
                         # CancelledError is a BaseException, not Exception, and

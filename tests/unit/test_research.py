@@ -10,6 +10,7 @@ import pytest
 import notebooklm._research as research_module
 from notebooklm import NotebookLMClient
 from notebooklm._research import ResearchAPI
+from notebooklm.research import normalize_citation_url
 from notebooklm.rpc import RPCMethod
 
 
@@ -51,6 +52,21 @@ class TestBuildImportEntries:
 
 
 class TestCitedSourceSelection:
+    def test_url_normalizers_keep_citation_and_import_semantics_distinct(self):
+        citation_url = "https://Example.com/path/#section."
+        punctuation_url = "https://Example.com/path/."
+
+        assert normalize_citation_url(citation_url) == "https://example.com/path#section"
+        assert (
+            research_module._normalize_import_verification_url(citation_url)
+            == "https://example.com/path"
+        )
+        assert normalize_citation_url(punctuation_url) == "https://example.com/path"
+        assert (
+            research_module._normalize_import_verification_url(punctuation_url)
+            == "https://example.com/path/."
+        )
+
     def test_extract_report_urls_normalizes_markdown_and_bare_urls(self):
         urls = ResearchAPI.extract_report_urls(
             "See [Example](https://Example.com/a/) and https://example.com/b."
@@ -107,7 +123,7 @@ class TestCitedSourceSelection:
     def test_select_cited_sources_deduplicates_report_entries_with_urls(self):
         report_source = {
             "title": "Deep Research Report",
-            "result_type": 5,
+            "result_type": "report",
             "report_markdown": "# Report",
             "url": "https://example.com/report",
         }
@@ -772,6 +788,51 @@ class TestResearch:
             3,
         ]
         assert params[4][1][2] == ["http://example.com", "Web Source"]
+
+    @pytest.mark.asyncio
+    async def test_import_sources_normalizes_public_report_result_type(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """Public dict inputs use the same result_type normalization as poll parsing."""
+        response_body = build_rpc_response(
+            RPCMethod.IMPORT_RESEARCH,
+            [[[["report_src_001"], "Deep Research Report"]]],
+        )
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources(
+                notebook_id="nb_123",
+                task_id="report_123",
+                sources=[
+                    {
+                        "title": "Deep Research Report",
+                        "result_type": "report",
+                        "report_markdown": "# Deep report body",
+                        "research_task_id": "report_123",
+                    }
+                ],
+            )
+
+        assert result == [{"id": "report_src_001", "title": "Deep Research Report"}]
+        request = httpx_mock.get_request()
+        params = _extract_request_params(request)
+        assert params[2] == "report_123"
+        assert params[4] == [
+            [
+                None,
+                ["Deep Research Report", "# Deep report body"],
+                None,
+                3,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                3,
+            ]
+        ]
 
     @pytest.mark.asyncio
     async def test_import_sources_rejects_mixed_research_task_ids(self, auth_tokens):
