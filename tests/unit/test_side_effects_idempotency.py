@@ -17,9 +17,7 @@ silently coerced to "no match", so the caller learns the prior create
 may have committed server-side and the retry loop won't duplicate the
 resource.
 
-Tests use ``httpx.MockTransport`` — no cassettes, no network. They are
-opted out of the VCR tier enforcement via
-``pytestmark = pytest.mark.allow_no_vcr``.
+Tests use ``httpx.MockTransport`` — no cassettes, no network.
 """
 
 from __future__ import annotations
@@ -34,9 +32,6 @@ from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NetworkError, NotebookLMClient
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.rpc import RPCMethod
-
-pytestmark = pytest.mark.allow_no_vcr
-
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal batchexecute response builders + mock-transport client

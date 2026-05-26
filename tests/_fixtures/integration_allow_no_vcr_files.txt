@@ -22,14 +22,10 @@ tests/integration/concurrency/test_upload_timeout_config.py # existing mock-only
 tests/integration/concurrency/test_wait_for_sources_leak.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_notes_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_deep_poll_vcr.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_research_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_save_chat_as_note_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sharing_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_side_effects_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

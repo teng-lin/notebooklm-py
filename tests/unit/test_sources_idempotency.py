@@ -55,11 +55,6 @@ from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.exceptions import NetworkError, NotebookLMError
 from notebooklm.rpc import RPCMethod
 
-# Mock-transport idempotency tests; no HTTP, no cassette. Opt out of the
-# tier-enforcement hook in tests/integration/conftest.py.
-pytestmark = pytest.mark.allow_no_vcr
-
-
 # ---------------------------------------------------------------------------
 # Helpers (mirror tests/integration/concurrency/test_idempotency_create.py)
 # ---------------------------------------------------------------------------

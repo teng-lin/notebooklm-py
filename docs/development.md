@@ -352,31 +352,34 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
 ```
 tests/
 ├── unit/                            # No network, fast, mock everything
-├── integration/                     # Mocked HTTP responses + VCR cassettes
-│   ├── test_artifacts_integration.py # ArtifactsAPI integration
+│   ├── cli/
+│   │   ├── test_cli_session_local.py
+│   │   └── test_download_multi_artifact.py
 │   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
+│   ├── test_auto_refresh.py         # Keepalive/refresh callback wiring
+│   ├── test_chat_passage_resolver.py
+│   ├── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
+│   ├── test_notes_idempotency.py
+│   ├── test_research_idempotency.py
+│   ├── test_side_effects_idempotency.py
+│   ├── test_skill_packaging.py      # Packaging smoke (skills, entry-points)
+│   └── test_sources_idempotency.py
+├── integration/                     # VCR cassettes + remaining API integration suites
+│   ├── test_artifacts_integration.py # ArtifactsAPI integration
 │   ├── test_auth_refresh_vcr.py     # Auth refresh token VCR test
-│   ├── test_auto_refresh.py         # Keepalive/refresh integration
 │   ├── test_chat_delete_conversation_vcr.py
 │   ├── test_chat_multi_source_vcr.py
-│   ├── test_chat_passage_resolver.py
-│   ├── test_cli_session_local.py
-│   ├── test_download_multi_artifact.py
 │   ├── test_error_paths_vcr.py      # Synthetic and VCR error paths
-│   ├── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
 │   ├── test_notebooks_integration.py # NotebooksAPI integration
 │   ├── test_notes_integration.py     # NotesAPI integration
-│   ├── test_notes_idempotency.py
 │   ├── test_polling_vcr.py
 │   ├── test_research_deep_poll_vcr.py
-│   ├── test_research_idempotency.py
 │   ├── test_save_chat_as_note_integration.py
 │   ├── test_session_integration.py  # Session + RPC plumbing
 │   ├── test_settings_integration.py  # SettingsAPI integration
 │   ├── test_settings_vcr.py
 │   ├── test_sharing_integration.py   # SharingAPI integration
 │   ├── test_sharing_vcr.py
-│   ├── test_skill_packaging.py      # Packaging smoke (skills, entry-points)
 │   ├── test_sources_integration.py   # SourcesAPI integration
 │   ├── test_vcr_comprehensive.py    # End-to-end VCR walkthrough
 │   ├── test_vcr_example.py          # VCR pattern reference
@@ -569,7 +572,8 @@ NotebookLM has undocumented rate limits. Generation tests may be skipped when ra
 ```
 Need network?
 ├── No → tests/unit/
-├── Mocked → tests/integration/
+├── Mocked cross-facade/API workflow → tests/integration/ + allow_no_vcr
+├── Recorded HTTP → tests/integration/ + VCR cassette
 └── Real API → tests/e2e/
     └── What notebook?
         ├── Read-only → read_only_notebook_id + @pytest.mark.readonly
