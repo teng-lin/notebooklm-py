@@ -1049,6 +1049,26 @@ class TestExtractArtifactUrlMalformedShapes:
         assert _extract_artifact_url(["any", "data"], None) is None
         assert _extract_artifact_url(["any", "data"], 99) is None
 
+    def test_extract_artifact_url_none_type_ignores_row_type_code(self):
+        from notebooklm.rpc import ArtifactTypeCode
+        from notebooklm.types import _extract_artifact_url
+
+        audio_row = [
+            "artifact_id",
+            "Audio",
+            ArtifactTypeCode.AUDIO.value,
+            None,
+            3,
+            None,
+            [None, None, None, None, None, [["https://example.com/audio.mp4", None, "audio/mp4"]]],
+        ]
+
+        assert _extract_artifact_url(audio_row, None) is None
+        assert (
+            _extract_artifact_url(audio_row, ArtifactTypeCode.AUDIO.value)
+            == "https://example.com/audio.mp4"
+        )
+
     def test_extract_audio_handles_short_or_non_list_data(self):
         from notebooklm.types import _extract_audio_artifact_url
 

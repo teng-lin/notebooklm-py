@@ -118,6 +118,8 @@ def _extract_slide_deck_artifact_url(data: list[Any]) -> str | None:
 
 def _extract_artifact_url(data: list[Any], artifact_type: int | None) -> str | None:
     """Extract a public download URL from known artifact response shapes."""
+    if artifact_type is None:
+        return None
     return ArtifactRow(data).artifact_url(artifact_type, suppress_drift=True)
 
 
