@@ -1,27 +1,30 @@
 """atomic ``(csrf, sid, cookies)`` snapshot during refresh.
 
-The race fixed here is a torn read of the auth-headers triple
-``(csrf_token, session_id, cookies)`` while a refresh runs concurrently
-with in-flight RPCs. ``AuthRefreshCoordinator.snapshot()`` (the
-canonical implementation since PR #4b inlined the Session-level
-``_snapshot`` delegate) reads the four scalar fields off ``self.auth``
-without holding any lock, and ``RpcExecutor.build_url()`` (the
-canonical method since PR #4b also inlined the Session-level
-``_build_url`` delegate) reads ``session_id`` / ``authuser`` /
-``account_email`` directly off ``self.auth`` (not the snapshot). A
-concurrent ``refresh_auth`` mutates ``csrf_token`` and ``session_id``
-in two separate Python statements — there's no asyncio yield between
-them in production today, but the moment any maintainer introduces
-an ``await`` in that prologue, an RPC can observe one field from the
-OLD generation and another from the NEW generation. The fix
-introduces a dedicated ``_auth_snapshot_lock`` that:
+The race this test guards against is a torn read of the auth-headers
+triple ``(csrf_token, session_id, cookies)`` while a refresh runs
+concurrently with in-flight RPCs. The pre-fix hazard was: a snapshot
+that read the four scalar fields off ``self.auth`` without holding any
+lock could observe one field from the OLD refresh generation and
+another from the NEW generation if any ``await`` slipped into the
+mutation prologue, and a URL builder that read
+``session_id`` / ``authuser`` / ``account_email`` directly off
+``self.auth`` (rather than off a frozen snapshot) could put the body's
+CSRF and the URL's ``f.sid`` from different generations on the wire.
+
+The fix — which is what the current code implements (see
+``AuthRefreshCoordinator.snapshot`` in
+``src/notebooklm/_session_auth.py:177-207`` and
+``RpcExecutor.build_url`` in ``src/notebooklm/_rpc_executor.py:368-389``,
+the canonical homes since PR #4b inlined the Session-level
+``_snapshot`` / ``_build_url`` thin wrappers) — introduces a dedicated
+``_auth_snapshot_lock`` that:
 
 1. ``AuthRefreshCoordinator.snapshot()`` acquires under ``async with``
-   to read all scalars atomically.
+   to read all scalars atomically into an :class:`AuthSnapshot`.
 2. The refresh-side mutation block in ``client.refresh_auth`` writes
    ``csrf_token`` + ``session_id`` under the same lock — tiny critical
    section, no awaits inside.
-3. ``RpcExecutor.build_url()`` consumes the resulting ``AuthSnapshot``
+3. ``RpcExecutor.build_url()`` consumes the resulting :class:`AuthSnapshot`
    rather than re-reading ``self.auth`` live, so the URL is built from
    the same generation the body was.
 
@@ -34,15 +37,18 @@ under the lock, so the assertion is purely "for every captured request,
 the three observed generation tags must match".
 
 Test scope (honest framing): this is the *runtime smoke proof* that
-the new design composes correctly under concurrent load. It does not,
-on its own, surface a pre-fix torn read against an unfixed code base —
-the actual hazard ``RpcExecutor.build_url`` reading ``self.auth`` live
-only materializes if a yield point slips into
-``_perform_authed_post``'s prologue between snapshot capture and
-request build, which is what the AST guards in
-``tests/unit/test_concurrency_refresh_race.py`` lock down statically.
-Together the AST guards and this runtime check form the regression
-net for the auth-snapshot atomicity contract.
+the design composes correctly under concurrent load. It does not, on
+its own, surface a pre-fix torn read against an unfixed code base —
+the original hazard (a URL builder reading ``self.auth`` live instead
+of consuming a frozen ``AuthSnapshot``) only materializes if a yield
+point slips into ``_perform_authed_post``'s prologue between snapshot
+capture and request build, which is what the AST guards in
+``tests/unit/test_concurrency_refresh_race.py`` lock down statically
+(``RpcExecutor.build_url`` is now AST-checked to consume the snapshot
+rather than read ``self.auth``, and the no-await-before-post invariant
+prevents a yield from re-introducing the gap). Together the AST guards
+and this runtime check form the regression net for the auth-snapshot
+atomicity contract.
 """
 
 from __future__ import annotations
