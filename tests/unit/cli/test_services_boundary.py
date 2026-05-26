@@ -1,17 +1,17 @@
 """Static AST checks enforcing the ADR-008 ``cli/services`` layering boundary.
 
-This file scans ``cli/services/listing.py`` for forbidden imports — top-level
-``click`` and relative imports from sibling presentation/runtime modules
-(``..rendering``, ``..error_handler``, ``..runtime``). It also inventories the
-Stage-3 transitional exceptions for the workflow services still being migrated
-out of rendering/exit ownership.
+This file scans cleaned ``cli/services`` modules for forbidden imports —
+top-level ``click`` and relative imports from sibling presentation/runtime
+modules (``..rendering``, ``..error_handler``, ``..runtime``). It also
+inventories the Stage-3 transitional exceptions for workflow services still
+being migrated out of rendering/exit ownership.
 
-Scope: only ``cli/services/listing.py`` is enforced here. The audit (I0) also
-flagged ``cli/services/login.py``, but between the audit and this PR landing,
-PR #954 split that file into the ``cli/services/login/`` package and the
-``console.print`` / Click cleanup was explicitly deferred at that point (per
-PR #954's source-plan overrides). Adding the ``login/`` package to this guard
-is the job of a follow-up PR; doing it here would gate a passing PR-C on
+Scope: only files listed in ``GUARDED_PATHS`` are enforced here. The audit (I0)
+also flagged ``cli/services/login.py``, but between the audit and this PR
+landing, PR #954 split that file into the ``cli/services/login/`` package and
+the ``console.print`` / Click cleanup was explicitly deferred at that point
+(per PR #954's source-plan overrides). Adding the ``login/`` package to this
+guard is the job of a follow-up PR; doing it here would gate a passing PR-C on
 unrelated ~1500-2000 lines of refactor work. See
 ``.sisyphus/drafts/pr-c-migration-map.md`` for the scope decision.
 
@@ -43,11 +43,11 @@ FORBIDDEN_TOP_LEVEL_MODULES = {"click"}
 FORBIDDEN_RELATIVE_PARENTS = {"rendering", "error_handler", "runtime"}
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 GUARDED_PATHS = {
     "cli/services/listing.py": REPO_ROOT / "src" / "notebooklm" / "cli" / "services" / "listing.py",
+    "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
 }
-
-SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 
 # Stage 3 migration inventory. These modules currently own presentation and/or
 # exit policy, which the architecture plan moves back to the command layer.
@@ -59,13 +59,6 @@ TRANSITIONAL_GUARDED_PATHS = {
         [
             "artifact_generation.py:9: forbidden relative import: '..error_handler'",
             "artifact_generation.py:10: forbidden relative import: '..rendering'",
-        ],
-    ),
-    "cli/services/source_content.py": (
-        SERVICES_ROOT / "source_content.py",
-        [
-            "source_content.py:18: forbidden relative import: '..error_handler'",
-            "source_content.py:19: forbidden relative import: '..rendering'",
         ],
     ),
     "cli/services/source_mutations.py": (

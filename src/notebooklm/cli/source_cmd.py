@@ -6,7 +6,7 @@ to its executor:
 * ``services/source_listing.py``   — list
 * ``services/source_mutations.py`` — delete, delete-by-title, rename,
   refresh, add-drive
-* ``services/source_content.py``   — get, fulltext, guide, stale
+* ``services/source_content.py``   — data fetchers for get, fulltext, guide, stale
 * ``services/source_research.py``  — add-research
 * ``services/source_wait.py``      — wait
 * ``services/source_add.py``       — add  (pre-T5; T5 added the executor)
@@ -17,15 +17,16 @@ below (it is what ``notebooklm source --help`` shows).
 """
 
 import asyncio  # noqa: F401 — re-exported for P1.T2 regression tests that patch source_cmd.asyncio.sleep
+from dataclasses import asdict
 from pathlib import Path
 
 import click
 from rich.table import Table
 
 from ..client import NotebookLMClient
-from ..types import Source
+from ..types import Source, source_status_to_str
 from .auth_runtime import with_client
-from .error_handler import _output_error, current_json_output
+from .error_handler import _output_error, current_json_output, exit_with_code
 from .input import read_stdin_text, resolve_prompt
 from .options import (
     json_option,
@@ -34,7 +35,7 @@ from .options import (
     prompt_file_option,
     wait_polling_options,
 )
-from .rendering import console
+from .rendering import console, get_source_type_display, json_output_response
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
 from .services import source_add as source_add_service
@@ -43,9 +44,13 @@ from .services.source_add import SourceAddExecutionPlan, execute_source_add
 from .services.source_clean import SourceCleanPlan, execute_source_clean
 from .services.source_content import (
     SourceFulltextPlan,
+    SourceFulltextResult,
     SourceGetPlan,
+    SourceGetResult,
     SourceGuidePlan,
+    SourceGuideResult,
     SourceStalePlan,
+    SourceStaleResult,
     execute_source_fulltext,
     execute_source_get,
     execute_source_guide,
@@ -101,6 +106,141 @@ def _print_clean_candidates(candidates: list[tuple[str, str, str, str]]) -> None
         display_title = title if title else "[dim](no title)[/dim]"
         table.add_row(sid[:8], display_title, status, reason)
     console.print(table)
+
+
+def _render_source_get_result(result: SourceGetResult, *, json_output: bool) -> None:
+    """Render ``source get`` output and not-found exit policy."""
+    src = result.source
+    if src is None:
+        _output_error(
+            "Source not found",
+            code="NOT_FOUND",
+            json_output=json_output,
+            exit_code=1,
+            extra={"source_id": result.source_id, "notebook_id": result.notebook_id},
+        )
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    if json_output:
+        json_output_response(
+            {
+                "source": {
+                    "id": src.id,
+                    "title": src.title,
+                    "type": str(src.kind),
+                    "url": src.url,
+                    "status": source_status_to_str(src.status),
+                    "status_id": src.status,
+                    "created_at": (src.created_at.isoformat() if src.created_at else None),
+                },
+                "found": True,
+            }
+        )
+        return
+
+    console.print(f"[bold cyan]Source:[/bold cyan] {src.id}")
+    console.print(f"[bold]Title:[/bold] {src.title}")
+    console.print(f"[bold]Type:[/bold] {get_source_type_display(src.kind)}")
+    if src.url:
+        console.print(f"[bold]URL:[/bold] {src.url}")
+    if src.created_at:
+        console.print(f"[bold]Created:[/bold] {src.created_at.strftime('%Y-%m-%d %H:%M')}")
+
+
+def _render_source_fulltext_result(
+    result: SourceFulltextResult,
+    *,
+    json_output: bool,
+    output: str | None,
+) -> None:
+    """Render ``source fulltext`` output, including optional file output."""
+    fulltext = result.fulltext
+    if json_output:
+        if output:
+            content_bytes = fulltext.content.encode("utf-8")
+            Path(output).write_bytes(content_bytes)
+            json_output_response(
+                {
+                    "path": str(output),
+                    "bytes": len(content_bytes),
+                    "source_id": fulltext.source_id,
+                    "title": fulltext.title,
+                }
+            )
+            return
+
+        json_output_response(asdict(fulltext))
+        return
+
+    if output:
+        Path(output).write_text(fulltext.content, encoding="utf-8")
+        console.print(f"[green]Saved {fulltext.char_count} chars to {output}[/green]")
+        return
+
+    console.print(f"[bold cyan]Source:[/bold cyan] {fulltext.source_id}")
+    console.print(f"[bold]Title:[/bold] {fulltext.title}")
+    console.print(f"[bold]Characters:[/bold] {fulltext.char_count:,}")
+    if fulltext.url:
+        console.print(f"[bold]URL:[/bold] {fulltext.url}")
+    console.print()
+    console.print("[bold cyan]Content:[/bold cyan]")
+    if len(fulltext.content) > 2000:
+        console.print(fulltext.content[:2000], markup=False, highlight=False)
+        console.print(
+            f"\n[dim]... ({fulltext.char_count - 2000:,} more chars, "
+            "use -o to save full content)[/dim]"
+        )
+    else:
+        console.print(fulltext.content, markup=False, highlight=False)
+
+
+def _render_source_guide_result(result: SourceGuideResult, *, json_output: bool) -> None:
+    """Render ``source guide`` output."""
+    if json_output:
+        json_output_response(
+            {
+                "source_id": result.source_id,
+                "summary": result.summary,
+                "keywords": result.keywords,
+            }
+        )
+        return
+
+    summary = result.summary.strip()
+    if not summary and not result.keywords:
+        console.print("[yellow]No guide available for this source[/yellow]")
+        return
+
+    if summary:
+        console.print("[bold cyan]Summary:[/bold cyan]")
+        console.print(summary)
+        console.print()
+
+    if result.keywords:
+        console.print("[bold cyan]Keywords:[/bold cyan]")
+        console.print(", ".join(result.keywords))
+
+
+def _render_source_stale_result(result: SourceStaleResult, *, json_output: bool) -> None:
+    """Render ``source stale`` output and inverted predicate exit policy."""
+    if json_output:
+        json_output_response(
+            {
+                "source_id": result.source_id,
+                "notebook_id": result.notebook_id,
+                "stale": result.stale,
+                "fresh": result.is_fresh,
+            }
+        )
+        exit_with_code(0 if result.stale else 1)
+
+    if result.is_fresh:
+        console.print("[green]✓ Source is fresh[/green]")
+        exit_with_code(1)
+
+    console.print("[yellow]⚠ Source is stale[/yellow]")
+    console.print("[dim]Run 'source refresh' to update[/dim]")
+    exit_with_code(0)
 
 
 @click.group()
@@ -269,14 +409,14 @@ def source_get(ctx, source_id, notebook_id, json_output, client_auth):
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
             )
-            await execute_source_get(
+            result = await execute_source_get(
                 client,
                 SourceGetPlan(
                     notebook_id=nb_id_resolved,
                     source_id=resolved_id,
-                    json_output=json_output,
                 ),
             )
+            _render_source_get_result(result, json_output=json_output)
 
     return _run()
 
@@ -543,16 +683,17 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_for
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
             )
-            await execute_source_fulltext(
-                client,
-                SourceFulltextPlan(
-                    notebook_id=nb_id_resolved,
-                    source_id=resolved_id,
-                    json_output=json_output,
-                    output=output,
-                    output_format=output_format,
-                ),
+            plan = SourceFulltextPlan(
+                notebook_id=nb_id_resolved,
+                source_id=resolved_id,
+                output_format=output_format,
             )
+            if json_output:
+                result = await execute_source_fulltext(client, plan)
+            else:
+                with console.status("Fetching fulltext content..."):
+                    result = await execute_source_fulltext(client, plan)
+            _render_source_fulltext_result(result, json_output=json_output, output=output)
 
     return _run()
 
@@ -576,14 +717,16 @@ def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
             )
-            await execute_source_guide(
-                client,
-                SourceGuidePlan(
-                    notebook_id=nb_id_resolved,
-                    source_id=resolved_id,
-                    json_output=json_output,
-                ),
+            plan = SourceGuidePlan(
+                notebook_id=nb_id_resolved,
+                source_id=resolved_id,
             )
+            if json_output:
+                result = await execute_source_guide(client, plan)
+            else:
+                with console.status("Generating source guide..."):
+                    result = await execute_source_guide(client, plan)
+            _render_source_guide_result(result, json_output=json_output)
 
     return _run()
 
@@ -610,14 +753,14 @@ def source_stale(ctx, source_id, notebook_id, json_output, client_auth):
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
             )
-            await execute_source_stale(
+            result = await execute_source_stale(
                 client,
                 SourceStalePlan(
                     notebook_id=nb_id_resolved,
                     source_id=resolved_id,
-                    json_output=json_output,
                 ),
             )
+            _render_source_stale_result(result, json_output=json_output)
 
     return _run()
 
