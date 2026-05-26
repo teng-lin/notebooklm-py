@@ -544,7 +544,7 @@ class Session:
 
     @asynccontextmanager
     async def operation_scope(self, label: str) -> AsyncIterator[None]:
-        """Return a drain-tracked operation scope for feature-owned work."""
+        """Drain-tracked context manager for feature-owned work."""
         token = await self._begin_transport_post(label)
         try:
             yield None
