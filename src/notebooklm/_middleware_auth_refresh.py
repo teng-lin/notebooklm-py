@@ -112,9 +112,12 @@ class AuthRefreshMiddleware:
       attr on the live client still takes effect (matches the live-binding
       contract preserved for retry budgets in PR 12.7).
     - ``snapshot_provider``: optional async callable returning a fresh
-      :class:`AuthSnapshot` after refresh. Production wires
-      :meth:`Session._snapshot`; tests that omit it preserve the older
-      "retry the same request" unit shape.
+      :class:`AuthSnapshot` after refresh. Production wires a lambda
+      that invokes :meth:`AuthRefreshCoordinator.snapshot` with the
+      live ``Session`` host (the previously-load-bearing
+      ``Session._snapshot`` thin wrapper was inlined in PR #4b of the
+      session-refactor arc); tests that omit ``snapshot_provider``
+      preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
       resolved at call time via :func:`_session_helpers.resolve_sleep` —
       the same shared helper :class:`RetryMiddleware` uses).

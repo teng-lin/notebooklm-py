@@ -7,8 +7,8 @@ These assertions pin down the new contract:
   session-shrink arc; this test now guards against any new
   ``DeprecationWarning`` escaping ``_chat.py``).
 - ``authuser=`` is present on the chat URL when ``account_email`` is set on
-  the auth tokens, mirroring the batchexecute path in ``_core._build_url``.
-  Previously omitted entirely on the chat endpoint.
+  the auth tokens, mirroring the batchexecute path in
+  ``RpcExecutor.build_url``. Previously omitted entirely on the chat endpoint.
 - Concurrent ``asyncio.gather(ask*3)`` produces three distinct reqid values.
 - 401 mid-chat triggers a refresh, and the post-refresh attempt's body
   carries the refreshed CSRF token (snapshot-per-attempt invariant).
