@@ -147,7 +147,7 @@ def test_allowed_rpc_context_keys_match_adr_vocabulary() -> None:
 def test_production_context_literal_keys_stay_in_allowed_vocabulary() -> None:
     violations: list[str] = []
     for path in PRODUCTION_CONTEXT_FILES:
-        tree = ast.parse(path.read_text(), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         visitor = _ContextLiteralVisitor(path)
         visitor.visit(tree)
         violations.extend(visitor.violations)
