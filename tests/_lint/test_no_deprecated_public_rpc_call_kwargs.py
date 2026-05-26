@@ -23,18 +23,14 @@ _DEPRECATED_KW: frozenset[str] = frozenset(
 )
 
 # Allowlist of (path-relative-to-repo, enclosing-function-name).
-# Function name "*" means "any function in this file is allowed"
-# (used for the new test file that exists solely to exercise the
-# deprecated surface).
-_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("tests/unit/test_rpc_call_public_surface.py", "*"),
-        (
-            "tests/unit/test_public_shims.py",
-            "test_client_rpc_call_delegates_keyword_for_keyword",
-        ),
-    }
-)
+# Function name "*" means "any function in this file is allowed".
+#
+# The v0.6.0 cut removed the three deprecated public-client ``rpc_call``
+# kwargs that this lint was guarding against, so the allowlist is empty:
+# the public surface no longer accepts those kwargs at all, and any
+# remaining static-use case would fail at type-check time rather than
+# needing a runtime allowlist carve-out.
+_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {

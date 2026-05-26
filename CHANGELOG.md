@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`NotebookLMClient.rpc_call(...)` no longer accepts `source_path`, `_is_retry`, or `operation_variant`** — the three kwargs deprecated in v0.5.0 (`docs/improvement.md` §7.4, `docs/deprecations.md`) were removed after one MINOR cycle. The public escape hatch's primary contract (`client.rpc_call(method, params)`) is unchanged and the default-shape call keeps working with no migration. Migration:
+  - **Keyword callers**: drop the removed kwarg from the call. The previous default-shape behavior (`source_path="/"`, `_is_retry=False`, `operation_variant=None`) is now what every call gets unconditionally — `source_path` was a leaky internal seam, `_is_retry` was an internal retry-loop flag, and `operation_variant` is part of the mutating-RPC idempotency registry. Calls that genuinely needed a non-`"/"` `source_path` or a specific `operation_variant` were already on the wrong layer; build a typed method on a sub-client instead, or open an issue describing the workflow.
+  - **Positional callers** (rare): the positional order of the remaining parameters is `(method, params, allow_null, *, disable_internal_retries=...)`, so a previously-positional `source_path` / `_is_retry` argument now binds to a different parameter slot. A pre-cut `client.rpc_call(method, params, "/", True)` (which passed `source_path="/"`, `allow_null=True`) becomes `client.rpc_call(method, params, allow_null=True)` after the cut — switch to keyword arguments for `allow_null` to avoid this footgun.
+  - There is no public replacement for the removed internal-only kwargs (`_is_retry`, `operation_variant`); they were never part of the supported surface in the first place.
+
 ### Added
 
 - **`NotFoundError` cross-domain umbrella exception.** Catch `NotFoundError` to handle any "resource not found" case across notebooks, sources, and artifacts in one `except` clause — replacing `except (NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError):`. `NotebookNotFoundError`, `SourceNotFoundError`, and `ArtifactNotFoundError` now also inherit from `NotFoundError`. This is **additive** and does **not** change any existing catch semantics: each `*NotFoundError` keeps its existing type-specific bases (`NotebookNotFoundError` is still an `RPCError` and `NotebookError`; `SourceNotFoundError` is still a `SourceError`; `ArtifactNotFoundError` is still an `ArtifactError`). The known asymmetry where `SourceNotFoundError`/`ArtifactNotFoundError` do not also inherit from `RPCError` is intentionally preserved for this release.
+
+### Removed
+
+- `NotebookLMClient.rpc_call(source_path=...)`, `NotebookLMClient.rpc_call(_is_retry=...)`, `NotebookLMClient.rpc_call(operation_variant=...)` — see Breaking changes above. The corresponding `DeprecationWarning` emitters in `client.py` and the `tests/unit/test_rpc_call_public_surface.py` warning-surface tests were retired in the same change.
 
 ## [0.5.0] - 2026-05-23
 

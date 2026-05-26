@@ -179,10 +179,10 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # ``resolve_source_ids``) via ``monkeypatch.setattr`` string targets.
         # Those resolvers are module-level CLI seams above the
         # ``NotebookLMClient`` core that ``make_fake_core(...)`` covers, so
-        # the same string-target pattern that ``test_public_shims.py`` /
-        # ``test_rpc_call_public_surface.py`` use for their non-core seams
-        # is required here. Revisit when ADR-007's seam-substitution pattern
-        # is extended to cover the CLI resolver surface.
+        # the same string-target pattern that ``test_public_shims.py`` uses
+        # for its non-core seams is required here. Revisit when ADR-007's
+        # seam-substitution pattern is extended to cover the CLI resolver
+        # surface.
         "tests/unit/test_generate_service.py",
         "tests/unit/test_idempotency_registry.py",
         "tests/unit/test_init_order.py",
@@ -190,18 +190,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_notebook_api.py",
         "tests/unit/test_notes_unit.py",
         "tests/unit/test_public_shims.py",
-        # Public ``NotebookLMClient.rpc_call`` deprecation-warning tests
-        # (Phase 1 PR-2). The fixture-injection path
-        # (``make_fake_core(...)``) targets sub-clients constructed with
-        # an externally-supplied core (``NotebooksAPI(fake)``); the
-        # *public* ``NotebookLMClient`` constructs its own ``_core`` via
-        # ``Session(...)`` inside ``__init__`` and exposes no DI seam,
-        # so the same ``client._core.rpc_call = AsyncMock(...)`` pattern
-        # already on the allowlist for the neighboring
-        # ``test_public_shims.py::test_client_rpc_call_delegates_keyword_for_keyword``
-        # is required here. Revisit when ADR-007's seam-substitution
-        # pattern is extended to cover the public-client surface.
-        "tests/unit/test_rpc_call_public_surface.py",
+        # ``tests/unit/test_rpc_call_public_surface.py`` was removed in
+        # v0.6.0 alongside the deprecated public-client ``rpc_call``
+        # kwargs it pinned; its allowlist entry would now be stale.
         "tests/unit/test_quota_failure_detection.py",
         "tests/unit/test_rpc_overrides.py",
         "tests/unit/test_select_artifact.py",

@@ -19,9 +19,13 @@ the broader stability policy (semver promise, supported Python versions, the
 | `notebooklm source add --mime-type` (file sources) | Omit `--mime-type`; Drive-source `--mime-type` remains live | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/cli/source_cmd.py:437` |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_artifact_polling.py:154` |
 | `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_notes.py:192` |
-| `NotebookLMClient.rpc_call(source_path=...)` | Omit the argument, or pass `"/"` explicitly | v0.5.0 | v0.6.0 | Explicit `source_path="/"` is silent (matches default); any other value warns |
-| `NotebookLMClient.rpc_call(_is_retry=...)` | Omit the argument | v0.5.0 | v0.6.0 | Internal-only; any explicit value (`True` or `False`) warns |
-| `NotebookLMClient.rpc_call(operation_variant=...)` | Omit the argument | v0.5.0 | v0.6.0 | Internal-only; will be removed once the mutating-RPC idempotency registry stabilizes |
+## Removed in v0.6.0
+
+| Removed | Replacement | Deprecated since | Removed in | Notes |
+|---------|-------------|------------------|------------|-------|
+| `NotebookLMClient.rpc_call(source_path=...)` | Omit the argument; the canonical `"/"` default is applied unconditionally | v0.5.0 | v0.6.0 | Public escape-hatch wrapper kept; only the kwarg was cut. No public replacement — callers that need a non-`"/"` source path should add a typed sub-client method (open an issue) rather than reaching across the wrapper. |
+| `NotebookLMClient.rpc_call(_is_retry=...)` | Omit the argument | v0.5.0 | v0.6.0 | Internal-only retry flag; never part of the supported public surface. |
+| `NotebookLMClient.rpc_call(operation_variant=...)` | Omit the argument | v0.5.0 | v0.6.0 | Internal-only routing key for the mutating-RPC idempotency registry. |
 
 ## How deprecations work in this project
 

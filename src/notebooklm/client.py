@@ -512,12 +512,9 @@ class NotebookLMClient:
         self,
         method: RPCMethod,
         params: list[Any],
-        source_path: str | None = None,
         allow_null: bool = False,
-        _is_retry: bool | None = None,
         *,
         disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
     ) -> Any:
         """Make a raw NotebookLM RPC call.
 
@@ -526,56 +523,21 @@ class NotebookLMClient:
         (``client.notebooks``, ``client.sources``, etc.) when possible. Import
         ``RPCMethod`` from ``notebooklm.rpc``.
 
-        .. deprecated:: 0.5.0
-            The following keyword arguments are deprecated and will be removed
-            in v0.6.0 (see :doc:`/deprecations`):
+        The wrapper forwards to :meth:`Session.rpc_call` with that method's
+        canonical defaults. Internal call sites that need to bind the
+        underlying internal-only parameters do so against the Session surface
+        directly, not via this public wrapper.
 
-            * ``source_path`` — omit the argument; the default ``"/"`` is
-              applied automatically. Passing ``"/"`` explicitly is still
-              silent (it matches the default).
-            * ``_is_retry`` — internal-only; never reach for this. Any
-              explicit value (``True`` or ``False``) warns, because callers
-              should not bind to this surface at all.
-            * ``operation_variant`` — internal-only; will be removed once
-              the mutating-RPC idempotency registry stabilizes.
-
-        The default-shape call (``client.rpc_call(method, params)``) remains
-        silent and forwards to :meth:`Session.rpc_call` with today's literal
-        defaults.
+        .. versionchanged:: 0.6.0
+            The deprecated keyword arguments previously documented here
+            were removed (see :doc:`/deprecations`). The default-shape
+            call (``client.rpc_call(method, params)``) is unchanged.
         """
-        if source_path is not None and source_path != "/":
-            warnings.warn(
-                "rpc_call(source_path=...) is deprecated; removal v0.6.0",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if _is_retry is not None:
-            warnings.warn(
-                "rpc_call(_is_retry=...) is deprecated; this is internal; removal v0.6.0",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if operation_variant is not None:
-            warnings.warn(
-                "rpc_call(operation_variant=...) is deprecated; removal v0.6.0",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        # Coerce sentinels back to today's literal defaults before
-        # delegating, so the forwarded keyword-for-keyword shape stays
-        # identical to the pre-deprecation contract. ``bool(None) is
-        # False``, so a single ``bool(_is_retry)`` collapses the
-        # not-None / None branches into one expression.
-        resolved_source_path = "/" if source_path is None else source_path
-        resolved_is_retry = bool(_is_retry)
         return await self._session.rpc_call(
             method=method,
             params=params,
-            source_path=resolved_source_path,
             allow_null=allow_null,
-            _is_retry=resolved_is_retry,
             disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
         )
 
     @property

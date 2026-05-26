@@ -1008,8 +1008,15 @@ def test_auth_validation_uses_facade_extraction_hint(
 
 
 @pytest.mark.asyncio
-async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
-    """NotebookLMClient.rpc_call is a public delegator to Session.rpc_call."""
+async def test_client_rpc_call_forwards_supported_kwargs() -> None:
+    """NotebookLMClient.rpc_call forwards its supported kwargs to Session.
+
+    After the v0.6.0 cut, the public wrapper exposes only the supported
+    surface (``method``, ``params``, ``allow_null``, and the keyword-only
+    ``disable_internal_retries``); the previously-deprecated
+    ``source_path`` / ``_is_retry`` / ``operation_variant`` kwargs were
+    removed and are no longer forwarded by this layer.
+    """
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
@@ -1023,36 +1030,25 @@ async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
     )
     client._session.rpc_call = AsyncMock(return_value={"ok": True})
 
-    # This test intentionally exercises the deprecated kwargs to pin the
-    # forwarded keyword-for-keyword shape. Wrapping in pytest.warns keeps
-    # the existing forwarding asserts alive while documenting that the
-    # call SHOULD emit deprecations (source_path != "/" and explicit
-    # _is_retry both warn).
-    with pytest.warns(DeprecationWarning):
-        result = await client.rpc_call(
-            RPCMethod.CREATE_NOTEBOOK,
-            ["My Notebook"],
-            source_path="/notebook/abc",
-            allow_null=True,
-            _is_retry=True,
-            disable_internal_retries=True,
-        )
+    result = await client.rpc_call(
+        RPCMethod.CREATE_NOTEBOOK,
+        ["My Notebook"],
+        allow_null=True,
+        disable_internal_retries=True,
+    )
 
     assert result == {"ok": True}
     client._session.rpc_call.assert_awaited_once_with(
         method=RPCMethod.CREATE_NOTEBOOK,
         params=["My Notebook"],
-        source_path="/notebook/abc",
         allow_null=True,
-        _is_retry=True,
         disable_internal_retries=True,
-        operation_variant=None,
     )
 
 
 @pytest.mark.asyncio
 async def test_client_rpc_call_forwards_default_arguments() -> None:
-    """The public delegator must preserve Session.rpc_call defaults."""
+    """The default-shape call forwards minimal kwargs and inherits Session defaults."""
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
@@ -1071,14 +1067,14 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
     result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     assert result == []
+    # The wrapper forwards only the kwargs it owns; the rest of
+    # Session.rpc_call's signature (source_path, _is_retry,
+    # operation_variant) keeps its module-level defaults.
     client._session.rpc_call.assert_awaited_once_with(
         method=RPCMethod.LIST_NOTEBOOKS,
         params=[],
-        source_path="/",
         allow_null=False,
-        _is_retry=False,
         disable_internal_retries=False,
-        operation_variant=None,
     )
 
 

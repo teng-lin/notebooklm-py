@@ -709,26 +709,27 @@ class NotebookLMClient:
         self,
         method: RPCMethod,
         params: list[Any],
-        source_path: str | None = None,
         allow_null: bool = False,
-        _is_retry: bool | None = None,
         *,
         disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
     ) -> Any:
 ```
 
 `RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
 `typing.Any`. The default-shape call (`client.rpc_call(method, params)`)
-forwards to the core delegator with today's literal defaults
-(`source_path="/"`, `_is_retry=False`, `operation_variant=None`).
+forwards to the underlying `Session.rpc_call` with that method's
+canonical defaults (`source_path="/"`, `_is_retry=False`,
+`operation_variant=None`).
 
-> **Deprecated kwargs (removal in v0.6.0).** `source_path` (when explicitly
-> set to anything other than `"/"`), `_is_retry` (any explicit non-`None`
-> value, including `True` and `False`), and `operation_variant` (any
-> non-`None` value) emit `DeprecationWarning`. See
+> **Removed in v0.6.0.** The three previously-deprecated kwargs
+> (`source_path`, `_is_retry`, `operation_variant`) were removed after
+> their v0.5.0 deprecation cycle. The default-shape call
+> (`client.rpc_call(method, params)`) is unchanged. There is no public
+> replacement for the internal-only `_is_retry` / `operation_variant`
+> kwargs; callers that need a non-`"/"` `source_path` should request a
+> typed sub-client method rather than reach across this wrapper. See
 > [`docs/deprecations.md`](deprecations.md) for the canonical removal
-> table and migration guidance. New callers should omit all three.
+> table.
 
 **Long-lived clients:** pass `keepalive=<seconds>` to spawn a background task
 that periodically pokes `accounts.google.com` and persists any rotated
