@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`NotFoundError` cross-domain umbrella exception.** Catch `NotFoundError` to handle any "resource not found" case across notebooks, sources, and artifacts in one `except` clause — replacing `except (NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError):`. `NotebookNotFoundError`, `SourceNotFoundError`, and `ArtifactNotFoundError` now also inherit from `NotFoundError`. This is **additive** and does **not** change any existing catch semantics: each `*NotFoundError` keeps its existing type-specific bases (`NotebookNotFoundError` is still an `RPCError` and `NotebookError`; `SourceNotFoundError` is still a `SourceError`; `ArtifactNotFoundError` is still an `ArtifactError`). The known asymmetry where `SourceNotFoundError`/`ArtifactNotFoundError` do not also inherit from `RPCError` is intentionally preserved for this release.
+
 ## [0.5.0] - 2026-05-23
 
 The first release after the v0.4.x auth cookie lifecycle series. Headline user-facing work: a top-to-bottom CLI UX overhaul (uniform `--json`, exit-code policy, shell completion, stdin pipes, SIGINT-resume), auth and cookie reliability hardening (inline PSIDTS cold-start recovery, fail-closed `notebooklm use`, concurrent-upload safety), and the v0.3-era deprecation removal cycle. **Read Breaking changes below before upgrading.**

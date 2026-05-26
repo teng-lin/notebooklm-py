@@ -21,6 +21,7 @@ from notebooklm.exceptions import (
     NotebookLimitError,
     NotebookLMError,
     NotebookNotFoundError,
+    NotFoundError,
     RateLimitError,
     RPCError,
     RPCTimeoutError,
@@ -45,6 +46,7 @@ class TestExceptionHierarchy:
             ValidationError,
             ConfigurationError,
             NetworkError,
+            NotFoundError,
             RPCError,
             DecodingError,
             UnknownRPCMethodError,
@@ -112,6 +114,104 @@ class TestExceptionHierarchy:
         assert notebooklm.AccountTier is AccountTier
         assert "AccountLimits" in notebooklm.__all__
         assert "AccountTier" in notebooklm.__all__
+
+
+class TestNotFoundErrorUmbrella:
+    """The NotFoundError umbrella catches every *NotFoundError across domains.
+
+    Catch semantics for the existing per-type bases (NotebookError /
+    SourceError / ArtifactError / RPCError) MUST remain unchanged — this is
+    an additive change. The asymmetry where SourceNotFoundError and
+    ArtifactNotFoundError do not inherit from RPCError is intentionally
+    preserved here; widening that is a separate (breaking) change deferred
+    to a future release.
+    """
+
+    def test_not_found_error_is_subclass_of_notebooklm_error(self):
+        """NotFoundError lives under the top-level NotebookLMError umbrella."""
+        assert issubclass(NotFoundError, NotebookLMError)
+
+    def test_not_found_error_catches_notebook_not_found(self):
+        """`except NotFoundError` catches NotebookNotFoundError."""
+        assert issubclass(NotebookNotFoundError, NotFoundError)
+        with pytest.raises(NotFoundError):
+            raise NotebookNotFoundError("nb-123")
+
+    def test_not_found_error_catches_source_not_found(self):
+        """`except NotFoundError` catches SourceNotFoundError."""
+        assert issubclass(SourceNotFoundError, NotFoundError)
+        with pytest.raises(NotFoundError):
+            raise SourceNotFoundError("src-123")
+
+    def test_not_found_error_catches_artifact_not_found(self):
+        """`except NotFoundError` catches ArtifactNotFoundError."""
+        assert issubclass(ArtifactNotFoundError, NotFoundError)
+        with pytest.raises(NotFoundError):
+            raise ArtifactNotFoundError("art-123", "audio")
+
+    def test_existing_catches_still_work(self):
+        """Adding NotFoundError must not break existing domain catches.
+
+        Regression guard: each *NotFoundError must still be caught by its
+        legacy domain base(s).
+        """
+        # Notebook side: still RPCError + NotebookError.
+        with pytest.raises(NotebookError):
+            raise NotebookNotFoundError("nb-1")
+        with pytest.raises(RPCError):
+            raise NotebookNotFoundError("nb-2")
+
+        # Source side: still SourceError.
+        with pytest.raises(SourceError):
+            raise SourceNotFoundError("src-1")
+
+        # Artifact side: still ArtifactError.
+        with pytest.raises(ArtifactError):
+            raise ArtifactNotFoundError("art-1", "audio")
+
+    def test_source_not_found_does_not_gain_rpc_error(self):
+        """Asymmetry is preserved: SourceNotFoundError MUST NOT be an RPCError.
+
+        Adding RPCError to SourceNotFoundError is a behavior change (would
+        suddenly broaden `except RPCError:` clauses at every domain call
+        site) and is explicitly deferred to a future release.
+        """
+        assert not issubclass(SourceNotFoundError, RPCError)
+        assert RPCError not in SourceNotFoundError.__mro__
+
+    def test_artifact_not_found_does_not_gain_rpc_error(self):
+        """Asymmetry is preserved: ArtifactNotFoundError MUST NOT be an RPCError.
+
+        See ``test_source_not_found_does_not_gain_rpc_error`` for the
+        reasoning — same constraint applies here.
+        """
+        assert not issubclass(ArtifactNotFoundError, RPCError)
+        assert RPCError not in ArtifactNotFoundError.__mro__
+
+    def test_not_found_error_is_exported_from_package(self):
+        """NotFoundError is reachable via ``from notebooklm import NotFoundError``."""
+        assert notebooklm.NotFoundError is NotFoundError
+        assert "NotFoundError" in notebooklm.__all__
+
+    def test_not_found_error_catches_all_three_in_one_clause(self):
+        """The motivating use case: one `except NotFoundError` clause
+        replaces a 3-tuple ``except (NotebookNotFoundError, SourceNotFoundError,
+        ArtifactNotFoundError):``."""
+        caught: list[type] = []
+        for exc in (
+            NotebookNotFoundError("nb"),
+            SourceNotFoundError("src"),
+            ArtifactNotFoundError("art", "audio"),
+        ):
+            try:
+                raise exc
+            except NotFoundError as e:
+                caught.append(type(e))
+        assert caught == [
+            NotebookNotFoundError,
+            SourceNotFoundError,
+            ArtifactNotFoundError,
+        ]
 
 
 class TestRPCErrorAttributes:

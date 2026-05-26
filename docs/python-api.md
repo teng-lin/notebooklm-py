@@ -217,6 +217,40 @@ except RPCError as e:
     # - Invalid parameters
 ```
 
+#### Catching any "not found" across domains
+
+`NotFoundError` is a cross-domain umbrella that catches every
+`*NotFoundError` (notebook, source, artifact) in one `except` clause:
+
+```python
+from notebooklm import NotFoundError
+
+try:
+    notebook = await client.notebooks.get(nb_id)
+    source = await client.sources.wait_until_ready(nb_id, src_id)
+    await client.artifacts.download_audio(nb_id, audio_id, dest)
+except NotFoundError as e:
+    # Catches NotebookNotFoundError, SourceNotFoundError,
+    # and ArtifactNotFoundError uniformly.
+    print(f"Missing resource: {e}")
+```
+
+Each `*NotFoundError` keeps its existing type-specific bases — for example,
+`SourceNotFoundError` is still a `SourceError`, and `NotebookNotFoundError`
+is still an `RPCError` *and* a `NotebookError`. The umbrella is purely
+additive and does not change existing catch semantics.
+
+Note: only `NotebookNotFoundError` also inherits from `RPCError` today.
+`SourceNotFoundError` and `ArtifactNotFoundError` do not — a known
+asymmetry preserved for now and revisited in a future release with
+explicit migration notes.
+
+Methods that *raise* (rather than return `None`) on not-found include
+`client.notebooks.get`, `client.sources.wait_until_ready`, and the artifact
+download / content paths. `client.sources.get` and `client.artifacts.get`
+return `None` on missing IDs; use those when you want a lookup that does
+*not* trigger the umbrella.
+
 ### Authentication & Token Refresh
 
 **Automatic Refresh:** The client automatically refreshes CSRF tokens when authentication errors are detected. This happens transparently during any API call - you don't need to handle it manually.

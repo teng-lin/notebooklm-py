@@ -358,6 +358,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "DecodingError",
     "NetworkError",
     "NonIdempotentRetryError",
+    "NotFoundError",
     "NotebookError",
     "NotebookLimitError",
     "NotebookLMError",

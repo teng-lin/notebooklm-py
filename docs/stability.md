@@ -79,6 +79,7 @@ ChatReference, ReportSuggestion, SuggestedTopic
 
 # Exceptions (all inherit from NotebookLMError)
 NotebookLMError                    # Base exception
+NotFoundError                      # Cross-domain umbrella for *NotFoundError
 RPCError, AuthError, RateLimitError, RPCTimeoutError, ServerError
 NetworkError, DecodingError, UnknownRPCMethodError
 ClientError, ConfigurationError, ValidationError

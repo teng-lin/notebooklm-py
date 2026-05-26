@@ -80,6 +80,8 @@ from .exceptions import (
     # Base
     NotebookLMError,
     NotebookNotFoundError,
+    # Cross-domain umbrellas
+    NotFoundError,
     RateLimitError,
     # Domain: Research
     ResearchTaskMismatchError,
@@ -193,6 +195,8 @@ __all__ = [
     "NotebookLMError",
     "ValidationError",
     "ConfigurationError",
+    # Cross-domain umbrellas
+    "NotFoundError",
     # RPC/Network Exceptions
     "RPCError",
     "DecodingError",
