@@ -216,7 +216,7 @@ class SessionTransport:
         """Authed POST entry point — routes through the middleware chain.
 
         Compatibility surface preserved on :class:`Session` so
-        ``RpcExecutor.execute`` (``_rpc_executor.py``),
+        ``RpcExecutor._execute_once`` (``_rpc_executor.py``),
         ``_chat_transport`` (``_chat_transport.py``), and direct
         callers (``client._session._perform_authed_post(...)``) keep the
         same keyword-only signature.

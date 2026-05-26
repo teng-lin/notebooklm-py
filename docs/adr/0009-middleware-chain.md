@@ -204,8 +204,8 @@ Per-position rationale:
 
 | Key | Type | Set by | Read by |
 |---|---|---|---|
-| `rpc_method` | `str \| None` | `Session._perform_authed_post` (receives the resolved method-name string from `RpcExecutor.execute`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
-| `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor.execute`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware` |
+| `rpc_method` | `str \| None` | `Session._perform_authed_post` (receives the resolved method-name string from `RpcExecutor._execute_once`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
+| `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware` |
 | `build_request` | `BuildRequest` | `Session._perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `Session._authed_post_chain_terminal` (via `_refresh_request_for_current_auth`) |
 | `log_label` | `str` | `Session._perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `Session._authed_post_chain_terminal` |
 | `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
@@ -219,7 +219,7 @@ The dict is mutable by reference (deliberately, per master plan
 below for the rationale and the policy that governs additions.
 
 > **Note on `operation_variant`.** Idempotency policy is resolved
-> **before chain entry** in `RpcExecutor.execute()` via
+> **before chain entry** in `RpcExecutor._execute_once()` via
 > `_idempotency.resolve_effective_disable_internal_retries(...)`; the
 > resolved boolean is what flows through the chain as
 > `disable_internal_retries`. The chain itself never needs the

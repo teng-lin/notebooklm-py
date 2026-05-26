@@ -85,7 +85,7 @@ async def test_concurrent_callers_share_single_refresh():
         async def fake_retry(*args, **kwargs):
             return "ok"
 
-        core.rpc_call = fake_retry  # instance shadow over the bound method
+        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
 
         tasks = [asyncio.create_task(_trigger_refresh(core)) for _ in range(3)]
 
@@ -174,7 +174,7 @@ async def test_second_wave_creates_distinct_refresh_task():
         async def fake_retry(*args, **kwargs):
             return "ok"
 
-        core.rpc_call = fake_retry
+        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
 
         await _trigger_refresh(core)
         first_task = core._auth_coord._refresh_task

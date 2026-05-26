@@ -2,8 +2,8 @@
 
 Tier-12 PR 12.2 wired an empty middleware chain around
 ``Kernel.post`` through ``Session._authed_post_chain_terminal`` (the shared
-seam covering ``Session._perform_authed_post`` and ``RpcExecutor.execute``'s
-call to ``self._owner._perform_authed_post`` at ``_rpc_executor.py:245``).
+seam covering ``Session._perform_authed_post`` and ``RpcExecutor._execute_once``'s
+call to ``self._owner._perform_authed_post``).
 
 PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
 ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware`` outermost,

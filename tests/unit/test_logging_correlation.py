@@ -233,7 +233,7 @@ async def test_correlation_threads_through_child_loggers():
 
 @pytest.mark.asyncio
 async def test_retry_inherits_parent_request_id():
-    """Recursive rpc_call(_is_retry=True) must NOT mint a fresh id — the
+    """Recursive executor.rpc_call(_is_retry=True) must NOT mint a fresh id — the
     failure→refresh→retry sequence should appear under one prefix."""
     from notebooklm._session import Session
     from notebooklm.auth import AuthTokens
@@ -253,23 +253,28 @@ async def test_retry_inherits_parent_request_id():
         captured_ids.append(get_request_id())
         # First call: raise to trigger retry path; second call: succeed.
         if not is_retry:
-            # Mimic recursive retry: outer rpc_call would call _try_refresh
-            # which calls rpc_call(_is_retry=True). Use our own Session
-            # instance's rpc_call directly.
-            return await core.rpc_call(method, params, source_path, allow_null, _is_retry=True)
+            # Mimic decode-time retry without leaving the executor.
+            return await executor.rpc_call(
+                method,
+                params,
+                source_path,
+                allow_null,
+                _is_retry=True,
+            )
         return "ok"
 
     # Real Session — the executor's open-client guard
     # requires a truthy http_client, so we ``open()`` and let the lifecycle
     # construct one against the default httpx transport. ``fake_impl`` is
-    # monkeypatched onto ``_rpc_call_impl`` so no actual HTTP call fires;
+    # monkeypatched onto ``_execute_once`` so no actual HTTP call fires;
     # the test exercises the request-id propagation through the executor
     # wrapper purely in-process.
     auth = AuthTokens(cookies={"SID": "test_sid"}, csrf_token="csrf", session_id="sid")
     core = Session(auth)
     await core.open()
     try:
-        core._rpc_call_impl = fake_impl  # type: ignore[method-assign]
+        executor = core._get_rpc_executor()
+        executor._execute_once = fake_impl  # type: ignore[method-assign]
 
         result = await core.rpc_call(method=object(), params=[])  # type: ignore[arg-type]
         assert result == "ok"

@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
+from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session import Session
@@ -58,8 +59,7 @@ class _Owner:
         self._refresh_retry_delay = refresh_retry_delay
         self.perform_calls: list[dict[str, Any]] = []
         self.refresh_calls = 0
-        self.rpc_retry_calls: list[dict[str, Any]] = []
-        self.rpc_retry_result: Any = {"retried": True}
+        self.metric_increments: list[dict[str, int | float]] = []
         self.response = _ok_response()
         self.snapshot = AuthSnapshot(
             csrf_token="CSRF_SNAPSHOT",
@@ -67,6 +67,13 @@ class _Owner:
             authuser=1,
             account_email="user@example.test",
         )
+        self._kernel = self
+
+    def get_http_client(self) -> object:
+        return object()
+
+    def _increment_metrics(self, **increments: int | float) -> None:
+        self.metric_increments.append(increments)
 
     async def _perform_authed_post(
         self,
@@ -90,30 +97,6 @@ class _Owner:
 
     async def _await_refresh(self) -> None:
         self.refresh_calls += 1
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any:
-        self.rpc_retry_calls.append(
-            {
-                "method": method,
-                "params": params,
-                "source_path": source_path,
-                "allow_null": allow_null,
-                "_is_retry": _is_retry,
-                "disable_internal_retries": disable_internal_retries,
-                "operation_variant": operation_variant,
-            }
-        )
-        return self.rpc_retry_result
 
 
 def _executor(
@@ -146,101 +129,67 @@ def _executor(
 
 
 @pytest.mark.asyncio
-async def test_session_rpc_call_impl_delegates_to_rpc_executor(monkeypatch) -> None:
-    """``Session._rpc_call_impl`` remains a delegate (per the ``RpcOwner``
-    Protocol) and routes into :meth:`RpcExecutor.execute`. The other
-    executor-adjacent Session wrappers (``_build_url``,
-    ``_raise_rpc_error_from_http_status`` /
-    ``_raise_rpc_error_from_request_error``, ``_try_refresh_and_retry``)
-    were inlined in PR #4b — callers that need those reach the canonical
-    method on :class:`RpcExecutor` directly via
-    ``core._get_rpc_executor().<name>``.
-    """
+async def test_session_rpc_call_delegates_to_rpc_executor(monkeypatch) -> None:
+    """``Session.rpc_call`` remains the feature-facing compatibility facade."""
     core = Session(_auth_tokens())
-    snapshot = AuthSnapshot(
-        csrf_token="csrf",
-        session_id="session",
-        authuser=0,
-        account_email=None,
-    )
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
     class FakeExecutor:
-        async def execute(self, *args: Any, **kwargs: Any) -> str:
-            calls.append(("execute", args, kwargs))
-            return "executed"
-
-        def build_url(self, *args: Any, **kwargs: Any) -> str:
-            calls.append(("build_url", args, kwargs))
-            return "url"
-
-        def raise_rpc_error_from_http_status(self, *args: Any, **kwargs: Any) -> None:
-            calls.append(("http_status", args, kwargs))
-            raise RuntimeError("http status")
-
-        def raise_rpc_error_from_request_error(self, *args: Any, **kwargs: Any) -> None:
-            calls.append(("request_error", args, kwargs))
-            raise RuntimeError("request error")
-
-        async def try_refresh_and_retry(self, *args: Any, **kwargs: Any) -> str:
-            calls.append(("try_refresh", args, kwargs))
+        async def rpc_call(self, *args: Any, **kwargs: Any) -> str:
+            calls.append(("rpc_call", args, kwargs))
             return "retried"
 
     executor = FakeExecutor()
     monkeypatch.setattr(core, "_get_rpc_executor", lambda: executor)
 
     assert (
-        await core._rpc_call_impl(
+        await core.rpc_call(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
             False,
             False,
             disable_internal_retries=True,
-        )
-        == "executed"
-    )
-    assert (
-        core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, snapshot, "/source") == "url"
-    )
-    with pytest.raises(RuntimeError, match="http status"):
-        core._get_rpc_executor().raise_rpc_error_from_http_status(
-            _status_error(500), RPCMethod.LIST_NOTEBOOKS
-        )
-    with pytest.raises(RuntimeError, match="request error"):
-        core._get_rpc_executor().raise_rpc_error_from_request_error(
-            httpx.ConnectError("boom"),
-            RPCMethod.LIST_NOTEBOOKS,
-        )
-    assert (
-        await core._get_rpc_executor().try_refresh_and_retry(
-            RPCMethod.LIST_NOTEBOOKS,
-            [],
-            "/",
-            False,
-            RPCError("auth"),
-            disable_internal_retries=True,
-            operation_variant=None,
         )
         == "retried"
     )
 
-    assert [name for name, _, _ in calls] == [
-        "execute",
-        "build_url",
-        "http_status",
-        "request_error",
-        "try_refresh",
-    ]
+    assert [name for name, _, _ in calls] == ["rpc_call"]
     assert calls[0][2] == {
         "disable_internal_retries": True,
         "operation_variant": None,
     }
-    assert calls[1][2] == {}
-    assert calls[-1][2] == {
-        "disable_internal_retries": True,
-        "operation_variant": None,
-    }
+
+
+@pytest.mark.asyncio
+async def test_rpc_call_wraps_execute_once_with_metrics_and_request_id(monkeypatch) -> None:
+    owner = _Owner()
+    executor = _executor(owner)
+    captured_ids: list[str | None] = []
+
+    async def fake_execute_once(*args: Any, **kwargs: Any) -> str:
+        captured_ids.append(get_request_id())
+        return "ok"
+
+    monkeypatch.setattr(executor, "_execute_once", fake_execute_once)
+
+    result = await executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+    assert result == "ok"
+    assert owner.metric_increments == [{"rpc_calls_started": 1}]
+    assert captured_ids[0] is not None
+    assert get_request_id() is None
+
+    owner.metric_increments.clear()
+    token = set_request_id("parent-req")
+    try:
+        retry_result = await executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [], _is_retry=True)
+        assert retry_result == "ok"
+        assert captured_ids[-1] == "parent-req"
+    finally:
+        reset_request_id(token)
+
+    assert owner.metric_increments == []
 
 
 @pytest.mark.asyncio
@@ -276,7 +225,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
 
     monkeypatch.setattr(core, "_perform_authed_post", fake_perform_authed_post)
 
-    result = await core._rpc_call_impl(
+    result = await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/notebook/abc",
@@ -305,7 +254,7 @@ async def test_execute_threads_override_source_allow_null_and_retry_flag(monkeyp
         decode_calls.append({"raw": raw, "rpc_id": rpc_id, "allow_null": allow_null})
         return {"ok": True}
 
-    result = await _executor(owner, decode_response=decode).execute(
+    result = await _executor(owner, decode_response=decode)._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         [["param"]],
         "/notebook/abc",
@@ -336,9 +285,13 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
     owner = _Owner(refresh_callback=refresh_callback, refresh_retry_delay=0.25)
     sleep_calls: list[float] = []
     is_auth_error_calls: list[Exception] = []
+    decode_allow_nulls: list[bool] = []
 
     def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
-        raise RPCError("not matched by the built-in auth detector")
+        decode_allow_nulls.append(allow_null)
+        if len(decode_allow_nulls) == 1:
+            raise RPCError("not matched by the built-in auth detector")
+        return {"retried": True}
 
     def is_auth_error(exc: Exception) -> bool:
         is_auth_error_calls.append(exc)
@@ -352,7 +305,7 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
         decode_response=decode,
         is_auth_error=is_auth_error,
         sleep=sleep,
-    ).execute(
+    )._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         ["param"],
         "/notebook/abc",
@@ -365,17 +318,9 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
     assert owner.refresh_calls == 1
     assert sleep_calls == [0.25]
     assert len(is_auth_error_calls) == 1
-    assert owner.rpc_retry_calls == [
-        {
-            "method": RPCMethod.LIST_NOTEBOOKS,
-            "params": ["param"],
-            "source_path": "/notebook/abc",
-            "allow_null": True,
-            "_is_retry": True,
-            "disable_internal_retries": True,
-            "operation_variant": None,
-        }
-    ]
+    assert decode_allow_nulls == [True, True]
+    assert len(owner.perform_calls) == 2
+    assert [call["disable_internal_retries"] for call in owner.perform_calls] == [True, True]
 
 
 @pytest.mark.asyncio
@@ -384,16 +329,20 @@ async def test_decode_time_auth_retry_preserves_none_result() -> None:
         return object()
 
     owner = _Owner(refresh_callback=refresh_callback)
-    owner.rpc_retry_result = None
+    decode_calls = 0
 
     def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
-        raise RPCError("authentication expired")
+        nonlocal decode_calls
+        decode_calls += 1
+        if decode_calls == 1:
+            raise RPCError("authentication expired")
+        return None
 
     result = await _executor(
         owner,
         decode_response=decode,
         is_auth_error=lambda exc: True,
-    ).execute(
+    )._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/",
@@ -403,8 +352,7 @@ async def test_decode_time_auth_retry_preserves_none_result() -> None:
 
     assert result is None
     assert owner.refresh_calls == 1
-    assert owner.rpc_retry_calls[0]["allow_null"] is True
-    assert owner.rpc_retry_calls[0]["_is_retry"] is True
+    assert decode_calls == 2
 
 
 @pytest.mark.asyncio
@@ -462,7 +410,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         return {"ok": True}
 
     monkeypatch.setattr(core, "_await_refresh", fake_await_refresh)
-    monkeypatch.setattr(core, "rpc_call", fake_rpc_call)
+    monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)
 
     result = await executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
@@ -534,7 +482,7 @@ def test_request_error_mapper_parity(
 # =============================================================================
 # decode-time exception surface contract
 #
-# The ``except`` at ``_rpc_executor.py::RpcExecutor.execute`` only wraps genuine
+# The ``except`` at ``_rpc_executor.py::RpcExecutor._execute_once`` only wraps genuine
 # shape-drift exceptions (``json.JSONDecodeError``, ``KeyError``, ``IndexError``,
 # ``TypeError``) as ``RPCError``. Code bugs (``AttributeError`` and friends)
 # must propagate unmasked. These tests pin that contract.
@@ -564,7 +512,7 @@ async def test_decode_shape_error_wrapped(
         raise decoder_exc
 
     with pytest.raises(RPCError) as raised:
-        await _executor(owner, decode_response=decode).execute(
+        await _executor(owner, decode_response=decode)._execute_once(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
@@ -592,7 +540,7 @@ async def test_decode_shape_error_json_decode_wrapped() -> None:
         raise decoder_exc
 
     with pytest.raises(RPCError) as raised:
-        await _executor(owner, decode_response=decode).execute(
+        await _executor(owner, decode_response=decode)._execute_once(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
@@ -621,7 +569,7 @@ async def test_rpc_error_log_includes_class_code_and_retry_after(caplog) -> None
         caplog.at_level(logging.ERROR, logger="notebooklm._rpc_executor"),
         pytest.raises(RateLimitError),
     ):
-        await _executor(owner, decode_response=decode).execute(
+        await _executor(owner, decode_response=decode)._execute_once(
             RPCMethod.START_DEEP_RESEARCH,
             [],
             "/",
@@ -671,7 +619,7 @@ async def test_decode_code_bug_propagates(
         raise decoder_exc
 
     with pytest.raises(type(decoder_exc)) as raised:
-        await _executor(owner, decode_response=decode).execute(
+        await _executor(owner, decode_response=decode)._execute_once(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",

@@ -502,7 +502,7 @@ def test_client_token_dedupe_is_noop_for_other_policies() -> None:
 def _build_rpc_executor() -> Any:
     """Build a minimally-wired RpcExecutor for behavioral-equivalence tests.
 
-    The executor is driven via its ``execute()`` method (the lowest of the
+    The executor is driven via its ``_execute_once()`` method (the lowest of the
     five consultation sites). The fixture stubs the transport so we can
     assert on the ``disable_internal_retries`` value that the executor
     actually hands to ``_perform_authed_post``.
@@ -529,13 +529,7 @@ def _build_rpc_executor() -> Any:
     owner._refresh_retry_delay = 0.0
     owner._perform_authed_post = AsyncMock(side_effect=_fake_perform_authed_post)
     owner._await_refresh = AsyncMock()
-    owner._drain_tracker = MagicMock()
-    owner._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
-    owner._drain_tracker.finish_transport_post = AsyncMock()
     owner._increment_metrics = MagicMock()
-    owner._emit_rpc_event = AsyncMock()
-    owner.rpc_call = AsyncMock()
-    owner._rpc_call_impl = AsyncMock()
 
     def _decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
         return []
@@ -572,7 +566,7 @@ async def test_default_registry_preserves_today_behavior(
     behavior. No drift."""
     executor, owner, captured = _build_rpc_executor
 
-    await executor.execute(
+    await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         params=[],
         source_path="/",
@@ -594,7 +588,7 @@ async def test_caller_disable_true_propagates_through_executor(
     transport regardless of policy (caller wins)."""
     executor, owner, captured = _build_rpc_executor
 
-    await executor.execute(
+    await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         params=[],
         source_path="/",
@@ -614,12 +608,12 @@ async def test_operation_variant_kwarg_threads_through_executor(
     _build_rpc_executor: Any,
 ) -> None:
     """``operation_variant`` MUST be accepted as a kwarg on
-    ``RpcExecutor.execute()`` without breaking the call. Wave 2 will wire
+    ``RpcExecutor._execute_once()`` without breaking the call. Wave 2 will wire
     behavioral effects; this PR only adds the seam."""
     executor, owner, captured = _build_rpc_executor
 
     # Should not raise — kwarg is accepted everywhere.
-    await executor.execute(
+    await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
         params=[],
         source_path="/",

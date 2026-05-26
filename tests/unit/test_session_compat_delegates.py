@@ -1,4 +1,4 @@
-"""Pin: Session compat methods that the RpcOwner Protocol or test suite
+"""Pin: Session compat methods that capability Protocols or test suite
 reach are present on Session AND remain delegates (not real-body code).
 
 Phase 4 / PR 10 deleted the property-bridge layer; without this pin
@@ -18,10 +18,12 @@ to migrate:
 
     Protocol-locked (``RpcOwner`` in ``_rpc_executor.py``)
         _await_refresh
-        _rpc_call_impl
 
     External Protocol surface (``RefreshAuthCore`` in ``_auth/session.py``)
         update_auth_tokens
+
+    Feature-facing Protocol surface (``RpcCaller`` in ``_session_contracts.py``)
+        rpc_call
 
 A delegate body must be at most three top-level statements with at
 least one outbound collaborator call AND no forbidden control-flow
@@ -51,7 +53,7 @@ from notebooklm._session import Session
 # external callers migrated to the canonical collaborator method.
 _DELEGATE_METHODS = [
     "_await_refresh",
-    "_rpc_call_impl",
+    "rpc_call",
     "update_auth_tokens",
 ]
 
@@ -150,21 +152,21 @@ def test_session_delegate_calls_collaborator(name: str) -> None:
 
 
 def test_session_satisfies_rpc_owner_protocol_members() -> None:
-    """RpcOwner requires ``_rpc_call_impl``, ``_await_refresh``,
-    ``_perform_authed_post``, ``rpc_call`` and ``_increment_metrics`` as
-    methods (per ``src/notebooklm/_rpc_executor.py``). All must be present
-    and callable; only the first two are checked for delegate-shape because
-    the others are facade methods with legitimate logic bodies.
-    """
+    """RpcOwner stays narrow: only members the executor directly calls."""
     for name in (
-        "_rpc_call_impl",
         "_await_refresh",
         "_perform_authed_post",
-        "rpc_call",
         "_increment_metrics",
     ):
         assert hasattr(Session, name), f"Session missing RpcOwner member: {name}"
         assert callable(getattr(Session, name)), f"Session.{name} not callable"
+
+    from notebooklm.auth import AuthTokens
+
+    core = Session(
+        AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="sid"),
+    )
+    assert hasattr(core, "_kernel"), "Session missing RpcOwner member: _kernel"
 
 
 def test_session_keeps_drain_tracker_seam() -> None:

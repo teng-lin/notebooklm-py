@@ -689,7 +689,7 @@ class Session:
         moved in move #4c — ``docs/improvement.md`` §3.1). Kept on
         :class:`Session` because the :class:`RpcOwner` Protocol in
         :mod:`notebooklm._rpc_executor` structurally requires the method
-        here (``RpcExecutor.execute`` reaches it via ``self._owner``).
+        here (``RpcExecutor._execute_once`` reaches it via ``self._owner``).
         ``_chat_transport`` and ``client._session._perform_authed_post(...)``
         direct callers keep the same keyword-only signature.
         """
@@ -744,40 +744,18 @@ class Session:
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
     ) -> Any:
-        """Compatibility wrapper around :meth:`RpcExecutor.execute_with_telemetry`.
+        """Compatibility wrapper around :meth:`RpcExecutor.rpc_call`.
 
-        The executor owns the telemetry, reqid, drain, and decode-time
+        The executor owns the telemetry, reqid, and decode-time
         refresh-and-retry plumbing; this facade preserves the method shape so
         the 30+ tests that mock ``core.rpc_call = AsyncMock(...)`` by
         attribute keep working. See
-        :meth:`notebooklm._rpc_executor.RpcExecutor.execute_with_telemetry` for
+        :meth:`notebooklm._rpc_executor.RpcExecutor.rpc_call` for
         the full contract (kwargs ``_is_retry`` / ``disable_internal_retries``
         / ``operation_variant`` flow through unchanged; ``RuntimeError`` is
         raised if the client is not initialized).
         """
-        return await self._get_rpc_executor().execute_with_telemetry(
-            method,
-            params,
-            source_path,
-            allow_null,
-            _is_retry,
-            disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-        )
-
-    async def _rpc_call_impl(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str,
-        allow_null: bool,
-        _is_retry: bool,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any:
-        """Compatibility wrapper around :class:`RpcExecutor`."""
-        return await self._get_rpc_executor().execute(
+        return await self._get_rpc_executor().rpc_call(
             method,
             params,
             source_path,

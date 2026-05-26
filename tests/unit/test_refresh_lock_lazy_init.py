@@ -126,7 +126,7 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
             cookies={"SID": "post_refresh"},
         )
         # Mirror real-world callback behavior: update core.auth in place so
-        # ``_try_refresh_and_retry``'s subsequent ``rpc_call`` retry sees
+        # ``try_refresh_and_retry``'s subsequent ``rpc_call`` retry sees
         # the new tokens.
         core_box[0].auth.csrf_token = tokens.csrf_token
         core_box[0].auth.session_id = tokens.session_id
@@ -141,7 +141,7 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
         async def fake_retry(*args: object, **kwargs: object) -> str:
             return "ok"
 
-        core.rpc_call = fake_retry  # type: ignore[method-assign]
+        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
 
         # Pre-refresh invariant: lock is unallocated even after ``open()``.
         assert core._auth_coord._refresh_lock is None, (
@@ -187,7 +187,7 @@ async def test_refresh_lock_instance_stable_across_calls() -> None:
         async def fake_retry(*args: object, **kwargs: object) -> str:
             return "ok"
 
-        core.rpc_call = fake_retry  # type: ignore[method-assign]
+        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
 
         await _trigger_refresh(core)
         first_lock = core._auth_coord._refresh_lock

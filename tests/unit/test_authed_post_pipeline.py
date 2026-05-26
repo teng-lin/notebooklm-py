@@ -1,7 +1,7 @@
 """Parity tests for the shared transport pipeline.
 
 Pins down the behavior of :meth:`Session._perform_authed_post`
-extracted from ``_rpc_call_impl``:
+used by the RPC executor path:
 
 - ``build_request`` factory is called once per HTTP attempt.
 - On a single auth-error retry, the factory is called TWICE, and the second
@@ -158,7 +158,7 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
     the pre-PR-12.7 contract where the retry loop read the same attr live.
     Drives the chain via
     ``core._perform_authed_post`` so the assertion exercises the
-    production seam ``RpcExecutor.execute`` uses.
+    production seam ``RpcExecutor._execute_once`` uses.
     """
     core = _make_core(rate_limit_max_retries=0)
     await core.open()

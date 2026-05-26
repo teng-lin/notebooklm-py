@@ -832,7 +832,7 @@ def maybe_inject_client_token(
     token slot.
 
     ``params`` is mutated in place. Two shapes are supported, matching
-    the two shapes that ``RpcExecutor.execute`` is asked to encode:
+    the two shapes that ``RpcExecutor._execute_once`` is asked to encode:
 
     * ``dict``-shaped params with a ``str`` ``client_token_field`` key:
       ``params[field_name] = uuid4().hex`` if the key is absent or maps

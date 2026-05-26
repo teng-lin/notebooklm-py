@@ -15,10 +15,8 @@ caller (``Session._perform_authed_post``) always populates ``log_label``,
 so the middleware reads it via ``RPC_CONTEXT_LOG_LABEL`` and falls back
 to a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
-This PR lifts the drain bookkeeping from
-``RpcExecutor.execute_with_telemetry`` (which previously bracketed
-``_rpc_call_impl`` with ``_begin_transport_post`` / ``_finish_transport_post``)
-and from ``_chat_transport.send_authed_post`` (the chat-streaming entry).
+This PR lifts the drain bookkeeping from the logical RPC wrapper and from
+``_chat_transport.send_authed_post`` (the chat-streaming entry).
 After PR 12.5, drain admission is owned by the chain — the explicit
 bookkeeping calls in those two call sites are gone.
 
@@ -97,10 +95,9 @@ class DrainMiddleware:
         ``await begin_transport_post`` may raise ``RuntimeError`` when
         the tracker is in draining mode and the current task has no
         prior operation depth. The exception propagates out of the
-        chain unchanged — that's exactly the pre-PR-12.5 behavior;
-        ``RpcExecutor.execute_with_telemetry`` and
-        ``_chat_transport.send_authed_post`` both let
-        ``_begin_transport_post`` errors propagate without catching.
+        chain unchanged — that's exactly the pre-PR-12.5 behavior; the
+        RPC dispatch path and ``_chat_transport.send_authed_post`` both let
+        drain admission errors propagate without catching.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         token = await self._drain_tracker.begin_transport_post(log_label)

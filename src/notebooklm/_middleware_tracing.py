@@ -18,7 +18,7 @@ structured-logging consumers see them as ``LogRecord`` attributes):
 
 - ``rpc_method`` — value of ``RPC_CONTEXT_RPC_METHOD``. Populated
   as of PR 12.4 (via ``Session._perform_authed_post``'s ``rpc_method``
-  kwarg, passed by ``RpcExecutor.execute``). ``None`` only for the chat
+  kwarg, passed by ``RpcExecutor._execute_once``). ``None`` only for the chat
   streaming path (``_chat_transport.send_authed_post`` — chat-side
   requests are not classified RPCs) and for ``__new__``-built fixtures
   driving the chain directly.

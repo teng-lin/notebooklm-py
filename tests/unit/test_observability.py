@@ -32,12 +32,10 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     As of Tier-12 PR 12.4 the per-RPC success/failure counters and the
     ``on_rpc_event`` fire live inside ``MetricsMiddleware`` (which sits
     in the chain around ``_perform_authed_post``), not inside
-    ``RpcExecutor.execute_with_telemetry``. The seam the test mocks
-    therefore has to live below the chain — mocking ``_rpc_call_impl``
-    (the historical swap point) now bypasses the chain entirely and
-    would silence both the counter and the event. We mock
-    ``_perform_authed_post`` instead so the chain runs end-to-end, and
-    we return a wire-format payload that the real decoder accepts.
+    ``RpcExecutor.rpc_call``. The seam the test mocks therefore has to
+    live below the chain. We mock the chain terminal so the chain runs
+    end-to-end, and we return a wire-format payload that the real decoder
+    accepts.
 
     The test still asserts the same five public-contract invariants it
     always has: result value, correlation-id propagation INTO the chain,
@@ -63,8 +61,8 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     # ``Kernel.post``) so the real chain runs
     # end-to-end and ``MetricsMiddleware`` sees the call. Mocking
     # ``_perform_authed_post`` itself would bypass the chain entirely
-    # and silence the counters this test exists to assert. Mocking
-    # ``_rpc_call_impl`` (the historical swap point) would do the same.
+    # and silence the counters this test exists to assert. Mocking above
+    # the chain would do the same.
     from notebooklm._middleware import RpcResponse
 
     async def fake_terminal(request: object) -> RpcResponse:

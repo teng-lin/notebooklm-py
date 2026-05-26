@@ -39,16 +39,14 @@ caller-initiated unwinds, not RPC failures; they propagate without
 incrementing counters or emitting events. Same scope as TracingMiddleware,
 same reason.
 
-This PR also lifts the per-RPC telemetry block from
-``RpcExecutor.execute_with_telemetry`` (which previously increment-and-
-emitted around ``_rpc_call_impl``). The chain now owns that emission, and
-``execute_with_telemetry`` keeps only the ``rpc_calls_started`` counter
-plus the reqid + drain-token plumbing — concerns that live OUTSIDE the
-chain and are not transport-layer events.
+This PR also lifts the per-RPC telemetry block from the logical RPC wrapper.
+The chain now owns that emission, and ``RpcExecutor.rpc_call`` keeps only the
+``rpc_calls_started`` counter plus the reqid plumbing — concerns that live
+OUTSIDE the chain and are not transport-layer events.
 
 Semantic refinement vs. pre-PR-12.4: decode-time errors (e.g. ``NoData``
 raised after a 200-OK transport return) previously incremented
-``rpc_calls_failed`` because the old block wrapped ``_rpc_call_impl``,
+``rpc_calls_failed`` because the old block wrapped raw RPC dispatch,
 which includes decode. The chain wraps only the transport leg, so
 decode-only failures no longer count as ``rpc_calls_failed``. This is the
 intended Tier-13 endpoint shape (``Session.rpc_call`` decodes AFTER the

@@ -275,7 +275,7 @@ async def test_event_carries_current_request_id(
 ) -> None:
     """Event ``request_id`` reflects the active ``contextvar`` at emit time.
 
-    ``RpcExecutor.execute_with_telemetry`` mints (or inherits) a request
+    ``RpcExecutor.rpc_call`` mints (or inherits) a request
     id via ``set_request_id()`` BEFORE invoking the chain, and the
     middleware's call to ``get_request_id()`` reads that contextvar. Pin
     the propagation by setting the id explicitly in test scope and

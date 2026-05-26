@@ -9,7 +9,7 @@ entire ``(csrf, session_id, cookies)`` snapshot is atomic from a concurrent
 coroutine standpoint: no other task can mutate state between the terminal
 freshness check and the wire.
 
-The POST was extracted out of ``_rpc_call_impl`` into
+The POST lives in the shared authed transport path used by
 ``_perform_authed_post`` so chat can share the same transport pipeline.
 The AST guard below follows the POST; the invariant still belongs at the
 shared site.
@@ -554,6 +554,6 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
     assert cookie_is_new == csrf_is_new == sid_is_new, (
         f"Mixed-generation request observed (cookie_new={cookie_is_new}, "
         f"csrf_new={csrf_is_new}, sid_new={sid_is_new}). A yield point was "
-        f"introduced between auth read and post() in _rpc_call_impl — re-run "
+        f"introduced between auth read and post() in the RPC transport path — re-run "
         f"the AST guard above to find the offending await."
     )

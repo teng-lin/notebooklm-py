@@ -5,13 +5,13 @@ The Tier-12/13 greenfield migration wires
 The chain leaf (:meth:`Session._authed_post_chain_terminal`) consumes the
 populated ``RpcRequest.url`` / ``headers`` / ``body`` envelope and delegates
 directly to ``Kernel.post`` — the transport seam under both
-:meth:`Session._perform_authed_post` AND ``RpcExecutor.execute``.
+:meth:`Session._perform_authed_post` AND ``RpcExecutor._execute_once``.
 
 These tests verify the wiring contract from
 ADR-009 §"RpcRequest.context keys":
 
 1. Both call paths (``Session._perform_authed_post`` directly and the
-   ``RpcExecutor.execute`` keyword shape) flow through the chain terminal to
+   ``RpcExecutor._execute_once`` keyword shape) flow through the chain terminal to
    the transport.
 2. ``RpcRequest.context`` carries ``build_request`` / ``log_label`` /
    ``disable_internal_retries`` for retry/rebuild metadata while the terminal
@@ -113,17 +113,17 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
 
 @pytest.mark.asyncio
 async def test_chain_routes_rpc_executor_path_to_transport() -> None:
-    """``RpcExecutor.execute`` → ``_perform_authed_post`` flows through the chain too.
+    """``RpcExecutor._execute_once`` → ``_perform_authed_post`` flows through the chain too.
 
-    ``RpcExecutor.execute`` (``_rpc_executor.py:275``) calls
+    ``RpcExecutor._execute_once`` calls
     ``self._owner._perform_authed_post(...)`` which is precisely
     :meth:`Session._perform_authed_post`. Routing both paths through one
     seam is the whole point of wiring at ``_perform_authed_post`` rather
     than at each call site.
 
     We exercise the route by calling ``_perform_authed_post`` with the
-    keyword shape ``RpcExecutor.execute`` uses (the
-    ``log_label=f"RPC {method.name}"`` template at ``_rpc_executor.py:277``)
+    keyword shape ``RpcExecutor._execute_once`` uses (the
+    ``log_label=f"RPC {method.name}"`` template)
     and asserting the chain leaf hands those exact kwargs to the
     transport. We do NOT spin up a full ``RpcExecutor`` here because that
     pulls in the idempotency registry and encoder fixtures; the seam
@@ -373,8 +373,8 @@ def test_build_chain_empty_returns_terminal_unchanged() -> None:
 def test_perform_authed_post_signature_unchanged() -> None:
     """The keyword-only signature of ``_perform_authed_post`` is unchanged.
 
-    Many call sites pass the three kwargs by name
-    (``_rpc_executor.py:275``, ``_chat_transport.py:64``, integration tests).
+    Many call sites pass the three kwargs by name, including the RPC executor,
+    chat transport, and integration tests.
     The chain wiring inside the body must NOT change the public-ish
     signature; this guard catches an accidental rename.
     """
