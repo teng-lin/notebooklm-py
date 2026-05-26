@@ -12,7 +12,7 @@ Post-fix: each call site wraps the synchronous save with
 blocking work runs on the default thread executor and the event loop
 keeps spinning sibling tasks.
 
-This test monkeypatches ``notebooklm.auth.save_cookies_to_storage`` to
+This test monkeypatches ``notebooklm._auth.storage.save_cookies_to_storage`` to
 ``time.sleep(0.5)``. While ``AuthTokens.from_storage`` is mid-save, a
 concurrently scheduled async task increments a counter every 50 ms.
 Pre-fix the counter is ~0–1 (loop frozen by the sync sleep); post-fix
@@ -34,6 +34,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._auth.refresh as _auth_refresh
+import notebooklm._auth.storage as _auth_storage
 from notebooklm import auth as auth_module
 from notebooklm.auth import AuthTokens
 
@@ -98,11 +99,9 @@ async def test_from_storage_save_does_not_block_event_loop(
         time.sleep(_SLEEP_SECONDS)
         return True
 
-    # ``AuthTokens.from_storage`` calls ``save_cookies_to_storage`` via the
-    # module-local alias in ``notebooklm.auth`` (auth.py:86), so patch the
-    # consumer-side name on that module rather than the canonical home in
-    # ``_auth.storage``.
-    monkeypatch.setattr(auth_module, "save_cookies_to_storage", _blocking_save)
+    # ``AuthTokens.from_storage`` owns token loading in ``_auth.tokens`` and
+    # resolves the storage save through the private owner module.
+    monkeypatch.setattr(_auth_storage, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0
     stop = asyncio.Event()

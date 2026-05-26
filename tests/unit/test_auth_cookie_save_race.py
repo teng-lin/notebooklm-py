@@ -950,10 +950,9 @@ class TestRefreshCmdResnapshot:
             cookie_jar.set("__Secure-1PSIDTS", "post_refresh", domain=".google.com", path="/")
             return ("csrf", "sid", True, snapshot_cookie_jar(cookie_jar))
 
-        # ``AuthTokens.from_storage`` lives in ``notebooklm.auth`` and uses the
-        # local-aliased symbols bound at import time (auth.py:578-579), so the
-        # patch must target the facade module — not just ``_auth.refresh``.
-        monkeypatch.setattr(auth_mod, "_fetch_tokens_with_refresh", fake_fetch_with_refresh)
+        # ``AuthTokens.from_storage`` lives in ``_auth.tokens`` and resolves the
+        # token fetch through the private owner module.
+        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_refresh", fake_fetch_with_refresh)
 
         captured_snapshots: list = []
         real_save = auth_mod.save_cookies_to_storage
@@ -962,7 +961,7 @@ class TestRefreshCmdResnapshot:
             captured_snapshots.append(original_snapshot)
             return real_save(jar, path, original_snapshot=original_snapshot, **kwargs)
 
-        monkeypatch.setattr(auth_mod, "save_cookies_to_storage", capture_save)
+        monkeypatch.setattr(_auth_storage, "save_cookies_to_storage", capture_save)
 
         await auth_mod.AuthTokens.from_storage(path=storage)
 
@@ -1178,10 +1177,9 @@ class TestBaselineNotAdvancedOnSaveFailure:
             result = CookieSaveResult(False)
             return result if return_result else result.ok
 
-        # ``AuthTokens.from_storage`` uses the local aliases in ``notebooklm.auth``
-        # (auth.py:86 + auth.py:579), so the facade module is the call site.
-        monkeypatch.setattr(auth_mod, "_fetch_tokens_with_refresh", fake_fetch_with_refresh)
-        monkeypatch.setattr(auth_mod, "save_cookies_to_storage", failed_save)
+        # ``AuthTokens.from_storage`` resolves through the private owner modules.
+        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_refresh", fake_fetch_with_refresh)
+        monkeypatch.setattr(_auth_storage, "save_cookies_to_storage", failed_save)
 
         auth = await auth_mod.AuthTokens.from_storage(path=storage)
         core = Session(auth)
@@ -1507,8 +1505,8 @@ class TestCASVariantAware:
             _write_storage(storage_path, cookies)
             return ("csrf", "session", False, None)
 
-        # ``AuthTokens.from_storage`` uses ``notebooklm.auth``'s local alias.
-        monkeypatch.setattr(auth_mod, "_fetch_tokens_with_refresh", fake_fetch_with_refresh)
+        # ``AuthTokens.from_storage`` resolves through the private refresh owner.
+        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_refresh", fake_fetch_with_refresh)
 
         # Pre-client save runs through the real save_cookies_to_storage; the
         # CAS rejection must keep SIBLING on disk and the variant-aware

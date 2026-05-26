@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+import notebooklm._auth.refresh as refresh_mod
 from notebooklm import auth as auth_mod
 from notebooklm.auth import (
     NOTEBOOKLM_REFRESH_CMD_ENV,
@@ -34,10 +35,10 @@ def _clear_refresh_env(monkeypatch):
 
 
 def _stub_storage_path(monkeypatch, tmp_path: Path) -> Path:
-    """Point ``get_storage_path`` at a writable temp file."""
+    """Point the refresh owner module at a writable temp storage file."""
     storage = tmp_path / "storage_state.json"
     storage.write_text("{}")
-    monkeypatch.setattr(auth_mod, "get_storage_path", lambda profile=None: storage)
+    monkeypatch.setattr(refresh_mod, "get_storage_path", lambda profile=None: storage)
     return storage
 
 

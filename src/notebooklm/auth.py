@@ -27,13 +27,10 @@ Security Notes:
     - Path traversal protection is enforced on all file operations
 """
 
-import asyncio
 import logging
-import os
 import subprocess  # noqa: F401  # re-exported for tests that patch ``auth.subprocess.run``
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 import httpx
 
@@ -47,7 +44,8 @@ from ._auth import paths as _auth_paths
 from ._auth import psidts_recovery as _auth_psidts_recovery
 from ._auth import refresh as _auth_refresh
 from ._auth import storage as _auth_storage
-from .paths import get_storage_path
+from ._auth.tokens import AuthTokens
+from .paths import get_storage_path  # noqa: F401  # kept as a module-level compat alias
 
 logger = logging.getLogger(__name__)
 
@@ -198,220 +196,6 @@ def _validate_required_cookies(
 
 
 _auth_cookies._validate_required_cookies = _validate_required_cookies
-
-
-@dataclass
-class AuthTokens:
-    """Authentication tokens for NotebookLM API.
-
-    Attributes:
-        cookies: Required Google auth cookies keyed by ``(name, domain, path)``
-            per RFC 6265 §5.3 (issue #369). Legacy 2-tuple ``(name, domain)``
-            and flat ``name -> value`` shapes are still accepted on
-            construction and widened to the path-aware shape by
-            :func:`normalize_cookie_map` during ``__post_init__``.
-        csrf_token: CSRF token (SNlM0e) extracted from page
-        session_id: Session ID (FdrFJe) extracted from page
-        storage_path: Path to the storage_state.json file, if file-based auth was used
-        cookie_jar: Domain-preserving httpx.Cookies jar. Preferred over flat cookies dict
-            for HTTP operations as it retains original cookie domains (e.g.,
-            .googleusercontent.com vs .google.com).
-        authuser: Google ``authuser`` index this profile authenticates as.
-            ``0`` (the default account) is used when no account metadata is
-            present in ``context.json`` — matching pre-multi-account behavior.
-        account_email: Stable Google account identity for routing. When set,
-            NotebookLM requests use it as the ``authuser`` value instead of the
-            integer index, because Google account indices can change when other
-            accounts sign out.
-        cookie_snapshot: Internal save baseline used when a pre-client token
-            fetch mutates cookies but persistence fails or CAS-rejects. This
-            lets the eventual Session retry the unpersisted delta instead
-            of snapshotting the already-mutated jar as clean state.
-    """
-
-    # Secret fields are excluded from the dataclass-generated ``__repr__`` via
-    # ``field(repr=False)`` and re-surfaced as redacted placeholders by the
-    # custom ``__repr__`` below (P1-1). This prevents accidental secret
-    # leakage through ``logger.debug("%r", auth)``, ``pytest -vv`` failure
-    # diffs, and any third-party tooling that calls ``repr()`` on the dataclass.
-    cookies: DomainCookieMap = field(repr=False)
-    csrf_token: str = field(repr=False)
-    session_id: str = field(repr=False)
-    storage_path: Path | None = None
-    cookie_jar: httpx.Cookies | None = field(default=None, repr=False)
-    authuser: int = 0
-    cookie_snapshot: CookieSnapshot | None = field(default=None, repr=False)
-    account_email: str | None = None
-
-    def __post_init__(self) -> None:
-        """Normalize legacy flat cookie mappings into domain-keyed mappings."""
-        self.cookies = normalize_cookie_map(self.cookies)
-        if self.cookie_jar is None:
-            self.cookie_jar = build_cookie_jar(cookies=self.cookies, storage_path=self.storage_path)
-
-    def __repr__(self) -> str:
-        """Return a redacted representation safe for logs and pytest diffs.
-
-        Cookie values, CSRF + session tokens, the live ``cookie_jar``, and the
-        ``cookie_snapshot`` are all credential-equivalent and never appear
-        verbatim. The cookie count is preserved so reprs remain useful for
-        debugging (e.g. "expected 4 cookies, got 2"). Non-secret identity
-        fields (``authuser``, ``account_email``, ``storage_path``) are kept
-        for the same reason — they help identify *which* profile is involved
-        without leaking *how to impersonate it*.
-        """
-        jar_summary = "<redacted>" if self.cookie_jar is not None else "None"
-        snapshot_summary = "<redacted>" if self.cookie_snapshot is not None else "None"
-        return (
-            "AuthTokens("
-            f"cookies=<{len(self.cookies)} redacted>, "
-            "csrf_token=<redacted>, "
-            "session_id=<redacted>, "
-            f"storage_path={self.storage_path!r}, "
-            f"cookie_jar={jar_summary}, "
-            f"authuser={self.authuser!r}, "
-            f"cookie_snapshot={snapshot_summary}, "
-            f"account_email={self.account_email!r}"
-            ")"
-        )
-
-    @property
-    def cookie_header(self) -> str:
-        """Generate Cookie header value for HTTP requests.
-
-        Returns:
-            Semicolon-separated cookie string (e.g., "SID=abc; HSID=def")
-        """
-        return "; ".join(f"{k}={v}" for k, v in self.flat_cookies.items())
-
-    @property
-    def account_route(self) -> str:
-        """Return the value to send in NotebookLM ``authuser`` routing fields."""
-        return format_authuser_value(self.authuser, self.account_email)
-
-    @property
-    def flat_cookies(self) -> FlatCookieMap:
-        """Return a legacy name→value cookie mapping.
-
-        Duplicate-name resolution follows :func:`_auth_domain_priority` so the
-        result matches what :func:`load_auth_from_storage` produces for the same
-        storage state (see issue #375). Domain-aware HTTP operations should use
-        ``cookie_jar`` or ``cookies`` directly instead.
-        """
-        return flatten_cookie_map(self.cookies)
-
-    @classmethod
-    async def from_storage(
-        cls, path: Path | None = None, profile: str | None = None
-    ) -> "AuthTokens":
-        """Create AuthTokens from Playwright storage state file.
-
-        This is the recommended way to create AuthTokens for programmatic use.
-        It loads cookies from storage and fetches CSRF/session tokens automatically.
-
-        Args:
-            path: Path to storage_state.json. If provided, takes precedence over profile.
-            profile: Profile name to load auth from (e.g., "work", "personal").
-                If None, uses the active profile (from CLI flag, env var, or config).
-
-        Returns:
-            Fully initialized AuthTokens ready for API calls.
-
-        Raises:
-            FileNotFoundError: If storage file doesn't exist
-            ValueError: If required cookies are missing or tokens can't be extracted
-            httpx.HTTPError: If token fetch request fails
-
-        Example:
-            auth = await AuthTokens.from_storage()
-            async with NotebookLMClient(auth) as client:
-                notebooks = await client.list_notebooks()
-
-            # Load from a specific profile
-            auth = await AuthTokens.from_storage(profile="work")
-        """
-        if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
-            path = get_storage_path(profile=profile)
-
-        if path is None:
-            authuser = 0
-            account_email = None
-            account_metadata = _auth_account.read_account_metadata_from_storage_state(
-                _load_storage_state(path)
-            )
-            raw_authuser = account_metadata.get("authuser")
-            raw_email = account_metadata.get("email")
-            if isinstance(raw_authuser, int) and raw_authuser >= 0:
-                authuser = raw_authuser
-            if isinstance(raw_email, str) and raw_email.strip():
-                account_email = raw_email.strip()
-        else:
-            authuser = get_authuser_for_storage(path)
-            account_email = get_account_email_for_storage(path)
-        # Build the cookie jar via the lossless loader so path/secure/httpOnly
-        # survive into the live jar. The earlier
-        # extract_cookies_with_domains -> build_cookie_jar pipeline only carried
-        # (name, domain) -> value and dropped the same attributes the load
-        # paths in #365 fixed.
-        jar = build_httpx_cookies_from_storage(path)
-        # Snapshot before token fetch can rotate cookies; the snapshot/delta
-        # merge in save_cookies_to_storage will then write only what this
-        # process actually rotated, preserving sibling-process state.
-        snapshot = snapshot_cookie_jar(jar)
-        route_kwargs: dict[str, Any] = {"authuser": authuser}
-        if account_email is not None:
-            route_kwargs["account_email"] = account_email
-        csrf_token, session_id, refreshed, post_refresh_snapshot = await _fetch_tokens_with_refresh(
-            jar, path, profile, **route_kwargs
-        )
-
-        # If NOTEBOOKLM_REFRESH_CMD ran, ``_fetch_tokens_with_refresh`` captured
-        # a snapshot immediately after the jar was wholesale-replaced from
-        # disk — before the retry fetch could mutate it with redirect
-        # Set-Cookies. Use that snapshot so the retry's rotations land on
-        # disk as deltas instead of being silently absorbed into the baseline.
-        if refreshed and post_refresh_snapshot is not None:
-            snapshot = post_refresh_snapshot
-
-        # Persist any refreshed cookies from the token fetch. If the save
-        # fails, carry the old baseline into the returned AuthTokens so a
-        # later Session can retry the delta instead of treating the mutated
-        # jar as clean state.
-        # ``save_cookies_to_storage`` performs atomic-replace + fsync + flock
-        # under a synchronous file lock; offload to a worker thread so a
-        # slow filesystem (network FS, encrypted home, fcntl contention)
-        # can't freeze the event loop.
-        post_save_snapshot = snapshot_cookie_jar(jar)
-        save_result = await asyncio.to_thread(
-            save_cookies_to_storage,
-            jar,
-            path,
-            original_snapshot=snapshot,
-            return_result=True,
-        )
-        if isinstance(save_result, CookieSaveResult):
-            if save_result.ok:
-                cookie_snapshot = None
-            elif save_result.cas_rejected_keys:
-                cookie_snapshot = advance_cookie_snapshot_after_save(
-                    snapshot, post_save_snapshot, save_result.cas_rejected_keys
-                )
-            else:
-                cookie_snapshot = snapshot
-        else:
-            cookie_snapshot = None if save_result else snapshot
-        cookies = _cookie_map_from_jar(jar)
-
-        return cls(
-            cookies=cookies,
-            csrf_token=csrf_token,
-            session_id=session_id,
-            storage_path=path,
-            cookie_jar=jar,
-            authuser=authuser,
-            cookie_snapshot=cookie_snapshot,
-            account_email=account_email,
-        )
 
 
 # WIZ field token extraction (CSRF, session ID, generic WIZ data) lives in

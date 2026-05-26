@@ -10,8 +10,10 @@ import httpx
 
 from .._env import get_base_url
 from .._url_utils import is_google_auth_redirect
-from ..auth import AuthTokens, authuser_query, extract_wiz_field
 from ..exceptions import AuthExtractionError
+from .account import authuser_query
+from .extraction import extract_wiz_field
+from .tokens import AuthTokens
 
 
 class RefreshAuthCore(Protocol):
