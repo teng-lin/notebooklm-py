@@ -201,8 +201,7 @@ async def test_session_rpc_call_impl_delegates_to_rpc_executor(monkeypatch) -> N
         == "executed"
     )
     assert (
-        core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, snapshot, "/source")
-        == "url"
+        core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, snapshot, "/source") == "url"
     )
     with pytest.raises(RuntimeError, match="http status"):
         core._get_rpc_executor().raise_rpc_error_from_http_status(
