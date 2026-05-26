@@ -1,4 +1,4 @@
-"""Integration tests for automatic token refresh."""
+"""Tests for automatic token refresh."""
 
 import asyncio
 from unittest.mock import MagicMock
@@ -10,10 +10,6 @@ from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCError
-
-# mock-based refresh-callback wiring tests; no HTTP, no cassette.
-# Opt out of the tier-enforcement hook in tests/integration/conftest.py.
-pytestmark = pytest.mark.allow_no_vcr
 
 
 class TestAutoRefreshIntegration:

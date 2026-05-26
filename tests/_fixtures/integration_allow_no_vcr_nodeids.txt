@@ -98,15 +98,6 @@ tests/integration/concurrency/test_upload_timeout_config.py::test_default_upload
 tests/integration/concurrency/test_upload_timeout_config.py::test_default_upload_timeout_preserves_back_compat_start # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_upload_timeout_config.py::test_from_storage_accepts_upload_timeout # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_wait_for_sources_leak.py::test_wait_for_sources_cancels_sibling_on_first_failure # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_classified_as_probe_then_create # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_variant_none_explicit # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_generate_mind_map_classified_as_probe_then_create # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_generate_mind_map_variant_none_explicit # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::test_create_artifact_429_does_not_re_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::test_create_artifact_503_does_not_re_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::test_create_artifact_happy_path_still_returns_artifact # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::test_generate_mind_map_503_does_not_re_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::test_generate_mind_map_happy_path_still_returns_mind_map # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactErrorPaths::test_download_audio_artifact_id_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactErrorPaths::test_download_audio_no_completed_audio # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactErrorPaths::test_download_infographic_no_completed # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -227,11 +218,6 @@ tests/integration/test_artifacts_integration.py::TestStudioContent::test_generat
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_poll_studio_status # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_revise_slide # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestWaitForCompletionDeprecated::test_wait_for_completion_deprecated_poll_interval_warning # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_client_has_refresh_callback_wired # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_full_refresh_flow_http_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_full_refresh_flow_rpc_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_no_retry_on_cookie_expiration # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_refresh_delay_is_applied # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestCreateNotebook::test_create_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestCreateNotebook::test_create_notebook_request_contains_title # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestDeleteNotebook::test_delete_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
