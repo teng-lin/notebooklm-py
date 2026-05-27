@@ -305,32 +305,55 @@ def compose_session_internals(
         auth=auth,
         chain_host=chain_host,
     )
-    transport = build_session_transport(collaborators, host=session, logger=logger)
+    transport = build_session_transport(
+        collaborators,
+        host=session,
+        chain_host=chain_host,
+        logger=logger,
+    )
     session._bind_transport(transport)
     # Bind the transport on the host as well so the chain leaf
     # (:meth:`MiddlewareChainHost._authed_post_chain_terminal`) can
     # forward to it. Both sides are write-once and bound in this same
     # composition root, so the symmetric bind is safe.
     chain_host._bind_transport(transport)
-    # The chain leaf wires to the :class:`Session`-side descriptor
-    # forward (:attr:`_authed_post_chain_terminal`), not directly to
-    # :meth:`SessionTransport.terminal`. The forward is the canonical
-    # seam: a fixture-time rebind via
+    # Stage B2 PR 2 split the historical ``host=session`` parameter
+    # into ``chain_host`` (owns the retry tunables + the
+    # ``await_refresh`` delegate) and ``auth_snapshot_host`` (= the
+    # :class:`Session` — the auth-snapshot lookup reads
+    # ``session.auth`` / ``session._metrics_obj`` / ``session._kernel``,
+    # which live on Session, not the chain host). The chain leaf still
+    # wires to the :class:`Session`-side descriptor forward
+    # (:attr:`_authed_post_chain_terminal`) so a fixture-time rebind via
     # ``session._authed_post_chain_terminal = fake_terminal`` keeps
-    # steering the live chain leaf because the descriptor setter
-    # writes through to ``chain_host._authed_post_chain_terminal``.
-    # ``wire_middleware_chain`` signature is unchanged in B2 PR 1 — it
-    # still reads ``host=session`` and the chain's tunable providers
-    # dereference ``session._<attr>`` (which now resolves through
-    # the descriptor to the host).
+    # steering the live chain leaf — the descriptor setter writes
+    # through to ``chain_host._authed_post_chain_terminal``.
     wired = wire_middleware_chain(
         config,
         collaborators,
-        host=session,
+        chain_host=chain_host,
+        auth_snapshot_host=session,
         authed_post_chain_terminal=session._authed_post_chain_terminal,
         rpc_semaphore_factory=session._get_rpc_semaphore,
     )
-    session._bind_chain(wired)
+    # Stage B2 PR 2: the chain slot lives on the host
+    # (``chain_host._authed_post_chain``). It is set ONCE here via the
+    # :class:`Session` descriptor setter, which writes through to the
+    # host slot — that single assignment is the canonical install site.
+    # The transport's ``chain_provider`` lambda reads
+    # ``chain_host._authed_post_chain`` directly (Stage B2 PR 2 signature
+    # split), and the long-standing test pattern
+    # ``session._authed_post_chain = fake_chain`` still steers the live
+    # chain because the descriptor write-through routes the fake into
+    # the same host slot.
+    session._authed_post_chain = wired.authed_post_chain
+    # ``_bind_chain_metadata`` stores only the auxiliary chain artifacts
+    # (``_chain_builder`` / ``_middlewares``) — it does NOT touch
+    # ``_authed_post_chain`` (the host's slot, assigned via the
+    # descriptor above). This avoids the double-bind ambiguity flagged
+    # in the rev-5 review of the post-refactoring plan: the chain slot
+    # has exactly one assignment site, the descriptor write above.
+    session._bind_chain_metadata(wired)
     # Lambdas preserve the late-binding contract pinned by
     # ``tests/unit/test_init_order.py``:
     # post-construction ``session._decode_response = rebound`` /
@@ -395,8 +418,10 @@ class Session:
         this constructor with the validated config + the bundle + the
         auth tokens. The transport / chain / executor are written into
         the late-bound slots by the composition root via the
-        :meth:`_bind_transport` / :meth:`_bind_chain` /
-        :meth:`_bind_executor` write-once setters.
+        :meth:`_bind_transport` / :meth:`_bind_chain_metadata` /
+        :meth:`_bind_executor` write-once setters (plus the single
+        :attr:`_authed_post_chain` descriptor write that installs the
+        wired chain into the host).
 
         Stage B2 PR 1 added ``chain_host``: the
         :class:`MiddlewareChainHost` constructed by
@@ -550,8 +575,18 @@ class Session:
     # attribute. They are reserved for :func:`compose_session_internals`
     # (the composition root) and are load-bearing — :meth:`Session.__init__`
     # leaves ``_transport`` / ``_chain_builder`` / ``_middlewares`` /
-    # ``_authed_post_chain`` / ``_rpc_executor`` at ``None``, so the
-    # composition root is the single assignment site for each.
+    # ``_rpc_executor`` at ``None``, so the composition root is the
+    # single assignment site for each.
+    #
+    # Stage B2 PR 2 renamed ``_bind_chain`` to ``_bind_chain_metadata``:
+    # ``_authed_post_chain`` is no longer a slot on :class:`Session`; it
+    # lives on :class:`MiddlewareChainHost` and is installed by the
+    # composition root via the :class:`Session` descriptor setter
+    # (``session._authed_post_chain = wired.authed_post_chain``), which
+    # writes through to ``chain_host._authed_post_chain``. The binder
+    # below stores only the auxiliary chain artifacts (``_chain_builder``
+    # / ``_middlewares``) so the chain slot has exactly one assignment
+    # site.
     #
     # The legacy lazy ``_get_rpc_executor`` factory was deleted in PR 2;
     # post-construction the executor is reachable directly via
@@ -570,26 +605,33 @@ class Session:
             raise RuntimeError("Session._transport already bound")
         self._transport = transport
 
-    def _bind_chain(self, wired: "WiredMiddleware") -> None:
-        """Write-once setter for the wired middleware chain.
+    def _bind_chain_metadata(self, wired: "WiredMiddleware") -> None:
+        """Write-once setter for the auxiliary chain-metadata artifacts.
 
-        Stores the three chain artifacts (``_chain_builder``,
-        ``_middlewares``, ``_authed_post_chain``) in one call so the
-        composition root cannot leave the chain partially wired. Raises
+        Stage B2 PR 2 of the post-refactoring plan split the chain-slot
+        assignment off this binder: the canonical install site for
+        ``_authed_post_chain`` is now
+        ``session._authed_post_chain = wired.authed_post_chain`` in
+        :func:`compose_session_internals` (which writes through the
+        :class:`Session` descriptor to ``chain_host._authed_post_chain``).
+        This binder is left to store only the *auxiliary* artifacts —
+        :class:`MiddlewareChainBuilder` (introspected by builder-level
+        unit tests) and the ``middlewares`` list (introspected by
+        ``test_chain_wiring.test_chain_seeded_with_final_adr_009_ordering``)
+        — so the chain slot has exactly one assignment site. Raises
         ``RuntimeError`` on a second bind attempt.
 
         The ``_authed_post_chain`` attribute itself remains a mutable
         seam — the long-standing test pattern of reassigning
         ``core._authed_post_chain = fake_chain`` post-construction is
-        unaffected because that path mutates the attribute directly,
-        not via this binder. Only repeated calls to :meth:`_bind_chain`
-        itself raise.
+        unaffected because that path routes through the Session-side
+        descriptor setter to the host slot. Only repeated calls to
+        :meth:`_bind_chain_metadata` itself raise.
         """
         if getattr(self, "_chain_builder", None) is not None:
-            raise RuntimeError("Session._chain already bound")
+            raise RuntimeError("Session._chain_metadata already bound")
         self._chain_builder = wired.chain_builder
         self._middlewares = wired.middlewares
-        self._authed_post_chain = wired.authed_post_chain
 
     def _bind_executor(self, executor: RpcExecutor) -> None:
         """Write-once setter for :attr:`_rpc_executor`.

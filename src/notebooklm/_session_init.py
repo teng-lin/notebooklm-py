@@ -57,6 +57,8 @@ if TYPE_CHECKING:
     # :func:`validate_constructor_args` to keep the long-standing
     # defensive guard against the ``types.py`` → session cycle (see the
     # inline comment in the function body).
+    from ._middleware_chain_host import MiddlewareChainHost
+    from ._session_auth import _AuthRefreshHost
     from .types import ConnectionLimits, RpcTelemetryEvent
 
 
@@ -353,6 +355,7 @@ def build_session_transport(
     collaborators: SessionCollaborators,
     *,
     host: Session,
+    chain_host: MiddlewareChainHost,
     logger: logging.Logger,
 ) -> SessionTransport:
     """Construct the :class:`SessionTransport` collaborator.
@@ -361,24 +364,36 @@ def build_session_transport(
     :func:`wire_middleware_chain`, because the wired chain is built
     around ``transport.terminal``. The transport reaches the chain
     through a live-binding ``chain_provider`` closure that reads
-    ``host._authed_post_chain`` on every authed POST; that attribute is
-    assigned by :class:`Session.__init__` immediately after
-    :func:`wire_middleware_chain` returns. Using a provider closure
-    (rather than a frozen reference) preserves the pre-extraction
-    behavior where tests reassign ``core._authed_post_chain = fake_chain``
-    to install a fake chain and expect the next call to honor it.
+    ``chain_host._authed_post_chain`` on every authed POST; that
+    attribute is assigned by :func:`compose_session_internals`
+    immediately after :func:`wire_middleware_chain` returns, via the
+    :class:`Session` descriptor that writes through to the host. Using a
+    provider closure (rather than a frozen reference) preserves the
+    pre-extraction behavior where tests reassign
+    ``core._authed_post_chain = fake_chain`` to install a fake chain and
+    expect the next call to honor it — that write routes through the
+    descriptor to ``chain_host._authed_post_chain``, which this lambda
+    re-reads on the next dispatch.
 
-    The ``snapshot_provider`` closure captures ``host`` so the transport
-    never needs a direct back-reference to :class:`Session`. The
-    ``bound_loop_check`` lambda re-reads ``host.assert_bound_loop`` on
-    every call rather than freezing the bound method at construction
-    time, so a test that reassigns ``core.assert_bound_loop = mock``
-    after construction still steers the live check — preserving the
-    pre-extraction behavior where the call site read
-    ``self.assert_bound_loop`` live. The lookup goes through
-    ``host.assert_bound_loop`` rather than the lifecycle's
-    ``_bound_loop`` directly so a Mock-based Session fixture (which
-    sets ``_lifecycle`` to a MagicMock) still short-circuits the guard.
+    The ``snapshot_provider`` closure captures ``host`` (the
+    :class:`Session` instance) so :meth:`AuthRefreshCoordinator.snapshot`
+    sees the auth-snapshot host — that lookup intentionally stays on
+    :class:`Session` because the snapshot reads ``host.auth`` /
+    ``host._metrics_obj`` / ``host._kernel``, which live on Session, not
+    the chain host. The ``bound_loop_check`` lambda re-reads
+    ``host.assert_bound_loop`` on every call rather than freezing the
+    bound method at construction time, so a test that reassigns
+    ``core.assert_bound_loop = mock`` after construction still steers
+    the live check. The lookup goes through ``host.assert_bound_loop``
+    rather than the lifecycle's ``_bound_loop`` directly so a Mock-based
+    Session fixture (which sets ``_lifecycle`` to a MagicMock) still
+    short-circuits the guard.
+
+    Stage B2 PR 2 of the post-refactoring plan added the explicit
+    ``chain_host`` parameter so the chain-slot lookup no longer goes
+    through ``host._authed_post_chain`` (the :class:`Session` descriptor
+    forward) — going through the host directly removes the descriptor
+    indirection on the hot path.
 
     The ``logger`` is forwarded as-is — typically the module logger of
     ``notebooklm._session`` — so transport-error log lines keep
@@ -390,7 +405,7 @@ def build_session_transport(
     return SessionTransport(
         kernel=collaborators.kernel,
         snapshot_provider=lambda: collaborators.auth_coord.snapshot(host),
-        chain_provider=lambda: getattr(host, "_authed_post_chain", None),
+        chain_provider=lambda: chain_host._authed_post_chain,
         metrics=collaborators.metrics,
         bound_loop_check=lambda: host.assert_bound_loop(),
         logger=logger,
@@ -401,21 +416,40 @@ def wire_middleware_chain(
     config: ValidatedSessionConfig,
     collaborators: SessionCollaborators,
     *,
-    host: Session,
+    chain_host: MiddlewareChainHost,
+    auth_snapshot_host: _AuthRefreshHost,
     authed_post_chain_terminal: Callable[..., Awaitable[Any]],
     rpc_semaphore_factory: Callable[[], AbstractAsyncContextManager[Any]],
 ) -> WiredMiddleware:
     """Construct the :class:`MiddlewareChainBuilder`, build the seven-middleware
     list, and wire the final chain via :func:`build_chain`.
 
-    The provider lambdas read from ``host`` (the :class:`Session`
-    instance) so post-construction mutations on ``Session`` —
-    integration tests do ``session._rate_limit_max_retries = 0`` —
-    still take effect through the middleware live-binding contract
-    documented in :class:`MiddlewareChainBuilder`. The
+    Stage B2 PR 2 of the post-refactoring plan split the historical
+    ``host: Session`` parameter into two narrower hosts:
+
+    * ``chain_host`` — the :class:`MiddlewareChainHost` owns the three
+      retry-budget tunables (``_rate_limit_max_retries`` /
+      ``_server_error_max_retries`` / ``_refresh_retry_delay``) plus the
+      dynamic-delegate refresh entry point (:meth:`await_refresh`). The
+      tunable provider lambdas and the ``refresh_callable`` reference
+      capture this host directly so the chain does not depend on the
+      :class:`Session`'s descriptor forwards.
+    * ``auth_snapshot_host`` — the auth-snapshot lookup intentionally
+      stays on :class:`Session` (the structural :class:`_AuthRefreshHost`
+      Protocol). The snapshot reads ``host.auth`` / ``host._metrics_obj``
+      / ``host._kernel``, which live on Session and are NOT proxied
+      through the chain host. The ``auth_snapshot_provider`` lambda
+      captures this host so :meth:`AuthRefreshCoordinator.snapshot`
+      receives the correct caller.
+
+    Post-construction mutation on ``chain_host._<attr>`` (or on
+    ``session._<attr>``, which writes through the descriptor to the
+    host) still takes effect through the middleware live-binding
+    contract documented in :class:`MiddlewareChainBuilder`. The
     ``rpc_semaphore_factory`` is passed in explicitly so the helper does
     not need to know that the live semaphore lives on
-    ``Session._get_rpc_semaphore``.
+    ``Session._get_rpc_semaphore`` — that surface stays on Session
+    because the semaphore is per-loop session state (not chain state).
     """
     # ADR-009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in
@@ -424,11 +458,11 @@ def wire_middleware_chain(
         drain_tracker=collaborators.drain_tracker,
         metrics=collaborators.metrics,
         rpc_semaphore_factory=rpc_semaphore_factory,
-        rate_limit_max_retries_provider=lambda: host._rate_limit_max_retries,
-        server_error_max_retries_provider=lambda: host._server_error_max_retries,
-        refresh_retry_delay_provider=lambda: host._refresh_retry_delay,
-        refresh_callable=host._await_refresh,
-        auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(host),
+        rate_limit_max_retries_provider=lambda: chain_host._rate_limit_max_retries,
+        server_error_max_retries_provider=lambda: chain_host._server_error_max_retries,
+        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
+        refresh_callable=chain_host.await_refresh,
+        auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth_snapshot_host),
         is_auth_error=config.is_auth_error,
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
     )

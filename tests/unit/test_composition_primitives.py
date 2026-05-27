@@ -8,7 +8,7 @@ PR 2 of the post-refactoring plan
 - :func:`notebooklm._session.resolve_seam_defaults`
 - :func:`notebooklm._session.compose_session_internals` — the live
   composition root after PR 2
-- ``Session._bind_transport`` / ``_bind_chain`` / ``_bind_executor``
+- ``Session._bind_transport`` / ``_bind_chain_metadata`` / ``_bind_executor``
   write-once setters (now load-bearing — :meth:`Session.__init__` no
   longer inline-sets the slots; :func:`compose_session_internals`
   drives the binders)
@@ -306,12 +306,20 @@ def test_bind_transport_raises_on_double_bind() -> None:
         composed.session._bind_transport(composed.transport)
 
 
-def test_bind_chain_raises_on_double_bind() -> None:
-    """:meth:`_bind_chain` accepts exactly one bind.
+def test_bind_chain_metadata_raises_on_double_bind() -> None:
+    """:meth:`_bind_chain_metadata` accepts exactly one bind.
 
     Same shape as :func:`test_bind_transport_raises_on_double_bind`:
-    PR 2 moved chain wiring into :func:`compose_session_internals`, so
-    re-driving the binder after composition raises.
+    Stage B1 PR 2 moved chain wiring into
+    :func:`compose_session_internals`, so re-driving the binder after
+    composition raises. Stage B2 PR 2 renamed ``_bind_chain`` to
+    ``_bind_chain_metadata`` because the ``_authed_post_chain`` slot
+    moved off Session onto :class:`MiddlewareChainHost` — the binder
+    now stores only the auxiliary chain artifacts (``_chain_builder``
+    / ``_middlewares``) and the chain slot has exactly one assignment
+    site (`session._authed_post_chain = wired.authed_post_chain`,
+    which writes through the Session descriptor to
+    ``chain_host._authed_post_chain``).
     """
     composed = compose_session_internals(auth=_make_auth())
 
@@ -324,8 +332,8 @@ def test_bind_chain_raises_on_double_bind() -> None:
         middlewares=composed.session._middlewares,
         authed_post_chain=composed.session._authed_post_chain,
     )
-    with pytest.raises(RuntimeError, match="_chain already bound"):
-        composed.session._bind_chain(wired)
+    with pytest.raises(RuntimeError, match="_chain_metadata already bound"):
+        composed.session._bind_chain_metadata(wired)
 
 
 # ---------------------------------------------------------------------------
