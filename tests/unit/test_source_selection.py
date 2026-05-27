@@ -35,9 +35,9 @@ def mock_core():
     factory so URL/body assertions still exercise the production request
     builder.
     """
-    from notebooklm._request_types import AuthSnapshot
+    from types import SimpleNamespace
 
-    from _fixtures.fake_core import make_fake_core
+    from notebooklm._request_types import AuthSnapshot
 
     # ``ChatAPI.get_conversation_id`` uses ``core.rpc_call`` with the
     # ``hPTbtc`` (GET_LAST_CONVERSATION_ID) method. Issue #659: after a
@@ -49,7 +49,16 @@ def mock_core():
     from notebooklm.rpc import RPCMethod as _RPC
 
     rpc_call = AsyncMock(return_value=MagicMock())
-    core = make_fake_core(rpc_call=rpc_call)
+
+    # Forward declare so the dispatcher and default-transport closures can
+    # capture the eventual ``core`` symbol. The actual ``SimpleNamespace``
+    # assembly happens further below, after both closures are defined.
+    auth = SimpleNamespace(
+        csrf_token="test_csrf",
+        session_id="test_session",
+        authuser=0,
+        account_email=None,
+    )
 
     async def _rpc_call_dispatch(method, params, **kwargs):
         if method == _RPC.GET_LAST_CONVERSATION_ID:
@@ -57,21 +66,6 @@ def mock_core():
         return rpc_call.return_value
 
     rpc_call.side_effect = _rpc_call_dispatch
-    core.auth = MagicMock()
-    core.auth.csrf_token = "test_csrf"
-    core.auth.session_id = "test_session"
-    core.auth.authuser = 0
-    core.auth.account_email = None
-    # Reqid counter is bumped via ``await self._reqid.next_reqid()`` inside
-    # ``ChatAPI.ask`` (Wave 8 of session-decoupling); the mock_core fixture
-    # is passed as the ``reqid=`` collaborator by ``_chat_from_mock_core``
-    # below, so this attribute stub is what the chat path actually calls.
-    core.next_reqid = AsyncMock(return_value=100000)
-    core.assert_bound_loop = MagicMock(return_value=None)
-    core.get_http_client = MagicMock()
-    # ``ChatAPI`` reaches transport through ``mock_core.session_transport``
-    # (see ``_chat_from_mock_core`` below); explicit slot on the fake.
-    core.session_transport = MagicMock()
 
     # Default ``perform_authed_post`` stub on the session-transport
     # collaborator: invokes the caller-supplied ``build_request`` factory
@@ -82,10 +76,10 @@ def mock_core():
     # chat-side ``parse_label`` is forwarded as ``log_label``.
     async def _perform_authed_post_default(*, build_request, log_label):
         snapshot = AuthSnapshot(
-            csrf_token=core.auth.csrf_token,
-            session_id=core.auth.session_id,
-            authuser=core.auth.authuser,
-            account_email=core.auth.account_email,
+            csrf_token=auth.csrf_token,
+            session_id=auth.session_id,
+            authuser=auth.authuser,
+            account_email=auth.account_email,
         )
         url, body, headers = build_request(snapshot)
         core._last_chat_request = {"url": url, "body": body, "headers": headers}
@@ -107,11 +101,51 @@ def mock_core():
         resp.text = f")]}}'\n{len(chunk)}\n{chunk}\n"
         return resp
 
-    # Track call counts so tests can assert on transport invocation.
+    # Assemble the bag-of-attributes fixture in one ``SimpleNamespace`` call
+    # so every collaborator slot ``ChatAPI`` and ``ArtifactsAPI`` read from
+    # the fixture lands at construction time. ADR-007 specifically forbids
+    # the ``core.<attr> = <value>`` re-assignment pattern (which is why this
+    # is *not* built via ``make_fake_core`` + post-construction stubs); the
+    # SimpleNamespace constructor satisfies the policy by setting every
+    # attribute up-front.
+    #
     # Wave 8 of session-decoupling: chat now reaches the network through
     # ``session_transport.perform_authed_post`` rather than the legacy
-    # ``transport_post`` facade on Session.
-    core.session_transport.perform_authed_post = AsyncMock(side_effect=_perform_authed_post_default)
+    # ``transport_post`` facade on Session. Reqid is bumped via
+    # ``await self._reqid.next_reqid()``; the bag below is passed as the
+    # ``reqid=`` collaborator by ``_chat_from_mock_core``.
+    session_transport = SimpleNamespace(
+        perform_authed_post=AsyncMock(side_effect=_perform_authed_post_default),
+    )
+
+    # ArtifactsAPI uses the same fixture as its runtime collaborator and
+    # exercises ``register_drain_hook`` (close-time hook) and
+    # ``operation_scope`` (drain-coordinated scope). Stub both up-front so
+    # the fixture satisfies both ChatAPI's reqid/transport surfaces and
+    # ArtifactsAPI's runtime surface in one bag.
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _operation_scope_factory(label: str):
+        yield None
+
+    drain_hooks: dict = {}
+
+    def _register_drain_hook(name: str, hook):
+        drain_hooks[name] = hook
+
+    core = SimpleNamespace(
+        rpc_call=rpc_call,
+        auth=auth,
+        next_reqid=AsyncMock(return_value=100000),
+        assert_bound_loop=MagicMock(return_value=None),
+        get_http_client=MagicMock(),
+        session_transport=session_transport,
+        _last_chat_request=None,
+        operation_scope=MagicMock(side_effect=_operation_scope_factory),
+        register_drain_hook=MagicMock(side_effect=_register_drain_hook),
+        _drain_hooks=drain_hooks,
+    )
     return core
 
 

@@ -105,12 +105,25 @@ _PATTERN_OBJECT_ATTR = re.compile(r"monkeypatch\.setattr\(\s*notebooklm\.")
 # matches; with it, each occurrence is reported once with the natural
 # start position.
 _PATTERN_ASYNCMOCK_ASSIGN = re.compile(
-    # Wave 11c of session-decoupling deleted ``Session._perform_authed_post``
-    # along with the ``_begin_transport_*`` / ``_finish_transport_*`` legacy
-    # names — once a method no longer exists on ``Session``, attempting to
-    # patch it with ``AsyncMock`` would surface immediately at runtime as an
-    # ``AttributeError``, so the lint pattern stops enumerating them.
-    r"(?<![\w.])[\w.]+\.(rpc_call)\s*=\s*(?:[\w]+\.)*AsyncMock"
+    # Method-name enumeration kept INTENTIONALLY broad — not narrowed to
+    # only the methods that still exist on ``Session`` (per gemini-code-
+    # assist's review on PR #1078 / Wave 11c). The lint exists precisely
+    # to catch dynamic attribute assignment of ``AsyncMock`` onto a fake
+    # or duck-typed collaborator — those targets are bag-of-attributes
+    # fakes (``MagicMock``, ``FakeSession``) that happily accept *any*
+    # attribute name regardless of whether the production class still
+    # defines it. Removing a deleted method name from this enumeration
+    # would create a silent escape hatch: a test that re-introduces the
+    # forbidden ``<chain>.transport_post = AsyncMock(...)`` pattern
+    # against a ``MagicMock(spec=...)`` would no longer surface, even
+    # though that is exactly the ADR-007 violation the lint is supposed
+    # to catch. ``rpc_call`` is the canonical core-RPC seam; the
+    # transport-side names retained here
+    # (``transport_post`` / ``_perform_authed_post`` / ``next_reqid`` /
+    # ``save_cookies``) were deleted from ``Session`` in Waves 11a-11c
+    # but remain in this enumeration so the lint keeps catching dynamic
+    # re-assignment of them on a fake.
+    r"(?<![\w.])[\w.]+\.(?:rpc_call|transport_post|_perform_authed_post|next_reqid|save_cookies)\s*=\s*(?:[\w]+\.)*AsyncMock"
 )
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
