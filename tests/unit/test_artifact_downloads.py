@@ -61,8 +61,7 @@ class TestDownloadInteractiveArtifact:
     @pytest.mark.asyncio
     async def test_get_artifact_content_null_result_returns_none(self):
         """Null GET_INTERACTIVE_HTML is a missing-content result, not schema drift."""
-        runtime = MagicMock()
-        runtime.rpc_call = AsyncMock(return_value=None)
+        runtime = MagicMock(rpc_call=AsyncMock(return_value=None))
         service = artifact_downloads.ArtifactDownloadService(
             runtime=runtime,
             listing=MagicMock(),
