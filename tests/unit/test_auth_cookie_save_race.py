@@ -28,6 +28,7 @@ import pytest
 
 import notebooklm._auth.refresh as _auth_refresh
 import notebooklm._auth.storage as _auth_storage
+from _helpers.session_factory import build_session_for_tests
 from notebooklm.auth import (
     AuthTokens,
     CookieSaveResult,
@@ -1160,7 +1161,6 @@ class TestBaselineNotAdvancedOnSaveFailure:
     ):
         """Pre-client fetch rotations must be retried if their save fails."""
         from notebooklm import auth as auth_mod
-        from notebooklm._session import Session
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -1184,7 +1184,7 @@ class TestBaselineNotAdvancedOnSaveFailure:
         monkeypatch.setattr(_auth_storage, "save_cookies_to_storage", failed_save)
 
         auth = await auth_mod.AuthTokens.from_storage(path=storage)
-        core = Session(auth)
+        core = build_session_for_tests(auth)
         await core.open()
         try:
             key = CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
@@ -1321,7 +1321,6 @@ class TestCASRejectReturnsFalse:
     @pytest.mark.asyncio
     async def test_partial_cas_advances_successful_keys_for_next_save(self, tmp_path):
         """A mixed save should not replay successful deltas on later saves."""
-        from notebooklm._session import Session
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -1340,7 +1339,7 @@ class TestCASRejectReturnsFalse:
             session_id="s",
             storage_path=storage,
         )
-        core = Session(auth)
+        core = build_session_for_tests(auth)
         await core.open()
 
         def jar_with(sid_value: str) -> httpx.Cookies:
@@ -1480,7 +1479,6 @@ class TestCASVariantAware:
            rotation can persist without re-clobbering the sibling write.
         """
         from notebooklm import auth as auth_mod
-        from notebooklm._session import Session
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -1538,7 +1536,7 @@ class TestCASVariantAware:
         # Stand up the real Session so the second save flows through
         # Session.save_cookies (lock + to_thread + baseline advance), not
         # straight into save_cookies_to_storage.
-        core = Session(auth)
+        core = build_session_for_tests(auth)
         await core.open()
         try:
             assert core.cookie_persistence.loaded_cookie_snapshot is not None
@@ -1610,7 +1608,6 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
         import asyncio
 
         from notebooklm import auth as auth_mod
-        from notebooklm._session import Session
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -1648,7 +1645,7 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
 
         # Phase 2 PR 4: inject the cookie-saver seam via the constructor
         # rather than monkeypatching ``notebooklm._core.save_cookies_to_storage``.
-        core = Session(auth, cookie_saver=capture_save)
+        core = build_session_for_tests(auth, cookie_saver=capture_save)
         await core.open()
 
         # Explicit barrier: each coroutine records its submission and the

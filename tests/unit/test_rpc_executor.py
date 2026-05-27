@@ -7,10 +7,10 @@ from typing import Any
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import (
     ClientError,
@@ -148,7 +148,7 @@ def _executor(
 @pytest.mark.asyncio
 async def test_session_rpc_call_delegates_to_rpc_executor(monkeypatch) -> None:
     """``Session.rpc_call`` remains the feature-facing compatibility facade."""
-    core = Session(_auth_tokens())
+    core = build_session_for_tests(_auth_tokens())
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
     class FakeExecutor:
@@ -157,7 +157,11 @@ async def test_session_rpc_call_delegates_to_rpc_executor(monkeypatch) -> None:
             return "retried"
 
     executor = FakeExecutor()
-    monkeypatch.setattr(core, "_get_rpc_executor", lambda: executor)
+    # Stage B1 PR 2 deleted ``Session._get_rpc_executor`` (the lazy
+    # factory) — the executor now lives directly on ``core._rpc_executor``
+    # post-composition. Override the attribute rather than the deleted
+    # factory so :meth:`Session.rpc_call` reads the fake.
+    monkeypatch.setattr(core, "_rpc_executor", executor)
 
     assert (
         await core.rpc_call(
@@ -228,8 +232,8 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         decode_calls.append({"raw": raw, "rpc_id": rpc_id, "allow_null": allow_null})
         return {"decoded": rpc_id}
 
-    core = Session(_auth_tokens(), decode_response=fake_decode)
-    executor = core._get_rpc_executor()
+    core = build_session_for_tests(_auth_tokens(), decode_response=fake_decode)
+    executor = core._rpc_executor
 
     async def fake_perform_authed_post(
         *,
@@ -254,7 +258,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         False,
     )
 
-    assert core._get_rpc_executor() is executor
+    assert core._rpc_executor is executor
     assert result == {"decoded": RPCMethod.LIST_NOTEBOOKS.value}
     assert decode_calls == [
         {
@@ -398,13 +402,13 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     async def fake_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    core = Session(
+    core = build_session_for_tests(
         _auth_tokens(),
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.5,
         sleep=fake_sleep,
     )
-    executor = core._get_rpc_executor()
+    executor = core._rpc_executor
     refresh_calls = 0
 
     async def fake_await_refresh() -> None:
@@ -444,7 +448,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         disable_internal_retries=True,
     )
 
-    assert core._get_rpc_executor() is executor
+    assert core._rpc_executor is executor
     assert result == {"ok": True}
     assert refresh_calls == 1
     assert sleep_calls == [0.5]

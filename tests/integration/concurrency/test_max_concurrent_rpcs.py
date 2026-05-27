@@ -60,6 +60,7 @@ import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
+from _helpers.session_factory import build_session_for_tests
 from notebooklm import NotebookLMClient
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -98,7 +99,7 @@ async def _open_core_with_transport(
     one routing through the recording transport so the in-flight peak
     is observable.
     """
-    core = Session(auth=_make_auth(), max_concurrent_rpcs=max_concurrent_rpcs)
+    core = build_session_for_tests(auth=_make_auth(), max_concurrent_rpcs=max_concurrent_rpcs)
     await core.open()
     assert core._kernel.http_client is not None
     prior_cookies = core._kernel.get_http_client().cookies

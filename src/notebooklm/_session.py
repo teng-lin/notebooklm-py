@@ -38,7 +38,11 @@ from .auth import (
 from .types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
-    from ._session_init import SessionCollaborators, WiredMiddleware
+    from ._session_init import (
+        SessionCollaborators,
+        ValidatedSessionConfig,
+        WiredMiddleware,
+    )
     from ._session_transport import SessionTransport
     from .types import ConnectionLimits
 
@@ -71,16 +75,6 @@ logger = logging.getLogger(__name__)
 # inspect the coordinator's source via ``inspect.getsource(...)`` +
 # AST parsing — changes to auth-snapshot invariants must be applied to
 # the coordinator (not the surviving ``update_auth_tokens`` delegate).
-
-
-# Three previously module-level test seams (one each for RPC response
-# decoding, the awaitable used by retry/backoff loops, and the
-# authentication-error classifier) were retired in favour of
-# constructor-injected callables on :class:`Session`. Tests that need to
-# substitute behaviour pass ``decode_response=…``, ``sleep=…``, or
-# ``is_auth_error=…`` keyword arguments to :class:`Session` directly
-# instead of monkeypatching module attributes. See ``docs/improvement.md``
-# §4.1 for the rationale.
 
 
 def _default_decode_response() -> Callable[..., Any]:
@@ -120,25 +114,24 @@ def _default_is_auth_error() -> Callable[[Exception], bool]:
 
 
 # ----------------------------------------------------------------------
-# Stage B1 PR 1 — composition primitives (no behavior change)
+# Stage B1 PR 2 — composition root (live)
 # ----------------------------------------------------------------------
 #
 # These helpers (``resolve_seam_defaults`` / :func:`compose_session_internals`
 # / :class:`ComposedSession`) and the ``Session._bind_*`` write-once
-# setters were introduced in Stage B1 PR 1 of the post-refactoring plan
-# (``docs/post-refactoring-plan-2026-05-27.md``) as a no-behavior-change
-# additive step toward moving ``build_collaborators`` ownership out of
-# ``Session.__init__`` into ``NotebookLMClient``.
+# setters were introduced in Stage B1 PR 1 and made LIVE in PR 2 of the
+# post-refactoring plan (``docs/post-refactoring-plan-2026-05-27.md``).
 #
-# **In PR 1 these primitives are DORMANT** — ``Session.__init__`` still
-# does the legacy inline construction sequence. PR 2 of Stage B1 rewrites
-# ``Session.__init__`` to take ``(*, collaborators, config, auth)``,
-# moves the composition root into ``NotebookLMClient.__init__`` via
-# :func:`compose_session_internals`, and starts exercising the
-# ``_bind_*`` setters at composition time. The fail-fast guards on
-# ``Session`` entry points are inert in PR 1 (because inline
-# construction always sets the required attributes) and become
-# load-bearing in PR 2.
+# After PR 2, ``Session.__init__`` takes ``(*, collaborators, config,
+# auth)`` and leaves the transport / chain / executor slots at ``None``.
+# :func:`compose_session_internals` is the only path that produces a
+# fully-bound :class:`Session` — it constructs the collaborators bundle,
+# the transport, the wired middleware chain, and the :class:`RpcExecutor`,
+# and drives the write-once binders on the Session. The fail-fast guards
+# on :class:`Session` entry points (``rpc_call`` / ``_get_rpc_semaphore`` /
+# ``open`` / ``close``) became load-bearing in PR 2 — they raise actionably
+# if a caller exercises the Session before the composition root has bound
+# the slots.
 #
 # The helper lives in :mod:`notebooklm._session` (not
 # :mod:`notebooklm._session_init`) so seam-default resolution happens
@@ -152,8 +145,11 @@ class ComposedSession:
 
     Bundles the fully-constructed :class:`Session` with the collaborators
     and late-bound dependencies that ``NotebookLMClient`` wires feature
-    APIs against. PR 2 of Stage B1 starts consuming this; in PR 1 it is
-    a returnable artifact of the dormant helper.
+    APIs against. After Stage B1 PR 2, this is the canonical output of
+    the composition root — :class:`NotebookLMClient` consumes it directly
+    and feature adapters draw from ``composed.executor`` /
+    ``composed.transport`` / ``composed.collaborators`` rather than
+    reading back through Session accessors.
     """
 
     session: "Session"
@@ -172,16 +168,17 @@ def resolve_seam_defaults(
     """Resolve ``None``-default seam callables against this module's bindings.
 
     Centralizes the ``X if X is not None else <module-attr>`` dance that
-    :class:`Session.__init__` currently performs inline. Resolution happens
-    against the :mod:`notebooklm._session` module's bindings so the
-    documented monkeypatch paths
+    :class:`Session.__init__` performed inline before Stage B1 PR 2.
+    Resolution happens against the :mod:`notebooklm._session` module's
+    bindings so the documented monkeypatch paths
     (``notebooklm._session.asyncio.sleep`` /
     ``notebooklm._session.httpx.AsyncClient`` and the lazy imports inside
     :func:`_default_decode_response` / :func:`_default_is_auth_error`)
     keep steering the seams at construction time.
 
-    PR 1: not invoked from production code. Reserved for
-    :func:`compose_session_internals` (also dormant in PR 1).
+    Called from :func:`compose_session_internals`. After PR 2 this is the
+    single seam-resolution site; ``Session.__init__`` no longer touches
+    the seam defaults.
     """
     return {
         "sleep": asyncio.sleep if sleep is None else sleep,
@@ -220,108 +217,104 @@ def compose_session_internals(
 ) -> ComposedSession:
     """Single entry point that owns the full Session composition sequence.
 
-    PR 1 (this PR): DORMANT. ``Session.__init__`` still performs the
-    inline construction below; this helper exists only as the future
-    home of that sequence. PR 2 of Stage B1 rewrites
-    ``Session.__init__`` to ``(*, collaborators, config, auth)`` and
-    moves the composition root into ``NotebookLMClient.__init__`` via
-    this helper.
+    Stage B1 PR 2 made this helper LIVE — :class:`Session.__init__` no
+    longer constructs the collaborator bundle / transport / chain
+    inline; this helper does, and feeds them into a ``Session(*,
+    collaborators=..., config=..., auth=...)`` constructor that just
+    stores references and initialises the late-bound slots to ``None``
+    before the write-once binders fire.
 
-    The kwarg surface mirrors the current :class:`Session.__init__`
+    The kwarg surface mirrors the historical :class:`Session.__init__`
     kwargs (production NotebookLMClient kwargs ∪ the four seam kwargs
     ``decode_response`` / ``sleep`` / ``is_auth_error`` /
     ``async_client_factory``). The seam kwargs are intentionally
     test-only — they are NOT exposed on ``NotebookLMClient.__init__``,
-    which preserves the public surface.
+    which preserves the public surface. Tests construct Sessions via
+    ``tests/_helpers/session_factory.build_session_for_tests`` (a thin
+    forwarder that accepts the same kwargs and returns the
+    :class:`Session` from a :class:`ComposedSession`).
 
     The first call inside the body MUST stay
     :func:`_refuse_synthetic_error_outside_test_context` — that
-    preserves the existing :class:`Session.__init__` side-effect pinned
-    by :mod:`tests.unit.concurrency.test_synthetic_error_transport_guard`.
+    preserves the existing earliest-opportunity refusal pinned by
+    :mod:`tests.unit.concurrency.test_synthetic_error_transport_guard`.
 
     The lambda closures for the executor wiring
     (``decode_response`` / ``is_auth_error`` / ``sleep`` /
     ``timeout_provider`` / ``refresh_callback_enabled_provider`` /
     ``refresh_retry_delay_provider``) preserve the late-binding contract
-    pinned by :mod:`tests.unit.test_init_order` lines 622-672 —
-    post-construction ``session._decode_response = rebound`` (and the
+    pinned by
+    :func:`tests.unit.test_init_order.test_session_wires_seam_attributes_for_executor_and_chain`
+    — post-construction ``session._decode_response = rebound`` (and the
     sibling seam reassignments) continue to take effect inside the live
     executor because the closures dereference ``session._<attr>`` on
     every call.
     """
-    # MUST stay first — preserves the existing Session.__init__ side
-    # effect that ``test_synthetic_error_transport_guard`` pins. The
-    # legacy ``Session.__init__`` invocation below would also fire this
-    # guard, but the contract documented in the post-refactoring plan
-    # requires it to be the FIRST call inside ``compose_session_internals``
-    # so PR 2's helper (where ``Session.__init__`` no longer runs the
-    # guard inline) preserves the same earliest-opportunity refusal.
+    # MUST stay first — preserves the earliest-opportunity refusal that
+    # ``test_synthetic_error_transport_guard`` pins.
     _refuse_synthetic_error_outside_test_context()
-    # ``resolve_seam_defaults`` is invoked unconditionally so the helper
-    # exercises the seam-resolution boundary documented in
-    # ``_session_init.py`` (lines 19-25). In PR 1 the resolved callables
-    # are discarded — legacy ``Session.__init__`` re-resolves seams
-    # inline against the same module bindings; both paths produce
-    # identical seam values. PR 2 of Stage B1 threads the resolved
-    # callables straight into ``validate_constructor_args`` and the
-    # legacy inline resolution disappears, so the call site here
-    # becomes load-bearing without a code shape change.
-    resolve_seam_defaults(
+    resolved = resolve_seam_defaults(
         sleep=sleep,
         async_client_factory=async_client_factory,
         is_auth_error=is_auth_error,
         decode_response=decode_response,
     )
-    # PR 1: hand the legacy ``Session.__init__`` the same kwargs the
-    # caller passed in (it re-resolves seams + validates the config +
-    # builds collaborators inline). The helper then reads back
-    # ``session._collaborators`` / ``session._transport`` for the
-    # ``ComposedSession`` bundle so ``composed.collaborators`` /
-    # ``composed.transport`` reference the SAME objects the session is
-    # actually using (a fresh ``build_collaborators`` call here would
-    # produce a duplicate bundle that diverged from the live session
-    # state). PR 2 inverts this — the helper constructs collaborators
-    # / transport / chain itself and feeds them into a ``Session(*,
-    # collaborators=..., config=..., auth=...)`` constructor that no
-    # longer does inline construction.
-    session = Session(
-        auth,
+    config = validate_constructor_args(
         timeout=timeout,
         connect_timeout=connect_timeout,
-        refresh_callback=refresh_callback,
         refresh_retry_delay=refresh_retry_delay,
+        rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
         keepalive=keepalive,
         keepalive_min_interval=keepalive_min_interval,
         keepalive_storage_path=keepalive_storage_path,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
+        auth_storage_path=auth.storage_path,
         limits=limits,
         max_concurrent_uploads=max_concurrent_uploads,
         max_concurrent_rpcs=max_concurrent_rpcs,
+        decode_response=resolved["decode_response"],
+        sleep=resolved["sleep"],
+        is_auth_error=resolved["is_auth_error"],
+        async_client_factory=resolved["async_client_factory"],
+    )
+    collaborators = build_collaborators(
+        config,
+        auth=auth,
+        refresh_callback=refresh_callback,
         on_rpc_event=on_rpc_event,
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
-        decode_response=decode_response,
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        async_client_factory=async_client_factory,
     )
-    collaborators = session._collaborators
-    transport = session._transport
-    if transport is None:  # pragma: no cover - defensive; legacy __init__ sets this
-        raise RuntimeError(
-            "compose_session_internals: Session.__init__ did not produce a transport"
-        )
+    session = Session(collaborators=collaborators, config=config, auth=auth)
+    transport = build_session_transport(collaborators, host=session, logger=logger)
+    session._bind_transport(transport)
+    # The chain leaf wires to the :class:`Session`-side forward
+    # (:meth:`_authed_post_chain_terminal`), not directly to
+    # :meth:`SessionTransport.terminal`. The forward is the canonical
+    # seam: a subclass override or fixture-time class-level
+    # monkeypatch of ``Session._authed_post_chain_terminal`` keeps
+    # steering the live chain leaf, matching pre-extraction behavior.
+    wired = wire_middleware_chain(
+        config,
+        collaborators,
+        host=session,
+        authed_post_chain_terminal=session._authed_post_chain_terminal,
+        rpc_semaphore_factory=session._get_rpc_semaphore,
+    )
+    session._bind_chain(wired)
     # Lambdas preserve the late-binding contract pinned by
-    # ``tests/unit/test_init_order.py:622-672`` — post-construction
-    # ``session._decode_response = rebound`` / ``_sleep = …`` /
-    # ``_is_auth_error = …`` reassignments continue to take effect
-    # inside the executor.
-    # The `*a, **kw` forwarding form matches the lazy ``_get_rpc_executor``
-    # factory (see lines 743-746) so future signature changes or custom
-    # test-double overrides on ``session._is_auth_error`` / ``session._sleep``
-    # propagate identically through both construction paths
-    # (gemini-code-assist PR #1086 review, finding 4).
+    # ``tests/unit/test_init_order.py``:
+    # post-construction ``session._decode_response = rebound`` /
+    # ``_sleep = …`` / ``_is_auth_error = …`` reassignments continue
+    # to take effect inside the executor because each closure
+    # dereferences ``session._<attr>`` on every call.
+    #
+    # The ``*a, **kw`` forwarding form (instead of capturing the
+    # callable by name) is intentional — it lets test doubles that
+    # rebind ``session._is_auth_error`` / ``session._sleep`` to a
+    # callable with a different signature (e.g. a ``Mock`` with
+    # ``**kwargs``) keep working without the closure dropping
+    # arguments. See gemini-code-assist PR #1086 review, finding 4.
     executor = RpcExecutor(
         kernel=collaborators.kernel,
         transport=transport,
@@ -334,12 +327,6 @@ def compose_session_internals(
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
         refresh_retry_delay_provider=lambda: session._refresh_retry_delay,
     )
-    # ``Session.__init__`` (PR 1) does not pre-bind the executor — it
-    # initialises the slot to ``None`` and lazily fills it via
-    # :meth:`Session._get_rpc_executor`. The write-once binder accepts
-    # the first bind, so calling it here from the dormant helper does
-    # not conflict with the legacy lazy-init path (lazy init only
-    # triggers when ``_rpc_executor`` is ``None``).
     session._bind_executor(executor)
     return ComposedSession(
         session=session,
@@ -364,207 +351,48 @@ class Session:
 
     def __init__(
         self,
-        auth: AuthTokens,
-        timeout: float = DEFAULT_TIMEOUT,
-        connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
-        refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
-        refresh_retry_delay: float = 0.2,
-        keepalive: float | None = None,
-        keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
-        keepalive_storage_path: Path | None = None,
-        rate_limit_max_retries: int = 3,
-        server_error_max_retries: int = 3,
-        limits: "ConnectionLimits | None" = None,
-        max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
-        max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
-        on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-        cookie_saver: CookieSaver | None = None,
-        cookie_rotator: CookieRotator | None = None,
         *,
-        decode_response: Callable[..., Any] | None = None,
-        sleep: Callable[[float], Awaitable[Any]] | None = None,
-        is_auth_error: Callable[[Exception], bool] | None = None,
-        async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
-    ):
-        """Initialize the core client.
+        collaborators: "SessionCollaborators",
+        config: "ValidatedSessionConfig",
+        auth: AuthTokens,
+    ) -> None:
+        """Initialise a Session from a pre-built collaborator bundle.
+
+        Stage B1 PR 2 of the post-refactoring plan inverted the
+        composition root — :class:`Session` no longer constructs the
+        bundle / transport / chain inline. Instead,
+        :func:`compose_session_internals` builds all three, then calls
+        this constructor with the validated config + the bundle + the
+        auth tokens. The transport / chain / executor are written into
+        the late-bound slots by the composition root via the
+        :meth:`_bind_transport` / :meth:`_bind_chain` /
+        :meth:`_bind_executor` write-once setters.
+
+        Production callers DO NOT instantiate :class:`Session` directly
+        — :class:`NotebookLMClient` calls
+        :func:`compose_session_internals` from its own ``__init__`` and
+        feature adapters draw from the returned :class:`ComposedSession`.
+        Tests use the canonical
+        ``tests/_helpers/session_factory.build_session_for_tests``
+        helper, which forwards through the same composition root.
 
         Args:
+            collaborators: The :class:`SessionCollaborators` bundle
+                constructed by :func:`build_collaborators` inside
+                :func:`compose_session_internals`.
+            config: The :class:`ValidatedSessionConfig` constructed by
+                :func:`validate_constructor_args` inside
+                :func:`compose_session_internals`.
             auth: Authentication tokens from browser login.
-            timeout: HTTP request timeout in seconds. Defaults to 30 seconds.
-                This applies to read/write operations after connection is established.
-            connect_timeout: Connection establishment timeout in seconds. Defaults to 10 seconds.
-                A shorter connect timeout helps detect network issues faster.
-            refresh_callback: Optional async callback to refresh auth tokens on failure.
-                If provided, rpc_call will automatically retry once after refreshing.
-            refresh_retry_delay: Delay in seconds before retrying after refresh.
-            keepalive: Optional interval in seconds for a background task that pokes
-                ``accounts.google.com/RotateCookies`` while the client is open. ``None``
-                (default) disables the task. Must be ``None`` or a positive finite
-                number; values below ``keepalive_min_interval`` are clamped up to
-                that floor.
-            keepalive_min_interval: Lower bound for ``keepalive`` (defaults to 60s)
-                to avoid accidentally rate-limiting Google's identity surface.
-                Must be a positive finite number.
-            keepalive_storage_path: Optional storage path to persist rotated cookies
-                to from the keepalive loop. Falls back to ``auth.storage_path``.
-            rate_limit_max_retries: Max automatic retries on HTTP 429.
-                Defaults to ``3`` so programmatic users
-                inherit "smart retry" behavior without having to opt in. Set
-                to ``0`` to raise ``RateLimitError`` immediately. Each retry
-                sleeps for the
-                ``Retry-After`` value when the server provides a parseable
-                header (clamped at ``MAX_RETRY_AFTER_SECONDS``); when the
-                header is absent or unparseable, the loop falls back to
-                capped exponential backoff ``min(2 ** attempt, 30)`` seconds
-                with ±20% jitter, matching the 5xx path so the positive
-                default is still useful when Google omits the hint.
-            server_error_max_retries: Max automatic retries for retryable transient
-                transport failures: HTTP 5xx responses and network-layer
-                ``httpx.RequestError`` (timeouts, connect errors). Defaults to
-                ``3``. Uses exponential backoff ``min(2 ** attempt, 30)``
-                seconds — 5xx responses rarely carry ``Retry-After``, so the
-                429 model doesn't apply. Set to ``0`` to disable. Refresh-path
-                errors (400/401/403) are NOT covered here; those follow the
-                existing auth-refresh-and-retry flow.
-            limits: HTTP connection-pool tuning (``ConnectionLimits``). ``None``
-                (default) constructs a ``ConnectionLimits()`` with defaults
-                sized for typical batchexecute fan-out (max_connections=100,
-                max_keepalive_connections=50, keepalive_expiry=30.0). Pass an
-                explicit ``ConnectionLimits(...)`` to widen the pool for
-                heavy batch workloads (e.g. FastAPI/Django services that
-                share one client across many concurrent requests).
-            max_concurrent_uploads: Ceiling on simultaneous in-flight
-                ``SourcesAPI.add_file`` uploads. Defaults to
-                ``DEFAULT_MAX_CONCURRENT_UPLOADS`` (4). ``None`` resolves to
-                the default — unbounded uploads are intentionally rejected
-                because each in-flight upload holds one open file
-                descriptor for the duration of the upload, and an
-                unbounded fan-out exhausts the per-process FD limit. Must
-                be ``>= 1`` when supplied. Independent
-                of the RPC connection pool because uploads use their own
-                ``httpx.AsyncClient`` (Scotty endpoint) and don't share
-                the RPC pool.
-            max_concurrent_rpcs: Ceiling on simultaneous in-flight
-                ``SessionTransport.perform_authed_post`` RPC POSTs. Defaults to
-                ``DEFAULT_MAX_CONCURRENT_RPCS`` (16) — well below the
-                default httpx pool size (``max_connections=100``) so
-                short-lived helper requests (refresh GETs, upload
-                preflights) outside this gate still have pool headroom.
-                Pass ``None`` to disable the gate entirely (callers with
-                an external rate-limiter or single-shot CLI work).
-                Must be ``>= 1`` when supplied. Before this gate was added,
-                heavy fan-out workloads tripped opaque
-                ``httpx.PoolTimeout`` errors before the connection pool
-                could surface clean back-pressure. Cross-
-                validation with ``limits.max_connections`` is enforced at
-                the ``NotebookLMClient`` boundary (so the constraint
-                applies whether ``limits`` is explicit or auto-defaulted
-                inside ``Session``).
-            on_rpc_event: Optional callback invoked after each logical
-                ``rpc_call`` succeeds or fails. The callback receives a
-                backend-agnostic :class:`RpcTelemetryEvent`; exceptions raised
-                by the callback are logged and never mask the RPC result.
-            cookie_saver: Optional injectable seam (Phase 2 PR 3) overriding
-                the on-disk cookie writer used by
-                :meth:`ClientLifecycle.save_cookies`. ``None`` (default)
-                resolves to :func:`_default_cookie_saver`, which late-binds
-                to ``notebooklm._auth.storage.save_cookies_to_storage`` so
-                the canonical-seam monkeypatch surface keeps affecting the
-                live path. Must be sync (``def``, not ``async def``) — it
-                runs inside ``asyncio.to_thread``. Custom callables bypass
-                the late-bind hop entirely.
-            cookie_rotator: Optional injectable seam (Phase 2 PR 3)
-                overriding the keepalive-loop rotator. ``None`` (default)
-                resolves to :func:`_default_cookie_rotator`, which late-binds
-                to ``notebooklm._auth.keepalive._rotate_cookies``. Must be
-                async — it is awaited from :meth:`ClientLifecycle._keepalive_loop`.
-            decode_response: Override for the canonical RPC response
-                decoder. ``None`` (default) resolves to
-                :func:`notebooklm.rpc.decode_response` via the
-                module-level imported binding at construction time —
-                tests that ``monkeypatch.setattr("notebooklm.rpc.decode_response",
-                fake)`` BEFORE constructing :class:`Session` still steer
-                the captured callable. Replaces the retired module-level
-                decode wrapper, which performed the lookup on every call;
-                tests that need to swap the decoder AFTER construction
-                should pass an explicit callable here or assign
-                ``session._decode_response = fake`` before the first RPC.
-                See ``docs/improvement.md`` §4.1.
-            sleep: Override for the awaitable used by retry/backoff loops.
-                ``None`` (default) resolves to :func:`asyncio.sleep` via
-                the module-level binding at construction time. Replaces
-                the retired module-level sleep wrapper — tests can pass
-                ``sleep=fake_sleep`` directly or
-                ``monkeypatch.setattr("notebooklm._session.asyncio.sleep",
-                fake_sleep)`` BEFORE constructing :class:`Session`.
-            is_auth_error: Override for the authentication-error classifier
-                used by the chain's ``AuthRefreshMiddleware`` and by
-                :class:`RpcExecutor`'s decode-time refresh path. ``None``
-                (default) resolves to
-                :func:`notebooklm._session_helpers.is_auth_error` via the
-                module-level imported binding at construction time.
-                Replaces the retired module-level classifier wrapper.
-            async_client_factory: Override for the live ``httpx.AsyncClient``
-                factory used by :meth:`Kernel.open` to build the live
-                transport. ``None`` (default) resolves to
-                :class:`httpx.AsyncClient` via a module-level name lookup
-                at call time, so tests that
-                ``monkeypatch.setattr("notebooklm._session.httpx.AsyncClient",
-                fake)`` before constructing the client still steer the
-                live transport build. Pass an explicit callable to install
-                a mock transport (e.g. via ``httpx.MockTransport``) without
-                going through the late-bind hop. The retired
-                ``Kernel.http_client`` setter previously absorbed that
-                post-construction mutation. See ``docs/improvement.md``
-                §4.2.
-
-        Raises:
-            ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
-                positive finite number, or if ``max_concurrent_uploads`` /
-                ``max_concurrent_rpcs`` is a non-positive integer.
-            RuntimeError: If ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to a
-                recognised mode without a ``PYTEST_CURRENT_TEST`` environment
-                marker. The env var is test-only — see
-                :func:`_refuse_synthetic_error_outside_test_context`.
         """
-        # P1-12: refuse instantiation if the test-only synthetic-error env var
-        # is set without pytest context. Catches leaked deploy envs at the
-        # earliest opportunity, before any HTTP client is constructed. The
-        # guard is a no-op for the normal production path (env var unset)
-        # and for legitimate pytest contexts (PYTEST_CURRENT_TEST set).
-        _refuse_synthetic_error_outside_test_context()
-        config = validate_constructor_args(
-            timeout=timeout,
-            connect_timeout=connect_timeout,
-            refresh_retry_delay=refresh_retry_delay,
-            rate_limit_max_retries=rate_limit_max_retries,
-            server_error_max_retries=server_error_max_retries,
-            keepalive=keepalive,
-            keepalive_min_interval=keepalive_min_interval,
-            keepalive_storage_path=keepalive_storage_path,
-            auth_storage_path=auth.storage_path,
-            limits=limits,
-            max_concurrent_uploads=max_concurrent_uploads,
-            max_concurrent_rpcs=max_concurrent_rpcs,
-            # Seam defaults resolve against THIS module's ``asyncio`` /
-            # ``httpx`` bindings (see ``_session_init.py`` module
-            # docstring for the seam-resolution boundary).
-            decode_response=_default_decode_response()
-            if decode_response is None
-            else decode_response,
-            sleep=asyncio.sleep if sleep is None else sleep,
-            is_auth_error=_default_is_auth_error() if is_auth_error is None else is_auth_error,
-            async_client_factory=httpx.AsyncClient
-            if async_client_factory is None
-            else async_client_factory,
-        )
-
-        # Plain-attribute assignments precede ``build_collaborators``
-        # because the chain provider lambdas in
-        # :func:`wire_middleware_chain` read ``_rate_limit_max_retries``
-        # / ``_server_error_max_retries`` / ``_refresh_retry_delay``
-        # from ``self`` live (integration tests SET them
-        # post-construction).
+        # The chain provider lambdas in :func:`wire_middleware_chain`
+        # read ``_rate_limit_max_retries`` / ``_server_error_max_retries``
+        # / ``_refresh_retry_delay`` from ``self`` live (integration
+        # tests SET them post-construction). Same for the seam
+        # callables ``_decode_response`` / ``_sleep`` /
+        # ``_is_auth_error`` — the executor closures dereference these
+        # via ``session._<attr>`` on every call, so post-construction
+        # reassignment continues to take effect.
         self.auth = auth
         self._decode_response: Callable[..., Any] = config.decode_response
         self._sleep: Callable[[float], Awaitable[Any]] = config.sleep
@@ -576,20 +404,15 @@ class Session:
         # Lazy-created per-instance — see :meth:`_get_rpc_semaphore`.
         self._rpc_semaphore: asyncio.Semaphore | None = None
 
-        collaborators = build_collaborators(
-            config,
-            auth=auth,
-            refresh_callback=refresh_callback,
-            on_rpc_event=on_rpc_event,
-            cookie_saver=cookie_saver,
-            cookie_rotator=cookie_rotator,
-        )
-        # ADR-014 Rule 3 Stage A (Wave 6 of session-decoupling): store the
-        # bundle so the ``Session.collaborators`` accessor below can expose
-        # it as a single typed attribute for ``NotebookLMClient.__init__``
-        # feature wiring. Stage B (Wave 7 follow-up) moves
-        # ``build_collaborators`` ownership to NotebookLMClient and deletes
-        # this storage along with the accessor.
+        # The collaborator bundle is stored as a private attribute so
+        # :class:`NotebookLMClient` can hoist the ``metrics``
+        # collaborator off the same bundle the Session uses (e.g. for
+        # ``NotebookLMClient.metrics_snapshot``). The Stage A
+        # accessor properties (``Session.collaborators`` /
+        # ``Session.session_transport`` / ``Session.rpc_executor``) that
+        # previously exposed the bundle through the Session surface
+        # were deleted in this PR — :class:`NotebookLMClient` reads
+        # from the :class:`ComposedSession` it received instead.
         self._collaborators = collaborators
         self._metrics_obj = collaborators.metrics
         self._drain_tracker = collaborators.drain_tracker
@@ -599,89 +422,17 @@ class Session:
         self._lifecycle = collaborators.lifecycle
         self.cookie_persistence = collaborators.cookie_persistence
         self.poll_registry = collaborators.poll_registry
-        # ``_drain_hooks`` storage moved to ``TransportDrainTracker`` in
-        # Wave 2 of the session-decoupling plan (ADR-014 Rule 1);
-        # ``Session.register_drain_hook`` was deleted in Wave 11a.
+
+        # Late-bound storage — these slots stay ``None`` until the
+        # composition root in :func:`compose_session_internals` drives
+        # the write-once binders. Entry points (``rpc_call`` /
+        # ``_get_rpc_semaphore`` / ``open`` / ``close``) guard against
+        # use-before-bind via :meth:`_require_constructed`.
+        self._transport: SessionTransport | None = None
+        self._chain_builder: Any = None
+        self._middlewares: Any = None
+        self._authed_post_chain: Any = None
         self._rpc_executor: RpcExecutor | None = None
-
-        # The authed POST hot path (chain terminal, freshness rebuild,
-        # and ``perform_authed_post`` entry) lives on
-        # :class:`SessionTransport` (move #4c — ``docs/improvement.md``
-        # §3.1). Build the transport BEFORE :func:`wire_middleware_chain`
-        # so the chain leaf can route through :class:`Session`; the
-        # transport reaches the chain itself through a live-binding
-        # ``chain_provider`` closure that reads
-        # ``self._authed_post_chain`` (set just below), which preserves
-        # the long-standing test pattern of reassigning
-        # ``core._authed_post_chain = fake_chain`` post-construction.
-        # The transport receives :data:`logger` (this module's logger,
-        # ``notebooklm._session``) so transport-error log lines stay in
-        # the historical namespace rather than acquiring a new
-        # ``notebooklm._session_transport`` namespace.
-        self._transport: SessionTransport = build_session_transport(
-            collaborators, host=self, logger=logger
-        )
-
-        # The chain leaf wires to the :class:`Session`-side forward
-        # (:meth:`_authed_post_chain_terminal`), not directly to
-        # :meth:`SessionTransport.terminal`. The forward is the canonical
-        # seam: a subclass override or fixture-time class-level
-        # monkeypatch of ``Session._authed_post_chain_terminal`` keeps
-        # steering the live chain leaf, matching pre-extraction
-        # behavior. The forward adds one bound-method dispatch hop per
-        # chain leaf invocation — negligible overhead.
-        wired = wire_middleware_chain(
-            config,
-            collaborators,
-            host=self,
-            authed_post_chain_terminal=self._authed_post_chain_terminal,
-            rpc_semaphore_factory=self._get_rpc_semaphore,
-        )
-        self._chain_builder = wired.chain_builder
-        self._middlewares = wired.middlewares
-        self._authed_post_chain = wired.authed_post_chain
-
-    # ------------------------------------------------------------------
-    # ADR-014 Rule 3 Stage A accessors (Wave 6 of session-decoupling)
-    # ------------------------------------------------------------------
-    #
-    # Three typed accessors that let ``NotebookLMClient.__init__`` wire
-    # feature APIs with the collaborators they actually depend on, instead
-    # of passing the whole ``Session`` and having features reach for
-    # underscore-prefixed attributes. The base bundle (``collaborators``)
-    # exposes the eight fields ``SessionCollaborators`` carries today; two
-    # narrow accessors expose the late-bound collaborators that are NOT on
-    # the dataclass (``session_transport`` is constructed after the bundle
-    # via ``build_session_transport``; ``rpc_executor`` is lazy via
-    # ``_get_rpc_executor``).
-    #
-    # Per Stage B (Wave 7 follow-up): when ``build_collaborators`` ownership
-    # moves to ``NotebookLMClient``, all three accessors are deleted along
-    # with the ``self._collaborators`` storage above.
-    #
-    # The Wave 6 lint guard (``tests/_lint/test_client_composition.py``)
-    # restricts reads of these accessors to ``client.py`` + ``_session.py``
-    # + ``tests/`` to keep them from becoming a discoverability hub.
-
-    @property
-    def collaborators(self) -> "SessionCollaborators":
-        """Typed access to the constructed collaborator bundle (ADR-014 Rule 3 Stage A)."""
-        return self._collaborators
-
-    @property
-    def session_transport(self) -> "SessionTransport":
-        """Late-bound collaborator not present on :class:`SessionCollaborators`
-        today (constructed via :func:`build_session_transport` after the bundle).
-        Deleted in Wave 7 follow-up along with the other Stage-A accessors.
-        """
-        return self._transport
-
-    @property
-    def rpc_executor(self) -> RpcExecutor:
-        """Lazily-constructed collaborator not present on :class:`SessionCollaborators`
-        today. Deleted in Wave 7 follow-up along with the other Stage-A accessors.
-        """
-        return self._get_rpc_executor()
 
     def assert_bound_loop(self) -> None:
         """Raise if this core is used from a loop other than its open-time loop.
@@ -709,11 +460,11 @@ class Session:
         between the ``is None`` check and the assignment unless we
         ``await`` (and we don't).
         """
-        # Stage B1 PR 1 fail-fast: this factory is captured by the chain
-        # at construction time and invoked from middleware on every
-        # rpc_call. A pre-composition call indicates the chain is being
-        # exercised before the full composition completed. Inert under
-        # inline construction.
+        # Stage B1 PR 2 fail-fast: this factory is captured by the
+        # chain at construction time and invoked from middleware on
+        # every rpc_call. A pre-composition call indicates the chain
+        # is being exercised before the composition root drove
+        # :meth:`_bind_transport`.
         self._require_constructed("_transport")
         if self._max_concurrent_rpcs is None:
             return nullcontext()
@@ -721,72 +472,29 @@ class Session:
             self._rpc_semaphore = asyncio.Semaphore(self._max_concurrent_rpcs)
         return self._rpc_semaphore
 
-    def _get_rpc_executor(self) -> RpcExecutor:
-        """Return the RPC execution collaborator, lazily initialized.
-
-        The decode/sleep/is-auth-error callables are the constructor-injected
-        seams (``Session(..., decode_response=…, sleep=…, is_auth_error=…)``).
-        Tests substitute behaviour at construction time rather than via
-        ``monkeypatch.setattr`` on module attributes; see
-        ``docs/improvement.md`` §4.1 for the migration rationale.
-        """
-        executor = getattr(self, "_rpc_executor", None)
-        if executor is None:
-            # ADR-014 Rule 5 (Wave 4 of session-decoupling): RpcExecutor
-            # takes its collaborators directly via keyword-only arguments
-            # instead of reaching them through a Session-shaped owner.
-            executor = RpcExecutor(
-                kernel=self._kernel,
-                transport=self._transport,
-                auth_refresh=self._auth_coord,
-                metrics=self._metrics_obj,
-                # Late-bind so tests that patch ``session._decode_response``
-                # after construction (legacy pattern in
-                # ``tests/integration/test_auto_refresh.py`` etc.) still take
-                # effect under the Wave 7 wiring where ``_get_rpc_executor``
-                # is invoked eagerly from ``NotebookLMClient.__init__``.
-                decode_response=lambda *a, **kw: self._decode_response(*a, **kw),
-                is_auth_error=lambda *a, **kw: self._is_auth_error(*a, **kw),
-                sleep=lambda *a, **kw: self._sleep(*a, **kw),
-                timeout_provider=lambda: self._lifecycle._timeout,
-                refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
-                refresh_retry_delay_provider=lambda: self._refresh_retry_delay,
-            )
-            self._rpc_executor = executor
-        return executor
-
     # ------------------------------------------------------------------
-    # Stage B1 PR 1 — write-once binders + fail-fast guards
+    # Stage B1 PR 2 — write-once binders + fail-fast guards (live)
     # ------------------------------------------------------------------
     #
     # The three ``_bind_*`` setters below accept exactly one bind per
     # attribute. They are reserved for :func:`compose_session_internals`
-    # (the Stage B1 PR 2 composition root) and are DORMANT in PR 1
-    # because ``Session.__init__`` still inline-constructs the
-    # transport / chain / executor.
+    # (the composition root) and are load-bearing — :meth:`Session.__init__`
+    # leaves ``_transport`` / ``_chain_builder`` / ``_middlewares`` /
+    # ``_authed_post_chain`` / ``_rpc_executor`` at ``None``, so the
+    # composition root is the single assignment site for each.
     #
-    # Subtlety: because PR 1's :class:`Session.__init__` already sets
-    # ``self._transport`` / ``self._chain_builder`` /
-    # ``self._middlewares`` / ``self._authed_post_chain`` to non-None
-    # values inline, calling :meth:`_bind_transport` or
-    # :meth:`_bind_chain` after the legacy ``__init__`` will raise
-    # ``RuntimeError`` ("already bound"). That's intentional — the
-    # write-once contract guards against accidental double-construction.
-    # PR 2 inverts ``Session.__init__`` to leave these slots at ``None``
-    # so the binders become the single assignment site. ``_rpc_executor``
-    # is the one slot that ``__init__`` leaves at ``None`` (lazy via
-    # :meth:`_get_rpc_executor`), so :meth:`_bind_executor` is the only
-    # binder that fires in PR 1 if a caller exercises
-    # :func:`compose_session_internals`.
+    # The legacy lazy ``_get_rpc_executor`` factory was deleted in PR 2;
+    # post-construction the executor is reachable directly via
+    # ``self._rpc_executor`` (and never re-nulled by ``close()`` — see
+    # ``_session_lifecycle.py:close`` for the corresponding contract).
 
     def _bind_transport(self, transport: "SessionTransport") -> None:
         """Write-once setter for :attr:`_transport`.
 
-        Raises ``RuntimeError`` on a second bind attempt. PR 2 of Stage
-        B1 calls this from :func:`compose_session_internals` after
-        :func:`build_session_transport` returns; PR 1 leaves the binder
-        dormant because :class:`Session.__init__` still wires the
-        transport inline.
+        Raises ``RuntimeError`` on a second bind attempt.
+        :func:`compose_session_internals` calls this after
+        :func:`build_session_transport` returns; it is the single
+        assignment site for :attr:`_transport` (Stage B1 PR 2 onwards).
         """
         if getattr(self, "_transport", None) is not None:
             raise RuntimeError("Session._transport already bound")
@@ -816,17 +524,14 @@ class Session:
     def _bind_executor(self, executor: RpcExecutor) -> None:
         """Write-once setter for :attr:`_rpc_executor`.
 
-        Distinct from the lazy :meth:`_get_rpc_executor` factory in two
-        ways: (a) :meth:`_get_rpc_executor` is idempotent and lazily
-        builds the executor only if ``_rpc_executor is None``, whereas
-        :meth:`_bind_executor` is an explicit composition step that
-        raises on a second bind; (b) the lazy factory exists for the
-        ``close()`` → ``open()`` re-binding cycle (close nulls the
-        slot, the next ``rpc_call`` lazily refills it) which Stage B1
-        PR 2 removes. Until then, both coexist: PR 1's
-        :func:`compose_session_internals` exercises the binder once,
-        and the lazy factory takes over after ``close()`` for clients
-        that re-open.
+        Stage B1 PR 2 deleted the legacy lazy ``_get_rpc_executor``
+        factory — :func:`compose_session_internals` is the only
+        producer of an :class:`RpcExecutor`, and it drives this binder
+        exactly once during composition. The slot is NOT re-nulled by
+        :meth:`ClientLifecycle.close`; the executor persists across
+        ``close()`` → ``open()`` cycles because the underlying
+        transport collaborator (:class:`Kernel`) rebuilds its
+        ``httpx.AsyncClient`` lazily on each ``open()``.
         """
         if getattr(self, "_rpc_executor", None) is not None:
             raise RuntimeError("Session._rpc_executor already bound")
@@ -836,11 +541,12 @@ class Session:
         """Fail-fast guard for :class:`Session` entry points.
 
         Raises ``RuntimeError("Session not fully constructed: <attr> is
-        None")`` when a required write-once binding is unset. Inert in
-        PR 1 of Stage B1 because ``Session.__init__`` still inline-sets
-        the slots; becomes load-bearing in PR 2 when the inline
-        construction moves to :func:`compose_session_internals` and the
-        guards catch any pre-binder call.
+        None")`` when a required write-once binding is unset. Load-bearing
+        after Stage B1 PR 2: :class:`Session.__init__` leaves the
+        transport / chain / executor slots at ``None`` and only the
+        composition root (:func:`compose_session_internals`) drives the
+        binders, so this guard catches any path that exercises a
+        :class:`Session` outside that root.
 
         The lookup uses :func:`getattr` with a ``None`` default so the
         check works during ``__init__`` itself (before the attribute
@@ -866,9 +572,12 @@ class Session:
         unbind so an
         accidental cross-loop call after close still raises actionably.
         """
-        # Stage B1 PR 1 fail-fast: ensure full composition before lifecycle
-        # work. Inert under inline construction (legacy ``__init__`` sets
-        # ``_transport`` before returning).
+        # Stage B1 PR 2 fail-fast: ensure full composition before
+        # lifecycle work. The composition root
+        # (:func:`compose_session_internals`) drives
+        # :meth:`_bind_transport` before returning, so a ``None``
+        # here means the Session was instantiated outside the
+        # composition root and is unusable.
         self._require_constructed("_transport")
         await self._lifecycle.open(self)
 
@@ -884,13 +593,18 @@ class Session:
         3. Saves cookies one last time through ``ClientLifecycle.save_cookies``.
         4. Calls ``aclose()`` under :func:`asyncio.shield` so cancellation
            arriving mid-close cannot leak the underlying httpx transport.
-        5. Nulls out ``_kernel._http_client`` and ``_rpc_executor`` so a
-           follow-up :meth:`open` rebuilds transport collaborators against
-           the new ``httpx.AsyncClient``.
+        5. Nulls out ``_kernel._http_client`` so a follow-up
+           :meth:`open` rebuilds the live transport against a fresh
+           ``httpx.AsyncClient``.
+
+        Stage B1 PR 2 dropped the close-time ``_rpc_executor = None``
+        step that previously lived in :meth:`ClientLifecycle.close` —
+        the executor is composition-root-bound and persists across
+        ``close()`` → ``open()`` cycles. See
+        :mod:`tests.unit.test_lifecycle_executor_reuse` for the
+        regression pin.
         """
-        # Stage B1 PR 1 fail-fast: same guard as :meth:`open` — close()
-        # tears down lifecycle state that depends on the composition
-        # bundle. Inert under inline construction.
+        # Stage B1 PR 2 fail-fast: same guard as :meth:`open`.
         self._require_constructed("_transport")
         await self._lifecycle.close(self)
 
@@ -944,19 +658,28 @@ class Session:
         """Middleware chain leaf — forwards to :meth:`SessionTransport.terminal`.
 
         The body moved to the collaborator in move #4c
-        (``docs/improvement.md`` §3.1). :meth:`Session.__init__` wires
-        this method as the chain leaf (``wire_middleware_chain`` receives
-        ``self._authed_post_chain_terminal``), so this forward IS the
-        live chain leaf — not a test-only entry point. Routing through
-        the Session forward (rather than directly to
-        :meth:`SessionTransport.terminal`) preserves the canonical seam:
-        a subclass override or fixture-time class-level monkeypatch of
-        this method keeps steering the live chain leaf. AST guard
+        (``docs/improvement.md`` §3.1). :func:`compose_session_internals`
+        wires this method as the chain leaf (``wire_middleware_chain``
+        receives ``self._authed_post_chain_terminal``), so this forward
+        IS the live chain leaf — not a test-only entry point. Routing
+        through the Session forward (rather than directly to
+        :meth:`SessionTransport.terminal`) preserves the canonical
+        seam: a subclass override or fixture-time class-level
+        monkeypatch of this method keeps steering the live chain leaf.
+        AST guard
         (:func:`tests.unit.test_concurrency_refresh_race.test_kernel_post_terminal_has_no_await_before_post_per_attempt`)
         inspects :meth:`SessionTransport.terminal` directly because the
         forward carries no try/await structure.
+
+        ``_transport`` is statically typed ``Optional`` because the
+        composition root binds it lazily via :meth:`_bind_transport`,
+        but this method is only reachable from the wired middleware
+        chain (itself constructed AFTER the transport bind), so the
+        runtime invariant is "non-None whenever this method runs". The
+        ``type: ignore`` is the type-system acknowledgement of that
+        runtime guarantee.
         """
-        return await self._transport.terminal(request)
+        return await self._transport.terminal(request)  # type: ignore[union-attr]
 
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.
@@ -1001,15 +724,16 @@ class Session:
         / ``operation_variant`` flow through unchanged; ``RuntimeError`` is
         raised if the client is not initialized).
         """
-        # Stage B1 PR 1 fail-fast: ``_transport`` is the proxy for "full
-        # composition completed" because :class:`Session.__init__` sets
-        # it inline and it is never nulled by close(). The lazy executor
-        # slot (``_rpc_executor``) is intentionally NOT checked here —
-        # it is None between ``Session.__init__`` (which leaves it lazy)
-        # and the first ``_get_rpc_executor()`` call, and is re-nulled
-        # by ``ClientLifecycle.close``. Inert under inline construction.
-        self._require_constructed("_transport")
-        return await self._get_rpc_executor().rpc_call(
+        # Stage B1 PR 2 fail-fast: ``_rpc_executor`` is the canonical
+        # "full composition completed" probe after PR 2 — the
+        # composition root (:func:`compose_session_internals`) binds it
+        # last via :meth:`_bind_executor`, and it is never re-nulled
+        # by ``close()``. A ``None`` here means the Session was
+        # instantiated outside the composition root (e.g. via
+        # ``Session.__new__`` in a unit test) or the composition was
+        # short-circuited.
+        self._require_constructed("_rpc_executor")
+        return await self._rpc_executor.rpc_call(  # type: ignore[union-attr]
             method,
             params,
             source_path,

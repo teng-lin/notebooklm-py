@@ -26,6 +26,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -52,7 +53,7 @@ def _make_core(tmp_path: Path, *, cookie_saver=None) -> Session:
         storage_path=storage_path,
     )
     storage_path.write_text('{"cookies": []}')
-    return Session(auth, cookie_saver=cookie_saver)
+    return build_session_for_tests(auth, cookie_saver=cookie_saver)
 
 
 @pytest.mark.asyncio

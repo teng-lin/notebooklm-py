@@ -40,6 +40,7 @@ import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -78,7 +79,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Sessi
     prove the harness fans out at the *transport* boundary (the
     cap-on semantics are covered by ``test_max_concurrent_rpcs.py``).
     """
-    core = Session(auth=_make_auth(), max_concurrent_rpcs=None)
+    core = build_session_for_tests(auth=_make_auth(), max_concurrent_rpcs=None)
     await core.open()
     assert core._kernel.http_client is not None
     prior_cookies = core._kernel.get_http_client().cookies

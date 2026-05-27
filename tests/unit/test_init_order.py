@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm.auth import AuthTokens
@@ -572,23 +573,33 @@ def test_lifted_core_modules_are_retired() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_session_exposes_constructor_di_seams_for_decode_sleep_auth_factory() -> None:
-    """``Session.__init__`` MUST expose the four constructor-DI seams.
+def test_compose_session_internals_exposes_constructor_di_seams() -> None:
+    """``compose_session_internals`` MUST expose the four constructor-DI seams.
+
+    Stage B1 PR 2 of the post-refactoring plan moved the composition
+    root out of ``Session.__init__`` (which now takes
+    ``(*, collaborators, config, auth)`` only) into
+    ``notebooklm._session.compose_session_internals``. The seams live
+    on the helper (and on the canonical test builder
+    ``build_session_for_tests``), NOT on ``NotebookLMClient.__init__``
+    (which preserves the production surface).
 
     The seams replace the retired module-level late-binding wrappers
     (see ``docs/improvement.md`` §4.1) and the retired
     ``Kernel.http_client`` setter (§4.2). Each must be keyword-only and
-    default to ``None`` so the body can resolve the canonical seam via
+    default to ``None`` so the helper can resolve the canonical seam via
     a fresh module-attribute lookup at construction time (preserving
     pre-construction monkeypatch propagation).
     """
     import inspect
 
-    from notebooklm._session import Session
+    from notebooklm._session import compose_session_internals
 
-    sig = inspect.signature(Session.__init__)
+    sig = inspect.signature(compose_session_internals)
     for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):
-        assert name in sig.parameters, f"Session.__init__ must expose constructor-DI kwarg {name!r}"
+        assert name in sig.parameters, (
+            f"compose_session_internals must expose constructor-DI kwarg {name!r}"
+        )
         param = sig.parameters[name]
         assert param.kind == inspect.Parameter.KEYWORD_ONLY, (
             f"{name!r} must be keyword-only; got {param.kind!r}"
@@ -630,7 +641,6 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     effect. This test pins both halves: constructor-injected callables
     reach the executor, AND post-construction rebinds also take effect.
     """
-    from notebooklm._session import Session
     from notebooklm.auth import AuthTokens
 
     auth = AuthTokens(
@@ -648,7 +658,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     def custom_is_auth_error(_exc):
         return True
 
-    core = Session(
+    core = build_session_for_tests(
         auth,
         decode_response=custom_decode,
         sleep=custom_sleep,
@@ -659,7 +669,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     assert core._sleep is custom_sleep
     assert core._is_auth_error is custom_is_auth_error
 
-    executor = core._get_rpc_executor()
+    executor = core._rpc_executor
     # Constructor-injected callables propagate through the closure.
     assert executor._decode_response() == ["custom"]
     assert executor._is_auth_error(object()) is True

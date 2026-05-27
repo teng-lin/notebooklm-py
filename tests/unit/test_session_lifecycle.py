@@ -46,6 +46,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session_helpers import _resolve_keepalive_interval
 from notebooklm._session_lifecycle import (
     ClientLifecycle,
@@ -73,8 +74,14 @@ class _StubHost:
       coroutine; assertions check it was called with the right args.
     * ``_drain_tracker.run_drain_hooks`` — called by close(); set to an
       ``AsyncMock`` so tests can assert it ran and inspect call order.
-    * ``_rpc_executor`` — set to a sentinel marker value so tests can
-      assert :meth:`ClientLifecycle.close` nulls it.
+
+    Stage B1 PR 2 of the post-refactoring plan dropped the close-time
+    ``host._rpc_executor = None`` line from
+    :meth:`ClientLifecycle.close` — the executor now persists across
+    ``close()`` → ``open()`` cycles. The corresponding sentinel and the
+    ``test_close_nulls_rpc_executor`` regression test were removed in
+    that PR; see :mod:`tests.unit.test_lifecycle_executor_reuse` for
+    the replacement contract.
     """
 
     def __init__(self) -> None:
@@ -101,7 +108,10 @@ class _StubHost:
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
-        # Sentinel — close() nulls this out.
+        # Stage B1 PR 2 dropped the close-time null on ``_rpc_executor``;
+        # the slot is left as-set by the composition root. Set a stable
+        # sentinel here in case future regression tests want to assert
+        # the value is untouched across an open/close cycle.
         self._rpc_executor: Any = "RPC_EXECUTOR_SENTINEL"
 
 
@@ -304,28 +314,6 @@ async def test_close_cancels_keepalive_cleanly() -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_nulls_rpc_executor() -> None:
-    """``close()`` nulls out the RPC collaborator handle so a follow-up
-    ``open()`` rebuilds it against the current transport state.
-
-    Pre-extraction this lived inline in ``Session``; the contract is
-    preserved by the lifecycle helper writing into ``host._rpc_executor``.
-    """
-    lifecycle = _make_lifecycle()
-    host = _StubHost()
-    await lifecycle.open(host)
-
-    # Sanity: sentinel still present pre-close.
-    assert host._rpc_executor == "RPC_EXECUTOR_SENTINEL"
-
-    await lifecycle.close(host)
-
-    assert host._rpc_executor is None
-    assert lifecycle._http_client is None
-    assert lifecycle.is_open() is False
-
-
-@pytest.mark.asyncio
 async def test_close_when_never_opened_is_noop() -> None:
     """Closing a never-opened lifecycle is safe and does nothing harmful."""
     lifecycle = _make_lifecycle()
@@ -470,10 +458,9 @@ def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
     inside an authed POST. The test runs two separate
     ``asyncio.run`` invocations to materialise two distinct loops.
     """
-    from notebooklm._session import Session
 
     auth = AuthTokens(csrf_token="CSRF", session_id="SID", cookies={"SID": "v1"})
-    core = Session(auth=auth)
+    core = build_session_for_tests(auth=auth)
 
     async def _open_on_loop_a() -> None:
         await core.open()

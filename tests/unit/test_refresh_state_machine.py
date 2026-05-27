@@ -3,7 +3,7 @@
 Pins three behaviors of ``RpcExecutor.try_refresh_and_retry`` (the
 canonical implementation; ``Session._try_refresh_and_retry`` was
 inlined in PR #4b and callers now reach the executor through
-``core._get_rpc_executor()``):
+``core._rpc_executor``):
 
 1. Concurrent callers share the same in-flight refresh task (single-flight).
 2. Refresh failures propagate to all waiters with chained ``__cause__``.
@@ -39,7 +39,7 @@ EVENT_TIMEOUT_S = 5.0
 
 async def _trigger_refresh(core):
     """Drive ``RpcExecutor.try_refresh_and_retry`` with throwaway args."""
-    return await core._get_rpc_executor().try_refresh_and_retry(
+    return await core._rpc_executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/",
@@ -85,7 +85,7 @@ async def test_concurrent_callers_share_single_refresh():
         async def fake_retry(*args, **kwargs):
             return "ok"
 
-        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
+        core._rpc_executor.rpc_call = fake_retry  # type: ignore[method-assign]
 
         tasks = [asyncio.create_task(_trigger_refresh(core)) for _ in range(3)]
 
@@ -174,7 +174,7 @@ async def test_second_wave_creates_distinct_refresh_task():
         async def fake_retry(*args, **kwargs):
             return "ok"
 
-        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
+        core._rpc_executor.rpc_call = fake_retry  # type: ignore[method-assign]
 
         await _trigger_refresh(core)
         first_task = core._auth_coord._refresh_task

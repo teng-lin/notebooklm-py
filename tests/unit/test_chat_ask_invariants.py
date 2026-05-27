@@ -28,11 +28,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
 from notebooklm._request_types import AuthSnapshot
-from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 # ---------------------------------------------------------------------------
@@ -273,7 +273,7 @@ class TestChatRefreshRetry:
             auth.session_id = "NEW_SID"
             return auth
 
-        core = Session(auth=auth, refresh_callback=refresh, refresh_retry_delay=0.0)
+        core = build_session_for_tests(auth=auth, refresh_callback=refresh, refresh_retry_delay=0.0)
         await core.open()
         try:
             observed_bodies: list[str] = []
@@ -320,11 +320,14 @@ class TestChatRefreshRetry:
             # arg. Wired here from the real ``Session`` under test so the
             # refresh path exercises the production transport/rpc/reqid
             # collaborators end-to-end.
+            # Stage B1 PR 2 deleted the Stage A accessors
+            # (``Session.session_transport`` / ``Session.collaborators``);
+            # read the private slots directly instead.
             api = ChatAPI(
-                rpc=core.rpc_executor,
-                transport=core.session_transport,
-                reqid=core.collaborators.reqid,
-                loop_guard=core.collaborators.lifecycle,
+                rpc=core._rpc_executor,
+                transport=core._transport,
+                reqid=core._collaborators.reqid,
+                loop_guard=core._collaborators.lifecycle,
             )
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])
 

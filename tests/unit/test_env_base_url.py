@@ -2,8 +2,8 @@
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._env import get_base_host, get_base_url
-from notebooklm._session import Session
 from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
@@ -70,7 +70,7 @@ def test_rpc_endpoint_helpers_are_lazy(monkeypatch):
 
 def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
-    core = Session(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
+    core = build_session_for_tests(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
     # ``RpcExecutor.build_url`` consumes an ``AuthSnapshot`` so callers
     # outside ``_perform_authed_post`` must build one inline.
@@ -82,7 +82,7 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
         authuser=core.auth.authuser,
         account_email=core.auth.account_email,
     )
-    url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, snapshot)
+    url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, snapshot)
 
     assert url.startswith("https://notebooklm.cloud.google.com/_/LabsTailwindUi/data/")
 
@@ -98,7 +98,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
         headers={"x-goog-upload-url": upload_url},
     )
 
-    core = Session(auth)
+    core = build_session_for_tests(auth)
     await core.open()
     try:
         api = SourcesAPI(

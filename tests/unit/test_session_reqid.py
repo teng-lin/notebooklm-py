@@ -18,6 +18,7 @@ import warnings
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
@@ -28,7 +29,7 @@ def _make_core() -> Session:
         csrf_token="test_csrf",
         session_id="test_session",
     )
-    return Session(auth=auth)
+    return build_session_for_tests(auth=auth)
 
 
 @pytest.mark.asyncio

@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._polling_registry import PendingPolls, PollRegistry
-from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
@@ -58,7 +58,7 @@ async def test_poll_registry_preserves_seeded_pending_mapping_identity() -> None
 
 
 def test_session_exposes_poll_registry() -> None:
-    core = Session(_auth_tokens())
+    core = build_session_for_tests(_auth_tokens())
 
     assert isinstance(core.poll_registry, PollRegistry)
     assert core.poll_registry.get(("notebook-1", "task-1")) is None
@@ -66,7 +66,7 @@ def test_session_exposes_poll_registry() -> None:
 
 
 def test_session_poll_registry_identity_is_stable() -> None:
-    core = Session(_auth_tokens())
+    core = build_session_for_tests(_auth_tokens())
     registry = core.poll_registry
 
     assert core.poll_registry is registry
@@ -74,7 +74,7 @@ def test_session_poll_registry_identity_is_stable() -> None:
 
 @pytest.mark.asyncio
 async def test_session_poll_registry_preserves_entry_shape_through_methods() -> None:
-    core = Session(_auth_tokens())
+    core = build_session_for_tests(_auth_tokens())
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
     task = asyncio.create_task(_never())

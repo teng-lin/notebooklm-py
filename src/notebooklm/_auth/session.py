@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from .._env import get_base_url
 from .._url_utils import is_google_auth_redirect
@@ -14,8 +14,7 @@ from .tokens import AuthTokens
 
 if TYPE_CHECKING:
     from .._kernel import Kernel
-    from .._session_init import SessionCollaborators
-    from .._session_lifecycle import _LifecycleHost
+    from .._session_lifecycle import ClientLifecycle
 
 
 class RefreshAuthCore(Protocol):
@@ -29,11 +28,17 @@ class RefreshAuthCore(Protocol):
     Session slot.
 
     Wave 11c of session-decoupling: the ``save_cookies`` forward on
-    ``Session`` was also deleted — :func:`refresh_auth_session` now
-    reaches the cookie persistence chokepoint through
-    ``core.collaborators.lifecycle`` directly
-    (``ClientLifecycle.save_cookies``), which is the canonical home
-    identified by ADR-014.
+    ``Session`` was deleted — :func:`refresh_auth_session` reached the
+    cookie persistence chokepoint through ``core.collaborators.lifecycle``.
+
+    Stage B1 PR 2 of the post-refactoring plan further narrowed this
+    Protocol: the ``collaborators`` property was deleted from
+    :class:`Session` along with the other Stage A accessors, so
+    :func:`refresh_auth_session` now takes ``lifecycle: ClientLifecycle``
+    as an explicit argument supplied by the caller
+    (:meth:`NotebookLMClient.refresh_auth` passes
+    ``self._collaborators.lifecycle``). The Protocol no longer needs a
+    ``collaborators`` field.
     """
 
     auth: AuthTokens
@@ -47,14 +52,23 @@ class RefreshAuthCore(Protocol):
         """Refresh auth-dependent HTTP state after token mutation."""
         ...
 
-    @property
-    def collaborators(self) -> SessionCollaborators:
-        """Access the constructed collaborator bundle (Stage A accessor)."""
-        ...
 
+async def refresh_auth_session(
+    core: RefreshAuthCore,
+    lifecycle: ClientLifecycle,
+) -> AuthTokens:
+    """Refresh NotebookLM auth tokens through the raw homepage session path.
 
-async def refresh_auth_session(core: RefreshAuthCore) -> AuthTokens:
-    """Refresh NotebookLM auth tokens through the raw homepage session path."""
+    Stage B1 PR 2 of the post-refactoring plan made ``lifecycle`` an
+    explicit second argument. Previously this function reached the
+    canonical cookie-persistence chokepoint through
+    ``core.collaborators.lifecycle`` (a Stage A accessor on
+    :class:`Session`). PR 2 deleted that accessor — :class:`Session` no
+    longer carries a ``collaborators`` property — so callers now pass
+    ``ClientLifecycle`` directly. The single production caller
+    (:meth:`NotebookLMClient.refresh_auth`) supplies
+    ``self._collaborators.lifecycle``.
+    """
     http_client = core._kernel.get_http_client()
     url = f"{get_base_url()}/"
     if core.auth.account_email or core.auth.authuser:
@@ -81,18 +95,12 @@ async def refresh_auth_session(core: RefreshAuthCore) -> AuthTokens:
     # observe a torn token pair while refresh is in flight.
     await core.update_auth_tokens(csrf or "", sid or "")
     core.update_auth_headers()
-    # Persist through ClientLifecycle.save_cookies so refresh serializes
-    # with keepalive and close saves. The ``Session.save_cookies`` forward
-    # was deleted in Wave 11c of session-decoupling; callers now reach the
-    # lifecycle collaborator directly. The ``cast`` widens the
-    # ``RefreshAuthCore`` shape to the lifecycle's ``_LifecycleHost`` shape —
-    # ``Session`` (the only production caller) satisfies both Protocols
-    # structurally; the cast is a typing-level acknowledgement that
-    # ``RefreshAuthCore`` deliberately stays narrow (it doesn't pull in
-    # the lifecycle host's metrics / drain / reqid / auth-coord fields
-    # because none of those are read by ``refresh_auth_session``).
-    await core.collaborators.lifecycle.save_cookies(
-        cast("_LifecycleHost", core), http_client.cookies
-    )
+    # Persist through ``ClientLifecycle.save_cookies`` so refresh
+    # serializes with keepalive and close saves. The ``host`` argument
+    # of :meth:`ClientLifecycle.save_cookies` is read for its
+    # ``_metrics_obj`` / ``cookie_persistence`` attributes; ``Session``
+    # (the only production caller) satisfies that shape, and unit-test
+    # fakes mirror those attributes via a recording lifecycle.
+    await lifecycle.save_cookies(core, http_client.cookies)  # type: ignore[arg-type]
 
     return core.auth

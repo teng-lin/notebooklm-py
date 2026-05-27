@@ -63,7 +63,7 @@ import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
-from notebooklm._session import Session
+from _helpers.session_factory import build_session_for_tests
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -204,7 +204,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
     # refresh side directly via ``bump_generation_under_lock`` below
     # because the test asserts the *lock semantics*, not the
     # full refresh state machine.
-    core = Session(auth=auth, refresh_retry_delay=0.0)
+    core = build_session_for_tests(auth=auth, refresh_retry_delay=0.0)
 
     async def bump_generation_under_lock() -> None:
         """One-shot synthetic refresh: bump the generation and atomically

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import AuthError, RPCMethod
@@ -71,14 +72,14 @@ def test_construct_outside_event_loop_with_callback() -> None:
         asyncio.get_running_loop()
 
     # Eager construction would have blown up under the prior code path.
-    core_with_cb = Session(auth=_auth_tokens(), refresh_callback=_noop_refresh)
+    core_with_cb = build_session_for_tests(auth=_auth_tokens(), refresh_callback=_noop_refresh)
     assert core_with_cb._auth_coord._refresh_lock is None, (
         "Lazy-init contract: lock must remain None until first refresh."
     )
     assert core_with_cb._auth_coord._refresh_callback is _noop_refresh
 
     # And the no-callback path stays the same (also lazy / also None).
-    core_without_cb = Session(auth=_auth_tokens())
+    core_without_cb = build_session_for_tests(auth=_auth_tokens())
     assert core_without_cb._auth_coord._refresh_lock is None
     assert core_without_cb._auth_coord._refresh_callback is None
 
@@ -93,9 +94,9 @@ async def _trigger_refresh(core: Session) -> object:
     (matches the helper in ``test_refresh_state_machine.py`` so this
     test pins the same code path). The Session-level
     ``_try_refresh_and_retry`` delegate was inlined in PR #4b — callers
-    now reach the executor through ``core._get_rpc_executor()``.
+    now reach the executor through ``core._rpc_executor``.
     """
-    return await core._get_rpc_executor().try_refresh_and_retry(
+    return await core._rpc_executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/",
@@ -141,7 +142,7 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
         async def fake_retry(*args: object, **kwargs: object) -> str:
             return "ok"
 
-        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
+        core._rpc_executor.rpc_call = fake_retry  # type: ignore[method-assign]
 
         # Pre-refresh invariant: lock is unallocated even after ``open()``.
         assert core._auth_coord._refresh_lock is None, (
@@ -187,7 +188,7 @@ async def test_refresh_lock_instance_stable_across_calls() -> None:
         async def fake_retry(*args: object, **kwargs: object) -> str:
             return "ok"
 
-        core._get_rpc_executor().rpc_call = fake_retry  # type: ignore[method-assign]
+        core._rpc_executor.rpc_call = fake_retry  # type: ignore[method-assign]
 
         await _trigger_refresh(core)
         first_lock = core._auth_coord._refresh_lock

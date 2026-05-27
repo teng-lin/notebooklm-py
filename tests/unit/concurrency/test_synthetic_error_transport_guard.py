@@ -31,7 +31,7 @@ import logging
 
 import pytest
 
-from notebooklm._session import Session
+from _helpers.session_factory import build_session_for_tests
 from notebooklm.auth import AuthTokens
 
 
@@ -68,7 +68,7 @@ def test_synthetic_error_env_var_without_pytest_context_refuses(
         caplog.at_level(logging.WARNING, logger="notebooklm._core"),
         pytest.raises(RuntimeError, match="NOTEBOOKLM_VCR_RECORD_ERRORS"),
     ):
-        Session(_make_auth())
+        build_session_for_tests(_make_auth())
 
     # WARNING must mention the env var so an operator can find the source.
     assert any(
@@ -95,7 +95,7 @@ def test_synthetic_error_env_var_with_pytest_context_succeeds(
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "fake_test")
 
     # Must NOT raise.
-    core = Session(_make_auth())
+    core = build_session_for_tests(_make_auth())
     assert core is not None
 
 
@@ -110,7 +110,7 @@ def test_synthetic_error_env_var_unset_succeeds(
     monkeypatch.delenv("NOTEBOOKLM_VCR_RECORD_ERRORS", raising=False)
     # Even when pytest IS running (PYTEST_CURRENT_TEST set), no env var
     # means no gate check at all.
-    core = Session(_make_auth())
+    core = build_session_for_tests(_make_auth())
     assert core is not None
 
 
@@ -127,5 +127,5 @@ def test_synthetic_error_env_var_empty_string_succeeds(
     monkeypatch.setenv("NOTEBOOKLM_VCR_RECORD_ERRORS", "")
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
-    core = Session(_make_auth())
+    core = build_session_for_tests(_make_auth())
     assert core is not None

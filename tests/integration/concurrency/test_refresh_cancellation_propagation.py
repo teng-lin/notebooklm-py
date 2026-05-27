@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
@@ -55,7 +56,7 @@ async def _opened_core(refresh_callback):
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    core = Session(
+    core = build_session_for_tests(
         auth=auth,
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.0,

@@ -87,7 +87,6 @@ if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
-    from ._rpc_executor import RpcExecutor
     from ._session_auth import AuthRefreshCoordinator
     from ._transport_drain import TransportDrainTracker
     from .auth import CookieSaveResult
@@ -177,14 +176,21 @@ class _LifecycleHost(Protocol):
     surface as Protocol violations rather than silent ``AttributeError``s
     at close-time. ``cookie_persistence`` mirrors today's public attribute
     name on ``Session``; ``_metrics_obj``, ``_drain_tracker``, and
-    ``_auth_coord`` are helper handles. ``_rpc_executor`` is nulled out by
-    :meth:`ClientLifecycle.close` so a follow-up ``open()`` rebuilds it
-    against the new ``httpx.AsyncClient`` state.
+    ``_auth_coord`` are helper handles.
 
     Note: ``_drain_hooks`` was removed from this Protocol in Wave 2 of the
     session-decoupling plan (ADR-014 Rule 1) — the storage and the
     ``run_drain_hooks`` firing now live on ``TransportDrainTracker``, so
     ``close()`` reaches them through ``host._drain_tracker`` instead.
+
+    Stage B1 PR 2 of the post-refactoring plan also removed
+    ``_rpc_executor`` from this Protocol. The lifecycle no longer nulls
+    the executor on :meth:`close` — the executor is bound by the
+    composition root (:func:`notebooklm._session.compose_session_internals`)
+    via :meth:`Session._bind_executor` and survives ``close()`` →
+    ``open()`` cycles. The lifecycle never reads or writes
+    ``_rpc_executor`` after that PR, so the Protocol no longer needs to
+    declare the field.
     """
 
     auth: AuthTokens
@@ -193,7 +199,6 @@ class _LifecycleHost(Protocol):
     _auth_coord: AuthRefreshCoordinator
     _reqid: ReqidCounter
     cookie_persistence: CookiePersistence
-    _rpc_executor: RpcExecutor | None
 
 
 class ClientLifecycle:
@@ -402,8 +407,16 @@ class ClientLifecycle:
         so a single misbehaving hook can't block the rest of the close
         sequence.
 
-        Nulls out ``host._rpc_executor`` so a follow-up :meth:`open` rebuilds
-        it against the current transport state.
+        Stage B1 PR 2 of the post-refactoring plan removed the
+        close-time ``host._rpc_executor = None`` step. The composition
+        root (:func:`notebooklm._session.compose_session_internals`)
+        binds the executor exactly once via
+        :meth:`Session._bind_executor` and the binding is preserved
+        across ``close()`` → ``open()`` cycles. The executor's
+        underlying transport collaborator (:class:`Kernel`) rebuilds
+        its ``httpx.AsyncClient`` on each :meth:`open`, so the executor
+        continues to operate against the fresh transport state without
+        a fresh executor instance.
         """
         try:
             # Stop the keepalive task before tearing down the HTTP client so
@@ -442,16 +455,14 @@ class ClientLifecycle:
                     logger.warning("Failed to sync refreshed cookies during close: %s", e)
         finally:
             if self._http_client:
-                try:
-                    # Shield: cancellation arriving mid-aclose must not leak
-                    # the transport. The shielded aclose runs to completion;
-                    # ``self._http_client = None`` then makes ``is_open``
-                    # return False correctly.
-                    await asyncio.shield(self._kernel.aclose())
-                finally:
-                    # Null out the RPC collaborator so a follow-up ``open()``
-                    # rebuilds it against the current transport state.
-                    host._rpc_executor = None
+                # Shield: cancellation arriving mid-aclose must not leak
+                # the transport. The shielded aclose runs to completion;
+                # ``self._http_client = None`` then makes ``is_open``
+                # return False correctly. Stage B1 PR 2 dropped the
+                # ``host._rpc_executor = None`` step that previously
+                # lived here — the executor is composition-root-bound
+                # and persists across close() → open() cycles.
+                await asyncio.shield(self._kernel.aclose())
 
     # ------------------------------------------------------------------
     # Keepalive

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._session import Session
@@ -52,7 +53,7 @@ class TestClientInitialization:
         # with a constructor-injection seam wired through
         # ``ClientLifecycle._cookie_saver``).
         mock_save = MagicMock(return_value=False)
-        core = Session(auth, cookie_saver=mock_save)
+        core = build_session_for_tests(auth, cookie_saver=mock_save)
         await core.open()
 
         await core.close()
@@ -67,7 +68,7 @@ class TestClientInitialization:
         # close()-handles-saver-failure path without monkeypatching the
         # legacy ``_core.save_cookies_to_storage`` seam.
         boom_save = MagicMock(side_effect=RuntimeError("boom"))
-        core = Session(auth_tokens, cookie_saver=boom_save)
+        core = build_session_for_tests(auth_tokens, cookie_saver=boom_save)
         await core.open()
 
         await core.close()
@@ -337,7 +338,7 @@ class TestGetHttpClient:
     """
 
     def test_get_http_client_raises_when_not_initialized(self, auth_tokens):
-        core = Session(auth_tokens)
+        core = build_session_for_tests(auth_tokens)
         with pytest.raises(RuntimeError, match="not initialized"):
             core._kernel.get_http_client()
 
@@ -544,7 +545,7 @@ class TestBuildUrlHL:
     This is the load-bearing site for setting the interface language on
     every RPC call. The Session-level ``_build_url`` thin wrapper was
     inlined in PR #4b — callers reach the canonical method through
-    ``core._get_rpc_executor().build_url(...)``.
+    ``core._rpc_executor.build_url(...)``.
 
     ``RpcExecutor.build_url`` requires an ``AuthSnapshot`` (consumes
     ``session_id`` / ``authuser`` / ``account_email`` from it rather
@@ -566,18 +567,18 @@ class TestBuildUrlHL:
 
     def test_build_url_defaults_hl_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_HL", raising=False)
-        core = Session(auth_tokens)
-        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        core = build_session_for_tests(auth_tokens)
+        url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url
 
     def test_build_url_includes_hl_from_env(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
-        core = Session(auth_tokens)
-        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        core = build_session_for_tests(auth_tokens)
+        url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=ja" in url
 
     def test_build_url_empty_env_falls_back_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "")
-        core = Session(auth_tokens)
-        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        core = build_session_for_tests(auth_tokens)
+        url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url

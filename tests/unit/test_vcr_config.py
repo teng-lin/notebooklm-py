@@ -29,6 +29,7 @@ from urllib.parse import quote
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._error_injection import (
     ERROR_INJECT_ENV_VAR,
     _get_error_injection_mode,
@@ -555,11 +556,10 @@ async def test_error_injection_middleware_present_when_env_var_set_in_session(mo
     short-circuits with the synthetic shape."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
     from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
-    from notebooklm._session import Session
     from notebooklm.auth import AuthTokens
 
     auth = AuthTokens(cookies={"SID": "t"}, csrf_token="c", session_id="s")
-    core = Session(auth)
+    core = build_session_for_tests(auth)
     try:
         await core.open()
         assert core._kernel.http_client is not None

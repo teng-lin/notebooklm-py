@@ -63,16 +63,12 @@ lint at PR time.
 | `_await_refresh` | provider-closure capture target | retain — captured as bound-method (`refresh_callable=host._await_refresh`) by [`_session_init.py:430`](../src/notebooklm/_session_init.py) |
 | `assert_bound_loop` | provider-closure capture target | retain — captured via lambda (`bound_loop_check=lambda: host.assert_bound_loop()`) by `build_session_transport` at [`_session_init.py:395`](../src/notebooklm/_session_init.py); late-bound so a test reassigning `core.assert_bound_loop = mock` still steers the live check |
 | `_get_rpc_semaphore` | provider-closure capture target | retain — passed as `rpc_semaphore_factory=self._get_rpc_semaphore` to `wire_middleware_chain` at [`_session.py:416`](../src/notebooklm/_session.py); has real body (lazy semaphore creation) reading `self._max_concurrent_rpcs` / `self._rpc_semaphore`, not a forward |
-| `_get_rpc_executor` | lazy collaborator factory | retain — builds the `RpcExecutor` collaborator the first time `rpc_call` or the Stage A `rpc_executor` accessor needs it; real construction logic, not a forward |
-| `collaborators` (property) | Stage A accessor | retain — Stage A accessor (ADR-014 Rule 3); deleted under Stage B when `build_collaborators` ownership moves to `NotebookLMClient` |
-| `session_transport` (property) | Stage A accessor | retain — Stage A accessor; exposes late-bound `SessionTransport` not present on `SessionCollaborators` |
-| `rpc_executor` (property) | Stage A accessor | retain — Stage A accessor; exposes lazy `RpcExecutor` not present on `SessionCollaborators` |
-| `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_tokens(...)` from [`_auth/session.py`](../src/notebooklm/_auth/session.py); also referenced in the AST-guard prose at `tests/unit/test_concurrency_refresh_race.py:386` (the guard inspects `AuthRefreshCoordinator.update_auth_tokens` directly, but the Session-side delegate is the Protocol seam) |
-| `update_auth_headers` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_headers()` from [`_auth/session.py`](../src/notebooklm/_auth/session.py) |
-| `_bind_transport` | composition write-once setter | retain — Stage B1 PR 1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for `Session._transport`. DORMANT in PR 1 (legacy `Session.__init__` still inline-builds the transport); reserved for `compose_session_internals` once PR 2 inverts the composition root. |
-| `_bind_chain` | composition write-once setter | retain — Stage B1 PR 1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for the wired middleware chain trio (`_chain_builder` / `_middlewares` / `_authed_post_chain`). DORMANT in PR 1; reserved for `compose_session_internals` once PR 2 inverts the composition root. |
-| `_bind_executor` | composition write-once setter | retain — Stage B1 PR 1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for `Session._rpc_executor`. Exercised by `compose_session_internals` even in PR 1 because the legacy `Session.__init__` leaves `_rpc_executor=None` (lazy via `_get_rpc_executor`). |
-| `_require_constructed` | composition guard | retain — Stage B1 PR 1 composition primitive (post-refactoring plan 2026-05-27); fail-fast helper used by `rpc_call` / `_get_rpc_semaphore` / `open` / `close` to assert the named binding is non-None. Inert under inline construction (PR 1) because `Session.__init__` always sets `_transport`; becomes load-bearing in PR 2. |
+| `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core, lifecycle)` calls `core.update_auth_tokens(...)` from [`_auth/session.py`](../src/notebooklm/_auth/session.py); also referenced in the AST-guard prose at `tests/unit/test_concurrency_refresh_race.py:386` (the guard inspects `AuthRefreshCoordinator.update_auth_tokens` directly, but the Session-side delegate is the Protocol seam) |
+| `update_auth_headers` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core, lifecycle)` calls `core.update_auth_headers()` from [`_auth/session.py`](../src/notebooklm/_auth/session.py) |
+| `_bind_transport` | composition write-once setter | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for `Session._transport`. Load-bearing after PR 2 — `Session.__init__` leaves `_transport` at `None` and `compose_session_internals` is the single assignment site. |
+| `_bind_chain` | composition write-once setter | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for the wired middleware chain trio (`_chain_builder` / `_middlewares` / `_authed_post_chain`). Load-bearing after PR 2 — `Session.__init__` leaves the slots at `None` and `compose_session_internals` is the single assignment site. |
+| `_bind_executor` | composition write-once setter | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for `Session._rpc_executor`. Load-bearing after PR 2 — the lazy `_get_rpc_executor` factory was deleted; `compose_session_internals` is the single assignment site and the binding is never re-nulled by `close()`. |
+| `_require_constructed` | composition guard | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); fail-fast helper used by `rpc_call` / `_get_rpc_semaphore` / `open` / `close` to assert the named binding is non-None. Load-bearing after PR 2 — `Session.__init__` leaves the late-bound slots at `None`, and any caller that exercises a Session outside `compose_session_internals` trips the guard. |
 
 ## Stage-A and Rule-4 attribute capture targets (context, not lint-enumerated)
 
@@ -94,16 +90,22 @@ The two follow-up issues filed per ADR-014 close-out (Wave 6 / Task 6.2):
 
 - **Stage B (Rule 3 completion):** move `build_collaborators` ownership from
   `Session` to `NotebookLMClient`; delete `Session.collaborators` /
-  `Session.session_transport` / `Session.rpc_executor` accessors.
+  `Session.session_transport` / `Session.rpc_executor` accessors. **CLOSED by
+  Stage B1 PR 2 of the post-refactoring plan (2026-05-27)** — the composition
+  root moved to `compose_session_internals()` in `_session.py`; the three Stage
+  A accessor properties and the `_get_rpc_executor` lazy factory are listed
+  in the **Deleted** section below.
 - **`MiddlewareChainHost` extraction (Rule 4 completion):** extract a
   `MiddlewareChainHost` collaborator owning `_authed_post_chain_terminal` +
   the `_rate_limit_max_retries` / `_server_error_max_retries` /
   `_refresh_retry_delay` tunables; `Session` holds it like any other
-  collaborator.
+  collaborator. **DEFERRED to Stage B2 of the post-refactoring plan
+  (2026-05-27)** — Stage B1 landed `compose_session_internals` as the
+  composition root; B2 builds the host skeleton on top.
 
-Both issues remain open after Wave 12; the Stage A accessors and the chain
-seams on Session listed above are explicitly carved out until those issues
-land.
+The chain seams on Session (`_authed_post_chain_terminal` + the three
+`_rate_limit_max_retries` / `_server_error_max_retries` /
+`_refresh_retry_delay` tunables listed above) remain on Session pending B2.
 
 ## Deleted
 
@@ -149,3 +151,19 @@ Wave 11<sub>` row in one of the cluster sub-sections below.
 | `_perform_authed_post` | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `SessionTransport.perform_authed_post`. Production callers (`_chat_transport`, `RpcExecutor`) already call `SessionTransport.perform_authed_post` directly; test callers in `tests/unit/test_authed_post_pipeline.py` / `test_chain_wiring.py` / `test_session_lifecycle.py` / `test_rate_limit_default.py` migrated to `core._transport.perform_authed_post(...)`. The keyword-only signature contract is now pinned on the canonical collaborator method via `test_chain_wiring.test_perform_authed_post_signature_unchanged`. |
 | `transport_post` | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a `parse_label`-renaming forward over `_perform_authed_post` retained for the Tier-13 chat contract. The chat path moved to `SessionTransport.perform_authed_post` directly in Wave 8; no production or test callers remained at deletion time. |
 | `save_cookies` | RefreshAuthCore Protocol surface / compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `ClientLifecycle.save_cookies`. The `RefreshAuthCore` Protocol in `_auth/session.py` was narrowed in the same commit: the `save_cookies` method requirement was dropped and replaced with a `collaborators: SessionCollaborators` accessor; `refresh_auth_session(core)` now persists rotated cookies through `core.collaborators.lifecycle.save_cookies(core, jar)` (the canonical chokepoint that already serialises with keepalive and close saves). The Session host argument is widened to `_LifecycleHost` via `typing.cast` — the production `Session` satisfies both `RefreshAuthCore` and `_LifecycleHost` structurally; the cast is the typing-level acknowledgement that `RefreshAuthCore` deliberately stays narrow. Test callers in `tests/unit/test_auth_cookie_save_race.py` / `test_save_lock_contract.py` / `test_client_keepalive.py` / `test_cookie_persistence.py` migrated to `core._lifecycle.save_cookies(core, jar)`. |
+
+### Stage B1 PR 2 — composition-root inversion (post-refactoring plan 2026-05-27)
+
+Stage B1 PR 2 inverted the composition root: `compose_session_internals()`
+in `_session.py` now owns the full collaborator-bundle / transport / chain /
+executor construction sequence, and `Session.__init__` was narrowed to
+`(*, collaborators, config, auth)`. The Stage A accessor properties added by
+PR #1069 (Wave 6) and the lazy `_get_rpc_executor` factory all collapse to
+direct reads on the `ComposedSession` returned by the helper.
+
+| Method | Category | Disposition |
+|---|---|---|
+| `_get_rpc_executor` | lazy collaborator factory | deleted in Stage B1 PR 2 — `compose_session_internals` constructs the `RpcExecutor` and drives `Session._bind_executor(executor)` exactly once. Callers read `core._rpc_executor` directly (it is bound by the composition root and never re-nulled by `close()`); the close-time `host._rpc_executor = None` line in `ClientLifecycle.close` was dropped in the same PR. |
+| `collaborators` (property) | Stage A accessor | deleted in Stage B1 PR 2 — `NotebookLMClient.__init__` reads `composed.collaborators` from the `ComposedSession` returned by `compose_session_internals` and stores it on `self._collaborators`. The Stage A wrapper was never an architectural goal — Wave 6 noted it would be deleted under Stage B. |
+| `session_transport` (property) | Stage A accessor | deleted in Stage B1 PR 2 — `NotebookLMClient.__init__` reads `composed.transport` from the `ComposedSession` and threads it into `ChatAPI`'s `transport=` kwarg directly. Same Stage B-under-ADR-014 disposition as `collaborators`. |
+| `rpc_executor` (property) | Stage A accessor | deleted in Stage B1 PR 2 — `NotebookLMClient.__init__` reads `composed.executor` from the `ComposedSession` and passes it to every feature adapter (`SourcesAPI`, `NotebooksAPI`, `NoteService`, `ResearchAPI`, `SettingsAPI`, `SharingAPI`, `ArtifactsRuntimeAdapter`, `UploadRuntimeAdapter`, `ChatAPI`). Same Stage B-under-ADR-014 disposition as `collaborators`. |

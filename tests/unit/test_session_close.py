@@ -18,9 +18,9 @@ from typing import Any
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
 from notebooklm._polling_registry import PollRegistry
-from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -95,13 +95,13 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
-    core = Session(_auth())
+    core = build_session_for_tests(_auth())
     # Wave 11a of session-decoupling deleted ``Session.register_drain_hook``
     # / ``Session.operation_scope`` forwards; ``ArtifactsAPI`` now consumes
     # an ``ArtifactsRuntimeAdapter`` composite (mirrors production wiring
     # in ``NotebookLMClient.__init__``).
     runtime = ArtifactsRuntimeAdapter(
-        rpc=core.rpc_executor,
+        rpc=core._rpc_executor,
         drain=core._drain_tracker,
         lifecycle=core._lifecycle,
     )
@@ -143,7 +143,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
 @pytest.mark.asyncio
 async def test_session_close_absorbs_drain_hook_errors() -> None:
     """A drain hook raising during close does not block transport teardown."""
-    core = Session(_auth())
+    core = build_session_for_tests(_auth())
     await core.open()
 
     async def angry_hook() -> None:
@@ -160,7 +160,7 @@ async def test_session_close_absorbs_drain_hook_errors() -> None:
 @pytest.mark.asyncio
 async def test_session_close_with_no_polls_is_noop_on_drain_step() -> None:
     """``close()`` works unchanged when no polls are registered."""
-    core = Session(_auth())
+    core = build_session_for_tests(_auth())
     await core.open()
     await core.close()
     assert core._kernel.http_client is None

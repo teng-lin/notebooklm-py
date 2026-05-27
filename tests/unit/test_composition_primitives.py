@@ -1,21 +1,23 @@
-"""Tests for Stage B1 PR 1 composition primitives.
+"""Tests for Stage B1 composition primitives (PR 2 — composition root live).
 
-Covers the additive helpers introduced by Stage B1 PR 1 of the
-post-refactoring plan (``docs/post-refactoring-plan-2026-05-27.md``):
+Covers the helpers introduced by Stage B1 PR 1 and made live by Stage B1
+PR 2 of the post-refactoring plan
+(``docs/post-refactoring-plan-2026-05-27.md``):
 
 - :class:`notebooklm._session.ComposedSession` dataclass
 - :func:`notebooklm._session.resolve_seam_defaults`
-- :func:`notebooklm._session.compose_session_internals`
+- :func:`notebooklm._session.compose_session_internals` — the live
+  composition root after PR 2
 - ``Session._bind_transport`` / ``_bind_chain`` / ``_bind_executor``
-  write-once setters
+  write-once setters (now load-bearing — :meth:`Session.__init__` no
+  longer inline-sets the slots; :func:`compose_session_internals`
+  drives the binders)
 - ``Session._require_constructed`` fail-fast guard
 
-All primitives are **DORMANT** in PR 1 — ``Session.__init__`` still
-performs the legacy inline construction sequence. These tests exercise
-the primitives directly so they don't bit-rot before PR 2 starts using
-them. They also pin the write-once contract (raise on double-bind) and
-the synthetic-error guard ordering (``_refuse_synthetic_error_outside_test_context``
-runs first inside ``compose_session_internals``).
+PR 2 inverted the composition root: :meth:`Session.__init__` now takes
+``(*, collaborators, config, auth)`` and leaves the transport / chain /
+executor slots at ``None``. :func:`compose_session_internals` is the
+only path that produces a fully-bound :class:`Session`.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from typing import Any
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import (
     ComposedSession,
     Session,
@@ -117,23 +120,31 @@ def test_resolve_seam_defaults_passes_through_explicit_callables() -> None:
 
 
 # ---------------------------------------------------------------------------
-# compose_session_internals
+# compose_session_internals — live composition root after Stage B1 PR 2
 # ---------------------------------------------------------------------------
 
 
 def test_compose_session_internals_returns_composed_session() -> None:
-    """The helper returns a fully-bundled :class:`ComposedSession`."""
+    """The helper returns a fully-bundled :class:`ComposedSession`.
+
+    PR 2 made the helper load-bearing: :meth:`Session.__init__` no
+    longer constructs collaborators / transport / chain inline, so this
+    bundle is the only path to a usable :class:`Session`.
+    """
     composed = compose_session_internals(auth=_make_auth())
 
     assert isinstance(composed, ComposedSession)
     assert isinstance(composed.session, Session)
-    # The transport in the bundle is the one wired by the legacy inline
-    # ``Session.__init__`` and read back inside the helper.
+    # The transport in the bundle was constructed by the helper and
+    # passed into ``Session._bind_transport`` — both reads point at the
+    # same instance.
     assert composed.transport is composed.session._transport
-    # The executor is the one bound by the helper via :meth:`_bind_executor`.
+    # Same shape for the executor — bound via :meth:`_bind_executor`.
     assert composed.executor is composed.session._rpc_executor
-    # The collaborators are accessible via the Stage-A accessor for
-    # cross-checking (both reads should point at the same bundle).
+    # The collaborators bundle is the same instance the helper threaded
+    # into the Session constructor (stored on the Session as
+    # ``_collaborators`` so :class:`NotebookLMClient` can hoist metrics
+    # off the bundle without a fresh build).
     assert composed.collaborators is composed.session._collaborators
 
 
@@ -264,79 +275,57 @@ def test_compose_session_internals_executor_timeout_provider_reads_lifecycle() -
 
 
 # ---------------------------------------------------------------------------
-# write-once binders
+# write-once binders — load-bearing after PR 2
 # ---------------------------------------------------------------------------
 
 
-def test_bind_executor_succeeds_when_slot_is_none() -> None:
-    """The legacy ``Session.__init__`` leaves ``_rpc_executor`` at ``None``
-    (lazy via :meth:`_get_rpc_executor`), so :meth:`_bind_executor` is the
-    one binder that fires cleanly in PR 1.
-    """
-    session = Session(_make_auth())
-    assert session._rpc_executor is None
-
-    # Build an executor the same way the helper does and bind it.
-    from notebooklm._rpc_executor import RpcExecutor
-
-    executor = RpcExecutor(
-        kernel=session._kernel,
-        transport=session._transport,
-        auth_refresh=session._auth_coord,
-        metrics=session._metrics_obj,
-        decode_response=session._decode_response,
-        is_auth_error=session._is_auth_error,
-        sleep=session._sleep,
-        timeout_provider=lambda: session._lifecycle._timeout,
-        refresh_callback_enabled_provider=lambda: session._auth_coord.has_refresh_callback,
-        refresh_retry_delay_provider=lambda: session._refresh_retry_delay,
-    )
-
-    session._bind_executor(executor)
-    assert session._rpc_executor is executor
-
-
 def test_bind_executor_raises_on_double_bind() -> None:
-    """:meth:`_bind_executor` accepts exactly one bind."""
+    """:meth:`_bind_executor` accepts exactly one bind.
+
+    :func:`compose_session_internals` invokes the binder once during
+    composition; calling it a second time on the returned Session must
+    raise.
+    """
     composed = compose_session_internals(auth=_make_auth())
 
     with pytest.raises(RuntimeError, match="_rpc_executor already bound"):
         composed.session._bind_executor(composed.executor)
 
 
-def test_bind_transport_raises_after_legacy_init_sets_slot() -> None:
-    """In PR 1, the legacy ``Session.__init__`` inline-sets ``_transport``,
-    so :meth:`_bind_transport` raises if called after construction.
+def test_bind_transport_raises_on_double_bind() -> None:
+    """:meth:`_bind_transport` accepts exactly one bind.
 
-    PR 2 of Stage B1 inverts this — ``Session.__init__`` will leave
-    ``_transport`` at ``None`` and :func:`compose_session_internals` will
-    drive the binder. Until then, the write-once contract is exercised
-    by this test against the inline-set slot.
+    PR 2 of Stage B1 inverted :meth:`Session.__init__` (the transport
+    slot is now left at ``None`` and the binder is the only assignment
+    site). A second bind attempt after :func:`compose_session_internals`
+    has driven the binder must raise.
     """
-    session = Session(_make_auth())
+    composed = compose_session_internals(auth=_make_auth())
 
     with pytest.raises(RuntimeError, match="_transport already bound"):
-        session._bind_transport(session._transport)
+        composed.session._bind_transport(composed.transport)
 
 
-def test_bind_chain_raises_after_legacy_init_sets_slot() -> None:
-    """Same shape as :func:`test_bind_transport_raises_after_legacy_init_sets_slot`:
-    legacy ``Session.__init__`` sets ``_chain_builder`` inline, so
-    :meth:`_bind_chain` raises on the first call after construction.
+def test_bind_chain_raises_on_double_bind() -> None:
+    """:meth:`_bind_chain` accepts exactly one bind.
+
+    Same shape as :func:`test_bind_transport_raises_on_double_bind`:
+    PR 2 moved chain wiring into :func:`compose_session_internals`, so
+    re-driving the binder after composition raises.
     """
-    session = Session(_make_auth())
+    composed = compose_session_internals(auth=_make_auth())
 
     # Build a sentinel ``WiredMiddleware`` carrying the existing values so
     # the rejection comes from the write-once guard, not a missing field.
     from notebooklm._session_init import WiredMiddleware
 
     wired = WiredMiddleware(
-        chain_builder=session._chain_builder,
-        middlewares=session._middlewares,
-        authed_post_chain=session._authed_post_chain,
+        chain_builder=composed.session._chain_builder,
+        middlewares=composed.session._middlewares,
+        authed_post_chain=composed.session._authed_post_chain,
     )
     with pytest.raises(RuntimeError, match="_chain already bound"):
-        session._bind_chain(wired)
+        composed.session._bind_chain(wired)
 
 
 # ---------------------------------------------------------------------------
@@ -345,20 +334,24 @@ def test_bind_chain_raises_after_legacy_init_sets_slot() -> None:
 
 
 def test_require_constructed_raises_when_attr_is_none() -> None:
-    """The guard raises ``RuntimeError`` with a self-describing message."""
-    session = Session(_make_auth())
+    """The guard raises ``RuntimeError`` with a self-describing message.
 
-    # ``_rpc_executor`` is None until the lazy factory fires; use it as
-    # the canonical ``is None`` slot for this assertion.
-    assert session._rpc_executor is None
-    with pytest.raises(RuntimeError, match="Session not fully constructed: _rpc_executor is None"):
-        session._require_constructed("_rpc_executor")
+    Constructs a bare ``Session`` via ``__new__`` to bypass the
+    composition root — the resulting instance has all the late-bound
+    slots unset so the guard fires actionably.
+    """
+    session = Session.__new__(Session)
+    session._transport = None  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="Session not fully constructed: _transport is None"):
+        session._require_constructed("_transport")
 
 
 def test_require_constructed_is_inert_when_attr_is_set() -> None:
     """The guard returns silently when the binding is set."""
-    session = Session(_make_auth())
-    # ``_transport`` is set inline by ``Session.__init__`` in PR 1.
+    session = build_session_for_tests(_make_auth())
+    # ``_transport`` is set by :func:`compose_session_internals` via
+    # :meth:`_bind_transport`.
     assert session._transport is not None
     # Should not raise.
     session._require_constructed("_transport")
@@ -371,7 +364,7 @@ def test_require_constructed_raises_on_missing_attribute() -> None:
     message surfaces during ``__init__`` itself, before the attribute
     has been assigned for the first time.
     """
-    session = Session(_make_auth())
+    session = build_session_for_tests(_make_auth())
 
     with pytest.raises(RuntimeError, match="Session not fully constructed: _nonexistent is None"):
         session._require_constructed("_nonexistent")
@@ -379,19 +372,28 @@ def test_require_constructed_raises_on_missing_attribute() -> None:
 
 def test_entry_point_guards_fire_on_uninitialised_session() -> None:
     """The fail-fast guards on ``rpc_call`` / ``_get_rpc_semaphore`` /
-    ``open`` / ``close`` raise when ``_transport`` is ``None``.
-
-    Bypasses ``Session.__init__`` (which sets ``_transport`` inline in
-    PR 1) by using ``Session.__new__`` directly so the guards see a
-    pre-binding state. This is the contract that PR 2 of Stage B1 will
-    rely on once :func:`compose_session_internals` becomes the only
-    composition path and ``Session.__init__`` leaves the slot at
+    ``open`` / ``close`` raise when the relevant write-once binding is
     ``None``.
+
+    Bypasses :func:`compose_session_internals` (the canonical composition
+    root) via ``Session.__new__`` so the guards see a pre-binding
+    state — the same state ``__init__`` exits in if the composition
+    root is short-circuited.
+
+    Stage B1 PR 2 of the post-refactoring plan deleted the lazy
+    ``Session._get_rpc_executor`` factory; :meth:`Session.rpc_call` now
+    requires ``_rpc_executor`` (the slot the composition root binds
+    last) instead of ``_transport``. The other three entry points
+    continue to probe ``_transport`` because that's the slot the
+    composition root binds first — a pre-transport call indicates
+    a fundamentally unconstructed Session regardless of whether the
+    chain or executor finished wiring.
     """
     session = Session.__new__(Session)
     # No attributes set — guards must treat this as "not constructed".
 
-    with pytest.raises(RuntimeError, match="Session not fully constructed: _transport is None"):
+    # rpc_call probes the executor (Stage B1 PR 2 change).
+    with pytest.raises(RuntimeError, match="Session not fully constructed: _rpc_executor is None"):
         asyncio.run(session.rpc_call(None, []))  # type: ignore[arg-type]
 
     with pytest.raises(RuntimeError, match="Session not fully constructed: _transport is None"):

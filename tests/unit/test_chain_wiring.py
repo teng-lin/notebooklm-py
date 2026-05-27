@@ -31,6 +31,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._middleware import (
     Middleware,
     NextCall,
@@ -55,7 +56,7 @@ def _make_core() -> Session:
     auth.account_email = None
     auth.csrf_token = "csrf-token"
     auth.session_id = "session-id"
-    return Session(auth=auth)
+    return build_session_for_tests(auth=auth)
 
 
 class FakeKernelPost:

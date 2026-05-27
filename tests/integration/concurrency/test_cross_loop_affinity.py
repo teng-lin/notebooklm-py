@@ -53,6 +53,7 @@ import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -89,7 +90,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Sessi
     ``self._lifecycle.get_bound_loop()`` unchanged because we don't call
     ``open()`` again.
     """
-    core = Session(auth=_make_auth())
+    core = build_session_for_tests(auth=_make_auth())
     await core.open()
     assert core._kernel.http_client is not None
     prior_cookies = core._kernel.get_http_client().cookies
@@ -211,7 +212,7 @@ async def test_bound_loop_captured_on_open(
     outside a running loop) would break the audit-§14 fix because the
     construction-time loop may not be the dispatch-time loop.
     """
-    core = Session(auth=_make_auth())
+    core = build_session_for_tests(auth=_make_auth())
     assert core._lifecycle.get_bound_loop() is None, (
         "Session must not bind to a loop at construction time — open() is the binding moment."
     )

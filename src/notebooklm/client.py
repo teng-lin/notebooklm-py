@@ -45,7 +45,7 @@ from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
-from ._session import Session
+from ._session import compose_session_internals
 from ._session_config import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
@@ -267,10 +267,21 @@ class NotebookLMClient:
                     "clean back-pressure."
                 )
 
-        # Pass refresh_auth as callback for automatic retry on auth failures
-        # Note: refresh_auth calls update_auth_headers internally
-        self._session = Session(
-            auth,
+        # Stage B1 PR 2 of the post-refactoring plan inverted the
+        # composition root — :class:`Session` no longer constructs the
+        # collaborator bundle / transport / chain inline; the
+        # :func:`compose_session_internals` helper does, and feeds them
+        # into a ``Session(*, collaborators, config, auth)`` constructor.
+        # Feature adapters below draw from the returned
+        # :class:`ComposedSession` (no Stage A accessor reads).
+        #
+        # The public NotebookLMClient kwarg surface is unchanged — the
+        # four seam kwargs (``decode_response`` / ``sleep`` /
+        # ``is_auth_error`` / ``async_client_factory``) live on
+        # ``compose_session_internals`` and ``build_session_for_tests``
+        # only.
+        composed = compose_session_internals(
+            auth=auth,
             timeout=timeout,
             refresh_callback=self.refresh_auth,
             keepalive=keepalive,
@@ -289,14 +300,13 @@ class NotebookLMClient:
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
         )
-
-        # Per ADR-014 Rule 3 Stage A, every feature adapter draws from
-        # the same ``SessionCollaborators`` bundle exposed by Wave 6.
-        # Hoist the accessor once so the upload / artifacts / chat
-        # wirings below read as obvious siblings rather than as
-        # potentially-distinct bundles. (Claude review on PR #1074
-        # Wave 9 / step 3 flagged the per-adapter aliases as misleading.)
-        collaborators = self._session.collaborators
+        self._session = composed.session
+        # Owned reference to the collaborator bundle so
+        # :meth:`metrics_snapshot` (and any future
+        # NotebookLMClient-side collaborator consumers) read from the
+        # same bundle the Session uses, without going through a Stage A
+        # accessor on the Session.
+        self._collaborators = composed.collaborators
 
         # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
         # upload pipeline takes a ``UploadRuntimeAdapter`` composite —
@@ -307,29 +317,30 @@ class NotebookLMClient:
         # the composition root that knows these internals;
         # ``SourcesAPI`` no longer reads them back off the session.
         upload_runtime = UploadRuntimeAdapter(
-            rpc=self._session.rpc_executor,
-            drain=collaborators.drain_tracker,
-            lifecycle=collaborators.lifecycle,
+            rpc=composed.executor,
+            drain=composed.collaborators.drain_tracker,
+            lifecycle=composed.collaborators.lifecycle,
         )
         source_uploader = SourceUploadPipeline(
             upload_runtime,
-            collaborators.kernel,
+            composed.collaborators.kernel,
             self._session.auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
-            record_upload_queue_wait=collaborators.metrics.record_upload_queue_wait,
+            record_upload_queue_wait=composed.collaborators.metrics.record_upload_queue_wait,
         )
-        # ADR-014 Rule 3 Stage A (Wave 7 of session-decoupling): simple
-        # features take their RpcCaller dependency directly via
-        # ``self._session.rpc_executor`` (the late-bound accessor added in
-        # Wave 6) instead of receiving the whole ``Session``.
+        # ADR-014 Rule 3 Stage B (Stage B1 PR 2 of the post-refactoring
+        # plan): simple features take their RpcCaller dependency directly
+        # from the composition root's :attr:`ComposedSession.executor`,
+        # not from a Stage A accessor on :class:`Session` (those
+        # accessors were deleted in PR 2).
         self.sources = SourcesAPI(
-            self._session.rpc_executor,
+            composed.executor,
             uploader=source_uploader,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
         )
-        self.notebooks = NotebooksAPI(self._session.rpc_executor, sources_api=self.sources)
+        self.notebooks = NotebooksAPI(composed.executor, sources_api=self.sources)
         # Phase 5 wiring per docs/refactor-history.md Migration Plan steps 6-7:
         # the legacy single-service handoff (``MindMapService(self._session)``
         # passed as ``mind_map_service=``) is replaced with the explicit
@@ -337,7 +348,7 @@ class NotebookLMClient:
         # raw row primitives; NoteBackedMindMapService is the mind-map-only
         # adapter the download path uses; the artifact-generation path uses
         # NoteService.create_note directly to persist a generated mind map.
-        note_service = NoteService(self._session.rpc_executor)
+        note_service = NoteService(composed.executor)
         mind_maps = NoteBackedMindMapService(note_service)
         # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
         # artifacts API takes an ``ArtifactsRuntimeAdapter`` composite —
@@ -347,9 +358,9 @@ class NotebookLMClient:
         # DrainHookRegistration) by delegating to those three
         # collaborators directly.
         artifacts_runtime = ArtifactsRuntimeAdapter(
-            rpc=self._session.rpc_executor,
-            drain=collaborators.drain_tracker,
-            lifecycle=collaborators.lifecycle,
+            rpc=composed.executor,
+            drain=composed.collaborators.drain_tracker,
+            lifecycle=composed.collaborators.lifecycle,
         )
         self.artifacts = ArtifactsAPI(
             artifacts_runtime,
@@ -366,16 +377,15 @@ class NotebookLMClient:
         #
         # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ChatAPI
         # takes its four direct collaborators (RpcCaller, SessionTransport,
-        # ReqidCounter, LoopGuard) by keyword argument instead of a
-        # chat-local ``ChatRuntime`` runtime composite. The collaborators
-        # are sourced from the late-bound ``session.rpc_executor`` /
-        # ``session.session_transport`` accessors and the
-        # ``session.collaborators`` bundle.
+        # ReqidCounter, LoopGuard) by keyword argument. They are sourced
+        # from the :class:`ComposedSession` returned by the composition
+        # root instead of from Stage A accessors on :class:`Session`
+        # (those accessors were deleted in Stage B1 PR 2).
         self.chat = ChatAPI(
-            rpc=self._session.rpc_executor,
-            transport=self._session.session_transport,
-            reqid=collaborators.reqid,
-            loop_guard=collaborators.lifecycle,
+            rpc=composed.executor,
+            transport=composed.transport,
+            reqid=composed.collaborators.reqid,
+            loop_guard=composed.collaborators.lifecycle,
             notebooks=self.notebooks,
         )
         self.notes = NotesAPI(
@@ -385,11 +395,12 @@ class NotebookLMClient:
         )
         # Pure-RPC features (typed as ``rpc: RpcCaller``). Wave 7 of
         # session-decoupling: pass the ``RpcExecutor`` collaborator
-        # directly via ``self._session.rpc_executor`` accessor (Wave 6)
-        # instead of the whole ``Session``.
-        self.research = ResearchAPI(self._session.rpc_executor)
-        self.settings = SettingsAPI(self._session.rpc_executor)
-        self.sharing = SharingAPI(self._session.rpc_executor)
+        # directly. Stage B1 PR 2 updated the source from
+        # ``self._session.rpc_executor`` (deleted accessor) to
+        # ``composed.executor``.
+        self.research = ResearchAPI(composed.executor)
+        self.settings = SettingsAPI(composed.executor)
+        self.sharing = SharingAPI(composed.executor)
 
     @property
     def auth(self) -> AuthTokens:
@@ -558,8 +569,14 @@ class NotebookLMClient:
         await self._session.close()
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
-        """Return cumulative observability counters for this client."""
-        return self._session.collaborators.metrics.snapshot()
+        """Return cumulative observability counters for this client.
+
+        Stage B1 PR 2 of the post-refactoring plan migrated the read off
+        the deleted ``Session.collaborators`` Stage A accessor onto the
+        bundle stored by :meth:`__init__` from the composition root's
+        :class:`ComposedSession`.
+        """
+        return self._collaborators.metrics.snapshot()
 
     async def rpc_call(
         self,
@@ -713,13 +730,25 @@ class NotebookLMClient:
         This helps prevent 'Session Expired' errors by obtaining a fresh CSRF
         token (SNlM0e) and session ID (FdrFJe).
 
+        Stage B1 PR 2 of the post-refactoring plan narrowed
+        :class:`RefreshAuthCore` and made ``lifecycle`` an explicit
+        argument; the call site supplies the lifecycle directly rather
+        than letting :func:`refresh_auth_session` reach through a
+        deleted ``Session.collaborators`` Stage A accessor. The
+        lifecycle is read off the Session (``self._session._lifecycle``)
+        rather than off the client's owned ``_collaborators`` bundle so
+        a ``NotebookLMClient`` shell built via ``__new__`` (used in
+        ``tests/unit/test_concurrency_refresh_race.py``) still works —
+        the test sets ``client._session`` directly and never calls
+        ``__init__``.
+
         Returns:
             Updated AuthTokens.
 
         Raises:
             ValueError: If token extraction fails (page structure may have changed).
         """
-        return await refresh_auth_session(self._session)
+        return await refresh_auth_session(self._session, self._session._lifecycle)
 
 
 class _FromStorageContext:

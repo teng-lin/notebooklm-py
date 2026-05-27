@@ -10,6 +10,7 @@ from contextvars import Token
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._logging import (
     RedactingFilter,
     RedactingFormatter,
@@ -235,7 +236,6 @@ async def test_correlation_threads_through_child_loggers():
 async def test_retry_inherits_parent_request_id():
     """Recursive executor.rpc_call(_is_retry=True) must NOT mint a fresh id — the
     failure→refresh→retry sequence should appear under one prefix."""
-    from notebooklm._session import Session
     from notebooklm.auth import AuthTokens
 
     captured_ids: list[str | None] = []
@@ -270,10 +270,10 @@ async def test_retry_inherits_parent_request_id():
     # the test exercises the request-id propagation through the executor
     # wrapper purely in-process.
     auth = AuthTokens(cookies={"SID": "test_sid"}, csrf_token="csrf", session_id="sid")
-    core = Session(auth)
+    core = build_session_for_tests(auth)
     await core.open()
     try:
-        executor = core._get_rpc_executor()
+        executor = core._rpc_executor
         executor._execute_once = fake_impl  # type: ignore[method-assign]
 
         result = await core.rpc_call(method=object(), params=[])  # type: ignore[arg-type]

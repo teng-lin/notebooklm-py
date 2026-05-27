@@ -7,15 +7,14 @@ import inspect
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._auth.session import refresh_auth_session
-from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -85,7 +84,7 @@ class RecordingRefreshCore:
     auth: AuthTokens
     http_client: httpx.AsyncClient
     _own_operations: list[str] = field(default_factory=list)
-    _lifecycle: _RecordingLifecycle = field(default_factory=_RecordingLifecycle)
+    lifecycle: _RecordingLifecycle = field(default_factory=_RecordingLifecycle)
 
     def __post_init__(self) -> None:
         # Mirror the live ``Session._kernel`` slot — the Wave 11b Protocol
@@ -95,11 +94,13 @@ class RecordingRefreshCore:
         # Wire the lifecycle's operations list to share storage with ours so
         # the legacy ``core.operations`` ordering ([..., "save_cookies"])
         # still matches without forcing tests to read from two separate
-        # logs. Wave 11c routes ``save_cookies`` through
-        # ``core.collaborators.lifecycle`` (the ``Session.save_cookies``
-        # forward was deleted), so the recording lives on the lifecycle
-        # stub and is bridged back into ``operations`` here.
-        self._lifecycle.operations = self._own_operations
+        # logs. Stage B1 PR 2 of the post-refactoring plan narrowed
+        # :class:`RefreshAuthCore` — the ``collaborators`` property was
+        # dropped along with the deleted ``Session.collaborators`` Stage A
+        # accessor, and :func:`refresh_auth_session` now takes
+        # ``lifecycle`` as an explicit positional argument. Tests pass
+        # ``core.lifecycle`` directly.
+        self.lifecycle.operations = self._own_operations
 
     @property
     def operations(self) -> list[str]:
@@ -109,17 +110,7 @@ class RecordingRefreshCore:
     @property
     def saved_jars(self) -> list[httpx.Cookies]:
         """Back-compat passthrough so existing assertions still read the recorded jars."""
-        return self._lifecycle.saved_jars
-
-    @property
-    def collaborators(self) -> SimpleNamespace:
-        """Expose the recording lifecycle through the Stage-A accessor shape.
-
-        Mirrors :attr:`Session.collaborators`, which returns the constructed
-        :class:`SessionCollaborators` bundle whose ``lifecycle`` field is the
-        :class:`ClientLifecycle` :func:`refresh_auth_session` invokes.
-        """
-        return SimpleNamespace(lifecycle=self._lifecycle)
+        return self.lifecycle.saved_jars
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
         self._own_operations.append("update_auth_tokens")
@@ -145,7 +136,7 @@ async def test_refresh_auth_session_default_account_uses_bare_base_url() -> None
     async with _client(httpx.MockTransport(handler)) as http_client:
         core = RecordingRefreshCore(_auth(), http_client)
 
-        refreshed_auth = await refresh_auth_session(core)
+        refreshed_auth = await refresh_auth_session(core, core.lifecycle)
 
     assert requests == [httpx.URL("https://notebooklm.google.com/")]
     assert refreshed_auth is core.auth
@@ -167,7 +158,7 @@ async def test_refresh_auth_session_selected_account_uses_account_email_url() ->
     async with _client(httpx.MockTransport(handler)) as http_client:
         core = RecordingRefreshCore(auth, http_client)
 
-        await refresh_auth_session(core)
+        await refresh_auth_session(core, core.lifecycle)
 
     assert requests == [httpx.URL("https://notebooklm.google.com/?authuser=bob%40example.com")]
 
@@ -184,7 +175,7 @@ async def test_refresh_auth_session_selected_account_uses_authuser_url() -> None
     async with _client(httpx.MockTransport(handler)) as http_client:
         core = RecordingRefreshCore(auth, http_client)
 
-        await refresh_auth_session(core)
+        await refresh_auth_session(core, core.lifecycle)
 
     assert requests == [httpx.URL("https://notebooklm.google.com/?authuser=2")]
 
@@ -204,7 +195,7 @@ async def test_refresh_auth_session_detects_login_redirect() -> None:
         core = RecordingRefreshCore(_auth(), http_client)
 
         with pytest.raises(ValueError, match="Authentication expired"):
-            await refresh_auth_session(core)
+            await refresh_auth_session(core, core.lifecycle)
 
     assert core.operations == []
 
@@ -220,7 +211,7 @@ async def test_refresh_auth_session_missing_csrf_wraps_extraction_error() -> Non
         core = RecordingRefreshCore(_auth(), http_client)
 
         with pytest.raises(ValueError) as exc_info:
-            await refresh_auth_session(core)
+            await refresh_auth_session(core, core.lifecycle)
 
     message = str(exc_info.value)
     assert "Failed to extract CSRF token (SNlM0e)." in message
@@ -240,7 +231,7 @@ async def test_refresh_auth_session_missing_session_id_wraps_extraction_error() 
         core = RecordingRefreshCore(_auth(), http_client)
 
         with pytest.raises(ValueError) as exc_info:
-            await refresh_auth_session(core)
+            await refresh_auth_session(core, core.lifecycle)
 
     message = str(exc_info.value)
     assert "Failed to extract session ID (FdrFJe)." in message
@@ -279,7 +270,7 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
     # Inject the cookie-saver seam directly (Phase 2 PR 4 — replaces the
     # legacy ``_core.save_cookies_to_storage`` string-target monkeypatch
     # with constructor injection through ``ClientLifecycle._cookie_saver``).
-    core = Session(auth, cookie_saver=fake_save_cookies_to_storage)
+    core = build_session_for_tests(auth, cookie_saver=fake_save_cookies_to_storage)
 
     http_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
@@ -289,7 +280,14 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
     install_http_client_for_test(core._kernel, http_client)
     core.cookie_persistence.capture_open_snapshot(http_client.cookies)
     try:
-        await refresh_auth_session(core)
+        # The real ``Session`` exposes its lifecycle as the private
+        # ``_lifecycle`` slot — the only attribute on ``Session`` that
+        # carries the :class:`ClientLifecycle`. The
+        # :class:`RecordingRefreshCore` stub above exposes it as
+        # ``lifecycle`` (no underscore) to match the new explicit
+        # argument shape; real Session callers (NotebookLMClient.refresh_auth)
+        # similarly pass ``self._collaborators.lifecycle``.
+        await refresh_auth_session(core, core._lifecycle)
     finally:
         await http_client.aclose()
         install_http_client_for_test(core._kernel, None)

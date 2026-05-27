@@ -9,8 +9,8 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
+from _helpers.session_factory import build_session_for_tests
 from conftest import install_post_as_stream
-from notebooklm._session import Session
 from notebooklm._session_helpers import is_auth_error
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -574,7 +574,7 @@ class TestSessionRefreshCallback:
         async def mock_refresh():
             pass
 
-        core = Session(auth, refresh_callback=mock_refresh)
+        core = build_session_for_tests(auth, refresh_callback=mock_refresh)
         assert core._auth_coord._refresh_callback is mock_refresh
 
     def test_refresh_callback_defaults_to_none(self):
@@ -586,7 +586,7 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        core = Session(auth)
+        core = build_session_for_tests(auth)
         assert core._auth_coord._refresh_callback is None
 
     def test_refresh_lock_lazy_at_construction(self):
@@ -608,12 +608,12 @@ class TestSessionRefreshCallback:
             pass
 
         # With callback: lazy — lock is None until first refresh attempt.
-        core_with_cb = Session(auth, refresh_callback=mock_refresh)
+        core_with_cb = build_session_for_tests(auth, refresh_callback=mock_refresh)
         assert core_with_cb._auth_coord._refresh_lock is None
         assert core_with_cb._auth_coord._refresh_callback is mock_refresh
 
         # Without callback: also None (unchanged behavior on this axis).
-        core_without_cb = Session(auth)
+        core_without_cb = build_session_for_tests(auth)
         assert core_without_cb._auth_coord._refresh_lock is None
         assert core_without_cb._auth_coord._refresh_callback is None
 
@@ -642,7 +642,7 @@ class TestRpcCallAutoRetry:
         def fake_decode(*args, **kwargs):
             return ["result"]
 
-        core = Session(
+        core = build_session_for_tests(
             auth,
             refresh_callback=mock_refresh,
             refresh_retry_delay=0,
@@ -699,7 +699,7 @@ class TestRpcCallAutoRetry:
                 raise RPCError("Authentication expired", method_id="wXbhsf")
             return ["result"]
 
-        core = Session(
+        core = build_session_for_tests(
             auth,
             refresh_callback=mock_refresh,
             refresh_retry_delay=0,
@@ -733,7 +733,7 @@ class TestRpcCallAutoRetry:
             session_id="sid",
         )
 
-        core = Session(auth)  # No refresh_callback
+        core = build_session_for_tests(auth)  # No refresh_callback
 
         call_count = [0]
 
@@ -767,7 +767,7 @@ class TestRpcCallAutoRetry:
             refresh_count[0] += 1
             return auth
 
-        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = build_session_for_tests(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
 
         call_count = [0]
 
@@ -809,7 +809,7 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = Session(
+        core = build_session_for_tests(
             auth,
             refresh_callback=mock_refresh,
             refresh_retry_delay=0,
@@ -846,7 +846,9 @@ class TestRpcCallAutoRetry:
         async def failing_refresh():
             raise ValueError("Refresh failed - cookies expired")
 
-        core = Session(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
+        core = build_session_for_tests(
+            auth, refresh_callback=failing_refresh, refresh_retry_delay=0
+        )
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -880,7 +882,7 @@ class TestRpcCallAutoRetry:
             await asyncio.sleep(0.05)  # Simulate slow refresh
             return auth
 
-        core = Session(
+        core = build_session_for_tests(
             auth,
             refresh_callback=mock_refresh,
             refresh_retry_delay=0,
@@ -940,7 +942,7 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = Session(
+        core = build_session_for_tests(
             auth,
             refresh_callback=mock_refresh,
             refresh_retry_delay=0,
@@ -987,7 +989,7 @@ class TestRpcCallAutoRetry:
             session_id="sid",
         )
 
-        core = Session(auth)  # No refresh_callback
+        core = build_session_for_tests(auth)  # No refresh_callback
 
         call_count = [0]
 
@@ -1026,7 +1028,9 @@ class TestRpcCallAutoRetry:
         async def failing_refresh():
             raise ValueError("Refresh failed - cookies expired")
 
-        core = Session(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
+        core = build_session_for_tests(
+            auth, refresh_callback=failing_refresh, refresh_retry_delay=0
+        )
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -1071,8 +1075,8 @@ class TestBuildUrlAuthuser:
             csrf_token="csrf",
             session_id="sess",
         )
-        core = Session(auth=auth)
-        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        core = build_session_for_tests(auth=auth)
+        url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser" not in url
 
     def test_non_default_authuser_added(self):
@@ -1082,8 +1086,8 @@ class TestBuildUrlAuthuser:
             session_id="sess",
             authuser=2,
         )
-        core = Session(auth=auth)
-        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        core = build_session_for_tests(auth=auth)
+        url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=2" in url
 
     def test_account_email_preferred_over_authuser_index(self):
@@ -1094,7 +1098,7 @@ class TestBuildUrlAuthuser:
             authuser=2,
             account_email="bob@example.com",
         )
-        core = Session(auth=auth)
-        url = core._get_rpc_executor().build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
+        core = build_session_for_tests(auth=auth)
+        url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=bob%40example.com" in url
         assert "authuser=2" not in url

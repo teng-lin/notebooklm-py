@@ -9,6 +9,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._auth.keepalive as _auth_keepalive
+from _helpers.session_factory import build_session_for_tests
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -487,7 +488,7 @@ class TestSaveCookiesUnification:
             return True
 
         # Phase 2 PR 4: inject the cookie-saver seam at construction.
-        core = Session(auth, cookie_saver=spy)
+        core = build_session_for_tests(auth, cookie_saver=spy)
         core_ref["core"] = core
 
         await core._lifecycle.save_cookies(core, httpx.Cookies())

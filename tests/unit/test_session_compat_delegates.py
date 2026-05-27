@@ -9,7 +9,7 @@ logic into Session. The pin still guards against the reverse direction
 PR #4b of the session-refactor arc (inline-pure-delegates) deleted
 most of the previously-pinned delegates entirely — every caller now
 talks to the canonical collaborator directly
-(``core._auth_coord.snapshot(self)``, ``core._get_rpc_executor().build_url(...)``,
+(``core._auth_coord.snapshot(self)``, ``core._rpc_executor.build_url(...)``,
 ``core._drain_tracker.begin_transport_post(...)``, etc.). The
 surviving delegates retained on Session are kept because each has a
 structural protocol caller, a Protocol-imposed call site, or an
@@ -46,6 +46,7 @@ import textwrap
 
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from notebooklm._session import Session
 
 # Delegates that MUST stay on Session because an external protocol or
@@ -182,7 +183,7 @@ def test_session_retains_adr_014_rule_4_middleware_chain_seams() -> None:
 
     from notebooklm.auth import AuthTokens
 
-    core = Session(
+    core = build_session_for_tests(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="sid"),
     )
     assert hasattr(core, "_kernel"), "Session missing Rule-4 retained member: _kernel"
@@ -202,7 +203,7 @@ def test_session_keeps_drain_tracker_seam() -> None:
     from notebooklm._transport_drain import TransportDrainTracker
     from notebooklm.auth import AuthTokens
 
-    core = Session(
+    core = build_session_for_tests(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="sid"),
     )
     assert isinstance(core._drain_tracker, TransportDrainTracker), (

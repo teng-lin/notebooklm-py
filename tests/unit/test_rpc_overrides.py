@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 import pytest
 
+from _helpers.session_factory import build_session_for_tests
 from conftest import install_post_as_stream
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -327,7 +328,7 @@ def _make_core() -> Session:
         session_id="SID_OLD",
         cookies={"SID": "sid_cookie"},
     )
-    return Session(
+    return build_session_for_tests(
         auth=auth,
         refresh_callback=None,
         refresh_retry_delay=0.0,

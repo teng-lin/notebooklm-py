@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
-from notebooklm._session import Session
+from _helpers.session_factory import build_session_for_tests
 from notebooklm.auth import AuthTokens
 
 
@@ -143,7 +143,7 @@ async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    core = Session(
+    core = build_session_for_tests(
         auth=auth,
         refresh_callback=refresh_callback,
         refresh_retry_delay=refresh_retry_delay,
