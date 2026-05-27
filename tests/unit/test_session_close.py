@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
 from notebooklm._polling_registry import PollRegistry
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -96,8 +96,17 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from notebooklm._note_service import NoteService
 
     core = Session(_auth())
+    # Wave 11a of session-decoupling deleted ``Session.register_drain_hook``
+    # / ``Session.operation_scope`` forwards; ``ArtifactsAPI`` now consumes
+    # an ``ArtifactsRuntimeAdapter`` composite (mirrors production wiring
+    # in ``NotebookLMClient.__init__``).
+    runtime = ArtifactsRuntimeAdapter(
+        rpc=core.rpc_executor,
+        drain=core._drain_tracker,
+        lifecycle=core._lifecycle,
+    )
     artifacts = ArtifactsAPI(
-        core,
+        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -140,7 +149,7 @@ async def test_session_close_absorbs_drain_hook_errors() -> None:
     async def angry_hook() -> None:
         raise RuntimeError("poll cleanup failed")
 
-    core.register_drain_hook("angry", angry_hook)
+    core._drain_tracker.register_drain_hook("angry", angry_hook)
 
     # return_exceptions=True in close() means this should NOT propagate.
     await asyncio.wait_for(core.close(), timeout=1.0)
@@ -174,7 +183,7 @@ async def test_client_close_default_drain_is_true() -> None:
     async def fake_close() -> None:
         pass
 
-    client._session.drain = fake_drain  # type: ignore[method-assign]
+    client._session._drain_tracker.drain = fake_drain  # type: ignore[method-assign]
     client._session.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
@@ -196,7 +205,7 @@ async def test_client_close_drain_false_skips_drain() -> None:
     async def fake_close() -> None:
         pass
 
-    client._session.drain = fake_drain  # type: ignore[method-assign]
+    client._session._drain_tracker.drain = fake_drain  # type: ignore[method-assign]
     client._session.close = fake_close  # type: ignore[method-assign]
 
     await client.close(drain=False)
@@ -216,7 +225,7 @@ async def test_client_aexit_uses_drain_true_default() -> None:
     async def fake_close() -> None:
         pass
 
-    client._session.drain = fake_drain  # type: ignore[method-assign]
+    client._session._drain_tracker.drain = fake_drain  # type: ignore[method-assign]
     client._session.close = fake_close  # type: ignore[method-assign]
 
     # Drive __aexit__ directly rather than `async with` so we can use the

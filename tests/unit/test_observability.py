@@ -14,7 +14,7 @@ from notebooklm import (
     correlation_id,
     get_request_id,
 )
-from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._session import Session
@@ -118,7 +118,7 @@ async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthT
     task = asyncio.create_task(in_flight())
     await started.wait()
 
-    drain_task = asyncio.create_task(core.drain(timeout=1.0))
+    drain_task = asyncio.create_task(core._drain_tracker.drain(timeout=1.0))
     await asyncio.sleep(0)
 
     assert not drain_task.done()
@@ -137,7 +137,7 @@ async def test_drain_allows_nested_work_inside_accepted_operation(
     core = Session(auth_tokens)
     outer_token = await core._drain_tracker.begin_transport_post("source upload")
     try:
-        drain_task = asyncio.create_task(core.drain(timeout=1.0))
+        drain_task = asyncio.create_task(core._drain_tracker.drain(timeout=1.0))
         await asyncio.sleep(0)
 
         nested_token = await core._drain_tracker.begin_transport_post("RPC ADD_SOURCE")
@@ -156,7 +156,7 @@ async def test_operation_scope_tracks_drain_without_upload_semaphore(
 ) -> None:
     core = Session(auth_tokens)
 
-    async with core.operation_scope("plain-operation"):
+    async with core._drain_tracker.operation_scope("plain-operation"):
         assert core._drain_tracker._in_flight_posts == 1
         assert not hasattr(core, "get_upload_semaphore")
 
@@ -171,7 +171,7 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
     core = Session(auth_tokens)
     outer_token = await core._drain_tracker.begin_transport_post("source upload")
     try:
-        drain_task = asyncio.create_task(core.drain(timeout=1.0))
+        drain_task = asyncio.create_task(core._drain_tracker.drain(timeout=1.0))
         await asyncio.sleep(0)
 
         async def child_work() -> None:
@@ -189,8 +189,17 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 @pytest.mark.asyncio
 async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
     core = Session(auth_tokens)
+    # Wave 11a of session-decoupling deleted ``Session.register_drain_hook``
+    # / ``Session.operation_scope`` forwards; ``ArtifactsAPI`` now consumes
+    # an ``ArtifactsRuntimeAdapter`` composite (mirrors production wiring
+    # in ``NotebookLMClient.__init__``).
+    runtime = ArtifactsRuntimeAdapter(
+        rpc=core.rpc_executor,
+        drain=core._drain_tracker,
+        lifecycle=core._lifecycle,
+    )
     api = ArtifactsAPI(
-        core,
+        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -225,7 +234,7 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
     )
     await first_poll_started.wait()
 
-    drain_task = asyncio.create_task(core.drain(timeout=1.0))
+    drain_task = asyncio.create_task(core._drain_tracker.drain(timeout=1.0))
     await asyncio.sleep(0)
     assert not drain_task.done()
 
@@ -249,7 +258,7 @@ async def test_close_with_drain_closes_transport_after_timeout(auth_tokens: Auth
     async def close_transport() -> None:
         calls.append("close")
 
-    client._session.drain = drain_timeout  # type: ignore[method-assign]
+    client._session._drain_tracker.drain = drain_timeout  # type: ignore[method-assign]
     client._session.close = close_transport  # type: ignore[method-assign]
 
     with pytest.raises(TimeoutError, match="deadline"):
@@ -270,7 +279,7 @@ async def test_close_with_invalid_drain_does_not_close_transport(auth_tokens: Au
     async def close_transport() -> None:
         calls.append("close")
 
-    client._session.drain = invalid_drain  # type: ignore[method-assign]
+    client._session._drain_tracker.drain = invalid_drain  # type: ignore[method-assign]
     client._session.close = close_transport  # type: ignore[method-assign]
 
     with pytest.raises(ValueError, match="bad deadline"):
@@ -332,8 +341,15 @@ async def test_upload_progress_callback_receives_byte_counts(
 @pytest.mark.asyncio
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
     core = Session(auth_tokens)
+    # Wave 11a of session-decoupling deleted the ``Session`` drain forwards;
+    # ``ArtifactsAPI`` now consumes an ``ArtifactsRuntimeAdapter`` composite.
+    runtime = ArtifactsRuntimeAdapter(
+        rpc=core.rpc_executor,
+        drain=core._drain_tracker,
+        lifecycle=core._lifecycle,
+    )
     api = ArtifactsAPI(
-        core,
+        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

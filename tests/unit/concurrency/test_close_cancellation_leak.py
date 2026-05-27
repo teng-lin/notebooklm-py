@@ -262,9 +262,12 @@ async def test_cancel_during_drain_in_close_does_not_leak_transport(
     - Open the client.
     - Capture ``http_client_ref`` BEFORE the cancel (successful close
       nulls the kernel's transport attribute).
-    - Monkeypatch ``client._session.drain`` to park on an unset
-      ``asyncio.Event`` so drain() blocks indefinitely; the only exit is
-      the ``CancelledError`` injected by the outer ``wait_for`` deadline.
+    - Monkeypatch ``client._session._drain_tracker.drain`` to park on an
+      unset ``asyncio.Event`` so drain() blocks indefinitely; the only
+      exit is the ``CancelledError`` injected by the outer ``wait_for``
+      deadline. (Wave 11a of session-decoupling deleted the
+      ``Session.drain`` forward; the public ``NotebookLMClient.drain``
+      reaches the tracker directly.)
     - Drive ``close(drain=True)`` through ``asyncio.wait_for(timeout=0.1)``
       so the cancel reliably lands while ``drain`` is parked.
 
@@ -302,7 +305,7 @@ async def test_cancel_during_drain_in_close_does_not_leak_transport(
             drain_entered.set()
             await hang_event.wait()
 
-        monkeypatch.setattr(client._session, "drain", _hanging_drain)
+        monkeypatch.setattr(client._session._drain_tracker, "drain", _hanging_drain)
 
         # Drive ``close(drain=True)`` through a short ``wait_for`` so a
         # cancel lands while ``drain`` is parked. The cancel propagates
