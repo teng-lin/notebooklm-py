@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
-from ._artifacts import ArtifactsAPI
+from ._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._env import get_base_url as get_base_url
@@ -55,7 +55,7 @@ from ._session_config import (
 from ._session_lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
-from ._source_upload import SourceUploadPipeline
+from ._source_upload import SourceUploadPipeline, UploadRuntimeAdapter
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
@@ -290,12 +290,22 @@ class NotebookLMClient:
             cookie_rotator=cookie_rotator,
         )
 
-        # Wire the upload pipeline explicitly with the concrete capability
-        # surfaces (UploadRuntime via the Session, plus Kernel and AuthMetadata).
-        # NotebookLMClient is the only composition root that knows these
-        # internals — SourcesAPI no longer reads them back off the session.
+        # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
+        # upload pipeline takes a ``UploadRuntimeAdapter`` composite —
+        # built from ``rpc_executor`` + ``drain_tracker`` + ``lifecycle``
+        # — instead of the whole ``Session``. ``Kernel`` and
+        # ``AuthMetadata`` continue to flow as separate parameters per
+        # the ADR-014 Rule 6 example. ``NotebookLMClient.__init__`` is
+        # the composition root that knows these internals;
+        # ``SourcesAPI`` no longer reads them back off the session.
+        upload_collaborators = self._session.collaborators
+        upload_runtime = UploadRuntimeAdapter(
+            rpc=self._session.rpc_executor,
+            drain=upload_collaborators.drain_tracker,
+            lifecycle=upload_collaborators.lifecycle,
+        )
         source_uploader = SourceUploadPipeline(
-            self._session,
+            upload_runtime,
             self._session.kernel,
             self._session.auth,
             upload_timeout=upload_timeout,
@@ -322,8 +332,21 @@ class NotebookLMClient:
         # NoteService.create_note directly to persist a generated mind map.
         note_service = NoteService(self._session.rpc_executor)
         mind_maps = NoteBackedMindMapService(note_service)
+        # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
+        # artifacts API takes an ``ArtifactsRuntimeAdapter`` composite —
+        # built from ``rpc_executor`` + ``drain_tracker`` + ``lifecycle``
+        # — instead of the whole ``Session``. The adapter satisfies
+        # ``ArtifactsRuntime`` (RpcCaller + AsyncWorkRuntime +
+        # DrainHookRegistration) by delegating to those three
+        # collaborators directly.
+        artifacts_collaborators = self._session.collaborators
+        artifacts_runtime = ArtifactsRuntimeAdapter(
+            rpc=self._session.rpc_executor,
+            drain=artifacts_collaborators.drain_tracker,
+            lifecycle=artifacts_collaborators.lifecycle,
+        )
         self.artifacts = ArtifactsAPI(
-            self._session,
+            artifacts_runtime,
             notebooks=self.notebooks,
             mind_maps=mind_maps,
             note_service=note_service,

@@ -1563,8 +1563,13 @@ class TestReviseSlide:
         async with NotebookLMClient(auth_tokens) as client:
             err = RPCError("Rate limit exceeded")
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
+            # Wave 9 of session-decoupling: ``ArtifactsAPI._runtime`` is now a
+            # frozen ``ArtifactsRuntimeAdapter``, so patches go through the
+            # held ``rpc`` collaborator (the ``RpcExecutor``) rather than
+            # the adapter itself — frozen dataclasses reject ``setattr`` and
+            # ``patch.object`` cleanup also fails on ``delattr``.
             with patch.object(
-                client.artifacts._runtime,
+                client.artifacts._runtime.rpc,
                 "rpc_call",
                 AsyncMock(side_effect=err),
             ):
@@ -1590,9 +1595,10 @@ class TestReviseSlide:
         async with NotebookLMClient(auth_tokens) as client:
             err = RPCError("Internal error")
             err.rpc_code = "INTERNAL_ERROR"
+            # See sibling test above for the Wave 9 patch-target rationale.
             with (
                 patch.object(
-                    client.artifacts._runtime,
+                    client.artifacts._runtime.rpc,
                     "rpc_call",
                     AsyncMock(side_effect=err),
                 ),
@@ -2097,9 +2103,13 @@ class TestCallGenerateErrorHandling:
             err = RPCError("You have exceeded your quota")
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
             # Pass source_ids explicitly so get_source_ids (GET_NOTEBOOK) is NOT called.
-            # Then patch _core.rpc_call so the CREATE_ARTIFACT call raises the error.
+            # Then patch the held ``rpc`` collaborator's ``rpc_call`` so the
+            # CREATE_ARTIFACT call raises the error. Wave 9 of session-decoupling:
+            # ``_runtime`` is now a frozen ``ArtifactsRuntimeAdapter``, so the
+            # patch goes through ``_runtime.rpc`` (the ``RpcExecutor``) — see
+            # the ``revise_slide`` siblings above for the same rationale.
             with patch.object(
-                client.artifacts._runtime,
+                client.artifacts._runtime.rpc,
                 "rpc_call",
                 AsyncMock(side_effect=err),
             ):
@@ -2120,10 +2130,12 @@ class TestCallGenerateErrorHandling:
             err = RPCError("Server error")
             err.rpc_code = "INTERNAL_ERROR"
             # Pass source_ids explicitly so get_source_ids (GET_NOTEBOOK) is NOT called.
-            # Then patch _core.rpc_call so the CREATE_ARTIFACT call raises the error.
+            # Then patch the held ``rpc`` collaborator's ``rpc_call`` so the
+            # CREATE_ARTIFACT call raises the error. See sibling tests above
+            # for the Wave 9 patch-target rationale.
             with (
                 patch.object(
-                    client.artifacts._runtime,
+                    client.artifacts._runtime.rpc,
                     "rpc_call",
                     AsyncMock(side_effect=err),
                 ),
