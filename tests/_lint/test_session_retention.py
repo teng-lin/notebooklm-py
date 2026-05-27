@@ -21,9 +21,13 @@ and :mod:`tests._lint.test_no_core_imports`):
   ``| `method_name` | category | disposition |``. Method names appear
   inside the first backtick-pair of column one; the entire backtick token
   may also carry a ``(property)`` suffix (e.g. ``kernel`` (property)).
-* Valid dispositions are either ``retain — <reason>`` or
-  ``delete in Wave 11 (<cluster>)``. Wave 11c will tighten the lint to
-  reject the latter once the cluster-deletion PRs land.
+* The only valid disposition is ``retain — <reason>``. Wave 11c tightened
+  the lint to its **final form** when the three sub-wave cluster
+  deletions (11a + 11b + 11c) had all landed: the transitional
+  ``delete in Wave 11 (<cluster>)`` disposition that Wave 10 introduced
+  to schedule the cluster deletions is no longer accepted; the rows
+  that carried it moved to the **Deleted** section at the bottom of
+  the retention doc (which the parser scopes out).
 
 The lint enumerates methods only — not instance attributes like
 ``Session._rate_limit_max_retries`` (those are assigned in ``__init__`` and
@@ -46,11 +50,19 @@ RETENTION_DOC: Path = REPO_ROOT / "docs" / "session-method-retention.md"
 
 SESSION_CLASS_NAME: str = "Session"
 
-# Disposition prefixes that the retention doc may use. Wave 11c tightens this
-# to ``{"retain"}`` after the cluster-deletion PRs land.
+# Disposition prefixes that the retention doc may use. Wave 11c tightened
+# this to ``{"retain"}`` after the three sub-wave cluster-deletion PRs
+# (11a, 11b, 11c) had all landed; the transitional ``delete in Wave 11``
+# prefix that Wave 10 introduced to schedule the cluster deletions is
+# no longer accepted (any row that still carries it is doc drift and
+# must be moved to the **Deleted** section at the bottom of the
+# retention doc, which the parser scopes out).
 _RETAIN_PREFIX: str = "retain"
-_DELETE_PREFIX: str = "delete in Wave 11"
-VALID_DISPOSITION_PREFIXES: tuple[str, ...] = (_RETAIN_PREFIX, _DELETE_PREFIX)
+VALID_DISPOSITION_PREFIXES: tuple[str, ...] = (_RETAIN_PREFIX,)
+# Recognised but **rejected** prefix — kept as a named constant so the
+# self-coverage tests below can pin "Wave 11c rejects this" without
+# accidentally widening the live ``VALID_DISPOSITION_PREFIXES`` tuple.
+_RETIRED_DELETE_PREFIX: str = "delete in Wave 11"
 
 
 def _enumerate_session_methods(source: str) -> list[str]:
@@ -138,10 +150,12 @@ def _parse_retention_doc(text: str) -> dict[str, str]:
 def _disposition_is_valid(disposition: str) -> bool:
     """Return ``True`` iff ``disposition`` starts with a valid prefix.
 
-    The retain branch must carry a reason (em-dash + text); the delete branch
-    must carry a cluster name in parentheses. Wave 10's contract checks the
-    prefix; Wave 11c will tighten to assert the cluster name matches the
-    known set and that retain reasons reference a load-bearing seam.
+    After Wave 11c the retain branch is the only accepted shape — every
+    row in the live Inventory must read ``retain — <reason>``. The
+    transitional ``delete in Wave 11 (<cluster>)`` form that Wave 10
+    introduced is now rejected; any row that still carries it is doc
+    drift and must be moved to the **Deleted** section at the bottom
+    of the retention doc (which the inventory parser scopes out).
     """
     return disposition.startswith(VALID_DISPOSITION_PREFIXES)
 
@@ -213,16 +227,23 @@ def test_parse_retention_doc_extracts_known_rows() -> None:
 
 
 def test_parse_retention_doc_handles_property_suffix() -> None:
-    """The ``(property)`` suffix outside backticks must not block the row match."""
+    """The ``(property)`` suffix outside backticks must not block the row match.
+
+    Uses a ``retain`` disposition (the only one the live lint accepts after
+    Wave 11c). The parser is opaque to disposition contents — it only
+    captures the first-cell method name — but the sample chosen here
+    matches the post-Wave-11 vocabulary so a future reader doesn't
+    mistake it for live ``delete in Wave 11`` usage.
+    """
     text = (
         "## Inventory\n"
         "\n"
         "| Method | Category | Disposition |\n"
         "|---|---|---|\n"
-        "| `kernel` (property) | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) |\n"
+        "| `kernel` (property) | Stage A accessor | retain — Stage A accessor |\n"
     )
     rows = _parse_retention_doc(text)
-    assert rows == {"kernel": "delete in Wave 11 (`metrics-and-kernel`)"}
+    assert rows == {"kernel": "retain — Stage A accessor"}
 
 
 def test_parse_retention_doc_skips_glossary_tables() -> None:
@@ -254,8 +275,22 @@ def test_parse_retention_doc_skips_glossary_tables() -> None:
 
 
 def test_disposition_validator_accepts_known_shapes() -> None:
+    """``retain — <reason>`` is the only accepted shape after Wave 11c."""
     assert _disposition_is_valid("retain — lifecycle")
-    assert _disposition_is_valid("delete in Wave 11 (`drain-and-operation`)")
+    assert _disposition_is_valid("retain — Stage A accessor")
+
+
+def test_disposition_validator_rejects_retired_delete_prefix() -> None:
+    """Wave 11c retired ``delete in Wave 11 (<cluster>)`` — the lint must reject it.
+
+    Pins the **final-form** invariant: any row that still carries the
+    transitional Wave-10 disposition is doc drift left over from before
+    the three cluster-deletion PRs (11a, 11b, 11c) landed, and must be
+    moved to the **Deleted** section at the bottom of the retention doc.
+    """
+    assert not _disposition_is_valid(f"{_RETIRED_DELETE_PREFIX} (`drain-and-operation`)")
+    assert not _disposition_is_valid(f"{_RETIRED_DELETE_PREFIX} (`metrics-and-kernel`)")
+    assert not _disposition_is_valid(f"{_RETIRED_DELETE_PREFIX} (`transport-and-reqid`)")
 
 
 def test_disposition_validator_rejects_unknown_prefix() -> None:
@@ -287,17 +322,25 @@ def test_every_session_method_appears_in_retention_doc(
 
 
 def test_every_listed_disposition_is_valid(retention_rows: dict[str, str]) -> None:
-    """Every row's disposition must start with a recognised prefix."""
+    """Every row's disposition must start with a recognised prefix.
+
+    After Wave 11c the only accepted prefix is ``retain``. Rows that
+    still carry the transitional Wave-10 ``delete in Wave 11 (<cluster>)``
+    disposition are doc drift and must be moved to the **Deleted**
+    section at the bottom of the retention doc (which the parser scopes
+    out, so a properly-located row does not surface here).
+    """
     invalid = {
         name: disposition
         for name, disposition in retention_rows.items()
         if not _disposition_is_valid(disposition)
     }
     assert not invalid, (
-        "These rows in "
-        f"{RETENTION_DOC.relative_to(REPO_ROOT)} carry an unrecognised "
-        f"disposition. Use `retain — <reason>` or `delete in Wave 11 "
-        f"(<cluster>)`. Offenders:\n"
+        f"These rows in {RETENTION_DOC.relative_to(REPO_ROOT)} carry an "
+        f"unrecognised disposition. Use `retain — <reason>`; the "
+        f"transitional `delete in Wave 11 (<cluster>)` disposition was "
+        f"retired by Wave 11c — move the row to the **Deleted** section "
+        f"at the bottom of the doc instead. Offenders:\n"
         + "\n".join(f"  - `{name}`: {disposition!r}" for name, disposition in invalid.items())
     )
 
