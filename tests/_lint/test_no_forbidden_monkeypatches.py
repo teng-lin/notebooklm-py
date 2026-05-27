@@ -127,83 +127,100 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 _ALLOWLIST: frozenset[str] = frozenset(
     {
+        # CLI VCR test patches `notebooklm.cli.services.login.refresh.*` and
+        # `notebooklm.auth.account.*` module-level seams (browser-cookie
+        # extraction, account profile loaders) — these are CLI-side seams above
+        # the `NotebookLMClient` core that `make_fake_core(...)` covers.
+        # reason: CLI-side module seam — out of scope for `make_fake_core` (core-injection only)
         "tests/integration/cli_vcr/test_login_browser_cookies.py",
+        # reason: loop-affinity violation test — raw patch required
         "tests/integration/concurrency/test_aexit_exception_masking.py",
+        # reason: loop-affinity violation test — raw patch required
         "tests/integration/concurrency/test_download_blocks_loop.py",
+        # reason: loop-affinity violation test — raw patch required
         "tests/integration/concurrency/test_idempotency_create.py",
+        # reason: loop-affinity violation test — raw patch required
         "tests/integration/concurrency/test_upload_blocks_loop.py",
+        # reason: loop-affinity violation test — raw patch required
         "tests/integration/concurrency/test_upload_cancel_dangling_session.py",
-        "tests/integration/test_artifacts_integration.py",
+        # reason: integration test patches transport-side
+        # `notebooklm.<module>.*` stdlib seams (httpx-level overrides for
+        # side-effects/idempotency cassettes); these patches sit below the
+        # core-injection seam that `make_fake_core` covers.
         "tests/integration/test_side_effects_idempotency.py",
+        # reason: integration test patches transport-side `notebooklm.<module>.*`
+        # stdlib seams (httpx-level overrides for sources idempotency cassettes);
+        # below the core-injection seam covered by `make_fake_core`.
         "tests/integration/test_sources_idempotency.py",
-        "tests/unit/test_artifacts_drift.py",
-        "tests/unit/test_get_summary_drift.py",
+        # reason: CLI conftest patches `notebooklm.cli.*` module-level seams
+        # (resolvers, click context shims) above the `NotebookLMClient` core
+        # that `make_fake_core(...)` covers.
         "tests/unit/cli/conftest.py",
+        # reason: download-collision concurrency test exercises raw Session-attribute
+        # mutation to provoke download-id collision races; not a candidate for
+        # constructor injection since the test is *about* attribute-level races.
         "tests/unit/concurrency/test_download_collision.py",
+        # reason: public API coverage smoke-test imports `notebooklm.<feature>`
+        # facades to assert re-export shapes; the string-target patches verify
+        # the facade itself, not the core surface.
         "tests/unit/test_api_coverage.py",
-        "tests/unit/test_artifact_downloads.py",
-        "tests/unit/test_artifacts_coverage.py",
+        # reason: cookie save-race test patches module-level
+        # `_try_claim_rotation`, `_file_lock_try_exclusive`,
+        # `save_cookies_to_storage` rotation/lock helpers — outside the
+        # core-injection surface.
         "tests/unit/test_auth_cookie_save_race.py",
-        # PSIDTS inline recovery (issue #865) — patches module-level
-        # seams (``_try_claim_rotation``, ``_file_lock_try_exclusive``,
-        # ``save_cookies_to_storage``, ``_load_storage_state``, and
-        # ``get_storage_path``) that are NOT part of the core-injection
-        # surface ``tests/_fixtures/make_fake_core(...)`` covers. Same
-        # rationale as the neighboring ``test_auth_cookie_save_race.py``
-        # and ``test_auth_session.py`` entries; revisit when ADR-007's
-        # seam-substitution pattern is extended to cover module-level
-        # rotation/lock helpers.
+        # reason: PSIDTS inline recovery (issue #865) patches module-level
+        # rotation/lock seams (`_try_claim_rotation`, `_file_lock_try_exclusive`,
+        # `save_cookies_to_storage`, `_load_storage_state`, `get_storage_path`)
+        # — outside the core-injection surface `make_fake_core` covers.
         "tests/unit/test_auth_psidts_recovery.py",
+        # reason: backoff test patches `notebooklm._session_helpers` stdlib
+        # time/sleep seams (asyncio.sleep) — stdlib seam, not core attribute.
         "tests/unit/test_backoff.py",
-        # Phase 2 PR 5 migrated this file's ``asyncio.to_thread`` patch
-        # off the legacy ``notebooklm._core.asyncio.to_thread`` shim onto
-        # its canonical importing module
-        # (``notebooklm._session_lifecycle.asyncio.to_thread``, where
-        # ``ClientLifecycle.save_cookies`` sources it). The new patch
-        # target is still a string-target into the ``notebooklm.*``
-        # namespace, so the file lands on the allowlist with the rest of
-        # the stdlib-seam patchers (``test_authed_post_pipeline.py``,
-        # ``test_rpc_executor.py``, ``test_side_effects_idempotency.py``,
-        # …) until ADR-007's pattern is extended to stdlib seams.
+        # reason: Phase-2 PR-5 migrated this file's `asyncio.to_thread` patch
+        # to `notebooklm._session_lifecycle.asyncio.to_thread` (where
+        # `ClientLifecycle.save_cookies` sources it). Still a stdlib-seam
+        # string-target patch into `notebooklm.*` until ADR-007's pattern is
+        # extended to cover stdlib seams.
         "tests/unit/test_cookie_persistence.py",
-        # ``tests/unit/test_session_lifecycle.py`` removed from allowlist in
-        # Phase 4 (v0.5.0): the file's monkeypatch.setattr sites that targeted
-        # ``notebooklm._core.*`` were retargeted to the canonical seams
-        # (_auth.storage / _auth.keepalive / _error_injection) when the
-        # ``_core`` compatibility shim was deleted.
+        # reason: RPC executor unit test stub-patches `notebooklm._rpc_executor`
+        # module-level stdlib seams (asyncio.sleep, time providers) on the
+        # executor module itself — below the core-injection seam.
         "tests/unit/test_rpc_executor.py",
+        # reason: authed-post pipeline test patches `notebooklm._streaming_post`
+        # and `notebooklm._transport_errors` module-level stdlib seams (httpx
+        # response builders, time/retry helpers) — transport-layer seams below
+        # the core-injection surface.
         "tests/unit/test_authed_post_pipeline.py",
-        "tests/unit/test_download_url.py",
+        # reason: Firefox container detection test patches module-level
+        # `notebooklm.cli.services.login.firefox_accounts.*` filesystem and
+        # database-discovery helpers — CLI-side seam outside `make_fake_core`.
         "tests/unit/test_firefox_containers.py",
-        # P3.T1 generate-extraction service tests stub the CLI resolver
-        # functions (``notebooklm.cli.resolve.resolve_notebook_id`` and
-        # ``resolve_source_ids``) via ``monkeypatch.setattr`` string targets.
-        # Those resolvers are module-level CLI seams above the
-        # ``NotebookLMClient`` core that ``make_fake_core(...)`` covers, so
-        # the same string-target pattern that ``test_public_shims.py`` uses
-        # for its non-core seams is required here. Revisit when ADR-007's
-        # seam-substitution pattern is extended to cover the CLI resolver
-        # surface.
+        # reason: P3.T1 generate-extraction service tests patch CLI resolver
+        # functions (`notebooklm.cli.resolve.resolve_notebook_id`,
+        # `resolve_source_ids`) — module-level CLI seams above the
+        # `NotebookLMClient` core.
         "tests/unit/test_generate_service.py",
-        # tests/unit/test_idempotency_registry.py — removed in Wave 4 of
-        # session-decoupling: the test's RpcExecutor construction was
-        # migrated from a MagicMock-owner monkeypatch pattern to the
-        # ADR-014 Rule 5 keyword-collaborator constructor shape.
+        # reason: client __init__ ordering test patches `notebooklm._session.*`
+        # module-level constructors/factories to assert wiring order — verifies
+        # construction sequencing, not a core method seam.
         "tests/unit/test_init_order.py",
+        # reason: storage migration-lock test patches `notebooklm._auth.storage.*`
+        # filesystem lock helpers — module-level filesystem seam outside
+        # `make_fake_core`.
         "tests/unit/test_migration_lock.py",
-        "tests/unit/test_notebook_api.py",
-        "tests/unit/test_notes_unit.py",
+        # reason: public-API shim test asserts forwarding of `notebooklm.<x>`
+        # facades; the string-target patches *are* the test subject (shim
+        # routing) rather than an incidental implementation detail.
         "tests/unit/test_public_shims.py",
-        "tests/unit/test_quota_failure_detection.py",
+        # reason: RPC overrides test patches `notebooklm.rpc.types.RPC_METHOD_OVERRIDES`
+        # module-level mapping used during request encoding — module-level data
+        # seam, not a core attribute.
         "tests/unit/test_rpc_overrides.py",
-        "tests/unit/test_select_artifact.py",
-        "tests/unit/test_sharing_manager.py",
-        "tests/unit/test_sharing_types.py",
-        "tests/unit/test_source_selection.py",
+        # reason: source symlink test patches `notebooklm.cli.services.source_add.*`
+        # module-level filesystem helpers — CLI-side seam outside the
+        # `make_fake_core` core-injection surface.
         "tests/unit/test_source_symlink.py",
-        "tests/unit/test_sources_upload.py",
-        "tests/unit/test_swallow_observability.py",
-        "tests/unit/test_user_settings_api.py",
     }
 )
 
