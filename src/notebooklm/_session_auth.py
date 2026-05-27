@@ -33,7 +33,7 @@ tests/integration/concurrency/test_refresh_cancellation_propagation.py):
   ``host.auth.session_id`` under the snapshot lock. It does NOT touch the
   http client. The cookie-jar sync is a separate concern handled by
   :meth:`update_auth_headers` (sync, no await — it runs the
-  ``host.get_http_client().cookies`` read outside any auth lock).
+  ``host._kernel.get_http_client().cookies`` read outside any auth lock).
 * The ``_refresh_task`` slot is intentionally NOT cleared when a waiter is
   cancelled mid-shield — concurrency tests assert task identity across
   cancellation so siblings joined to the same single-flight refresh see the
@@ -48,8 +48,6 @@ import time
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-import httpx
-
 from ._loop_affinity import assert_bound_loop
 from ._request_types import AuthSnapshot
 from ._session_config import CORE_LOGGER_NAME
@@ -57,6 +55,7 @@ from .auth import AuthTokens
 
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
+    from ._kernel import Kernel
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
@@ -67,18 +66,16 @@ logger = logging.getLogger(CORE_LOGGER_NAME)
 class _AuthRefreshHost(Protocol):
     """Structural host boundary required by :class:`AuthRefreshCoordinator`.
 
-    Mirrors the ``RefreshAuthCore`` shape in ``_auth/session.py`` so the
-    coordinator composes cleanly with B2's ``ClientLifecycle`` — both reach
-    the live ``httpx.AsyncClient`` via :meth:`get_http_client`, never via a
-    direct ``_http_client`` attribute access.
+    Mirrors the ``RefreshAuthCore`` shape in ``_auth/session.py``. Wave 11b
+    of session-decoupling (ADR-014) deleted the ``Session.get_http_client``
+    forward; the coordinator now reaches the live ``httpx.AsyncClient`` via
+    ``host._kernel.get_http_client()``, mirroring the ``RefreshAuthCore``
+    migration in ``_auth/session.py``.
     """
 
     auth: AuthTokens
     _metrics_obj: ClientMetrics
-
-    def get_http_client(self) -> httpx.AsyncClient:
-        """Return the live HTTP client (raises if not open)."""
-        ...
+    _kernel: Kernel
 
 
 class AuthRefreshCoordinator:
@@ -249,9 +246,9 @@ class AuthRefreshCoordinator:
 
         Raises:
             RuntimeError: If the host's HTTP client is not initialised (the
-                error originates from :meth:`host.get_http_client`).
+                error originates from :meth:`Kernel.get_http_client`).
         """
-        host.auth.cookie_jar = host.get_http_client().cookies
+        host.auth.cookie_jar = host._kernel.get_http_client().cookies
 
     # ------------------------------------------------------------------
     # Single-flight refresh task.

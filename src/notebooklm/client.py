@@ -313,11 +313,11 @@ class NotebookLMClient:
         )
         source_uploader = SourceUploadPipeline(
             upload_runtime,
-            self._session.kernel,
+            collaborators.kernel,
             self._session.auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
-            record_upload_queue_wait=self._session.record_upload_queue_wait,
+            record_upload_queue_wait=collaborators.metrics.record_upload_queue_wait,
         )
         # ADR-014 Rule 3 Stage A (Wave 7 of session-decoupling): simple
         # features take their RpcCaller dependency directly via
@@ -559,7 +559,7 @@ class NotebookLMClient:
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client."""
-        return self._session.metrics_snapshot()
+        return self._session.collaborators.metrics.snapshot()
 
     async def rpc_call(
         self,

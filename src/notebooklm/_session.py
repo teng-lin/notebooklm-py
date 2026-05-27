@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ._error_injection import _refuse_synthetic_error_outside_test_context
-from ._kernel import Kernel
 from ._middleware import (
     RpcRequest,
     RpcResponse,
@@ -37,13 +36,7 @@ from ._session_transport import SessionTransport
 from .auth import (
     AuthTokens,
 )
-from .auth import (
-    authuser_query as _authuser_query_value,
-)
-from .auth import (
-    format_authuser_value as _format_authuser_header_value,
-)
-from .types import ClientMetricsSnapshot, RpcTelemetryEvent
+from .types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
     from ._session_init import SessionCollaborators
@@ -430,22 +423,6 @@ class Session:
         """
         return await self._reqid.next_reqid(step)
 
-    def metrics_snapshot(self) -> ClientMetricsSnapshot:
-        """Return cumulative observability counters for this client instance."""
-        return self._metrics_obj.snapshot()
-
-    def _increment_metrics(self, **increments: int | float) -> None:
-        self._metrics_obj.increment(**increments)
-
-    def record_upload_queue_wait(self, wait_seconds: float) -> None:
-        """Record time spent waiting for the upload semaphore."""
-        self._metrics_obj.record_upload_queue_wait(wait_seconds)
-
-    # Session/support surface consumed by feature APIs and private helpers.
-    @property
-    def kernel(self) -> Kernel:
-        return self._kernel
-
     # ------------------------------------------------------------------
     # ADR-014 Rule 3 Stage A accessors (Wave 6 of session-decoupling)
     # ------------------------------------------------------------------
@@ -489,23 +466,6 @@ class Session:
         return self._get_rpc_executor()
 
     @property
-    def authuser(self) -> int:
-        return self.auth.authuser
-
-    @property
-    def account_email(self) -> str | None:
-        return self.auth.account_email
-
-    def authuser_query(self) -> str:
-        return _authuser_query_value(self.authuser, self.account_email)
-
-    def authuser_header(self) -> str:
-        return _format_authuser_header_value(self.authuser, self.account_email)
-
-    def live_cookies(self) -> httpx.Cookies:
-        return self.get_http_client().cookies
-
-    @property
     def bound_loop(self) -> asyncio.AbstractEventLoop | None:
         """Return the open-time captured event loop for affinity checks.
 
@@ -530,10 +490,6 @@ class Session:
         Protocol directly since Wave 2 of the session-decoupling plan.
         """
         self._lifecycle.assert_bound_loop()
-
-    async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
-        """Invoke the optional telemetry callback without affecting RPC behavior."""
-        await self._metrics_obj.emit_rpc_event(event)
 
     def _get_rpc_semaphore(self) -> AbstractAsyncContextManager[Any]:
         """Return the per-instance RPC semaphore (or a null-context).
@@ -663,9 +619,9 @@ class Session:
         Call this after modifying auth tokens (e.g., after refresh_auth())
         to ensure the HTTP client uses the updated credentials. Delegates
         to :meth:`AuthRefreshCoordinator.update_auth_headers`; the cookie
-        jar source is fetched via ``self.get_http_client()`` so the open()
-        precondition (and its ``RuntimeError`` if not initialised) is
-        enforced at one site.
+        jar source is fetched via ``self._kernel.get_http_client()`` so the
+        ``open()`` precondition (and its ``RuntimeError`` if not initialised)
+        is enforced at one site.
 
         Raises:
             RuntimeError: If client is not initialized.
@@ -808,16 +764,3 @@ class Session:
             disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
         )
-
-    def get_http_client(self) -> httpx.AsyncClient:
-        """Get the underlying HTTP client for direct requests.
-
-        Used by download operations that need direct HTTP access.
-
-        Returns:
-            The httpx.AsyncClient instance.
-
-        Raises:
-            RuntimeError: If client is not initialized.
-        """
-        return self._kernel.get_http_client()

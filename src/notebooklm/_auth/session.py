@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
@@ -15,15 +15,23 @@ from .account import authuser_query
 from .extraction import extract_wiz_field
 from .tokens import AuthTokens
 
+if TYPE_CHECKING:
+    from .._kernel import Kernel
+
 
 class RefreshAuthCore(Protocol):
-    """Structural core boundary required by auth session refresh."""
+    """Structural core boundary required by auth session refresh.
+
+    Wave 11b of session-decoupling (ADR-014): the live HTTP client is
+    sourced via ``core._kernel.get_http_client()`` instead of a
+    ``core.get_http_client()`` forward on ``Session``. The underscore-
+    prefixed ``_kernel`` slot mirrors the live ``Session._kernel``
+    attribute so structural conformance does not require renaming the
+    Session slot.
+    """
 
     auth: AuthTokens
-
-    def get_http_client(self) -> httpx.AsyncClient:
-        """Return the live HTTP client."""
-        ...
+    _kernel: Kernel
 
     def update_auth_tokens(self, csrf: str, session_id: str) -> Awaitable[None]:
         """Atomically update auth token scalars."""
@@ -40,7 +48,7 @@ class RefreshAuthCore(Protocol):
 
 async def refresh_auth_session(core: RefreshAuthCore) -> AuthTokens:
     """Refresh NotebookLM auth tokens through the raw homepage session path."""
-    http_client = core.get_http_client()
+    http_client = core._kernel.get_http_client()
     url = f"{get_base_url()}/"
     if core.auth.account_email or core.auth.authuser:
         url = f"{url}?{authuser_query(core.auth.authuser, core.auth.account_email)}"
