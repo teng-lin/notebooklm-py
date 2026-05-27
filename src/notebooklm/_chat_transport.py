@@ -5,13 +5,17 @@ single authed POST attempt against the NotebookLM batchexecute
 endpoint. It is the chat-domain consumer-side seam: transport-layer
 exceptions (``TransportAuthExpired``, ``TransportRateLimited``,
 ``TransportServerError``, raw ``httpx.HTTPStatusError``) raised by
-``Session._perform_authed_post`` are translated into ``ChatError``
-or ``NetworkError`` so callers (currently only :class:`ChatAPI.ask`)
-stay free of HTTP-status branching.
+:meth:`SessionTransport.perform_authed_post` are translated into
+``ChatError`` or ``NetworkError`` so callers (currently only
+:class:`ChatAPI.ask`) stay free of HTTP-status branching.
 
 After the D2 cutover (PR-2 / arch-d2-cutover), :meth:`ChatAPI.ask`
 calls :func:`chat_aware_authed_post` directly, replacing the prior
-chat-side wrapper that lived on the core's RPC executor.
+chat-side wrapper that lived on the core's RPC executor. As of Wave 8
+of the session-decoupling plan (ADR-014 Rule 2 Corollary), this helper
+takes the :class:`SessionTransport` collaborator directly rather than a
+local ``ChatRuntime`` Protocol — the indirection through a chat-local
+Protocol added no value once ``transport_post`` was its only member.
 """
 
 from __future__ import annotations
@@ -28,17 +32,17 @@ from ._transport_errors import (
 from .exceptions import ChatError, NetworkError
 
 if TYPE_CHECKING:
-    from ._chat import ChatRuntime
     from ._request_types import BuildRequest
+    from ._session_transport import SessionTransport
 
 
 async def chat_aware_authed_post(
-    runtime: ChatRuntime,
+    transport: SessionTransport,
     *,
     build_request: BuildRequest,
     parse_label: str,
 ) -> httpx.Response:
-    """Chat-side semantic owner around :meth:`ChatRuntime.transport_post`.
+    """Chat-side semantic owner around :meth:`SessionTransport.perform_authed_post`.
 
     Wraps the shared transport pipeline with chat-flavored exception
     mapping: transport-layer auth failures become
@@ -52,21 +56,28 @@ async def chat_aware_authed_post(
     executor).
 
     Args:
-        runtime: Local chat runtime (typically the shared client session,
-            which structurally satisfies :class:`ChatRuntime`).
-        build_request: Request builder forwarded to :meth:`ChatRuntime.transport_post`.
+        transport: :class:`SessionTransport` collaborator that owns the
+            authed POST entry point on the shared transport pipeline.
+            Passed directly via constructor injection from
+            ``NotebookLMClient.__init__`` (ADR-014 Rule 2 Corollary, Wave 8
+            of session-decoupling) — no chat-local Protocol intermediates.
+        build_request: Request builder forwarded to
+            :meth:`SessionTransport.perform_authed_post`.
         parse_label: Caller-friendly label used in log lines and error
-            messages (e.g. ``"chat.ask"``).
+            messages (e.g. ``"chat.ask"``). Threaded through to the
+            transport as ``log_label`` — the two names refer to the same
+            value (``parse_label`` is the chat-domain spelling; the chain
+            context still names it ``log_label``).
     """
     # Drain admission lives in ``DrainMiddleware`` at the outermost chain
-    # position around ``_perform_authed_post`` — it reads ``log_label``
+    # position around ``perform_authed_post`` — it reads ``log_label``
     # from ``RpcRequest.context`` (passed below as ``parse_label``), so a
     # drained client still surfaces ``RuntimeError`` with the chat-friendly
     # label without explicit bracketing here.
     try:
-        return await runtime.transport_post(
+        return await transport.perform_authed_post(
             build_request=build_request,
-            parse_label=parse_label,
+            log_label=parse_label,
         )
     except TransportAuthExpired as exc:
         raise ChatError(

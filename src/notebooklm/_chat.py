@@ -113,6 +113,16 @@ class ChatRuntime(RpcCaller, LoopGuard, Protocol):
 
     async def next_reqid(self, step: int = 100000) -> int: ...
 
+    # Wave 8 (ADR-014 Rule 2 Corollary): ``chat_aware_authed_post`` now
+    # takes :class:`SessionTransport` directly. Expose the late-bound
+    # accessor on this transitional Protocol so ``ChatAPI.ask`` can pass
+    # ``self._runtime.session_transport`` to the helper without a typing
+    # escape. Removed together with the rest of the Protocol in commit
+    # 3 of the same PR once :class:`ChatAPI` takes :class:`SessionTransport`
+    # via direct constructor injection.
+    @property
+    def session_transport(self) -> Any: ...
+
 
 class ChatAPI:
     """Operations for notebook chat/conversations.
@@ -328,7 +338,7 @@ class ChatAPI:
             reqid_token = None if get_request_id() is not None else set_request_id()
             try:
                 response = await chat_aware_authed_post(
-                    self._runtime,
+                    self._runtime.session_transport,
                     build_request=build_request,
                     parse_label="chat.ask",
                 )

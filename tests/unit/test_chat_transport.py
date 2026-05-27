@@ -1,24 +1,31 @@
 """Unit tests for :func:`notebooklm._chat_transport.chat_aware_authed_post`.
 
 Exercises the chat-domain error-mapping seam over the generic transport
-primitives. Each test injects a stub ``session`` whose ``transport_post``
-raises one of the transport-layer exceptions (or the raw ``httpx``
-status error) and asserts the function maps the failure to the expected
-``ChatError`` / ``NetworkError`` shape, message, and exception chain.
+primitives. Each test injects a stub ``transport`` whose
+``perform_authed_post`` raises one of the transport-layer exceptions
+(or the raw ``httpx`` status error) and asserts the function maps the
+failure to the expected ``ChatError`` / ``NetworkError`` shape, message,
+and exception chain.
 
 As of Tier-12 PR 12.5 the drain-tracking bookkeeping
 (``_begin_transport_post`` / ``_finish_transport_post``) has moved into
 ``DrainMiddleware`` at the outermost chain position around
-``Session.transport_post``. ``chat_aware_authed_post`` no longer brackets
-its own transport call with explicit drain calls —
+``SessionTransport.perform_authed_post``. ``chat_aware_authed_post`` no
+longer brackets its own transport call with explicit drain calls —
 admission and finalization are middleware concerns now. The tests
-correspondingly stub only ``transport_post`` on the session.
+correspondingly stub only ``perform_authed_post`` on the transport.
 
-The stub ``session`` is a lightweight ``SimpleNamespace`` rather than a
-``MagicMock(spec=Session)`` so the tests stay independent of the
-protocol's exact member set — they only need the transport
-primitive the function actually calls. The drain-fires-on-exception
-invariant is now covered by
+As of Wave 8 of the session-decoupling plan (ADR-014 Rule 2 Corollary),
+``chat_aware_authed_post`` takes the :class:`SessionTransport` collaborator
+directly rather than a chat-local ``ChatRuntime`` Protocol, and calls
+``transport.perform_authed_post(build_request=..., log_label=parse_label)``
+on it.
+
+The stub ``transport`` is a lightweight ``SimpleNamespace`` rather than a
+``MagicMock(spec=SessionTransport)`` so the tests stay independent of the
+class's exact member set — they only need the transport primitive the
+function actually calls. The drain-fires-on-exception invariant is now
+covered by
 ``tests/unit/test_drain_middleware.py::test_finish_fires_on_exception``.
 """
 
@@ -55,24 +62,28 @@ def _make_status_error(code: int, *, retry_after: str | None = None) -> httpx.HT
     return httpx.HTTPStatusError(f"HTTP {code}", request=request, response=response)
 
 
-def _make_stub_session(
+def _make_stub_transport(
     *,
     transport_side_effect: Any = None,
     transport_return_value: Any = None,
 ) -> SimpleNamespace:
-    """Build a stub ``session`` matching the slice of ``Session`` we exercise.
+    """Build a stub ``transport`` matching the slice of ``SessionTransport`` we exercise.
 
-    Pass ``transport_side_effect`` to make ``transport_post`` raise
+    Pass ``transport_side_effect`` to make ``perform_authed_post`` raise
     (exception instance) or invoke a callable; pass ``transport_return_value``
     to make it return that response unchanged. Exactly one of the two
     should be supplied per test — they are mutually exclusive.
 
     PR 12.5 lifted ``_begin_transport_post`` / ``_finish_transport_post``
     into DrainMiddleware, so the stub no longer needs to mock them —
-    ``chat_aware_authed_post`` does not call them.
+    ``chat_aware_authed_post`` does not call them. Wave 8 of
+    session-decoupling switched the helper to take a
+    :class:`SessionTransport` directly, so the stub exposes the
+    transport's ``perform_authed_post`` method (the chat-side
+    ``parse_label`` is forwarded to it as ``log_label``).
     """
     return SimpleNamespace(
-        transport_post=AsyncMock(
+        perform_authed_post=AsyncMock(
             side_effect=transport_side_effect,
             return_value=transport_return_value,
         ),
@@ -93,18 +104,18 @@ def _noop_build_request(_snapshot: Any) -> tuple[str, str, dict[str, str]]:
 async def test_chat_aware_authed_post_returns_response_and_balances_bookkeeping():
     """Success path: response forwarded; begin/finish tokens balanced."""
     expected_response = httpx.Response(200, request=_make_request())
-    session = _make_stub_session(transport_return_value=expected_response)
+    transport = _make_stub_transport(transport_return_value=expected_response)
 
     result = await chat_aware_authed_post(
-        session,  # type: ignore[arg-type]
+        transport,  # type: ignore[arg-type]
         build_request=_noop_build_request,
         parse_label="chat.ask",
     )
 
     assert result is expected_response
-    session.transport_post.assert_awaited_once_with(
+    transport.perform_authed_post.assert_awaited_once_with(
         build_request=_noop_build_request,
-        parse_label="chat.ask",
+        log_label="chat.ask",
     )
 
 
@@ -117,11 +128,11 @@ async def test_chat_aware_authed_post_returns_response_and_balances_bookkeeping(
 async def test_transport_auth_expired_maps_to_chat_error():
     original = _make_status_error(401)
     transport_exc = TransportAuthExpired("auth refresh failed", original=original)
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(ChatError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -146,11 +157,11 @@ async def test_transport_rate_limited_with_retry_after_includes_retry_seconds():
         response=response,
         original=original,
     )
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(ChatError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -172,11 +183,11 @@ async def test_transport_rate_limited_without_retry_after_omits_retry_clause():
         response=response,
         original=original,
     )
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(ChatError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -202,11 +213,11 @@ async def test_transport_server_error_with_http_status_error_maps_to_chat_error(
         response=original.response,
         status_code=503,
     )
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(ChatError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -221,11 +232,11 @@ async def test_transport_server_error_with_http_status_error_maps_to_chat_error(
 async def test_transport_server_error_with_request_error_maps_to_network_error():
     original = httpx.RequestError("connect failed", request=_make_request())
     transport_exc = TransportServerError("network failure", original=original)
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(NetworkError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -244,11 +255,11 @@ async def test_transport_server_error_with_timeout_exception_keeps_timeout_messa
     would collapse to the generic "network error after retries" line."""
     original = httpx.ReadTimeout("read timed out", request=_make_request())
     transport_exc = TransportServerError("timeout", original=original)
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(NetworkError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -272,11 +283,11 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
 
     original = _UnexpectedException("not http, not request")
     transport_exc = TransportServerError("bogus original", original=original)
-    session = _make_stub_session(transport_side_effect=transport_exc)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
 
     with pytest.raises(TypeError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
@@ -298,15 +309,15 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
 @pytest.mark.asyncio
 async def test_raw_http_status_error_maps_to_chat_error():
     """Non-401 / non-429 / non-5xx status errors that fall through
-    ``Session.transport_post`` reach this layer as raw
+    ``SessionTransport.perform_authed_post`` reach this layer as raw
     ``httpx.HTTPStatusError`` and get wrapped in a ``ChatError`` that
     surfaces the status code."""
     raw_exc = _make_status_error(404)
-    session = _make_stub_session(transport_side_effect=raw_exc)
+    transport = _make_stub_transport(transport_side_effect=raw_exc)
 
     with pytest.raises(ChatError) as excinfo:
         await chat_aware_authed_post(
-            session,  # type: ignore[arg-type]
+            transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
         )
