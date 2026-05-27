@@ -209,13 +209,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # `notebooklm.cli.services.login.firefox_accounts.*` filesystem and
         # database-discovery helpers — CLI-side seam outside `make_fake_core`.
         "tests/unit/test_firefox_containers.py",
-        # reason: Stage B2 PR 2 host live-binding tests patch
-        # `notebooklm._session.random.uniform` (jitter pin) and
-        # `notebooklm._session.asyncio.sleep` (retry-backoff pin) — both
-        # stdlib seams used by the retry middleware to assert exact sleep
-        # schedules, identical pattern to
-        # ``tests/unit/test_authed_post_pipeline.py`` (also allowlisted).
-        "tests/unit/test_middleware_chain_host.py",
         # reason: P3.T1 generate-extraction service tests patch CLI resolver
         # functions (`notebooklm.cli.resolve.resolve_notebook_id`,
         # `resolve_source_ids`) — module-level CLI seams above the

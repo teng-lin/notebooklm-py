@@ -27,6 +27,8 @@ write-through descriptor contract without a live chain.
 
 from __future__ import annotations
 
+import asyncio
+import random
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
@@ -47,11 +49,16 @@ def _no_backoff_jitter(monkeypatch):
     """Pin retry backoff jitter to 0 for deterministic sleep assertions.
 
     Mirrors the ``_no_backoff_jitter`` fixture in
-    ``test_authed_post_pipeline.py``. Production code adds a ±20% jitter
-    to the exponential backoff; these chain-level tests assert exact
-    sleep schedules so the jitter is pinned to 0.
+    ``test_authed_post_pipeline.py`` semantically — pin the ±20%
+    exponential-backoff jitter to 0 so these chain-level tests can
+    assert exact sleep schedules. Uses ADR-007 object-target
+    monkeypatching: ``random`` is a singleton module, so patching
+    ``random.uniform`` directly is functionally identical to patching
+    ``notebooklm._session.random.uniform`` (the string-target form),
+    but the object form is the ADR-007-preferred shape and keeps this
+    file out of the forbidden-monkeypatch allowlist.
     """
-    monkeypatch.setattr("notebooklm._session.random.uniform", lambda a, b: 0.0)
+    monkeypatch.setattr(random, "uniform", lambda a, b: 0.0)
 
 
 def _make_core(
@@ -124,7 +131,13 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
         async def fake_sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
-        monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
+        # ADR-007 object-target form. ``asyncio`` is a singleton module
+        # so patching ``asyncio.sleep`` directly is functionally
+        # identical to the string-target form
+        # ``notebooklm._session.asyncio.sleep`` — both resolve to the
+        # same callable on the same module object — while staying out
+        # of the forbidden-monkeypatch allowlist.
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
         def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
