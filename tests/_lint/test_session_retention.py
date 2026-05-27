@@ -58,10 +58,19 @@ SESSION_CLASS_NAME: str = "Session"
 # must be moved to the **Deleted** section at the bottom of the
 # retention doc, which the parser scopes out).
 _RETAIN_PREFIX: str = "retain"
+# **Advisory only** — left in place for documentation continuity and for
+# external readers grepping for "what dispositions does this lint
+# accept?". The actual validator is ``_DISPOSITION_RETAIN_RE`` below;
+# Wave 12 (claude PR #1080 review Finding 2) switched
+# ``_disposition_is_valid`` from
+# ``startswith(VALID_DISPOSITION_PREFIXES)`` to a strict regex match,
+# so adding a new entry to this tuple has **no effect** on validation.
+# Modify the regex if a new prefix needs to be recognised.
 VALID_DISPOSITION_PREFIXES: tuple[str, ...] = (_RETAIN_PREFIX,)
 # Recognised but **rejected** prefix — kept as a named constant so the
 # self-coverage tests below can pin "Wave 11c rejects this" without
-# accidentally widening the live ``VALID_DISPOSITION_PREFIXES`` tuple.
+# accidentally widening the live retain-only invariant enforced by
+# ``_DISPOSITION_RETAIN_RE``.
 _RETIRED_DELETE_PREFIX: str = "delete in Wave 11"
 
 # Strict-shape validator (Wave 12, coderabbit Wave 11c deferred). The
