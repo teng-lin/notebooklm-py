@@ -164,37 +164,18 @@ __all__ = [
 ]
 
 
-def _validate_required_cookies(
-    cookie_names: set[str],
-    *,
-    context: str = "",
-    extra_diagnostics: list[str] | None = None,
-) -> None:
-    """Copy-forward shim into ``_cookie_policy`` for legacy patch sites.
-
-    Propagates test-patched policy names (``MINIMUM_REQUIRED_COOKIES``,
-    ``_EXTRACTION_HINT``, ``_has_valid_secondary_binding``) bound on
-    ``auth.py`` into ``_cookie_policy`` before delegating, then mirrors
-    ``_SECONDARY_BINDING_WARNED`` back in the ``finally`` block. Tests that
-    patch ``auth.MINIMUM_REQUIRED_COOKIES`` (or sibling names) continue to
-    work without going through a facade write-through; modern tests should
-    target the canonical home in ``_auth.cookie_policy`` directly. The
-    ``_AuthFacadeModule`` write-through was retired in D1 PR-2 (ADR-003).
-    """
-    global _SECONDARY_BINDING_WARNED
-    _cookie_policy.MINIMUM_REQUIRED_COOKIES = MINIMUM_REQUIRED_COOKIES
-    _cookie_policy._EXTRACTION_HINT = _EXTRACTION_HINT
-    _cookie_policy._has_valid_secondary_binding = _has_valid_secondary_binding
-    try:
-        _cookie_policy._validate_required_cookies(
-            cookie_names,
-            context=context,
-            extra_diagnostics=extra_diagnostics,
-        )
-    finally:
-        _SECONDARY_BINDING_WARNED = _cookie_policy._SECONDARY_BINDING_WARNED
-
-
+# ADR-014 + Wave 4 T2.2 of session-decoupling: ``_validate_required_cookies``
+# is now a direct re-export of ``_auth.cookie_policy._validate_required_cookies``.
+# The prior write-through that copy-forwarded facade-level rebindings of
+# ``MINIMUM_REQUIRED_COOKIES`` / ``_EXTRACTION_HINT`` /
+# ``_has_valid_secondary_binding`` into ``_cookie_policy`` (and mirrored
+# ``_SECONDARY_BINDING_WARNED`` back) was deleted as a behaviour-change
+# masquerading as a refactor. Tests that need to rebind policy names now
+# patch the canonical home in ``_auth.cookie_policy`` directly — see
+# ``tests/unit/test_public_shims.py::test_auth_validation_uses_cookie_policy_rebindings_directly``.
+# The ``_auth_cookies._validate_required_cookies`` reverse-assignment
+# downstream policy callers rely on is preserved.
+_validate_required_cookies = _cookie_policy._validate_required_cookies
 _auth_cookies._validate_required_cookies = _validate_required_cookies
 
 

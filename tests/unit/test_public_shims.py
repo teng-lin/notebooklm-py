@@ -989,42 +989,56 @@ def test_auth_subpackage_init_wires_new_seam_modules() -> None:
     assert hasattr(_auth, "refresh")
 
 
-def test_auth_validation_preserves_private_warning_state(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Facade validation must not clobber a private validation's warning state."""
-    import notebooklm.auth as auth
+def test_auth_validation_is_identity_re_export() -> None:
+    """ADR-014 + Wave 4 T2.2: ``auth._validate_required_cookies`` is now a
+    direct re-export of ``_auth.cookie_policy._validate_required_cookies``.
+
+    Round-2 reviewer finding (codex/momus): the prior write-through that
+    copy-forwarded ``MINIMUM_REQUIRED_COOKIES`` / ``_EXTRACTION_HINT`` /
+    ``_has_valid_secondary_binding`` from ``auth.py`` into ``_cookie_policy``
+    before delegation was a behaviour-change risk. Wave 4 T2.2 inverts the
+    dependency: tests that need to rebind policy must patch
+    ``_auth.cookie_policy.X`` directly. Identity is the contract that
+    survives.
+    """
+    from notebooklm import auth
     from notebooklm._auth import cookie_policy
 
-    monkeypatch.setattr(auth, "_SECONDARY_BINDING_WARNED", False)
-    cookie_policy._validate_required_cookies({"SID", "__Secure-1PSIDTS"})
-
-    auth._validate_required_cookies({"SID", "__Secure-1PSIDTS", "OSID"})
-
-    assert auth._SECONDARY_BINDING_WARNED is True
-    assert cookie_policy._SECONDARY_BINDING_WARNED is True
+    assert auth._validate_required_cookies is cookie_policy._validate_required_cookies
 
 
-def test_auth_validation_uses_facade_policy_rebindings(
+def test_auth_validation_uses_cookie_policy_rebindings_directly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Validation accepts a single cookie only when the facade policy is rebound."""
-    import notebooklm.auth as auth
+    """Validation rebindings must target the canonical home in ``_auth.cookie_policy``.
 
-    monkeypatch.setattr(auth, "MINIMUM_REQUIRED_COOKIES", {"SID"})
-    monkeypatch.setattr(auth, "_has_valid_secondary_binding", lambda names: True)
+    Wave 4 T2.2 of the session-decoupling plan removed the auth.py
+    write-through that previously copy-forwarded facade-level rebinds into
+    ``_cookie_policy``. Tests that want to rebind policy names patch the
+    canonical module directly.
+    """
+    from notebooklm import auth
+    from notebooklm._auth import cookie_policy
 
+    monkeypatch.setattr(cookie_policy, "MINIMUM_REQUIRED_COOKIES", {"SID"})
+    monkeypatch.setattr(cookie_policy, "_has_valid_secondary_binding", lambda names: True)
+
+    # ``auth._validate_required_cookies`` is the same object as
+    # ``cookie_policy._validate_required_cookies`` (see identity test
+    # above), so calling either reaches the canonical implementation
+    # which observes the rebind.
     auth._validate_required_cookies({"SID"})
 
 
-def test_auth_validation_uses_facade_extraction_hint(
+def test_auth_validation_extraction_hint_lives_on_cookie_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Authentication errors still read the compatibility facade's extraction hint."""
-    import notebooklm.auth as auth
+    """The validator's error message uses ``_cookie_policy._EXTRACTION_HINT``."""
+    from notebooklm import auth
+    from notebooklm._auth import cookie_policy
 
-    monkeypatch.setattr(auth, "MINIMUM_REQUIRED_COOKIES", {"SID", "SIDTS"})
-    monkeypatch.setattr(auth, "_EXTRACTION_HINT", "custom extraction hint")
+    monkeypatch.setattr(cookie_policy, "MINIMUM_REQUIRED_COOKIES", {"SID", "SIDTS"})
+    monkeypatch.setattr(cookie_policy, "_EXTRACTION_HINT", "custom extraction hint")
 
     with pytest.raises(ValueError, match="custom extraction hint"):
         auth._validate_required_cookies({"SID"})
