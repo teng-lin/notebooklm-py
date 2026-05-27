@@ -3,6 +3,10 @@
 ## Status
 
 Accepted (#1082; Stage-B issue #1084; MiddlewareChainHost issue #1085).
+Rule 3 Stage B closed by the post-refactoring plan 2026-05-27 Stage B1
+(#1086 / #1089 / #1091). Rule 4 deepening closed by the same plan's
+Stage B2 (#1090 / #1092 / this PR) — the chain ownership carve-out is
+recorded under [Revision history](#revision-history) below.
 
 ## Context
 
@@ -189,20 +193,26 @@ After migration, `Session` owns:
 - The few methods downstream tests still pin via AST-guard
   (`tests/unit/test_public_shims.py`, `tests/unit/test_concurrency_refresh_race.py`).
 - **Live middleware-chain seams that legitimately route through `Session`.**
-  `Session._authed_post_chain_terminal` is the live chain leaf
-  ([`_session.py:662-678`](../../src/notebooklm/_session.py)) — wired via
-  `wire_middleware_chain(...)` in
-  [`_session_init.py:394-428`](../../src/notebooklm/_session_init.py) and
-  documented as "this forward IS the live chain leaf — not a test-only entry
-  point". Similarly, `build_session_transport` captures `host._await_refresh`,
-  `host._rate_limit_max_retries`, `host._server_error_max_retries`,
-  `host._refresh_retry_delay`, and `host.assert_bound_loop` via
-  provider lambdas
-  ([`_session_init.py:365-390`](../../src/notebooklm/_session_init.py)) so
-  post-construction mutation of those Session attributes continues to steer
-  the live middleware chain. These provider closures are **load-bearing test
-  seams** documented in the helpers' own module docstring; they are not
-  forwards-to-remove.
+  **Chain-ownership carve-out (post-refactoring plan 2026-05-27 Stage B2):**
+  the storage backing the chain's tunables — `_authed_post_chain_terminal`,
+  `_authed_post_chain`, `_rate_limit_max_retries`,
+  `_server_error_max_retries`, `_refresh_retry_delay` — moved off `Session`
+  onto :class:`MiddlewareChainHost`
+  ([`_middleware_chain_host.py`](../../src/notebooklm/_middleware_chain_host.py))
+  in Stage B2 PR 1 (#1090). PR 2 (#1092) then split
+  `wire_middleware_chain` / `build_session_transport` to take
+  `chain_host: MiddlewareChainHost` directly, so the live chain reads
+  the host and the Session-side names are exclusively writable
+  `@property` descriptors that forward to the host (test-seam only;
+  no longer the load-bearing dereference on the hot path). The
+  long-standing fixture-rebind contract is preserved end-to-end — a test
+  that writes `core._<attr> = ...` still steers the live chain because
+  the descriptor's setter writes through to `chain_host._<attr>`. See
+  the [retention doc](../session-method-retention.md#inventory) rows
+  marked `retain — forwards to MiddlewareChainHost` for the per-attr
+  contract. `Session.assert_bound_loop` remains captured via lambda by
+  `build_session_transport`'s `bound_loop_check` (not migrated to the
+  host — it forwards to `ClientLifecycle` per Rule 1).
 
 `Session` stops being passed _to_ feature APIs. It stops satisfying capability
 Protocols intended for feature consumption. The compatibility forwards on
@@ -217,16 +227,45 @@ deletes them.
   is the documented raw-RPC escape hatch and it forwards through
   `Session.rpc_call`. Internally `Session.rpc_call` now delegates to
   `self.rpc_executor.rpc_call(...)` (via the late-bound accessor added by the migration plan's Task 3.0).
-- `Session._authed_post_chain_terminal` — live middleware chain leaf.
-- `Session._await_refresh`, `Session._rate_limit_max_retries`,
-  `Session._server_error_max_retries`, `Session._refresh_retry_delay` — captured
-  by the middleware-chain provider closures. Note: `host._await_refresh` is
-  captured as a bound-method reference at construction time (not late-bound via
-  lambda), but the binding is established once and survives for the chain's
-  lifetime.
+- `Session._authed_post_chain_terminal` (writable `@property`) — **test-seam
+  forwards to MiddlewareChainHost** (chain-ownership carve-out; Stage B2 PR 1
+  #1090 moved storage to `chain_host._authed_post_chain_terminal`, Stage B2
+  PR 2 #1092 wired the live leaf off `chain_host` directly). The Session-side
+  descriptor preserves the canonical fixture-rebind seam
+  (`core._authed_post_chain_terminal = fake_terminal` writes through to the
+  host); the live chain no longer reaches through it on the hot path.
+- `Session._authed_post_chain` (writable `@property`) — **test-seam forwards
+  to MiddlewareChainHost** (chain-ownership carve-out; storage on
+  `chain_host._authed_post_chain`). The transport's `chain_provider` closure
+  reads the host directly after Stage B2 PR 2; the Session-side descriptor is
+  retained for the long-standing rebind seam in
+  `tests/unit/test_authed_post_pipeline.py`.
+- `Session._rate_limit_max_retries`, `Session._server_error_max_retries`,
+  `Session._refresh_retry_delay` (writable `@property` each) — **test-seam
+  forwards to MiddlewareChainHost** (chain-ownership carve-out; storage on
+  `chain_host._<attr>`). The chain's `MiddlewareChainBuilder` provider lambdas
+  read the host directly after Stage B2 PR 2; the Session-side descriptors
+  preserve the integration-test mutation-after-construction contract
+  (`core._<attr> = N` writes through to the host so the next attempt sees the
+  new budget).
+- `Session._await_refresh` — **test-seam forwards to MiddlewareChainHost**
+  (chain-ownership carve-out; the method's body routes through
+  `MiddlewareChainHost.await_refresh`, which dynamically delegates to
+  `host._auth_refresh.await_refresh()`). Stage B2 PR 2 moved the chain's
+  capture site off this method onto `chain_host.await_refresh` directly, so
+  the chain no longer reaches through the Session-side delegate on the hot
+  path. The method is retained as a test seam for the long-standing
+  `session._await_refresh` patch point.
 - `Session.update_auth_tokens` — AST-guarded by `test_concurrency_refresh_race.py`.
 - `Session.open` / `close` / `is_open` / `_keepalive_loop` — lifecycle.
-- `Session.collaborators`, `Session.session_transport`, `Session.rpc_executor` — three typed accessors per Rule 3 Stage A. The first exposes the constructed `SessionCollaborators` bundle; the latter two expose late-bound collaborators not present on the dataclass today. All three are deleted under Rule 3 Stage B (Wave 7 follow-up) when `build_collaborators` ownership moves to `NotebookLMClient`. The migration plan's Task 6.3 AST lint forbids any other module from reading these accessors.
+- ~~`Session.collaborators`, `Session.session_transport`, `Session.rpc_executor`~~
+  — three typed accessors per Rule 3 Stage A. **Deleted under Rule 3 Stage B
+  by Stage B1 PR 2 of the post-refactoring plan 2026-05-27 (#1089 commit
+  `313bbef1`)** — `compose_session_internals()` in `_session.py` is now the
+  composition root; the three accessor properties and the `_get_rpc_executor`
+  lazy factory all collapsed to direct reads on the returned
+  `ComposedSession`. The previous Task 6.3 AST lint protecting these
+  accessors no longer has live callers to protect.
 
 Everything else on `Session` after Wave 5 should be either listed here or
 deleted.
@@ -292,7 +331,7 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
 
 ## Consequences
 
-**Migration outcome:** Migration completed in PRs #1064–#1082; ADR-007 Session-shaped allowlist entries drained; Session reduced to lifecycle root + retention list (see [`docs/session-method-retention.md`](../session-method-retention.md)). Two Wave-7 follow-ups are tracked in issues #1084 (Stage B: move `build_collaborators` to `NotebookLMClient`) and #1085 (MiddlewareChainHost extraction).
+**Migration outcome:** Migration completed in PRs #1064–#1082; ADR-007 Session-shaped allowlist entries drained; Session reduced to lifecycle root + retention list (see [`docs/session-method-retention.md`](../session-method-retention.md)). The two Wave-7 follow-ups (#1084 Stage B and #1085 MiddlewareChainHost) were closed by the post-refactoring plan 2026-05-27 — Stage B1 (#1086 / #1089 / #1091) and Stage B2 (#1090 / #1092 / this PR) respectively. See [Revision history](#revision-history) for the chain-ownership carve-out introduced under Stage B2.
 
 **Wanted:**
 
@@ -363,7 +402,62 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
 ## Migration
 
 See [`docs/session-decoupling-plan-2026-05-26.md`](../session-decoupling-plan-2026-05-26.md)
-for the staged migration plan and per-wave PR breakdown.
+for the staged migration plan and per-wave PR breakdown. The
+post-refactoring plan 2026-05-27 (Stage B1 + Stage B2) closed the two
+deferred follow-ups — see [Revision history](#revision-history).
+
+## Revision history
+
+### 2026-05-27 — Rule 3 Stage B closure (post-refactoring plan 2026-05-27 Stage B1, #1086 / #1089 / #1091)
+
+Issue #1084 (deferred Rule 3 Stage B) closed. `compose_session_internals()`
+in `_session.py` became the composition root: `Session.__init__` was
+narrowed to `(*, collaborators, config, auth)` and the Stage A accessor
+properties (`Session.collaborators`, `Session.session_transport`,
+`Session.rpc_executor`) plus the `_get_rpc_executor` lazy factory were
+deleted. Feature wiring now reads `composed.collaborators` /
+`composed.transport` / `composed.executor` from the `ComposedSession`
+returned by the helper. The deletion is recorded in the **Deleted**
+section of [`docs/session-method-retention.md`](../session-method-retention.md).
+
+### 2026-05-27 — Rule 4 chain-ownership carve-out (post-refactoring plan 2026-05-27 Stage B2, #1090 / #1092 / this PR)
+
+Issue #1085 (deferred `MiddlewareChainHost` extraction) closed.
+
+- **PR 1 (#1090)** introduced
+  [`_middleware_chain_host.py`](../../src/notebooklm/_middleware_chain_host.py).
+  The chain's tunable storage (`_authed_post_chain_terminal`,
+  `_authed_post_chain`, `_rate_limit_max_retries`,
+  `_server_error_max_retries`, `_refresh_retry_delay`) moved from
+  `Session` instance attributes onto `MiddlewareChainHost` fields.
+  Session retained the five names as writable `@property` descriptors
+  that forward to the host so the long-standing fixture-rebind seam
+  (`core._<attr> = ...` writing through to the live chain) survived
+  the move. `_await_refresh` was routed through
+  `MiddlewareChainHost.await_refresh` (dynamic delegation to
+  `host._auth_refresh.await_refresh()`) for the same reason.
+- **PR 2 (#1092)** split
+  `_session_init.wire_middleware_chain` / `build_session_transport`
+  to take `chain_host: MiddlewareChainHost` directly. The live chain
+  and the transport's `chain_provider` closure now read the host
+  instead of routing through Session descriptors on every attempt.
+  After PR 2 the descriptors are **test-seam only** — they preserve
+  the rebind contract for fixtures but no longer carry the hot-path
+  dereference.
+- **PR 3 (this PR)** amends Rule 4's retention list to mark the five
+  writable descriptors + `_await_refresh` as `test-seam forwards to
+  MiddlewareChainHost` and adds the canonical per-attr disposition
+  string `retain — forwards to MiddlewareChainHost` to the inventory
+  in [`docs/session-method-retention.md`](../session-method-retention.md).
+
+**Carve-out scope.** The rule that `Session` should not satisfy
+collaborator-shaped Protocols for feature consumption is unchanged.
+The carve-out covers only the five `Session`-side descriptor forwards
+(plus the `_await_refresh` method) that are kept as test seams for
+the chain's storage; they are explicitly **not** part of the public
+API surface and are documented in the retention doc as
+`test-seam forwards to MiddlewareChainHost`. Live chain dereferences
+go through `MiddlewareChainHost` directly.
 
 ## Related decisions
 
