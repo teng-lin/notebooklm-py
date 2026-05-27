@@ -57,16 +57,24 @@ def test_adapter_is_a_frozen_dataclass() -> None:
 
 
 def test_adapter_structurally_satisfies_upload_runtime() -> None:
-    """Runtime check: a constructed adapter is assignable to the Protocol.
+    """Static-analysis pin: the adapter is assignable to the Protocol.
 
-    Pins the same contract the ``TYPE_CHECKING`` mypy guard pins at
-    static-analysis time, but exercised at runtime so a CI without
-    mypy still catches shape drift.
+    Pins the same contract the ``TYPE_CHECKING`` mypy guard at the
+    bottom of ``_source_upload.py`` pins at static-analysis time.
+    Python does not enforce type annotations at runtime, so the
+    assignment itself is a no-op — the contract bites at mypy time on
+    the annotation, not at runtime. This test exists alongside the
+    delegate-behaviour tests below to keep the Protocol-satisfaction
+    intent visible in the suite even on a CI without mypy enabled
+    (the annotation would still surface as a syntax/import error if
+    the Protocol moved or was renamed).
+
+    Runtime structural verification would require
+    ``@runtime_checkable`` plus ``isinstance``, which the Protocol
+    intentionally is not — per the project's "prefer mypy + signature
+    pins" rule of thumb (gemini-code-assist guidance, Wave 9).
     """
     adapter = _make_adapter()
-    # ``UploadRuntime`` is a structural Protocol; the assignment is the
-    # contract — a runtime ``isinstance`` would require
-    # ``@runtime_checkable``, which the Protocol intentionally is not.
     runtime: UploadRuntime = adapter
     assert runtime is adapter
 

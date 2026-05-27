@@ -192,7 +192,7 @@ class ArtifactsRuntimeAdapter:
 
     async def rpc_call(
         self,
-        method: Any,
+        method: RPCMethod,
         params: list[Any],
         source_path: str = "/",
         allow_null: bool = False,
