@@ -67,8 +67,12 @@ logger = logging.getLogger(__name__)
 # ``Session.update_auth_tokens`` into thin delegates that forwarded
 # through ``self._auth_coord``. PR #4b of the session-refactor arc
 # then inlined ``Session._snapshot`` entirely — every site that needs
-# an :class:`AuthSnapshot` now reads ``self._auth_coord.snapshot(self)``
-# directly. ``Session.update_auth_tokens`` is retained as a delegate
+# an :class:`AuthSnapshot` now reads
+# ``self._auth_coord.snapshot(auth=self.auth)`` directly. The
+# coordinator method signatures take explicit ``auth`` / ``kernel``
+# collaborators (the Session-shaped ``_AuthRefreshHost`` Protocol was
+# deleted in favor of per-method explicit args).
+# ``Session.update_auth_tokens`` is retained as a delegate
 # because :class:`RefreshAuthCore` in ``_auth/session.py`` is the
 # structural Protocol used by ``refresh_auth_session`` and still
 # requires that method on the core. The AST guards in
@@ -319,20 +323,24 @@ def compose_session_internals(
     chain_host._bind_transport(transport)
     # Stage B2 PR 2 split the historical ``host=session`` parameter
     # into ``chain_host`` (owns the retry tunables + the
-    # ``await_refresh`` delegate) and ``auth_snapshot_host`` (= the
-    # :class:`Session` — the auth-snapshot lookup reads
-    # ``session.auth`` / ``session._metrics_obj`` / ``session._kernel``,
-    # which live on Session, not the chain host). The chain leaf still
-    # wires to the :class:`Session`-side descriptor forward
-    # (:attr:`_authed_post_chain_terminal`) so a fixture-time rebind via
-    # ``session._authed_post_chain_terminal = fake_terminal`` keeps
-    # steering the live chain leaf — the descriptor setter writes
+    # ``await_refresh`` delegate) and an auth-snapshot host (formerly
+    # ``auth_snapshot_host: _AuthRefreshHost`` = the :class:`Session`).
+    # The follow-up "explicit auth-refresh collaborators" change
+    # narrowed the auth-snapshot lookup further: it now passes
+    # ``auth=auth`` (the live :class:`AuthTokens`) directly, because the
+    # coordinator method no longer needs a Session-shaped host (the
+    # ``_AuthRefreshHost`` Protocol that re-declared Session's private
+    # ``auth`` / ``_metrics_obj`` / ``_kernel`` slots was deleted). The
+    # chain leaf still wires to the :class:`Session`-side descriptor
+    # forward (:attr:`_authed_post_chain_terminal`) so a fixture-time
+    # rebind via ``session._authed_post_chain_terminal = fake_terminal``
+    # keeps steering the live chain leaf — the descriptor setter writes
     # through to ``chain_host._authed_post_chain_terminal``.
     wired = wire_middleware_chain(
         config,
         collaborators,
         chain_host=chain_host,
-        auth_snapshot_host=session,
+        auth=auth,
         authed_post_chain_terminal=session._authed_post_chain_terminal,
         rpc_semaphore_factory=session._get_rpc_semaphore,
     )
@@ -742,12 +750,14 @@ class Session:
         to :meth:`AuthRefreshCoordinator.update_auth_headers`; the cookie
         jar source is fetched via ``self._kernel.get_http_client()`` so the
         ``open()`` precondition (and its ``RuntimeError`` if not initialised)
-        is enforced at one site.
+        is enforced at one site. The coordinator no longer accepts a
+        Session-shaped host — the two collaborators it reads (``auth`` /
+        ``kernel``) are passed explicitly per call.
 
         Raises:
             RuntimeError: If client is not initialized.
         """
-        self._auth_coord.update_auth_headers(self)
+        self._auth_coord.update_auth_headers(auth=self.auth, kernel=self._kernel)
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
         """Delegate to :meth:`AuthRefreshCoordinator.update_auth_tokens`.
@@ -758,13 +768,15 @@ class Session:
         on the core. PR 8 collapsed the previously real body into a
         delegate that forwards through ``self._auth_coord``; PR #4b of
         the session-refactor arc inlined sibling delegates but kept
-        this one for the Protocol caller. The coordinator routes the
-        lock-wait metric through ``host._metrics_obj`` directly. The
-        AST guard for the no-await mutation-block invariant now lives
-        on :meth:`AuthRefreshCoordinator.update_auth_tokens`
+        this one for the Protocol caller. The coordinator now takes
+        ``auth`` explicitly and routes the lock-wait metric through its
+        own ``self._metrics`` (supplied at construction) instead of
+        reaching through a Session-shaped host. The AST guard for the
+        no-await mutation-block invariant lives on
+        :meth:`AuthRefreshCoordinator.update_auth_tokens`
         (``test_concurrency_refresh_race.test_update_auth_tokens_has_no_await_inside_mutation_block``).
         """
-        await self._auth_coord.update_auth_tokens(self, csrf, session_id)
+        await self._auth_coord.update_auth_tokens(auth=self.auth, csrf=csrf, session_id=session_id)
 
     # ------------------------------------------------------------------
     # Stage B2 PR 1 — writable descriptor forwards to MiddlewareChainHost

@@ -480,16 +480,25 @@ async def test_first_terminal_attempt_rebuilds_when_snapshot_changed(monkeypatch
             ]
         )
 
-        async def fake_snapshot(_host: object) -> AuthSnapshot:
+        async def fake_snapshot(*, auth: AuthTokens) -> AuthSnapshot:
+            # Tightened signature pins the explicit-collaborator contract:
+            # the production caller MUST pass ``auth=<live AuthTokens>``,
+            # not the legacy positional host. ``auth is core.auth`` proves
+            # the chain captured the same ``AuthTokens`` instance Session
+            # holds (identity-stable per the live-reference contract in
+            # ``wire_middleware_chain``).
+            assert auth is core.auth
             try:
                 return next(snapshots)
             except StopIteration:
                 pytest.fail("unexpected extra auth snapshot")
 
         # PR #4b inlined ``Session._snapshot``; the production call
-        # sites now read ``self._auth_coord.snapshot(self)`` directly,
-        # so this test swaps the canonical coordinator method instead
-        # of the (now-deleted) Session delegate.
+        # sites now read ``self._auth_coord.snapshot(auth=self.auth)``
+        # directly (the Session-shaped ``_AuthRefreshHost`` was deleted
+        # in favor of an explicit ``auth: AuthTokens`` kwarg), so this
+        # test swaps the canonical coordinator method instead of the
+        # (now-deleted) Session delegate.
         core._auth_coord.snapshot = fake_snapshot  # type: ignore[method-assign]
         calls: list[AuthSnapshot] = []
 

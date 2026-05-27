@@ -58,7 +58,6 @@ if TYPE_CHECKING:
     # defensive guard against the ``types.py`` → session cycle (see the
     # inline comment in the function body).
     from ._middleware_chain_host import MiddlewareChainHost
-    from ._session_auth import _AuthRefreshHost
     from .types import ConnectionLimits, RpcTelemetryEvent
 
 
@@ -284,8 +283,11 @@ def build_collaborators(
     # inter-helper contract for the upcoming B2/C1 extractions; do not
     # rename.
     # Wave 3b of session-decoupling (Task 1.0): supply ``metrics`` so
-    # ``await_refresh`` records lock-wait latency without needing an
-    # ``_AuthRefreshHost`` parameter.
+    # ``await_refresh`` records lock-wait latency without needing a host
+    # parameter. The remaining coordinator methods (``snapshot``,
+    # ``update_auth_tokens``, ``update_auth_headers``) take their explicit
+    # ``auth`` / ``kernel`` collaborators per call — the ``_AuthRefreshHost``
+    # Protocol was deleted alongside that signature change.
     auth_coord = AuthRefreshCoordinator(
         refresh_callback=refresh_callback,
         metrics=metrics,
@@ -375,16 +377,16 @@ def build_session_transport(
     descriptor to ``chain_host._authed_post_chain``, which this lambda
     re-reads on the next dispatch.
 
-    The ``snapshot_provider`` closure captures ``host`` (the
-    :class:`Session` instance) so :meth:`AuthRefreshCoordinator.snapshot`
-    sees the auth-snapshot host — that lookup intentionally stays on
-    :class:`Session` because the snapshot reads ``host.auth`` /
-    ``host._metrics_obj`` / ``host._kernel``, which live on Session, not
-    the chain host. The ``bound_loop_check`` lambda re-reads
-    ``host.assert_bound_loop`` on every call rather than freezing the
-    bound method at construction time, so a test that reassigns
-    ``core.assert_bound_loop = mock`` after construction still steers
-    the live check. The lookup goes through ``host.assert_bound_loop``
+    The ``snapshot_provider`` closure passes ``host.auth`` (re-read on
+    every call) to :meth:`AuthRefreshCoordinator.snapshot` so the
+    coordinator receives the live :class:`AuthTokens` collaborator
+    directly — the Session-shaped ``_AuthRefreshHost`` Protocol was
+    deleted, and the coordinator routes its lock-wait metric through
+    ``self._metrics`` (supplied at construction). The ``bound_loop_check``
+    lambda re-reads ``host.assert_bound_loop`` on every call rather than
+    freezing the bound method at construction time, so a test that
+    reassigns ``core.assert_bound_loop = mock`` after construction still
+    steers the live check. The lookup goes through ``host.assert_bound_loop``
     rather than the lifecycle's ``_bound_loop`` directly so a Mock-based
     Session fixture (which sets ``_lifecycle`` to a MagicMock) still
     short-circuits the guard.
@@ -404,7 +406,7 @@ def build_session_transport(
     """
     return SessionTransport(
         kernel=collaborators.kernel,
-        snapshot_provider=lambda: collaborators.auth_coord.snapshot(host),
+        snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth=host.auth),
         chain_provider=lambda: chain_host._authed_post_chain,
         metrics=collaborators.metrics,
         bound_loop_check=lambda: host.assert_bound_loop(),
@@ -417,7 +419,7 @@ def wire_middleware_chain(
     collaborators: SessionCollaborators,
     *,
     chain_host: MiddlewareChainHost,
-    auth_snapshot_host: _AuthRefreshHost,
+    auth: AuthTokens,
     authed_post_chain_terminal: Callable[..., Awaitable[Any]],
     rpc_semaphore_factory: Callable[[], AbstractAsyncContextManager[Any]],
 ) -> WiredMiddleware:
@@ -434,13 +436,20 @@ def wire_middleware_chain(
       tunable provider lambdas and the ``refresh_callable`` reference
       capture this host directly so the chain does not depend on the
       :class:`Session`'s descriptor forwards.
-    * ``auth_snapshot_host`` — the auth-snapshot lookup intentionally
-      stays on :class:`Session` (the structural :class:`_AuthRefreshHost`
-      Protocol). The snapshot reads ``host.auth`` / ``host._metrics_obj``
-      / ``host._kernel``, which live on Session and are NOT proxied
-      through the chain host. The ``auth_snapshot_provider`` lambda
-      captures this host so :meth:`AuthRefreshCoordinator.snapshot`
-      receives the correct caller.
+    * ``auth`` — the live :class:`AuthTokens` collaborator passed
+      explicitly to :meth:`AuthRefreshCoordinator.snapshot` on every
+      call. The provider lambda captures this object by reference; the
+      capture is safe because production never reassigns
+      ``Session.auth`` after construction (the only mutation path is
+      in-place scalar updates via
+      :meth:`AuthRefreshCoordinator.update_auth_tokens`, which mutate
+      the captured instance directly). This replaced the previous
+      ``auth_snapshot_host: _AuthRefreshHost`` (= Session) parameter
+      when the ``_AuthRefreshHost`` Protocol was deleted in favor of
+      per-method explicit collaborators; the coordinator routes its
+      lock-wait metric through its own ``self._metrics`` (supplied at
+      construction), so it no longer needs a host-shaped collaborator
+      for the metric either.
 
     Post-construction mutation on ``chain_host._<attr>`` (or on
     ``session._<attr>``, which writes through the descriptor to the
@@ -462,7 +471,7 @@ def wire_middleware_chain(
         server_error_max_retries_provider=lambda: chain_host._server_error_max_retries,
         refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
         refresh_callable=chain_host.await_refresh,
-        auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth_snapshot_host),
+        auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth=auth),
         is_auth_error=config.is_auth_error,
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
     )

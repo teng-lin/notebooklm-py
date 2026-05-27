@@ -123,7 +123,9 @@ class AuthRefreshMiddleware:
     - ``snapshot_provider``: optional async callable returning a fresh
       :class:`AuthSnapshot` after refresh. Production wires a lambda
       that invokes :meth:`AuthRefreshCoordinator.snapshot` with the
-      live ``Session`` host (the previously-load-bearing
+      explicit ``auth=session.auth`` collaborator (the
+      Session-shaped ``_AuthRefreshHost`` Protocol was deleted in
+      favor of per-method explicit args; the previously-load-bearing
       ``Session._snapshot`` thin wrapper was inlined in PR #4b of the
       session-refactor arc); tests that omit ``snapshot_provider``
       preserve the older "retry the same request" unit shape.

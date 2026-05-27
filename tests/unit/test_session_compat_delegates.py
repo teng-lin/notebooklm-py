@@ -9,7 +9,8 @@ logic into Session. The pin still guards against the reverse direction
 PR #4b of the session-refactor arc (inline-pure-delegates) deleted
 most of the previously-pinned delegates entirely — every caller now
 talks to the canonical collaborator directly
-(``core._auth_coord.snapshot(self)``, ``core._rpc_executor.build_url(...)``,
+(``core._auth_coord.snapshot(auth=core.auth)``,
+``core._rpc_executor.build_url(...)``,
 ``core._drain_tracker.begin_transport_post(...)``, etc.). The
 surviving delegates retained on Session are kept because each has a
 structural protocol caller, a Protocol-imposed call site, or an

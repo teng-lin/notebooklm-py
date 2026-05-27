@@ -29,15 +29,29 @@ tests/integration/concurrency/test_refresh_cancellation_propagation.py):
   The refresh lock gates *task creation* only; the await on the task itself
   happens outside the lock so other waiters can join. Mixing this contract
   would silently deadlock waiters on a slow callback.
-* :meth:`update_auth_tokens` writes ONLY ``host.auth.csrf_token`` and
-  ``host.auth.session_id`` under the snapshot lock. It does NOT touch the
+* :meth:`update_auth_tokens` writes ONLY ``auth.csrf_token`` and
+  ``auth.session_id`` under the snapshot lock. It does NOT touch the
   http client. The cookie-jar sync is a separate concern handled by
   :meth:`update_auth_headers` (sync, no await — it runs the
-  ``host._kernel.get_http_client().cookies`` read outside any auth lock).
+  ``kernel.get_http_client().cookies`` read outside any auth lock).
 * The ``_refresh_task`` slot is intentionally NOT cleared when a waiter is
   cancelled mid-shield — concurrency tests assert task identity across
   cancellation so siblings joined to the same single-flight refresh see the
   same completion. Per ``_core.py`` history at the relocated comment site.
+
+Collaborator surface (no Session-shaped host):
+
+The coordinator was historically wired through a structural
+``_AuthRefreshHost`` Protocol that re-declared three private ``Session``
+slots (``auth`` / ``_metrics_obj`` / ``_kernel``). That Protocol coupled
+the coordinator to ``Session``'s private attribute names and forced
+fake-host shims in tests. It was deleted in favor of explicit per-method
+collaborators: :meth:`snapshot` and :meth:`update_auth_tokens` take an
+``auth: AuthTokens`` kwarg, :meth:`update_auth_headers` takes
+``auth: AuthTokens`` plus ``kernel: Kernel``, and the lock-wait metric is
+recorded through ``self._metrics`` (already supplied at construction).
+This keeps every dependency on the coordinator's surface concrete and
+narrow — there is no Session shape to fake.
 """
 
 from __future__ import annotations
@@ -46,7 +60,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ._loop_affinity import assert_bound_loop
 from ._request_types import AuthSnapshot
@@ -61,21 +75,6 @@ if TYPE_CHECKING:
 # tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
 # keep matching after the extraction.
 logger = logging.getLogger(CORE_LOGGER_NAME)
-
-
-class _AuthRefreshHost(Protocol):
-    """Structural host boundary required by :class:`AuthRefreshCoordinator`.
-
-    Mirrors the ``RefreshAuthCore`` shape in ``_auth/session.py``. Wave 11b
-    of session-decoupling (ADR-014) deleted the ``Session.get_http_client``
-    forward; the coordinator now reaches the live ``httpx.AsyncClient`` via
-    ``host._kernel.get_http_client()``, mirroring the ``RefreshAuthCore``
-    migration in ``_auth/session.py``.
-    """
-
-    auth: AuthTokens
-    _metrics_obj: ClientMetrics
-    _kernel: Kernel
 
 
 class AuthRefreshCoordinator:
@@ -99,9 +98,12 @@ class AuthRefreshCoordinator:
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = refresh_callback
         # Wave 3b of session-decoupling: ``await_refresh`` records lock-wait
-        # latency via this metrics dep (was previously read off the
-        # ``_AuthRefreshHost`` parameter — see plan Task 1.0). ``None`` is a
-        # safe fallback for tests that construct the coordinator standalone
+        # latency via this metrics dep (was previously read off the host
+        # parameter — see plan Task 1.0). The same ``self._metrics`` slot is
+        # now read by :meth:`snapshot` and :meth:`update_auth_tokens` too —
+        # the deleted ``_AuthRefreshHost`` Protocol's ``_metrics_obj`` slot
+        # is no longer threaded through method args. ``None`` is a safe
+        # fallback for tests that construct the coordinator standalone
         # without a metrics collaborator; the lock-wait latency is simply not
         # recorded in that case.
         self._metrics: ClientMetrics | None = metrics
@@ -184,7 +186,7 @@ class AuthRefreshCoordinator:
     # longer a "second body" to keep in sync.
     # ------------------------------------------------------------------
 
-    async def snapshot(self, host: _AuthRefreshHost) -> AuthSnapshot:
+    async def snapshot(self, *, auth: AuthTokens) -> AuthSnapshot:
         """Capture the current auth scalars as a frozen snapshot.
 
         Acquires :attr:`_auth_snapshot_lock` for the four scalar reads so a
@@ -200,20 +202,27 @@ class AuthRefreshCoordinator:
         guard in ``tests/unit/test_concurrency_refresh_race.py``). The lock
         guarantees the four scalars in the snapshot are coherent with each
         other; the no-await rule keeps the cookie axis aligned with them.
+
+        ``auth`` is passed explicitly per call (the previous
+        ``_AuthRefreshHost`` Protocol re-declared the ``auth`` slot from
+        ``Session``); the lock-wait metric is recorded through
+        ``self._metrics`` (supplied at construction).
         """
         wait_start = time.perf_counter()
         async with self.get_auth_snapshot_lock():
-            host._metrics_obj.record_lock_wait(time.perf_counter() - wait_start)
+            if self._metrics is not None:
+                self._metrics.record_lock_wait(time.perf_counter() - wait_start)
             return AuthSnapshot(
-                csrf_token=host.auth.csrf_token,
-                session_id=host.auth.session_id,
-                authuser=host.auth.authuser,
-                account_email=host.auth.account_email,
+                csrf_token=auth.csrf_token,
+                session_id=auth.session_id,
+                authuser=auth.authuser,
+                account_email=auth.account_email,
             )
 
     async def update_auth_tokens(
         self,
-        host: _AuthRefreshHost,
+        *,
+        auth: AuthTokens,
         csrf: str,
         session_id: str,
     ) -> None:
@@ -224,18 +233,21 @@ class AuthRefreshCoordinator:
         snapshot acquired between this method and the header sync observe a
         new token pair against stale cookies, which is exactly the torn-state
         scenario the snapshot lock exists to prevent.
+
+        ``auth`` is passed explicitly (no ``_AuthRefreshHost`` shape).
         """
         lock = self.get_auth_snapshot_lock()
         wait_start = time.perf_counter()
         await lock.acquire()
-        host._metrics_obj.record_lock_wait(time.perf_counter() - wait_start)
+        if self._metrics is not None:
+            self._metrics.record_lock_wait(time.perf_counter() - wait_start)
         try:
-            host.auth.csrf_token = csrf
-            host.auth.session_id = session_id
+            auth.csrf_token = csrf
+            auth.session_id = session_id
         finally:
             lock.release()
 
-    def update_auth_headers(self, host: _AuthRefreshHost) -> None:
+    def update_auth_headers(self, *, auth: AuthTokens, kernel: Kernel) -> None:
         """Sync ``auth.cookie_jar`` with the live HTTP client's jar.
 
         Synchronous on purpose — no await — so callers can run this without
@@ -244,11 +256,16 @@ class AuthRefreshCoordinator:
         overwrite cookies refreshed during redirects to
         ``accounts.google.com``.
 
+        ``auth`` and ``kernel`` are passed explicitly per call so the
+        coordinator does not need a ``_AuthRefreshHost``-shaped host (the
+        Protocol that re-declared Session's ``auth`` / ``_kernel`` slots was
+        deleted alongside this signature change).
+
         Raises:
-            RuntimeError: If the host's HTTP client is not initialised (the
+            RuntimeError: If the kernel's HTTP client is not initialised (the
                 error originates from :meth:`Kernel.get_http_client`).
         """
-        host.auth.cookie_jar = host._kernel.get_http_client().cookies
+        auth.cookie_jar = kernel.get_http_client().cookies
 
     # ------------------------------------------------------------------
     # Single-flight refresh task.
@@ -272,11 +289,12 @@ class AuthRefreshCoordinator:
         refresh wave once the current task transitions to ``done()``.
 
         Wave 3b of the session-decoupling plan (Task 1.0): this method no
-        longer takes an ``_AuthRefreshHost`` parameter — the only host
-        attribute it touched (``_metrics_obj``) is now supplied via the
-        ``metrics`` kwarg on :meth:`__init__`. The other coordinator
-        methods (``snapshot``, ``update_auth_tokens``, ``update_auth_headers``)
-        still take ``host`` — out of scope for this PR.
+        longer takes a host parameter — the only host attribute it touched
+        (``_metrics_obj``) is supplied via the ``metrics`` kwarg on
+        :meth:`__init__`. The other coordinator methods (``snapshot``,
+        ``update_auth_tokens``, ``update_auth_headers``) were migrated to
+        explicit per-method collaborators in a follow-up so the
+        coordinator no longer depends on any Session-shaped Protocol.
         """
         # P0-2: catch cross-loop refresh before touching ``_refresh_lock``.
         # The lock is lazily bound to the loop that first awaited
@@ -315,4 +333,4 @@ class AuthRefreshCoordinator:
         await asyncio.shield(refresh_task)
 
 
-__all__ = ["AuthRefreshCoordinator", "_AuthRefreshHost"]
+__all__ = ["AuthRefreshCoordinator"]
