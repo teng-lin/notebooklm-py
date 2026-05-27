@@ -239,9 +239,16 @@ class AuthRefreshCoordinator:
         lock = self.get_auth_snapshot_lock()
         wait_start = time.perf_counter()
         await lock.acquire()
-        if self._metrics is not None:
-            self._metrics.record_lock_wait(time.perf_counter() - wait_start)
         try:
+            # ``record_lock_wait`` lives INSIDE the ``try`` so a metric-side
+            # exception (e.g. a misconfigured spy in tests, or a runtime bug
+            # in :class:`ClientMetrics`) cannot leave the snapshot lock held
+            # — the ``finally`` releases unconditionally. The call is
+            # synchronous so the no-await guard pinned by
+            # ``test_update_auth_tokens_has_no_await_inside_mutation_block``
+            # still holds.
+            if self._metrics is not None:
+                self._metrics.record_lock_wait(time.perf_counter() - wait_start)
             auth.csrf_token = csrf
             auth.session_id = session_id
         finally:

@@ -286,6 +286,47 @@ async def test_update_auth_tokens_records_lock_wait_through_constructor_metrics(
     assert metrics.lock_waits[0] >= 0.0
 
 
+class _ExplodingMetrics:
+    """Lock-wait recorder that raises on every call — simulates a bug or
+    misconfigured test spy inside the metrics path.
+    """
+
+    def record_lock_wait(self, duration: float) -> None:
+        raise RuntimeError("metrics blew up")
+
+
+@pytest.mark.asyncio
+async def test_update_auth_tokens_releases_lock_when_metric_raises(
+    auth: AuthTokens,
+) -> None:
+    """A metric-side exception must NOT leave the snapshot lock held.
+
+    Pins the deadlock-safety property that the metric write lives inside
+    the ``try`` block guarded by the ``finally: lock.release()``. Without
+    this guard, a buggy metrics implementation (or a test spy that
+    raises) would silently hang every subsequent ``snapshot`` /
+    ``update_auth_tokens`` caller on the leaked lock.
+    """
+    metrics = _ExplodingMetrics()
+    coord = AuthRefreshCoordinator(metrics=cast(ClientMetrics, metrics))
+
+    with pytest.raises(RuntimeError, match="metrics blew up"):
+        await coord.update_auth_tokens(auth=auth, csrf="X", session_id="Y")
+
+    # The lock must be released even though the metric write raised.
+    # A second call must acquire the lock without blocking. Wrap in
+    # ``wait_for`` so a leaked lock surfaces as a fast failure rather
+    # than hanging the suite.
+    metrics2 = _RecordingMetrics()
+    coord._metrics = cast(ClientMetrics, metrics2)
+    await asyncio.wait_for(
+        coord.update_auth_tokens(auth=auth, csrf="Z", session_id="W"),
+        timeout=EVENT_TIMEOUT_S,
+    )
+    assert auth.csrf_token == "Z"
+    assert auth.session_id == "W"
+
+
 # ---------------------------------------------------------------------------
 # update_auth_headers — syncs auth.cookie_jar from get_http_client().cookies
 # ---------------------------------------------------------------------------
