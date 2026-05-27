@@ -433,11 +433,16 @@ class NotebookLMClient:
             raise
 
     async def drain(self, timeout: float | None = None) -> None:
-        """Stop accepting new operations and wait for in-flight operations to finish."""
-        # ADR-014 Rule 4 (Wave 11a of session-decoupling): reach the
-        # ``TransportDrainTracker`` collaborator directly instead of going
-        # through a deleted ``Session.drain`` forward.
-        await self._session._drain_tracker.drain(timeout=timeout)
+        """Stop accepting new operations and wait for in-flight operations to finish.
+
+        Delegates to :meth:`Session.drain` so the composition root does
+        not dereference the private ``_drain_tracker`` slot on the
+        session. ``Session.drain`` is a narrow forward to the
+        :class:`TransportDrainTracker` that owns the in-flight counter;
+        the public client-side behavior (drain semantics and timeout
+        propagation) is unchanged.
+        """
+        await self._session.drain(timeout=timeout)
 
     async def close(
         self,
@@ -727,12 +732,15 @@ class NotebookLMClient:
         argument; the call site supplies the lifecycle directly rather
         than letting :func:`refresh_auth_session` reach through a
         deleted ``Session.collaborators`` Stage A accessor. The
-        lifecycle is read off the Session (``self._session._lifecycle``)
-        rather than off the client's owned ``_collaborators`` bundle so
-        a ``NotebookLMClient`` shell built via ``__new__`` (used in
-        ``tests/unit/test_concurrency_refresh_race.py``) still works —
+        lifecycle is sourced from :attr:`Session.lifecycle` — a narrow
+        read-only accessor — rather than from the client's owned
+        ``_collaborators`` bundle so a ``NotebookLMClient`` shell built
+        via ``__new__`` (used in
+        ``tests/unit/test_concurrency_refresh_race.py``) still works:
         the test sets ``client._session`` directly and never calls
-        ``__init__``.
+        ``__init__``, so ``client._session.lifecycle`` is the only
+        resolution path that works without widening the constructor
+        surface.
 
         Returns:
             Updated AuthTokens.
@@ -740,7 +748,7 @@ class NotebookLMClient:
         Raises:
             ValueError: If token extraction fails (page structure may have changed).
         """
-        return await refresh_auth_session(self._session, self._session._lifecycle)
+        return await refresh_auth_session(self._session, self._session.lifecycle)
 
 
 class _FromStorageContext:

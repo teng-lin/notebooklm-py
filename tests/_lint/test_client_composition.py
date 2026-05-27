@@ -1,7 +1,9 @@
 """ADR-014 Rule 3 enforcement: features take collaborators, not Session.
 
-Two AST guards introduced in Wave 13 of the session-decoupling plan
-(see ``docs/session-decoupling-plan-2026-05-26.md`` Task 6.3):
+Three AST guards. The first two were introduced in Wave 13 of the
+session-decoupling plan (see ``docs/session-decoupling-plan-2026-05-26.md``
+Task 6.3); the third is a follow-up boundary rule that closes out the
+client-side reach-through cleanup.
 
 1. :func:`test_no_feature_constructed_with_session_at_composition_root`
    parses ``src/notebooklm/client.py`` and fails if any feature-API
@@ -23,6 +25,20 @@ Two AST guards introduced in Wave 13 of the session-decoupling plan
    pattern ADR-014 Rule 3 closes. Stage B (tracked as a Wave 7
    follow-up) moves ``build_collaborators`` ownership to
    ``NotebookLMClient`` and deletes the three accessors entirely.
+
+3. :func:`test_client_does_not_dereference_session_privates` parses
+   ``src/notebooklm/client.py`` and fails if any expression of the
+   shape ``self._session._<name>`` appears anywhere in the module
+   (read, write, delete, or augmented assignment). The composition
+   root MUST consume ``Session`` through its narrow public surface
+   (e.g. :meth:`Session.drain`, :attr:`Session.lifecycle`,
+   :attr:`Session.auth`, :meth:`Session.open` / :meth:`Session.close`),
+   never through the underscore-prefixed collaborator slots on
+   ``Session``. The rule is boundary-focused: it does not pin
+   line-history-specific reach-through call sites and so does not need
+   to be rewritten every time a private slot is renamed. New private
+   slots automatically come under the rule the moment they get an
+   underscore-prefixed name.
 
 The AST shape is deliberate: a regex over the source would either
 over-match (e.g. ``collaborators`` as a variable name) or under-match
@@ -157,4 +173,69 @@ def test_stage_a_accessors_only_used_in_allowlist() -> None:
         "ADR-014 Rule 3 Stage-A accessor leak — feature modules must "
         "not reach Session.collaborators / .session_transport / "
         ".rpc_executor:\n  " + "\n  ".join(violations)
+    )
+
+
+def _is_self_session_private_attribute(node: ast.AST) -> tuple[int, str] | None:
+    """Return ``(lineno, attr)`` if ``node`` is ``self._session._<name>``.
+
+    Matches read context, write context, ``del`` context, and the
+    ``Attribute`` target of an :class:`ast.AugAssign` — the AST shape
+    is the same in all four. Returns ``None`` for anything else.
+
+    The receiver must be exactly the AST shape of ``self._session``:
+    an :class:`ast.Attribute` whose ``value`` is a bare :class:`ast.Name`
+    ``self`` and whose ``attr`` is ``_session``. Chains like
+    ``other._session._foo`` are deliberately not flagged here — this
+    lint is scoped to the composition root, and ``client.py`` does not
+    construct alternate references to the session under any other name.
+
+    Python dunder attributes (``__name__``-style — start AND end with a
+    double underscore) are intentionally excluded: they are Python
+    protocol surface, not project-defined private implementation slots,
+    so a ``self._session.__class__`` access does not signal a boundary
+    leak. The lint targets only project-owned private slots.
+    """
+    if not isinstance(node, ast.Attribute):
+        return None
+    if not node.attr.startswith("_"):
+        return None
+    # Exclude Python dunder attributes — ``__class__``, ``__dict__``, etc.
+    # are protocol surface, not project-defined private slots.
+    if node.attr.startswith("__") and node.attr.endswith("__"):
+        return None
+    inner = node.value
+    if not isinstance(inner, ast.Attribute):
+        return None
+    if inner.attr != "_session":
+        return None
+    if not (isinstance(inner.value, ast.Name) and inner.value.id == "self"):
+        return None
+    return node.lineno, node.attr
+
+
+def test_client_does_not_dereference_session_privates() -> None:
+    """``client.py`` must not access ``self._session._<name>`` anywhere.
+
+    Boundary rule (not line-history-focused): the composition root
+    consumes :class:`Session` through narrow public/internal accessors
+    (e.g. :meth:`Session.drain`, :attr:`Session.lifecycle`,
+    :attr:`Session.auth`, :meth:`Session.open`, :meth:`Session.close`).
+    Any ``self._session._<name>`` read, write, delete, or augmented
+    assignment reintroduces a private reach-through and fails this
+    test. New private slots come under the rule automatically when
+    they get an underscore-prefixed name — no edits required here.
+    """
+    tree = ast.parse(CLIENT_PATH.read_text(encoding="utf-8"))
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        match = _is_self_session_private_attribute(node)
+        if match is not None:
+            lineno, attr = match
+            violations.append(f"line {lineno}: self._session.{attr}")
+    assert not violations, (
+        "client.py must not dereference private attributes of "
+        "self._session — route through a narrow Session accessor "
+        "(e.g. Session.drain, Session.lifecycle) instead:\n  "
+        + "\n  ".join(violations)
     )

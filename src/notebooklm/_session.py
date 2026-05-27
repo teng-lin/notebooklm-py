@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         ValidatedSessionConfig,
         WiredMiddleware,
     )
+    from ._session_lifecycle import ClientLifecycle
     from ._session_transport import SessionTransport
     from .types import ConnectionLimits
 
@@ -741,6 +742,39 @@ class Session:
     def is_open(self) -> bool:
         """Check if the HTTP client is open."""
         return self._lifecycle.is_open()
+
+    async def drain(self, timeout: float | None = None) -> None:
+        """Stop accepting new operations and wait for in-flight ones to finish.
+
+        Narrow forward to :meth:`TransportDrainTracker.drain` so the
+        ``NotebookLMClient`` composition root no longer dereferences
+        ``self._session._drain_tracker`` (a private collaborator slot)
+        when implementing :meth:`NotebookLMClient.drain`. The method
+        body intentionally stays a one-line delegation — Session does
+        not add semantics here, it just exposes the drain capability
+        with a name that does not depend on the underscore-prefixed
+        storage slot.
+        """
+        await self._drain_tracker.drain(timeout=timeout)
+
+    @property
+    def lifecycle(self) -> "ClientLifecycle":
+        """Return the :class:`ClientLifecycle` collaborator.
+
+        Narrow read-only accessor introduced so the
+        ``NotebookLMClient.refresh_auth`` composition root can pass the
+        live :class:`ClientLifecycle` to
+        :func:`refresh_auth_session` without dereferencing
+        ``self._session._lifecycle`` (a private collaborator slot).
+        The previous ``self._session._lifecycle`` reach-through was
+        also load-bearing for
+        ``tests/unit/test_concurrency_refresh_race.py``, which
+        constructs a shell client via ``NotebookLMClient.__new__`` and
+        sets only ``client._session`` — that test path resolves
+        ``client._session.lifecycle`` to this property and continues to
+        work unchanged.
+        """
+        return self._lifecycle
 
     def update_auth_headers(self) -> None:
         """Refresh auth metadata without resetting the live cookie jar.
