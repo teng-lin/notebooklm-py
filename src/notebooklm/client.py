@@ -431,7 +431,10 @@ class NotebookLMClient:
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new operations and wait for in-flight operations to finish."""
-        await self._session.drain(timeout=timeout)
+        # ADR-014 Rule 4 (Wave 11a of session-decoupling): reach the
+        # ``TransportDrainTracker`` collaborator directly instead of going
+        # through a deleted ``Session.drain`` forward.
+        await self._session._drain_tracker.drain(timeout=timeout)
 
     async def close(
         self,

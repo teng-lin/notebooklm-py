@@ -419,15 +419,6 @@ class Session:
         self._middlewares = wired.middlewares
         self._authed_post_chain = wired.authed_post_chain
 
-    def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
-        """Register or replace a feature-owned close-time drain hook.
-
-        Forward to :meth:`TransportDrainTracker.register_drain_hook` per
-        ADR-014 Rule 1; the storage and firing live on the tracker since
-        Wave 2 of the session-decoupling plan.
-        """
-        self._drain_tracker.register_drain_hook(name, hook)
-
     async def next_reqid(self, step: int = _REQID_DEFAULT_STEP) -> int:
         """Atomically increment the request-id counter and return the new value.
 
@@ -543,28 +534,6 @@ class Session:
     async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
         """Invoke the optional telemetry callback without affecting RPC behavior."""
         await self._metrics_obj.emit_rpc_event(event)
-
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
-        """Return a drain-tracked operation scope for feature-owned work.
-
-        Forward to :meth:`TransportDrainTracker.operation_scope` per
-        ADR-014 Rule 1; ``TransportDrainTracker`` satisfies the
-        ``OperationScopeProvider`` capability Protocol directly since
-        Wave 2 of the session-decoupling plan. Plain sync function (no
-        ``@asynccontextmanager``) so the inner context manager flows
-        through unchanged; callers still write
-        ``async with session.operation_scope(label):``.
-        """
-        return self._drain_tracker.operation_scope(label)
-
-    async def drain(self, timeout: float | None = None) -> None:
-        """Stop accepting new client operations and wait for in-flight ones to finish.
-
-        If ``timeout`` expires, ``TimeoutError`` is raised and the client
-        remains in draining mode so shutdown callers do not accidentally admit
-        new work after a missed deadline.
-        """
-        await self._drain_tracker.drain(timeout)
 
     def _get_rpc_semaphore(self) -> AbstractAsyncContextManager[Any]:
         """Return the per-instance RPC semaphore (or a null-context).
