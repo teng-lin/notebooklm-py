@@ -185,9 +185,8 @@ class TestSharingAPIValidation:
         """Test that add_user rejects OWNER permission."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
-
         from _fixtures.fake_core import make_fake_core
+        from notebooklm._sharing import SharingAPI
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
         api = SharingAPI(mock_core)
@@ -203,9 +202,8 @@ class TestSharingAPIValidation:
         """Test that add_user rejects _REMOVE permission."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
-
         from _fixtures.fake_core import make_fake_core
+        from notebooklm._sharing import SharingAPI
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
         api = SharingAPI(mock_core)
@@ -220,9 +218,8 @@ class TestSharingAPIValidation:
         """Test that add_user accepts EDITOR permission."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
-
         from _fixtures.fake_core import make_fake_core
+        from notebooklm._sharing import SharingAPI
 
         # Return empty list for share call, then mock get_status
         mock_core = make_fake_core(
@@ -250,9 +247,8 @@ class TestSharingAPIValidation:
         """Test that add_user accepts VIEWER permission (default)."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
-
         from _fixtures.fake_core import make_fake_core
+        from notebooklm._sharing import SharingAPI
 
         mock_core = make_fake_core(
             rpc_call=AsyncMock(

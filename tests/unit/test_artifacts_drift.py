@@ -35,10 +35,9 @@ from notebooklm.rpc import RPCMethod
 @pytest.fixture
 def artifacts_api():
     """Build a minimal ArtifactsAPI for direct parser invocation."""
+    from _fixtures.fake_core import make_fake_core
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
-
-    from _fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(rpc_call=AsyncMock())
     return ArtifactsAPI(

@@ -1,6 +1,6 @@
 """Unit tests for user settings parsing."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 

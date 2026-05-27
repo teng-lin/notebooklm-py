@@ -611,9 +611,7 @@ class TestGetNotebookFailsClosed:
         returns a Notebook rather than raising.
         """
         api = _make_api(
-            rpc_call=AsyncMock(
-                return_value=[["Title Only", None, "", None, None, [None, False]]]
-            )
+            rpc_call=AsyncMock(return_value=[["Title Only", None, "", None, None, [None, False]]])
         )
 
         notebook = await api.get("nb_partial")

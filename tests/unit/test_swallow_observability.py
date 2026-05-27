@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -171,9 +171,8 @@ async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
 @pytest.mark.asyncio
 async def test_description_partial_summary_logs_debug(caplog):
     """_notebooks.py:273 — partial summary (no topics) logs at DEBUG."""
-    from notebooklm._notebooks import NotebooksAPI
-
     from _fixtures.fake_core import make_fake_core
+    from notebooklm._notebooks import NotebooksAPI
 
     api = NotebooksAPI.__new__(NotebooksAPI)
     # outer[0][0] works but outer[1] raises (no topics shape)
