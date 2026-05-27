@@ -84,7 +84,7 @@ RPC Layer (rpc/)
 | File | Purpose |
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
-| `_session.py` | Concrete `Session` orchestrator; HTTP client lifecycle; late-binding wrappers |
+| `_session.py` | Concrete `Session` lifecycle root (no longer a compatibility facade as of Waves 5 + 11 of session-decoupling — see [ADR-014](docs/adr/0014-feature-local-runtime-adapters.md)). Constructs the collaborator graph in `__init__`; owns open/close lifecycle; exposes a narrow retention set (`rpc_call` public-API forward, Stage-A accessors `collaborators` / `session_transport` / `rpc_executor`, the `_authed_post_chain_terminal` middleware leaf, provider-closure capture targets, and AST-guarded auth surface). Retention list pinned by [`docs/session-method-retention.md`](docs/session-method-retention.md) + [`tests/_lint/test_session_retention.py`](tests/_lint/test_session_retention.py); Stage-A accessor leakage outside `client.py` / `_session.py` / `tests/` blocked by [`tests/_lint/test_client_composition.py`](tests/_lint/test_client_composition.py). |
 | `_kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
 | `_session_config.py` | `DEFAULT_*` knobs and module-level constants |
 | `_session_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
@@ -94,7 +94,7 @@ RPC Layer (rpc/)
 | `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
 | `_session_auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
 | `_session_lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
-| `_rpc_executor.py` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols |
+| `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `SessionTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5). The `RpcOwner` Protocol that previously re-declared Session's private attribute surface was deleted in Wave 4 of session-decoupling (#1068); only the local `DecodeResponse` Protocol remains. |
 | `_request_types.py` | Shared authed POST request construction types: `AuthSnapshot`, `BuildRequest`, `PostBody`, and materialization helpers. |
 | `_transport_errors.py` | Transport exceptions, `Retry-After` parsing, and terminal `Kernel.post` error mapping for retry/auth middleware. |
 | `_streaming_post.py` | Size-capped streaming POST helper used by `Kernel.post`. |
