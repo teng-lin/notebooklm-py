@@ -32,8 +32,9 @@ satisfier of every Protocol. This produces four observable consequences:
 2. **Forwards are structurally required, not accidental.** `Session.transport_post`
    exists because `ChatRuntime` requires it — `Session` must forward to
    `SessionTransport`. Deleting the forward is not possible while `Session`
-   satisfies `ChatRuntime`. Earlier "shrink the facade" attempts (`docs/architecture-fix-plan-2026-05-26.md`
-   §Stage 2, the in-flight rpc-dispatch plan) consistently hit this wall.
+   satisfies `ChatRuntime`. Earlier "shrink the facade" attempts (the
+   in-flight rpc-dispatch refactor; the Stage 2 work in the architecture
+   fix-plan that produced PRs #1049/#1059/#1061) consistently hit this wall.
 
 3. **Tests monkeypatch `Session`, not the collaborator.** At runtime, the method
    body lives on `Session`. Tests that need to fake `transport_post` patch
@@ -300,8 +301,8 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
 - Tests fake the adapter or single collaborator, not `Session`. The ADR-007
   forbidden-monkeypatch allowlist becomes drainable — the surface tests pinned
   (Session method bodies) is gone.
-- Independent feature testability. A test for `ChatAPI` constructs a fake
-  a narrow set of fake collaborators (just a fake `RpcExecutor`, depending on what the
+- Independent feature testability. A test for `ChatAPI` constructs a narrow
+  set of fake collaborators (just a fake `RpcExecutor`, depending on what the
   test exercises). It does not need to know `Session` exists.
 - Construction is explicit. `NotebookLMClient.__init__` reads as a wiring
   diagram. Replaces "Session has every method" with "every feature gets exactly

@@ -55,6 +55,13 @@
 W0 baseline + ADR-014 land
               │
               ▼
+W0.5 push Protocol-satisfying methods down to collaborators
+   (operation_scope → TransportDrainTracker;
+    register_drain_hook → TransportDrainTracker;
+    assert_bound_loop → ClientLifecycle)
+   — REQUIRED prereq for W1+ Rule 1 satisfaction
+              │
+              ▼
 W1 collaborator decoupling ──┐
    (kill RpcOwner; rewire    │   parallel with W2
     RpcExecutor + any other  │
@@ -860,7 +867,7 @@ Order is by ascending complexity (Settings is smallest; Notebooks is biggest).
 
 Three features have composite-Protocol runtimes: Chat (`ChatRuntime`), Artifacts (`ArtifactsRuntime`), Upload (`UploadRuntime`). One PR per feature.
 
-Per ADR-014 Rule 2's adapter threshold (≥3 capabilities OR ≥1 non-trivial delegate):
+Per ADR-014 Rule 2's intent-based adapter threshold (introduce an adapter when a downstream consumer intentionally takes the composite as a single dependency, OR delegation changes the call shape, OR multiple consumers share the composite — the earlier numeric heuristic was replaced in round-2 amendments):
 
 | Feature | Composite shape | Adapter? |
 |---|---|---|
@@ -1338,7 +1345,7 @@ Explicit constraints, named so scope cannot drift:
 
 - **Does not delete `Session`.** Session survives as the lifecycle root and collaborator graph. The class may be renamed in a separate follow-up after the migration completes.
 - **Does not change `NotebookLMClient` public surface.** Same constructor, same method names, same return types, same exception behaviour. Cassette-replaying tests pass unchanged.
-- **Does not change capability Protocols.** `RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AuthMetadata`, `Kernel`, `ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime` keep their current shapes. ADR-014 changes who *satisfies* them at runtime, not what they require.
+- **Does not change shared capability Protocols.** `RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AuthMetadata`, `Kernel` keep their current shapes. ADR-014 changes who *satisfies* them at runtime, not what they require. **Exception:** the feature-local composite Protocol `ChatRuntime` is **deleted** by Wave 4.1 (per ADR-014 Rule 2 Corollary — no consumer remains once `_chat_transport.chat_aware_authed_post` takes `SessionTransport` directly). `ArtifactsRuntime` and `UploadRuntime` keep their shapes; they are satisfied by `ArtifactsRuntimeAdapter` / `UploadRuntimeAdapter` (Wave 4.2/4.3).
 - **Does not auto-generate adapter forwards.** Adapter bodies are written explicitly to keep the Protocol contract visible at the satisfier.
 - **Does not pursue the TypeVar-on-`RpcCaller` work.** That is a separate concern raised by the code-quality lens; tracked as a Wave 7 follow-up after the migration is complete.
 - **Does not change Session's `_session_init.build_collaborators` shape.** That factoring already exists and is the right primitive for the new wiring.
