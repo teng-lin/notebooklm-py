@@ -59,18 +59,19 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
 CLI command or user code
   -> NotebookLMClient.<feature>.<method>()
   -> feature API / service builds params and chooses RPCMethod
-  -> RpcCaller.rpc_call(...) (production: Session.rpc_call)
+  -> RpcCaller.rpc_call(...) (production: RpcExecutor wired directly into the feature
+                              per ADR-014 Rule 1; NotebookLMClient.rpc_call still
+                              forwards through Session.rpc_call for the public escape hatch)
   -> RpcExecutor.rpc_call(...)
        - pre-open guard via Kernel.get_http_client()
        - logical-RPC request id + rpc_calls_started metric
   -> RpcExecutor._execute_once(...)
        - idempotency policy / client-token injection
        - method-id override resolution, request encoding, URL/body builder
-  -> Session._perform_authed_post(...)
   -> SessionTransport.perform_authed_post(...)
        - loop-affinity guard, auth snapshot, RpcRequest materialization
   -> ADR-009 middleware chain
-  -> Session._authed_post_chain_terminal(...)
+  -> Session._authed_post_chain_terminal(...)   # retained chain leaf (ADR-014 Rule 4)
   -> SessionTransport.terminal(...)
        - final auth-freshness rebuild immediately before POST
   -> Kernel.post(...) -> _streaming_post -> httpx.AsyncClient
@@ -237,7 +238,15 @@ See [ADR-011](./adr/0011-schema-validation-policy.md).
 
 ADR-013 ("Composable Session Capabilities") is the design rationale:
 feature APIs depend on narrow capability Protocols rather than on the
-concrete `Session` class. Six Protocols live in
+concrete `Session` class.
+[ADR-014](./adr/0014-feature-local-runtime-adapters.md) extends that
+intent at runtime: each feature receives the *collaborator* (for
+single-capability Protocols) or a *feature-local frozen-dataclass
+adapter* (for composite Protocols) that satisfies its Protocol —
+never `Session` itself. `NotebookLMClient.__init__` is the composition
+root that wires each feature with the satisfier it needs.
+
+Six Protocols live in
 [`_session_contracts.py`](../src/notebooklm/_session_contracts.py) —
 four shared capability Protocols used by ≥2 features, plus `AuthMetadata`
 and `Kernel`, whose sole consumer today is `SourceUploadPipeline`. Per
@@ -277,27 +286,41 @@ collaborators (`rpc: RpcCaller`, `transport: SessionTransport`,
 constructor argument rather than reaching them through a feature-local
 runtime composite.
 
-Production satisfies the shared Protocols via `Session`; tests substitute
+Production satisfies the shared Protocols via the underlying
+collaborators (ADR-014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
+`ClientLifecycle` satisfies `LoopGuard`, `TransportDrainTracker`
+satisfies `OperationScopeProvider` and `DrainHookRegistration`) and the
+composite Protocols via feature-local adapters
+(`ArtifactsRuntimeAdapter`, `UploadRuntimeAdapter` — ADR-014 Rule 2).
+`Session` no longer claims to satisfy the shared Protocols itself.
+Tests substitute
 [`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py)
 (constructed via `make_fake_core(...)`) — the sanctioned ADR-007 / ADR-013
-fixture pattern.
+fixture pattern; tests that inject narrow fakes into a single feature
+(e.g. `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`) construct
+the feature directly under ADR-014.
 
-### Executor protocols are narrow too
+### Executor takes its collaborators directly
 
-The executor-facing Protocols are intentionally implementation-local,
-but they no longer depend on Session's historical private attribute
-surface. `RpcOwner` in
-[`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) declares only
-the kernel plus the methods the executor still calls; timeout,
-refresh-callback, and retry-delay values are supplied through constructor
-providers. The executor enters transport through
-`Session._perform_authed_post`, which forwards to
-`SessionTransport.perform_authed_post`; the middleware terminal is
-`Session._authed_post_chain_terminal → SessionTransport.terminal → Kernel.post`.
-Request types, transport errors, and streaming helpers live in separate owning
-modules instead of one catch-all transport helper. This keeps feature APIs on
-narrow capability Protocols while avoiding a near-`Session` structural contract
-inside the RPC stack.
+Per ADR-014 Rule 5, `RpcExecutor` no longer reaches its kernel,
+transport, auth-refresh coordinator, or metrics tracker through a
+Session-shaped owner Protocol. The earlier `RpcOwner` Protocol — which
+re-declared the four private Session attributes the executor needed —
+was deleted in Wave 4 of the session-decoupling plan; the executor's
+constructor now takes
+`kernel: Kernel`, `transport: SessionTransport`,
+`auth_refresh: AuthRefreshCoordinator`, and `metrics: ClientMetrics`
+as keyword-only parameters, plus the previously-existing
+constructor-injected providers for timeout, refresh-callback enablement,
+and retry-delay values. The executor enters transport through
+`SessionTransport.perform_authed_post` directly; the middleware
+terminal remains `Session._authed_post_chain_terminal →
+SessionTransport.terminal → Kernel.post` because the chain leaf is the
+load-bearing seam Wave 5 of the session-decoupling plan retained on
+`Session` per ADR-014 Rule 4. Request types, transport errors, and
+streaming helpers live in separate owning modules instead of one
+catch-all transport helper. This keeps feature APIs on narrow capability
+Protocols and the executor on direct collaborator dependencies.
 
 ## Post-refactor `Session` collaborator graph
 
@@ -341,8 +364,8 @@ Exec  Ref    Life    Chain Trans Drain  Tracker Coun  Pers
 
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
-| `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Consumes the `RpcOwner` Protocol declared at module top and enters transport through `Session._perform_authed_post`. |
-| `SessionTransport` | [`_session_transport.py`](../src/notebooklm/_session_transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Reached through the Session forwards `_perform_authed_post`, `transport_post`, and `_authed_post_chain_terminal`. |
+| `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `SessionTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5; the historical `RpcOwner` Protocol was deleted in Wave 4 of session-decoupling). Enters transport through `SessionTransport.perform_authed_post`. |
+| `SessionTransport` | [`_session_transport.py`](../src/notebooklm/_session_transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `chat_aware_authed_post` (ChatAPI's chat-flavoured transport call); the middleware chain leaf at `Session._authed_post_chain_terminal` continues to dispatch through `SessionTransport.terminal` per ADR-014 Rule 4. |
 | `AuthRefreshCoordinator` | [`_session_auth.py`](../src/notebooklm/_session_auth.py) | Owns the auth-snapshot lock and the refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(host)` and token updates. `Session.update_auth_tokens()` remains a one-line delegate for the `RefreshAuthCore` Protocol; the old `Session._snapshot` delegate was inlined. |
 | `ClientLifecycle` | [`_session_lifecycle.py`](../src/notebooklm/_session_lifecycle.py) | HTTP-client open/close, keepalive task, cookie save coordination. Holds `_timeout`, `_bound_loop`, `_http_client`, `_keepalive_*`. |
 | `MiddlewareChainBuilder` | [`_middleware_chain.py`](../src/notebooklm/_middleware_chain.py) | Constructs the middleware chain in the canonical ADR-009 order. Extracted in Phase 3 PR 7. |
@@ -467,33 +490,59 @@ TracingMiddleware            innermost — structured-logging boundary
 Authed POST leaf             (SessionTransport.terminal → Kernel → httpx)
 ```
 
-## Session as facade
+## Session as lifecycle root
 
-`Session` is large (~780 lines) because it is the historical orchestration
-class plus a compatibility facade. The post-v0.5.0 collaborator graph above
-shows what `Session` actually delegates today; almost everything it exposes
-is a one-line forward to a focused collaborator (`AuthRefreshCoordinator`,
-`SessionTransport`, `RpcExecutor`, `ClientLifecycle`, `ClientMetrics`,
-`TransportDrainTracker`, `ReqidCounter`, `CookiePersistence`).
+`Session` is no longer a compatibility facade. Waves 5 + 11 of the
+session-decoupling plan
+([ADR-014](./adr/0014-feature-local-runtime-adapters.md)) deleted the
+historical drain/metrics/operation_scope/kernel/authuser/save_cookies
+forwards that existed only because feature APIs used to reach through
+`Session`. What remains is a narrow lifecycle root: `Session` constructs
+the collaborator graph at `__init__` time, owns the open/close lifecycle
+(loop-affinity binding, keepalive task), and exposes the few surfaces
+that remain load-bearing for the public API or the middleware chain. The
+exact retention list is checked-in at
+[`docs/session-method-retention.md`](./session-method-retention.md) and
+enforced by [`tests/_lint/test_session_retention.py`](../tests/_lint/test_session_retention.py)
+— a new method on `Session` cannot land without a documented
+disposition.
 
-The facade survives for three reasons:
+Concretely, `Session` retains:
 
-1. **Public API stability.** `NotebookLMClient.rpc_call(method, params)`
-   forwards to `Session.rpc_call`, and feature APIs satisfy `RpcCaller` via
-   `Session`. Removing the facade is a public-surface change.
-2. **Compatibility shims.** A handful of `Session` methods
-   (`_perform_authed_post`, `transport_post`,
-   `_authed_post_chain_terminal`, `update_auth_tokens`) are the
-   structural Protocol surface other collaborators or the
-   `RefreshAuthCore` Protocol depend on.
-3. **Test seams.** Module-level binding paths (e.g.
-   `notebooklm._session.asyncio.sleep`, `notebooklm._session.httpx.AsyncClient`)
-   are documented monkeypatch targets steered from `Session.__init__`.
-   See [ADR-007](./adr/0007-test-monkeypatch-policy.md).
+1. **Public-API forward.** `Session.rpc_call(method, params)` is
+   pinned by `tests/unit/test_public_shims.py` because
+   `NotebookLMClient.rpc_call` (the documented raw-RPC escape hatch)
+   forwards through it. Internally it delegates to
+   `self.rpc_executor.rpc_call(...)`.
+2. **Stage-A collaborator accessors** (ADR-014 Rule 3 Stage A —
+   transitional). `Session.collaborators`, `Session.session_transport`,
+   and `Session.rpc_executor` are the three typed accessors
+   `NotebookLMClient.__init__` reads while wiring features. They are
+   lint-guarded to the composition root + tests by
+   [`tests/_lint/test_client_composition.py`](../tests/_lint/test_client_composition.py)
+   so they cannot become a discoverability hub. Stage B (Wave 7
+   follow-up) moves `build_collaborators` ownership to `NotebookLMClient`
+   and deletes all three accessors.
+3. **Middleware-chain seams.** `_authed_post_chain_terminal` is the
+   live chain leaf wired by `wire_middleware_chain`. Provider-closure
+   capture targets (`_await_refresh`, `_rate_limit_max_retries`,
+   `_server_error_max_retries`, `_refresh_retry_delay`, `assert_bound_loop`)
+   are reached as `host.X` from `build_session_transport` /
+   `wire_middleware_chain`. Per ADR-014 Rule 4 these stay on
+   `Session` until a `MiddlewareChainHost` collaborator extracts them
+   (Wave 7 follow-up).
+4. **Lifecycle methods.** `open`, `close`, `is_open`, `_keepalive_loop`,
+   and `assert_bound_loop` (now a one-line forward to
+   `ClientLifecycle.assert_bound_loop` since
+   `ClientLifecycle` satisfies the `LoopGuard` Protocol directly).
+5. **AST-guarded auth surface.** `update_auth_tokens` is asserted by
+   `tests/unit/test_concurrency_refresh_race.py`.
 
-Known follow-up work is to narrow the executor/session callback cycle
-further and continue retiring facade-only compatibility surfaces as their
-callers move to collaborator-owned contracts.
+Feature APIs do **not** receive `Session`. They receive the collaborator
+(`RpcExecutor` for `RpcCaller`, `ClientLifecycle` for `LoopGuard`, etc.)
+or a frozen-dataclass adapter (`ArtifactsRuntimeAdapter`,
+`UploadRuntimeAdapter`) per ADR-014 Rules 1 + 2 + 3. The composition
+wiring is in [`client.py`](../src/notebooklm/client.py).
 
 ## Testing patterns
 
