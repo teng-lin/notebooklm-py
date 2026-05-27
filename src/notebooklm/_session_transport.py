@@ -17,39 +17,32 @@ pieces of the authed POST hot path that used to live on :class:`Session`:
   the request envelope, dispatches it through the wired middleware
   chain, and records the semaphore queue-wait latency.
 
-``Session`` keeps :meth:`Session._authed_post_chain_terminal`,
-:meth:`Session._refresh_request_for_current_auth`, and
-:meth:`Session._perform_authed_post` as one-line forwards to the
-collaborator so the long-standing call surfaces (``RpcOwner`` Protocol,
-``core._perform_authed_post(...)`` direct callers, and the test-side
-``core._authed_post_chain_terminal = fake`` monkeypatch point) keep
-working unchanged. The two AST guards in
-``tests/unit/test_concurrency_refresh_race.py`` follow the source by
-inspecting the collaborator methods directly — the Session forwards
-carry only the dispatch hop, so there is no try/await structure on the
-Session side for those guards to inspect after the move.
-
-``_refresh_retry_delay`` deliberately stays on :class:`Session`.
-``perform_authed_post`` does not read it — the retry/backoff budget for
-the refresh path is owned by ``AuthRefreshMiddleware`` and by
+:class:`MiddlewareChainHost` owns the chain leaf
+(:meth:`MiddlewareChainHost._authed_post_chain_terminal`), the chain
+slot (``chain_host._authed_post_chain``), and the three retry-budget
+tunables (``_rate_limit_max_retries`` / ``_server_error_max_retries`` /
+``_refresh_retry_delay``). ``perform_authed_post`` does not read the
+retry-delay directly — the retry/backoff budget for the refresh path
+is owned by ``AuthRefreshMiddleware`` and by
 ``RpcExecutor.try_refresh_and_retry``, both of which read
-``host._refresh_retry_delay`` live through provider lambdas wired in
-``_session_init.wire_middleware_chain``. Integration tests that assign
-``client._session._refresh_retry_delay = 0`` keep steering the live
-delay without migration.
+``chain_host._refresh_retry_delay`` live through provider lambdas wired
+in ``_session_init.wire_middleware_chain``. Integration tests that
+assign ``client._session._chain_host._refresh_retry_delay = 0`` keep
+steering the live delay.
 
-Construction order in :class:`Session.__init__`:
+Construction order in :func:`compose_session_internals`:
 :func:`notebooklm._session_init.build_session_transport` constructs the
 transport **before** :func:`wire_middleware_chain`. The wired chain
-leaf is :meth:`Session._authed_post_chain_terminal` (a one-line forward
-to :meth:`SessionTransport.terminal`) — wiring through the Session
-forward preserves the canonical seam for a subclass override or
-fixture-time class-level monkeypatch of that method. The chain itself
-is reached by the transport through an injected ``chain_provider``
-closure that reads ``host._authed_post_chain`` live, late on every
+leaf is :meth:`MiddlewareChainHost._authed_post_chain_terminal` (a
+one-line forward to :meth:`SessionTransport.terminal`) — wiring through
+the host preserves the canonical fixture-rebind seam (tests that
+swap the chain leaf or the chain itself rebind on the host directly).
+The chain itself is reached by the transport through an injected
+``chain_provider`` closure that reads
+``chain_host._authed_post_chain`` live, late on every
 :meth:`perform_authed_post` call; this both breaks the construction
 cycle and preserves the long-standing test pattern of reassigning
-``core._authed_post_chain`` to install a fake chain. The
+``core._chain_host._authed_post_chain`` to install a fake chain. The
 :class:`AuthRefreshCoordinator` snapshot is reached via an injected
 ``snapshot_provider`` callable so :class:`SessionTransport` never has
 to hold a direct back-reference to :class:`Session`.
@@ -91,16 +84,17 @@ class SessionTransport:
 
     Owns the three methods extracted from :class:`Session` in move #4c.
     Does NOT own lifecycle (that stays on :class:`ClientLifecycle`) nor
-    retry/refresh budget state (that stays on :class:`Session` and is
-    threaded into middleware via provider lambdas).
+    retry/refresh budget state (that lives on
+    :class:`MiddlewareChainHost` and is threaded into middleware via
+    provider lambdas).
 
     The chain reference is fetched late on every
     :meth:`perform_authed_post` — just before chain dispatch, after
     snapshot + materialization — through the injected ``chain_provider``
-    closure (typically ``lambda: host._authed_post_chain``). The lookup
-    is intentionally deferred so a chain reassignment that happens
-    while the snapshot capture awaits still steers the dispatch,
-    matching the pre-extraction behavior where ``self._authed_post_chain``
+    closure (typically ``lambda: chain_host._authed_post_chain``). The
+    lookup is intentionally deferred so a chain reassignment that
+    happens while the snapshot capture awaits still steers the
+    dispatch, matching the pre-extraction behavior where the chain
     was read at the dispatch site.
 
     The injected ``logger`` is held so error messages mapped through
@@ -123,13 +117,14 @@ class SessionTransport:
         self._kernel = kernel
         self._snapshot_provider = snapshot_provider
         # Live-binding chain accessor. The wired chain is installed onto
-        # :class:`Session` AFTER :class:`SessionTransport` is constructed
-        # (the chain's leaf is :meth:`terminal`, so the transport must
-        # exist first). Tests also reassign ``core._authed_post_chain``
-        # post-construction to install a fake chain — going through a
-        # provider closure (called late in :meth:`perform_authed_post`)
-        # ensures those reassignments take effect on the next call
-        # without any further mutation here.
+        # :class:`MiddlewareChainHost` AFTER :class:`SessionTransport`
+        # is constructed (the chain's leaf is :meth:`terminal`, so the
+        # transport must exist first). Tests also reassign
+        # ``core._chain_host._authed_post_chain`` post-construction to
+        # install a fake chain — going through a provider closure
+        # (called late in :meth:`perform_authed_post`) ensures those
+        # reassignments take effect on the next call without any
+        # further mutation here.
         self._chain_provider = chain_provider
         self._metrics = metrics
         self._bound_loop_check = bound_loop_check
@@ -302,17 +297,17 @@ class SessionTransport:
         #
         # Chain resolution is deferred to here — AFTER snapshot capture +
         # materialization, immediately before dispatch — so a reassignment
-        # of ``host._authed_post_chain`` that lands while the snapshot
-        # call awaits still steers this dispatch. Pre-extraction, the
-        # equivalent ``self._authed_post_chain(request)`` read happened
-        # at the dispatch site for the same live-binding reason; the
-        # provider closure preserves that timing.
+        # of ``chain_host._authed_post_chain`` that lands while the
+        # snapshot call awaits still steers this dispatch. Pre-extraction,
+        # the equivalent read happened at the dispatch site for the same
+        # live-binding reason; the provider closure preserves that timing.
         chain = self._chain_provider()
         if chain is None:  # pragma: no cover - wiring bug guard
             raise RuntimeError(
                 "SessionTransport.perform_authed_post called before the "
-                "wired chain was installed on Session; Session construction "
-                "must assign self._authed_post_chain before any authed POST."
+                "wired chain was installed on MiddlewareChainHost; the "
+                "composition root must assign chain_host._authed_post_chain "
+                "before any authed POST."
             )
         try:
             result = await chain(request)

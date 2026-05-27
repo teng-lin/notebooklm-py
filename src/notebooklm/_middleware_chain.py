@@ -1,9 +1,9 @@
 """Composes the ADR-009 middleware chain.
 
 Tier-12 PR 12.2 wired an empty middleware chain around
-``Kernel.post`` through ``Session._authed_post_chain_terminal`` (the shared
-seam covering ``Session._perform_authed_post`` and ``RpcExecutor._execute_once``'s
-call to ``self._owner._perform_authed_post``).
+``Kernel.post`` through ``MiddlewareChainHost._authed_post_chain_terminal``
+(the shared seam covering ``SessionTransport.perform_authed_post`` and
+``RpcExecutor._execute_once``'s dispatch into the transport).
 
 PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
 ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware`` outermost,
@@ -59,9 +59,9 @@ class MiddlewareChainBuilder:
 
     Provider callables (``rate_limit_max_retries_provider`` etc.) are
     used by ``RetryMiddleware`` / ``AuthRefreshMiddleware`` so
-    post-construction mutations on ``Session`` still take effect — the
-    integration-test idiom of poking
-    ``session._rate_limit_max_retries = 0`` must keep working.
+    post-construction mutations on ``MiddlewareChainHost`` still take
+    effect — the integration-test idiom of poking
+    ``core._chain_host._rate_limit_max_retries = 0`` must keep working.
     """
 
     def __init__(
@@ -110,8 +110,8 @@ class MiddlewareChainBuilder:
             # ``async with`` collapses to a no-op for opted-out clients.
             SemaphoreMiddleware(self._rpc_semaphore_factory),
             # Pass callable budgets so post-construction mutation of
-            # ``self._rate_limit_max_retries`` /
-            # ``self._server_error_max_retries`` (an integration-test
+            # ``chain_host._rate_limit_max_retries`` /
+            # ``chain_host._server_error_max_retries`` (an integration-test
             # idiom; production never mutates these) still takes effect —
             # bit-for-bit preserving the pre-PR-12.7 live-binding
             # contract where the retry loop read these attrs LIVE.

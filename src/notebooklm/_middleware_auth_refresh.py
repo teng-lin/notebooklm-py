@@ -98,7 +98,7 @@ class AuthRefreshMiddleware:
 
     - ``refresh_callable``: a zero-arg async callable that drives one
       coalesced auth refresh. Production wires
-      ``lambda: Session._await_refresh(self)`` which delegates to
+      ``chain_host.await_refresh``, which dynamically delegates to
       :meth:`AuthRefreshCoordinator.await_refresh`. The middleware never
       reaches into the coordinator directly; this keeps the seam thin
       and testable.
@@ -117,9 +117,9 @@ class AuthRefreshMiddleware:
       ``host._refresh_callback is not None``).
     - ``refresh_retry_delay``: zero-arg callable returning the
       post-refresh sleep duration. Production wires
-      ``lambda: self._refresh_retry_delay`` so a test that mutates the
-      attr on the live client still takes effect (matches the live-binding
-      contract preserved for retry budgets in PR 12.7).
+      ``lambda: chain_host._refresh_retry_delay`` so a test that mutates
+      the attr on the live host still takes effect (matches the
+      live-binding contract preserved for retry budgets in PR 12.7).
     - ``snapshot_provider``: optional async callable returning a fresh
       :class:`AuthSnapshot` after refresh. Production wires a lambda
       that invokes :meth:`AuthRefreshCoordinator.snapshot` with the

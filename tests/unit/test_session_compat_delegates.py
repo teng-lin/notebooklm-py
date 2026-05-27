@@ -17,17 +17,17 @@ structural protocol caller, a Protocol-imposed call site, or an
 established test-seam swap point that would require its own follow-up
 to migrate:
 
-    Middleware-chain seam (ADR-014 Rule 4, retained on Session by design)
-        _await_refresh — captured via ``refresh_callable=host._await_refresh``
-        in ``wire_middleware_chain``; deleting it would break the chain
-        wiring. (``RpcOwner`` Protocol was deleted in Wave 4 of session-decoupling
-        when ``RpcExecutor`` migrated to direct collaborator dependencies.)
-
     External Protocol surface (``RefreshAuthCore`` in ``_auth/session.py``)
         update_auth_tokens
 
     Feature-facing Protocol surface (``RpcCaller`` in ``_session_contracts.py``)
         rpc_call
+
+The middleware-chain refresh seam (formerly ``Session._await_refresh``)
+was removed when :class:`MiddlewareChainHost` took ownership of the
+chain wiring; ``wire_middleware_chain`` now captures
+``chain_host.await_refresh`` directly, and tests reach the refresh
+entry point through ``core._chain_host.await_refresh()``.
 
 A delegate body must be at most three top-level statements with at
 least one outbound collaborator call AND no forbidden control-flow
@@ -54,10 +54,10 @@ from notebooklm._session import Session
 # load-bearing test seam still resolves them. See module docstring for
 # the per-method rationale; the deleted ones (``_build_url``,
 # ``_raise_rpc_error_from_http_status``, ``_raise_rpc_error_from_request_error``,
-# ``_try_refresh_and_retry``, ``_snapshot``) were inlined when their
-# external callers migrated to the canonical collaborator method.
+# ``_try_refresh_and_retry``, ``_snapshot``, ``_await_refresh``) were
+# inlined or moved when their external callers migrated to the
+# canonical collaborator method.
 _DELEGATE_METHODS = [
-    "_await_refresh",
     "rpc_call",
     "update_auth_tokens",
 ]
@@ -160,13 +160,10 @@ def test_session_retains_adr_014_rule_4_middleware_chain_seams() -> None:
     """ADR-014 Rule 4 retention list: Session keeps the surfaces the
     middleware-chain wiring + downstream Protocol consumers depend on.
 
-    These names were previously the ``RpcOwner`` Protocol surface (deleted
-    in Wave 4 of the session-decoupling plan when ``RpcExecutor`` migrated
-    to direct collaborator dependencies). They remain on Session because:
-
-    - ``_await_refresh`` — captured by ``wire_middleware_chain`` as
-      ``refresh_callable=host._await_refresh``.
-    - ``_kernel`` — Session owns the transport core (instance attribute).
+    The chain-host extraction moved the middleware-chain seams off
+    Session onto :class:`MiddlewareChainHost`. Session keeps the
+    chain host as ``_chain_host`` and the transport core as
+    ``_kernel`` so feature code and tests can reach them.
 
     Wave 11b of session-decoupling deleted the ``_increment_metrics`` /
     ``metrics_snapshot`` / ``_emit_rpc_event`` / ``record_upload_queue_wait``
@@ -178,16 +175,19 @@ def test_session_retains_adr_014_rule_4_middleware_chain_seams() -> None:
     there are no remaining production callers of the Session-level
     forward.
     """
-    for name in ("_await_refresh",):
-        assert hasattr(Session, name), f"Session missing Rule-4 retained member: {name}"
-        assert callable(getattr(Session, name)), f"Session.{name} not callable"
-
+    from notebooklm._middleware_chain_host import MiddlewareChainHost
     from notebooklm.auth import AuthTokens
 
     core = build_session_for_tests(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="sid"),
     )
     assert hasattr(core, "_kernel"), "Session missing Rule-4 retained member: _kernel"
+    assert isinstance(core._chain_host, MiddlewareChainHost), (
+        "Session must expose ``_chain_host`` as a ``MiddlewareChainHost`` "
+        "instance — chain wiring (``wire_middleware_chain``) and tests "
+        "reach the chain leaf / chain slot / retry tunables / refresh "
+        "delegate through it."
+    )
 
 
 def test_session_keeps_drain_tracker_seam() -> None:

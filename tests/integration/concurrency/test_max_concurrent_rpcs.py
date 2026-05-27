@@ -282,7 +282,7 @@ async def test_slot_held_across_retry_middleware_retries(
 
     core = await _open_core_with_transport(transport, max_concurrent_rpcs=1)
     # Force fast retry so the test finishes promptly even on a slow box.
-    core._rate_limit_max_retries = 3
+    core._chain_host._rate_limit_max_retries = 3
 
     try:
         results = await asyncio.gather(

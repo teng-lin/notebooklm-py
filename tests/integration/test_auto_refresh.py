@@ -49,7 +49,7 @@ class TestAutoRefreshIntegration:
 
         client = NotebookLMClient(auth)
         # Override retry delay for faster tests
-        client._session._refresh_retry_delay = 0
+        client._session._chain_host._refresh_retry_delay = 0
 
         # Track refresh calls
         refresh_calls = []
@@ -103,7 +103,7 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._session._refresh_retry_delay = 0
+        client._session._chain_host._refresh_retry_delay = 0
 
         refresh_calls = []
 
@@ -152,7 +152,7 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._session._refresh_retry_delay = 0.1  # 100ms delay
+        client._session._chain_host._refresh_retry_delay = 0.1  # 100ms delay
 
         async def mock_refresh():
             return auth
@@ -197,7 +197,7 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._session._refresh_retry_delay = 0
+        client._session._chain_host._refresh_retry_delay = 0
 
         async def failing_refresh():
             # Simulates refresh_auth detecting redirect to login

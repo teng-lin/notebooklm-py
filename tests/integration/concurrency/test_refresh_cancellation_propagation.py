@@ -1,7 +1,8 @@
 """shielded shared refresh task survives waiter cancellation.
 
 Regression test for the cancellation-propagation bug at
-``src/notebooklm/_core.py:_await_refresh``: prior to the fix, a caller
+``AuthRefreshCoordinator.await_refresh`` (reached today through
+``MiddlewareChainHost.await_refresh``): prior to the fix, a caller
 cancelled via ``asyncio.wait_for(timeout=...)`` while
 ``await self._refresh_task`` was pending would propagate the
 ``CancelledError`` into the *shared* refresh task itself, taking down
@@ -72,19 +73,20 @@ async def _opened_core(refresh_callback):
 async def test_waiter_cancellation_does_not_kill_shared_refresh():
     """Cancelling one waiter must not cancel the shared refresh task.
 
-    Two coroutines call ``_await_refresh()`` concurrently. The first is
-    wrapped in ``asyncio.wait_for(timeout=0.01)`` so it gets cancelled
-    while the gated refresh callback is still blocked. The second
-    coroutine continues awaiting the shared task. After the callback is
-    released, the second coroutine must observe a successful refresh
-    (no ``CancelledError`` leaking from the shared task).
+    Two coroutines call ``chain_host.await_refresh()`` concurrently.
+    The first is wrapped in ``asyncio.wait_for(timeout=0.01)`` so it
+    gets cancelled while the gated refresh callback is still blocked.
+    The second coroutine continues awaiting the shared task. After the
+    callback is released, the second coroutine must observe a
+    successful refresh (no ``CancelledError`` leaking from the shared
+    task).
 
     Pre-fix (unshielded ``await self._refresh_task``): the cancelled
     waiter's ``CancelledError`` propagates into the shared task,
     cancelling it; the second waiter raises ``CancelledError``.
     Post-fix (``await asyncio.shield(self._refresh_task)``): the
     cancelled waiter unwinds locally; the shared task completes; the
-    second waiter resolves to ``None`` (``_await_refresh`` returns
+    second waiter resolves to ``None`` (the refresh entry point returns
     ``None`` on success).
     """
     callback_entered = asyncio.Event()
@@ -118,13 +120,13 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         # we never release until both callers are joined, so #1 is
         # guaranteed to time out.
         async def cancelled_waiter():
-            await asyncio.wait_for(core._await_refresh(), timeout=0.01)
+            await asyncio.wait_for(core._chain_host.await_refresh(), timeout=0.01)
 
         # Caller #2: plain await — represents a parallel 401 retry path
         # that should observe a successful shared refresh regardless of
         # what happens to caller #1.
         async def surviving_waiter():
-            return await core._await_refresh()
+            return await core._chain_host.await_refresh()
 
         task1 = asyncio.create_task(cancelled_waiter())
         task2 = asyncio.create_task(surviving_waiter())
@@ -155,8 +157,8 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         )
 
         # Release the gate. The shared task should complete successfully
-        # and caller #2 should resolve to ``None`` (``_await_refresh``
-        # returns None on success).
+        # and caller #2 should resolve to ``None`` (the refresh entry
+        # point returns None on success).
         release_refresh.set()
         result = await asyncio.wait_for(task2, EVENT_TIMEOUT_S)
 
@@ -206,7 +208,7 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
     async with _opened_core(refresh_callback=cb) as core:
 
         async def cancelled_waiter():
-            await asyncio.wait_for(core._await_refresh(), timeout=0.01)
+            await asyncio.wait_for(core._chain_host.await_refresh(), timeout=0.01)
 
         task = asyncio.create_task(cancelled_waiter())
         await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)

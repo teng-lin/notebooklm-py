@@ -12,10 +12,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ._error_injection import _refuse_synthetic_error_outside_test_context
-from ._middleware import (
-    RpcRequest,
-    RpcResponse,
-)
 from ._middleware_chain_host import MiddlewareChainHost
 from ._rpc_executor import RpcExecutor
 from ._session_config import (
@@ -39,7 +35,7 @@ from .auth import (
 from .types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
-    from ._middleware import Middleware, NextCall
+    from ._middleware import Middleware
     from ._middleware_chain import MiddlewareChainBuilder
     from ._session_init import (
         SessionCollaborators,
@@ -321,46 +317,34 @@ def compose_session_internals(
     # forward to it. Both sides are write-once and bound in this same
     # composition root, so the symmetric bind is safe.
     chain_host._bind_transport(transport)
-    # Stage B2 PR 2 split the historical ``host=session`` parameter
-    # into ``chain_host`` (owns the retry tunables + the
-    # ``await_refresh`` delegate) and an auth-snapshot host (formerly
-    # ``auth_snapshot_host: _AuthRefreshHost`` = the :class:`Session`).
-    # The follow-up "explicit auth-refresh collaborators" change
-    # narrowed the auth-snapshot lookup further: it now passes
-    # ``auth=auth`` (the live :class:`AuthTokens`) directly, because the
-    # coordinator method no longer needs a Session-shaped host (the
-    # ``_AuthRefreshHost`` Protocol that re-declared Session's private
-    # ``auth`` / ``_metrics_obj`` / ``_kernel`` slots was deleted). The
-    # chain leaf still wires to the :class:`Session`-side descriptor
-    # forward (:attr:`_authed_post_chain_terminal`) so a fixture-time
-    # rebind via ``session._authed_post_chain_terminal = fake_terminal``
-    # keeps steering the live chain leaf — the descriptor setter writes
-    # through to ``chain_host._authed_post_chain_terminal``.
+    # The chain leaf wires through ``chain_host._authed_post_chain_terminal``
+    # directly. Tests that need a fake terminal rebind on the host
+    # (``core._chain_host._authed_post_chain_terminal = fake_terminal``);
+    # the chain is rebuilt by the test around that new terminal. The
+    # auth-snapshot lookup passes ``auth=auth`` (the live
+    # :class:`AuthTokens`) directly — the coordinator method takes the
+    # tokens explicitly instead of reaching through a Session-shaped
+    # host (the ``_AuthRefreshHost`` Protocol that re-declared Session's
+    # private slots was deleted).
     wired = wire_middleware_chain(
         config,
         collaborators,
         chain_host=chain_host,
         auth=auth,
-        authed_post_chain_terminal=session._authed_post_chain_terminal,
+        authed_post_chain_terminal=chain_host._authed_post_chain_terminal,
         rpc_semaphore_factory=session._get_rpc_semaphore,
     )
-    # Stage B2 PR 2: the chain slot lives on the host
-    # (``chain_host._authed_post_chain``). It is set ONCE here via the
-    # :class:`Session` descriptor setter, which writes through to the
-    # host slot — that single assignment is the canonical install site.
-    # The transport's ``chain_provider`` lambda reads
-    # ``chain_host._authed_post_chain`` directly (Stage B2 PR 2 signature
-    # split), and the long-standing test pattern
-    # ``session._authed_post_chain = fake_chain`` still steers the live
-    # chain because the descriptor write-through routes the fake into
-    # the same host slot.
-    session._authed_post_chain = wired.authed_post_chain
+    # The chain slot lives on the host (``chain_host._authed_post_chain``)
+    # and is installed exactly once here. The transport's ``chain_provider``
+    # lambda reads ``chain_host._authed_post_chain`` directly on every
+    # authed POST, so a test that swaps the chain via
+    # ``core._chain_host._authed_post_chain = fake_chain`` continues to
+    # steer the live chain.
+    chain_host._authed_post_chain = wired.authed_post_chain
     # ``_bind_chain_metadata`` stores only the auxiliary chain artifacts
-    # (``_chain_builder`` / ``_middlewares``) — it does NOT touch
-    # ``_authed_post_chain`` (the host's slot, assigned via the
-    # descriptor above). This avoids the double-bind ambiguity flagged
-    # in the rev-5 review of the post-refactoring plan: the chain slot
-    # has exactly one assignment site, the descriptor write above.
+    # (``_chain_builder`` / ``_middlewares``) — the chain slot is owned
+    # by the host and assigned above, so this binder has no role in the
+    # canonical install site for ``_authed_post_chain``.
     session._bind_chain_metadata(wired)
     # Lambdas preserve the late-binding contract pinned by
     # ``tests/unit/test_init_order.py``:
@@ -385,7 +369,7 @@ def compose_session_internals(
         sleep=lambda *a, **kw: session._sleep(*a, **kw),
         timeout_provider=lambda: collaborators.lifecycle._timeout,
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
-        refresh_retry_delay_provider=lambda: session._refresh_retry_delay,
+        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
     )
     session._bind_executor(executor)
     return ComposedSession(
@@ -419,30 +403,23 @@ class Session:
     ) -> None:
         """Initialise a Session from a pre-built collaborator bundle.
 
-        Stage B1 PR 2 of the post-refactoring plan inverted the
-        composition root — :class:`Session` no longer constructs the
-        bundle / transport / chain inline. Instead,
-        :func:`compose_session_internals` builds all three, then calls
-        this constructor with the validated config + the bundle + the
-        auth tokens. The transport / chain / executor are written into
-        the late-bound slots by the composition root via the
-        :meth:`_bind_transport` / :meth:`_bind_chain_metadata` /
-        :meth:`_bind_executor` write-once setters (plus the single
-        :attr:`_authed_post_chain` descriptor write that installs the
-        wired chain into the host).
+        :class:`Session` does not construct the bundle / transport /
+        chain inline — :func:`compose_session_internals` builds all
+        three, then calls this constructor with the validated config +
+        the bundle + the auth tokens. The transport / chain / executor
+        are written into the late-bound slots by the composition root
+        via the :meth:`_bind_transport` / :meth:`_bind_chain_metadata`
+        / :meth:`_bind_executor` write-once setters.
 
-        Stage B2 PR 1 added ``chain_host``: the
-        :class:`MiddlewareChainHost` constructed by
-        :func:`compose_session_internals` BEFORE this constructor. The
-        host owns the retry tunables, the installed chain slot, and the
-        chain leaf; :class:`Session` exposes them through writable
-        ``@property`` descriptors that write through to the host (the
-        descriptors are permanent, load-bearing test seams pinned by
-        ``test_observability.py:77`` and ``test_authed_post_pipeline.py:113``).
-        ``self._chain_host = chain_host`` MUST be the first assignment
-        in this constructor because every subsequent ``self._<attr>``
-        write that targets a descriptor-managed name routes through the
-        host — assigning the host last would dereference ``None``.
+        ``chain_host`` is the :class:`MiddlewareChainHost` constructed
+        by :func:`compose_session_internals` BEFORE this constructor.
+        The host owns the retry tunables, the installed chain slot,
+        and the chain leaf; :class:`Session` keeps a reference to it
+        as ``self._chain_host`` so feature code and tests that need
+        to rebind one of those slots can reach the host directly
+        (``core._chain_host._rate_limit_max_retries = N``,
+        ``core._chain_host._authed_post_chain = fake_chain``,
+        ``core._chain_host._authed_post_chain_terminal = fake_terminal``).
 
         Production callers DO NOT instantiate :class:`Session` directly
         — :class:`NotebookLMClient` calls
@@ -463,18 +440,15 @@ class Session:
             chain_host: The :class:`MiddlewareChainHost` constructed by
                 :func:`compose_session_internals` for this session. The
                 host owns the chain leaf, the chain slot, and the three
-                retry-budget tunables; the descriptor forwards below
-                require it.
+                retry-budget tunables.
         """
-        # CHAIN HOST FIRST — the writable descriptors below
-        # (``_authed_post_chain_terminal``, ``_authed_post_chain``,
-        # ``_rate_limit_max_retries``, ``_server_error_max_retries``,
-        # ``_refresh_retry_delay``) all dereference ``self._chain_host``
-        # in their setters and getters, so assigning the host has to
-        # precede any descriptor-managed attribute write. See the
-        # ``Session.__init__ ordering`` section of
-        # ``docs/post-refactoring-plan-2026-05-27.md`` for the
-        # invariant.
+        # ``_chain_host`` owns the retry tunables (``_rate_limit_max_retries``,
+        # ``_server_error_max_retries``, ``_refresh_retry_delay``), the
+        # chain slot (``_authed_post_chain``), and the chain leaf
+        # (``_authed_post_chain_terminal``). :func:`compose_session_internals`
+        # constructed the host with the live values BEFORE this Session
+        # was instantiated, and it remains the canonical owner — there
+        # are no Session-side aliases or descriptor forwards.
         self._chain_host = chain_host
 
         # The seam callables ``_decode_response`` / ``_sleep`` /
@@ -485,17 +459,6 @@ class Session:
         self._decode_response: Callable[..., Any] = config.decode_response
         self._sleep: Callable[[float], Awaitable[Any]] = config.sleep
         self._is_auth_error: Callable[[Exception], bool] = config.is_auth_error
-        # B2 PR 1: ``_rate_limit_max_retries`` / ``_server_error_max_retries``
-        # / ``_refresh_retry_delay`` are no longer stored on Session —
-        # the assignments below route through writable @property
-        # descriptors that write through to ``self._chain_host``. The
-        # chain provider lambdas in :func:`wire_middleware_chain` read
-        # ``host._<attr>`` live (now resolving through the descriptor
-        # to the host) so integration tests that SET them
-        # post-construction continue to steer the live chain.
-        self._rate_limit_max_retries = config.rate_limit_max_retries
-        self._server_error_max_retries = config.server_error_max_retries
-        self._refresh_retry_delay = config.refresh_retry_delay
         self._max_concurrent_rpcs: int | None = config.max_concurrent_rpcs
         # Lazy-created per-instance — see :meth:`_get_rpc_semaphore`.
         self._rpc_semaphore: asyncio.Semaphore | None = None
@@ -526,12 +489,8 @@ class Session:
         # use-before-bind via :meth:`_require_constructed`. Types
         # mirror the corresponding :class:`WiredMiddleware` fields so
         # downstream readers see precise types rather than ``Any``
-        # (claude[bot] review on PR #1089).
-        #
-        # B2 PR 1: ``_authed_post_chain`` slot moved to the host. The
-        # ``_authed_post_chain`` name on :class:`Session` is now a
-        # writable @property descriptor that writes through to
-        # ``self._chain_host._authed_post_chain``.
+        # (claude[bot] review on PR #1089). The ``_authed_post_chain``
+        # slot is owned by ``_chain_host``; it is not duplicated here.
         self._transport: SessionTransport | None = None
         self._chain_builder: MiddlewareChainBuilder | None = None
         self._middlewares: list[Middleware] | None = None
@@ -576,7 +535,7 @@ class Session:
         return self._rpc_semaphore
 
     # ------------------------------------------------------------------
-    # Stage B1 PR 2 — write-once binders + fail-fast guards (live)
+    # Write-once binders + fail-fast guards
     # ------------------------------------------------------------------
     #
     # The three ``_bind_*`` setters below accept exactly one bind per
@@ -586,19 +545,15 @@ class Session:
     # ``_rpc_executor`` at ``None``, so the composition root is the
     # single assignment site for each.
     #
-    # Stage B2 PR 2 renamed ``_bind_chain`` to ``_bind_chain_metadata``:
-    # ``_authed_post_chain`` is no longer a slot on :class:`Session`; it
-    # lives on :class:`MiddlewareChainHost` and is installed by the
-    # composition root via the :class:`Session` descriptor setter
-    # (``session._authed_post_chain = wired.authed_post_chain``), which
-    # writes through to ``chain_host._authed_post_chain``. The binder
-    # below stores only the auxiliary chain artifacts (``_chain_builder``
-    # / ``_middlewares``) so the chain slot has exactly one assignment
-    # site.
+    # ``_authed_post_chain`` is owned by :class:`MiddlewareChainHost`;
+    # the composition root installs it via
+    # ``chain_host._authed_post_chain = wired.authed_post_chain``. The
+    # binder below stores only the auxiliary chain artifacts
+    # (``_chain_builder`` / ``_middlewares``) so the chain slot has
+    # exactly one assignment site.
     #
-    # The legacy lazy ``_get_rpc_executor`` factory was deleted in PR 2;
-    # post-construction the executor is reachable directly via
-    # ``self._rpc_executor`` (and never re-nulled by ``close()`` — see
+    # The executor is reachable directly via ``self._rpc_executor``
+    # (and never re-nulled by ``close()`` — see
     # ``_session_lifecycle.py:close`` for the corresponding contract).
 
     def _bind_transport(self, transport: "SessionTransport") -> None:
@@ -616,25 +571,20 @@ class Session:
     def _bind_chain_metadata(self, wired: "WiredMiddleware") -> None:
         """Write-once setter for the auxiliary chain-metadata artifacts.
 
-        Stage B2 PR 2 of the post-refactoring plan split the chain-slot
-        assignment off this binder: the canonical install site for
-        ``_authed_post_chain`` is now
-        ``session._authed_post_chain = wired.authed_post_chain`` in
-        :func:`compose_session_internals` (which writes through the
-        :class:`Session` descriptor to ``chain_host._authed_post_chain``).
-        This binder is left to store only the *auxiliary* artifacts —
+        The canonical install site for ``_authed_post_chain`` is
+        ``chain_host._authed_post_chain = wired.authed_post_chain`` in
+        :func:`compose_session_internals`. This binder is left to store
+        only the *auxiliary* artifacts —
         :class:`MiddlewareChainBuilder` (introspected by builder-level
         unit tests) and the ``middlewares`` list (introspected by
-        ``test_chain_wiring.test_chain_seeded_with_final_adr_009_ordering``)
-        — so the chain slot has exactly one assignment site. Raises
-        ``RuntimeError`` on a second bind attempt.
+        ``test_chain_wiring.test_chain_seeded_with_final_adr_009_ordering``).
+        Raises ``RuntimeError`` on a second bind attempt.
 
-        The ``_authed_post_chain`` attribute itself remains a mutable
-        seam — the long-standing test pattern of reassigning
-        ``core._authed_post_chain = fake_chain`` post-construction is
-        unaffected because that path routes through the Session-side
-        descriptor setter to the host slot. Only repeated calls to
-        :meth:`_bind_chain_metadata` itself raise.
+        Tests that need to swap the live chain after construction
+        rebind ``core._chain_host._authed_post_chain = fake_chain`` so
+        the transport's ``chain_provider`` lambda picks up the fake on
+        the next authed POST; this binder does not participate in that
+        post-construction rebind path.
         """
         if getattr(self, "_chain_builder", None) is not None:
             raise RuntimeError("Session._chain_metadata already bound")
@@ -777,147 +727,6 @@ class Session:
         (``test_concurrency_refresh_race.test_update_auth_tokens_has_no_await_inside_mutation_block``).
         """
         await self._auth_coord.update_auth_tokens(auth=self.auth, csrf=csrf, session_id=session_id)
-
-    # ------------------------------------------------------------------
-    # Stage B2 PR 1 — writable descriptor forwards to MiddlewareChainHost
-    # ------------------------------------------------------------------
-    #
-    # The five names below (``_authed_post_chain_terminal``,
-    # ``_authed_post_chain``, ``_rate_limit_max_retries``,
-    # ``_server_error_max_retries``, ``_refresh_retry_delay``) plus the
-    # async method :meth:`_await_refresh` are permanent, load-bearing
-    # test seams. ADR-014 Rule 4's retention list records them as
-    # "test-seam forwards to MiddlewareChainHost" once Stage B2 PR 3
-    # lands.
-    #
-    # The setters all *write through* to the host — the historical
-    # tests assign ``core._authed_post_chain_terminal = fake_terminal``
-    # (test_observability.py:77), ``core._authed_post_chain =
-    # fake_chain`` (test_authed_post_pipeline.py:113), and
-    # ``core._rate_limit_max_retries = 0`` (integration tests). After
-    # B2 PR 1 those writes route to ``chain_host.<attr>``, where the
-    # chain's provider lambdas dereference them live — preserving the
-    # mutation-after-construction contract.
-    #
-    # The ``_authed_post_chain_terminal`` setter intentionally does NOT
-    # re-route an already-built chain. ``test_observability.py:82``
-    # follows the assignment with ``core._authed_post_chain =
-    # build_chain(core._middlewares, fake_terminal)`` to rebuild the
-    # chain around the new terminal. The setter's only job is to
-    # accept the write; chain rebuild is the test's responsibility.
-
-    @property
-    def _authed_post_chain_terminal(
-        self,
-    ) -> Callable[[RpcRequest], Awaitable[RpcResponse]]:
-        """Forward to :attr:`MiddlewareChainHost._authed_post_chain_terminal`.
-
-        Resolves to the host's bound method (the live chain leaf that
-        forwards to :meth:`SessionTransport.terminal`) until a test
-        reassigns ``session._authed_post_chain_terminal = fake_terminal``;
-        the setter writes the fake through to the host so subsequent
-        reads via the descriptor pick it up.
-        """
-        return self._chain_host._authed_post_chain_terminal
-
-    @_authed_post_chain_terminal.setter
-    def _authed_post_chain_terminal(
-        self,
-        value: Callable[[RpcRequest], Awaitable[RpcResponse]],
-    ) -> None:
-        # Writes through so ``test_observability.py:77`` can install a
-        # fake terminal on the host. The setter does NOT re-route an
-        # already-built chain — chain rebuild is the test's job (see
-        # the ``build_chain`` call at line 82 of that test).
-        # ``method-assign`` covers shadowing the dataclass's async
-        # method with a plain callable; ``assignment`` covers the
-        # ``Awaitable``/``Coroutine`` return-type variance between the
-        # descriptor's value annotation and the host's declared
-        # ``async def`` signature.
-        self._chain_host._authed_post_chain_terminal = value  # type: ignore[method-assign,assignment]
-
-    @property
-    def _authed_post_chain(self) -> "NextCall | None":
-        """Forward to :attr:`MiddlewareChainHost._authed_post_chain`.
-
-        Stage B2 PR 2 switched the transport's ``chain_provider``
-        closure to ``lambda: chain_host._authed_post_chain`` — it now
-        reads the host slot directly rather than going through this
-        descriptor. A ``session._authed_post_chain = fake_chain`` write
-        still keeps steering the live transport because the descriptor
-        setter below writes through to the same host slot the transport
-        reads.
-        """
-        return self._chain_host._authed_post_chain
-
-    @_authed_post_chain.setter
-    def _authed_post_chain(self, value: "NextCall | None") -> None:
-        # Writes through so ``test_authed_post_pipeline.py:113`` can
-        # install a fake chain on the host.
-        self._chain_host._authed_post_chain = value
-
-    @property
-    def _rate_limit_max_retries(self) -> int:
-        """Forward to :attr:`MiddlewareChainHost._rate_limit_max_retries`."""
-        return self._chain_host._rate_limit_max_retries
-
-    @_rate_limit_max_retries.setter
-    def _rate_limit_max_retries(self, value: int) -> None:
-        # Writes through so the chain's
-        # ``rate_limit_max_retries_provider`` lambda picks up the new
-        # budget on the next attempt (integration tests SET this
-        # mid-flight at ``test_max_concurrent_rpcs.py``).
-        self._chain_host._rate_limit_max_retries = value
-
-    @property
-    def _server_error_max_retries(self) -> int:
-        """Forward to :attr:`MiddlewareChainHost._server_error_max_retries`."""
-        return self._chain_host._server_error_max_retries
-
-    @_server_error_max_retries.setter
-    def _server_error_max_retries(self, value: int) -> None:
-        # Writes through so the chain's
-        # ``server_error_max_retries_provider`` lambda picks up the new
-        # budget on the next attempt.
-        self._chain_host._server_error_max_retries = value
-
-    @property
-    def _refresh_retry_delay(self) -> float:
-        """Forward to :attr:`MiddlewareChainHost._refresh_retry_delay`."""
-        return self._chain_host._refresh_retry_delay
-
-    @_refresh_retry_delay.setter
-    def _refresh_retry_delay(self, value: float) -> None:
-        # Writes through so both the chain's
-        # ``refresh_retry_delay_provider`` lambda AND the executor's
-        # ``refresh_retry_delay_provider`` closure (built in
-        # :func:`compose_session_internals`) pick up the new delay on
-        # the next refresh wave.
-        self._chain_host._refresh_retry_delay = value
-
-    async def _await_refresh(self) -> None:
-        """Run / join the shared refresh task via :class:`MiddlewareChainHost`.
-
-        Stage B2 PR 1 routed this delegate through the host —
-        :meth:`MiddlewareChainHost.await_refresh` looks up the
-        coordinator's ``await_refresh`` method dynamically on every
-        call, preserving the long-standing pattern where a fixture
-        rebinds the coordinator's behavior to inject a fake refresh.
-        The single-flight semantics, lock contract, and
-        :func:`asyncio.shield` cancellation handling all still live
-        inside :meth:`AuthRefreshCoordinator.await_refresh`.
-
-        After Stage B2 PR 2, the middleware chain no longer captures
-        this method — :func:`wire_middleware_chain` now captures
-        ``chain_host.await_refresh`` directly so the refresh path skips
-        the Session-side descriptor on every call. This Session-side
-        method is retained as a test seam (the long-standing
-        ``session._await_refresh`` patch point survives — it routes
-        through the host, which dynamically delegates to the
-        coordinator) and as a stable name the
-        ``docs/session-method-retention.md`` invariant pins.
-        """
-        await self._chain_host.await_refresh()
 
     async def rpc_call(
         self,

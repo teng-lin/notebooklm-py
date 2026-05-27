@@ -76,12 +76,12 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
             context=request.context,  # type: ignore[attr-defined]
         )
 
-    core._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
+    core._chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
     # Rebuild the chain so it wraps the new terminal (the original chain
-    # was built in ``__init__`` against the original bound method).
+    # was built in the composition root against the original bound method).
     from notebooklm._middleware import build_chain
 
-    core._authed_post_chain = build_chain(core._middlewares, fake_terminal)
+    core._chain_host._authed_post_chain = build_chain(core._middlewares, fake_terminal)
 
     with correlation_id("batch-42"):
         result = await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])

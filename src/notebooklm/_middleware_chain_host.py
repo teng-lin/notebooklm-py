@@ -1,4 +1,4 @@
-"""Middleware-chain host (Stage B2 PR 1 of the post-refactoring plan).
+"""Middleware-chain host.
 
 The :class:`MiddlewareChainHost` owns the four pieces of state that the
 wired middleware chain reads on every authed POST plus the chain leaf
@@ -13,8 +13,9 @@ itself:
   chain;
 * the chain leaf coroutine (``_authed_post_chain_terminal``) that
   forwards to :meth:`SessionTransport.terminal`;
-* the dynamic refresh delegate (``await_refresh``) that callers reach
-  through :meth:`Session._await_refresh`.
+* the dynamic refresh delegate (``await_refresh``) reached by the
+  middleware chain (``wire_middleware_chain`` captures
+  ``chain_host.await_refresh`` directly).
 
 This module is intentionally narrow:
 
@@ -24,18 +25,13 @@ This module is intentionally narrow:
 * The host has no back-reference to :class:`Session` — it is reachable
   from :class:`Session` (via ``self._chain_host``) but not the other
   way around. This breaks the historical Session ↔ transport cycle the
-  way ADR-014 Rule 4 (post-refactoring plan, Stage B2) anticipated.
+  way ADR-014 Rule 4 anticipated.
 
-Stage B2 PR 1 wires the host into :class:`Session.__init__` and routes
-the five mutable test seams (``_authed_post_chain_terminal``,
-``_authed_post_chain``, ``_rate_limit_max_retries``,
-``_server_error_max_retries``, ``_refresh_retry_delay``) through
-writable ``@property`` descriptors on :class:`Session` that write
-through to the host. Transport / wire signatures are still ``host=
-session`` in PR 1 — providers continue to read ``session._<attr>``
-which now writes through to the host. Stage B2 PR 2 will split
-``build_session_transport`` and ``wire_middleware_chain`` so the chain
-reads from the host directly.
+The transport / wire helpers take the host directly via the
+``chain_host`` parameter; the chain reads ``chain_host._<attr>`` on
+every attempt. Tests that need a mid-flight mutation rebind on the
+host (``core._chain_host._<attr> = ...``); there are no Session-side
+forwards in front of the host.
 """
 
 from __future__ import annotations
@@ -67,17 +63,16 @@ class MiddlewareChainHost:
             the live refresh-and-retry path.
         _rate_limit_max_retries: Budget consumed by the retry middleware
             on 429 responses. Stored on the host (the chain's provider
-            lambda reads ``host._rate_limit_max_retries`` live, so
-            mid-flight rebinding takes effect on the next attempt).
+            lambda reads this attribute live, so mid-flight rebinding
+            takes effect on the next attempt).
         _server_error_max_retries: Budget consumed by the retry
             middleware on 5xx responses. Same live-read contract.
         _refresh_retry_delay: Backoff between refresh-retry attempts
             in the auth-refresh middleware. Same live-read contract.
         _authed_post_chain: The wired middleware chain. ``None`` until
-            :func:`compose_session_internals` assigns it through the
-            :class:`Session` descriptor forward (which writes through
-            to this slot). The transport's ``chain_provider`` lambda
-            reads this attribute every authed POST.
+            :func:`compose_session_internals` assigns it directly here.
+            The transport's ``chain_provider`` lambda reads this
+            attribute every authed POST.
         _transport: The :class:`SessionTransport` collaborator. ``None``
             until :meth:`_bind_transport` fires; after that bind the
             chain leaf (:meth:`_authed_post_chain_terminal`) can forward
@@ -109,18 +104,15 @@ class MiddlewareChainHost:
     async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
         """Middleware-chain leaf — forwards to :meth:`SessionTransport.terminal`.
 
-        Reachable through the :class:`Session` writable descriptor
-        forward (``session._authed_post_chain_terminal`` resolves to
-        this bound method until a test installs a fake terminal via
-        ``session._authed_post_chain_terminal = fake_terminal``; the
-        descriptor's setter writes the fake through to this host so
-        subsequent reads pick it up).
+        Tests that install a fake terminal rebind directly on the host
+        (``core._chain_host._authed_post_chain_terminal = fake_terminal``)
+        and rebuild the chain around the new terminal.
 
         Raises :class:`RuntimeError` if the transport is not yet bound.
         This can only happen if a caller exercised the chain before
         the composition root finished — the fail-fast guard mirrors
         the corresponding :meth:`Session._require_constructed` guard
-        on the Session entry points (introduced in Stage B1 PR 2).
+        on the Session entry points.
         """
         transport = self._transport
         if transport is None:

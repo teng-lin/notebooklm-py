@@ -234,25 +234,26 @@ def test_compose_session_internals_preserves_late_binding_for_sleep() -> None:
 
 
 def test_compose_session_internals_preserves_late_binding_for_refresh_retry_delay() -> None:
-    """Post-construction ``session._refresh_retry_delay = X`` MUST be seen
+    """Post-construction ``chain_host._refresh_retry_delay = X`` MUST be seen
     by the executor's ``refresh_retry_delay_provider`` lambda on the next
     call.
 
-    The plan's "Design Invariants" section explicitly calls out this
-    contract: ``client._session._refresh_retry_delay = 0`` continues to
-    steer the live chain after construction. The lambda
-    ``refresh_retry_delay_provider=lambda: session._refresh_retry_delay``
+    The integration-test contract is that
+    ``client._session._chain_host._refresh_retry_delay = 0`` continues
+    to steer the live chain after construction. The lambda
+    ``refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay``
     re-reads the attribute on every invocation, so this is a live binding,
     not a frozen snapshot.
     """
     composed = compose_session_internals(auth=_make_auth())
 
+    chain_host = composed.session._chain_host
     # The provider lambda must dereference the *current* attribute on
     # each call — not the value captured at construction time.
-    initial = composed.session._refresh_retry_delay
+    initial = chain_host._refresh_retry_delay
     assert composed.executor._refresh_retry_delay_provider() == initial
 
-    composed.session._refresh_retry_delay = 0.99
+    chain_host._refresh_retry_delay = 0.99
     assert composed.executor._refresh_retry_delay_provider() == 0.99
 
 
@@ -309,17 +310,12 @@ def test_bind_transport_raises_on_double_bind() -> None:
 def test_bind_chain_metadata_raises_on_double_bind() -> None:
     """:meth:`_bind_chain_metadata` accepts exactly one bind.
 
-    Same shape as :func:`test_bind_transport_raises_on_double_bind`:
-    Stage B1 PR 2 moved chain wiring into
-    :func:`compose_session_internals`, so re-driving the binder after
-    composition raises. Stage B2 PR 2 renamed ``_bind_chain`` to
-    ``_bind_chain_metadata`` because the ``_authed_post_chain`` slot
-    moved off Session onto :class:`MiddlewareChainHost` — the binder
-    now stores only the auxiliary chain artifacts (``_chain_builder``
-    / ``_middlewares``) and the chain slot has exactly one assignment
-    site (`session._authed_post_chain = wired.authed_post_chain`,
-    which writes through the Session descriptor to
-    ``chain_host._authed_post_chain``).
+    Re-driving the binder after composition raises. The binder stores
+    only the auxiliary chain artifacts (``_chain_builder`` /
+    ``_middlewares``); the chain slot itself lives on
+    :class:`MiddlewareChainHost` and is assigned exactly once by the
+    composition root (``chain_host._authed_post_chain =
+    wired.authed_post_chain``).
     """
     composed = compose_session_internals(auth=_make_auth())
 
@@ -330,7 +326,7 @@ def test_bind_chain_metadata_raises_on_double_bind() -> None:
     wired = WiredMiddleware(
         chain_builder=composed.session._chain_builder,
         middlewares=composed.session._middlewares,
-        authed_post_chain=composed.session._authed_post_chain,
+        authed_post_chain=composed.session._chain_host._authed_post_chain,
     )
     with pytest.raises(RuntimeError, match="_chain_metadata already bound"):
         composed.session._bind_chain_metadata(wired)

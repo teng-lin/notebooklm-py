@@ -128,7 +128,7 @@ async def test_perform_authed_post_populates_request_envelope_for_chain() -> Non
         captured.append(request)
         return RpcResponse(response=_ok_response(), context=request.context)
 
-    core._authed_post_chain = fake_chain  # type: ignore[method-assign]
+    core._chain_host._authed_post_chain = fake_chain  # type: ignore[method-assign]
 
     calls: list[AuthSnapshot] = []
 
@@ -170,7 +170,7 @@ async def test_perform_authed_post_populates_request_envelope_for_chain() -> Non
 async def test_chain_reads_live_retry_budget(monkeypatch):
     """Tier-12 PR 12.7 lifted the 429 / 5xx retry loop into ``RetryMiddleware``.
 
-    The middleware reads ``self._rate_limit_max_retries`` on the host LIVE
+    The middleware reads ``chain_host._rate_limit_max_retries`` LIVE
     (via the callable factory the chain seed installs) so a test that
     mutates the budget AFTER ``open()`` still takes effect — preserving
     the pre-PR-12.7 contract where the retry loop read the same attr live.
@@ -183,7 +183,7 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
     try:
         # Mutate AFTER open() — middleware reads via lambda closure so this
         # bump from 0 → 1 grants a single retry on the next chain call.
-        core._rate_limit_max_retries = 1
+        core._chain_host._rate_limit_max_retries = 1
         sleeps: list[float] = []
 
         async def fake_sleep(seconds: float) -> None:

@@ -124,7 +124,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
 
     client = await _build_client_for_test()
     # Eliminate the post-refresh retry delay so the test runs fast.
-    client._session._refresh_retry_delay = 0
+    client._session._chain_host._refresh_retry_delay = 0
 
     # Track whether refresh_auth ran. We wrap the bound method so the
     # mutation is observable from outside the test. Using ``list[object]``

@@ -1,12 +1,11 @@
-"""Stage B2 PR 2 — :class:`MiddlewareChainHost` live-binding contract.
+""":class:`MiddlewareChainHost` live-binding contract.
 
 The host owns the chain leaf, the chain slot, the three retry-budget
 tunables, and the dynamic ``await_refresh`` delegate. The chain's
 provider lambdas and the transport's ``chain_provider`` lambda both
-capture the host directly (Stage B2 PR 2 signature split), so the
-long-standing post-construction mutation patterns are now load-bearing
-on the host itself rather than on :class:`Session`. These tests pin
-that contract end-to-end:
+capture the host directly, so post-construction mutation patterns
+are load-bearing on the host itself. These tests pin that contract
+end-to-end:
 
 * ``chain_host._rate_limit_max_retries = 0`` mid-flight steers the live
   retry budget (the :class:`RetryMiddleware` provider lambda reads the
@@ -14,15 +13,16 @@ that contract end-to-end:
 * ``chain_host._auth_refresh.await_refresh = fake`` rebind steers the
   live refresh path (dynamic delegation via
   :meth:`MiddlewareChainHost.await_refresh`).
-* ``core._authed_post_chain = fake_chain`` writes through to
-  ``chain_host._authed_post_chain``; the transport's ``chain_provider``
-  lambda returns ``fake_chain`` on the next call.
-* ``core._authed_post_chain_terminal = fake_terminal`` writes through to
-  the host (mirrors the ``test_observability.py:77`` pattern).
+* ``chain_host._authed_post_chain = fake_chain`` installs a fake chain
+  that the transport's ``chain_provider`` lambda returns on the next
+  call.
+* ``chain_host._authed_post_chain_terminal = fake_terminal`` installs
+  a fake chain leaf (mirrors the ``test_observability.py`` rebind
+  pattern).
 
 The first two tests drive a real chain through
 :meth:`SessionTransport.perform_authed_post`; the last two assert the
-write-through descriptor contract without a live chain.
+host-side rebind contract without a live chain.
 """
 
 from __future__ import annotations
@@ -106,13 +106,12 @@ def _status_error(code: int, *, retry_after: str | None = None) -> httpx.HTTPSta
 async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) -> None:
     """Mid-flight ``chain_host._rate_limit_max_retries = N`` steers the retry budget.
 
-    Pins the Stage B2 PR 2 contract: the :class:`RetryMiddleware`'s
+    Pins the contract: the :class:`RetryMiddleware`'s
     ``rate_limit_max_retries`` provider lambda (built by
     :func:`wire_middleware_chain`) captures the host directly and reads
     ``chain_host._rate_limit_max_retries`` LIVE on every attempt. A test
     that bumps the budget AFTER ``open()`` still takes effect on the
-    next chain call — preserving the pre-Stage-B2 contract where the
-    provider lambda read ``session._rate_limit_max_retries``.
+    next chain call.
 
     Drives the chain via :meth:`SessionTransport.perform_authed_post`
     so the assertion exercises the production seam used by
@@ -122,9 +121,9 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
     chain_host = core._chain_host
     await core.open()
     try:
-        # Mutate the host slot directly (Stage B2 PR 2: the provider
-        # lambda captures chain_host, NOT session). The bump from
-        # 0 -> 1 grants a single retry on the next chain call.
+        # Mutate the host slot directly — the provider lambda captures
+        # chain_host. The bump from 0 -> 1 grants a single retry on
+        # the next chain call.
         chain_host._rate_limit_max_retries = 1
         sleeps: list[float] = []
 
@@ -205,26 +204,23 @@ async def test_chain_host_auth_refresh_rebind_steers_live_refresh() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — core._authed_post_chain writes through to host slot;
-#          transport's chain_provider returns the new chain on next call
+# Test 3 — chain_host._authed_post_chain steers the transport's chain_provider
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_authed_post_chain_write_through_to_host_steers_transport() -> None:
-    """``core._authed_post_chain = fake_chain`` writes through to the host slot.
+async def test_authed_post_chain_on_host_steers_transport() -> None:
+    """``chain_host._authed_post_chain = fake_chain`` steers the live transport.
 
-    The :class:`Session` descriptor setter writes through to
-    ``chain_host._authed_post_chain``. The transport's
-    ``chain_provider`` lambda (built in :func:`build_session_transport`
-    after Stage B2 PR 2) captures the host directly and reads
-    ``chain_host._authed_post_chain`` on every authed POST, so a
+    The transport's ``chain_provider`` lambda (built in
+    :func:`build_session_transport`) captures the host directly and
+    reads ``chain_host._authed_post_chain`` on every authed POST, so a
     post-construction fake-chain install reaches the next dispatch
     without any further mutation.
 
-    Mirrors the ``test_authed_post_pipeline.py:113`` pattern but exists
-    at this level to pin the host-side write-through contract
-    independently of the larger pipeline test.
+    Mirrors the ``test_authed_post_pipeline.py`` rebind pattern but
+    exists at this level to pin the host-side contract independently
+    of the larger pipeline test.
     """
     core = _make_core()
     chain_host = core._chain_host
@@ -235,13 +231,11 @@ async def test_authed_post_chain_write_through_to_host_steers_transport() -> Non
         captured.append(request)
         return RpcResponse(response=_ok_response("fake-chain"), context=request.context)
 
-    # Assignment goes through the :class:`Session` descriptor setter,
-    # which writes through to ``chain_host._authed_post_chain``.
-    core._authed_post_chain = fake_chain  # type: ignore[method-assign]
+    # Install the fake chain directly on the host — there is no
+    # Session-side alias.
+    chain_host._authed_post_chain = fake_chain
 
-    # The Session descriptor read MUST resolve to the host slot.
-    assert core._authed_post_chain is fake_chain
-    # The host slot itself MUST hold the fake chain.
+    # The host slot holds the fake chain.
     assert chain_host._authed_post_chain is fake_chain
 
     # The transport's chain_provider lambda must return the fake on
@@ -257,7 +251,7 @@ async def test_authed_post_chain_write_through_to_host_steers_transport() -> Non
 
         response = await core._transport.perform_authed_post(
             build_request=build,
-            log_label="test-chain-write-through",
+            log_label="test-chain-host-steers-transport",
         )
 
         # The fake chain produced the response — proves the transport's
@@ -272,30 +266,19 @@ async def test_authed_post_chain_write_through_to_host_steers_transport() -> Non
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — core._authed_post_chain_terminal writes through to host
-#          (mirrors test_observability.py:77 pattern)
+# Test 4 — chain_host._authed_post_chain_terminal can be rebound directly
 # ---------------------------------------------------------------------------
 
 
-def test_authed_post_chain_terminal_write_through_to_host() -> None:
-    """``core._authed_post_chain_terminal = fake`` writes through to the host.
+def test_authed_post_chain_terminal_on_host_is_rebindable() -> None:
+    """``chain_host._authed_post_chain_terminal = fake`` installs a fake terminal.
 
-    Mirrors the ``test_observability.py:77`` pattern: a test reassigns
-    the chain leaf via the :class:`Session` descriptor setter to install
-    a fake terminal; the setter writes the value through to
-    ``chain_host._authed_post_chain_terminal``. Subsequent reads via
-    either the descriptor (``core._authed_post_chain_terminal``) or the
-    host slot directly (``chain_host._authed_post_chain_terminal``)
-    resolve to the fake.
-
-    The setter intentionally does NOT re-route an already-built chain —
-    ``test_observability.py:82`` follows the assignment with
-    ``core._authed_post_chain = build_chain(core._middlewares,
-    fake_terminal)`` to rebuild the chain around the new terminal. The
-    setter's only job is to accept the write; chain rebuild is the
-    test's responsibility. This test only asserts the write-through
-    contract; chain rebuild integration is covered by
-    ``test_observability.py``.
+    Mirrors the ``test_observability.py`` rebind pattern: a test
+    swaps the chain leaf on the host and rebuilds the chain around
+    the new terminal (``chain_host._authed_post_chain =
+    build_chain(core._middlewares, fake_terminal)``). This test only
+    asserts the host-side rebind contract; chain-rebuild integration
+    is covered by ``test_observability.py``.
     """
     auth = MagicMock()
     auth.storage_path = None
@@ -309,24 +292,18 @@ def test_authed_post_chain_terminal_write_through_to_host() -> None:
     async def fake_terminal(request: RpcRequest) -> RpcResponse:
         return RpcResponse(response=_ok_response("fake-terminal"), context=request.context)
 
-    # Assignment goes through the :class:`Session` descriptor setter,
-    # which writes through to ``chain_host._authed_post_chain_terminal``.
-    core._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
-
-    # Both surfaces must resolve to the fake.
-    assert core._authed_post_chain_terminal is fake_terminal
+    # Rebind directly on the host.
+    chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
     assert chain_host._authed_post_chain_terminal is fake_terminal
 
 
-def test_chain_host_tunable_descriptor_read_after_write() -> None:
-    """Session-side descriptor reads reflect host-side mutations.
+def test_chain_host_tunable_attributes_are_writable() -> None:
+    """The chain-host retry-budget attributes accept post-construction writes.
 
-    Stage B2 PR 2 makes the chain's provider lambdas capture the host
-    directly, so a write to ``chain_host._refresh_retry_delay`` (or
-    siblings) is visible through both surfaces — the host slot
-    directly, and the :class:`Session` descriptor that forwards to it.
-    Pins both directions so future refactors cannot break the read /
-    write symmetry between the two surfaces.
+    The chain's provider lambdas capture the host directly, so a
+    write to ``chain_host._refresh_retry_delay`` (or siblings) is
+    visible to the live chain on the next attempt. Pins the
+    plain-attribute contract on :class:`MiddlewareChainHost`.
     """
     auth = MagicMock()
     auth.storage_path = None
@@ -337,18 +314,16 @@ def test_chain_host_tunable_descriptor_read_after_write() -> None:
     core = build_session_for_tests(auth=auth)
     chain_host = core._chain_host
 
-    # Write through host -> read through Session descriptor.
     chain_host._refresh_retry_delay = 0.5
     chain_host._rate_limit_max_retries = 7
     chain_host._server_error_max_retries = 11
-    assert core._refresh_retry_delay == 0.5
-    assert core._rate_limit_max_retries == 7
-    assert core._server_error_max_retries == 11
+    assert chain_host._refresh_retry_delay == 0.5
+    assert chain_host._rate_limit_max_retries == 7
+    assert chain_host._server_error_max_retries == 11
 
-    # Write through Session descriptor -> read through host slot.
-    core._refresh_retry_delay = 1.25
-    core._rate_limit_max_retries = 2
-    core._server_error_max_retries = 3
+    chain_host._refresh_retry_delay = 1.25
+    chain_host._rate_limit_max_retries = 2
+    chain_host._server_error_max_retries = 3
     assert chain_host._refresh_retry_delay == 1.25
     assert chain_host._rate_limit_max_retries == 2
     assert chain_host._server_error_max_retries == 3

@@ -71,7 +71,7 @@ CLI command or user code
   -> SessionTransport.perform_authed_post(...)
        - loop-affinity guard, auth snapshot, RpcRequest materialization
   -> ADR-009 middleware chain
-  -> Session._authed_post_chain_terminal(...)   # retained chain leaf (ADR-014 Rule 4)
+  -> MiddlewareChainHost._authed_post_chain_terminal(...)   # chain leaf (ADR-014 Rule 4)
   -> SessionTransport.terminal(...)
        - final auth-freshness rebuild immediately before POST
   -> Kernel.post(...) -> _streaming_post -> httpx.AsyncClient
@@ -314,13 +314,14 @@ as keyword-only parameters, plus the previously-existing
 constructor-injected providers for timeout, refresh-callback enablement,
 and retry-delay values. The executor enters transport through
 `SessionTransport.perform_authed_post` directly; the middleware
-terminal remains `Session._authed_post_chain_terminal →
-SessionTransport.terminal → Kernel.post` because the chain leaf is the
-load-bearing seam Wave 5 of the session-decoupling plan retained on
-`Session` per ADR-014 Rule 4. Request types, transport errors, and
-streaming helpers live in separate owning modules instead of one
-catch-all transport helper. This keeps feature APIs on narrow capability
-Protocols and the executor on direct collaborator dependencies.
+terminal remains `MiddlewareChainHost._authed_post_chain_terminal →
+SessionTransport.terminal → Kernel.post`. The chain leaf moved off
+`Session` onto `MiddlewareChainHost` so the chain owns its own
+terminal and retry tunables (ADR-014 Rule 4 chain-ownership
+carve-out). Request types, transport errors, and streaming helpers
+live in separate owning modules instead of one catch-all transport
+helper. This keeps feature APIs on narrow capability Protocols and
+the executor on direct collaborator dependencies.
 
 ## Post-refactor `Session` collaborator graph
 
@@ -365,7 +366,8 @@ Exec  Ref    Life    Chain Trans Drain  Tracker Coun  Pers
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
 | `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `SessionTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5; the historical `RpcOwner` Protocol was deleted in Wave 4 of session-decoupling). Enters transport through `SessionTransport.perform_authed_post`. |
-| `SessionTransport` | [`_session_transport.py`](../src/notebooklm/_session_transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `chat_aware_authed_post` (ChatAPI's chat-flavoured transport call); the middleware chain leaf at `Session._authed_post_chain_terminal` continues to dispatch through `SessionTransport.terminal` per ADR-014 Rule 4. |
+| `SessionTransport` | [`_session_transport.py`](../src/notebooklm/_session_transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `chat_aware_authed_post` (ChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `SessionTransport.terminal` per ADR-014 Rule 4. |
+| `MiddlewareChainHost` | [`_middleware_chain_host.py`](../src/notebooklm/_middleware_chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `core._chain_host._rate_limit_max_retries = 0`) still steers the live chain. `Session` references the host as `self._chain_host` but exposes no Session-side aliases. |
 | `AuthRefreshCoordinator` | [`_session_auth.py`](../src/notebooklm/_session_auth.py) | Owns the auth-snapshot lock and the refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(host)` and token updates. `Session.update_auth_tokens()` remains a one-line delegate for the `RefreshAuthCore` Protocol; the old `Session._snapshot` delegate was inlined. |
 | `ClientLifecycle` | [`_session_lifecycle.py`](../src/notebooklm/_session_lifecycle.py) | HTTP-client open/close, keepalive task, cookie save coordination. Holds `_timeout`, `_bound_loop`, `_http_client`, `_keepalive_*`. |
 | `MiddlewareChainBuilder` | [`_middleware_chain.py`](../src/notebooklm/_middleware_chain.py) | Constructs the middleware chain in the canonical ADR-009 order. Extracted in Phase 3 PR 7. |
@@ -522,14 +524,18 @@ Concretely, `Session` retains:
    so they cannot become a discoverability hub. Stage B (Wave 7
    follow-up) moves `build_collaborators` ownership to `NotebookLMClient`
    and deletes all three accessors.
-3. **Middleware-chain seams.** `_authed_post_chain_terminal` is the
-   live chain leaf wired by `wire_middleware_chain`. Provider-closure
-   capture targets (`_await_refresh`, `_rate_limit_max_retries`,
-   `_server_error_max_retries`, `_refresh_retry_delay`, `assert_bound_loop`)
-   are reached as `host.X` from `build_session_transport` /
-   `wire_middleware_chain`. Per ADR-014 Rule 4 these stay on
-   `Session` until a `MiddlewareChainHost` collaborator extracts them
-   (Wave 7 follow-up).
+3. **Middleware-chain seams.** The chain leaf
+   (`_authed_post_chain_terminal`), the chain slot (`_authed_post_chain`),
+   the dynamic refresh delegate (`await_refresh`), and the three
+   retry-budget tunables (`_rate_limit_max_retries`,
+   `_server_error_max_retries`, `_refresh_retry_delay`) all live on
+   `MiddlewareChainHost` after the chain-ownership carve-out (ADR-014
+   Rule 4). `wire_middleware_chain` and `build_session_transport` take
+   `chain_host: MiddlewareChainHost` directly and read the host
+   attributes live; tests rebind through `core._chain_host._<attr>`.
+   The only middleware-chain capture target that remains on `Session`
+   is `assert_bound_loop`, which is reached as `host.assert_bound_loop`
+   from `build_session_transport`'s `bound_loop_check` lambda.
 4. **Lifecycle methods.** `open`, `close`, `is_open`, `_keepalive_loop`,
    and `assert_bound_loop` (now a one-line forward to
    `ClientLifecycle.assert_bound_loop` since

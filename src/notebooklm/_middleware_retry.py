@@ -110,13 +110,14 @@ class RetryMiddleware:
     ) -> None:
         # Budgets accept either a static int OR a zero-arg callable. The
         # callable form preserves the historical contract where the retry
-        # loop read ``host._rate_limit_max_retries`` /
-        # ``host._server_error_max_retries`` LIVE, so tests (and any
-        # production tweaks) that mutate those attrs on the core after
-        # ``open()`` still take effect. ``Session.__init__``
-        # wires the callable form via a ``lambda: self._rate_limit_max_retries``
-        # closure; tests that build a middleware in isolation typically pass
-        # the int form.
+        # loop read ``chain_host._rate_limit_max_retries`` /
+        # ``chain_host._server_error_max_retries`` LIVE, so tests (and any
+        # production tweaks) that mutate those attrs on the chain host
+        # after ``open()`` still take effect. ``wire_middleware_chain``
+        # passes the callable form via a
+        # ``lambda: chain_host._rate_limit_max_retries`` closure; tests
+        # that build a middleware in isolation typically pass the int
+        # form.
         self._rate_limit_max = rate_limit_max_retries
         self._server_error_max = server_error_max_retries
         # Late-binding rationale lives on ``_session_helpers.resolve_sleep``;

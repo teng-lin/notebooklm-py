@@ -29,10 +29,10 @@ and :mod:`tests._lint.test_no_core_imports`):
   that carried it moved to the **Deleted** section at the bottom of
   the retention doc (which the parser scopes out).
 
-The lint enumerates methods only — not instance attributes like
-``Session._rate_limit_max_retries`` (those are assigned in ``__init__`` and
-documented in the "Stage-A and Rule-4 attribute capture targets" section of
-the retention doc for context).
+The lint enumerates methods only — not instance attributes. The
+retry-budget tunables and chain-leaf slots live on
+:class:`MiddlewareChainHost` (reached as ``core._chain_host._<attr>``),
+not on Session.
 """
 
 from __future__ import annotations

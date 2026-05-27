@@ -1,11 +1,12 @@
-"""Integration tests for the authed-post middleware chain wired into ``Session``.
+"""Integration tests for the authed-post middleware chain.
 
-The Tier-12/13 greenfield migration wires
-:func:`notebooklm._middleware.build_chain` into :meth:`Session.__init__`.
-The chain leaf (:meth:`Session._authed_post_chain_terminal`) consumes the
-populated ``RpcRequest.url`` / ``headers`` / ``body`` envelope and delegates
-directly to ``Kernel.post`` — the transport seam under both
-:meth:`SessionTransport.perform_authed_post` AND
+:func:`notebooklm._middleware.build_chain` is wired by
+:func:`compose_session_internals` against the chain leaf on
+:class:`MiddlewareChainHost`
+(:meth:`MiddlewareChainHost._authed_post_chain_terminal`), which
+consumes the populated ``RpcRequest.url`` / ``headers`` / ``body``
+envelope and delegates directly to ``Kernel.post`` — the transport
+seam under both :meth:`SessionTransport.perform_authed_post` AND
 ``RpcExecutor._execute_once``. The ``Session._perform_authed_post``
 compatibility forward was deleted in Wave 11c of session-decoupling;
 tests now drive the canonical collaborator method directly.
@@ -183,7 +184,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
         },
     )
 
-    result = await core._authed_post_chain_terminal(request)
+    result = await core._chain_host._authed_post_chain_terminal(request)
 
     assert isinstance(result, RpcResponse)
     assert result.response is expected_response
@@ -220,7 +221,7 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
         },
     )
 
-    await core._authed_post_chain_terminal(request)
+    await core._chain_host._authed_post_chain_terminal(request)
 
     assert fake.call_count == 1
     assert fake.calls[0]["url"] == "https://fake/no-retry-flag"
@@ -249,7 +250,7 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
     )
 
     with pytest.raises(TransportServerError, match="<unknown-chain-call> network error"):
-        await core._authed_post_chain_terminal(request)
+        await core._chain_host._authed_post_chain_terminal(request)
 
 
 @pytest.mark.asyncio
@@ -329,7 +330,7 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     # terminal. This per-test composition validates the leaf's contract
     # against ``build_chain`` without mutating ``Session.__init__``'s
     # production chain.
-    chain: NextCall = build_chain([observer], core._authed_post_chain_terminal)
+    chain: NextCall = build_chain([observer], core._chain_host._authed_post_chain_terminal)
 
     request = RpcRequest(
         url="https://fake/observe",
@@ -355,8 +356,8 @@ def test_build_chain_empty_returns_terminal_unchanged() -> None:
     """:func:`build_chain` returns the terminal unchanged when ``middlewares`` is empty.
 
     Pins the contract that ``_middleware.build_chain([], terminal) is terminal``
-    so :meth:`Session.__init__`'s ``self._authed_post_chain is
-    self._authed_post_chain_terminal`` invariant from
+    so the ``chain_host._authed_post_chain is
+    chain_host._authed_post_chain_terminal`` invariant from
     :func:`test_chain_is_empty_by_default` does not silently flip if
     ``build_chain``'s identity behavior changes. Synchronous test —
     no event-loop overhead.

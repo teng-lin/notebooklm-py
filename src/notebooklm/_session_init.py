@@ -368,14 +368,11 @@ def build_session_transport(
     through a live-binding ``chain_provider`` closure that reads
     ``chain_host._authed_post_chain`` on every authed POST; that
     attribute is assigned by :func:`compose_session_internals`
-    immediately after :func:`wire_middleware_chain` returns, via the
-    :class:`Session` descriptor that writes through to the host. Using a
+    immediately after :func:`wire_middleware_chain` returns. Using a
     provider closure (rather than a frozen reference) preserves the
     pre-extraction behavior where tests reassign
-    ``core._authed_post_chain = fake_chain`` to install a fake chain and
-    expect the next call to honor it — that write routes through the
-    descriptor to ``chain_host._authed_post_chain``, which this lambda
-    re-reads on the next dispatch.
+    ``core._chain_host._authed_post_chain = fake_chain`` to install a
+    fake chain and expect the next call to honor it.
 
     The ``snapshot_provider`` closure passes ``host.auth`` (re-read on
     every call) to :meth:`AuthRefreshCoordinator.snapshot` so the
@@ -391,11 +388,9 @@ def build_session_transport(
     Session fixture (which sets ``_lifecycle`` to a MagicMock) still
     short-circuits the guard.
 
-    Stage B2 PR 2 of the post-refactoring plan added the explicit
-    ``chain_host`` parameter so the chain-slot lookup no longer goes
-    through ``host._authed_post_chain`` (the :class:`Session` descriptor
-    forward) — going through the host directly removes the descriptor
-    indirection on the hot path.
+    The ``chain_host`` parameter lets the chain-slot lookup go through
+    the host directly, with no Session-side indirection on the hot
+    path.
 
     The ``logger`` is forwarded as-is — typically the module logger of
     ``notebooklm._session`` — so transport-error log lines keep
@@ -426,16 +421,14 @@ def wire_middleware_chain(
     """Construct the :class:`MiddlewareChainBuilder`, build the seven-middleware
     list, and wire the final chain via :func:`build_chain`.
 
-    Stage B2 PR 2 of the post-refactoring plan split the historical
-    ``host: Session`` parameter into two narrower hosts:
+    Two narrow host parameters:
 
     * ``chain_host`` — the :class:`MiddlewareChainHost` owns the three
       retry-budget tunables (``_rate_limit_max_retries`` /
       ``_server_error_max_retries`` / ``_refresh_retry_delay``) plus the
       dynamic-delegate refresh entry point (:meth:`await_refresh`). The
       tunable provider lambdas and the ``refresh_callable`` reference
-      capture this host directly so the chain does not depend on the
-      :class:`Session`'s descriptor forwards.
+      capture this host directly.
     * ``auth`` — the live :class:`AuthTokens` collaborator passed
       explicitly to :meth:`AuthRefreshCoordinator.snapshot` on every
       call. The provider lambda captures this object by reference; the
@@ -451,14 +444,13 @@ def wire_middleware_chain(
       construction), so it no longer needs a host-shaped collaborator
       for the metric either.
 
-    Post-construction mutation on ``chain_host._<attr>`` (or on
-    ``session._<attr>``, which writes through the descriptor to the
-    host) still takes effect through the middleware live-binding
-    contract documented in :class:`MiddlewareChainBuilder`. The
-    ``rpc_semaphore_factory`` is passed in explicitly so the helper does
-    not need to know that the live semaphore lives on
-    ``Session._get_rpc_semaphore`` — that surface stays on Session
-    because the semaphore is per-loop session state (not chain state).
+    Post-construction mutation on ``chain_host._<attr>`` still takes
+    effect through the middleware live-binding contract documented in
+    :class:`MiddlewareChainBuilder`. The ``rpc_semaphore_factory`` is
+    passed in explicitly so the helper does not need to know that the
+    live semaphore lives on ``Session._get_rpc_semaphore`` — that
+    surface stays on Session because the semaphore is per-loop session
+    state (not chain state).
     """
     # ADR-009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in

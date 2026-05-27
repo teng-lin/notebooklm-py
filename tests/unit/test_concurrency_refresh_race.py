@@ -99,12 +99,10 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     would let a concurrent refresh change the cookie jar between request
     rebuild and wire send.
 
-    The terminal body lives on :meth:`SessionTransport.terminal` after
-    move #4c — ``Session._authed_post_chain_terminal`` is now a one-line
-    forward to it, so the AST guard must inspect the collaborator method
-    that carries the actual body. The error messages still mention
-    ``Session._authed_post_chain_terminal`` as the conceptual entry point
-    because that is still where chain-leaf callers reach the behavior.
+    The terminal body lives on :meth:`SessionTransport.terminal`; the
+    chain leaf (:meth:`MiddlewareChainHost._authed_post_chain_terminal`)
+    forwards to it. The AST guard inspects the collaborator method
+    that carries the actual body.
     """
     src = textwrap.dedent(inspect.getsource(SessionTransport.terminal))
     tree = ast.parse(src)
@@ -133,7 +131,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     found_try = _find_first_try(func)
     assert found_try is not None, (
         "Could not locate the ``try:`` block guarding the POST in "
-        "Session._authed_post_chain_terminal. Update this guard to match."
+        "SessionTransport.terminal. Update this guard to match."
     )
 
     def is_post_await(node):
@@ -190,7 +188,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     post_await_position = min(post_await_positions, default=None)
     assert post_await_position is not None, (
         "Could not locate `await ...post(...)` in the try body of "
-        "Session._authed_post_chain_terminal. If the call site was refactored (e.g. to "
+        "SessionTransport.terminal. If the call site was refactored (e.g. to "
         "``client.request(...)``), update this guard to match — the "
         "invariant is 'no await between snapshot read and the POST per "
         "iteration', not specifically the `.post` attribute."
@@ -202,7 +200,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
         if isinstance(n, ast.Await) and (n.lineno, n.col_offset) < post_await_position
     ]
     assert not earlier_awaits, (
-        f"Session._authed_post_chain_terminal gained an await before the per-attempt POST "
+        f"SessionTransport.terminal gained an await before the per-attempt POST "
         f"at {post_await_position}: "
         f"{[(n.lineno, ast.dump(n)) for n in earlier_awaits]}. "
         "This breaks the snapshot-invariant — auth state could be mutated "

@@ -84,7 +84,7 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
 
     # NotebookLMClient default — NO ``rate_limit_max_retries`` kwarg.
     client = NotebookLMClient(auth_tokens)
-    assert client._session._rate_limit_max_retries == 3, (
+    assert client._session._chain_host._rate_limit_max_retries == 3, (
         "rate_limit_max_retries default must be 3; check that NotebookLMClient.__init__ "
         "forwards the Session default."
     )
@@ -117,7 +117,7 @@ async def test_default_retries_exhausted_raises_rate_limit_error(auth_tokens) ->
     mock_post = AsyncMock(return_value=_build_429("1"))
 
     client = NotebookLMClient(auth_tokens)
-    assert client._session._rate_limit_max_retries == 3
+    assert client._session._chain_host._rate_limit_max_retries == 3
 
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_http.post = mock_post
@@ -206,7 +206,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     mock_post = AsyncMock(return_value=_build_429("1"))
 
     client = NotebookLMClient(auth_tokens)
-    assert client._session._rate_limit_max_retries == 3
+    assert client._session._chain_host._rate_limit_max_retries == 3
 
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_http.post = mock_post
