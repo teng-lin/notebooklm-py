@@ -334,7 +334,22 @@ class NotebookLMClient:
         # exists at NotesAPI construction time. Phase 6 (refactor-history.md
         # Step 8, ADR-013) moves saved-chat ownership to ChatAPI and
         # has NotesAPI delegate via constructor injection.
-        self.chat = ChatAPI(self._session, notebooks=self.notebooks)
+        #
+        # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ChatAPI
+        # takes its four direct collaborators (RpcCaller, SessionTransport,
+        # ReqidCounter, LoopGuard) by keyword argument instead of a
+        # chat-local ``ChatRuntime`` runtime composite. The collaborators
+        # are sourced from the late-bound ``session.rpc_executor`` /
+        # ``session.session_transport`` accessors and the
+        # ``session.collaborators`` bundle.
+        chat_collaborators = self._session.collaborators
+        self.chat = ChatAPI(
+            rpc=self._session.rpc_executor,
+            transport=self._session.session_transport,
+            reqid=chat_collaborators.reqid,
+            loop_guard=chat_collaborators.lifecycle,
+            notebooks=self.notebooks,
+        )
         self.notes = NotesAPI(
             notes=note_service,
             mind_maps=mind_maps,

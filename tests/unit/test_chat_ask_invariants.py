@@ -315,7 +315,17 @@ class TestChatRefreshRetry:
             assert core._kernel.http_client is not None
             install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-            api = ChatAPI(core)
+            # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary):
+            # ``ChatAPI`` takes its four direct collaborators by keyword
+            # arg. Wired here from the real ``Session`` under test so the
+            # refresh path exercises the production transport/rpc/reqid
+            # collaborators end-to-end.
+            api = ChatAPI(
+                rpc=core.rpc_executor,
+                transport=core.session_transport,
+                reqid=core.collaborators.reqid,
+                loop_guard=core.collaborators.lifecycle,
+            )
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])
 
             assert call_count["n"] == 2
@@ -421,10 +431,18 @@ class TestBuildChatRequestFactory:
     """
 
     def _factory(self) -> ChatAPI:
+        # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary):
+        # ``ChatAPI`` takes direct collaborators by keyword arg. Pure
+        # ``_build_chat_request`` exercise — none of these collaborators
+        # are touched, so they are bare ``MagicMock()`` placeholders.
         from unittest.mock import MagicMock
 
-        core = MagicMock(spec=Session)
-        return ChatAPI(core)
+        return ChatAPI(
+            rpc=MagicMock(),
+            transport=MagicMock(),
+            reqid=MagicMock(),
+            loop_guard=MagicMock(),
+        )
 
     def test_build_request_omits_authuser_for_default_profile(self):
         chat = self._factory()

@@ -1819,9 +1819,14 @@ class TestGetConversationIdNullRaw:
     ):
         """Test get_conversation_id returns None when rpc_call returns None (arc 231->230)."""
         async with NotebookLMClient(auth_tokens) as client:
-            # Patch rpc_call to return None directly (bypasses decode error)
+            # Patch the direct ``rpc`` collaborator on ChatAPI to return
+            # None (bypasses decode error). Wave 8 of session-decoupling
+            # (ADR-014 Rule 2 Corollary) replaced the ``client._session``
+            # facade with direct constructor injection of the underlying
+            # collaborators, so we reach the chat dispatch surface via
+            # ``client.chat._rpc`` rather than ``client._session``.
             with patch.object(
-                client._session,
+                client.chat._rpc,
                 "rpc_call",
                 new_callable=AsyncMock,
                 return_value=None,

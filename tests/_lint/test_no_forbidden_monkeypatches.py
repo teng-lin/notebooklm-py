@@ -153,7 +153,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # rotation/lock helpers.
         "tests/unit/test_auth_psidts_recovery.py",
         "tests/unit/test_backoff.py",
-        "tests/unit/test_chat_delete_conversation.py",
         # Phase 2 PR 5 migrated this file's ``asyncio.to_thread`` patch
         # off the legacy ``notebooklm._core.asyncio.to_thread`` shim onto
         # its canonical importing module

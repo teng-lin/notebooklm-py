@@ -4,11 +4,13 @@ Provides operations for asking questions, managing conversations, and
 retrieving conversation history.
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
 import weakref
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
@@ -31,6 +33,10 @@ from ._notebook_metadata import NotebookSourceIdProvider
 from ._request_types import AuthSnapshot, BuildRequest
 from ._session_contracts import LoopGuard, RpcCaller
 from .exceptions import ChatError, NetworkError, ValidationError
+
+if TYPE_CHECKING:
+    from ._reqid_counter import ReqidCounter
+    from ._session_transport import SessionTransport
 from .rpc import (
     ChatGoal,
     ChatResponseLength,
@@ -146,30 +152,62 @@ class ChatAPI:
 
     def __init__(
         self,
-        runtime: ChatRuntime,
         *,
+        rpc: RpcCaller,
+        transport: SessionTransport,
+        reqid: ReqidCounter,
+        loop_guard: LoopGuard,
         conversation_cache: ConversationCache | None = None,
         notebooks: NotebookSourceIdProvider | None = None,
     ):
         """Initialize the chat API.
 
+        Per ADR-014 Rule 2 Corollary (Wave 8 of the session-decoupling
+        plan), ``ChatAPI`` depends on the **direct** collaborators it
+        actually exercises rather than a chat-local Runtime Protocol that
+        bundles them. The chat-local ``ChatRuntime`` Protocol used to
+        compose ``RpcCaller`` + ``LoopGuard`` + ``transport_post`` +
+        ``next_reqid``; once ``chat_aware_authed_post`` was switched to
+        take :class:`SessionTransport` directly (Wave 8 step 1), the
+        single-member surface that justified the Protocol disappeared, so
+        the Protocol was deleted and ChatAPI takes the four underlying
+        collaborators by keyword argument instead.
+
         Args:
-            runtime: Local :class:`ChatRuntime` providing RPC dispatch,
-                chat-aware transport, request-id minting, and loop-affinity
-                assertion. The concrete :class:`Session` structurally
-                satisfies this protocol.
+            rpc: RPC dispatch collaborator (typically
+                ``session.rpc_executor``) for the ``get_conversation_*``,
+                ``configure``, ``delete_conversation``, and
+                ``save_answer_as_note`` round-trips.
+            transport: :class:`SessionTransport` collaborator (typically
+                ``session.session_transport``) that owns the authed-POST
+                entry point used by :meth:`ask` via
+                :func:`chat_aware_authed_post`.
+            reqid: :class:`ReqidCounter` collaborator (typically
+                ``session.collaborators.reqid``) that mints the
+                per-attempt ``_reqid`` query parameter for the streamed
+                chat request.
+            loop_guard: :class:`LoopGuard` collaborator (typically
+                ``session.collaborators.lifecycle``) whose
+                :meth:`assert_bound_loop` fires before :meth:`ask`
+                acquires the per-conversation lock so a cross-loop
+                follow-up doesn't hang on a lock bound to a dead loop.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache`` (chat-domain state, no
                 other consumer).
             notebooks: Optional source-id resolver. Defaults to a
-                ``NotebooksAPI`` wrapper around ``runtime`` for backward
-                compatibility with tests that construct ``ChatAPI(fake)``.
+                ``NotebooksAPI`` wrapper around ``rpc`` so a bare
+                ``ChatAPI(rpc=..., transport=..., reqid=..., loop_guard=...)``
+                still has a default source-id resolver without callers
+                wiring the full NotebooksAPI graph.
         """
-        self._runtime = runtime
+        self._rpc = rpc
+        self._transport = transport
+        self._reqid = reqid
+        self._loop_guard = loop_guard
         if notebooks is None:
             from ._notebooks import NotebooksAPI
 
-            notebooks = NotebooksAPI(runtime)
+            notebooks = NotebooksAPI(rpc)
         self._notebooks = notebooks
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
         # Per-``conversation_id`` lock that serializes follow-up asks on the
@@ -268,7 +306,7 @@ class ChatAPI:
         # guard in ``Session._perform_authed_post`` only catches misuse on
         # the POST itself, which is *after* the conversation lock is
         # already held — too late.
-        self._runtime.assert_bound_loop()
+        self._loop_guard.assert_bound_loop()
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
             notebook_id,
@@ -315,8 +353,11 @@ class ChatAPI:
             # previous direct mutation ``self._core._reqid_counter += 100000``
             # (``self._core`` was the pre-Phase-2 attribute name, now
             # ``self._runtime``) raced under ``asyncio.gather`` and produced
-            # duplicate ``_reqid`` URL params.
-            reqid = await self._runtime.next_reqid()
+            # duplicate ``_reqid`` URL params. After Wave 8 of session-
+            # decoupling, ``ChatAPI`` holds the :class:`ReqidCounter`
+            # directly (constructor injection) instead of reaching for it
+            # through a runtime composite.
+            reqid = await self._reqid.next_reqid()
 
             def build_request(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
                 return self._build_chat_request(
@@ -338,7 +379,7 @@ class ChatAPI:
             reqid_token = None if get_request_id() is not None else set_request_id()
             try:
                 response = await chat_aware_authed_post(
-                    self._runtime.session_transport,
+                    self._transport,
                     build_request=build_request,
                     parse_label="chat.ask",
                 )
@@ -453,7 +494,7 @@ class ChatAPI:
             limit,
         )
         params: list[Any] = [[], None, None, conversation_id, limit]
-        return await self._runtime.rpc_call(
+        return await self._rpc.rpc_call(
             RPCMethod.GET_CONVERSATION_TURNS,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -472,7 +513,7 @@ class ChatAPI:
         """
         logger.debug("Getting conversation ID for notebook %s", notebook_id)
         params: list[Any] = [[], None, notebook_id, 1]
-        raw = await self._runtime.rpc_call(
+        raw = await self._rpc.rpc_call(
             RPCMethod.GET_LAST_CONVERSATION_ID,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -628,7 +669,7 @@ class ChatAPI:
             # Param shape captured from web-UI traffic. The trailing 1 is
             # always observed; its meaning is uncharted — treated as a fixed flag.
             params: list[Any] = [[], conversation_id, None, 1]
-            await self._runtime.rpc_call(
+            await self._rpc.rpc_call(
                 RPCMethod.DELETE_CONVERSATION,
                 params,
                 source_path=f"/notebook/{notebook_id}",
@@ -694,7 +735,7 @@ class ChatAPI:
             [[None, None, None, None, None, None, None, chat_settings]],
         ]
 
-        await self._runtime.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.RENAME_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -771,7 +812,7 @@ class ChatAPI:
             else f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"
         )
         return await save_chat_answer_as_note(
-            self._runtime,
+            self._rpc,
             notebook_id,
             ask_result.answer,
             ask_result.references,

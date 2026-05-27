@@ -113,6 +113,27 @@ def mock_notebooks_api():
     return notebooks
 
 
+def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
+    """Build a ``ChatAPI`` from the ``mock_core`` fixture's surfaces.
+
+    Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ``ChatAPI``
+    takes its four direct collaborators by keyword arg. The legacy single-
+    arg ``ChatAPI(mock_core)`` form is gone; this helper preserves the
+    test shape by mapping the bag-of-attributes mock_core fixture onto
+    the new constructor surface (rpc, transport, reqid, loop_guard).
+    Tests pass ``mock_core.rpc_call`` for ``rpc.rpc_call`` and the
+    fixture's pre-wired ``mock_core.session_transport.perform_authed_post``
+    for the transport entry point.
+    """
+    return ChatAPI(
+        rpc=mock_core,
+        transport=mock_core.session_transport,
+        reqid=mock_core,
+        loop_guard=mock_core,
+        notebooks=notebooks,
+    )
+
+
 @pytest.fixture
 def mock_mind_map_service():
     """Bundle of stand-in services required by ``ArtifactsAPI.__init__``.
@@ -139,7 +160,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_with_explicit_source_ids(self, mock_core):
         """Test ask() with explicitly provided source_ids."""
-        api = ChatAPI(mock_core)
+        api = _chat_from_mock_core(mock_core)
 
         result = await api.ask(
             notebook_id="nb_123",
@@ -163,7 +184,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_with_none_fetches_all_sources(self, mock_core, mock_notebooks_api):
         """Test ask() with source_ids=None fetches all sources."""
-        api = ChatAPI(mock_core, notebooks=mock_notebooks_api)
+        api = _chat_from_mock_core(mock_core, notebooks=mock_notebooks_api)
 
         # Mock get_source_ids to return source IDs
         mock_notebooks_api.get_source_ids.return_value = ["src_001", "src_002", "src_003"]
@@ -182,7 +203,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_source_encoding_format(self, mock_core):
         """Verify the correct encoding format for source IDs in ask()."""
-        api = ChatAPI(mock_core)
+        api = _chat_from_mock_core(mock_core)
 
         await api.ask(
             notebook_id="nb_123",
@@ -731,7 +752,7 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_ask_with_empty_source_list(self, mock_core):
         """Test ask with empty source_ids list."""
-        api = ChatAPI(mock_core)
+        api = _chat_from_mock_core(mock_core)
 
         await api.ask(
             notebook_id="nb_123",

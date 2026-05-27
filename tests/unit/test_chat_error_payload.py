@@ -12,7 +12,16 @@ class MalformedErrorPayload(list):
 
 
 def test_rate_limit_payload_parse_failure_logs_debug(caplog):
-    api = ChatAPI(MagicMock())
+    # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ``ChatAPI``
+    # takes direct collaborators by keyword arg. ``_raise_if_rate_limited``
+    # is a pure-payload-parsing helper that does not touch any collaborator,
+    # so all four are plain ``MagicMock()`` placeholders.
+    api = ChatAPI(
+        rpc=MagicMock(),
+        transport=MagicMock(),
+        reqid=MagicMock(),
+        loop_guard=MagicMock(),
+    )
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm._chat"):
         api._raise_if_rate_limited(MalformedErrorPayload())

@@ -190,20 +190,30 @@ def test_wait_for_completion_guards_against_cross_loop_call() -> None:
 def test_chat_ask_guards_against_cross_loop_call() -> None:
     """``ChatAPI.ask`` must raise on cross-loop misuse.
 
-    The chat entry calls its core capability's ``assert_bound_loop`` *before*
+    The chat entry calls its ``loop_guard.assert_bound_loop`` *before*
     acquiring the per-conversation lock so a cross-loop follow-up doesn't
     hang on a lock bound to a dead loop.
+
+    Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ``ChatAPI``
+    takes the :class:`LoopGuard` collaborator directly via keyword arg
+    instead of reaching for it through a chat-local runtime composite.
     """
     from notebooklm._chat import ChatAPI
 
-    capabilities = MagicMock()
     other_loop = asyncio.new_event_loop()
     try:
-        capabilities.assert_bound_loop = MagicMock(
-            side_effect=RuntimeError("NotebookLM client used from a different event loop")
+        loop_guard = MagicMock(
+            assert_bound_loop=MagicMock(
+                side_effect=RuntimeError("NotebookLM client used from a different event loop")
+            )
         )
 
-        chat = ChatAPI(capabilities)
+        chat = ChatAPI(
+            rpc=MagicMock(),
+            transport=MagicMock(),
+            reqid=MagicMock(),
+            loop_guard=loop_guard,
+        )
 
         async def inner() -> None:
             await chat.ask("nb-id", "question", source_ids=["src-1"])
