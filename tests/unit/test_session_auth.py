@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -54,13 +53,13 @@ class _StubHost:
       writes ``csrf_token`` / ``session_id`` directly on it.
     * ``_metrics_obj`` is a real :class:`ClientMetrics` — the coordinator's
       :meth:`record_lock_wait` calls land on it.
-    * ``_kernel`` exposes a ``get_http_client()`` method that returns an
-      ``httpx.AsyncClient`` whose cookie jar :meth:`update_auth_headers`
-      reads. The client's lifecycle is owned by the test fixture
-      (`http_host`), not by the stub. Wave 11b of session-decoupling moved
-      the live-HTTP-client read off ``Session.get_http_client`` and onto
-      ``host._kernel.get_http_client()`` to match the canonical
-      :class:`Kernel` ownership.
+    * ``_kernel`` aliases ``self`` so ``host._kernel.get_http_client()``
+      resolves to the stub's own :meth:`get_http_client`. Wave 11b of
+      session-decoupling moved the live-HTTP-client read off
+      ``Session.get_http_client`` and onto ``host._kernel.get_http_client()``
+      to match the canonical :class:`Kernel` ownership; the stub is its
+      own kernel-shaped collaborator because it already exposes the
+      one-method surface the Protocol requires.
     """
 
     def __init__(self, http_client: httpx.AsyncClient | None = None) -> None:
@@ -71,7 +70,7 @@ class _StubHost:
         )
         self._metrics_obj = ClientMetrics(on_rpc_event=None)
         self.http_client = http_client
-        self._kernel = SimpleNamespace(get_http_client=self.get_http_client)
+        self._kernel = self
 
     def get_http_client(self) -> httpx.AsyncClient:
         assert self.http_client is not None, "Test forgot to wire an http client."
