@@ -1,0 +1,58 @@
+{
+  "method_name": "GET_NOTEBOOK",
+  "method_id": "rLM1Ne",
+  "description": "Fetch a notebook's sources and metadata by id.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      null,
+      [
+        2
+      ],
+      null,
+      0
+    ],
+    "expected_f_req": [
+      [
+        [
+          "rLM1Ne",
+          "[\"SCRUBBED_NB_001\",null,[2],null,0]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "rLM1Ne",
+          "[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",[[[\"SCRUBBED_SRC_001\"],\"Scrubbed Source\",[2,null]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_NB_001",
+      "Scrubbed Notebook One",
+      [
+        [
+          [
+            "SCRUBBED_SRC_001"
+          ],
+          "Scrubbed Source",
+          [
+            2,
+            null
+          ]
+        ]
+      ]
+    ]
+  }
+}

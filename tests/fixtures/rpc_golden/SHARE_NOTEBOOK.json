@@ -1,0 +1,54 @@
+{
+  "method_name": "SHARE_NOTEBOOK",
+  "method_id": "QDyure",
+  "description": "Set notebook visibility / share state (production shape [[[notebook_id, None, [access], [access, '']]], 1, None, [2]]).",
+  "request": {
+    "params": [
+      [
+        [
+          "SCRUBBED_NB_001",
+          null,
+          [
+            1
+          ],
+          [
+            1,
+            ""
+          ]
+        ]
+      ],
+      1,
+      null,
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "QDyure",
+          "[[[\"SCRUBBED_NB_001\",null,[1],[1,\"\"]]],1,null,[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "QDyure",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

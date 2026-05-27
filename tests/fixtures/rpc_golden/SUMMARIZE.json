@@ -1,0 +1,43 @@
+{
+  "method_name": "SUMMARIZE",
+  "method_id": "VfAZjd",
+  "description": "Generate a notebook-level summary across selected sources.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      null,
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "VfAZjd",
+          "[\"SCRUBBED_NB_001\",null,[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "VfAZjd",
+          "[\"Scrubbed summary paragraph describing the notebook.\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "Scrubbed summary paragraph describing the notebook."
+    ]
+  }
+}

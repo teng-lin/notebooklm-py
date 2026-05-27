@@ -1,0 +1,40 @@
+{
+  "method_name": "DELETE_ARTIFACT",
+  "method_id": "V5N4be",
+  "description": "Delete an artifact by id (production shape [[type_code], artifact_id]).",
+  "request": {
+    "params": [
+      [
+        2
+      ],
+      "SCRUBBED_ARTIFACT_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "V5N4be",
+          "[[2],\"SCRUBBED_ARTIFACT_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "V5N4be",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

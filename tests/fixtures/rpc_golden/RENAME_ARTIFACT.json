@@ -1,0 +1,45 @@
+{
+  "method_name": "RENAME_ARTIFACT",
+  "method_id": "rc3d8d",
+  "description": "Rename an artifact (production shape [[artifact_id, new_title], [['title']]]).",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_ARTIFACT_001",
+        "Scrubbed Renamed Artifact"
+      ],
+      [
+        [
+          "title"
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "rc3d8d",
+          "[[\"SCRUBBED_ARTIFACT_001\",\"Scrubbed Renamed Artifact\"],[[\"title\"]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "rc3d8d",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

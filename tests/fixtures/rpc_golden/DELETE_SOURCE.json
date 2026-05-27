@@ -1,0 +1,41 @@
+{
+  "method_name": "DELETE_SOURCE",
+  "method_id": "tGMBJ",
+  "description": "Delete a source from a notebook (production shape [[[source_id]]]).",
+  "request": {
+    "params": [
+      [
+        [
+          "SCRUBBED_SRC_001"
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "tGMBJ",
+          "[[[\"SCRUBBED_SRC_001\"]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "tGMBJ",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

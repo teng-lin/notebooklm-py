@@ -1,0 +1,42 @@
+{
+  "method_name": "GET_INTERACTIVE_HTML",
+  "method_id": "v9rmvd",
+  "description": "Fetch quiz / flashcard HTML content.",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_ARTIFACT_001"
+      ],
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "v9rmvd",
+          "[[\"SCRUBBED_ARTIFACT_001\"],\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "v9rmvd",
+          "[\"<html><body>Scrubbed quiz content.</body></html>\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "<html><body>Scrubbed quiz content.</body></html>"
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "method_name": "CREATE_ARTIFACT",
+  "method_id": "R7cb6c",
+  "description": "Generate an artifact (audio, video, report, quiz, infographic, slides, ...).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      [
+        1
+      ],
+      null
+    ],
+    "expected_f_req": [
+      [
+        [
+          "R7cb6c",
+          "[\"SCRUBBED_NB_001\",[1],null]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "R7cb6c",
+          "[\"SCRUBBED_ARTIFACT_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_ARTIFACT_001"
+    ]
+  }
+}

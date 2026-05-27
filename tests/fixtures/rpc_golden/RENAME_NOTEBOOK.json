@@ -1,0 +1,48 @@
+{
+  "method_name": "RENAME_NOTEBOOK",
+  "method_id": "s0tc2d",
+  "description": "Rename a notebook (production shape [notebook_id, [[None, None, None, [None, new_title]]]]; also reused as SET_SHARE_ACCESS carrier with different inner params).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      [
+        [
+          null,
+          null,
+          null,
+          [
+            null,
+            "Scrubbed Renamed Title"
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "s0tc2d",
+          "[\"SCRUBBED_NB_001\",[[null,null,null,[null,\"Scrubbed Renamed Title\"]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "s0tc2d",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

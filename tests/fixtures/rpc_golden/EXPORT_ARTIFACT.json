@@ -1,0 +1,43 @@
+{
+  "method_name": "EXPORT_ARTIFACT",
+  "method_id": "Krh3pd",
+  "description": "Export an artifact (e.g. report) to Google Docs / Sheets.",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_ARTIFACT_001"
+      ],
+      1,
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "Krh3pd",
+          "[[\"SCRUBBED_ARTIFACT_001\"],1,\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "Krh3pd",
+          "[\"https://scrubbed.example.com/docs/SCRUBBED_DOC_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "https://scrubbed.example.com/docs/SCRUBBED_DOC_001"
+    ]
+  }
+}

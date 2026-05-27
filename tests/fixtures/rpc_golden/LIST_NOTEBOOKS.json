@@ -1,0 +1,63 @@
+{
+  "method_name": "LIST_NOTEBOOKS",
+  "method_id": "wXbhsf",
+  "description": "List notebooks visible to the authenticated user.",
+  "request": {
+    "params": [
+      null,
+      1,
+      null,
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "wXbhsf",
+          "[null,1,null,[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "wXbhsf",
+          "[[[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",null,null,null,null,0],[\"SCRUBBED_NB_002\",\"Scrubbed Notebook Two\",null,null,null,null,0]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "SCRUBBED_NB_001",
+          "Scrubbed Notebook One",
+          null,
+          null,
+          null,
+          null,
+          0
+        ],
+        [
+          "SCRUBBED_NB_002",
+          "Scrubbed Notebook Two",
+          null,
+          null,
+          null,
+          null,
+          0
+        ]
+      ]
+    ]
+  }
+}

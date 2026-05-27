@@ -1,0 +1,43 @@
+{
+  "method_name": "SHARE_ARTIFACT",
+  "method_id": "RGP97b",
+  "description": "Toggle artifact share state.",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_ARTIFACT_001"
+      ],
+      true,
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "RGP97b",
+          "[[\"SCRUBBED_ARTIFACT_001\"],true,\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "RGP97b",
+          "[\"https://scrubbed.example.com/share/SCRUBBED_ARTIFACT_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "https://scrubbed.example.com/share/SCRUBBED_ARTIFACT_001"
+    ]
+  }
+}

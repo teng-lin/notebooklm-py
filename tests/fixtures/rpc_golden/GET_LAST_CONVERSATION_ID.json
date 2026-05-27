@@ -1,0 +1,39 @@
+{
+  "method_name": "GET_LAST_CONVERSATION_ID",
+  "method_id": "hPTbtc",
+  "description": "Fetch the most recent conversation id for a notebook.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "hPTbtc",
+          "[\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "hPTbtc",
+          "[\"SCRUBBED_CONV_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_CONV_001"
+    ]
+  }
+}

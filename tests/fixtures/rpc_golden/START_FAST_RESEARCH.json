@@ -1,0 +1,41 @@
+{
+  "method_name": "START_FAST_RESEARCH",
+  "method_id": "Ljjv0c",
+  "description": "Start a fast (shallow) research task on a notebook.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      "Scrubbed research prompt.",
+      null
+    ],
+    "expected_f_req": [
+      [
+        [
+          "Ljjv0c",
+          "[\"SCRUBBED_NB_001\",\"Scrubbed research prompt.\",null]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "Ljjv0c",
+          "[\"SCRUBBED_RESEARCH_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_RESEARCH_001"
+    ]
+  }
+}

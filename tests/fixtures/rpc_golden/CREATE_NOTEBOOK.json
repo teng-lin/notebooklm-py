@@ -1,0 +1,47 @@
+{
+  "method_name": "CREATE_NOTEBOOK",
+  "method_id": "CCqFvf",
+  "description": "Create a new notebook with a title.",
+  "request": {
+    "params": [
+      "Scrubbed Notebook Title",
+      null,
+      null,
+      [
+        2
+      ],
+      [
+        1
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "CCqFvf",
+          "[\"Scrubbed Notebook Title\",null,null,[2],[1]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "CCqFvf",
+          "[\"SCRUBBED_NB_NEW_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_NB_NEW_001"
+    ]
+  }
+}

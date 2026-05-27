@@ -1,0 +1,58 @@
+{
+  "method_name": "LIST_ARTIFACTS",
+  "method_id": "gArtLc",
+  "description": "List all artifacts in a notebook (production shape [[type_code], notebook_id, filter_string]).",
+  "request": {
+    "params": [
+      [
+        2
+      ],
+      "SCRUBBED_NB_001",
+      "NOT artifact.status = \"ARTIFACT_STATUS_SUGGESTED\""
+    ],
+    "expected_f_req": [
+      [
+        [
+          "gArtLc",
+          "[[2],\"SCRUBBED_NB_001\",\"NOT artifact.status = \\\"ARTIFACT_STATUS_SUGGESTED\\\"\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "gArtLc",
+          "[[[\"SCRUBBED_ARTIFACT_001\",\"Scrubbed Audio Overview\",1,null,3],[\"SCRUBBED_ARTIFACT_002\",\"Scrubbed Briefing Doc\",2,null,3]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "SCRUBBED_ARTIFACT_001",
+          "Scrubbed Audio Overview",
+          1,
+          null,
+          3
+        ],
+        [
+          "SCRUBBED_ARTIFACT_002",
+          "Scrubbed Briefing Doc",
+          2,
+          null,
+          3
+        ]
+      ]
+    ]
+  }
+}

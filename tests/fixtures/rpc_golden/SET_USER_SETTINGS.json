@@ -1,0 +1,52 @@
+{
+  "method_name": "SET_USER_SETTINGS",
+  "method_id": "hT54vc",
+  "description": "Set user settings (production shape [[[None, [[None, None, None, None, [language]]]]]]).",
+  "request": {
+    "params": [
+      [
+        [
+          null,
+          [
+            [
+              null,
+              null,
+              null,
+              null,
+              [
+                "en"
+              ]
+            ]
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "hT54vc",
+          "[[[null,[[null,null,null,null,[\"en\"]]]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "hT54vc",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

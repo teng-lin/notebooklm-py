@@ -1,0 +1,41 @@
+{
+  "method_name": "GET_USER_SETTINGS",
+  "method_id": "ZwVcOc",
+  "description": "Fetch user settings (production shape []; no params).",
+  "request": {
+    "params": [],
+    "expected_f_req": [
+      [
+        [
+          "ZwVcOc",
+          "[]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "ZwVcOc",
+          "[[\"en\"],null,null]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        "en"
+      ],
+      null,
+      null
+    ]
+  }
+}

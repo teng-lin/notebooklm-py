@@ -1,0 +1,44 @@
+{
+  "method_name": "REVISE_SLIDE",
+  "method_id": "KmcKPe",
+  "description": "Revise an individual slide in a slide-deck artifact.",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_ARTIFACT_001"
+      ],
+      3,
+      "Scrubbed revision prompt.",
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "KmcKPe",
+          "[[\"SCRUBBED_ARTIFACT_001\"],3,\"Scrubbed revision prompt.\",\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "KmcKPe",
+          "[\"Scrubbed revised slide content.\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "Scrubbed revised slide content."
+    ]
+  }
+}

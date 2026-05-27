@@ -1,0 +1,43 @@
+{
+  "method_name": "IMPORT_RESEARCH",
+  "method_id": "LBwxtb",
+  "description": "Import a finished research task (production shape [None, [1], task_id, notebook_id, source_array]).",
+  "request": {
+    "params": [
+      null,
+      [
+        1
+      ],
+      "SCRUBBED_RESEARCH_001",
+      "SCRUBBED_NB_001",
+      []
+    ],
+    "expected_f_req": [
+      [
+        [
+          "LBwxtb",
+          "[null,[1],\"SCRUBBED_RESEARCH_001\",\"SCRUBBED_NB_001\",[]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "LBwxtb",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "method_name": "DELETE_NOTEBOOK",
+  "method_id": "WWINqb",
+  "description": "Delete a notebook by id (matches production shape [[notebook_id], [2]]).",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_NB_001"
+      ],
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "WWINqb",
+          "[[\"SCRUBBED_NB_001\"],[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "WWINqb",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}
