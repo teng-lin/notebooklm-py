@@ -20,17 +20,16 @@ from notebooklm.types import ArtifactDownloadError
 @pytest.fixture
 def mock_artifacts_api():
     """Create an ArtifactsAPI with mocked core and notes API."""
-    mock_core = MagicMock()
-    mock_core.rpc_call = AsyncMock()
-    mock_core.get_source_ids = AsyncMock(return_value=[])
+    from _fixtures.fake_core import make_fake_core
+
+    mock_core = make_fake_core(
+        rpc_call=AsyncMock(),
+        get_source_ids=AsyncMock(return_value=[]),
+        operation_scope=MagicMock(side_effect=lambda _label: _noop_operation_scope()),
+    )
     # Real registry backing. A MagicMock attribute would return a child Mock
     # and confuse the ``existing is not None`` branch.
     mock_core.poll_registry = PollRegistry()
-    mock_core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
-    # The affinity guard is consumed by feature APIs through
-    # ``assert_bound_loop()`` directly; the ``Session.bound_loop`` property
-    # forward was deleted in Wave 11c of session-decoupling.
-    mock_core.assert_bound_loop = MagicMock(return_value=None)
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 

@@ -22,8 +22,9 @@ from notebooklm.types import Source
 @pytest.fixture
 def mock_core():
     """Create a mocked Session for SourcesAPI."""
-    core = MagicMock()
-    core.rpc_call = AsyncMock()
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock())
     core.auth = MagicMock()
     core.auth.authuser = 0
     core.auth.account_email = None
@@ -33,6 +34,7 @@ def mock_core():
     auth_cookie_jar = MagicMock(name="auth_cookie_jar")
     live_cookie_jar = MagicMock(name="live_cookie_jar")
     core.auth.cookie_jar = auth_cookie_jar
+    core.get_http_client = MagicMock()
     core.get_http_client.return_value.cookies = live_cookie_jar
     core.kernel = core
     # The stateful upload pipeline reaches the live cookie jar through the

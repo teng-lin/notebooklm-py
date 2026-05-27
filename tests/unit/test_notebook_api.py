@@ -21,14 +21,22 @@ from notebooklm.rpc import RPCMethod
 from notebooklm.types import AccountLimits, Notebook, NotebookMetadata, Source, SourceType
 
 
-def _make_core() -> MagicMock:
-    core = MagicMock()
-    core.rpc_call = AsyncMock()
-    return core
+def _make_core(rpc_call: AsyncMock | None = None):
+    """Return a fake collaborator core with a pre-wired ``rpc_call``.
+
+    ADR-007 substrate: built via :func:`make_fake_core` so the resulting
+    bag-of-attributes satisfies the capability Protocols without re-
+    introducing the forbidden post-construction AsyncMock attribute-
+    assignment pattern. Callers that need to control the dispatch
+    behaviour pass a pre-built ``rpc_call`` here.
+    """
+    from _fixtures.fake_core import make_fake_core
+
+    return make_fake_core(rpc_call=rpc_call if rpc_call is not None else AsyncMock())
 
 
-def _make_api() -> NotebooksAPI:
-    core = _make_core()
+def _make_api(rpc_call: AsyncMock | None = None) -> NotebooksAPI:
+    core = _make_core(rpc_call)
     return NotebooksAPI(core, sources_api=MagicMock())
 
 
@@ -328,9 +336,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_create_invalid_argument_near_paid_limit_raises_limit_error(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         account_limits = _set_account_limit(api, 500)
         api.list = AsyncMock(return_value=_owned_notebooks(499))
 
@@ -348,9 +355,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_create_invalid_argument_at_paid_limit_raises_limit_error(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, 500)
         api.list = AsyncMock(return_value=_owned_notebooks(500))
 
@@ -362,8 +368,7 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_create_invalid_argument_near_free_limit_raises_limit_error(self):
-        api = _make_api()
-        api._rpc.rpc_call = AsyncMock(side_effect=_create_invalid_argument_error())
+        api = _make_api(rpc_call=AsyncMock(side_effect=_create_invalid_argument_error()))
         _set_account_limit(api, 100)
         api.list = AsyncMock(return_value=_owned_notebooks(100))
 
@@ -375,9 +380,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_create_invalid_argument_uses_account_limit_not_free_boundary(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, 500)
         api.list = AsyncMock(return_value=_owned_notebooks(100))
 
@@ -388,9 +392,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_create_invalid_argument_away_from_server_limit_preserves_rpc_error(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, 500)
         api.list = AsyncMock(return_value=_owned_notebooks(250))
 
@@ -401,9 +404,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_non_quota_rpc_code_preserves_rpc_error_without_listing(self):
-        api = _make_api()
         original = _create_invalid_argument_error(rpc_code=13)
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
             return_value=AccountLimits(notebook_limit=500)
         )
@@ -421,9 +423,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_non_create_method_preserves_rpc_error_without_listing(self):
-        api = _make_api()
         original = _create_invalid_argument_error(method_id=RPCMethod.GET_NOTEBOOK.value)
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
             return_value=AccountLimits(notebook_limit=500)
         )
@@ -440,9 +441,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_shared_notebooks_do_not_trigger_owned_quota_error(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, 500)
         api.list = AsyncMock(return_value=_owned_notebooks(20) + _shared_notebooks(479))
 
@@ -453,9 +453,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_account_limit_failure_preserves_original_create_error_without_listing(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
             side_effect=NetworkError("settings failed")
         )
@@ -471,9 +470,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_account_limit_rpc_error_preserves_original_create_error_without_listing(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
             side_effect=RPCError("settings failed")
         )
@@ -488,9 +486,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_missing_account_limit_preserves_original_create_error_without_listing(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, None)
         api.list = AsyncMock(return_value=_owned_notebooks(500))
 
@@ -503,9 +500,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_list_failure_preserves_original_create_error(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, 500)
         api.list = AsyncMock(side_effect=NetworkError("list failed"))
 
@@ -516,9 +512,8 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_list_parse_bug_preserves_original_create_error(self):
-        api = _make_api()
         original = _create_invalid_argument_error()
-        api._rpc.rpc_call = AsyncMock(side_effect=original)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
         _set_account_limit(api, 500)
         api.list = AsyncMock(side_effect=ValueError("bad notebook data"))
 
@@ -529,8 +524,7 @@ class TestCreateNotebookQuotaDetection:
 
     @pytest.mark.asyncio
     async def test_get_account_limits_uses_user_settings_rpc(self):
-        api = _make_api()
-        api._rpc.rpc_call = AsyncMock(return_value=[[None, [6, 500, 300, 500000, 2]]])
+        api = _make_api(rpc_call=AsyncMock(return_value=[[None, [6, 500, 300, 500000, 2]]]))
 
         limits = await api._get_account_limits()
 
@@ -557,10 +551,11 @@ class TestGetNotebookFailsClosed:
 
     @pytest.mark.asyncio
     async def test_get_returns_notebook_on_full_response(self):
-        api = _make_api()
         # Realistic shape: [[title, ?, id, ?, ?, [None, False, ...]], ...]
-        api._rpc.rpc_call = AsyncMock(
-            return_value=[["My Notebook", None, "nb_real_123", None, None, [None, False]]]
+        api = _make_api(
+            rpc_call=AsyncMock(
+                return_value=[["My Notebook", None, "nb_real_123", None, None, [None, False]]]
+            )
         )
 
         notebook = await api.get("nb_real_123")
@@ -571,8 +566,7 @@ class TestGetNotebookFailsClosed:
     @pytest.mark.asyncio
     async def test_get_raises_on_empty_outer_list(self):
         """Server returned ``[]`` — no notebook at all."""
-        api = _make_api()
-        api._rpc.rpc_call = AsyncMock(return_value=[])
+        api = _make_api(rpc_call=AsyncMock(return_value=[]))
 
         with pytest.raises(NotebookNotFoundError) as exc_info:
             await api.get("nb_missing")
@@ -582,8 +576,7 @@ class TestGetNotebookFailsClosed:
 
     @pytest.mark.asyncio
     async def test_get_raises_on_none_response(self):
-        api = _make_api()
-        api._rpc.rpc_call = AsyncMock(return_value=None)
+        api = _make_api(rpc_call=AsyncMock(return_value=None))
 
         with pytest.raises(NotebookNotFoundError):
             await api.get("nb_missing")
@@ -591,8 +584,7 @@ class TestGetNotebookFailsClosed:
     @pytest.mark.asyncio
     async def test_get_raises_on_degenerate_empty_inner(self):
         """``[[]]`` — outer wrapper present but inner notebook payload empty."""
-        api = _make_api()
-        api._rpc.rpc_call = AsyncMock(return_value=[[]])
+        api = _make_api(rpc_call=AsyncMock(return_value=[[]]))
 
         with pytest.raises(NotebookNotFoundError) as exc_info:
             await api.get("nb_typo")
@@ -602,9 +594,10 @@ class TestGetNotebookFailsClosed:
     @pytest.mark.asyncio
     async def test_get_raises_when_id_and_title_both_blank(self):
         """Both id and title parsed to empty string → treat as not found."""
-        api = _make_api()
         # Same shape as the happy path but with empty strings in both fields.
-        api._rpc.rpc_call = AsyncMock(return_value=[["", None, "", None, None, [None, False]]])
+        api = _make_api(
+            rpc_call=AsyncMock(return_value=[["", None, "", None, None, [None, False]]])
+        )
 
         with pytest.raises(NotebookNotFoundError):
             await api.get("nb_typo")
@@ -617,9 +610,10 @@ class TestGetNotebookFailsClosed:
         blank, so a parser-quirk that strips the id but keeps the title still
         returns a Notebook rather than raising.
         """
-        api = _make_api()
-        api._rpc.rpc_call = AsyncMock(
-            return_value=[["Title Only", None, "", None, None, [None, False]]]
+        api = _make_api(
+            rpc_call=AsyncMock(
+                return_value=[["Title Only", None, "", None, None, [None, False]]]
+            )
         )
 
         notebook = await api.get("nb_partial")

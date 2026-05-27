@@ -26,9 +26,10 @@ from notebooklm.rpc import RPCMethod
 
 
 def _make_api(rpc_return):
+    from _fixtures.fake_core import make_fake_core
+
     api = NotebooksAPI.__new__(NotebooksAPI)
-    core = MagicMock()
-    core.rpc_call = AsyncMock(return_value=rpc_return)
+    core = make_fake_core(rpc_call=AsyncMock(return_value=rpc_return))
     api._rpc = core
     return api
 

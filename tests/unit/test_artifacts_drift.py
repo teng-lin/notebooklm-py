@@ -38,8 +38,9 @@ def artifacts_api():
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
-    mock_core = MagicMock()
-    mock_core.rpc_call = AsyncMock()
+    from _fixtures.fake_core import make_fake_core
+
+    mock_core = make_fake_core(rpc_call=AsyncMock())
     return ArtifactsAPI(
         mock_core,
         notebooks=MagicMock(),

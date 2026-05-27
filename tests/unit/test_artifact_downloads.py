@@ -33,9 +33,12 @@ def mock_artifacts_api():
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
-    mock_core = MagicMock()
-    mock_core.rpc_call = AsyncMock()
-    mock_core.get_source_ids = AsyncMock(return_value=[])
+    from _fixtures.fake_core import make_fake_core
+
+    mock_core = make_fake_core(
+        rpc_call=AsyncMock(),
+        get_source_ids=AsyncMock(return_value=[]),
+    )
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     # Use real NoteService + NoteBackedMindMapService so the wire RPC

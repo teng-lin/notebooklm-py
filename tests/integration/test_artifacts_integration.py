@@ -390,8 +390,9 @@ class TestArtifactsAPI:
     @pytest.mark.asyncio
     async def test_list_raw_preserves_rpc_call_shape(self):
         """_list_raw keeps the exact LIST_ARTIFACTS RPC contract."""
-        core = MagicMock()
-        core.rpc_call = AsyncMock(return_value=[[]])
+        from _fixtures.fake_core import make_fake_core
+
+        core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),
@@ -416,12 +417,13 @@ class TestArtifactsAPI:
     @pytest.mark.asyncio
     async def test_list_raw_preserves_already_flat_artifact_rows(self):
         """_list_raw must not collapse already-flat artifact rows."""
+        from _fixtures.fake_core import make_fake_core
+
         artifact_rows = [
             ["art_001", "My Report", 2, None, 3],
             ["art_002", "Audio Overview", 1, None, 3],
         ]
-        core = MagicMock()
-        core.rpc_call = AsyncMock(return_value=artifact_rows)
+        core = make_fake_core(rpc_call=AsyncMock(return_value=artifact_rows))
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),

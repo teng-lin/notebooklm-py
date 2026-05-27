@@ -157,8 +157,9 @@ def test_extract_account_tier_against_recorded_cassette_shape():
 
 @pytest.mark.asyncio
 async def test_get_account_limits_calls_user_settings_rpc():
-    core = MagicMock()
-    core.rpc_call = AsyncMock(return_value=[[None, [6, 200, 100, 500000, 1]]])
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, [6, 200, 100, 500000, 1]]]))
     api = SettingsAPI(core)
 
     limits = await api.get_account_limits()
@@ -177,8 +178,9 @@ async def test_get_account_limits_calls_user_settings_rpc():
 
 @pytest.mark.asyncio
 async def test_get_account_tier_calls_user_tier_rpc():
-    core = MagicMock()
-    core.rpc_call = AsyncMock(return_value=[[[[None, "NOTEBOOKLM_TIER_STANDARD"]]]])
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[[[[None, "NOTEBOOKLM_TIER_STANDARD"]]]]))
     api = SettingsAPI(core)
 
     tier = await api.get_account_tier()

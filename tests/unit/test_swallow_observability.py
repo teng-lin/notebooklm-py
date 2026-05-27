@@ -133,12 +133,13 @@ async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
     # the warn-and-return-"" legacy behavior the CLI's truthiness check relies on.
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
+    from _fixtures.fake_core import make_fake_core
+
     api = NotebooksAPI.__new__(NotebooksAPI)
-    mock_core = MagicMock()
     # result[0][0] is a string, so [0] returns a char; result[0][0][0] is fine
     # We need a shape that raises IndexError. result[0] is an empty list →
     # result[0][0] raises IndexError.
-    mock_core.rpc_call = AsyncMock(return_value=[[]])
+    mock_core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
     api._rpc = mock_core
 
     with (
@@ -172,10 +173,11 @@ async def test_description_partial_summary_logs_debug(caplog):
     """_notebooks.py:273 — partial summary (no topics) logs at DEBUG."""
     from notebooklm._notebooks import NotebooksAPI
 
+    from _fixtures.fake_core import make_fake_core
+
     api = NotebooksAPI.__new__(NotebooksAPI)
-    mock_core = MagicMock()
     # outer[0][0] works but outer[1] raises (no topics shape)
-    mock_core.rpc_call = AsyncMock(return_value=[[["the summary"]]])
+    mock_core = make_fake_core(rpc_call=AsyncMock(return_value=[[["the summary"]]]))
     api._rpc = mock_core
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm"):

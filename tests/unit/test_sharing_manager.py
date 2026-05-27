@@ -8,6 +8,8 @@ from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sharing_manager import ShareManager, build_share_url
 from notebooklm.rpc import RPCMethod
 
+from _fixtures.fake_core import make_fake_core
+
 BASE_URL = "https://notebooklm.google.com"
 
 
@@ -17,8 +19,7 @@ def _make_rpc() -> AsyncMock:
 
 def _make_manager() -> tuple[ShareManager, AsyncMock]:
     rpc = _make_rpc()
-    core = MagicMock()
-    core.rpc_call = rpc
+    core = make_fake_core(rpc_call=rpc)
     return ShareManager(core, base_url_provider=lambda: BASE_URL), rpc
 
 
@@ -129,10 +130,12 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 
 @pytest.mark.asyncio
 async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_call() -> None:
-    core = MagicMock()
-    core.rpc_call = AsyncMock(return_value=None)
+    core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     api = NotebooksAPI(core, sources_api=MagicMock())
     replacement_rpc = AsyncMock(return_value=None)
+    # ShareManager binds to the core's rpc_call attribute lazily — swap it
+    # to verify the late-binding contract. This is intentional behavior
+    # under test, not the forbidden pattern (we're testing the binding).
     core.rpc_call = replacement_rpc
 
     with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):

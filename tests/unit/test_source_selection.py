@@ -37,25 +37,26 @@ def mock_core():
     """
     from notebooklm._request_types import AuthSnapshot
 
-    core = MagicMock()
+    from _fixtures.fake_core import make_fake_core
 
     # ``ChatAPI.get_conversation_id`` uses ``core.rpc_call`` with the
     # ``hPTbtc`` (GET_LAST_CONVERSATION_ID) method. Issue #659: after a
     # new-conversation ask, ``ChatAPI.ask`` calls this to recover the real
     # conversation_id. Route only that method to a hPTbtc-shaped reply;
-    # every other RPC honors ``mock_core.rpc_call.return_value`` so the
-    # artifact tests in this module (which set ``return_value`` per call)
-    # are unaffected.
+    # every other RPC honors ``rpc_call.return_value`` so the artifact
+    # tests in this module (which set ``return_value`` per call) are
+    # unaffected.
     from notebooklm.rpc import RPCMethod as _RPC
 
-    core.rpc_call = AsyncMock(return_value=MagicMock())
+    rpc_call = AsyncMock(return_value=MagicMock())
+    core = make_fake_core(rpc_call=rpc_call)
 
     async def _rpc_call_dispatch(method, params, **kwargs):
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
-        return core.rpc_call.return_value
+        return rpc_call.return_value
 
-    core.rpc_call.side_effect = _rpc_call_dispatch
+    rpc_call.side_effect = _rpc_call_dispatch
     core.auth = MagicMock()
     core.auth.csrf_token = "test_csrf"
     core.auth.session_id = "test_session"
@@ -68,6 +69,9 @@ def mock_core():
     core.next_reqid = AsyncMock(return_value=100000)
     core.assert_bound_loop = MagicMock(return_value=None)
     core.get_http_client = MagicMock()
+    # ``ChatAPI`` reaches transport through ``mock_core.session_transport``
+    # (see ``_chat_from_mock_core`` below); explicit slot on the fake.
+    core.session_transport = MagicMock()
 
     # Default ``perform_authed_post`` stub on the session-transport
     # collaborator: invokes the caller-supplied ``build_request`` factory
@@ -789,16 +793,17 @@ class TestGetSourceIds:
     async def test_get_source_ids_extracts_correctly(self, auth_tokens):
         """Test get_source_ids correctly extracts source IDs from notebook data."""
         from notebooklm._notebooks import NotebooksAPI
-        from notebooklm._session import Session
 
-        core = Session(auth_tokens)
-        core.rpc_call = AsyncMock()
+        from _fixtures.fake_core import make_fake_core
+
+        rpc = AsyncMock()
+        core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(core)
 
         # Mock notebook data with multiple sources
         # Structure: notebook_data[0][1] = sources list
         # Each source: [["source_id"], "Source Title", ...]
-        core.rpc_call.return_value = [
+        rpc.return_value = [
             [
                 "nb_123",  # notebook_info[0]
                 [
@@ -818,13 +823,14 @@ class TestGetSourceIds:
     async def test_get_source_ids_handles_empty_notebook(self, auth_tokens):
         """Test get_source_ids handles notebook with no sources."""
         from notebooklm._notebooks import NotebooksAPI
-        from notebooklm._session import Session
 
-        core = Session(auth_tokens)
-        core.rpc_call = AsyncMock()
+        from _fixtures.fake_core import make_fake_core
+
+        rpc = AsyncMock()
+        core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(core)
 
-        core.rpc_call.return_value = [["nb_123", []]]
+        rpc.return_value = [["nb_123", []]]
 
         source_ids = await api.get_source_ids("nb_123")
 
@@ -834,13 +840,14 @@ class TestGetSourceIds:
     async def test_get_source_ids_handles_null_response(self, auth_tokens):
         """Test get_source_ids handles null API response."""
         from notebooklm._notebooks import NotebooksAPI
-        from notebooklm._session import Session
 
-        core = Session(auth_tokens)
-        core.rpc_call = AsyncMock()
+        from _fixtures.fake_core import make_fake_core
+
+        rpc = AsyncMock()
+        core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(core)
 
-        core.rpc_call.return_value = None
+        rpc.return_value = None
 
         source_ids = await api.get_source_ids("nb_123")
 
@@ -850,15 +857,16 @@ class TestGetSourceIds:
     async def test_get_source_ids_handles_malformed_data(self, auth_tokens):
         """Test get_source_ids handles malformed source data gracefully."""
         from notebooklm._notebooks import NotebooksAPI
-        from notebooklm._session import Session
 
-        core = Session(auth_tokens)
-        core.rpc_call = AsyncMock()
+        from _fixtures.fake_core import make_fake_core
+
+        rpc = AsyncMock()
+        core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(core)
 
         # Malformed data - missing nested structure
         # Structure: source[0] must be a list, source[0][0] must be a string
-        core.rpc_call.return_value = [
+        rpc.return_value = [
             [
                 "nb_123",
                 [
