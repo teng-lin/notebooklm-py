@@ -91,7 +91,9 @@ def mock_artifacts_api(tmp_path):
 
     mock_core = MagicMock()
     api = ArtifactsAPI(
-        mock_core,
+        rpc=mock_core,
+        drain=mock_core,
+        lifecycle=mock_core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

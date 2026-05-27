@@ -69,7 +69,8 @@ def mock_core():
 
     core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
-    # Audit C1: ``UploadRuntime`` now includes ``LoopGuard`` so
+    # Audit C1: :class:`SourceUploadPipeline` now takes ``LoopGuard``
+    # directly (the ``lifecycle`` constructor slot) so
     # :meth:`SourceUploadPipeline.add_file` short-circuits cross-loop
     # misuse. MagicMock blocks ``assert``-prefixed attribute access as a
     # foot-gun guard, so the no-op stub must be installed explicitly.
@@ -84,12 +85,16 @@ def sources_api(mock_core):
     The uploader is constructed explicitly from the same mocked core so the
     upload-path tests still exercise the real :class:`SourceUploadPipeline`
     while honoring the now-required ``uploader=`` kwarg on
-    :class:`SourcesAPI`.
+    :class:`SourcesAPI`. ``mock_core`` bundles ``rpc_call`` /
+    ``operation_scope`` / ``assert_bound_loop`` so it structurally
+    satisfies all three of the pipeline's narrow collaborator slots.
     """
     uploader = SourceUploadPipeline(
-        mock_core,
-        mock_core.kernel,
-        mock_core.auth,
+        rpc=mock_core,
+        drain=mock_core,
+        lifecycle=mock_core,
+        kernel=mock_core.kernel,
+        auth=mock_core.auth,
         record_upload_queue_wait=mock_core.record_upload_queue_wait,
     )
     return SourcesAPI(mock_core, uploader=uploader)

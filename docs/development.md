@@ -123,12 +123,15 @@ The feature-facing surface is the set of **capability Protocols** in
 `AuthMetadata` and `Kernel` consumed by the upload pipeline. The
 broad `Session` Protocol that previously bundled these together was
 deleted in the final phase of the capability refactor (see
-[`docs/refactor-history.md`](refactor-history.md) and ADR-013); each feature now depends on the narrowest
-slice it needs, either by composing the shared Protocols here or by
-defining a feature-local runtime in its own module (`ChatRuntime` in
-`_chat.py`, `ArtifactsRuntime` in `_artifacts.py`, `UploadRuntime` in
-`_source_upload.py`). See ADR-013 for the rationale and the
-promotion criterion (≥2 consumers).
+[`docs/refactor-history.md`](refactor-history.md) and ADR-013); each
+feature now depends on the narrowest slice it needs and takes those
+collaborators by keyword-only constructor argument. The feature-local
+composite-runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`,
+`UploadRuntime`) and their adapter dataclasses that previously bundled
+three capability Protocols apiece were retired once it was clear they
+only hid three stable collaborators with one production satisfier; see
+ADR-013 for the promotion criterion (≥2 consumers) that still gates
+adding any new shared Protocol.
 
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
@@ -194,19 +197,21 @@ from those catalogues rather than introducing parallel patterns.
 
 **New API Class:**
 1. Create `_newfeature.py` with `NewFeatureAPI` class.
-2. Type the constructor's runtime parameter against the **narrowest
-   shared capability Protocol** it actually uses (`RpcCaller`,
+2. Type each constructor parameter against the **narrowest shared
+   capability Protocol** it actually uses (`RpcCaller`,
    `AsyncWorkRuntime`, etc. — see
    [`docs/architecture.md`](./architecture.md) for the protocol
-   catalog), or define a feature-local runtime Protocol in your feature
-   module if the slice you need is not shared with any other feature
-   (e.g. `ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`). **Do NOT
-   import the concrete `Session` class for type annotations** — the
-   broad `Session` Protocol was deleted in Phase 7 of the capability
-   refactor; see ADR-013 for the rationale.
-3. Add to `client.py`: `self.newfeature = NewFeatureAPI(self._session)` —
-   the concrete `Session` structurally satisfies every capability
-   Protocol, so the wiring stays straightforward.
+   catalog). Pass each collaborator by keyword-only argument; do not
+   bundle them into a feature-local composite-runtime Protocol unless a
+   second consumer materialises. **Do NOT import the concrete
+   `Session` class for type annotations** — the broad `Session`
+   Protocol was deleted in Phase 7 of the capability refactor; see
+   ADR-013 for the rationale.
+3. Add to `client.py`: wire each collaborator explicitly from the
+   composition root (e.g. `self.newfeature = NewFeatureAPI(rpc=composed.executor,
+   ...)`). The concrete collaborator instances on
+   `ComposedSession.collaborators` structurally satisfy every
+   capability Protocol, so the wiring stays straightforward.
 4. **Tests** should use `tests/_fixtures/fake_core.py:FakeSession`
    which exposes the union of all capability protocols — it lets a
    feature test substitute the broad runtime without constructing a

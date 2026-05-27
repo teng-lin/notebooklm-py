@@ -21,6 +21,15 @@ from notebooklm.types import Source, SourceAddError
 
 
 class UploadRuntime:
+    """Test stub bundling ``rpc_call`` + ``operation_scope`` +
+    ``assert_bound_loop`` on a single object so one instance can be
+    passed as all three of :class:`SourceUploadPipeline`'s ``rpc`` /
+    ``drain`` / ``lifecycle`` collaborator slots. (The production
+    composite Protocol of the same name was retired together with its
+    adapter dataclass; this stub kept the historical name to minimise
+    churn across the test file.)
+    """
+
     def __init__(self) -> None:
         self.queue_waits: list[float] = []
         self.labels: list[str] = []
@@ -122,10 +131,16 @@ def make_pipeline(
     session = session or UploadRuntime()
     kernel = kernel or HttpRuntime()
     auth = auth or kernel
+    # The ``UploadRuntime`` test stub bundles ``rpc_call``,
+    # ``operation_scope``, and ``assert_bound_loop`` so a single instance
+    # structurally satisfies all three of the constructor's
+    # ``rpc`` / ``drain`` / ``lifecycle`` collaborator slots.
     return SourceUploadPipeline(
-        session,
-        kernel,
-        auth,  # type: ignore[arg-type]
+        rpc=session,  # type: ignore[arg-type]
+        drain=session,  # type: ignore[arg-type]
+        lifecycle=session,  # type: ignore[arg-type]
+        kernel=kernel,
+        auth=auth,  # type: ignore[arg-type]
         max_concurrent_uploads=max_concurrent_uploads,
         record_upload_queue_wait=session.record_upload_queue_wait,
         async_client_factory=async_client_factory,

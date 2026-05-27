@@ -1168,7 +1168,9 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
 
     core = MagicMock()
     api = ArtifactsAPI(
-        core,
+        rpc=core,
+        drain=core,
+        lifecycle=core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -1218,7 +1220,9 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
 
     def _make_artifacts() -> ArtifactsAPI:
         return ArtifactsAPI(
-            core,
+            rpc=core,
+            drain=core,
+            lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -1302,7 +1306,9 @@ def _build_artifacts_with_real_mind_map_service(core: MagicMock) -> ArtifactsAPI
     note_service = NoteService(core)
     mind_maps = NoteBackedMindMapService(note_service)
     return ArtifactsAPI(
-        core,
+        rpc=core,
+        drain=core,
+        lifecycle=core,
         notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),
         mind_maps=mind_maps,
         note_service=note_service,

@@ -9,8 +9,7 @@ import mimetypes
 import os
 import re
 from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast
@@ -27,8 +26,6 @@ from ._session_config import (
 from ._session_contracts import (
     AuthMetadata,
     Kernel,
-    LoopGuard,
-    OperationScopeProvider,
     RpcCaller,
 )
 from ._source_listing import SourceLister
@@ -80,85 +77,6 @@ class RpcCallback(Protocol):
 
 
 GetSourceLimit = Callable[[], Awaitable[int | None]]
-
-
-class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
-    """Runtime capabilities required by source upload.
-
-    Combines :class:`RpcCaller` (``rpc_call`` method),
-    :class:`OperationScopeProvider` (``operation_scope`` async-context
-    manager), and :class:`LoopGuard` (``assert_bound_loop`` method) — the
-    only ``Session`` surfaces the pipeline needs at runtime. A concrete
-    :class:`Session` structurally satisfies this Protocol.
-
-    Audit C1: ``LoopGuard`` is included so :meth:`SourceUploadPipeline.add_file`
-    can short-circuit cross-loop misuse *before* entering
-    ``operation_scope`` or lazily allocating the per-loop upload semaphore.
-    Mirrors the ``ArtifactsRuntime`` pattern. (The historical
-    ``ChatRuntime`` Protocol that this docstring also referenced was
-    deleted in Wave 8 of the session-decoupling plan, ADR-014 Rule 2
-    Corollary, in favour of direct constructor injection on ``ChatAPI``.)
-    """
-
-
-@dataclass(frozen=True)
-class UploadRuntimeAdapter:
-    """Concrete satisfier of :class:`UploadRuntime` per ADR-014 Rule 2.
-
-    Earns its keep under Rule 2 because:
-
-    - the composite has three capabilities (``RpcCaller`` +
-      ``OperationScopeProvider`` + ``LoopGuard``);
-    - :class:`SourceUploadPipeline` takes the whole composite as a
-      single dependency (``runtime``) and threads it into the
-      lister/poller collaborators — consumer-demand;
-    - ``assert_bound_loop`` is a meaningful named affordance used as a
-      cross-loop short-circuit guard in :meth:`SourceUploadPipeline.add_file`.
-
-    The adapter is constructed at the composition root
-    (:class:`notebooklm.client.NotebookLMClient`) from the three
-    underlying collaborators: :class:`RpcCaller`,
-    :class:`TransportDrainTracker`, and :class:`ClientLifecycle`. It
-    transitively satisfies ``AsyncWorkRuntime`` (``LoopGuard`` +
-    ``OperationScopeProvider``) per ADR-014 Rule 2 — no dedicated
-    ``_AsyncWorkAdapter`` is introduced.
-
-    :class:`SourceUploadPipeline` continues to take :class:`Kernel`
-    and :class:`AuthMetadata` as separate parameters, so this adapter
-    covers only the composite ``UploadRuntime`` Protocol — mirroring
-    the ADR-014 Rule 6 example.
-    """
-
-    rpc: RpcCaller
-    drain: TransportDrainTracker
-    lifecycle: ClientLifecycle
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any:
-        return await self.rpc.rpc_call(
-            method,
-            params,
-            source_path,
-            allow_null,
-            _is_retry,
-            disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-        )
-
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
-        return self.drain.operation_scope(label)
-
-    def assert_bound_loop(self) -> None:
-        self.lifecycle.assert_bound_loop()
 
 
 _INVALID_ARGUMENT_RPC_CODE = 3
@@ -333,17 +251,21 @@ class SourceUploadPipeline:
 
     def __init__(
         self,
-        runtime: UploadRuntime,
+        *,
+        rpc: RpcCaller,
+        drain: TransportDrainTracker,
+        lifecycle: ClientLifecycle,
         kernel: Kernel,
         auth: AuthMetadata,
         upload_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
-        *,
         record_upload_queue_wait: QueueWaitRecorder | None = None,
         async_client_factory: AsyncClientFactory | None = None,
         get_source_limit: GetSourceLimit | None = None,
     ):
-        self._runtime = runtime
+        self._rpc = rpc
+        self._drain = drain
+        self._lifecycle = lifecycle
         self._kernel = kernel
         self._auth = auth
         self._upload_timeout = upload_timeout
@@ -351,7 +273,7 @@ class SourceUploadPipeline:
         self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
-        self._lister = SourceLister(self._runtime)
+        self._lister = SourceLister(self._rpc)
         self._poller = SourcePoller()
         self._get_source_limit = get_source_limit
 
@@ -414,7 +336,7 @@ class SourceUploadPipeline:
         # Both are loop-bound on first use, so a cross-loop call would
         # otherwise attach a primitive to the wrong loop before the
         # documented ``RuntimeError`` guard fires (ADR-004).
-        self._runtime.assert_bound_loop()
+        self._lifecycle.assert_bound_loop()
         module_logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
         if title is not None:
             title = title.strip()
@@ -439,7 +361,7 @@ class SourceUploadPipeline:
         filename = file_path.name
         content_type = _resolve_upload_content_type(file_path, mime_type)
         transient_error_types = _transient_error_types_for_upload(content_type)
-        async with self._runtime.operation_scope(f"upload:{upload_index}"):
+        async with self._drain.operation_scope(f"upload:{upload_index}"):
             upload_sem = self.get_upload_semaphore()
             upload_wait_start = monotonic()
             async with upload_sem:
@@ -560,7 +482,7 @@ class SourceUploadPipeline:
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
         if rpc_call is None:
-            rpc_call = self._runtime.rpc_call
+            rpc_call = self._rpc.rpc_call
         if list_sources is None:
             list_sources = self.list_sources
         if logger is None:
@@ -773,7 +695,7 @@ class SourceUploadPipeline:
         """Rename an uploaded source."""
         module_logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = [None, [source_id], [[[new_title]]]]
-        result = await self._runtime.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.UPDATE_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -972,22 +894,7 @@ class SourceUploadPipeline:
 __all__ = [
     "RpcCallback",
     "SourceUploadPipeline",
-    "UploadRuntime",
-    "UploadRuntimeAdapter",
     "_SOURCE_ID_UUID_PATTERN",
     "_extract_register_file_source_id",
     "_looks_like_id_string",
 ]
-
-
-if TYPE_CHECKING:
-    # mypy guard: ``UploadRuntimeAdapter`` must structurally satisfy
-    # the ``UploadRuntime`` Protocol it adapts. Failing this assertion
-    # at type-check time catches shape drift on the delegate methods
-    # before runtime construction at the composition root would. Mirrors
-    # the pattern used by ``_rpc_executor._assert_rpc_executor_satisfies_rpc_caller``.
-
-    def _assert_adapter_satisfies_upload_runtime(
-        adapter: UploadRuntimeAdapter,
-    ) -> None:
-        _: UploadRuntime = adapter

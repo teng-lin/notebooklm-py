@@ -104,9 +104,11 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
         api = SourcesAPI(
             core,
             uploader=SourceUploadPipeline(
-                core,
-                core._kernel,
-                core.auth,
+                rpc=core,
+                drain=core,
+                lifecycle=core,
+                kernel=core._kernel,
+                auth=core.auth,
                 record_upload_queue_wait=core._metrics_obj.record_upload_queue_wait,
             ),
         )

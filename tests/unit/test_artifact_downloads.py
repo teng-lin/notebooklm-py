@@ -47,7 +47,9 @@ def mock_artifacts_api():
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
-        mock_core,
+        rpc=mock_core,
+        drain=mock_core,
+        lifecycle=mock_core,
         notebooks=mock_notebooks,
         mind_maps=mind_maps,
         note_service=note_service,
@@ -63,7 +65,7 @@ class TestDownloadInteractiveArtifact:
         """Null GET_INTERACTIVE_HTML is a missing-content result, not schema drift."""
         runtime = MagicMock(rpc_call=AsyncMock(return_value=None))
         service = artifact_downloads.ArtifactDownloadService(
-            runtime=runtime,
+            rpc=runtime,
             listing=MagicMock(),
             mind_maps=MagicMock(),
         )
@@ -82,7 +84,7 @@ class TestDownloadInteractiveArtifact:
             created_at=None,
         )
         service = artifact_downloads.ArtifactDownloadService(
-            runtime=MagicMock(),
+            rpc=MagicMock(),
             listing=MagicMock(),
             mind_maps=MagicMock(),
         )
@@ -869,7 +871,7 @@ class TestStoragePathEncapsulation:
         listing = MagicMock()
         mind_maps = MagicMock()
         service = ArtifactDownloadService(
-            runtime=runtime,
+            rpc=runtime,
             listing=listing,
             mind_maps=mind_maps,
             storage_path=sentinel,
@@ -903,7 +905,7 @@ class TestStoragePathEncapsulation:
         listing = MagicMock()
         mind_maps = MagicMock()
         service = ArtifactDownloadService(
-            runtime=runtime,
+            rpc=runtime,
             listing=listing,
             mind_maps=mind_maps,
             storage_path=sentinel,

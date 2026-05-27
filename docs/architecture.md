@@ -265,33 +265,33 @@ Protocols live next to their single consumer.
 | `RpcCaller` | Exposes `rpc_call(method, params, ...)` — the chokepoint every feature API uses for batchexecute calls. |
 | `LoopGuard` | Exposes `assert_bound_loop()` — single-method cross-loop affinity check; consumed by anything that may touch the HTTP client. |
 | `OperationScopeProvider` | Exposes `operation_scope(label)` — async context manager that scopes drain admission for graceful shutdown. |
-| `AsyncWorkRuntime` | Composes `LoopGuard` + `OperationScopeProvider` for features that own async work. |
+| `AsyncWorkRuntime` | Composes `LoopGuard` + `OperationScopeProvider` for features that own async work. No production consumer at present (the artifact polling service now takes the two underlying Protocols directly); retained because the composition rule it pins is still useful documentation. |
 | `AuthMetadata` | Selected-account routing metadata — `authuser` + `account_email` properties. Single consumer today: `SourceUploadPipeline`. |
 | `Kernel` | Pure transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
 
-**Feature-module-local Protocols** (composite runtime unions + the single-consumer
-capability slice `DrainHookRegistration`; each lives next to its consumer and is
-not exported from `_session_contracts.py`):
+**Feature-module-local Protocols.** The feature-local composite runtime
+unions (`ArtifactsRuntime` in `_artifacts.py`, `UploadRuntime` in
+`_source_upload.py`) and the single-consumer capability slice
+`DrainHookRegistration` previously listed here were retired together
+with their adapter dataclasses (`ArtifactsRuntimeAdapter`,
+`UploadRuntimeAdapter`) once it was clear each only hid three stable
+collaborators with exactly one production satisfier. `ArtifactsAPI` and
+`SourceUploadPipeline` now take their three runtime collaborators
+(`rpc: RpcCaller`, `drain: TransportDrainTracker`, `lifecycle:
+ClientLifecycle`) by keyword-only constructor argument — mirroring the
+`ChatAPI` pattern below.
 
-| Protocol | Module | Responsibility |
-|----------|--------|----------------|
-| `ArtifactsRuntime` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Artifact-feature capability union — composes `RpcCaller` + `AsyncWorkRuntime` + `DrainHookRegistration`. No own members; used by `ArtifactsAPI` for RPC dispatch, loop affinity, operation scopes, and close-time drain-hook registration. The `PollRegistry` lives on `ArtifactsAPI`, not the Protocol. |
-| `UploadRuntime` | [`_source_upload.py`](../src/notebooklm/_source_upload.py) | Upload-pipeline capability union — composes `RpcCaller` + `OperationScopeProvider` + `LoopGuard`. The upload semaphore is internal to `SourceUploadPipeline`, not the Protocol. |
-| `DrainHookRegistration` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Exposes `register_drain_hook(name, hook)` for close-time cleanup. Sole `DrainHookRegistration` after the broad-`Session` Protocol was deleted from `_session_contracts.py` (see the `_session_contracts.py` module docstring). |
-
-`ChatRuntime` was deleted in Wave 8 of the session-decoupling plan
-(ADR-014 Rule 2 Corollary). `ChatAPI` now takes its four direct
-collaborators (`rpc: RpcCaller`, `transport: SessionTransport`,
-`reqid: ReqidCounter`, `loop_guard: LoopGuard`) by keyword-only
-constructor argument rather than reaching them through a feature-local
-runtime composite.
+`ChatRuntime` was deleted earlier in Wave 8 of the session-decoupling
+plan (ADR-014 Rule 2 Corollary) on the same grounds. `ChatAPI` takes
+its four direct collaborators (`rpc: RpcCaller`, `transport:
+SessionTransport`, `reqid: ReqidCounter`, `loop_guard: LoopGuard`) by
+keyword-only constructor argument rather than reaching them through a
+feature-local runtime composite.
 
 Production satisfies the shared Protocols via the underlying
 collaborators (ADR-014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
 `ClientLifecycle` satisfies `LoopGuard`, `TransportDrainTracker`
-satisfies `OperationScopeProvider` and `DrainHookRegistration`) and the
-composite Protocols via feature-local adapters
-(`ArtifactsRuntimeAdapter`, `UploadRuntimeAdapter` — ADR-014 Rule 2).
+satisfies `OperationScopeProvider`).
 `Session` no longer claims to satisfy the shared Protocols itself.
 Tests substitute
 [`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py)
@@ -538,11 +538,17 @@ Concretely, `Session` retains:
 5. **AST-guarded auth surface.** `update_auth_tokens` is asserted by
    `tests/unit/test_concurrency_refresh_race.py`.
 
-Feature APIs do **not** receive `Session`. They receive the collaborator
-(`RpcExecutor` for `RpcCaller`, `ClientLifecycle` for `LoopGuard`, etc.)
-or a frozen-dataclass adapter (`ArtifactsRuntimeAdapter`,
-`UploadRuntimeAdapter`) per ADR-014 Rules 1 + 2 + 3. The composition
-wiring is in [`client.py`](../src/notebooklm/client.py).
+Feature APIs do **not** receive `Session`. They receive the
+collaborator (`RpcExecutor` for `RpcCaller`, `ClientLifecycle` for
+`LoopGuard`, `TransportDrainTracker` for `OperationScopeProvider` /
+`register_drain_hook`) per ADR-014 Rules 1 + 3. Features that need
+more than one capability — `ChatAPI`, `ArtifactsAPI`, and
+`SourceUploadPipeline` — take each collaborator by keyword-only
+constructor argument; the feature-local composite-runtime adapter
+dataclasses that previously bundled three collaborators apiece were
+retired once it was clear they only hid three stable collaborators
+with one production satisfier. The composition wiring is in
+[`client.py`](../src/notebooklm/client.py).
 
 ## Testing patterns
 

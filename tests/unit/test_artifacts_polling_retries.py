@@ -97,7 +97,9 @@ def api():
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        core,
+        rpc=core,
+        drain=core,
+        lifecycle=core,
         notebooks=mock_notebooks,
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -172,7 +174,7 @@ async def test_wait_for_completion_no_retry_on_auth_error(api):
 async def test_polling_service_operation_scope_wraps_spawned_poll_task() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)
-    service = ArtifactPollingService(provider, provider.poll_registry)
+    service = ArtifactPollingService(loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         assert (notebook_id, task_id) == ("nb1", "task1")
@@ -203,7 +205,7 @@ async def test_polling_service_operation_scope_wraps_spawned_poll_task() -> None
 async def test_polling_service_registers_pending_before_transport_begin_completes() -> None:
     begin_release = asyncio.Event()
     provider = _FakeTransportProvider(begin_release=begin_release)
-    service = ArtifactPollingService(provider, provider.poll_registry)
+    service = ArtifactPollingService(loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry)
     poll_call_count = 0
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
@@ -264,7 +266,7 @@ async def test_polling_service_resolves_wait_before_slow_transport_finish() -> N
     token = object()
     finish_release = asyncio.Event()
     provider = _FakeTransportProvider(token=token, finish_release=finish_release)
-    service = ArtifactPollingService(provider, provider.poll_registry)
+    service = ArtifactPollingService(loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         return GenerationStatus(task_id=task_id, status="completed")
@@ -301,7 +303,7 @@ async def test_polling_service_drain_waits_for_bookkeeping_without_active_polls(
     token = object()
     finish_release = asyncio.Event()
     provider = _FakeTransportProvider(token=token, finish_release=finish_release)
-    service = ArtifactPollingService(provider, provider.poll_registry)
+    service = ArtifactPollingService(loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         return GenerationStatus(task_id=task_id, status="completed")
@@ -345,7 +347,7 @@ async def test_polling_service_drain_waits_for_bookkeeping_without_active_polls(
 async def test_polling_service_finishes_transport_token_once_after_poll_failure() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)
-    service = ArtifactPollingService(provider, provider.poll_registry)
+    service = ArtifactPollingService(loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         raise ValueError(f"poll failed: {notebook_id}/{task_id}")
@@ -373,7 +375,7 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
         begin_error=begin_error,
         yield_before_begin_error=True,
     )
-    service = ArtifactPollingService(provider, provider.poll_registry)
+    service = ArtifactPollingService(loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         raise AssertionError("poll should not start when operation admission fails")
@@ -402,7 +404,9 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
 
     core = _make_session_core()
     api = ArtifactsAPI(
-        core,
+        rpc=core,
+        drain=core,
+        lifecycle=core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

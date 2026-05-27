@@ -396,7 +396,9 @@ class TestArtifactsAPI:
 
         core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
         api = ArtifactsAPI(
-            core,
+            rpc=core,
+            drain=core,
+            lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -427,7 +429,9 @@ class TestArtifactsAPI:
         ]
         core = make_fake_core(rpc_call=AsyncMock(return_value=artifact_rows))
         api = ArtifactsAPI(
-            core,
+            rpc=core,
+            drain=core,
+            lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -442,7 +446,9 @@ class TestArtifactsAPI:
         """list() resolves facade _list_raw and the injected mind-map service."""
         core = MagicMock()
         api = ArtifactsAPI(
-            core,
+            rpc=core,
+            drain=core,
+            lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -474,7 +480,9 @@ class TestArtifactsAPI:
         """Filtering to studio-only kinds must not fetch mind maps."""
         core = MagicMock()
         api = ArtifactsAPI(
-            core,
+            rpc=core,
+            drain=core,
+            lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -499,7 +507,9 @@ class TestArtifactsAPI:
         """get() delegates through the public list callback."""
         core = MagicMock()
         api = ArtifactsAPI(
-            core,
+            rpc=core,
+            drain=core,
+            lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -1630,13 +1640,12 @@ class TestReviseSlide:
         async with NotebookLMClient(auth_tokens) as client:
             err = RPCError("Rate limit exceeded")
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
-            # Wave 9 of session-decoupling: ``ArtifactsAPI._runtime`` is now a
-            # frozen ``ArtifactsRuntimeAdapter``, so patches go through the
-            # held ``rpc`` collaborator (the ``RpcExecutor``) rather than
-            # the adapter itself — frozen dataclasses reject ``setattr`` and
-            # ``patch.object`` cleanup also fails on ``delattr``.
+            # ``ArtifactsAPI`` now stores its three runtime collaborators
+            # directly; the patch goes through ``_rpc`` (the
+            # ``RpcExecutor``) since that is what ``rpc_call`` resolves
+            # through.
             with patch.object(
-                client.artifacts._runtime.rpc,
+                client.artifacts._rpc,
                 "rpc_call",
                 AsyncMock(side_effect=err),
             ):
@@ -1662,10 +1671,10 @@ class TestReviseSlide:
         async with NotebookLMClient(auth_tokens) as client:
             err = RPCError("Internal error")
             err.rpc_code = "INTERNAL_ERROR"
-            # See sibling test above for the Wave 9 patch-target rationale.
+            # See sibling test above for the ``_rpc`` patch-target rationale.
             with (
                 patch.object(
-                    client.artifacts._runtime.rpc,
+                    client.artifacts._rpc,
                     "rpc_call",
                     AsyncMock(side_effect=err),
                 ),
@@ -2171,12 +2180,12 @@ class TestCallGenerateErrorHandling:
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
             # Pass source_ids explicitly so get_source_ids (GET_NOTEBOOK) is NOT called.
             # Then patch the held ``rpc`` collaborator's ``rpc_call`` so the
-            # CREATE_ARTIFACT call raises the error. Wave 9 of session-decoupling:
-            # ``_runtime`` is now a frozen ``ArtifactsRuntimeAdapter``, so the
-            # patch goes through ``_runtime.rpc`` (the ``RpcExecutor``) — see
-            # the ``revise_slide`` siblings above for the same rationale.
+            # CREATE_ARTIFACT call raises the error. ``ArtifactsAPI``
+            # stores its three runtime collaborators directly, so the
+            # patch target is ``_rpc`` — see the ``revise_slide``
+            # siblings above for the same rationale.
             with patch.object(
-                client.artifacts._runtime.rpc,
+                client.artifacts._rpc,
                 "rpc_call",
                 AsyncMock(side_effect=err),
             ):
@@ -2199,10 +2208,10 @@ class TestCallGenerateErrorHandling:
             # Pass source_ids explicitly so get_source_ids (GET_NOTEBOOK) is NOT called.
             # Then patch the held ``rpc`` collaborator's ``rpc_call`` so the
             # CREATE_ARTIFACT call raises the error. See sibling tests above
-            # for the Wave 9 patch-target rationale.
+            # for the ``_rpc`` patch-target rationale.
             with (
                 patch.object(
-                    client.artifacts._runtime.rpc,
+                    client.artifacts._rpc,
                     "rpc_call",
                     AsyncMock(side_effect=err),
                 ),

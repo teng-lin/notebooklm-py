@@ -474,6 +474,25 @@ API surface and are documented in the retention doc as
 `test-seam forwards to MiddlewareChainHost`. Live chain dereferences
 go through `MiddlewareChainHost` directly.
 
+### 2026-05-27 — Rule 2 adapter retirement (runtime-adapter decision)
+
+The Rule 2 example dataclasses `ArtifactsRuntimeAdapter` and
+`UploadRuntimeAdapter` introduced for the artifact and upload features
+were retired. Each adapter only hid three stable collaborators
+(`RpcCaller` + `TransportDrainTracker` + `ClientLifecycle`) and had
+exactly one production satisfier, so they sat at the bottom of Rule
+2's keep-vs-delete spectrum. The feature constructors now take their
+three runtime collaborators (`rpc` + `drain` + `lifecycle`) as
+keyword-only arguments directly — mirroring the post-ADR-014 `ChatAPI`
+pattern. The feature-local composite Protocols (`ArtifactsRuntime`,
+`UploadRuntime`) and the local `DrainHookRegistration` Protocol were
+deleted with their adapters; the mypy structural-satisfier guards near
+the adapter definitions are no longer needed because the constructors
+type each slot against its narrow shared Protocol directly. The
+post-migration table and example code earlier in this ADR document the
+historical Rule 2 satisfier pattern; this revision-history note is the
+authoritative current-state pointer.
+
 ## Related decisions
 
 - Builds on [ADR-013](./0013-composable-session-capabilities.md) (capability

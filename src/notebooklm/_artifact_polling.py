@@ -13,7 +13,7 @@ from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
 from ._polling_registry import PollRegistry
 from ._row_adapters import ArtifactRow
-from ._session_contracts import AsyncWorkRuntime
+from ._session_contracts import LoopGuard, OperationScopeProvider
 from .exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from .rpc import (
     ArtifactStatus,
@@ -49,10 +49,13 @@ class ArtifactPollingService:
 
     def __init__(
         self,
-        runtime: AsyncWorkRuntime,
+        *,
+        loop_guard: LoopGuard,
+        op_scope: OperationScopeProvider,
         poll_registry: PollRegistry | None = None,
     ) -> None:
-        self._runtime = runtime
+        self._loop_guard = loop_guard
+        self._op_scope = op_scope
         self._poll_registry = poll_registry if poll_registry is not None else PollRegistry()
 
     @property
@@ -147,7 +150,7 @@ class ArtifactPollingService:
         # P0-2: catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
         # loop) or spawning a poll task on a foreign loop.
-        self._runtime.assert_bound_loop()
+        self._loop_guard.assert_bound_loop()
         # Backward compatibility: poll_interval overrides initial_interval.
         if poll_interval is not None:
             import warnings
@@ -245,7 +248,7 @@ class ArtifactPollingService:
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None,
     ) -> GenerationStatus:
-        async with self._runtime.operation_scope(f"artifact wait {task_id}"):
+        async with self._op_scope.operation_scope(f"artifact wait {task_id}"):
             return await self._run_poll_loop(
                 notebook_id,
                 task_id,

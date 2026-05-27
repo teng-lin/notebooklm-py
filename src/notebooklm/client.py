@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
-from ._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
+from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._env import get_base_url as get_base_url
@@ -55,7 +55,7 @@ from ._session_config import (
 from ._session_lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
-from ._source_upload import SourceUploadPipeline, UploadRuntimeAdapter
+from ._source_upload import SourceUploadPipeline
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
@@ -308,23 +308,19 @@ class NotebookLMClient:
         # accessor on the Session.
         self._collaborators = composed.collaborators
 
-        # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
-        # upload pipeline takes a ``UploadRuntimeAdapter`` composite —
-        # built from ``rpc_executor`` + ``drain_tracker`` + ``lifecycle``
-        # — instead of the whole ``Session``. ``Kernel`` and
+        # ADR-014 Rule 2: the upload pipeline takes its three runtime
+        # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
+        # instead of via a composite-runtime adapter. ``Kernel`` and
         # ``AuthMetadata`` continue to flow as separate parameters per
         # the ADR-014 Rule 6 example. ``NotebookLMClient.__init__`` is
         # the composition root that knows these internals;
         # ``SourcesAPI`` no longer reads them back off the session.
-        upload_runtime = UploadRuntimeAdapter(
+        source_uploader = SourceUploadPipeline(
             rpc=composed.executor,
             drain=composed.collaborators.drain_tracker,
             lifecycle=composed.collaborators.lifecycle,
-        )
-        source_uploader = SourceUploadPipeline(
-            upload_runtime,
-            composed.collaborators.kernel,
-            self._session.auth,
+            kernel=composed.collaborators.kernel,
+            auth=self._session.auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=composed.collaborators.metrics.record_upload_queue_wait,
@@ -350,20 +346,16 @@ class NotebookLMClient:
         # NoteService.create_note directly to persist a generated mind map.
         note_service = NoteService(composed.executor)
         mind_maps = NoteBackedMindMapService(note_service)
-        # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
-        # artifacts API takes an ``ArtifactsRuntimeAdapter`` composite —
-        # built from ``rpc_executor`` + ``drain_tracker`` + ``lifecycle``
-        # — instead of the whole ``Session``. The adapter satisfies
-        # ``ArtifactsRuntime`` (RpcCaller + AsyncWorkRuntime +
-        # DrainHookRegistration) by delegating to those three
-        # collaborators directly.
-        artifacts_runtime = ArtifactsRuntimeAdapter(
+        # ADR-014 Rule 2: the artifacts API takes its three runtime
+        # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
+        # instead of via a composite-runtime adapter. ``rpc`` covers
+        # RPC dispatch; ``drain`` covers ``operation_scope`` and the
+        # close-time ``register_drain_hook`` used by the polling
+        # service; ``lifecycle`` covers ``assert_bound_loop``.
+        self.artifacts = ArtifactsAPI(
             rpc=composed.executor,
             drain=composed.collaborators.drain_tracker,
             lifecycle=composed.collaborators.lifecycle,
-        )
-        self.artifacts = ArtifactsAPI(
-            artifacts_runtime,
             notebooks=self.notebooks,
             mind_maps=mind_maps,
             note_service=note_service,

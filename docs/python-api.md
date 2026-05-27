@@ -697,12 +697,14 @@ compatibility shim was removed in v0.5.0.
 | `_streaming_post` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
 
 Feature APIs depend on narrow per-capability Protocols defined in
-`notebooklm._session_contracts` (and feature-local runtime Protocols
-such as `ArtifactsRuntime`, `UploadRuntime`) rather than on the
-concrete `Session` class. `ChatAPI` takes its four direct collaborators
-(`rpc`, `transport`, `reqid`, `loop_guard`) by keyword-only constructor
-argument as of Wave 8 of the session-decoupling plan (ADR-014 Rule 2
-Corollary); the prior `ChatRuntime` feature-local composite was deleted.
+`notebooklm._session_contracts` rather than on the concrete `Session`
+class. `ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` each take
+their direct collaborators by keyword-only constructor argument. The
+feature-local composite-runtime Protocols (`ChatRuntime`,
+`ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
+previously bundled three collaborators apiece were retired once it was
+clear they only hid three stable collaborators with one production
+satisfier.
 See [ADR-013](adr/0013-composable-session-capabilities.md) and
 [`docs/architecture.md`](architecture.md) for the rationale and the
 post-v0.5.0 collaborator graph.

@@ -31,9 +31,9 @@ from .rpc import (
 from .types import GenerationStatus, ReportSuggestion
 
 if TYPE_CHECKING:
-    from ._artifacts import ArtifactsRuntime
     from ._note_service import NoteService
     from ._notebook_metadata import NotebookSourceIdProvider
+    from ._session_contracts import RpcCaller
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +44,11 @@ class ArtifactGenerationService:
     def __init__(
         self,
         *,
-        runtime: ArtifactsRuntime,
+        rpc: RpcCaller,
         notebooks: NotebookSourceIdProvider,
         note_service: NoteService,
     ) -> None:
-        self._runtime = runtime
+        self._rpc = rpc
         self._notebooks = notebooks
         self._note_service = note_service
 
@@ -551,7 +551,7 @@ class ArtifactGenerationService:
             [[[slide_index, prompt]]],
         ]
         try:
-            result = await self._runtime.rpc_call(
+            result = await self._rpc.rpc_call(
                 RPCMethod.REVISE_SLIDE,
                 params,
                 source_path=f"/notebook/{notebook_id}",
@@ -651,7 +651,7 @@ class ArtifactGenerationService:
         # explicitly to document this call site as the no-variant default
         # (the registry resolves the same entry either way; the explicit
         # kwarg is a future-proofing marker for a possible variant table).
-        result = await self._runtime.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GENERATE_MIND_MAP,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -706,7 +706,7 @@ class ArtifactGenerationService:
         """Get AI-suggested report formats for a notebook."""
         params = [[2], notebook_id]
 
-        result = await self._runtime.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_SUGGESTED_REPORTS,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -746,7 +746,7 @@ class ArtifactGenerationService:
             # no-variant default (the registry resolves the same entry
             # either way; the explicit kwarg is a future-proofing marker
             # for a possible variant table).
-            result = await self._runtime.rpc_call(
+            result = await self._rpc.rpc_call(
                 RPCMethod.CREATE_ARTIFACT,
                 params,
                 source_path=f"/notebook/{notebook_id}",

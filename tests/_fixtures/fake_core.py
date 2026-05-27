@@ -4,12 +4,16 @@ This module provides a single entry point — :func:`make_fake_core` — that
 returns a ``FakeSession`` instance shaped to satisfy the **shared
 capability Protocols** in :mod:`notebooklm._session_contracts`
 (``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
-``AsyncWorkRuntime``, ``AuthMetadata``, ``Kernel``) plus the
-feature-local runtime Protocols (``ArtifactsRuntime``,
-``UploadRuntime``) that compose them. (``ChatRuntime`` was deleted in
-Wave 8 of the session-decoupling plan, ADR-014 Rule 2 Corollary —
-``ChatAPI`` takes direct collaborators by keyword arg and does not
-need a feature-local runtime Protocol.) Tests pass the result to a
+``AsyncWorkRuntime``, ``AuthMetadata``, ``Kernel``). Feature APIs that
+need more than one capability now take their direct collaborators by
+keyword-only constructor argument (``ChatAPI`` in ``_chat.py``,
+``ArtifactsAPI`` in ``_artifacts.py``, ``SourceUploadPipeline`` in
+``_source_upload.py``); the feature-local composite Protocols
+``ArtifactsRuntime`` and ``UploadRuntime`` (and their adapter
+dataclasses) were retired once it was clear they only hid three stable
+collaborators with one production satisfier. (``ChatRuntime`` was
+deleted earlier in Wave 8 of the session-decoupling plan, ADR-014 Rule
+2 Corollary, on the same grounds.) Tests pass the result to a
 sub-client constructor (``NotebooksAPI(fake)``) instead of constructing
 a real ``Session`` and mutating its attributes after the fact.
 

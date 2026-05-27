@@ -127,9 +127,11 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     # must therefore be installed explicitly.
     core.assert_bound_loop = MagicMock()
     uploader = SourceUploadPipeline(
-        core,
-        core.kernel,
-        core.auth,
+        rpc=core,
+        drain=core,
+        lifecycle=core,
+        kernel=core.kernel,
+        auth=core.auth,
         record_upload_queue_wait=core.record_upload_queue_wait,
     )
     return SourcesAPI(core, uploader=uploader), core

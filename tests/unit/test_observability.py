@@ -15,7 +15,7 @@ from notebooklm import (
     correlation_id,
     get_request_id,
 )
-from notebooklm._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
+from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._source_upload import SourceUploadPipeline
@@ -191,17 +191,13 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 @pytest.mark.asyncio
 async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
     core = build_session_for_tests(auth_tokens)
-    # Wave 11a of session-decoupling deleted ``Session.register_drain_hook``
-    # / ``Session.operation_scope`` forwards; ``ArtifactsAPI`` now consumes
-    # an ``ArtifactsRuntimeAdapter`` composite (mirrors production wiring
-    # in ``NotebookLMClient.__init__``).
-    runtime = ArtifactsRuntimeAdapter(
+    # ``ArtifactsAPI`` consumes its three runtime collaborators
+    # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
+    # wiring in ``NotebookLMClient.__init__``.
+    api = ArtifactsAPI(
         rpc=core._rpc_executor,
         drain=core._drain_tracker,
         lifecycle=core._lifecycle,
-    )
-    api = ArtifactsAPI(
-        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -301,9 +297,11 @@ async def test_upload_progress_callback_receives_byte_counts(
         api = SourcesAPI(
             core,
             uploader=SourceUploadPipeline(
-                core,
-                core._kernel,
-                core.auth,
+                rpc=core,
+                drain=core,
+                lifecycle=core,
+                kernel=core._kernel,
+                auth=core.auth,
                 record_upload_queue_wait=core._metrics_obj.record_upload_queue_wait,
             ),
         )
@@ -343,15 +341,11 @@ async def test_upload_progress_callback_receives_byte_counts(
 @pytest.mark.asyncio
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
     core = build_session_for_tests(auth_tokens)
-    # Wave 11a of session-decoupling deleted the ``Session`` drain forwards;
-    # ``ArtifactsAPI`` now consumes an ``ArtifactsRuntimeAdapter`` composite.
-    runtime = ArtifactsRuntimeAdapter(
+    # ``ArtifactsAPI`` consumes its three runtime collaborators directly.
+    api = ArtifactsAPI(
         rpc=core._rpc_executor,
         drain=core._drain_tracker,
         lifecycle=core._lifecycle,
-    )
-    api = ArtifactsAPI(
-        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

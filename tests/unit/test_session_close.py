@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from _helpers.session_factory import build_session_for_tests
-from notebooklm._artifacts import ArtifactsAPI, ArtifactsRuntimeAdapter
+from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._polling_registry import PollRegistry
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -96,17 +96,13 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from notebooklm._note_service import NoteService
 
     core = build_session_for_tests(_auth())
-    # Wave 11a of session-decoupling deleted ``Session.register_drain_hook``
-    # / ``Session.operation_scope`` forwards; ``ArtifactsAPI`` now consumes
-    # an ``ArtifactsRuntimeAdapter`` composite (mirrors production wiring
-    # in ``NotebookLMClient.__init__``).
-    runtime = ArtifactsRuntimeAdapter(
+    # ``ArtifactsAPI`` consumes its three runtime collaborators
+    # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
+    # wiring in ``NotebookLMClient.__init__``.
+    artifacts = ArtifactsAPI(
         rpc=core._rpc_executor,
         drain=core._drain_tracker,
         lifecycle=core._lifecycle,
-    )
-    artifacts = ArtifactsAPI(
-        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

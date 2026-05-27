@@ -144,19 +144,19 @@ class ArtifactDownloadService:
     def __init__(
         self,
         *,
-        runtime: RpcCaller,
+        rpc: RpcCaller,
         listing: ArtifactListingService,
         mind_maps: NoteBackedMindMapService,
         storage_path: Path | None = None,
     ) -> None:
-        self._runtime = runtime
+        self._rpc = rpc
         self._listing = listing
         self._mind_maps = mind_maps
         self._storage_path = storage_path
 
     async def _list_raw(self, notebook_id: str) -> list[Any]:
         """List raw artifacts through the injected listing service."""
-        return await self._listing.list_raw(notebook_id, rpc=self._runtime)
+        return await self._listing.list_raw(notebook_id, rpc=self._rpc)
 
     async def _list_mind_maps(self, notebook_id: str) -> list[Any]:
         """List mind-map artifacts through the injected mind-map service."""
@@ -195,7 +195,7 @@ class ArtifactDownloadService:
 
     async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
         """Fetch interactive artifact HTML through the runtime RPC seam."""
-        result = await self._runtime.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_INTERACTIVE_HTML,
             [artifact_id],
             source_path=f"/notebook/{notebook_id}",

@@ -7,11 +7,9 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
 import builtins
 import logging
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 # ``_mind_map`` is re-exported as ``_artifacts._mind_map`` so legacy patch
 # seams can still resolve the module via the artifacts facade. The runtime code
@@ -30,7 +28,7 @@ from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._session_contracts import AsyncWorkRuntime, RpcCaller
+from ._session_contracts import RpcCaller
 
 if TYPE_CHECKING:
     from ._session_lifecycle import ClientLifecycle
@@ -62,104 +60,6 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
-class DrainHookRegistration(Protocol):
-    """Narrow close-time hook registration surface, local to artifacts.
-
-    Artifact polling is the only current feature that registers
-    close-time cleanup hooks, so the Protocol stays local to
-    ``_artifacts.py`` rather than being promoted to
-    ``_session_contracts``. If a second consumer (e.g. Deep Research)
-    later adds artifact-style leader/follower polling with shared
-    background tasks, revisit whether ``register_drain_hook`` should
-    become shared.
-
-    This is the **canonical and only** ``DrainHookRegistration``
-    Protocol after Phase 7 of the capability refactor — the broad-
-    ``Session``-era twin previously at ``_session_contracts.py`` was
-    deleted in the same refactor arc once artifact polling was
-    confirmed as its only consumer.
-    """
-
-    def register_drain_hook(
-        self,
-        name: str,
-        hook: Callable[[], Awaitable[None]],
-    ) -> None: ...
-
-
-class ArtifactsRuntime(RpcCaller, AsyncWorkRuntime, DrainHookRegistration, Protocol):
-    """Runtime capabilities required by the artifacts feature.
-
-    Combines :class:`RpcCaller` (for RPC dispatch),
-    :class:`AsyncWorkRuntime` (for ``assert_bound_loop`` and
-    ``operation_scope``), and :class:`DrainHookRegistration` (for
-    close-time poll-task cleanup).
-    """
-
-
-@dataclass(frozen=True)
-class ArtifactsRuntimeAdapter:
-    """Concrete satisfier of :class:`ArtifactsRuntime` per ADR-014.
-
-    Earns its keep under Rule 2 because:
-
-    - the composite has three capabilities (``RpcCaller`` +
-      ``AsyncWorkRuntime`` + ``DrainHookRegistration``);
-    - :class:`ArtifactsAPI` takes the whole composite as a single
-      dependency (``runtime``), and passes it through to
-      ``ArtifactPollingService`` (which consumes ``AsyncWorkRuntime``)
-      and ``ArtifactDownloadService`` (which consumes ``RpcCaller``) —
-      consumer-demand;
-    - ``register_drain_hook`` is a meaningful named affordance worth
-      exposing as one method.
-
-    The adapter is constructed at the composition root
-    (:class:`notebooklm.client.NotebookLMClient`) from the three
-    underlying collaborators: :class:`RpcCaller`,
-    :class:`TransportDrainTracker`, and :class:`ClientLifecycle`. It
-    transitively satisfies :class:`AsyncWorkRuntime` per ADR-014 Rule 2
-    — no dedicated ``_AsyncWorkAdapter`` is introduced.
-    """
-
-    rpc: RpcCaller
-    drain: "TransportDrainTracker"
-    lifecycle: "ClientLifecycle"
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any:
-        return await self.rpc.rpc_call(
-            method,
-            params,
-            source_path,
-            allow_null,
-            _is_retry,
-            disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-        )
-
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
-        return self.drain.operation_scope(label)
-
-    def register_drain_hook(
-        self,
-        name: str,
-        hook: Callable[[], Awaitable[None]],
-    ) -> None:
-        self.drain.register_drain_hook(name, hook)
-
-    def assert_bound_loop(self) -> None:
-        self.lifecycle.assert_bound_loop()
-
-
 class ArtifactsAPI:
     """Operations on NotebookLM artifacts (studio content).
 
@@ -182,8 +82,10 @@ class ArtifactsAPI:
 
     def __init__(
         self,
-        runtime: ArtifactsRuntime,
         *,
+        rpc: RpcCaller,
+        drain: "TransportDrainTracker",
+        lifecycle: "ClientLifecycle",
         notebooks: NotebookSourceIdProvider,
         mind_maps: NoteBackedMindMapService,
         note_service: NoteService,
@@ -192,9 +94,16 @@ class ArtifactsAPI:
         """Initialize the artifacts API.
 
         Args:
-            runtime: Feature-local runtime that provides RPC dispatch,
-                loop-affinity assertion, operation scopes, and
-                close-time drain-hook registration.
+            rpc: RPC dispatch surface (:class:`RpcCaller`). Used for
+                direct artifact RPCs (delete, rename, export, list_raw)
+                and threaded into the generation and download services.
+            drain: Transport drain coordinator. Owns ``operation_scope``
+                (used by the polling service) and ``register_drain_hook``
+                (used here to register the polling-service close-time
+                cleanup hook).
+            lifecycle: Client lifecycle seam. Owns ``assert_bound_loop``
+                used by the polling service before it touches loop-bound
+                state.
             notebooks: Source-id resolver. Required — wire from
                 ``NotebookLMClient`` (no implicit fallback).
             mind_maps: Note-backed mind-map facade. Owns the
@@ -210,28 +119,31 @@ class ArtifactsAPI:
                 ``_mind_map.create_note`` shim (retired in Phase 6).
             storage_path: Path to storage state file for loading download cookies.
         """
-        self._runtime = runtime
+        self._rpc = rpc
+        self._drain = drain
+        self._lifecycle = lifecycle
         self._notebooks = notebooks
         self._mind_maps = mind_maps
         self._note_service = note_service
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(
-            runtime=self._runtime,
+            rpc=self._rpc,
             notebooks=self._notebooks,
             note_service=self._note_service,
         )
         self._downloads = ArtifactDownloadService(
-            runtime=self._runtime,
+            rpc=self._rpc,
             listing=self._listing,
             mind_maps=self._mind_maps,
             storage_path=storage_path,
         )
         self._polling = _artifact_polling.ArtifactPollingService(
-            runtime,
-            self._poll_registry,
+            loop_guard=self._lifecycle,
+            op_scope=self._drain,
+            poll_registry=self._poll_registry,
         )
-        self._runtime.register_drain_hook("artifacts.polls", self._polling.drain)
+        self._drain.register_drain_hook("artifacts.polls", self._polling.drain)
 
     # =========================================================================
     # List/Get Operations
@@ -666,7 +578,7 @@ class ArtifactsAPI:
         """
         logger.debug("Deleting artifact %s from notebook %s", artifact_id, notebook_id)
         params = [[2], artifact_id]
-        await self._runtime.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.DELETE_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -683,7 +595,7 @@ class ArtifactsAPI:
             new_title: The new title.
         """
         params = [[artifact_id, new_title], [["title"]]]
-        await self._runtime.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.RENAME_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -821,7 +733,7 @@ class ArtifactsAPI:
             Export result with document URL.
         """
         params = [None, artifact_id, None, title, int(export_type)]
-        return await self._runtime.rpc_call(
+        return await self._rpc.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -845,7 +757,7 @@ class ArtifactsAPI:
             Export result with spreadsheet URL.
         """
         params = [None, artifact_id, None, title, int(ExportType.SHEETS)]
-        return await self._runtime.rpc_call(
+        return await self._rpc.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -875,7 +787,7 @@ class ArtifactsAPI:
             Export result with document URL.
         """
         params = [None, artifact_id, content, title, int(export_type)]
-        return await self._runtime.rpc_call(
+        return await self._rpc.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -911,7 +823,7 @@ class ArtifactsAPI:
         """Get raw artifact list data."""
         # Keep this facade hop so callers/tests that patch ``api._list_raw``
         # still affect public listing paths that delegate into the service.
-        return await self._listing.list_raw(notebook_id, rpc=self._runtime)
+        return await self._listing.list_raw(notebook_id, rpc=self._rpc)
 
     def _select_artifact(
         self,
@@ -1051,16 +963,3 @@ class ArtifactsAPI:
             Returns True on unexpected structure (defensive fallback).
         """
         return _artifact_polling._is_media_ready(art, artifact_type)
-
-
-if TYPE_CHECKING:
-    # mypy guard: ``ArtifactsRuntimeAdapter`` must structurally satisfy
-    # the ``ArtifactsRuntime`` Protocol it adapts. Failing this assertion
-    # at type-check time catches shape drift on the delegate methods
-    # before runtime construction at the composition root would. Mirrors
-    # the pattern used by ``_rpc_executor._assert_rpc_executor_satisfies_rpc_caller``.
-
-    def _assert_adapter_satisfies_artifacts_runtime(
-        adapter: ArtifactsRuntimeAdapter,
-    ) -> None:
-        _: ArtifactsRuntime = adapter

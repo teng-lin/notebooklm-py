@@ -37,7 +37,9 @@ def mock_artifacts_api():
     mind_maps.list_mind_maps = AsyncMock(return_value=[])
     note_service = MagicMock(spec=NoteService)
     api = ArtifactsAPI(
-        mock_core,
+        rpc=mock_core,
+        drain=mock_core,
+        lifecycle=mock_core,
         notebooks=MagicMock(),
         mind_maps=mind_maps,
         note_service=note_service,

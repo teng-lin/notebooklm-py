@@ -44,7 +44,9 @@ def _make_api():
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        core,
+        rpc=core,
+        drain=core,
+        lifecycle=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
         note_service=note_service,

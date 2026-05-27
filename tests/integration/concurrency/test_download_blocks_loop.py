@@ -113,7 +113,9 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
-        mock_core,
+        rpc=mock_core,
+        drain=mock_core,
+        lifecycle=mock_core,
         notebooks=MagicMock(),
         mind_maps=mind_maps,
         note_service=note_service,
