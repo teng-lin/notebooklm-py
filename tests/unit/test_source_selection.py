@@ -298,7 +298,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_mind_map_service):
         """Test generate_audio with explicitly provided source_ids."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         # Mock successful generation response
         mock_core.rpc_call.return_value = [
@@ -344,7 +350,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit audio format and length are encoded instead of API defaults."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_123", "Audio", 1, None, 1]]
 
         await api.generate_audio(
@@ -364,7 +376,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service, mock_notebooks_api
     ):
         """Test generate_audio with source_ids=None fetches all sources."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=mock_notebooks_api, **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=mock_notebooks_api,
+            **mock_mind_map_service,
+        )
 
         # Mock get_source_ids to return source IDs
         mock_notebooks_api.get_source_ids.return_value = ["src_001", "src_002"]
@@ -394,7 +412,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_video_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_video has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
@@ -427,7 +451,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit video format and style are encoded instead of API defaults."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
         await api.generate_video(
@@ -447,7 +477,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Test custom video style prompt is encoded after the style code."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
         await api.generate_video(
@@ -466,7 +502,13 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_requires_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -479,7 +521,13 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_empty_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -493,7 +541,13 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_blank_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -507,7 +561,13 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_style_prompt_requires_custom_style(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         with pytest.raises(ValidationError, match="style_prompt requires"):
             await api.generate_video(
@@ -521,7 +581,13 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_cinematic_rejects_style_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         with pytest.raises(ValidationError, match="cinematic"):
             await api.generate_video(
@@ -534,7 +600,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_report_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_report has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
@@ -565,7 +637,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -588,7 +666,13 @@ class TestArtifactsSourceSelection:
         """extra_instructions has no effect when report_format is CUSTOM."""
         from notebooklm.rpc.types import ReportFormat
 
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -609,7 +693,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_quiz_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_quiz has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
 
@@ -638,7 +728,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit quiz quantity and difficulty are encoded instead of defaults."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
 
         await api.generate_quiz(
@@ -655,7 +751,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_flashcards_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_flashcards has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
 
@@ -679,7 +781,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit flashcard quantity and difficulty preserve flashcard option order."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
 
         await api.generate_flashcards(
@@ -696,7 +804,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_infographic_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_infographic has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -722,7 +836,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Test generate_infographic encodes explicit visual options in config slots."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -747,7 +867,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_slide_deck_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_slide_deck has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
 
@@ -772,7 +898,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit slide deck format and length are encoded instead of defaults."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
         mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
 
         await api.generate_slide_deck(
@@ -790,7 +922,13 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_data_table_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_data_table has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_table", "Table", 9, None, 1]]
 
@@ -812,7 +950,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service, mock_notebooks_api
     ):
         """Test generate_mind_map has correct source encoding format."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=mock_notebooks_api, **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=mock_notebooks_api,
+            **mock_mind_map_service,
+        )
 
         # Mock get_source_ids to return source IDs
         mock_notebooks_api.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
@@ -847,7 +991,13 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Test generate_mind_map passes language and instructions to RPC payload."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
 
@@ -877,7 +1027,13 @@ class TestArtifactsSourceSelection:
         """Test suggest_reports uses GET_SUGGESTED_REPORTS RPC."""
         from notebooklm.rpc.types import RPCMethod
 
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         # Mock the GET_SUGGESTED_REPORTS RPC call
         # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
@@ -904,7 +1060,13 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_generate_with_empty_source_list(self, mock_core, mock_mind_map_service):
         """Test generation with empty source_ids list produces empty arrays."""
-        api = ArtifactsAPI(rpc=mock_core, drain=mock_core, lifecycle=mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        api = ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
 
         mock_core.rpc_call.return_value = [["artifact_empty", "Audio", 1, None, 1]]
 
