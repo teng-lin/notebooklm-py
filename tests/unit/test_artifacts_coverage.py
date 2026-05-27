@@ -12,7 +12,6 @@ import httpx
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._polling_registry import PollRegistry
 from notebooklm.exceptions import (
     ArtifactInProgressTimeoutError,
     ArtifactPendingTimeoutError,
@@ -32,9 +31,8 @@ def mock_artifacts_api():
         get_source_ids=AsyncMock(return_value=[]),
         operation_scope=MagicMock(side_effect=lambda _label: _noop_operation_scope()),
     )
-    # Real registry backing. A MagicMock attribute would return a child Mock
-    # and confuse the ``existing is not None`` branch.
-    mock_core.poll_registry = PollRegistry()
+    # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally
+    # (``_artifacts.py:217``); the fake core does not need to provide one.
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 

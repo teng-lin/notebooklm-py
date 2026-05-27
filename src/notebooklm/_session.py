@@ -517,7 +517,6 @@ class Session:
         self._kernel = collaborators.kernel
         self._lifecycle = collaborators.lifecycle
         self.cookie_persistence = collaborators.cookie_persistence
-        self.poll_registry = collaborators.poll_registry
 
         # Late-bound storage — these slots stay ``None`` until the
         # composition root in :func:`compose_session_internals` drives

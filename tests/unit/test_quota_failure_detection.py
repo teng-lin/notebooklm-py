@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._polling_registry import PollRegistry
 from notebooklm.rpc.types import ArtifactStatus
 from notebooklm.types import GenerationStatus
 
@@ -37,8 +36,8 @@ def _make_api():
         rpc_call=AsyncMock(),
         operation_scope=MagicMock(side_effect=lambda _label: _noop_operation_scope()),
     )
-    # Real registry backing so wait_for_completion can ``dict.get(key)``.
-    core.poll_registry = PollRegistry()
+    # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally
+    # (``_artifacts.py:217``); the fake core does not need to provide one.
     mind_maps = MagicMock(spec=NoteBackedMindMapService)
     note_service = MagicMock(spec=NoteService)
     notebooks = MagicMock()

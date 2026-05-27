@@ -42,7 +42,6 @@ from ._cookie_persistence import CookiePersistence
 from ._kernel import Kernel
 from ._middleware import Middleware, NextCall, build_chain
 from ._middleware_chain import MiddlewareChainBuilder
-from ._polling_registry import PollRegistry
 from ._reqid_counter import ReqidCounter
 from ._session_auth import AuthRefreshCoordinator
 from ._session_config import normalize_max_concurrent_uploads
@@ -107,7 +106,6 @@ class SessionCollaborators:
     kernel: Kernel
     lifecycle: ClientLifecycle
     cookie_persistence: CookiePersistence
-    poll_registry: PollRegistry
 
 
 @dataclass(frozen=True)
@@ -244,7 +242,7 @@ def build_collaborators(
     reqid counter / auth coordinator follow because they are leaf
     collaborators with no inter-helper dependencies; ``Kernel`` is
     built next because ``ClientLifecycle`` holds a reference to it;
-    ``CookiePersistence`` and ``PollRegistry`` close out the bundle.
+    ``CookiePersistence`` closes out the bundle.
     """
     # Observability counters + telemetry callback. ``metrics_snapshot``
     # remains the lock-safe read path; helper-level tests that need
@@ -326,16 +324,6 @@ def build_collaborators(
     )
     # Owns the in-process save lock and open-time cookie baseline.
     cookie_persistence = CookiePersistence(auth, config.keepalive_storage_path)
-    # Session-level :class:`PollRegistry` retained as a legacy attribute
-    # for historical tests. The *live* artifact-polling state is owned
-    # separately by
-    # :class:`ArtifactsAPI` (``src/notebooklm/_artifacts.py``), which
-    # constructs its own :class:`PollRegistry` and threads it into
-    # :class:`ArtifactPollingService` (``src/notebooklm/_artifact_polling.py``).
-    # This ``self.poll_registry`` is currently unused by production code;
-    # retain it only as a legacy collaborator until the session facade can
-    # drop the attribute in a separate compatibility cleanup.
-    poll_registry = PollRegistry()
 
     return SessionCollaborators(
         metrics=metrics,
@@ -345,7 +333,6 @@ def build_collaborators(
         kernel=kernel,
         lifecycle=lifecycle,
         cookie_persistence=cookie_persistence,
-        poll_registry=poll_registry,
     )
 
 
