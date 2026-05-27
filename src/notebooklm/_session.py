@@ -46,6 +46,8 @@ from .auth import (
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 if TYPE_CHECKING:
+    from ._session_init import SessionCollaborators
+    from ._session_transport import SessionTransport
     from .types import ConnectionLimits
 
     # ADR-014 Rule 5 (Wave 4 of session-decoupling): the compile-time
@@ -360,6 +362,13 @@ class Session:
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
         )
+        # ADR-014 Rule 3 Stage A (Wave 6 of session-decoupling): store the
+        # bundle so the ``Session.collaborators`` accessor below can expose
+        # it as a single typed attribute for ``NotebookLMClient.__init__``
+        # feature wiring. Stage B (Wave 7 follow-up) moves
+        # ``build_collaborators`` ownership to NotebookLMClient and deletes
+        # this storage along with the accessor.
+        self._collaborators = collaborators
         self._metrics_obj = collaborators.metrics
         self._drain_tracker = collaborators.drain_tracker
         self._reqid = collaborators.reqid
@@ -445,6 +454,48 @@ class Session:
     @property
     def kernel(self) -> Kernel:
         return self._kernel
+
+    # ------------------------------------------------------------------
+    # ADR-014 Rule 3 Stage A accessors (Wave 6 of session-decoupling)
+    # ------------------------------------------------------------------
+    #
+    # Three typed accessors that let ``NotebookLMClient.__init__`` wire
+    # feature APIs with the collaborators they actually depend on, instead
+    # of passing the whole ``Session`` and having features reach for
+    # underscore-prefixed attributes. The base bundle (``collaborators``)
+    # exposes the eight fields ``SessionCollaborators`` carries today; two
+    # narrow accessors expose the late-bound collaborators that are NOT on
+    # the dataclass (``session_transport`` is constructed after the bundle
+    # via ``build_session_transport``; ``rpc_executor`` is lazy via
+    # ``_get_rpc_executor``).
+    #
+    # Per Stage B (Wave 7 follow-up): when ``build_collaborators`` ownership
+    # moves to ``NotebookLMClient``, all three accessors are deleted along
+    # with the ``self._collaborators`` storage above.
+    #
+    # The Wave 6 lint guard (``tests/_lint/test_client_composition.py``)
+    # restricts reads of these accessors to ``client.py`` + ``_session.py``
+    # + ``tests/`` to keep them from becoming a discoverability hub.
+
+    @property
+    def collaborators(self) -> "SessionCollaborators":
+        """Typed access to the constructed collaborator bundle (ADR-014 Rule 3 Stage A)."""
+        return self._collaborators
+
+    @property
+    def session_transport(self) -> "SessionTransport":
+        """Late-bound collaborator not present on :class:`SessionCollaborators`
+        today (constructed via :func:`build_session_transport` after the bundle).
+        Deleted in Wave 7 follow-up along with the other Stage-A accessors.
+        """
+        return self._transport
+
+    @property
+    def rpc_executor(self) -> RpcExecutor:
+        """Lazily-constructed collaborator not present on :class:`SessionCollaborators`
+        today. Deleted in Wave 7 follow-up along with the other Stage-A accessors.
+        """
+        return self._get_rpc_executor()
 
     @property
     def authuser(self) -> int:
