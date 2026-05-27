@@ -5,14 +5,29 @@ used by the RPC executor path (the ``Session._perform_authed_post``
 compatibility forward was deleted in Wave 11c of session-decoupling;
 tests now drive the canonical collaborator method directly):
 
-- ``build_request`` factory is called once per HTTP attempt.
-- On a single auth-error retry, the factory is called TWICE, and the second
-  invocation observes a fresh ``AuthSnapshot`` capturing whatever the
-  refresh callback mutated.
+- ``build_request`` factory is invoked once at chain entry (in
+  :meth:`SessionTransport.perform_authed_post`) and once again at the
+  terminal freshness rebuild (in
+  :meth:`SessionTransport.refresh_request_for_current_auth`). The
+  terminal rebuild runs unconditionally on every attempt so a 429
+  retry that re-enters the chain on the original request after an
+  auth refresh always sends an envelope built from the current
+  :class:`AuthSnapshot`; the happy-path rebuild is byte-identical to
+  the chain-entry materialization because the snapshot has not moved.
+- On a 401 + successful refresh + 200 retry, ``build_request`` is
+  invoked four times — chain-entry + terminal pre-401 (both with the
+  stale snapshot), then refresh-rebuild + terminal pre-200 (both with
+  the refreshed snapshot). The post-refresh invocations observe a
+  fresh ``AuthSnapshot`` capturing whatever the refresh callback
+  mutated.
 - The request-id correlation tag (``[req=<id>]``) is stable across the retry
   chain.
 - ``rate_limit_max_retries`` bounds 429 retries; exhausting the budget
   raises ``TransportRateLimited``.
+- A 401 → refresh → 429 → 200 sequence with the retry budget enabled
+  must send the post-429 retry with the refreshed auth envelope, not
+  the stale pre-refresh one — see
+  ``test_stale_envelope_rebuilt_after_refresh_then_retry``.
 - The historical ``rpc_call`` happy path is unchanged byte-for-byte
   (URL + body identical to pre-extraction).
 
@@ -412,7 +427,11 @@ async def test_perform_authed_post_disable_internal_retries_short_circuits(monke
 
 
 @pytest.mark.asyncio
-async def test_build_request_called_once_on_happy_path(monkeypatch):
+async def test_build_request_rebuilt_at_terminal_on_happy_path(monkeypatch):
+    """``build_request`` is invoked at chain entry AND at the terminal
+    freshness rebuild — both with the same (unmoved) snapshot on the
+    happy path, so the rebuilt envelope is byte-identical to the
+    chain-entry materialization."""
     core = _make_core()
     await core.open()
     try:
@@ -432,8 +451,14 @@ async def test_build_request_called_once_on_happy_path(monkeypatch):
         response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
-        assert len(calls) == 1
+        # The terminal freshness rebuild is load-bearing: it runs on every
+        # attempt so a 429-retry after auth refresh always sends fresh auth
+        # values (see ``test_stale_envelope_rebuilt_after_refresh_then_retry``).
+        # On the happy path the snapshot has not moved, so both invocations
+        # observe the same ``AuthSnapshot``.
+        assert len(calls) == 2
         assert calls[0].csrf_token == "CSRF_OLD"
+        assert calls[1].csrf_token == "CSRF_OLD"
     finally:
         await core.close()
 
@@ -489,9 +514,16 @@ async def test_first_terminal_attempt_rebuilds_when_snapshot_changed(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_build_request_called_twice_with_fresh_snapshot_on_401(monkeypatch):
-    """On a 401 + successful refresh, the factory is invoked twice — and the
-    second call sees the refreshed CSRF / session-id, not the stale ones."""
+async def test_build_request_observes_fresh_snapshot_after_401_refresh(monkeypatch):
+    """On a 401 + successful refresh, the second HTTP attempt carries the
+    refreshed CSRF / session-id, not the stale ones.
+
+    ``build_request`` is invoked four times across the two-attempt flow:
+    chain-entry + terminal pre-401 (both stale snapshot), then
+    refresh-rebuild + terminal pre-200 (both refreshed snapshot). The
+    pre-rebuild invocations carry the stale snapshot and the post-rebuild
+    invocations carry the refreshed one.
+    """
     refresh_calls = []
 
     async def refresh() -> AuthTokens:
@@ -527,12 +559,139 @@ async def test_build_request_called_twice_with_fresh_snapshot_on_401(monkeypatch
         assert response.status_code == 200
         assert len(refresh_calls) == 1
         assert call_count["n"] == 2
-        assert len(snapshots) == 2
-        # First snapshot pre-refresh; second snapshot post-refresh.
+        # Four ``build_request`` invocations: chain-entry + terminal pre-401
+        # (stale snapshot) and refresh-rebuild + terminal pre-200 (refreshed
+        # snapshot).
+        assert len(snapshots) == 4
+        # First two invocations observe the pre-refresh snapshot.
         assert snapshots[0].csrf_token == "CSRF_OLD"
         assert snapshots[0].session_id == "SID_OLD"
-        assert snapshots[1].csrf_token == "CSRF_NEW"
-        assert snapshots[1].session_id == "SID_NEW"
+        assert snapshots[1].csrf_token == "CSRF_OLD"
+        assert snapshots[1].session_id == "SID_OLD"
+        # Refresh runs after the 401; the last two invocations observe the
+        # refreshed snapshot, and the actual HTTP body carries CSRF_NEW.
+        assert snapshots[-1].csrf_token == "CSRF_NEW"
+        assert snapshots[-1].session_id == "SID_NEW"
+        assert snapshots[-2].csrf_token == "CSRF_NEW"
+        assert snapshots[-2].session_id == "SID_NEW"
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_stale_envelope_rebuilt_after_refresh_then_retry(monkeypatch):
+    """Regression: 401 → refresh → 429 → 200 sends post-429 retry with fresh auth.
+
+    The bug being guarded:
+
+    - ``AuthRefreshMiddleware`` lives just inside ``RetryMiddleware``. After a
+      401, it refreshes auth, updates ``request.context[RPC_CONTEXT_AUTH_SNAPSHOT]``
+      in-place on the shared context dict, and re-invokes the chain with a
+      freshly built ``retry_request`` carrying refreshed URL / body / headers.
+    - When that retry attempt receives a 429, the ``TransportRateLimited``
+      bubbles back up through ``AuthRefreshMiddleware`` (which does not catch
+      transport errors) and is caught by ``RetryMiddleware``, which then
+      retries the chain with the **original** ``RpcRequest`` — whose
+      ``url`` / ``body`` were built from the pre-refresh snapshot.
+    - Without the load-bearing terminal rebuild
+      (:meth:`SessionTransport.refresh_request_for_current_auth` running on
+      every attempt), the original request would be sent verbatim and the
+      backend would see stale CSRF / session-id / authuser values even though
+      the cookie jar carries the refreshed cookies.
+
+    Assertions:
+
+    - The third terminal-side request (the post-429 retry) carries the
+      refreshed CSRF / session-id / authuser values, NOT the pre-refresh
+      snapshot.
+    - The refresh callback is invoked exactly once across the whole flow —
+      the once-per-call marker on ``request.context`` prevents
+      ``AuthRefreshMiddleware`` from running a second refresh when the
+      original request re-enters the chain on the 429-retry path.
+    """
+    refresh_calls: list[bool] = []
+
+    async def refresh() -> AuthTokens:
+        refresh_calls.append(True)
+        # Mutate auth state so a subsequent snapshot captures the new values.
+        core.auth.csrf_token = "CSRF_NEW"
+        core.auth.session_id = "SID_NEW"
+        return core.auth
+
+    # ``rate_limit_max_retries=1`` lets the 429 burn one retry slot so the
+    # post-refresh-then-429 retry path actually fires; the regression depends
+    # on ``RetryMiddleware`` re-invoking the chain with the original request.
+    core = _make_core(refresh_callback=refresh, rate_limit_max_retries=1)
+    await core.open()
+    try:
+        # Avoid actually sleeping during the 429 backoff.
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            # Encode CSRF in the body and session-id + authuser in the URL,
+            # mirroring how ``RpcExecutor._build`` composes the real envelope
+            # (see ``RpcExecutor.build_url`` and ``build_request_body``).
+            url = f"https://example.test/x?f.sid={snapshot.session_id}&authuser={snapshot.authuser}"
+            body = f"at={snapshot.csrf_token}&payload=1"
+            return url, body, {"X-Goog-AuthUser": str(snapshot.authuser)}
+
+        terminal_urls: list[str] = []
+        terminal_bodies: list[bytes] = []
+        terminal_headers: list[dict[str, str]] = []
+        call_count = {"n": 0}
+
+        async def fake_post(url, *, content, headers=None, **kwargs):
+            call_count["n"] += 1
+            terminal_urls.append(url)
+            terminal_bodies.append(content)
+            terminal_headers.append(dict(headers or {}))
+            if call_count["n"] == 1:
+                # First attempt: 401 → triggers AuthRefreshMiddleware refresh.
+                raise _status_error(401)
+            if call_count["n"] == 2:
+                # Second attempt (the refreshed retry inside AuthRefresh):
+                # 429 → bubbles up through ``RetryMiddleware`` which then
+                # retries the chain with the ORIGINAL request.
+                raise _status_error(429, retry_after="1")
+            # Third attempt (RetryMiddleware retry of the original request):
+            # must carry the refreshed auth envelope, not the stale one.
+            return _ok_response()
+
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
+
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert call_count["n"] == 3, "expected three terminal attempts (401, 429, 200)"
+        # The 429 retry-after backoff fires exactly once between attempts 2 and 3.
+        assert sleeps == [1]
+        # The refresh callback runs exactly ONCE; the once-per-call marker on
+        # the shared ``request.context`` prevents a second refresh on the
+        # RetryMiddleware-driven re-entry.
+        assert refresh_calls == [True]
+
+        # First attempt: pre-refresh snapshot on the wire.
+        assert terminal_urls[0] == "https://example.test/x?f.sid=SID_OLD&authuser=0"
+        assert terminal_bodies[0] == b"at=CSRF_OLD&payload=1"
+        assert terminal_headers[0]["X-Goog-AuthUser"] == "0"
+        # Second attempt (refreshed retry inside AuthRefreshMiddleware):
+        # refreshed snapshot on the wire.
+        assert terminal_urls[1] == "https://example.test/x?f.sid=SID_NEW&authuser=0"
+        assert terminal_bodies[1] == b"at=CSRF_NEW&payload=1"
+        assert terminal_headers[1]["X-Goog-AuthUser"] == "0"
+        # Third attempt (RetryMiddleware re-invoking the chain with the
+        # ORIGINAL request after the 429): MUST carry the refreshed envelope.
+        # This is the stale-envelope regression assertion — without the
+        # unconditional terminal rebuild, this attempt would carry
+        # ``f.sid=SID_OLD`` / ``at=CSRF_OLD``.
+        assert terminal_urls[2] == "https://example.test/x?f.sid=SID_NEW&authuser=0"
+        assert terminal_bodies[2] == b"at=CSRF_NEW&payload=1"
+        assert terminal_headers[2]["X-Goog-AuthUser"] == "0"
     finally:
         await core.close()
 
@@ -671,7 +830,12 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
             reset_request_id(token)
 
         assert call_count["n"] == 2
-        assert observed_request_ids == ["REQ-stable-1234", "REQ-stable-1234"]
+        # ``build_request`` is invoked four times across two terminal
+        # attempts (chain-entry + terminal-rebuild per attempt; see module
+        # docstring); the correlation id must be identical for every
+        # invocation regardless of attempt index.
+        assert len(observed_request_ids) == 4
+        assert all(rid == "REQ-stable-1234" for rid in observed_request_ids)
     finally:
         await core.close()
 

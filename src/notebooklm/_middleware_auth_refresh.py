@@ -41,7 +41,10 @@ the initial ``RpcRequest.url`` / ``.headers`` / ``.body`` populated and the
 terminal consumes that envelope through ``Kernel.post``. After a successful
 refresh this middleware re-snapshots auth state and replaces the request
 envelope before retrying so the terminal never sends stale URL/body/header
-values.
+values. See :meth:`AuthRefreshMiddleware._rebuild_request_after_refresh`
+for the full in-place context-mutation contract and the paired terminal
+rebuild invariant that keeps the post-refresh 429 retry from sending a
+stale envelope.
 
 This regression-fix from PR 12.7 also closes here: pre-PR-12.7 the leaf's
 ``refreshed_this_call`` lived in the same loop as 429/5xx retries (one
@@ -255,6 +258,42 @@ class AuthRefreshMiddleware:
         envelope materialization synchronous. The terminal still performs a
         final freshness check immediately before ``Kernel.post`` because inner
         middlewares may await between this retry rebuild and the wire.
+
+        **In-place context mutation is the deliberate cross-boundary carrier
+        for refreshed auth state and the once-per-call refresh guard.** This
+        method (and its caller :meth:`__call__`) intentionally mutates the
+        inbound ``request.context`` rather than copying it, because two
+        pieces of shared state must survive the ``Retry`` ↔ ``AuthRefresh``
+        boundary:
+
+        - ``RPC_CONTEXT_AUTH_REFRESHED`` is written by :meth:`__call__` on
+          the **original** ``request.context`` just before this rebuild
+          runs. ``RetryMiddleware`` lives one layer *outside* this
+          middleware and, on a 429 / 5xx caught after the refresh, re-invokes
+          the chain with that same original ``RpcRequest``. The marker on
+          the shared context suppresses a second refresh on the
+          original-request retry, preserving the "exactly one refresh per
+          logical call" contract pinned in ADR-009 §"Retry semantics".
+
+        - ``RPC_CONTEXT_AUTH_SNAPSHOT`` is updated below to the freshly
+          captured snapshot. Because :func:`materialize_rpc_request`
+          retains the inbound ``context`` dict by reference (see
+          :func:`notebooklm._middleware.materialize_rpc_request`), the
+          returned ``retry_request`` and the original ``request`` share
+          that same context dict and therefore see the same updated
+          snapshot. This mutation is what lets the terminal freshness
+          guard (:meth:`SessionTransport.refresh_request_for_current_auth`)
+          observe the post-refresh snapshot when ``RetryMiddleware`` later
+          retries the original request after a 429.
+
+        The companion invariant — and the reason the in-place mutation is
+        safe even though the original request's ``url`` / ``headers`` /
+        ``body`` are still pre-refresh — is that
+        :meth:`SessionTransport.refresh_request_for_current_auth` rebuilds
+        URL / body / cookies from the current snapshot on **every** terminal
+        attempt, unconditionally. Both halves are load-bearing and must be
+        preserved together; deleting the unconditional rebuild reintroduces
+        the stale-envelope path on the post-refresh 429 retry.
         """
         if self._snapshot_provider is None:
             return request

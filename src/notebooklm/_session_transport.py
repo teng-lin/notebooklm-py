@@ -136,32 +136,66 @@ class SessionTransport:
         self._logger = logger
 
     async def refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
-        """Rebuild the envelope if auth changed before the terminal POST.
+        """Rebuild the envelope from the current auth snapshot before every POST.
 
-        :meth:`perform_authed_post` materializes the request before the
-        outer chain runs, so the request may wait behind Drain / Semaphore
-        before the leaf sends it. Compare the materialization snapshot to
-        a fresh snapshot immediately before :meth:`Kernel.post`; if auth
-        moved, rebuild the envelope synchronously from
-        ``RPC_CONTEXT_BUILD_REQUEST``.
+        This guard is **load-bearing**: it runs on *every* terminal attempt
+        (including retries driven by ``RetryMiddleware`` for 429 / 5xx) and
+        unconditionally rebuilds ``RpcRequest.url`` / ``.headers`` / ``.body``
+        from a freshly captured :class:`AuthSnapshot` whenever
+        ``RPC_CONTEXT_BUILD_REQUEST`` is present. The unconditional rebuild
+        is the runtime correctness fix for the stale-envelope path that
+        existed when the freshness check short-circuited on snapshot
+        equality:
+
+        1. Initial attempt: snapshot ``S_old`` is captured by
+           :meth:`perform_authed_post`, the envelope is materialized, and
+           the request enters the chain.
+        2. Terminal POSTs and the response is HTTP 401.
+        3. :class:`AuthRefreshMiddleware` (just inside ``RetryMiddleware``)
+           catches the auth error, refreshes credentials, mutates
+           ``request.context[RPC_CONTEXT_AUTH_SNAPSHOT]`` to ``S_new``
+           in-place (see
+           :meth:`AuthRefreshMiddleware._rebuild_request_after_refresh`
+           for the contract — that mutation is the carrier of the new
+           snapshot across the ``Retry`` ↔ ``AuthRefresh`` boundary), and
+           hands a freshly built ``retry_request`` to the chain leaf.
+        4. The retry attempt POSTs with the refreshed envelope and the
+           response is HTTP 429.
+        5. The 429 propagates back up to ``RetryMiddleware`` (outside
+           ``AuthRefreshMiddleware``), which retries by re-invoking the
+           chain with the **original** ``RpcRequest`` from step 1. That
+           request's ``.url`` / ``.headers`` / ``.body`` were built from
+           ``S_old`` even though its shared ``context`` dict now carries
+           ``S_new`` (mutated in step 3).
+        6. Without an unconditional rebuild here, a snapshot-equality
+           short-circuit would compare ``S_new`` (in context) against
+           ``S_new`` (freshly captured), declare "no change," and send the
+           stale ``S_old`` envelope. The unconditional rebuild keeps
+           ``URL`` / ``headers`` / ``body`` aligned with
+           :attr:`Kernel._client.cookies` (which carries the refreshed
+           cookie jar) for every attempt.
+
+        Idempotence on the happy path: when no refresh ran, the snapshot
+        captured here equals the snapshot used by
+        :meth:`perform_authed_post`, so the rebuilt envelope is
+        byte-identical to the inbound one. The extra ``build_request``
+        invocation per attempt is the cost of the freshness invariant.
 
         AST guarded — see
         :func:`tests.unit.test_concurrency_refresh_race.test_terminal_freshness_check_has_no_await_after_materialization`
         which reads the source of this method to assert no ``await``
         follows :func:`materialize_rpc_request`. Any restructuring here
         must keep that invariant: the snapshot and the rebuilt envelope
-        must be produced together with no suspension point between them.
+        must be produced together with no suspension point between them
+        so a concurrent refresh cannot move the cookie jar between the
+        rebuild and :meth:`Kernel.post`.
         """
         context = request.context
-        request_snapshot = context.get(RPC_CONTEXT_AUTH_SNAPSHOT)
         build_request = context.get(RPC_CONTEXT_BUILD_REQUEST)
-        if not isinstance(request_snapshot, AuthSnapshot) or build_request is None:
+        if build_request is None:
             return request
 
         current_snapshot = await self._snapshot_provider()
-        if current_snapshot == request_snapshot:
-            return request
-
         context[RPC_CONTEXT_AUTH_SNAPSHOT] = current_snapshot
         return materialize_rpc_request(
             build_request=build_request,
