@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
-
-import httpx
+from typing import TYPE_CHECKING, Protocol, cast
 
 from .._env import get_base_url
 from .._url_utils import is_google_auth_redirect
@@ -17,6 +14,8 @@ from .tokens import AuthTokens
 
 if TYPE_CHECKING:
     from .._kernel import Kernel
+    from .._session_init import SessionCollaborators
+    from .._session_lifecycle import _LifecycleHost
 
 
 class RefreshAuthCore(Protocol):
@@ -28,6 +27,13 @@ class RefreshAuthCore(Protocol):
     prefixed ``_kernel`` slot mirrors the live ``Session._kernel``
     attribute so structural conformance does not require renaming the
     Session slot.
+
+    Wave 11c of session-decoupling: the ``save_cookies`` forward on
+    ``Session`` was also deleted — :func:`refresh_auth_session` now
+    reaches the cookie persistence chokepoint through
+    ``core.collaborators.lifecycle`` directly
+    (``ClientLifecycle.save_cookies``), which is the canonical home
+    identified by ADR-014.
     """
 
     auth: AuthTokens
@@ -41,8 +47,9 @@ class RefreshAuthCore(Protocol):
         """Refresh auth-dependent HTTP state after token mutation."""
         ...
 
-    def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> Awaitable[None]:
-        """Persist refreshed cookies."""
+    @property
+    def collaborators(self) -> SessionCollaborators:
+        """Access the constructed collaborator bundle (Stage A accessor)."""
         ...
 
 
@@ -74,8 +81,18 @@ async def refresh_auth_session(core: RefreshAuthCore) -> AuthTokens:
     # observe a torn token pair while refresh is in flight.
     await core.update_auth_tokens(csrf or "", sid or "")
     core.update_auth_headers()
-    # Persist through Session.save_cookies so refresh serializes with
-    # keepalive and close saves.
-    await core.save_cookies(http_client.cookies)
+    # Persist through ClientLifecycle.save_cookies so refresh serializes
+    # with keepalive and close saves. The ``Session.save_cookies`` forward
+    # was deleted in Wave 11c of session-decoupling; callers now reach the
+    # lifecycle collaborator directly. The ``cast`` widens the
+    # ``RefreshAuthCore`` shape to the lifecycle's ``_LifecycleHost`` shape —
+    # ``Session`` (the only production caller) satisfies both Protocols
+    # structurally; the cast is a typing-level acknowledgement that
+    # ``RefreshAuthCore`` deliberately stays narrow (it doesn't pull in
+    # the lifecycle host's metrics / drain / reqid / auth-coord fields
+    # because none of those are read by ``refresh_auth_session``).
+    await core.collaborators.lifecycle.save_cookies(
+        cast("_LifecycleHost", core), http_client.cookies
+    )
 
     return core.auth

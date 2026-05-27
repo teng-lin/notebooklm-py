@@ -15,8 +15,6 @@ from ._middleware import (
     RpcRequest,
     RpcResponse,
 )
-from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
-from ._request_types import BuildRequest
 from ._rpc_executor import RpcExecutor
 from ._session_config import (
     DEFAULT_CONNECT_TIMEOUT,
@@ -216,7 +214,7 @@ class Session:
                 ``httpx.AsyncClient`` (Scotty endpoint) and don't share
                 the RPC pool.
             max_concurrent_rpcs: Ceiling on simultaneous in-flight
-                ``_perform_authed_post`` RPC POSTs. Defaults to
+                ``SessionTransport.perform_authed_post`` RPC POSTs. Defaults to
                 ``DEFAULT_MAX_CONCURRENT_RPCS`` (16) — well below the
                 default httpx pool size (``max_connections=100``) so
                 short-lived helper requests (refresh GETs, upload
@@ -371,12 +369,12 @@ class Session:
         self.cookie_persistence = collaborators.cookie_persistence
         self.poll_registry = collaborators.poll_registry
         # ``_drain_hooks`` storage moved to ``TransportDrainTracker`` in
-        # Wave 2 of the session-decoupling plan (ADR-014 Rule 1).
-        # ``Session.register_drain_hook`` is now a one-line forward.
+        # Wave 2 of the session-decoupling plan (ADR-014 Rule 1);
+        # ``Session.register_drain_hook`` was deleted in Wave 11a.
         self._rpc_executor: RpcExecutor | None = None
 
         # The authed POST hot path (chain terminal, freshness rebuild,
-        # and ``_perform_authed_post`` entry) lives on
+        # and ``perform_authed_post`` entry) lives on
         # :class:`SessionTransport` (move #4c — ``docs/improvement.md``
         # §3.1). Build the transport BEFORE :func:`wire_middleware_chain`
         # so the chain leaf can route through :class:`Session`; the
@@ -411,17 +409,6 @@ class Session:
         self._chain_builder = wired.chain_builder
         self._middlewares = wired.middlewares
         self._authed_post_chain = wired.authed_post_chain
-
-    async def next_reqid(self, step: int = _REQID_DEFAULT_STEP) -> int:
-        """Atomically increment the request-id counter and return the new value.
-
-        Thin facade over :meth:`ReqidCounter.next_reqid`. The default ``step``
-        is sourced from :data:`notebooklm._reqid_counter.DEFAULT_STEP` so the
-        facade and the underlying helper cannot silently drift apart; see
-        :class:`notebooklm._reqid_counter.ReqidCounter` for the full contract,
-        validation rules, and lazy-lock semantics.
-        """
-        return await self._reqid.next_reqid(step)
 
     # ------------------------------------------------------------------
     # ADR-014 Rule 3 Stage A accessors (Wave 6 of session-decoupling)
@@ -465,23 +452,6 @@ class Session:
         """
         return self._get_rpc_executor()
 
-    @property
-    def bound_loop(self) -> asyncio.AbstractEventLoop | None:
-        """Return the open-time captured event loop for affinity checks.
-
-        Defensive ``isinstance`` so a ``MagicMock``-shaped fixture whose
-        ``_lifecycle`` auto-vivifies into a mock doesn't synthesize a fake
-        loop object that the affinity helper would otherwise treat as a
-        real (mismatched) loop. Returns ``None`` when the underlying core
-        has no lifecycle or has not been opened; the affinity helper
-        treats ``None`` as a silent no-op.
-        """
-        lifecycle = getattr(self, "_lifecycle", None)
-        if lifecycle is None:
-            return None
-        loop = lifecycle.get_bound_loop()
-        return loop if isinstance(loop, asyncio.AbstractEventLoop) else None
-
     def assert_bound_loop(self) -> None:
         """Raise if this core is used from a loop other than its open-time loop.
 
@@ -496,9 +466,9 @@ class Session:
 
         When ``max_concurrent_rpcs`` was set to ``None`` at construction
         time, this returns a :class:`contextlib.nullcontext` so the
-        ``async with`` wrapper in :meth:`_perform_authed_post` collapses
-        to a no-op (callers with their own external rate-limiter opted
-        out of the gate). Otherwise it lazily constructs an
+        ``async with`` wrapper inside the chain's ``SemaphoreMiddleware``
+        collapses to a no-op (callers with their own external rate-limiter
+        opted out of the gate). Otherwise it lazily constructs an
         ``asyncio.Semaphore`` bound to the running loop on first use,
         mirroring the lazy-init pattern of :attr:`_reqid_lock` /
         :attr:`_auth_snapshot_lock`.
@@ -566,21 +536,6 @@ class Session:
         """
         await self._lifecycle.open(self)
 
-    async def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> None:
-        """Persist a cookie jar through the shared cookie-persistence collaborator.
-
-        Thin facade over :meth:`ClientLifecycle.save_cookies`. The storage
-        writer resolves through ``self._lifecycle._cookie_saver`` — by
-        default the ``_default_cookie_saver`` wrapper that late-binds to
-        ``notebooklm._auth.storage.save_cookies_to_storage`` so a
-        ``monkeypatch.setattr("notebooklm._auth.storage.save_cookies_to_storage", …)``
-        on the canonical seam keeps affecting the live save path. Phase 2
-        PR 4 added the ``cookie_saver=`` constructor kwarg as the
-        preferred test-side seam; passing a custom callable there bypasses
-        the late-bind hop entirely.
-        """
-        await self._lifecycle.save_cookies(self, jar, path)
-
     async def close(self) -> None:
         """Close the HTTP client connection.
 
@@ -590,7 +545,7 @@ class Session:
         1. Cancels and joins the keepalive task (so the loop can't issue a
            poke against an already-closed transport).
         2. Runs registered feature drain hooks.
-        3. Saves cookies one last time through ``save_cookies``.
+        3. Saves cookies one last time through ``ClientLifecycle.save_cookies``.
         4. Calls ``aclose()`` under :func:`asyncio.shield` so cancellation
            arriving mid-close cannot leak the underlying httpx transport.
         5. Nulls out ``_kernel._http_client`` and ``_rpc_executor`` so a
@@ -645,13 +600,6 @@ class Session:
         """
         await self._auth_coord.update_auth_tokens(self, csrf, session_id)
 
-    async def _refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
-        """Forward to :meth:`SessionTransport.refresh_request_for_current_auth`
-        (body moved in move #4c — ``docs/improvement.md`` §3.1; AST guard
-        now inspects the collaborator method directly).
-        """
-        return await self._transport.refresh_request_for_current_auth(request)
-
     async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
         """Middleware chain leaf — forwards to :meth:`SessionTransport.terminal`.
 
@@ -669,48 +617,6 @@ class Session:
         forward carries no try/await structure.
         """
         return await self._transport.terminal(request)
-
-    async def _perform_authed_post(
-        self,
-        *,
-        build_request: BuildRequest,
-        log_label: str,
-        disable_internal_retries: bool = False,
-        rpc_method: str | None = None,
-    ) -> httpx.Response:
-        """Forward to :meth:`SessionTransport.perform_authed_post` (body
-        moved in move #4c — ``docs/improvement.md`` §3.1). Retained on
-        :class:`Session` per ADR-014 Rule 4 as a load-bearing middleware-chain
-        seam: ``_chat_transport`` and ``client._session._perform_authed_post(...)``
-        direct callers still reach it here. ``RpcExecutor`` no longer calls
-        this method (Wave 4 of session-decoupling: the executor takes
-        :class:`SessionTransport` directly and calls
-        ``self._transport.perform_authed_post`` without going through Session).
-        ``_chat_transport`` and ``client._session._perform_authed_post(...)``
-        direct callers keep the same keyword-only signature.
-        """
-        return await self._transport.perform_authed_post(
-            build_request=build_request,
-            log_label=log_label,
-            disable_internal_retries=disable_internal_retries,
-            rpc_method=rpc_method,
-        )
-
-    async def transport_post(
-        self,
-        build_request: BuildRequest,
-        parse_label: str,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> httpx.Response:
-        """Session transport facade required by the Tier-13 contract."""
-        # ``Session`` exposes ``parse_label`` for the later feature retype; the
-        # chain context still names that value ``log_label``.
-        return await self._perform_authed_post(
-            build_request=build_request,
-            log_label=parse_label,
-            disable_internal_retries=disable_internal_retries,
-        )
 
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.
