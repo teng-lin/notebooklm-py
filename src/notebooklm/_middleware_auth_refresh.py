@@ -132,8 +132,12 @@ class AuthRefreshMiddleware:
       Defaults to the project-canonical ``notebooklm._core`` logger so
       ``caplog.at_level(..., logger="notebooklm._core")`` keeps matching.
     - ``metrics``: a :class:`ClientMetrics` whose ``increment(...)`` is
-      called once per successful refresh (matches the legacy
-      ``host._increment_metrics(rpc_auth_retries=1)`` site).
+      called once per successful refresh (replaces the historical
+      ``host._increment_metrics(rpc_auth_retries=1)`` site —
+      ``Session._increment_metrics`` was a thin forward to this
+      ``ClientMetrics.increment`` call and was deleted in Wave 11b of
+      the session-decoupling arc, so middleware now reaches the
+      collaborator directly).
     """
 
     def __init__(
