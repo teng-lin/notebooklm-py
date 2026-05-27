@@ -1,12 +1,9 @@
-"""Unit tests for the polling registry collaborator.
+"""Unit tests for the standalone :class:`PollRegistry` class.
 
 The live owner of artifact-polling state is
 :class:`notebooklm._artifacts.ArtifactsAPI`, which constructs a
 :class:`PollRegistry` directly and threads it into
-:class:`notebooklm._artifact_polling.ArtifactPollingService`. These
-tests cover the standalone registry class only; the previous
-``Session.poll_registry`` legacy attribute has been deleted along with
-the dead ``SessionCollaborators.poll_registry`` field.
+:class:`notebooklm._artifact_polling.ArtifactPollingService`.
 """
 
 from __future__ import annotations

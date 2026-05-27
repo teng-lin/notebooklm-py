@@ -229,7 +229,7 @@ def build_collaborators(
     cookie_saver: CookieSaver | None,
     cookie_rotator: CookieRotator | None,
 ) -> SessionCollaborators:
-    """Construct the eight extracted collaborators in dependency order.
+    """Construct the seven extracted collaborators in dependency order.
 
     The order mirrors the pre-extraction ``Session.__init__`` exactly so
     the load-bearing inter-collaborator wiring stays obvious to future
