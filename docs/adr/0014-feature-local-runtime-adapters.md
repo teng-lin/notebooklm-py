@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-05-26).
+Accepted (#1082; Stage-B issue #1084; MiddlewareChainHost issue #1085).
 
 ## Context
 
@@ -42,7 +42,7 @@ satisfier of every Protocol. This produces four observable consequences:
    [ADR-007](./0007-test-monkeypatch-policy.md) forbidden-monkeypatch
    allowlist (~30 file-level entries today) is the visible gravity well this
    creates — every entry pins a Session-shaped surface that ADR-013's narrow
-   Protocols *should* have eliminated.
+   Protocols _should_ have eliminated.
 
 4. **`RpcOwner` Protocol carries underscore-prefixed `Session` internals.**
    `RpcExecutor` declares an `RpcOwner` dependency
@@ -54,8 +54,8 @@ satisfier of every Protocol. This produces four observable consequences:
 
 The architectural pressure is real and ongoing. Every feature added between v0.5.0
 and today has either grown `Session` or required a new compatibility forward.
-ADR-013 framed the *interface* model correctly; what was missing is the matching
-*implementation* model.
+ADR-013 framed the _interface_ model correctly; what was missing is the matching
+_implementation_ model.
 
 ## Decision
 
@@ -65,15 +65,15 @@ implementation rules change how those interfaces are satisfied at runtime.
 
 ### Rule 1 — Single-collaborator Protocols are satisfied directly (after method push-down)
 
-| Protocol | Satisfier (post-migration) | Migration prerequisite |
-|---|---|---|
-| `RpcCaller` | `RpcExecutor` directly | none — already structurally satisfies (TYPE_CHECKING assertion at [`_rpc_executor.py:463`](../../src/notebooklm/_rpc_executor.py)) |
-| `LoopGuard` | `ClientLifecycle` directly | **push down `assert_bound_loop()`** — currently lives on `Session.assert_bound_loop` ([`_session.py:486`](../../src/notebooklm/_session.py)), which calls `_loop_affinity.assert_bound_loop(self.bound_loop)`. `ClientLifecycle` already owns `get_bound_loop` ([`_session_lifecycle.py:271`](../../src/notebooklm/_session_lifecycle.py)); the push-down adds a trivial `assert_bound_loop()` method that calls the free function with `self.get_bound_loop()`. |
-| `OperationScopeProvider` | `TransportDrainTracker` directly | **push down `operation_scope(label)`** — currently lives on `Session.operation_scope` ([`_session.py:495`](../../src/notebooklm/_session.py)) as an async context manager wrapping `begin_transport_post` / `finish_transport_post` (both already on `TransportDrainTracker` at [`_transport_drain.py:139,196`](../../src/notebooklm/_transport_drain.py)). The push-down moves the contextmanager wrapper to the tracker. |
-| `DrainHookRegistration` (feature-local in `_artifacts.py`) | `TransportDrainTracker` directly | **push down `register_drain_hook(name, hook)` + the underlying `_drain_hooks` storage** — currently lives on `Session.register_drain_hook` ([`_session.py:421`](../../src/notebooklm/_session.py)). The push-down moves both the method and the storage onto the tracker. |
-| `AsyncWorkRuntime` (composes `LoopGuard` + `OperationScopeProvider`) | satisfied **transitively** by `ArtifactsRuntimeAdapter` / `UploadRuntimeAdapter` (Rule 2) | depends on the push-downs above. No dedicated `_AsyncWorkAdapter` — per Rule 2, trivial composites do not get adapter middlemen. |
-| `AuthMetadata` | `AuthRefreshCoordinator` directly | verify with grep at migration time — likely already satisfies the Protocol |
-| `Kernel` (Protocol) | the concrete `Kernel` class | none — unchanged |
+| Protocol                                                             | Satisfier (post-migration)                                                                | Migration prerequisite                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RpcCaller`                                                          | `RpcExecutor` directly                                                                    | none — already structurally satisfies (TYPE_CHECKING assertion at [`_rpc_executor.py:463`](../../src/notebooklm/_rpc_executor.py))                                                                                                                                                                                                                                                                                                                               |
+| `LoopGuard`                                                          | `ClientLifecycle` directly                                                                | **push down `assert_bound_loop()`** — currently lives on `Session.assert_bound_loop` ([`_session.py:486`](../../src/notebooklm/_session.py)), which calls `_loop_affinity.assert_bound_loop(self.bound_loop)`. `ClientLifecycle` already owns `get_bound_loop` ([`_session_lifecycle.py:271`](../../src/notebooklm/_session_lifecycle.py)); the push-down adds a trivial `assert_bound_loop()` method that calls the free function with `self.get_bound_loop()`. |
+| `OperationScopeProvider`                                             | `TransportDrainTracker` directly                                                          | **push down `operation_scope(label)`** — currently lives on `Session.operation_scope` ([`_session.py:495`](../../src/notebooklm/_session.py)) as an async context manager wrapping `begin_transport_post` / `finish_transport_post` (both already on `TransportDrainTracker` at [`_transport_drain.py:139,196`](../../src/notebooklm/_transport_drain.py)). The push-down moves the contextmanager wrapper to the tracker.                                       |
+| `DrainHookRegistration` (feature-local in `_artifacts.py`)           | `TransportDrainTracker` directly                                                          | **push down `register_drain_hook(name, hook)` + the underlying `_drain_hooks` storage** — currently lives on `Session.register_drain_hook` ([`_session.py:421`](../../src/notebooklm/_session.py)). The push-down moves both the method and the storage onto the tracker.                                                                                                                                                                                        |
+| `AsyncWorkRuntime` (composes `LoopGuard` + `OperationScopeProvider`) | satisfied **transitively** by `ArtifactsRuntimeAdapter` / `UploadRuntimeAdapter` (Rule 2) | depends on the push-downs above. No dedicated `_AsyncWorkAdapter` — per Rule 2, trivial composites do not get adapter middlemen.                                                                                                                                                                                                                                                                                                                                 |
+| `AuthMetadata`                                                       | `AuthRefreshCoordinator` directly                                                         | verify with grep at migration time — likely already satisfies the Protocol                                                                                                                                                                                                                                                                                                                                                                                       |
+| `Kernel` (Protocol)                                                  | the concrete `Kernel` class                                                               | none — unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Why the push-downs are part of this ADR's mandate, not pre-existing.** The
 Protocol satisfiers were synthesised on `Session` because `Session` was the
@@ -88,7 +88,7 @@ collaborators) but they are non-trivial enough to be sequenced as
 **Adapter threshold (intent-based).** Introduce a frozen-dataclass adapter when
 **at least one** of the following holds:
 
-- a downstream module *intentionally* consumes the composite Protocol as a
+- a downstream module _intentionally_ consumes the composite Protocol as a
   single dependency (e.g. an HTTP-level helper that takes the whole runtime),
   **or**
 - delegation changes the call shape (the adapter method does more than forward
@@ -102,7 +102,7 @@ middleman.
 
 The earlier numeric heuristic ("≥3 capabilities OR ≥1 non-trivial delegate")
 was a proxy for the intent test above. It is replaced because counting
-capabilities does not capture *why* you would want a named runtime satisfier:
+capabilities does not capture _why_ you would want a named runtime satisfier:
 either some consumer demands it, or the call shape adapts. Counting alone
 incentivises adapters where they bring no value.
 
@@ -204,7 +204,7 @@ After migration, `Session` owns:
   seams** documented in the helpers' own module docstring; they are not
   forwards-to-remove.
 
-`Session` stops being passed *to* feature APIs. It stops satisfying capability
+`Session` stops being passed _to_ feature APIs. It stops satisfying capability
 Protocols intended for feature consumption. The compatibility forwards on
 `Session` (drain/metrics/kernel/authuser/save_cookies forwards that exist only
 because features used to reach through `Session`) are removed as Wave 5
@@ -287,10 +287,12 @@ takes the underlying collaborators as keyword-only constructor parameters
 instead.
 
 The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
-`_session_contracts.py`) is unchanged. Adapters are *not* promoted to
+`_session_contracts.py`) is unchanged. Adapters are _not_ promoted to
 `_session_contracts.py`; the file stays interface-only.
 
 ## Consequences
+
+**Migration outcome:** Migration completed in PRs #1064–#1082; ADR-007 Session-shaped allowlist entries drained; Session reduced to lifecycle root + retention list (see [`docs/session-method-retention.md`](../session-method-retention.md)). Two Wave-7 follow-ups are tracked in issues #1084 (Stage B: move `build_collaborators` to `NotebookLMClient`) and #1085 (MiddlewareChainHost extraction).
 
 **Wanted:**
 
