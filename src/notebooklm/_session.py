@@ -25,8 +25,6 @@ from ._session_config import (
     DEFAULT_TIMEOUT,
 )
 from ._session_init import (
-    SessionCollaborators,
-    WiredMiddleware,
     build_collaborators,
     build_session_transport,
     validate_constructor_args,
@@ -40,6 +38,7 @@ from .auth import (
 from .types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
+    from ._session_init import SessionCollaborators, WiredMiddleware
     from ._session_transport import SessionTransport
     from .types import ConnectionLimits
 
@@ -160,7 +159,7 @@ class ComposedSession:
     session: "Session"
     transport: SessionTransport
     executor: RpcExecutor
-    collaborators: SessionCollaborators
+    collaborators: "SessionCollaborators"
 
 
 def resolve_seam_defaults(
@@ -318,14 +317,19 @@ def compose_session_internals(
     # ``session._decode_response = rebound`` / ``_sleep = …`` /
     # ``_is_auth_error = …`` reassignments continue to take effect
     # inside the executor.
+    # The `*a, **kw` forwarding form matches the lazy ``_get_rpc_executor``
+    # factory (see lines 743-746) so future signature changes or custom
+    # test-double overrides on ``session._is_auth_error`` / ``session._sleep``
+    # propagate identically through both construction paths
+    # (gemini-code-assist PR #1086 review, finding 4).
     executor = RpcExecutor(
         kernel=collaborators.kernel,
         transport=transport,
         auth_refresh=collaborators.auth_coord,
         metrics=collaborators.metrics,
         decode_response=lambda *a, **kw: session._decode_response(*a, **kw),
-        is_auth_error=lambda exc: session._is_auth_error(exc),
-        sleep=lambda d: session._sleep(d),
+        is_auth_error=lambda *a, **kw: session._is_auth_error(*a, **kw),
+        sleep=lambda *a, **kw: session._sleep(*a, **kw),
         timeout_provider=lambda: collaborators.lifecycle._timeout,
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
         refresh_retry_delay_provider=lambda: session._refresh_retry_delay,

@@ -37,6 +37,12 @@ from notebooklm.auth import AuthTokens
 
 
 def _make_auth() -> AuthTokens:
+    """Build a minimal :class:`AuthTokens` for composition tests.
+
+    Cookies / CSRF / session id are sentinel values — these tests never
+    hit the network; they only need a token shape that passes
+    :func:`_validate_required_cookies`.
+    """
     return AuthTokens(
         cookies={"SID": "x", "__Secure-1PSIDTS": "y"},
         csrf_token="csrf",
@@ -82,15 +88,19 @@ def test_resolve_seam_defaults_passes_through_explicit_callables() -> None:
     """Explicit callables override the module-binding defaults."""
 
     async def fake_sleep(_d: float) -> None:
+        """Sentinel callable — identity-checked, never invoked."""
         return None
 
     def fake_factory(*_a: Any, **_kw: Any) -> Any:  # pragma: no cover - identity check
+        """Sentinel callable — identity-checked, never invoked."""
         raise AssertionError
 
     def fake_is_auth_error(_exc: Exception) -> bool:  # pragma: no cover
+        """Sentinel callable — identity-checked, never invoked."""
         return False
 
     def fake_decode(*_a: Any, **_kw: Any) -> Any:  # pragma: no cover
+        """Sentinel callable — identity-checked, never invoked."""
         return None
 
     resolved = resolve_seam_defaults(
@@ -163,6 +173,7 @@ def test_compose_session_internals_preserves_late_binding_for_decode_response() 
     sentinel: list[Any] = []
 
     def rebound(*args: Any, **kwargs: Any) -> str:
+        """Recording stand-in for ``session._decode_response``."""
         sentinel.append(("decoded", args, kwargs))
         return "rebound-result"
 
@@ -184,6 +195,7 @@ def test_compose_session_internals_preserves_late_binding_for_is_auth_error() ->
     composed = compose_session_internals(auth=_make_auth())
 
     def rebound(exc: Exception) -> bool:
+        """Stand-in classifier — treats KeyError as auth-related."""
         return isinstance(exc, KeyError)
 
     composed.session._is_auth_error = rebound
@@ -201,6 +213,7 @@ def test_compose_session_internals_preserves_late_binding_for_sleep() -> None:
     calls: list[float] = []
 
     async def rebound(delay: float) -> None:
+        """Recording stand-in for ``session._sleep`` (captures delays)."""
         calls.append(delay)
 
     composed.session._sleep = rebound
