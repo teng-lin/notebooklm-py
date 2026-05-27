@@ -42,6 +42,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CLIENT_PATH = REPO_ROOT / "src" / "notebooklm" / "client.py"
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 
+# Top-level feature APIs + the two domain services that
+# ``NotebookLMClient.__init__`` constructs directly with the Session-
+# derived collaborators. Scope boundary: this set is intentionally the
+# constructor names that appear in ``client.py`` and that take a
+# ``RpcCaller`` (or richer composite) as a primary dependency. Second-
+# level services constructed *from* one of these (e.g.
+# ``NoteBackedMindMapService`` which receives ``NoteService`` only) are
+# out of scope — they cannot accidentally take ``self._session`` because
+# they don't see ``self`` at the composition root.
 FEATURE_API_NAMES = {
     "SettingsAPI",
     "SharingAPI",
@@ -109,8 +118,13 @@ def test_no_feature_constructed_with_session_at_composition_root() -> None:
                 )
         for kw in node.keywords:
             if _passes_self_session(kw.value):
+                # ``kw.arg`` is ``None`` for ``**spread`` unpacking
+                # (``FeatureAPI(**self._session)``); render that as
+                # ``**`` so the diagnostic is unambiguous instead of
+                # printing the literal string ``None``.
+                kwarg_name = kw.arg if kw.arg is not None else "**"
                 violations.append(
-                    f"{node.func.id} at line {node.lineno}: passes self._session via kwarg {kw.arg}"
+                    f"{node.func.id} at line {node.lineno}: passes self._session via kwarg {kwarg_name}"
                 )
     assert not violations, (
         "ADR-014 Rule 3 violation — feature APIs must receive their "
