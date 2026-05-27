@@ -170,6 +170,17 @@ class TestParseGenerationResultStrictDrift:
         # Top-level descent: failing path is empty (we failed at the first index).
         assert err.path == ()
 
+    def test_none_result_raises_for_revise_slide(self, artifacts_api, monkeypatch):
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            artifacts_api._parse_generation_result(None, method_id=RPCMethod.REVISE_SLIDE.value)
+
+        err = exc_info.value
+        assert err.method_id == RPCMethod.REVISE_SLIDE.value
+        assert err.source == "_parse_generation_result"
+        assert err.path == ()
+
     def test_empty_list_raises_for_revise_slide(self, artifacts_api, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
 

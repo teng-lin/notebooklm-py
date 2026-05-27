@@ -59,6 +59,21 @@ class TestDownloadInteractiveArtifact:
     """Test shared quiz/flashcard download parsing behavior."""
 
     @pytest.mark.asyncio
+    async def test_get_artifact_content_null_result_returns_none(self):
+        """Null GET_INTERACTIVE_HTML is a missing-content result, not schema drift."""
+        runtime = MagicMock()
+        runtime.rpc_call = AsyncMock(return_value=None)
+        service = artifact_downloads.ArtifactDownloadService(
+            runtime=runtime,
+            listing=MagicMock(),
+            mind_maps=MagicMock(),
+        )
+
+        result = await service._get_artifact_content("nb_123", "quiz_001")
+
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_extract_app_data_value_error_propagates(self, monkeypatch, tmp_path):
         """Bare ValueError from helper internals is not converted to parse drift."""
         artifact = MagicMock(

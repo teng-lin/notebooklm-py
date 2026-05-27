@@ -201,6 +201,8 @@ class ArtifactDownloadService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
+        if result is None:
+            return None
         return safe_index(
             result,
             0,

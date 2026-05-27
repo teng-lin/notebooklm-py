@@ -70,8 +70,10 @@ class ArtifactGenerationService:
         source_ids_triple = nest_source_ids(source_ids, 2)
         source_ids_double = nest_source_ids(source_ids, 1)
 
-        format_code = audio_format.value if audio_format else None
-        length_code = audio_length.value if audio_length else None
+        format_code = (
+            audio_format.value if audio_format is not None else AudioFormat.DEEP_DIVE.value
+        )
+        length_code = audio_length.value if audio_length is not None else AudioLength.DEFAULT.value
 
         params = [
             [2],
@@ -97,7 +99,11 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="audio",
+        )
 
     async def generate_video(
         self,
@@ -126,8 +132,10 @@ class ArtifactGenerationService:
         source_ids_triple = nest_source_ids(source_ids, 2)
         source_ids_double = nest_source_ids(source_ids, 1)
 
-        format_code = video_format.value if video_format else None
-        style_code = video_style.value if video_style else None
+        format_code = (
+            video_format.value if video_format is not None else VideoFormat.EXPLAINER.value
+        )
+        style_code = video_style.value if video_style is not None else VideoStyle.AUTO_SELECT.value
 
         video_config = [
             source_ids_double,
@@ -159,7 +167,11 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="video",
+        )
 
     async def generate_cinematic_video(
         self,
@@ -202,7 +214,11 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="cinematic video",
+        )
 
     async def generate_report(
         self,
@@ -287,7 +303,11 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="report",
+        )
 
     async def generate_study_guide(
         self,
@@ -320,8 +340,10 @@ class ArtifactGenerationService:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
-        quantity_code = quantity.value if quantity else None
-        difficulty_code = difficulty.value if difficulty else None
+        quantity_code = quantity.value if quantity is not None else QuizQuantity.STANDARD.value
+        difficulty_code = (
+            difficulty.value if difficulty is not None else QuizDifficulty.MEDIUM.value
+        )
 
         params = [
             [2],
@@ -351,7 +373,11 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="quiz",
+        )
 
     async def generate_flashcards(
         self,
@@ -366,8 +392,10 @@ class ArtifactGenerationService:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
-        quantity_code = quantity.value if quantity else None
-        difficulty_code = difficulty.value if difficulty else None
+        quantity_code = quantity.value if quantity is not None else QuizQuantity.STANDARD.value
+        difficulty_code = (
+            difficulty.value if difficulty is not None else QuizDifficulty.MEDIUM.value
+        )
 
         params = [
             [2],
@@ -396,7 +424,11 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="flashcards",
+        )
 
     async def generate_infographic(
         self,
@@ -466,8 +498,12 @@ class ArtifactGenerationService:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
-        format_code = slide_format.value if slide_format else None
-        length_code = slide_length.value if slide_length else None
+        format_code = (
+            slide_format.value if slide_format is not None else SlideDeckFormat.DETAILED_DECK.value
+        )
+        length_code = (
+            slide_length.value if slide_length is not None else SlideDeckLength.DEFAULT.value
+        )
 
         params = [
             [2],
@@ -492,7 +528,11 @@ class ArtifactGenerationService:
                 [[instructions, language, format_code, length_code]],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="slide deck",
+        )
 
     async def revise_slide(
         self,
@@ -528,6 +568,10 @@ class ArtifactGenerationService:
             raise
         if result is None:
             logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
+            raise ArtifactFeatureUnavailableError(
+                "slide revision",
+                method_id=RPCMethod.REVISE_SLIDE.value,
+            )
         return self.parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
 
     async def generate_data_table(
@@ -570,7 +614,11 @@ class ArtifactGenerationService:
                 [None, [instructions, language]],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="data table",
+        )
 
     async def generate_mind_map(
         self,

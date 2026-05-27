@@ -18,9 +18,15 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import (
+    AudioFormat,
+    AudioLength,
     InfographicDetail,
     InfographicOrientation,
     InfographicStyle,
+    QuizDifficulty,
+    QuizQuantity,
+    SlideDeckFormat,
+    SlideDeckLength,
     VideoFormat,
     VideoStyle,
 )
@@ -325,10 +331,33 @@ class TestArtifactsSourceSelection:
         # ]
         inner_params = params[2]
         source_ids_triple = inner_params[3]
-        source_ids_double = inner_params[6][1][3]
+        audio_config = inner_params[6][1]
+        source_ids_double = audio_config[3]
 
         assert source_ids_triple == [[["src_001"]], [["src_002"]]]
         assert source_ids_double == [["src_001"], ["src_002"]]
+        assert audio_config[1] == AudioLength.DEFAULT.value
+        assert audio_config[6] == AudioFormat.DEEP_DIVE.value
+
+    @pytest.mark.asyncio
+    async def test_generate_audio_explicit_options_override_defaults(
+        self, mock_core, mock_mind_map_service
+    ):
+        """Explicit audio format and length are encoded instead of API defaults."""
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        mock_core.rpc_call.return_value = [["artifact_123", "Audio", 1, None, 1]]
+
+        await api.generate_audio(
+            notebook_id="nb_123",
+            source_ids=["src_001"],
+            audio_format=AudioFormat.DEBATE,
+            audio_length=AudioLength.LONG,
+        )
+
+        params = mock_core.rpc_call.call_args.args[1]
+        audio_config = params[2][6][1]
+        assert audio_config[1] == AudioLength.LONG.value
+        assert audio_config[6] == AudioFormat.DEBATE.value
 
     @pytest.mark.asyncio
     async def test_generate_audio_with_none_fetches_all_sources(
@@ -390,6 +419,28 @@ class TestArtifactsSourceSelection:
 
         assert source_ids_triple == [[["src_a"]], [["src_b"]]]
         assert source_ids_double == [["src_a"], ["src_b"]]
+        assert video_config[4] == VideoFormat.EXPLAINER.value
+        assert video_config[5] == VideoStyle.AUTO_SELECT.value
+
+    @pytest.mark.asyncio
+    async def test_generate_video_explicit_options_override_defaults(
+        self, mock_core, mock_mind_map_service
+    ):
+        """Explicit video format and style are encoded instead of API defaults."""
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
+
+        await api.generate_video(
+            notebook_id="nb_123",
+            source_ids=["src_a"],
+            video_format=VideoFormat.BRIEF,
+            video_style=VideoStyle.ANIME,
+        )
+
+        params = mock_core.rpc_call.call_args.args[1]
+        video_config = params[2][8][2]
+        assert video_config[4] == VideoFormat.BRIEF.value
+        assert video_config[5] == VideoStyle.ANIME.value
 
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_prompt_encoding(
@@ -577,8 +628,29 @@ class TestArtifactsSourceSelection:
         # ]
         inner_params = params[2]
         source_ids_triple = inner_params[3]
+        quiz_options = inner_params[9][1][7]
 
         assert source_ids_triple == [[["src_1"]], [["src_2"]]]
+        assert quiz_options == [QuizQuantity.STANDARD.value, QuizDifficulty.MEDIUM.value]
+
+    @pytest.mark.asyncio
+    async def test_generate_quiz_explicit_options_override_defaults(
+        self, mock_core, mock_mind_map_service
+    ):
+        """Explicit quiz quantity and difficulty are encoded instead of defaults."""
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
+
+        await api.generate_quiz(
+            notebook_id="nb_123",
+            source_ids=["src_1"],
+            quantity=QuizQuantity.FEWER,
+            difficulty=QuizDifficulty.HARD,
+        )
+
+        params = mock_core.rpc_call.call_args.args[1]
+        quiz_options = params[2][9][1][7]
+        assert quiz_options == [QuizQuantity.FEWER.value, QuizDifficulty.HARD.value]
 
     @pytest.mark.asyncio
     async def test_generate_flashcards_source_encoding(self, mock_core, mock_mind_map_service):
@@ -597,8 +669,29 @@ class TestArtifactsSourceSelection:
 
         inner_params = params[2]
         source_ids_triple = inner_params[3]
+        flashcard_options = inner_params[9][1][6]
 
         assert source_ids_triple == [[["src_flash"]]]
+        assert flashcard_options == [QuizDifficulty.MEDIUM.value, QuizQuantity.STANDARD.value]
+
+    @pytest.mark.asyncio
+    async def test_generate_flashcards_explicit_options_override_defaults(
+        self, mock_core, mock_mind_map_service
+    ):
+        """Explicit flashcard quantity and difficulty preserve flashcard option order."""
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
+
+        await api.generate_flashcards(
+            notebook_id="nb_123",
+            source_ids=["src_flash"],
+            quantity=QuizQuantity.FEWER,
+            difficulty=QuizDifficulty.EASY,
+        )
+
+        params = mock_core.rpc_call.call_args.args[1]
+        flashcard_options = params[2][9][1][6]
+        assert flashcard_options == [QuizDifficulty.EASY.value, QuizQuantity.FEWER.value]
 
     @pytest.mark.asyncio
     async def test_generate_infographic_source_encoding(self, mock_core, mock_mind_map_service):
@@ -668,8 +761,31 @@ class TestArtifactsSourceSelection:
 
         inner_params = params[2]
         source_ids_triple = inner_params[3]
+        slide_config = inner_params[16][0]
 
         assert source_ids_triple == [[["src_slide"]]]
+        assert slide_config[2] == SlideDeckFormat.DETAILED_DECK.value
+        assert slide_config[3] == SlideDeckLength.DEFAULT.value
+
+    @pytest.mark.asyncio
+    async def test_generate_slide_deck_explicit_options_override_defaults(
+        self, mock_core, mock_mind_map_service
+    ):
+        """Explicit slide deck format and length are encoded instead of defaults."""
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), **mock_mind_map_service)
+        mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
+
+        await api.generate_slide_deck(
+            notebook_id="nb_123",
+            source_ids=["src_slide"],
+            slide_format=SlideDeckFormat.PRESENTER_SLIDES,
+            slide_length=SlideDeckLength.SHORT,
+        )
+
+        params = mock_core.rpc_call.call_args.args[1]
+        slide_config = params[2][16][0]
+        assert slide_config[2] == SlideDeckFormat.PRESENTER_SLIDES.value
+        assert slide_config[3] == SlideDeckLength.SHORT.value
 
     @pytest.mark.asyncio
     async def test_generate_data_table_source_encoding(self, mock_core, mock_mind_map_service):
