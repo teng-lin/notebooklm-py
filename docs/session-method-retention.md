@@ -8,11 +8,15 @@ AST-parses `_session.py`, enumerates every method/property on the `Session`
 class, and asserts each one appears in the inventory below with a valid
 disposition. Adding a new method without a row here fails the lint at PR time.
 
-**Status:** Wave 10 of the [session-decoupling plan](session-decoupling-plan-2026-05-26.md)
-(Phase 3, Task 5.1). Wave 11 (sub-waves 11a–11c) will delete the
-`delete in Wave 11` rows in three clusters and move them to the **Deleted**
-section at the bottom of this file. Wave 11c also tightens the lint to
-forbid any `delete in Wave 11` rows once the cluster deletions land.
+**Status:** Wave 11 of the [session-decoupling plan](session-decoupling-plan-2026-05-26.md)
+(Phase 3, Task 5.2) is complete. The three sub-wave PRs (11a, 11b, 11c)
+deleted every `delete in Wave 11` row and moved the entries to the
+**Deleted** section at the bottom of this file. Wave 11c also tightened
+the [`tests/_lint/test_session_retention.py`](../tests/_lint/test_session_retention.py)
+lint to assert the **retain-only invariant**: every method on `Session`
+must carry a `retain — <reason>` disposition. No method may be tagged
+`delete in Wave 11` (the cluster deletions have all landed; the
+transitional disposition is gone from the recognised set).
 
 ## Categories
 
@@ -26,14 +30,22 @@ forbid any `delete in Wave 11` rows once the cluster deletions land.
 | `Stage A accessor` | Typed accessor added in Wave 6 so `NotebookLMClient.__init__` can wire features against collaborators (ADR-014 Rule 3 Stage A). Deleted under Rule 3 Stage B (Wave 7 follow-up). |
 | `lazy collaborator factory` | Real factory body (not a forward) backing a Stage A accessor or a public-API forward. |
 | `RefreshAuthCore Protocol surface` | Method required by the `RefreshAuthCore` Protocol in [`src/notebooklm/_auth/session.py`](../src/notebooklm/_auth/session.py); `refresh_auth_session(core)` calls it on the Session passed as `core`. |
-| `compatibility forward` | One-line forward to a collaborator method; kept only because in-tree callers (mostly tests) reach it via `Session`. Wave 11 deletes these and migrates callers to the owning collaborator. |
+| `compatibility forward` | One-line forward to a collaborator method; kept only because in-tree callers (mostly tests) reached it via `Session`. Wave 11 (sub-waves 11a, 11b, 11c) deleted every compatibility forward; no row in the live inventory now carries this category. The label is retained in this glossary for the **Deleted** section below and as the disposition lint's vocabulary for any future short-lived forward. |
 
 ## Dispositions
 
 | Disposition | Meaning |
 |---|---|
-| `retain — <reason>` | Stays on `Session` after Wave 11. |
-| `delete in Wave 11 (<cluster>)` | Scheduled for deletion in one of the three Wave 11 sub-wave PRs. Cluster names match [phase-3.md](../.sisyphus/phases/session-decoupling/phase-3.md): `drain-and-operation` (11a), `metrics-and-kernel` (11b), `transport-and-reqid` (11c). |
+| `retain — <reason>` | Stays on `Session` after Wave 11. **The only valid disposition** after Wave 11c tightened the lint. |
+
+The transitional `delete in Wave 11 (<cluster>)` disposition was used in
+Wave 10 to schedule the three sub-wave cluster deletions
+(`drain-and-operation` = 11a, `metrics-and-kernel` = 11b,
+`transport-and-reqid` = 11c). All three cluster PRs landed; the
+disposition is gone from the recognised set, and any new row that
+tries to use it fails the
+[`tests/_lint/test_session_retention.py`](../tests/_lint/test_session_retention.py)
+lint at PR time.
 
 ## Inventory
 
@@ -55,12 +67,6 @@ forbid any `delete in Wave 11` rows once the cluster deletions land.
 | `rpc_executor` (property) | Stage A accessor | retain — Stage A accessor; exposes lazy `RpcExecutor` not present on `SessionCollaborators` |
 | `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_tokens(...)` from [`_auth/session.py`](../src/notebooklm/_auth/session.py); also referenced in the AST-guard prose at `tests/unit/test_concurrency_refresh_race.py:386` (the guard inspects `AuthRefreshCoordinator.update_auth_tokens` directly, but the Session-side delegate is the Protocol seam) |
 | `update_auth_headers` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_headers()` from [`_auth/session.py`](../src/notebooklm/_auth/session.py) |
-| `next_reqid` | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `ReqidCounter.next_reqid` |
-| `bound_loop` (property) | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `ClientLifecycle.get_bound_loop` with defensive `isinstance` |
-| `_refresh_request_for_current_auth` | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `SessionTransport.refresh_request_for_current_auth`; the AST guard at `tests/unit/test_concurrency_refresh_race.py:222` already inspects `SessionTransport.refresh_request_for_current_auth` directly, so no guard migration needed |
-| `_perform_authed_post` | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `SessionTransport.perform_authed_post`; production callers (`_chat_transport`) already call `SessionTransport.perform_authed_post` directly. Verify no surviving production caller via `rg "session\._perform_authed_post\(\|core\._perform_authed_post\(\|host\._perform_authed_post\b" src/notebooklm` before deleting. Test callers in `tests/unit/test_authed_post_pipeline.py` migrate to `session.session_transport.perform_authed_post` or `make_fake_core` |
-| `transport_post` | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `_perform_authed_post`; no production callers (`rg "\.transport_post\(" src/ tests/` returns 0) |
-| `save_cookies` | RefreshAuthCore Protocol surface / compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `ClientLifecycle.save_cookies`; the `RefreshAuthCore` Protocol still references `save_cookies`, so Wave 11c MUST first migrate the Protocol (or `refresh_auth_session(core)`) to call `core.collaborators.lifecycle.save_cookies(core, jar, path)` before the Session forward can be removed |
 
 ## Stage-A and Rule-4 attribute capture targets (context, not lint-enumerated)
 
@@ -95,8 +101,13 @@ land.
 
 ## Deleted
 
-Wave 11 sub-wave PRs append entries here (preserving the deleting PR's SHA in
-the section sub-header) as the `delete in Wave 11` rows above are dropped.
+The three Wave 11 sub-wave PRs (11a, 11b, 11c) each appended a
+cluster-keyed section here, preserving the deleting commit's SHA in
+the sub-header. This section is the historical record of every
+compatibility forward that once lived on `Session`; the lint above
+enforces that no Session method exists today without either a
+`retain — <reason>` row in the **Inventory** above or a `deleted in
+Wave 11<sub>` row in one of the cluster sub-sections below.
 
 ### Wave 11a — drain-and-operation cluster (commit `80a54fda`)
 
@@ -121,3 +132,14 @@ the section sub-header) as the `delete in Wave 11` rows above are dropped.
 | `authuser_query` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `notebooklm._auth.account.authuser_query`. Callers import the helper directly. |
 | `authuser_header` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `notebooklm._auth.account.format_authuser_value`. Callers import the helper directly. |
 | `get_http_client` | RefreshAuthCore Protocol surface / compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `Kernel.get_http_client`. The `RefreshAuthCore` and `_AuthRefreshHost` Protocols were migrated in the same commit to require a `_kernel: Kernel` slot instead of `get_http_client`; the two call sites in `_auth/session.py` and `_session_auth.py` now read `core._kernel.get_http_client()` / `host._kernel.get_http_client()`. `Session._kernel` is already an instance attribute (assigned from `collaborators.kernel` in `__init__`), so live `Session` instances satisfy the new Protocol shape without further changes. |
+
+### Wave 11c — transport-and-reqid cluster (commit `579c7a35`)
+
+| Method | Category | Disposition |
+|---|---|---|
+| `next_reqid` | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `ReqidCounter.next_reqid`. Callers reach the counter directly (`core._reqid.next_reqid(...)` in tests; production code in `ChatAPI.ask` already uses `self._reqid.next_reqid(...)` since Wave 8). |
+| `bound_loop` (property) | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `ClientLifecycle.get_bound_loop` with a defensive `isinstance`. Tests now call `core._lifecycle.get_bound_loop()` directly; the `isinstance` guard is unnecessary because the canonical accessor on `ClientLifecycle` already returns `asyncio.AbstractEventLoop \| None`. |
+| `_refresh_request_for_current_auth` | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `SessionTransport.refresh_request_for_current_auth`. The AST guard at `tests/unit/test_concurrency_refresh_race.py:222` already inspects `SessionTransport.refresh_request_for_current_auth` directly, so no guard migration was needed. |
+| `_perform_authed_post` | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `SessionTransport.perform_authed_post`. Production callers (`_chat_transport`, `RpcExecutor`) already call `SessionTransport.perform_authed_post` directly; test callers in `tests/unit/test_authed_post_pipeline.py` / `test_chain_wiring.py` / `test_session_lifecycle.py` / `test_rate_limit_default.py` migrated to `core._transport.perform_authed_post(...)`. The keyword-only signature contract is now pinned on the canonical collaborator method via `test_chain_wiring.test_perform_authed_post_signature_unchanged`. |
+| `transport_post` | compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a `parse_label`-renaming forward over `_perform_authed_post` retained for the Tier-13 chat contract. The chat path moved to `SessionTransport.perform_authed_post` directly in Wave 8; no production or test callers remained at deletion time. |
+| `save_cookies` | RefreshAuthCore Protocol surface / compatibility forward | deleted in Wave 11c (commit `579c7a35`) — was a forward to `ClientLifecycle.save_cookies`. The `RefreshAuthCore` Protocol in `_auth/session.py` was narrowed in the same commit: the `save_cookies` method requirement was dropped and replaced with a `collaborators: SessionCollaborators` accessor; `refresh_auth_session(core)` now persists rotated cookies through `core.collaborators.lifecycle.save_cookies(core, jar)` (the canonical chokepoint that already serialises with keepalive and close saves). The Session host argument is widened to `_LifecycleHost` via `typing.cast` — the production `Session` satisfies both `RefreshAuthCore` and `_LifecycleHost` structurally; the cast is the typing-level acknowledgement that `RefreshAuthCore` deliberately stays narrow. Test callers in `tests/unit/test_auth_cookie_save_race.py` / `test_save_lock_contract.py` / `test_client_keepalive.py` / `test_cookie_persistence.py` migrated to `core._lifecycle.save_cookies(core, jar)`. |
