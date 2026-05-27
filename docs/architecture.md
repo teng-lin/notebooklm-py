@@ -401,13 +401,12 @@ Beyond the Session-orchestration graph, several feature APIs are implemented via
 
 [`auth.py`](../src/notebooklm/auth.py) is a thin public facade that
 re-exports the canonical implementations under
-[`_auth/`](../src/notebooklm/_auth). The facade still hosts the public
-`AuthTokens` name (re-exported from `_auth.tokens`), owns
-`load_auth_from_storage()`, and owns the
-`_validate_required_cookies()` write-through that propagates
-`auth.py`-level policy rebindings into `_auth.cookie_policy` (the flat
-re-export goal in ADR-003 is **deferred** — see CLAUDE.md's `auth.py`
-row for the current status).
+[`_auth/`](../src/notebooklm/_auth). ADR-014 closed ADR-003's deferred
+flat-re-export goal: `AuthTokens` and `load_auth_from_storage()` now live
+in `_auth.tokens`, `_validate_required_cookies` is a direct
+`_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the
+only remaining `auth.py` function body because it binds `_poke_session` as
+the default dependency.
 
 | Module | Responsibility |
 |--------|----------------|
