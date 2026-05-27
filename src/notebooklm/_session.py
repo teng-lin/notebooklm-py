@@ -3,8 +3,8 @@
 import asyncio
 import logging
 import random  # noqa: F401 - tests patch this for _backoff jitter
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -12,7 +12,6 @@ import httpx
 
 from ._error_injection import _refuse_synthetic_error_outside_test_context
 from ._kernel import Kernel
-from ._loop_affinity import assert_bound_loop
 from ._middleware import (
     RpcRequest,
     RpcResponse,
@@ -378,7 +377,9 @@ class Session:
         self._lifecycle = collaborators.lifecycle
         self.cookie_persistence = collaborators.cookie_persistence
         self.poll_registry = collaborators.poll_registry
-        self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
+        # ``_drain_hooks`` storage moved to ``TransportDrainTracker`` in
+        # Wave 2 of the session-decoupling plan (ADR-014 Rule 1).
+        # ``Session.register_drain_hook`` is now a one-line forward.
         self._rpc_executor: RpcExecutor | None = None
 
         # The authed POST hot path (chain terminal, freshness rebuild,
@@ -419,8 +420,13 @@ class Session:
         self._authed_post_chain = wired.authed_post_chain
 
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
-        """Register or replace a feature-owned close-time drain hook."""
-        self._drain_hooks[name] = hook
+        """Register or replace a feature-owned close-time drain hook.
+
+        Forward to :meth:`TransportDrainTracker.register_drain_hook` per
+        ADR-014 Rule 1; the storage and firing live on the tracker since
+        Wave 2 of the session-decoupling plan.
+        """
+        self._drain_tracker.register_drain_hook(name, hook)
 
     async def next_reqid(self, step: int = _REQID_DEFAULT_STEP) -> int:
         """Atomically increment the request-id counter and return the new value.
@@ -484,21 +490,30 @@ class Session:
         return loop if isinstance(loop, asyncio.AbstractEventLoop) else None
 
     def assert_bound_loop(self) -> None:
-        """Raise if this core is used from a loop other than its open-time loop."""
-        assert_bound_loop(self.bound_loop)
+        """Raise if this core is used from a loop other than its open-time loop.
+
+        Forward to :meth:`ClientLifecycle.assert_bound_loop` per ADR-014
+        Rule 1; ``ClientLifecycle`` satisfies the ``LoopGuard`` capability
+        Protocol directly since Wave 2 of the session-decoupling plan.
+        """
+        self._lifecycle.assert_bound_loop()
 
     async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
         """Invoke the optional telemetry callback without affecting RPC behavior."""
         await self._metrics_obj.emit_rpc_event(event)
 
-    @asynccontextmanager
-    async def operation_scope(self, label: str) -> AsyncIterator[None]:
-        """Return a drain-tracked operation scope for feature-owned work."""
-        token = await self._drain_tracker.begin_transport_post(label)
-        try:
-            yield None
-        finally:
-            await self._drain_tracker.finish_transport_post(token)
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        """Return a drain-tracked operation scope for feature-owned work.
+
+        Forward to :meth:`TransportDrainTracker.operation_scope` per
+        ADR-014 Rule 1; ``TransportDrainTracker`` satisfies the
+        ``OperationScopeProvider`` capability Protocol directly since
+        Wave 2 of the session-decoupling plan. Plain sync function (no
+        ``@asynccontextmanager``) so the inner context manager flows
+        through unchanged; callers still write
+        ``async with session.operation_scope(label):``.
+        """
+        return self._drain_tracker.operation_scope(label)
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new client operations and wait for in-flight ones to finish.

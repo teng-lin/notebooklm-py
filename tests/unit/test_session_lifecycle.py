@@ -71,7 +71,8 @@ class _StubHost:
       open() path so cross-loop misuse can be caught.
     * ``cookie_persistence`` — a ``MagicMock`` with an async ``save``
       coroutine; assertions check it was called with the right args.
-    * ``_drain_hooks`` — close-time hooks registered by feature APIs.
+    * ``_drain_tracker.run_drain_hooks`` — called by close(); set to an
+      ``AsyncMock`` so tests can assert it ran and inspect call order.
     * ``_rpc_executor`` — set to a sentinel marker value so tests can
       assert :meth:`ClientLifecycle.close` nulls it.
     """
@@ -86,6 +87,10 @@ class _StubHost:
         self._metrics_obj = MagicMock()
         self._drain_tracker = MagicMock()
         self._drain_tracker._draining = True  # so we can assert open() resets it
+        # Wave 2 of session-decoupling: drain hooks live on the tracker.
+        # ``close()`` calls ``host._drain_tracker.run_drain_hooks()`` so the
+        # mock needs an async implementation.
+        self._drain_tracker.run_drain_hooks = AsyncMock()
         self._auth_coord = MagicMock()
         # ``_auth_coord._refresh_task`` is checked by ``close()`` (P0-1).
         # Default to ``None`` so the cancel branch is skipped; tests that
@@ -96,7 +101,6 @@ class _StubHost:
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
-        self._drain_hooks = {}
         # Sentinel — close() nulls this out.
         self._rpc_executor: Any = "RPC_EXECUTOR_SENTINEL"
 
@@ -335,31 +339,41 @@ async def test_close_when_never_opened_is_noop() -> None:
 
 @pytest.mark.asyncio
 async def test_close_runs_drain_hooks_before_transport_teardown() -> None:
-    """``close()`` runs feature drain hooks before tearing down the HTTP client."""
+    """``close()`` invokes ``run_drain_hooks`` on the tracker before tearing down the HTTP client.
+
+    Wave 2 of session-decoupling: drain hooks live on ``TransportDrainTracker``;
+    the lifecycle just calls ``host._drain_tracker.run_drain_hooks()`` and the
+    tracker handles the firing + exception suppression.
+    """
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
-    # Build a real asyncio.Task that's parked indefinitely.
-    async def _park() -> None:
-        try:
-            await asyncio.sleep(60)
-        except asyncio.CancelledError:
-            raise
+    # Record ordering: drain hooks must run *before* the HTTP client teardown
+    # (so a hook that needs the live client — e.g. an in-flight cookie save —
+    # can still see it).
+    events: list[str] = []
 
-    parked = asyncio.create_task(_park())
+    async def fake_run_drain_hooks() -> None:
+        assert lifecycle._http_client is not None, (
+            "drain hooks must run while the HTTP client is still open"
+        )
+        events.append("run_drain_hooks")
 
-    async def drain_polls() -> None:
-        assert lifecycle._http_client is not None
-        parked.cancel()
-        await asyncio.gather(parked, return_exceptions=True)
+    host._drain_tracker.run_drain_hooks = fake_run_drain_hooks
 
-    host._drain_hooks["artifacts.polls"] = drain_polls
+    original_aclose = lifecycle._kernel.aclose
+
+    async def recording_aclose() -> None:
+        events.append("kernel_aclose")
+        await original_aclose()
+
+    lifecycle._kernel.aclose = recording_aclose  # type: ignore[method-assign]
 
     await lifecycle.open(host)
     await lifecycle.close(host)
 
-    assert parked.cancelled() or parked.done(), (
-        "close() must run drain hooks before tearing down the client."
+    assert events == ["run_drain_hooks", "kernel_aclose"], (
+        f"close() must run drain hooks before kernel.aclose(); got {events}"
     )
     assert lifecycle._http_client is None
 

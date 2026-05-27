@@ -176,11 +176,15 @@ class _LifecycleHost(Protocol):
     on the host, so future refactors that move state around ``Session``
     surface as Protocol violations rather than silent ``AttributeError``s
     at close-time. ``cookie_persistence`` mirrors today's public attribute
-    name on ``Session``; ``_drain_hooks``, ``_metrics_obj``,
-    ``_drain_tracker``, and ``_auth_coord`` are helper handles.
-    ``_rpc_executor`` is nulled out by :meth:`ClientLifecycle.close` so a
-    follow-up ``open()`` rebuilds it against the new ``httpx.AsyncClient``
-    state.
+    name on ``Session``; ``_metrics_obj``, ``_drain_tracker``, and
+    ``_auth_coord`` are helper handles. ``_rpc_executor`` is nulled out by
+    :meth:`ClientLifecycle.close` so a follow-up ``open()`` rebuilds it
+    against the new ``httpx.AsyncClient`` state.
+
+    Note: ``_drain_hooks`` was removed from this Protocol in Wave 2 of the
+    session-decoupling plan (ADR-014 Rule 1) — the storage and the
+    ``run_drain_hooks`` firing now live on ``TransportDrainTracker``, so
+    ``close()`` reaches them through ``host._drain_tracker`` instead.
     """
 
     auth: AuthTokens
@@ -189,7 +193,6 @@ class _LifecycleHost(Protocol):
     _auth_coord: AuthRefreshCoordinator
     _reqid: ReqidCounter
     cookie_persistence: CookiePersistence
-    _drain_hooks: dict[str, Callable[[], Awaitable[None]]]
     _rpc_executor: RpcExecutor | None
 
 
@@ -276,6 +279,18 @@ class ClientLifecycle:
         attribute stays an implementation detail of this helper.
         """
         return self._bound_loop
+
+    def assert_bound_loop(self) -> None:
+        """Satisfies the ``LoopGuard`` capability Protocol (ADR-014 Rule 1).
+
+        Delegates to the free function in :mod:`notebooklm._loop_affinity`
+        with this lifecycle's captured loop. ``Session.assert_bound_loop``
+        is a thin forward; feature APIs that depend on ``LoopGuard`` take
+        :class:`ClientLifecycle` directly.
+        """
+        from ._loop_affinity import assert_bound_loop as _assert
+
+        _assert(self._bound_loop)
 
     def get_http_client(self) -> httpx.AsyncClient:
         """Return the live HTTP client via the concrete Kernel."""
@@ -413,12 +428,7 @@ class ClientLifecycle:
                 refresh_task.cancel()
                 await asyncio.gather(refresh_task, return_exceptions=True)
 
-            drain_hooks = list(host._drain_hooks.values())
-            if drain_hooks:
-                await asyncio.gather(
-                    *(hook() for hook in drain_hooks),
-                    return_exceptions=True,
-                )
+            await host._drain_tracker.run_drain_hooks()
 
             if self._http_client:
                 try:

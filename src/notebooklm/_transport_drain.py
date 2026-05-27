@@ -45,11 +45,16 @@ D1-audit-full once its callers migrated; the field itself remains on
 from __future__ import annotations
 
 import asyncio
+import logging
 import weakref
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
 from ._loop_affinity import assert_bound_loop
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,11 @@ class TransportDrainTracker:
         # to the loop that constructed it). ``None`` is a silent no-op
         # for standalone fixtures.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
+        # ADR-014 Rule 1: close-time drain hooks are owned here, not on
+        # ``Session``. Insertion order is preserved (Python 3.7+ dict
+        # invariant) and :meth:`run_drain_hooks` fires them in that order
+        # under ``ClientLifecycle.close``.
+        self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
 
     def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
         """Capture or clear the event-loop binding for the affinity guard.
@@ -212,6 +222,45 @@ class TransportDrainTracker:
             self._in_flight_posts -= 1
             if self._in_flight_posts == 0:
                 condition.notify_all()
+
+    @asynccontextmanager
+    async def operation_scope(self, label: str) -> AsyncIterator[None]:
+        """Drain-tracked operation scope for feature-owned work (ADR-014 Rule 1).
+
+        Wraps :meth:`begin_transport_post` / :meth:`finish_transport_post`
+        so feature code can write ``async with tracker.operation_scope("upload"):``
+        without managing the token by hand. Satisfies ``OperationScopeProvider``
+        directly — ``Session.operation_scope`` becomes a thin forward.
+        """
+        token = await self.begin_transport_post(label)
+        try:
+            yield None
+        finally:
+            await self.finish_transport_post(token)
+
+    def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
+        """Register or replace a feature-owned close-time drain hook.
+
+        ADR-014 Rule 1 + close-out for plan Wave 0.5: the storage moved from
+        ``Session._drain_hooks`` to this tracker so ``DrainHookRegistration``
+        is satisfied directly. ``ClientLifecycle.close`` fires registered
+        hooks via :meth:`run_drain_hooks`.
+        """
+        self._drain_hooks[name] = hook
+
+    async def run_drain_hooks(self) -> None:
+        """Fire every registered drain hook in registration order.
+
+        Called once from ``ClientLifecycle.close`` after the auth-refresh
+        task has been cancelled and before the HTTP client is shut down.
+        Exceptions in individual hooks are suppressed (logged via
+        ``asyncio.gather(return_exceptions=True)``) so a misbehaving feature
+        cannot block the shutdown path.
+        """
+        hooks = list(self._drain_hooks.values())
+        if not hooks:
+            return
+        await asyncio.gather(*(hook() for hook in hooks), return_exceptions=True)
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new top-level work and wait for in-flight ops to finish.

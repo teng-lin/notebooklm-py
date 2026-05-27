@@ -68,7 +68,9 @@ class _StubHost:
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
-        self._drain_hooks = {}
+        # Wave 2 of session-decoupling: drain hooks live on
+        # ``TransportDrainTracker``; the host no longer carries ``_drain_hooks``.
+        # The real tracker constructed above already has its own ``_drain_hooks``.
         self._rpc_executor = None
 
 

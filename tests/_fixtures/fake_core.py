@@ -127,7 +127,11 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         "operation_scope": MagicMock(side_effect=_operation_scope),
         # DrainHookRegistration (local in ``_artifacts.py``) — close-time
         # hook the artifacts runtime registers against in
-        # ``ArtifactsAPI.__init__``.
+        # ``ArtifactsAPI.__init__``. Wave 2 of session-decoupling moved
+        # the storage onto ``TransportDrainTracker`` (ADR-014 Rule 1); we
+        # keep ``_drain_hooks`` as a public attribute on the fake so test
+        # sites that previously read ``fake._drain_hooks["name"]`` still
+        # work (the fake doesn't have a real ``_drain_tracker``).
         "_drain_hooks": {},
         "register_drain_hook": MagicMock(return_value=None),
         # Upload-pipeline glue: queue-wait recorder consumed by the
