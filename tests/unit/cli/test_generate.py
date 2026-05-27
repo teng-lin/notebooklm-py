@@ -568,6 +568,7 @@ class TestGenerateCinematicVideo:
         # this subcommand.
         assert "--format" in result.output
         assert "cinematic" in result.output.lower()
+        assert "cinematic format defaults to 3600" in result.output
 
 
 # =============================================================================

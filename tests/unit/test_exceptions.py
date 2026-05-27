@@ -8,9 +8,12 @@ from notebooklm.exceptions import (
     ArtifactDownloadError,
     ArtifactError,
     ArtifactFeatureUnavailableError,
+    ArtifactInProgressTimeoutError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
     AuthError,
     AuthExtractionError,
     ChatError,
@@ -71,6 +74,9 @@ class TestExceptionHierarchy:
             ArtifactParseError,
             ArtifactDownloadError,
             ArtifactFeatureUnavailableError,
+            ArtifactTimeoutError,
+            ArtifactPendingTimeoutError,
+            ArtifactInProgressTimeoutError,
         ]
         for exc_class in exceptions:
             assert issubclass(exc_class, NotebookLMError), (
@@ -105,6 +111,10 @@ class TestExceptionHierarchy:
         assert issubclass(ArtifactParseError, ArtifactError)
         assert issubclass(ArtifactDownloadError, ArtifactError)
         assert issubclass(ArtifactFeatureUnavailableError, ArtifactError)
+        assert issubclass(ArtifactTimeoutError, ArtifactError)
+        assert issubclass(ArtifactTimeoutError, TimeoutError)
+        assert issubclass(ArtifactPendingTimeoutError, ArtifactTimeoutError)
+        assert issubclass(ArtifactInProgressTimeoutError, ArtifactTimeoutError)
 
     def test_not_found_errors_are_rpc_errors(self):
         """All ``*NotFoundError`` classes mix in :class:`RPCError`.
@@ -182,6 +192,28 @@ class TestExceptionHierarchy:
         """NotebookLimitError is available from the public package namespace."""
         assert notebooklm.NotebookLimitError is NotebookLimitError
         assert "NotebookLimitError" in notebooklm.__all__
+
+    def test_artifact_timeout_errors_are_exported_from_package(self):
+        """Structured artifact timeout errors are public API exceptions."""
+        assert notebooklm.ArtifactTimeoutError is ArtifactTimeoutError
+        assert notebooklm.ArtifactPendingTimeoutError is ArtifactPendingTimeoutError
+        assert notebooklm.ArtifactInProgressTimeoutError is ArtifactInProgressTimeoutError
+        assert "ArtifactTimeoutError" in notebooklm.__all__
+        assert "ArtifactPendingTimeoutError" in notebooklm.__all__
+        assert "ArtifactInProgressTimeoutError" in notebooklm.__all__
+
+    def test_artifact_timeout_accepts_sequence_history(self):
+        """Manual exception construction normalizes status history to a tuple."""
+        err = ArtifactTimeoutError(
+            "nb_123",
+            "task_123",
+            30.0,
+            last_status="in_progress",
+            status_history=["pending", "in_progress"],
+        )
+
+        assert err.status_history == ("pending", "in_progress")
+        assert "pending -> in_progress" in str(err)
 
     def test_account_types_are_exported_from_package(self):
         """Account limit and tier types are available from the public package namespace."""

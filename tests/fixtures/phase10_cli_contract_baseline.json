@@ -3972,10 +3972,10 @@
           }
         },
         {
-          "default": 600,
+          "default": 1800,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Maximum seconds to wait (default: 600)",
+          "help": "Maximum seconds to wait (default: 1800; cinematic format defaults to 3600)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -5868,10 +5868,10 @@
           }
         },
         {
-          "default": 600,
+          "default": 1800,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Maximum seconds to wait (default: 600)",
+          "help": "Maximum seconds to wait (default: 1800; cinematic format defaults to 3600)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,

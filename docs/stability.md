@@ -90,6 +90,7 @@ ClientError, ConfigurationError, ValidationError
 SourceError, SourceAddError, SourceProcessingError, SourceTimeoutError, SourceNotFoundError
 NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactFeatureUnavailableError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
+ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError
 ChatError
 
 # Enums

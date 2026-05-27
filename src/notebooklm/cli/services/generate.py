@@ -188,9 +188,10 @@ _REPORT_FORMAT_MAP: Mapping[str, ReportFormat] = {
     "custom": ReportFormat.CUSTOM,
 }
 
-# Cinematic-video defaults to a longer wait ceiling (Veo 3 takes ~30-40 min).
-# Preserved from cli/generate_cmd.py pre-extraction.
-_CINEMATIC_DEFAULT_TIMEOUT = 1800.0
+# Media generation is frequently queue-bound. Keep default wait ceilings long
+# enough for the common case while still allowing explicit --timeout overrides.
+_VIDEO_DEFAULT_TIMEOUT = 1800.0
+_CINEMATIC_DEFAULT_TIMEOUT = 3600.0
 
 
 @dataclass(frozen=True)
@@ -223,9 +224,9 @@ class GenerationPlan:
             (currently ``revise-slide``, ``quiz``, ``flashcards``).
         wait: Whether to wait for completion before returning. Mind-map
             ignores this field and renders synchronously.
-        timeout: Wait timeout in seconds. For cinematic-video this is
-            defaulted to 1800.0 when the user did not pass ``--timeout``
-            explicitly.
+        timeout: Wait timeout in seconds. Video defaults to 1800.0 and
+            cinematic-video defaults to 3600.0 when the user did not pass
+            ``--timeout`` explicitly.
         interval: Polling interval in seconds for the wait loop.
         max_retries: Number of retry-after-rate-limit attempts. ``0``
             means a single attempt with no retry.
@@ -369,7 +370,7 @@ def _build_video_plan_for_kind(
 
     ``alias=True`` enforces the cinematic-video flag rules: an explicit
     ``--format <non-cinematic>`` raises UsageError, the format is coerced
-    to cinematic when not passed, and the timeout defaults to 1800s when
+    to cinematic when not passed, and the timeout defaults to 3600s when
     the user did not pass ``--timeout``.
     """
     common = _common(raw_args)
@@ -400,6 +401,8 @@ def _build_video_plan_for_kind(
     timeout_value = common["timeout"]
     if is_cinematic and source("timeout") != ParameterSource.COMMANDLINE:
         timeout_value = _CINEMATIC_DEFAULT_TIMEOUT
+    elif source("timeout") != ParameterSource.COMMANDLINE:
+        timeout_value = _VIDEO_DEFAULT_TIMEOUT
 
     language = resolve_language(raw_args.get("language"))
 

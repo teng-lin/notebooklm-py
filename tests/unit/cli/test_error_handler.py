@@ -15,6 +15,7 @@ from notebooklm.cli.error_handler import (
     handle_errors,
 )
 from notebooklm.exceptions import (
+    ArtifactPendingTimeoutError,
     AuthError,
     ConfigurationError,
     NetworkError,
@@ -23,6 +24,7 @@ from notebooklm.exceptions import (
     RPCError,
     ValidationError,
 )
+from notebooklm.types import GenerationStatus
 
 
 class TestHandleErrorsExitCodes:
@@ -163,6 +165,46 @@ class TestHandleErrorsJsonOutput:
         assert "method_id" not in data
         assert "rpc_code" not in data
 
+    def test_artifact_timeout_json_includes_poll_context(self, capsys):
+        """ArtifactTimeoutError should be a user error with structured context."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors(json_output=True):
+            raise ArtifactPendingTimeoutError(
+                "nb_123",
+                "task_123",
+                600.0,
+                last_status="pending",
+                status_history=("pending",),
+                status_transitions=(
+                    GenerationStatus(
+                        "task_123",
+                        "pending",
+                        metadata={"raw_status": "completed", "media_ready": False},
+                    ),
+                ),
+            )
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert data["error"] is True
+        assert data["code"] == "ARTIFACT_TIMEOUT"
+        assert data["notebook_id"] == "nb_123"
+        assert data["task_id"] == "task_123"
+        assert data["timeout_seconds"] == 600.0
+        assert data["last_status"] == "pending"
+        assert data["status_history"] == ["pending"]
+        assert data["status_transitions"] == [
+            {
+                "task_id": "task_123",
+                "status": "pending",
+                "url": None,
+                "error": None,
+                "error_code": None,
+                "metadata": {"raw_status": "completed", "media_ready": False},
+            }
+        ]
+        assert data["stalled_phase"] == "pending"
+
     def test_unexpected_error_json_format(self, capsys):
         """Unexpected errors should produce UNEXPECTED_ERROR code."""
         with pytest.raises(SystemExit), handle_errors(json_output=True):
@@ -236,6 +278,23 @@ class TestHandleErrorsTextOutput:
         output = capsys.readouterr().err
         assert "notebook limit" in output.lower()
         assert "499/500" in output
+
+    def test_artifact_timeout_text_includes_poll_context(self, capsys):
+        """ArtifactTimeoutError should remain a user error in text mode."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors(json_output=False):
+            raise ArtifactPendingTimeoutError(
+                "nb_123",
+                "task_123",
+                600.0,
+                last_status="pending",
+                status_history=("pending",),
+            )
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().err
+        assert "Artifact timeout" in output
+        assert "task_123" in output
+        assert "last status: pending" in output
 
     def test_unexpected_error_shows_bug_report_hint(self, capsys):
         """Unexpected errors should show bug report hint."""

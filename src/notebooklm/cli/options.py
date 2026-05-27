@@ -137,6 +137,7 @@ def wait_option(f: FC) -> FC:
 def wait_polling_options(
     default_timeout: int = 300,
     default_interval: int = 2,
+    timeout_help: str | None = None,
 ) -> Callable[[FC], FC]:
     """Bundle the shared ``--timeout`` / ``--interval`` polling flags.
 
@@ -162,6 +163,8 @@ def wait_polling_options(
             commands use 2 to match the existing ``artifact wait`` default;
             ``source wait`` uses 1 to match its underlying
             ``wait_until_ready`` default.
+        timeout_help: Optional custom help text for commands whose effective
+            timeout behavior depends on another option or alias.
 
     Returns:
         A decorator that adds ``--timeout`` and ``--interval`` Click options
@@ -189,7 +192,7 @@ def wait_polling_options(
             "--timeout",
             default=default_timeout,
             type=int,
-            help=f"Maximum seconds to wait (default: {default_timeout})",
+            help=timeout_help or f"Maximum seconds to wait (default: {default_timeout})",
         )(f)
         return f
 

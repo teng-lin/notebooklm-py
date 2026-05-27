@@ -13,6 +13,7 @@ from typing import Any, NoReturn
 import click
 
 from ..exceptions import (
+    ArtifactTimeoutError,
     AuthError,
     ConfigurationError,
     NetworkError,
@@ -80,6 +81,18 @@ def current_json_output(default: bool = False) -> bool:
 def exit_with_code(exit_code: int = 1) -> NoReturn:
     """Canonical raw exit path for callers that already emitted their payload."""
     raise SystemExit(exit_code)
+
+
+def _generation_status_extra(status: Any) -> dict[str, Any]:
+    """Serialize a GenerationStatus-like object for JSON error payloads."""
+    return {
+        "task_id": getattr(status, "task_id", None),
+        "status": getattr(status, "status", None),
+        "url": getattr(status, "url", None),
+        "error": getattr(status, "error", None),
+        "error_code": getattr(status, "error_code", None),
+        "metadata": getattr(status, "metadata", None),
+    }
 
 
 def _output_error(
@@ -248,6 +261,25 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
             json_output,
             1,
             extra=e.to_error_response_extra(),
+        )
+    except ArtifactTimeoutError as e:
+        extra_data = {
+            "notebook_id": e.notebook_id,
+            "task_id": e.task_id,
+            "timeout_seconds": e.timeout_seconds,
+            "last_status": e.last_status,
+            "status_history": list(e.status_history),
+            "status_transitions": [
+                _generation_status_extra(status) for status in e.status_transitions
+            ],
+            "stalled_phase": e.stalled_phase,
+        }
+        _output_error(
+            f"Artifact timeout: {e}",
+            "ARTIFACT_TIMEOUT",
+            json_output,
+            1,
+            extra=extra_data,
         )
     except NotebookLMError as e:
         extra_info: dict[str, Any] | None = None

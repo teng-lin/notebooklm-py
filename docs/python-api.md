@@ -233,6 +233,7 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `SourceNotFoundError` | `NotFoundError`, `RPCError`, `SourceError`, `NotebookLMError` |
 | `ArtifactNotFoundError` | `NotFoundError`, `RPCError`, `ArtifactError`, `NotebookLMError` |
 | `ArtifactFeatureUnavailableError` | `RPCError`, `ArtifactError`, `NotebookLMError` |
+| `ArtifactTimeoutError` | `TimeoutError`, `ArtifactError`, `NotebookLMError` |
 
 Use the table to pick the right level of catch. `client.sources.get(...)`
 returns `None` for a missing source rather than raising; the workflows that
@@ -244,6 +245,19 @@ when NotebookLM accepts the RPC but returns no generation task for a specific
 artifact feature. For infographic generation, a null `CREATE_ARTIFACT` result
 is reported this way instead of surfacing as schema drift or a failed
 `GenerationStatus`.
+
+`client.artifacts.wait_for_completion(...)` raises
+`ArtifactPendingTimeoutError` when a task stays queued and never reaches
+`in_progress`, or `ArtifactInProgressTimeoutError` when it starts but does not
+finish before `timeout`. Both subclass `ArtifactTimeoutError` and built-in
+`TimeoutError`. The exception exposes `task_id`, `notebook_id`,
+`timeout_seconds`, `last_status`, `stalled_phase`, `status_history`, and
+`status_transitions` so callers can retry, fail soft, or log upstream queueing
+patterns without parsing the message.
+
+The CLI defaults to longer wait budgets for media generation (`video`: 1800s,
+`cinematic-video`: 3600s). In Python, pass the same budget explicitly with
+`wait_for_completion(..., timeout=...)`.
 
 ##### Catching any "not found" across domains
 
@@ -1204,16 +1218,23 @@ status = await with_rate_limit_retry(
 **Waiting for Completion:**
 
 ```python
+from notebooklm import ArtifactTimeoutError
+
 # Start generation
 status = await client.artifacts.generate_audio(nb_id)
 
-# Wait with polling
-final = await client.artifacts.wait_for_completion(
-    nb_id,
-    status.task_id,
-    timeout=300,      # Max wait time in seconds
-    initial_interval=5  # Initial seconds between polls
-)
+try:
+    # Wait with polling. Use a higher timeout for long media jobs such as
+    # video or cinematic-video.
+    final = await client.artifacts.wait_for_completion(
+        nb_id,
+        status.task_id,
+        timeout=300,      # Max wait time in seconds
+        initial_interval=5  # Initial seconds between polls
+    )
+except ArtifactTimeoutError as exc:
+    print(exc.stalled_phase, exc.last_status, exc.status_history)
+    raise
 
 if final.is_complete:
     path = await client.artifacts.download_audio(nb_id, "podcast.mp3")

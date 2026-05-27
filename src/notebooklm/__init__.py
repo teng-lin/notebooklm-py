@@ -58,9 +58,12 @@ from .exceptions import (
     ArtifactDownloadError,
     ArtifactError,
     ArtifactFeatureUnavailableError,
+    ArtifactInProgressTimeoutError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
     # RPC Protocol
     AuthError,
     AuthExtractionError,
@@ -232,6 +235,9 @@ __all__ = [
     "ArtifactNotReadyError",
     "ArtifactParseError",
     "ArtifactDownloadError",
+    "ArtifactTimeoutError",
+    "ArtifactPendingTimeoutError",
+    "ArtifactInProgressTimeoutError",
     # Domain Exceptions: Research
     "ResearchTaskMismatchError",
     # Warnings

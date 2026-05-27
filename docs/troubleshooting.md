@@ -257,6 +257,25 @@ notebooklm generate audio --wait
 notebooklm artifact poll <task_id>
 ```
 
+#### Audio/Video task times out as pending or in progress
+
+**Cause:** NotebookLM accepted the generation task, but the upstream media queue
+did not reach a terminal state before your wait budget. For media artifacts, the
+SDK also keeps polling if NotebookLM marks the row completed before the media
+URL is populated.
+
+**Solution:**
+- Increase the wait budget with `--timeout` or the Python
+  `wait_for_completion(..., timeout=...)` argument.
+- For CLI waits, the built-in defaults are 1800s for standard video and
+  3600s for cinematic video; pass a larger `--timeout` if your account's media
+  queue is slower.
+- Catch `ArtifactPendingTimeoutError` to retry queued tasks separately from
+  `ArtifactInProgressTimeoutError`, which means the task started but did not
+  finish before the timeout.
+- Log `exc.status_history` and `exc.status_transitions` for upstream queueing
+  diagnostics instead of parsing the exception message.
+
 #### Mind map or data table "generates" but doesn't appear
 
 **Cause:** Generation may silently fail without error.

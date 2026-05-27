@@ -182,7 +182,7 @@ All generate commands (except the synchronous `mind-map`) accept the same unifor
 - `-s, --source ID` to select specific sources (repeatable)
 - `--json` for machine-readable output (returns `task_id` and `status`)
 - `--wait / --no-wait` to block until completion (default: `--no-wait` — returns immediately with a `task_id`)
-- `--timeout SECONDS` to cap the `--wait` budget (defaults: 300s for audio/quiz/flashcards/slide-deck/infographic/data-table/report/revise-slide, 600s for video/cinematic-video). No-op without `--wait`.
+- `--timeout SECONDS` to cap the `--wait` budget (defaults: 300s for audio/quiz/flashcards/slide-deck/infographic/data-table/report/revise-slide, 1800s for video, 3600s for cinematic-video). No-op without `--wait`.
 - `--interval SECONDS` to tune polling cadence (default: 2). No-op without `--wait`.
 - `--retry N` to automatically retry on rate limits with exponential backoff
 - `--prompt-file PATH` to read the description/query from a file (or `-` for stdin) instead of the command line. Mutually exclusive with the positional argument; useful for long prompts that exceed shell length limits.
@@ -917,7 +917,7 @@ notebooklm generate video [description] [OPTIONS]
 - `--language LANG` - Output language (precedence: `--language` > `NOTEBOOKLM_HL` env > config > `'en'`)
 - `-s, --source ID` - Limit to specific source IDs (repeatable, uses all if not specified)
 - `--wait / --no-wait` - Wait for completion (default: `--no-wait`)
-- `--timeout SECONDS` - Maximum seconds to wait (default: 600; no-op without `--wait`)
+- `--timeout SECONDS` - Maximum seconds to wait (default: 1800; `--format cinematic` defaults to 3600; no-op without `--wait`)
 - `--interval SECONDS` - Seconds between status checks (default: 2; no-op without `--wait`)
 - `--retry N` - Retry N times with exponential backoff on rate limit
 - `--json` - Output as JSON (returns `task_id` and `status`)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from ._env import DEFAULT_BASE_URL, get_base_url
@@ -82,6 +83,9 @@ __all__ = [
     "ArtifactParseError",
     "ArtifactDownloadError",
     "ArtifactFeatureUnavailableError",
+    "ArtifactTimeoutError",
+    "ArtifactPendingTimeoutError",
+    "ArtifactInProgressTimeoutError",
     # Domain: Research
     "ResearchTaskMismatchError",
 ]
@@ -1032,6 +1036,107 @@ class ArtifactFeatureUnavailableError(RPCError, ArtifactError):
             f"{artifact_type.replace('_', ' ').capitalize()} generation is unavailable",
             method_id=method_id,
             raw_response=raw_response,
+        )
+
+
+class ArtifactTimeoutError(ArtifactError, TimeoutError):
+    """Artifact generation did not reach a terminal state before timeout.
+
+    The exception remains catchable as built-in :class:`TimeoutError` for
+    backward compatibility, while exposing structured fields for callers that
+    need to distinguish queued tasks from tasks that started but did not
+    complete.
+
+    Attributes:
+        notebook_id: Notebook containing the artifact task.
+        task_id: Artifact generation task ID.
+        timeout: Wait budget in seconds.
+        timeout_seconds: Alias for ``timeout``.
+        last_status: Last observed status before timeout.
+        status_history: Ordered status strings emitted by the poll loop when
+            the status changed.
+        status_transitions: Ordered status snapshots emitted by the poll loop
+            when the status changed.
+        stalled_phase: Coarse phase where the timeout occurred.
+    """
+
+    def __init__(
+        self,
+        notebook_id: str,
+        task_id: str,
+        timeout: float,
+        *,
+        last_status: str | None = None,
+        status_history: Sequence[str] | None = None,
+        status_transitions: tuple[Any, ...] | None = None,
+        stalled_phase: str | None = None,
+    ):
+        self.notebook_id = notebook_id
+        self.task_id = task_id
+        self.timeout = timeout
+        self.timeout_seconds = timeout
+        self.last_status = last_status
+        self.status_transitions = status_transitions or ()
+        if status_history is None:
+            status_history = tuple(
+                status.status
+                for status in self.status_transitions
+                if isinstance(getattr(status, "status", None), str)
+            )
+        self.status_history = tuple(status_history)
+        self.stalled_phase = stalled_phase
+
+        history = " -> ".join(self.status_history)
+        history_info = f"; status history: {history}" if history else ""
+        status_info = f"last status: {last_status}" if last_status is not None else "no status"
+        super().__init__(f"Task {task_id} timed out after {timeout}s ({status_info}{history_info})")
+
+
+class ArtifactPendingTimeoutError(ArtifactTimeoutError):
+    """Artifact generation timed out before reaching ``in_progress``."""
+
+    def __init__(
+        self,
+        notebook_id: str,
+        task_id: str,
+        timeout: float,
+        *,
+        last_status: str | None = None,
+        status_history: Sequence[str] | None = None,
+        status_transitions: tuple[Any, ...] | None = None,
+    ):
+        super().__init__(
+            notebook_id,
+            task_id,
+            timeout,
+            last_status=last_status,
+            status_history=status_history,
+            status_transitions=status_transitions,
+            stalled_phase="pending",
+        )
+
+
+class ArtifactInProgressTimeoutError(ArtifactTimeoutError):
+    """Artifact generation timed out after reaching ``in_progress``."""
+
+    def __init__(
+        self,
+        notebook_id: str,
+        task_id: str,
+        timeout: float,
+        *,
+        last_status: str | None = None,
+        status_history: Sequence[str] | None = None,
+        status_transitions: tuple[Any, ...] | None = None,
+    ):
+        super().__init__(
+            notebook_id,
+            task_id,
+            timeout,
+            last_status=last_status,
+            status_history=status_history,
+            status_transitions=status_transitions,
+            stalled_phase="in_progress",
         )
 
 

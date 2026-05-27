@@ -13,8 +13,13 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._polling_registry import PollRegistry
+from notebooklm.exceptions import (
+    ArtifactInProgressTimeoutError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
+)
 from notebooklm.rpc.decoder import RPCError
-from notebooklm.types import ArtifactDownloadError
+from notebooklm.types import ArtifactDownloadError, GenerationStatus
 
 
 @pytest.fixture
@@ -248,9 +253,102 @@ class TestWaitForCompletion:
         with (
             patch.object(loop, "time", mock_time),
             patch("asyncio.sleep", new_callable=AsyncMock),
-            pytest.raises(TimeoutError, match="timed out"),
+            pytest.raises(ArtifactInProgressTimeoutError, match="timed out"),
         ):
             await api.wait_for_completion("nb_123", "task_123", timeout=1.5)
+
+    @pytest.mark.asyncio
+    async def test_pending_timeout_raises_structured_artifact_timeout(self, mock_artifacts_api):
+        """A queued task timeout remains catchable as TimeoutError and exposes history."""
+        api, _ = mock_artifacts_api
+        api.poll_status = AsyncMock(
+            side_effect=[
+                GenerationStatus("task_123", "pending"),
+                GenerationStatus("task_123", "pending"),
+            ]
+        )
+
+        clock = 0.0
+        loop = asyncio.get_running_loop()
+
+        def mock_time():
+            return clock
+
+        async def fake_sleep(_delay: float) -> None:
+            nonlocal clock
+            clock += 0.01
+
+        with (
+            patch.object(loop, "time", mock_time),
+            patch("asyncio.sleep", fake_sleep),
+            pytest.raises(ArtifactPendingTimeoutError) as exc_info,
+        ):
+            await api.wait_for_completion(
+                "nb_123",
+                "task_123",
+                initial_interval=0.001,
+                max_interval=0.001,
+                timeout=0.005,
+            )
+
+        exc = exc_info.value
+        assert isinstance(exc, TimeoutError)
+        assert isinstance(exc, ArtifactTimeoutError)
+        assert exc.notebook_id == "nb_123"
+        assert exc.task_id == "task_123"
+        assert exc.timeout == 0.005
+        assert exc.timeout_seconds == 0.005
+        assert exc.last_status == "pending"
+        assert exc.status_history == ("pending",)
+        assert [status.status for status in exc.status_transitions] == ["pending"]
+        assert exc.stalled_phase == "pending"
+
+    @pytest.mark.asyncio
+    async def test_in_progress_timeout_preserves_status_transitions(self, mock_artifacts_api):
+        """A task that starts but never completes raises the running-timeout subclass."""
+        api, _ = mock_artifacts_api
+        api.poll_status = AsyncMock(
+            side_effect=[
+                GenerationStatus("task_123", "pending"),
+                GenerationStatus(
+                    "task_123",
+                    "in_progress",
+                    metadata={"raw_status": "completed", "media_ready": False},
+                ),
+            ]
+        )
+
+        clock = 0.0
+        loop = asyncio.get_running_loop()
+
+        def mock_time():
+            return clock
+
+        async def fake_sleep(_delay: float) -> None:
+            nonlocal clock
+            clock += 0.01
+
+        with (
+            patch.object(loop, "time", mock_time),
+            patch("asyncio.sleep", fake_sleep),
+            pytest.raises(ArtifactInProgressTimeoutError) as exc_info,
+        ):
+            await api.wait_for_completion(
+                "nb_123",
+                "task_123",
+                initial_interval=0.001,
+                max_interval=0.001,
+                timeout=0.005,
+            )
+
+        exc = exc_info.value
+        assert exc.last_status == "in_progress"
+        assert exc.status_history == ("pending", "in_progress")
+        assert [status.metadata for status in exc.status_transitions] == [
+            None,
+            {"raw_status": "completed", "media_ready": False},
+        ]
+        assert exc.stalled_phase == "in_progress"
 
     @pytest.mark.asyncio
     async def test_wait_completes_successfully(self, mock_artifacts_api):
@@ -792,6 +890,13 @@ class TestPollStatusMediaReadiness:
         status = await api.poll_status("nb_123", "task_123")
         # Should downgrade to in_progress because URL is missing
         assert status.status == "in_progress"
+        assert status.metadata == {
+            "artifact_type": "AUDIO",
+            "artifact_type_code": 1,
+            "media_ready": False,
+            "normalized_status": "in_progress",
+            "raw_status": "completed",
+        }
 
     @pytest.mark.asyncio
     async def test_poll_status_video_completed_with_url(self, mock_artifacts_api):

@@ -262,7 +262,11 @@ def generate_audio(
 @language_option
 @multi_source_option
 @wait_option
-@wait_polling_options(default_timeout=600, default_interval=2)
+@wait_polling_options(
+    default_timeout=1800,
+    default_interval=2,
+    timeout_help="Maximum seconds to wait (default: 1800; cinematic format defaults to 3600)",
+)
 @retry_option
 @json_option
 @with_client

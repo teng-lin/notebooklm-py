@@ -14,6 +14,7 @@ from ._callbacks import maybe_await_callback
 from ._polling_registry import PollRegistry
 from ._row_adapters import ArtifactRow
 from ._session_contracts import AsyncWorkRuntime
+from .exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from .rpc import (
     ArtifactStatus,
     ArtifactTypeCode,
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Maximum number of retries for transient errors during artifact polling.
 POLL_MAX_RETRIES = 3
+_IN_PROGRESS_STATUS = "in_progress"
 
 ListRawCallback = Callable[[str], Awaitable[builtins.list[Any]]]
 PollStatusCallback = Callable[[str, str], Awaitable[GenerationStatus]]
@@ -83,12 +85,21 @@ class ArtifactPollingService:
         if row is not None:
             status_code = row.status
             artifact_type = row.type_code
+            raw_status = artifact_status_to_str(status_code)
+            metadata: dict[str, Any] | None = None
 
             # For media artifacts, verify URL availability before reporting completion.
             # The API may set status=COMPLETED before media URLs are populated.
             if status_code == ArtifactStatus.COMPLETED:
                 if not is_media_ready(row.raw, artifact_type):
                     type_name = get_artifact_type_name(artifact_type)
+                    metadata = {
+                        "artifact_type": type_name,
+                        "artifact_type_code": artifact_type,
+                        "media_ready": False,
+                        "normalized_status": _IN_PROGRESS_STATUS,
+                        "raw_status": raw_status,
+                    }
                     logger.debug(
                         "Artifact %s (type=%s) status=COMPLETED but media not ready, "
                         "continuing poll",
@@ -110,6 +121,7 @@ class ArtifactPollingService:
                 status=status,
                 url=url,
                 error=error_msg,
+                metadata=metadata,
             )
 
         # Artifact not found in the list. Use a distinct status so
@@ -268,6 +280,7 @@ class ArtifactPollingService:
         first_not_found_time: float | None = None
         last_status: str | None = None
         last_emitted_status: str | None = None
+        status_transitions: list[GenerationStatus] = []
 
         while True:
             try:
@@ -307,6 +320,7 @@ class ArtifactPollingService:
             last_status = status.status
             if status.status != last_emitted_status:
                 last_emitted_status = status.status
+                status_transitions.append(status)
                 if on_status_change is not None:
                     await maybe_await_callback(on_status_change, status)
 
@@ -361,8 +375,12 @@ class ArtifactPollingService:
 
             elapsed = asyncio.get_running_loop().time() - start_time
             if elapsed > timeout:
-                raise TimeoutError(
-                    f"Task {task_id} timed out after {timeout}s (last status: {last_status})"
+                raise _artifact_timeout_error(
+                    notebook_id,
+                    task_id,
+                    timeout,
+                    last_status,
+                    status_transitions,
                 )
 
             remaining_time = timeout - elapsed
@@ -371,6 +389,34 @@ class ArtifactPollingService:
                 await asyncio.sleep(sleep_duration)
 
             current_interval = min(current_interval * 2, max_interval)
+
+
+def _artifact_timeout_error(
+    notebook_id: str,
+    task_id: str,
+    timeout: float,
+    last_status: str | None,
+    status_transitions: list[GenerationStatus],
+) -> ArtifactPendingTimeoutError | ArtifactInProgressTimeoutError:
+    history = tuple(status.status for status in status_transitions)
+    transitions = tuple(status_transitions)
+    if _IN_PROGRESS_STATUS in history or last_status == _IN_PROGRESS_STATUS:
+        return ArtifactInProgressTimeoutError(
+            notebook_id,
+            task_id,
+            timeout,
+            last_status=last_status,
+            status_history=history,
+            status_transitions=transitions,
+        )
+    return ArtifactPendingTimeoutError(
+        notebook_id,
+        task_id,
+        timeout,
+        last_status=last_status,
+        status_history=history,
+        status_transitions=transitions,
+    )
 
 
 def _extract_artifact_error(art: builtins.list[Any]) -> str | None:

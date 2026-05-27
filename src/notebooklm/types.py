@@ -53,9 +53,12 @@ from .exceptions import (
     ArtifactDownloadError,
     ArtifactError,
     ArtifactFeatureUnavailableError,
+    ArtifactInProgressTimeoutError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
     SourceAddError,
     SourceError,
     SourceNotFoundError,
@@ -148,6 +151,9 @@ __all__ = [
     "ArtifactNotReadyError",
     "ArtifactParseError",
     "ArtifactDownloadError",
+    "ArtifactTimeoutError",
+    "ArtifactPendingTimeoutError",
+    "ArtifactInProgressTimeoutError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)

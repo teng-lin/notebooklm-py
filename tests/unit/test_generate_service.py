@@ -109,7 +109,7 @@ _PLAN_HAPPY_CASES: list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any
             "style_prompt": None,
             "language": "en",
         },
-        {"display_name": "video", "language": "en"},
+        {"display_name": "video", "language": "en", "timeout": 1800.0},
         {
             "video_format": VideoFormat.EXPLAINER,
             "video_style": VideoStyle.AUTO_SELECT,
@@ -127,7 +127,7 @@ _PLAN_HAPPY_CASES: list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any
         {
             "display_name": "video",
             "language": "en",
-            "timeout": 1800.0,  # cinematic-default override (source is DEFAULT)
+            "timeout": 3600.0,  # cinematic-default override (source is DEFAULT)
         },
         {},  # cinematic-video carries no kind-specific params
     ),
@@ -283,11 +283,11 @@ def test_cinematic_video_explicit_cinematic_format_is_accepted() -> None:
         "cinematic-video", args, parameter_source=source, language_resolver=_identity_language
     )
     assert plan.kind == "cinematic-video"
-    assert plan.timeout == 1800.0  # default cinematic timeout
+    assert plan.timeout == 3600.0  # default cinematic timeout
 
 
 def test_cinematic_video_explicit_timeout_wins_over_default() -> None:
-    """When the user passes ``--timeout``, the cinematic 1800s default does
+    """When the user passes ``--timeout``, the cinematic 3600s default does
     NOT clobber it."""
 
     def source(name: str) -> ParameterSource:
@@ -301,6 +301,21 @@ def test_cinematic_video_explicit_timeout_wins_over_default() -> None:
         "cinematic-video", args, parameter_source=source, language_resolver=_identity_language
     )
     assert plan.timeout == 60.0  # user override wins
+
+
+def test_video_explicit_timeout_wins_over_default() -> None:
+    """When the user passes ``--timeout``, the video 1800s default does not clobber it."""
+
+    def source(name: str) -> ParameterSource:
+        return ParameterSource.COMMANDLINE if name == "timeout" else ParameterSource.DEFAULT
+
+    args = _base_args(
+        video_format="explainer", style="auto", style_prompt=None, language="en", timeout=90
+    )
+    plan = build_generation_plan(
+        "video", args, parameter_source=source, language_resolver=_identity_language
+    )
+    assert plan.timeout == 90.0
 
 
 # ---------------------------------------------------------------------------
