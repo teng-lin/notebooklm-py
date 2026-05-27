@@ -8,8 +8,10 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 import builtins
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 # ``_mind_map`` is re-exported as ``_artifacts._mind_map`` so legacy patch
 # seams can still resolve the module via the artifacts facade. The runtime code
@@ -29,6 +31,10 @@ from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._session_contracts import AsyncWorkRuntime, RpcCaller
+
+if TYPE_CHECKING:
+    from ._session_lifecycle import ClientLifecycle
+    from ._transport_drain import TransportDrainTracker
 from .rpc import (
     ArtifactTypeCode,
     AudioFormat,
@@ -154,6 +160,69 @@ class ArtifactsRuntime(RpcCaller, AsyncWorkRuntime, DrainHookRegistration, Proto
     ``operation_scope``), and :class:`DrainHookRegistration` (for
     close-time poll-task cleanup).
     """
+
+
+@dataclass(frozen=True)
+class ArtifactsRuntimeAdapter:
+    """Concrete satisfier of :class:`ArtifactsRuntime` per ADR-014.
+
+    Earns its keep under Rule 2 because:
+
+    - the composite has three capabilities (``RpcCaller`` +
+      ``AsyncWorkRuntime`` + ``DrainHookRegistration``);
+    - :class:`ArtifactsAPI` takes the whole composite as a single
+      dependency (``runtime``), and passes it through to
+      ``ArtifactPollingService`` (which consumes ``AsyncWorkRuntime``)
+      and ``ArtifactDownloadService`` (which consumes ``RpcCaller``) —
+      consumer-demand;
+    - ``register_drain_hook`` is a meaningful named affordance worth
+      exposing as one method.
+
+    The adapter is constructed at the composition root
+    (:class:`notebooklm.client.NotebookLMClient`) from the three
+    underlying collaborators: :class:`RpcCaller`,
+    :class:`TransportDrainTracker`, and :class:`ClientLifecycle`. It
+    transitively satisfies :class:`AsyncWorkRuntime` per ADR-014 Rule 2
+    — no dedicated ``_AsyncWorkAdapter`` is introduced.
+    """
+
+    rpc: RpcCaller
+    drain: "TransportDrainTracker"
+    lifecycle: "ClientLifecycle"
+
+    async def rpc_call(
+        self,
+        method: Any,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+    ) -> Any:
+        return await self.rpc.rpc_call(
+            method,
+            params,
+            source_path,
+            allow_null,
+            _is_retry,
+            disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
+        )
+
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        return self.drain.operation_scope(label)
+
+    def register_drain_hook(
+        self,
+        name: str,
+        hook: Callable[[], Awaitable[None]],
+    ) -> None:
+        self.drain.register_drain_hook(name, hook)
+
+    def assert_bound_loop(self) -> None:
+        self.lifecycle.assert_bound_loop()
 
 
 class ArtifactsAPI:
@@ -1039,3 +1108,16 @@ class ArtifactsAPI:
             Returns True on unexpected structure (defensive fallback).
         """
         return _artifact_polling._is_media_ready(art, artifact_type)
+
+
+if TYPE_CHECKING:
+    # mypy guard: ``ArtifactsRuntimeAdapter`` must structurally satisfy
+    # the ``ArtifactsRuntime`` Protocol it adapts. Failing this assertion
+    # at type-check time catches shape drift on the delegate methods
+    # before runtime construction at the composition root would. Mirrors
+    # the pattern used by ``_rpc_executor._assert_rpc_executor_satisfies_rpc_caller``.
+
+    def _assert_adapter_satisfies_artifacts_runtime(
+        adapter: ArtifactsRuntimeAdapter,
+    ) -> None:
+        _: ArtifactsRuntime = adapter

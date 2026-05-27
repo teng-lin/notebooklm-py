@@ -18,16 +18,32 @@ These tests pin three contracts:
    keyword-only — the legacy ``mind_map_service`` kwarg is gone.
 3. Constructing without the new kwargs (or with the old name) raises
    ``TypeError``.
+
+Wave 9 of the session-decoupling plan (ADR-014 Rule 2) replaced the
+``make_fake_core()`` FakeSession runtime fakes used here with narrow
+mocks that only expose the ``ArtifactsRuntime`` surface (RpcCaller +
+AsyncWorkRuntime + DrainHookRegistration). The tests do not exercise
+RPC traffic — they pin the constructor contract — so the runtime mock
+only needs to silently accept ``register_drain_hook``.
 """
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from _fixtures.fake_core import make_fake_core
-from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._artifacts import ArtifactsAPI, ArtifactsRuntime
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
+
+
+def _make_runtime() -> MagicMock:
+    """Return a narrow ``ArtifactsRuntime`` mock for constructor-contract tests.
+
+    The mock only needs ``register_drain_hook`` (called by
+    :meth:`ArtifactsAPI.__init__`); no test in this file exercises an
+    RPC or operation-scope path on the runtime.
+    """
+    return MagicMock(spec=ArtifactsRuntime)
 
 
 @pytest.mark.asyncio
@@ -40,13 +56,13 @@ async def test_list_mind_maps_delegates_to_injected_facade():
     injected adapter. Confirming the adapter sees the call still pins
     the contract.
     """
-    core = make_fake_core()
+    runtime = _make_runtime()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_mind_maps.list_mind_maps = AsyncMock(return_value=["sentinel-row"])
     fake_note_service = MagicMock(spec=NoteService)
 
     api = ArtifactsAPI(
-        core,
+        runtime,
         notebooks=MagicMock(),
         mind_maps=fake_mind_maps,
         note_service=fake_note_service,
@@ -59,18 +75,18 @@ async def test_list_mind_maps_delegates_to_injected_facade():
 
 def test_mind_maps_and_note_service_are_required():
     """Both new kwargs are required — no implicit fallback installs them."""
-    core = make_fake_core()
+    runtime = _make_runtime()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
 
     # Missing both.
     with pytest.raises(TypeError):
-        ArtifactsAPI(core, notebooks=MagicMock())  # type: ignore[call-arg]
+        ArtifactsAPI(runtime, notebooks=MagicMock())  # type: ignore[call-arg]
 
     # Missing note_service.
     with pytest.raises(TypeError):
         ArtifactsAPI(  # type: ignore[call-arg]
-            core,
+            runtime,
             notebooks=MagicMock(),
             mind_maps=fake_mind_maps,
         )
@@ -78,7 +94,7 @@ def test_mind_maps_and_note_service_are_required():
     # Missing mind_maps.
     with pytest.raises(TypeError):
         ArtifactsAPI(  # type: ignore[call-arg]
-            core,
+            runtime,
             notebooks=MagicMock(),
             note_service=fake_note_service,
         )
@@ -86,11 +102,11 @@ def test_mind_maps_and_note_service_are_required():
 
 def test_mind_maps_and_note_service_are_keyword_only():
     """All non-``runtime`` parameters remain keyword-only."""
-    core = make_fake_core()
+    runtime = _make_runtime()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
     with pytest.raises(TypeError):
-        ArtifactsAPI(core, MagicMock(), fake_mind_maps, fake_note_service)  # type: ignore[misc]
+        ArtifactsAPI(runtime, MagicMock(), fake_mind_maps, fake_note_service)  # type: ignore[misc]
 
 
 def test_legacy_mind_map_service_kwarg_is_rejected():
@@ -99,12 +115,12 @@ def test_legacy_mind_map_service_kwarg_is_rejected():
     Passing it must raise ``TypeError`` so silent breakage on partial
     upgrades surfaces immediately.
     """
-    core = make_fake_core()
+    runtime = _make_runtime()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
     with pytest.raises(TypeError):
         ArtifactsAPI(  # type: ignore[call-arg]
-            core,
+            runtime,
             notebooks=MagicMock(),
             mind_map_service=fake_mind_maps,
             note_service=fake_note_service,
@@ -118,13 +134,13 @@ def test_artifacts_no_longer_exposes_core_property_alias():
     helper modules read; the transitional ``_core`` shim added in Phase 3
     is dead code.
     """
-    core = make_fake_core()
+    runtime = _make_runtime()
     api = ArtifactsAPI(
-        core,
+        runtime,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
     )
     # The descriptor must be gone — not just empty, not just delegating.
     assert not hasattr(api, "_core")
-    assert api._runtime is core
+    assert api._runtime is runtime
