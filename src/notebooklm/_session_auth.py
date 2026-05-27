@@ -94,12 +94,20 @@ class AuthRefreshCoordinator:
         self,
         *,
         refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
+        metrics: ClientMetrics | None = None,
     ) -> None:
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object can be constructed outside one.
         self._refresh_lock: asyncio.Lock | None = None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = refresh_callback
+        # Wave 3b of session-decoupling: ``await_refresh`` records lock-wait
+        # latency via this metrics dep (was previously read off the
+        # ``_AuthRefreshHost`` parameter — see plan Task 1.0). ``None`` is a
+        # safe fallback for tests that construct the coordinator standalone
+        # without a metrics collaborator; the lock-wait latency is simply not
+        # recorded in that case.
+        self._metrics: ClientMetrics | None = metrics
         # Distinct from ``_refresh_lock`` — see module docstring.
         self._auth_snapshot_lock: asyncio.Lock | None = None
         # P0-2: loop-affinity guard. Set by :meth:`ClientLifecycle.open`
@@ -249,7 +257,7 @@ class AuthRefreshCoordinator:
     # Single-flight refresh task.
     # ------------------------------------------------------------------
 
-    async def await_refresh(self, host: _AuthRefreshHost) -> None:
+    async def await_refresh(self) -> None:
         """Run / join the shared refresh task.
 
         Concurrent callers share one refresh task so a thundering herd of
@@ -265,6 +273,13 @@ class AuthRefreshCoordinator:
         same single-flight refresh. The slot at :attr:`_refresh_task` is left
         intact across the cancellation and is replaced only on the next
         refresh wave once the current task transitions to ``done()``.
+
+        Wave 3b of the session-decoupling plan (Task 1.0): this method no
+        longer takes an ``_AuthRefreshHost`` parameter — the only host
+        attribute it touched (``_metrics_obj``) is now supplied via the
+        ``metrics`` kwarg on :meth:`__init__`. The other coordinator
+        methods (``snapshot``, ``update_auth_tokens``, ``update_auth_headers``)
+        still take ``host`` — out of scope for this PR.
         """
         # P0-2: catch cross-loop refresh before touching ``_refresh_lock``.
         # The lock is lazily bound to the loop that first awaited
@@ -287,7 +302,8 @@ class AuthRefreshCoordinator:
         lock = self.get_refresh_lock()
         wait_start = time.perf_counter()
         await lock.acquire()
-        host._metrics_obj.record_lock_wait(time.perf_counter() - wait_start)
+        if self._metrics is not None:
+            self._metrics.record_lock_wait(time.perf_counter() - wait_start)
         try:
             if self._refresh_task is not None and not self._refresh_task.done():
                 refresh_task = self._refresh_task

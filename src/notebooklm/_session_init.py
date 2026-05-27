@@ -281,7 +281,13 @@ def build_collaborators(
     # to avoid. The attribute name ``_auth_coord`` is part of the
     # inter-helper contract for the upcoming B2/C1 extractions; do not
     # rename.
-    auth_coord = AuthRefreshCoordinator(refresh_callback=refresh_callback)
+    # Wave 3b of session-decoupling (Task 1.0): supply ``metrics`` so
+    # ``await_refresh`` records lock-wait latency without needing an
+    # ``_AuthRefreshHost`` parameter.
+    auth_coord = AuthRefreshCoordinator(
+        refresh_callback=refresh_callback,
+        metrics=metrics,
+    )
     # HTTP-client lifecycle — owns loop binding, keepalive, and close
     # ordering while delegating the live ``httpx.AsyncClient`` to
     # ``self._kernel``. The ``_resolve_keepalive_interval`` clamp lives

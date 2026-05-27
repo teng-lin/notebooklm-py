@@ -142,13 +142,13 @@ def test_await_refresh_guards_against_cross_loop_call() -> None:
     try:
         coord.set_bound_loop(other_loop)
 
-        # Minimal host mock; ``await_refresh`` only touches
-        # ``host._metrics_obj.record_lock_wait`` on the happy path, which
-        # the cross-loop guard short-circuits before reaching.
-        host = MagicMock()
-
+        # Wave 3b of session-decoupling (Task 1.0): ``await_refresh`` no
+        # longer takes a host parameter — the lock-wait metric is recorded
+        # via the coordinator's own ``metrics`` field (None here, which is
+        # a safe fallback). The cross-loop guard short-circuits before any
+        # metric is recorded either way.
         async def inner() -> None:
-            await coord.await_refresh(host)
+            await coord.await_refresh()
 
         with pytest.raises(RuntimeError, match="different event loop"):
             asyncio.run(inner())

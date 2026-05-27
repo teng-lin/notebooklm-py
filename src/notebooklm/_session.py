@@ -731,7 +731,11 @@ class Session:
         replaced only on the next refresh wave once the current task
         transitions to ``done()``.
         """
-        await self._auth_coord.await_refresh(self)
+        # Wave 3b of session-decoupling (Task 1.0): ``await_refresh`` no
+        # longer takes a host parameter — its only host attribute reach
+        # (``_metrics_obj``) is now supplied via the coordinator's
+        # constructor.
+        await self._auth_coord.await_refresh()
 
     async def rpc_call(
         self,

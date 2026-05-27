@@ -287,7 +287,7 @@ async def test_await_refresh_is_single_flight(stub_host: _StubHost) -> None:
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
 
-    tasks = [asyncio.create_task(coord.await_refresh(stub_host)) for _ in range(3)]
+    tasks = [asyncio.create_task(coord.await_refresh()) for _ in range(3)]
     await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
 
     # Yield enough times for waiters 2/3 to reach ``await shield(task)``.
@@ -322,11 +322,11 @@ async def test_await_refresh_creates_new_task_after_first_done(
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
 
-    await coord.await_refresh(stub_host)
+    await coord.await_refresh()
     first_task = coord._refresh_task
     assert first_task is not None and first_task.done()
 
-    await coord.await_refresh(stub_host)
+    await coord.await_refresh()
     second_task = coord._refresh_task
     assert second_task is not None and second_task.done()
 
@@ -365,8 +365,8 @@ async def test_await_refresh_cancellation_preserves_task_slot(
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
 
-    waiter_a = asyncio.create_task(coord.await_refresh(stub_host))
-    waiter_b = asyncio.create_task(coord.await_refresh(stub_host))
+    waiter_a = asyncio.create_task(coord.await_refresh())
+    waiter_b = asyncio.create_task(coord.await_refresh())
     await asyncio.wait_for(enter.wait(), EVENT_TIMEOUT_S)
 
     # Yield so both waiters reach ``await shield(task)``.
