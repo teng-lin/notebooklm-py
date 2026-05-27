@@ -251,7 +251,8 @@ def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
     2. NOTEBOOKLM_AUTH_JSON environment variable (inline JSON, no file needed)
     3. File at $NOTEBOOKLM_HOME/storage_state.json (or ~/.notebooklm/storage_state.json)
 
-    Duplicate-name resolution follows :func:`_auth_domain_priority`, matching
+    Duplicate-name resolution follows
+    :func:`notebooklm._auth.cookie_policy._auth_domain_priority`, matching
     :attr:`AuthTokens.flat_cookies` for the same storage state — previously the
     two paths disagreed on names that live only on non-base hosts (e.g.
     ``OSID`` on ``myaccount.google.com`` vs ``notebooklm.google.com``). See
@@ -299,4 +300,4 @@ def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
         return _auth_cookies.extract_cookies_from_storage(storage_state)
 
 
-__all__ = ["AuthTokens"]
+__all__ = ["AuthTokens", "load_auth_from_storage"]
