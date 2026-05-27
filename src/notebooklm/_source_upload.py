@@ -9,10 +9,11 @@ import mimetypes
 import os
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
-from typing import IO, Any, Protocol, cast
+from typing import IO, TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
@@ -43,6 +44,10 @@ from .exceptions import (
 from .rpc import RPCError, RPCMethod, get_upload_url
 from .rpc.types import SourceStatus
 from .types import Source, SourceAddError
+
+if TYPE_CHECKING:
+    from ._session_lifecycle import ClientLifecycle
+    from ._transport_drain import TransportDrainTracker
 
 _SOURCE_ID_UUID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -94,6 +99,66 @@ class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     deleted in Wave 8 of the session-decoupling plan, ADR-014 Rule 2
     Corollary, in favour of direct constructor injection on ``ChatAPI``.)
     """
+
+
+@dataclass(frozen=True)
+class UploadRuntimeAdapter:
+    """Concrete satisfier of :class:`UploadRuntime` per ADR-014 Rule 2.
+
+    Earns its keep under Rule 2 because:
+
+    - the composite has three capabilities (``RpcCaller`` +
+      ``OperationScopeProvider`` + ``LoopGuard``);
+    - :class:`SourceUploadPipeline` takes the whole composite as a
+      single dependency (``runtime``) and threads it into the
+      lister/poller collaborators — consumer-demand;
+    - ``assert_bound_loop`` is a meaningful named affordance used as a
+      cross-loop short-circuit guard in :meth:`SourceUploadPipeline.add_file`.
+
+    The adapter is constructed at the composition root
+    (:class:`notebooklm.client.NotebookLMClient`) from the three
+    underlying collaborators: :class:`RpcCaller`,
+    :class:`TransportDrainTracker`, and :class:`ClientLifecycle`. It
+    transitively satisfies ``AsyncWorkRuntime`` (``LoopGuard`` +
+    ``OperationScopeProvider``) per ADR-014 Rule 2 — no dedicated
+    ``_AsyncWorkAdapter`` is introduced.
+
+    :class:`SourceUploadPipeline` continues to take :class:`Kernel`
+    and :class:`AuthMetadata` as separate parameters, so this adapter
+    covers only the composite ``UploadRuntime`` Protocol — mirroring
+    the ADR-014 Rule 6 example.
+    """
+
+    rpc: RpcCaller
+    drain: TransportDrainTracker
+    lifecycle: ClientLifecycle
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+    ) -> Any:
+        return await self.rpc.rpc_call(
+            method,
+            params,
+            source_path,
+            allow_null,
+            _is_retry,
+            disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
+        )
+
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        return self.drain.operation_scope(label)
+
+    def assert_bound_loop(self) -> None:
+        self.lifecycle.assert_bound_loop()
 
 
 _INVALID_ARGUMENT_RPC_CODE = 3
@@ -908,7 +973,21 @@ __all__ = [
     "RpcCallback",
     "SourceUploadPipeline",
     "UploadRuntime",
+    "UploadRuntimeAdapter",
     "_SOURCE_ID_UUID_PATTERN",
     "_extract_register_file_source_id",
     "_looks_like_id_string",
 ]
+
+
+if TYPE_CHECKING:
+    # mypy guard: ``UploadRuntimeAdapter`` must structurally satisfy
+    # the ``UploadRuntime`` Protocol it adapts. Failing this assertion
+    # at type-check time catches shape drift on the delegate methods
+    # before runtime construction at the composition root would. Mirrors
+    # the pattern used by ``_rpc_executor._assert_rpc_executor_satisfies_rpc_caller``.
+
+    def _assert_adapter_satisfies_upload_runtime(
+        adapter: UploadRuntimeAdapter,
+    ) -> None:
+        _: UploadRuntime = adapter
