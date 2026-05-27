@@ -598,6 +598,30 @@ The corollary for contributors: if you find yourself reaching into
 `notebooklm._foo`, prefer a capability Protocol or a public function in
 one of the named modules.
 
+## Boundary moratorium
+
+New architectural carve-outs are expensive: every ADR amendment,
+retention-doc entry, and `tests/_lint/` pin becomes load-bearing for
+contributors who have to read the docs before touching the relevant
+seam. To keep that surface from drifting upward without bound, the
+following discipline applies to any future change that would *expand*
+the documented boundary set:
+
+- **Justify by failure mode.** A new ADR amendment, retention-doc row,
+  or `tests/_lint/` pin must cite a concrete user-visible failure mode
+  it prevents (loop-affinity break, auth-snapshot tear, transport drain
+  regression, public-API breakage, etc.). "Future-proofing" or "in case
+  someone refactors X" is not sufficient.
+- **Prefer deletion over carve-out.** When a compatibility seam can be
+  removed instead of documented, remove it. Carve-outs are the fallback
+  when removal is genuinely infeasible, not the default.
+- **One owner per rule.** A pin without a corresponding ADR clause (and
+  vice versa) is a smell — it means the rule is enforced but not
+  explained, or explained but not enforced.
+
+The intent is architectural: shrink the boundary set whenever the
+underlying code allows it, and resist growing it on speculative grounds.
+
 ## Glossary
 
 Vocabulary that recurs in this document and the surrounding code.
