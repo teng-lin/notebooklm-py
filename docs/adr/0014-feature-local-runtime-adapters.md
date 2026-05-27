@@ -197,7 +197,7 @@ After migration, `Session` owns:
   the storage backing the chain's tunables — `_authed_post_chain_terminal`,
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay` — moved off `Session`
-  onto :class:`MiddlewareChainHost`
+  onto `MiddlewareChainHost`
   ([`_middleware_chain_host.py`](../../src/notebooklm/_middleware_chain_host.py))
   in Stage B2 PR 1 (#1090). PR 2 (#1092) then split
   `wire_middleware_chain` / `build_session_transport` to take
@@ -229,11 +229,17 @@ deletes them.
   `self.rpc_executor.rpc_call(...)` (via the late-bound accessor added by the migration plan's Task 3.0).
 - `Session._authed_post_chain_terminal` (writable `@property`) — **test-seam
   forwards to MiddlewareChainHost** (chain-ownership carve-out; Stage B2 PR 1
-  #1090 moved storage to `chain_host._authed_post_chain_terminal`, Stage B2
-  PR 2 #1092 wired the live leaf off `chain_host` directly). The Session-side
-  descriptor preserves the canonical fixture-rebind seam
+  #1090 moved storage to `chain_host._authed_post_chain_terminal`). The
+  Session-side descriptor preserves the canonical fixture-rebind seam
   (`core._authed_post_chain_terminal = fake_terminal` writes through to the
-  host); the live chain no longer reaches through it on the hot path.
+  host). `compose_session_internals()` still passes
+  `session._authed_post_chain_terminal` to `wire_middleware_chain` at
+  [`_session.py:336`](../../src/notebooklm/_session.py); the live leaf
+  dereferences the descriptor once at wiring time, which resolves to
+  `chain_host._authed_post_chain_terminal`. The chain's per-attempt path
+  reads `chain_host._authed_post_chain` directly after Stage B2 PR 2 (see
+  the `_authed_post_chain` bullet below), so this terminal descriptor is
+  not on the hot path on a per-RPC basis.
 - `Session._authed_post_chain` (writable `@property`) — **test-seam forwards
   to MiddlewareChainHost** (chain-ownership carve-out; storage on
   `chain_host._authed_post_chain`). The transport's `chain_provider` closure
@@ -438,11 +444,20 @@ Issue #1085 (deferred `MiddlewareChainHost` extraction) closed.
   `host._auth_refresh.await_refresh()`) for the same reason.
 - **PR 2 (#1092)** split
   `_session_init.wire_middleware_chain` / `build_session_transport`
-  to take `chain_host: MiddlewareChainHost` directly. The live chain
-  and the transport's `chain_provider` closure now read the host
-  instead of routing through Session descriptors on every attempt.
-  After PR 2 the descriptors are **test-seam only** — they preserve
-  the rebind contract for fixtures but no longer carry the hot-path
+  to take `chain_host: MiddlewareChainHost` directly. The chain's
+  provider lambdas (`chain_provider`,
+  `rate_limit_max_retries_provider`,
+  `server_error_max_retries_provider`, `refresh_retry_delay_provider`)
+  and the transport's `chain_provider` closure now dereference
+  `chain_host.<attr>` directly on every attempt, instead of routing
+  through the Session descriptors. The chain leaf coroutine
+  (`authed_post_chain_terminal=session._authed_post_chain_terminal`
+  at [`_session.py:336`](../../src/notebooklm/_session.py)) is still
+  passed via the Session descriptor at wiring time, but that
+  descriptor resolves to `chain_host._authed_post_chain_terminal` and
+  is read once at chain-construction time — not per-RPC. After PR 2
+  the Session-side descriptors are **test-seam only** — they preserve
+  the fixture-rebind contract but no longer carry a per-attempt
   dereference.
 - **PR 3 (this PR)** amends Rule 4's retention list to mark the five
   writable descriptors + `_await_refresh` as `test-seam forwards to
