@@ -622,12 +622,13 @@ def test_session_retired_late_bound_wrappers_are_gone() -> None:
 def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     """Constructor-injected seams MUST reach the executor and chain builder.
 
-    The chain builder's ``is_auth_error`` and the lazily-built
-    ``RpcExecutor`` (``decode_response``, ``is_auth_error``, ``sleep``)
-    all read from the ``self._decode_response`` / ``self._sleep`` /
-    ``self._is_auth_error`` attributes captured at construction time.
-    Explicit callables passed to ``Session.__init__`` MUST reach the
-    executor end-to-end.
+    The ``RpcExecutor`` resolves ``decode_response`` / ``is_auth_error`` /
+    ``sleep`` through closures over ``self._decode_response`` etc., so that
+    legacy tests which rebind ``session._decode_response = stub`` after
+    ``NotebookLMClient.__init__`` (which eagerly builds the executor via
+    the ``rpc_executor`` accessor wired into sub-APIs in Wave 7) still take
+    effect. This test pins both halves: constructor-injected callables
+    reach the executor, AND post-construction rebinds also take effect.
     """
     from notebooklm._session import Session
     from notebooklm.auth import AuthTokens
@@ -658,11 +659,17 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     assert core._sleep is custom_sleep
     assert core._is_auth_error is custom_is_auth_error
 
-    # The lazily-constructed RpcExecutor reads from these attributes.
     executor = core._get_rpc_executor()
-    assert executor._decode_response is custom_decode
-    assert executor._sleep is custom_sleep
-    assert executor._is_auth_error is custom_is_auth_error
+    # Constructor-injected callables propagate through the closure.
+    assert executor._decode_response() == ["custom"]
+    assert executor._is_auth_error(object()) is True
+
+    # Post-construction rebind takes effect (late-binding contract).
+    def rebound_decode(*_a, **_kw):
+        return ["rebound"]
+
+    core._decode_response = rebound_decode
+    assert executor._decode_response() == ["rebound"]
 
 
 def test_kernel_http_client_is_read_only_property() -> None:

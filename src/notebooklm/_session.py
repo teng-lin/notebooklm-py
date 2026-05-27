@@ -608,9 +608,14 @@ class Session:
                 transport=self._transport,
                 auth_refresh=self._auth_coord,
                 metrics=self._metrics_obj,
-                decode_response=self._decode_response,
-                is_auth_error=self._is_auth_error,
-                sleep=self._sleep,
+                # Late-bind so tests that patch ``session._decode_response``
+                # after construction (legacy pattern in
+                # ``tests/integration/test_auto_refresh.py`` etc.) still take
+                # effect under the Wave 7 wiring where ``_get_rpc_executor``
+                # is invoked eagerly from ``NotebookLMClient.__init__``.
+                decode_response=lambda *a, **kw: self._decode_response(*a, **kw),
+                is_auth_error=lambda *a, **kw: self._is_auth_error(*a, **kw),
+                sleep=lambda *a, **kw: self._sleep(*a, **kw),
                 timeout_provider=lambda: self._lifecycle._timeout,
                 refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
                 refresh_retry_delay_provider=lambda: self._refresh_retry_delay,

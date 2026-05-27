@@ -363,7 +363,7 @@ class TestGetSourceIds:
             ]
 
             with patch.object(
-                core, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
+                core._rpc_executor, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
             ):
                 ids = await notebooks.get_source_ids("nb_123")
 
@@ -375,7 +375,7 @@ class TestGetSourceIds:
             core = client._session
             notebooks = client.notebooks
 
-            with patch.object(core, "rpc_call", new_callable=AsyncMock, return_value=None):
+            with patch.object(core._rpc_executor, "rpc_call", new_callable=AsyncMock, return_value=None):
                 ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
@@ -386,7 +386,7 @@ class TestGetSourceIds:
             core = client._session
             notebooks = client.notebooks
 
-            with patch.object(core, "rpc_call", new_callable=AsyncMock, return_value=[]):
+            with patch.object(core._rpc_executor, "rpc_call", new_callable=AsyncMock, return_value=[]):
                 ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
@@ -401,7 +401,7 @@ class TestGetSourceIds:
             mock_notebook_data = [["notebook_title", []]]
 
             with patch.object(
-                core, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
+                core._rpc_executor, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
             ):
                 ids = await notebooks.get_source_ids("nb_123")
 
@@ -414,7 +414,7 @@ class TestGetSourceIds:
             notebooks = client.notebooks
 
             with patch.object(
-                core, "rpc_call", new_callable=AsyncMock, return_value="unexpected_string"
+                core._rpc_executor, "rpc_call", new_callable=AsyncMock, return_value="unexpected_string"
             ):
                 ids = await notebooks.get_source_ids("nb_123")
 
@@ -430,7 +430,7 @@ class TestGetSourceIds:
             mock_notebook_data = [["notebook_title_only"]]
 
             with patch.object(
-                core, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
+                core._rpc_executor, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
             ):
                 ids = await notebooks.get_source_ids("nb_123")
 
