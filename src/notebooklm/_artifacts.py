@@ -54,77 +54,12 @@ from .rpc import (
 )
 from .types import (
     Artifact,
-    ArtifactDownloadError,
-    ArtifactNotFoundError,
-    ArtifactNotReadyError,
-    ArtifactParseError,
     ArtifactType,
     GenerationStatus,
     ReportSuggestion,
-    _extract_artifact_url,
 )
 
 logger = logging.getLogger(__name__)
-
-
-# Private compatibility exports that remain intentionally available through
-# ``notebooklm._artifacts``. Downloads no longer patch through this module, but
-# a few whitebox tests and downstream users still import these private names.
-_ARTIFACT_COMPAT_EXPORTS = (
-    DownloadResult,
-    ArtifactDownloadError,
-    ArtifactNotFoundError,
-    ArtifactNotReadyError,
-    ArtifactParseError,
-    _extract_artifact_url,
-)
-
-
-# Backward-compatible private helper wrappers.
-def _extract_app_data(html_content: str) -> dict:
-    return _artifact_formatters._extract_app_data(html_content)
-
-
-def _format_quiz_markdown(title: str, questions: list[dict]) -> str:
-    return _artifact_formatters._format_quiz_markdown(title, questions)
-
-
-def _format_flashcards_markdown(title: str, cards: list[dict]) -> str:
-    return _artifact_formatters._format_flashcards_markdown(title, cards)
-
-
-def _extract_cell_text(cell: Any) -> str:
-    return _artifact_formatters._extract_cell_text(cell)
-
-
-def _extract_data_table_rows(raw_data: Any) -> list[Any]:
-    return _artifact_formatters._extract_data_table_rows(raw_data)
-
-
-def _parse_data_table(raw_data: list) -> tuple[list[str], list[list[str]]]:
-    return _artifact_formatters._parse_data_table(
-        raw_data,
-        rows_extractor=_extract_data_table_rows,
-        cell_text_extractor=_extract_cell_text,
-    )
-
-
-def _format_interactive_content(
-    app_data: dict,
-    title: str,
-    output_format: str,
-    html_content: str,
-    is_quiz: bool,
-) -> str:
-    return _artifact_formatters._format_interactive_content(
-        app_data,
-        title,
-        output_format,
-        html_content,
-        is_quiz,
-        quiz_markdown_formatter=_format_quiz_markdown,
-        flashcards_markdown_formatter=_format_flashcards_markdown,
-    )
 
 
 class DrainHookRegistration(Protocol):
@@ -654,7 +589,15 @@ class ArtifactsAPI:
         Returns:
             Formatted content string.
         """
-        return _format_interactive_content(app_data, title, output_format, html_content, is_quiz)
+        return _artifact_formatters._format_interactive_content(
+            app_data,
+            title,
+            output_format,
+            html_content,
+            is_quiz,
+            quiz_markdown_formatter=_artifact_formatters._format_quiz_markdown,
+            flashcards_markdown_formatter=_artifact_formatters._format_flashcards_markdown,
+        )
 
     async def download_report(
         self,

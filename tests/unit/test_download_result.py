@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from notebooklm._artifacts import DownloadResult
+from notebooklm.exceptions import ArtifactDownloadError
 
 # A trusted-domain prefix accepted by `_download_urls_batch`'s domain check.
 TRUSTED_URL_PREFIX = "https://storage.googleapis.com/"
@@ -57,13 +58,23 @@ def test_failed_preserves_url_and_exception():
 
 
 def test_artifacts_module_preserves_download_patch_targets():
-    """Public download result remains available without facade patch targets."""
+    """Public download result remains available without facade patch targets.
+
+    Post-C2 the artifact-compat tuple and its unused exception-class
+    re-exports were removed from ``_artifacts.py``. The artifact
+    exception classes now resolve only from their canonical home
+    (``notebooklm.exceptions``); ``_artifacts`` no longer carries
+    ``ArtifactDownloadError`` as an attribute. ``DownloadResult`` and
+    the ``_mind_map`` re-export remain because ``_artifacts.py`` uses
+    them internally.
+    """
     import notebooklm._artifacts as artifacts_module
 
     assert artifacts_module.DownloadResult is DownloadResult
-    assert artifacts_module.ArtifactDownloadError is not None
     assert artifacts_module._mind_map is not None
     assert not hasattr(artifacts_module, "load_httpx_cookies")
+    # The exception classes are no longer reachable through `_artifacts`.
+    assert not hasattr(artifacts_module, "ArtifactDownloadError")
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +188,6 @@ async def test_html_response_aggregated_into_failed(mock_artifacts_api, tmp_path
     ``tests/integration/test_artifacts_integration.py``'s download-URL
     contract tests for that surface.
     """
-    from notebooklm._artifacts import ArtifactDownloadError
-
     api, _ = mock_artifacts_api
     html_response = _mock_response(b"<html>...</html>", "text/html")
 
@@ -200,8 +209,6 @@ async def test_html_response_aggregated_into_failed(mock_artifacts_api, tmp_path
 @pytest.mark.asyncio
 async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_path):
     """Untrusted-domain ``ArtifactDownloadError`` lands in ``failed``, not raised."""
-    from notebooklm._artifacts import ArtifactDownloadError
-
     api, _ = mock_artifacts_api
 
     with patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value={}):
@@ -265,8 +272,6 @@ async def test_download_batch_isolates_bad_url_from_good_one(mock_artifacts_api,
     the good URL still completes — caller can pick up the partial result
     and retry just the failure.
     """
-    from notebooklm._artifacts import ArtifactDownloadError
-
     api, _ = mock_artifacts_api
     bad_url = "https://untrusted.example/x.mp4"
     good_url = f"{TRUSTED_URL_PREFIX}y.mp4"

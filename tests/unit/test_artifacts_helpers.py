@@ -1,4 +1,4 @@
-"""Unit tests for module-level helpers in ``notebooklm._artifacts``.
+"""Unit tests for module-level helpers in ``notebooklm._artifact_formatters``.
 
 Focuses on ``_extract_data_table_rows`` — the named extractor that replaces
 the raw ``raw_data[0][0][0][0][4][2]`` deep-index chain in
@@ -13,8 +13,7 @@ import logging
 
 import pytest
 
-import notebooklm._artifacts as artifacts_module
-from notebooklm._artifacts import (
+from notebooklm._artifact_formatters import (
     _extract_data_table_rows,
     _parse_data_table,
 )
@@ -151,68 +150,6 @@ def test_parse_data_table_raises_on_empty_rows() -> None:
 
     with pytest.raises(ArtifactParseError, match="Empty data table"):
         _parse_data_table(raw_data)
-
-
-def test_parse_data_table_wrapper_honors_artifacts_private_helper_seams(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The _artifacts wrapper keeps sibling helper monkeypatch seams intact."""
-    rows_payload = [
-        [0, 5, ["header_cell"]],
-        [5, 10, ["value_cell"]],
-    ]
-
-    monkeypatch.setattr(
-        artifacts_module,
-        "_extract_data_table_rows",
-        lambda raw_data: rows_payload,
-    )
-    monkeypatch.setattr(
-        artifacts_module,
-        "_extract_cell_text",
-        lambda cell: f"text:{cell}",
-    )
-
-    headers, rows = artifacts_module._parse_data_table(["patched raw data"])
-
-    assert headers == ["text:header_cell"]
-    assert rows == [["text:value_cell"]]
-
-
-@pytest.mark.parametrize(
-    ("app_data", "is_quiz", "patched_name", "expected_items"),
-    [
-        ({"quiz": [{"question": "Q"}]}, True, "_format_quiz_markdown", [{"question": "Q"}]),
-        ({"flashcards": [{"f": "front"}]}, False, "_format_flashcards_markdown", [{"f": "front"}]),
-    ],
-)
-def test_format_interactive_content_wrapper_honors_artifacts_markdown_seams(
-    monkeypatch: pytest.MonkeyPatch,
-    app_data: dict,
-    is_quiz: bool,
-    patched_name: str,
-    expected_items: list[dict],
-) -> None:
-    """Interactive markdown wrappers keep sibling formatter monkeypatch seams intact."""
-    captured: dict[str, object] = {}
-
-    def formatter(title: str, items: list[dict]) -> str:
-        captured["title"] = title
-        captured["items"] = items
-        return "patched markdown"
-
-    monkeypatch.setattr(artifacts_module, patched_name, formatter)
-
-    result = artifacts_module._format_interactive_content(
-        app_data,
-        "Patched Title",
-        "markdown",
-        "<html></html>",
-        is_quiz,
-    )
-
-    assert result == "patched markdown"
-    assert captured == {"title": "Patched Title", "items": expected_items}
 
 
 def test_parse_data_table_happy_path() -> None:
