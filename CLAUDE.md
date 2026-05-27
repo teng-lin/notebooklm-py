@@ -132,7 +132,7 @@ RPC Layer (rpc/)
 | `_middleware_chain.py` | Constructs the middleware chain in the canonical ADR-009 order |
 | `_middleware*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — **now pure re-exports** (zero function/class bodies; verified via `grep -nE "^def \|^class " src/notebooklm/auth.py` returning empty). Every top-level name forwards from the relevant `_auth/*` module. The previous write-through (`_validate_required_cookies` copy-forwarding `MINIMUM_REQUIRED_COOKIES` / `_EXTRACTION_HINT` / `_has_valid_secondary_binding` into `_cookie_policy` and mirroring `_SECONDARY_BINDING_WARNED` back) was inverted in Wave 4 T2.2 (#1070); `auth._validate_required_cookies` is now identity-equal to `_auth.cookie_policy._validate_required_cookies`. `load_auth_from_storage` body was moved to `_auth/tokens.py` in Wave 3a (#1066). `AuthTokens` was moved to `_auth/tokens.py` in #1055. **ADR-003 flat-re-export goal closed by ADR-014** (session-decoupling Waves 3a + 4 T2.2 + 5). Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
+| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module. The previous write-through (`_validate_required_cookies` copy-forwarding `MINIMUM_REQUIRED_COOKIES` / `_EXTRACTION_HINT` / `_has_valid_secondary_binding` into `_cookie_policy` and mirroring `_SECONDARY_BINDING_WARNED` back) was inverted in Wave 4 T2.2 (#1070); `auth._validate_required_cookies` is now identity-equal to `_auth.cookie_policy._validate_required_cookies`. `load_auth_from_storage` body was moved to `_auth/tokens.py` in Wave 3a (#1066). `AuthTokens` was moved to `_auth/tokens.py` in #1055. **ADR-003 flat-re-export goal closed by ADR-014** (session-decoupling Waves 3a + 4 T2.2 + 5). Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/headers.py` | HTTP header construction |
@@ -145,7 +145,7 @@ RPC Layer (rpc/)
 src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── client.py                    # NotebookLMClient
-├── auth.py                      # Authentication facade — now pure re-exports (ADR-003 flat-re-export goal closed by ADR-014; see file table above)
+├── auth.py                      # Authentication facade — almost pure re-exports (`enumerate_accounts` exception; ADR-003 flat-re-export goal closed by ADR-014; see file table above)
 ├── types.py                     # Dataclasses
 ├── _session.py                  # Concrete Session orchestration (NotebookLMClient internals)
 ├── _kernel.py                   # Concrete Kernel transport core

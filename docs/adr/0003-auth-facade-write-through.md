@@ -4,7 +4,7 @@
 
 **Superseded — closed by [ADR-014](./0014-feature-local-runtime-adapters.md) (session-decoupling plan Waves 3a + 4 T2.2 + 5).**
 
-The deferred goal — reducing `auth.py` to a flat re-export module — was
+The deferred goal — reducing `auth.py` to an almost-flat re-export module — was
 completed across three PRs in the session-decoupling plan:
 
 - **#1066** (Wave 3a / Task 2.1) moved `load_auth_from_storage()` body into
@@ -20,11 +20,13 @@ completed across three PRs in the session-decoupling plan:
 - **#1055** (pre-plan groundwork) had already moved `AuthTokens` into
   `_auth/tokens.py`; the `auth.py`-level binding became a re-export.
 
-**Post-condition (verified by `grep -nE "^def |^class " src/notebooklm/auth.py`
-returning empty as of this PR's audit):** `auth.py` contains zero function
-bodies and zero class definitions. Every top-level name is a one-line
-re-export from the relevant `_auth/*` module. The historical write-through
-machinery is fully retired.
+**Post-condition (verified by
+`grep -nE "^(async[[:space:]]+)?def |^class " src/notebooklm/auth.py`):**
+`auth.py` contains exactly one function body, `async def enumerate_accounts`,
+which remains to bind `_poke_session` as a default dependency, and zero class
+definitions. Every other top-level name is a one-line re-export from the
+relevant `_auth/*` module. The historical write-through machinery is fully
+retired.
 
 **Why "Superseded by ADR-014" rather than "Accepted (completed)":** the
 original ADR-003 framing was a *write-through* approach (mirror writes
@@ -101,7 +103,7 @@ The mechanism is *Accepted* today because:
 - The `_REFRESH_DEP_MIRROR_NAMES` / `_KEEPALIVE_DEP_MIRROR_NAMES` cross-module mirror sets encode an even subtler invariant — names that are owned by one seam but aliased into another at import time. A reader has to trace the `from … import …` chains to verify the mirror is complete.
 - The whole apparatus exists to make tests pass under a pattern (`monkeypatch.setattr("notebooklm.auth.X", …)`) that the audit (`.sisyphus/plans/arch-biggest-problem-audit.md`, disease D1) wants to retire entirely.
 
-The retirement path was **partially completed** in the D1 auth-side PR ([#834](https://github.com/teng-lin/notebooklm-py/pull/834)): the monolithic `tests/unit/test_auth.py` was split into concern-aligned files (`test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.), monkeypatches were migrated to constructor injection, and `_AuthFacadeModule` itself was deleted. The second half — reducing `auth.py` to a flat re-export module — is **deferred**: at HEAD, `auth.py` still owns `AuthTokens`, `load_auth_from_storage()`, and a `_validate_required_cookies()` policy write-through (see the **Status** block above for the current contract).
+The retirement path began in the D1 auth-side PR ([#834](https://github.com/teng-lin/notebooklm-py/pull/834)): the monolithic `tests/unit/test_auth.py` was split into concern-aligned files (`test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.), monkeypatches were migrated to constructor injection, and `_AuthFacadeModule` itself was deleted. ADR-014's session-decoupling work finished the second half: `AuthTokens` and `load_auth_from_storage()` now live in `_auth/tokens.py`, `_validate_required_cookies` is a direct `_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the only remaining `auth.py` function body (see the **Status** block above for the current contract).
 
 ## Alternatives considered
 

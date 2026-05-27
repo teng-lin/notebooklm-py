@@ -595,8 +595,6 @@ class ArtifactsAPI:
             output_format,
             html_content,
             is_quiz,
-            quiz_markdown_formatter=_artifact_formatters._format_quiz_markdown,
-            flashcards_markdown_formatter=_artifact_formatters._format_flashcards_markdown,
         )
 
     async def download_report(

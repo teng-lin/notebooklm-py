@@ -87,7 +87,7 @@ three categories, signalled by its filename:
 src/notebooklm/
 ├── __init__.py                  # re-export hub; declares the stable surface
 ├── client.py                    # NotebookLMClient + lifecycle helpers
-├── auth.py                      # auth facade (flat re-exports from _auth/*)
+├── auth.py                      # auth facade (almost flat re-exports; enumerate_accounts exception)
 ├── types.py                     # public dataclasses (Notebook, Source, ...)
 ├── exceptions.py                # public exception hierarchy
 ├── config.py                    # process-level configuration helpers

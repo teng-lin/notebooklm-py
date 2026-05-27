@@ -58,15 +58,6 @@ SESSION_CLASS_NAME: str = "Session"
 # must be moved to the **Deleted** section at the bottom of the
 # retention doc, which the parser scopes out).
 _RETAIN_PREFIX: str = "retain"
-# **Advisory only** — left in place for documentation continuity and for
-# external readers grepping for "what dispositions does this lint
-# accept?". The actual validator is ``_DISPOSITION_RETAIN_RE`` below;
-# Wave 12 (claude PR #1080 review Finding 2) switched
-# ``_disposition_is_valid`` from
-# ``startswith(VALID_DISPOSITION_PREFIXES)`` to a strict regex match,
-# so adding a new entry to this tuple has **no effect** on validation.
-# Modify the regex if a new prefix needs to be recognised.
-VALID_DISPOSITION_PREFIXES: tuple[str, ...] = (_RETAIN_PREFIX,)
 # Recognised but **rejected** prefix — kept as a named constant so the
 # self-coverage tests below can pin "Wave 11c rejects this" without
 # accidentally widening the live retain-only invariant enforced by
@@ -77,9 +68,10 @@ _RETIRED_DELETE_PREFIX: str = "delete in Wave 11"
 # disposition must read exactly ``retain — <reason>``: ``retain``,
 # whitespace, an em-dash (``—``), whitespace, and at least one
 # non-whitespace character of reason text. A loose ``startswith("retain")``
-# check would accept ``retainXYZ`` (no boundary), ``retain`` alone (no
-# reason), or ``retain — `` (empty reason); the regex below rejects all
-# three so the retention doc's vocabulary cannot rot into ambiguity.
+# style prefix check would accept ``retainXYZ`` (no boundary),
+# ``retain`` alone (no reason), or ``retain — `` (empty reason);
+# the regex below rejects all three so the retention doc's vocabulary
+# cannot rot into ambiguity.
 _DISPOSITION_RETAIN_RE = re.compile(r"^retain\s+—\s+\S.*$")
 
 
