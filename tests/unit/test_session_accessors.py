@@ -45,14 +45,19 @@ def test_collaborators_accessor_returns_bundle() -> None:
     coll = session.collaborators
 
     assert isinstance(coll, SessionCollaborators)
-    # The bundle field names per _session_init.py:92-109 — the plan uses these
-    # exact names (note: ``reqid``, NOT ``reqid_counter``).
+    # All 8 SessionCollaborators fields validated per _session_init.py:92-109.
+    # The plan uses these exact names (note: ``reqid``, NOT ``reqid_counter``).
+    # Round-1 reviewer finding on PR #1069 (gemini + coderabbit): the prior
+    # 6-of-8 coverage left ``cookie_persistence`` and ``poll_registry``
+    # un-asserted — any future drift in those fields would slip through.
     assert coll.metrics is session._metrics_obj
     assert coll.drain_tracker is session._drain_tracker
     assert coll.reqid is session._reqid
     assert coll.auth_coord is session._auth_coord
     assert coll.kernel is session._kernel
     assert coll.lifecycle is session._lifecycle
+    assert coll.cookie_persistence is session.cookie_persistence
+    assert coll.poll_registry is session.poll_registry
 
 
 def test_session_transport_accessor_returns_concrete_transport() -> None:
