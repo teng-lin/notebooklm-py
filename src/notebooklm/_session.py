@@ -676,10 +676,12 @@ class Session:
         but this method is only reachable from the wired middleware
         chain (itself constructed AFTER the transport bind), so the
         runtime invariant is "non-None whenever this method runs". The
-        ``type: ignore`` is the type-system acknowledgement of that
-        runtime guarantee.
+        local-variable + ``assert`` narrows the type for the type
+        checker without suppressing diagnostics.
         """
-        return await self._transport.terminal(request)  # type: ignore[union-attr]
+        transport = self._transport
+        assert transport is not None
+        return await transport.terminal(request)
 
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.
@@ -731,9 +733,14 @@ class Session:
         # by ``close()``. A ``None`` here means the Session was
         # instantiated outside the composition root (e.g. via
         # ``Session.__new__`` in a unit test) or the composition was
-        # short-circuited.
+        # short-circuited. The guard raises before the executor read,
+        # so the local-variable + ``assert`` below narrows the
+        # ``Optional`` for the type checker without suppressing
+        # diagnostics.
         self._require_constructed("_rpc_executor")
-        return await self._rpc_executor.rpc_call(  # type: ignore[union-attr]
+        executor = self._rpc_executor
+        assert executor is not None
+        return await executor.rpc_call(
             method,
             params,
             source_path,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from .._env import get_base_url
 from .._url_utils import is_google_auth_redirect
@@ -14,7 +14,7 @@ from .tokens import AuthTokens
 
 if TYPE_CHECKING:
     from .._kernel import Kernel
-    from .._session_lifecycle import ClientLifecycle
+    from .._session_lifecycle import ClientLifecycle, _LifecycleHost
 
 
 class RefreshAuthCore(Protocol):
@@ -100,7 +100,12 @@ async def refresh_auth_session(
     # of :meth:`ClientLifecycle.save_cookies` is read for its
     # ``_metrics_obj`` / ``cookie_persistence`` attributes; ``Session``
     # (the only production caller) satisfies that shape, and unit-test
-    # fakes mirror those attributes via a recording lifecycle.
-    await lifecycle.save_cookies(core, http_client.cookies)  # type: ignore[arg-type]
+    # fakes mirror those attributes via a recording lifecycle. The
+    # ``cast`` is the typing-level acknowledgement that
+    # :class:`RefreshAuthCore` deliberately stays narrow (only declares
+    # what :func:`refresh_auth_session` reads); widening the Protocol
+    # would couple this module to the lifecycle's broader collaborator
+    # surface, which is what Stage B1 PR 2 is moving away from.
+    await lifecycle.save_cookies(cast("_LifecycleHost", core), http_client.cookies)
 
     return core.auth
