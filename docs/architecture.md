@@ -601,13 +601,15 @@ one of the named modules.
 ## Boundary moratorium
 
 New architectural carve-outs are expensive: every ADR amendment,
-retention-doc entry, and `tests/_lint/` pin becomes load-bearing for
-contributors who have to read the docs before touching the relevant
-seam. To keep that surface from drifting upward without bound, the
-following discipline applies to any future change that would *expand*
-the documented boundary set:
+[`session-method-retention.md`](./session-method-retention.md) entry,
+and `tests/_lint/` pin becomes load-bearing for contributors who have
+to read the docs before touching the relevant seam. To keep that
+surface from drifting upward without bound, the following discipline
+applies to any future change that would *expand* the documented
+boundary set:
 
-- **Justify by failure mode.** A new ADR amendment, retention-doc row,
+- **Justify by failure mode.** A new ADR amendment,
+  [`session-method-retention.md`](./session-method-retention.md) row,
   or `tests/_lint/` pin must cite a concrete user-visible failure mode
   it prevents (loop-affinity break, auth-snapshot tear, transport drain
   regression, public-API breakage, etc.). "Future-proofing" or "in case
