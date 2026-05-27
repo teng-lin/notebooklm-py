@@ -302,13 +302,17 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=self._session.record_upload_queue_wait,
         )
+        # ADR-014 Rule 3 Stage A (Wave 7 of session-decoupling): simple
+        # features take their RpcCaller dependency directly via
+        # ``self._session.rpc_executor`` (the late-bound accessor added in
+        # Wave 6) instead of receiving the whole ``Session``.
         self.sources = SourcesAPI(
-            self._session,
+            self._session.rpc_executor,
             uploader=source_uploader,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
         )
-        self.notebooks = NotebooksAPI(self._session, sources_api=self.sources)
+        self.notebooks = NotebooksAPI(self._session.rpc_executor, sources_api=self.sources)
         # Phase 5 wiring per docs/refactor-history.md Migration Plan steps 6-7:
         # the legacy single-service handoff (``MindMapService(self._session)``
         # passed as ``mind_map_service=``) is replaced with the explicit
@@ -316,7 +320,7 @@ class NotebookLMClient:
         # raw row primitives; NoteBackedMindMapService is the mind-map-only
         # adapter the download path uses; the artifact-generation path uses
         # NoteService.create_note directly to persist a generated mind map.
-        note_service = NoteService(self._session)
+        note_service = NoteService(self._session.rpc_executor)
         mind_maps = NoteBackedMindMapService(note_service)
         self.artifacts = ArtifactsAPI(
             self._session,
@@ -336,10 +340,13 @@ class NotebookLMClient:
             mind_maps=mind_maps,
             save_chat_answer=self.chat.save_answer_as_note,
         )
-        # Pure-RPC features (Phase 1 retypes: typed as `rpc: RpcCaller`).
-        self.research = ResearchAPI(self._session)
-        self.settings = SettingsAPI(self._session)
-        self.sharing = SharingAPI(self._session)
+        # Pure-RPC features (typed as ``rpc: RpcCaller``). Wave 7 of
+        # session-decoupling: pass the ``RpcExecutor`` collaborator
+        # directly via ``self._session.rpc_executor`` accessor (Wave 6)
+        # instead of the whole ``Session``.
+        self.research = ResearchAPI(self._session.rpc_executor)
+        self.settings = SettingsAPI(self._session.rpc_executor)
+        self.sharing = SharingAPI(self._session.rpc_executor)
 
     @property
     def auth(self) -> AuthTokens:
