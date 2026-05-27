@@ -60,7 +60,13 @@ def _enumerate_session_methods(source: str) -> list[str]:
     defined inside method bodies (the parent walk gates them out).
     """
     tree = ast.parse(source)
-    for node in ast.walk(tree):
+    # Iterate ``tree.body`` directly rather than ``ast.walk(tree)``:
+    # ``Session`` is a top-level class in ``_session.py`` and the lint
+    # contract requires the *outermost* same-named class, so the
+    # shallow walk is more predictable and rejects an accidental nested
+    # ``class Session: ...`` inside a function body. (gemini-code-assist
+    # review on PR #1075.)
+    for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == SESSION_CLASS_NAME:
             return [
                 item.name
@@ -78,8 +84,13 @@ def _enumerate_session_methods(source: str) -> list[str]:
 #   | `method_name` | ...
 #   | `method_name` (property) | ...
 # Captures ``method_name``. The optional ``(property)`` suffix lives outside
-# the backticks per the doc's column-one convention.
-_ROW_FIRST_CELL = re.compile(r"^\|\s*`(?P<name>[A-Za-z_][A-Za-z0-9_]*)`(?:\s*\(property\))?\s*\|")
+# the backticks per the doc's column-one convention. Leading whitespace
+# before the pipe is tolerated so a future markdownlint / Prettier pass
+# that indents tables doesn't silently empty the inventory.
+# (gemini-code-assist review on PR #1075.)
+_ROW_FIRST_CELL = re.compile(
+    r"^\s*\|\s*`(?P<name>[A-Za-z_][A-Za-z0-9_]*)`(?:\s*\(property\))?\s*\|"
+)
 
 
 INVENTORY_SECTION_HEADER: str = "## Inventory"
