@@ -290,6 +290,14 @@ class NotebookLMClient:
             cookie_rotator=cookie_rotator,
         )
 
+        # Per ADR-014 Rule 3 Stage A, every feature adapter draws from
+        # the same ``SessionCollaborators`` bundle exposed by Wave 6.
+        # Hoist the accessor once so the upload / artifacts / chat
+        # wirings below read as obvious siblings rather than as
+        # potentially-distinct bundles. (Claude review on PR #1074
+        # Wave 9 / step 3 flagged the per-adapter aliases as misleading.)
+        collaborators = self._session.collaborators
+
         # Wave 9 of session-decoupling (ADR-014 Rule 2 + Rule 3): the
         # upload pipeline takes a ``UploadRuntimeAdapter`` composite —
         # built from ``rpc_executor`` + ``drain_tracker`` + ``lifecycle``
@@ -298,11 +306,10 @@ class NotebookLMClient:
         # the ADR-014 Rule 6 example. ``NotebookLMClient.__init__`` is
         # the composition root that knows these internals;
         # ``SourcesAPI`` no longer reads them back off the session.
-        upload_collaborators = self._session.collaborators
         upload_runtime = UploadRuntimeAdapter(
             rpc=self._session.rpc_executor,
-            drain=upload_collaborators.drain_tracker,
-            lifecycle=upload_collaborators.lifecycle,
+            drain=collaborators.drain_tracker,
+            lifecycle=collaborators.lifecycle,
         )
         source_uploader = SourceUploadPipeline(
             upload_runtime,
@@ -339,11 +346,10 @@ class NotebookLMClient:
         # ``ArtifactsRuntime`` (RpcCaller + AsyncWorkRuntime +
         # DrainHookRegistration) by delegating to those three
         # collaborators directly.
-        artifacts_collaborators = self._session.collaborators
         artifacts_runtime = ArtifactsRuntimeAdapter(
             rpc=self._session.rpc_executor,
-            drain=artifacts_collaborators.drain_tracker,
-            lifecycle=artifacts_collaborators.lifecycle,
+            drain=collaborators.drain_tracker,
+            lifecycle=collaborators.lifecycle,
         )
         self.artifacts = ArtifactsAPI(
             artifacts_runtime,
@@ -365,12 +371,11 @@ class NotebookLMClient:
         # are sourced from the late-bound ``session.rpc_executor`` /
         # ``session.session_transport`` accessors and the
         # ``session.collaborators`` bundle.
-        chat_collaborators = self._session.collaborators
         self.chat = ChatAPI(
             rpc=self._session.rpc_executor,
             transport=self._session.session_transport,
-            reqid=chat_collaborators.reqid,
-            loop_guard=chat_collaborators.lifecycle,
+            reqid=collaborators.reqid,
+            loop_guard=collaborators.lifecycle,
             notebooks=self.notebooks,
         )
         self.notes = NotesAPI(
