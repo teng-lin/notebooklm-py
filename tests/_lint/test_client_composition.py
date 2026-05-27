@@ -95,7 +95,7 @@ def _passes_self_session(arg: ast.expr) -> bool:
 
 def test_no_feature_constructed_with_session_at_composition_root() -> None:
     """ADR-014 Rule 3: no feature constructor in ``client.py`` receives ``self._session``."""
-    tree = ast.parse(CLIENT_PATH.read_text())
+    tree = ast.parse(CLIENT_PATH.read_text(encoding="utf-8"))
     violations: list[str] = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
@@ -135,7 +135,7 @@ def test_stage_a_accessors_only_used_in_allowlist() -> None:
         rel = src.relative_to(REPO_ROOT).as_posix()
         if rel in ACCESSOR_ALLOWLIST:
             continue
-        tree = ast.parse(src.read_text())
+        tree = ast.parse(src.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in STAGE_A_ACCESSORS:
                 violations.append(f"{rel}:{node.lineno}: reads .{node.attr}")
