@@ -5,8 +5,11 @@ returns a ``FakeSession`` instance shaped to satisfy the **shared
 capability Protocols** in :mod:`notebooklm._session_contracts`
 (``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
 ``AsyncWorkRuntime``, ``AuthMetadata``, ``Kernel``) plus the
-feature-local runtime Protocols (``ChatRuntime``, ``ArtifactsRuntime``,
-``UploadRuntime``) that compose them. Tests pass the result to a
+feature-local runtime Protocols (``ArtifactsRuntime``,
+``UploadRuntime``) that compose them. (``ChatRuntime`` was deleted in
+Wave 8 of the session-decoupling plan, ADR-014 Rule 2 Corollary —
+``ChatAPI`` takes direct collaborators by keyword arg and does not
+need a feature-local runtime Protocol.) Tests pass the result to a
 sub-client constructor (``NotebooksAPI(fake)``) instead of constructing
 a real ``Session`` and mutating its attributes after the fact.
 
@@ -115,10 +118,13 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # RpcCaller — every feature API uses this. Fresh list per call so
         # tests can mutate the response without bleeding into siblings.
         "rpc_call": AsyncMock(side_effect=lambda *a, **kw: []),
-        # ChatRuntime — chat-only transport + reqid helpers consumed via
-        # the chat composite runtime; kept here so the same FakeSession
-        # can satisfy ChatRuntime, ArtifactsRuntime, and UploadRuntime
-        # for tests that wire the bag through several sub-clients.
+        # Legacy chat-runtime helpers (``transport_post``, ``next_reqid``)
+        # kept on the bag for now: tests outside the chat suite that wire
+        # the bag through several sub-clients can still rely on them, and
+        # ``ArtifactsRuntime`` / ``UploadRuntime`` may reference these in
+        # the future. ChatAPI itself stopped using these in Wave 8 of the
+        # session-decoupling plan (ADR-014 Rule 2 Corollary — ``ChatAPI``
+        # takes direct collaborators by keyword arg).
         "transport_post": AsyncMock(),
         "next_reqid": AsyncMock(return_value=100000),
         # AsyncWorkRuntime (LoopGuard + OperationScopeProvider) — used by

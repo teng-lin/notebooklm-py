@@ -10,9 +10,7 @@ import asyncio
 import contextlib
 import logging
 import weakref
-from typing import TYPE_CHECKING, Any, Protocol
-
-import httpx
+from typing import TYPE_CHECKING, Any
 
 from ._chat_notes import save_chat_answer_as_note
 from ._chat_protocol import (
@@ -30,7 +28,7 @@ from ._chat_transport import chat_aware_authed_post
 from ._conversation_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._notebook_metadata import NotebookSourceIdProvider
-from ._request_types import AuthSnapshot, BuildRequest
+from ._request_types import AuthSnapshot
 from ._session_contracts import LoopGuard, RpcCaller
 from .exceptions import ChatError, NetworkError, ValidationError
 
@@ -97,37 +95,6 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
         )
         return None
     return content
-
-
-class ChatRuntime(RpcCaller, LoopGuard, Protocol):
-    """Runtime capabilities required by the chat feature.
-
-    Local to ``_chat.py`` because ``transport_post`` and ``next_reqid`` are
-    chat-specific surfaces today and not shared with any other feature. If
-    another feature later needs the same capability, promote these members
-    to ``_session_contracts.py``; until then keeping them local minimises
-    the chat dependency surface (refactor-history.md §Local Chat Runtime, ADR-013).
-    """
-
-    async def transport_post(
-        self,
-        build_request: BuildRequest,
-        parse_label: str,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> httpx.Response: ...
-
-    async def next_reqid(self, step: int = 100000) -> int: ...
-
-    # Wave 8 (ADR-014 Rule 2 Corollary): ``chat_aware_authed_post`` now
-    # takes :class:`SessionTransport` directly. Expose the late-bound
-    # accessor on this transitional Protocol so ``ChatAPI.ask`` can pass
-    # ``self._runtime.session_transport`` to the helper without a typing
-    # escape. Removed together with the rest of the Protocol in commit
-    # 3 of the same PR once :class:`ChatAPI` takes :class:`SessionTransport`
-    # via direct constructor injection.
-    @property
-    def session_transport(self) -> Any: ...
 
 
 class ChatAPI:

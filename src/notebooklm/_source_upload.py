@@ -89,7 +89,10 @@ class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     Audit C1: ``LoopGuard`` is included so :meth:`SourceUploadPipeline.add_file`
     can short-circuit cross-loop misuse *before* entering
     ``operation_scope`` or lazily allocating the per-loop upload semaphore.
-    Mirrors the ``ChatRuntime`` / ``ArtifactsRuntime`` pattern.
+    Mirrors the ``ArtifactsRuntime`` pattern. (The historical
+    ``ChatRuntime`` Protocol that this docstring also referenced was
+    deleted in Wave 8 of the session-decoupling plan, ADR-014 Rule 2
+    Corollary, in favour of direct constructor injection on ``ChatAPI``.)
     """
 
 
