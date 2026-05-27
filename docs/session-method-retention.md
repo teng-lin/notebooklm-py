@@ -53,19 +53,8 @@ forbid any `delete in Wave 11` rows once the cluster deletions land.
 | `collaborators` (property) | Stage A accessor | retain — Stage A accessor (ADR-014 Rule 3); deleted under Stage B when `build_collaborators` ownership moves to `NotebookLMClient` |
 | `session_transport` (property) | Stage A accessor | retain — Stage A accessor; exposes late-bound `SessionTransport` not present on `SessionCollaborators` |
 | `rpc_executor` (property) | Stage A accessor | retain — Stage A accessor; exposes lazy `RpcExecutor` not present on `SessionCollaborators` |
-| `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_tokens(...)` at [`_auth/session.py:67`](../src/notebooklm/_auth/session.py); also referenced in the AST-guard prose at `tests/unit/test_concurrency_refresh_race.py:386` (the guard inspects `AuthRefreshCoordinator.update_auth_tokens` directly, but the Session-side delegate is the Protocol seam) |
-| `update_auth_headers` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_headers()` at [`_auth/session.py:68`](../src/notebooklm/_auth/session.py) |
-| `metrics_snapshot` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.snapshot` |
-| `_increment_metrics` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.increment` |
-| `record_upload_queue_wait` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.record_upload_queue_wait` |
-| `_emit_rpc_event` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.emit_rpc_event` |
-| `kernel` (property) | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `self._kernel`; readers migrate to `session.collaborators.kernel` |
-| `live_cookies` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `self.get_http_client().cookies` |
-| `authuser` (property) | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `self.auth.authuser` |
-| `account_email` (property) | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `self.auth.account_email` |
-| `authuser_query` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `auth.authuser_query(self.authuser, self.account_email)` |
-| `authuser_header` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `auth.format_authuser_value(...)` |
-| `get_http_client` | RefreshAuthCore Protocol surface / compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `Kernel.get_http_client`; the `RefreshAuthCore` Protocol still references `get_http_client`, so Wave 11b MUST first migrate the Protocol (or `refresh_auth_session(core)`) to call `core.collaborators.kernel.get_http_client()` before the Session forward can be removed |
+| `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_tokens(...)` from [`_auth/session.py`](../src/notebooklm/_auth/session.py); also referenced in the AST-guard prose at `tests/unit/test_concurrency_refresh_race.py:386` (the guard inspects `AuthRefreshCoordinator.update_auth_tokens` directly, but the Session-side delegate is the Protocol seam) |
+| `update_auth_headers` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_headers()` from [`_auth/session.py`](../src/notebooklm/_auth/session.py) |
 | `next_reqid` | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `ReqidCounter.next_reqid` |
 | `bound_loop` (property) | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `ClientLifecycle.get_bound_loop` with defensive `isinstance` |
 | `_refresh_request_for_current_auth` | compatibility forward | delete in Wave 11 (`transport-and-reqid`) — forward to `SessionTransport.refresh_request_for_current_auth`; the AST guard at `tests/unit/test_concurrency_refresh_race.py:222` already inspects `SessionTransport.refresh_request_for_current_auth` directly, so no guard migration needed |
@@ -116,3 +105,19 @@ the section sub-header) as the `delete in Wave 11` rows above are dropped.
 | `register_drain_hook` | compatibility forward | deleted in Wave 11a (commit `80a54fda`) — was a one-line forward to `TransportDrainTracker.register_drain_hook`. Callers now reach the tracker directly (`session._drain_tracker.register_drain_hook(...)` in tests; production callers use `ArtifactsRuntimeAdapter.register_drain_hook`). |
 | `operation_scope` | compatibility forward | deleted in Wave 11a (commit `80a54fda`) — was a forward to `TransportDrainTracker.operation_scope`. Callers now reach the tracker directly (`session._drain_tracker.operation_scope(...)` in tests; production callers use `ArtifactsRuntimeAdapter.operation_scope` / `UploadRuntimeAdapter.operation_scope`). |
 | `drain` | compatibility forward | deleted in Wave 11a (commit `80a54fda`) — was a forward to `TransportDrainTracker.drain`. `NotebookLMClient.drain` now calls `self._session._drain_tracker.drain(...)` directly. |
+
+### Wave 11b — metrics-and-kernel cluster (commit `37b16a79`)
+
+| Method | Category | Disposition |
+|---|---|---|
+| `metrics_snapshot` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `ClientMetrics.snapshot`. `NotebookLMClient.metrics_snapshot` now calls `self._session.collaborators.metrics.snapshot()`; in-tree tests reach `core._metrics_obj.snapshot()` directly. |
+| `_increment_metrics` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `ClientMetrics.increment`. No production caller remained; the historical `_middleware_auth_refresh` reference was prose only. |
+| `record_upload_queue_wait` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `ClientMetrics.record_upload_queue_wait`. `NotebookLMClient.__init__` now passes `collaborators.metrics.record_upload_queue_wait` to the upload pipeline; in-tree tests pass `core._metrics_obj.record_upload_queue_wait`. |
+| `_emit_rpc_event` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `ClientMetrics.emit_rpc_event`. The live middleware chain already reads `metrics` directly; no production caller surfaced via Session. |
+| `kernel` (property) | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `self._kernel`. `NotebookLMClient.__init__` now passes `collaborators.kernel` to the upload pipeline; in-tree tests use `core._kernel`. |
+| `live_cookies` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `self.get_http_client().cookies`. The canonical home is `Kernel.cookies` (also reachable via `Kernel.get_http_client().cookies`). |
+| `authuser` (property) | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `self.auth.authuser`. Callers read `auth.authuser` directly. |
+| `account_email` (property) | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `self.auth.account_email`. Callers read `auth.account_email` directly. |
+| `authuser_query` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `notebooklm._auth.account.authuser_query`. Callers import the helper directly. |
+| `authuser_header` | compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `notebooklm._auth.account.format_authuser_value`. Callers import the helper directly. |
+| `get_http_client` | RefreshAuthCore Protocol surface / compatibility forward | deleted in Wave 11b (commit `37b16a79`) — was a forward to `Kernel.get_http_client`. The `RefreshAuthCore` and `_AuthRefreshHost` Protocols were migrated in the same commit to require a `_kernel: Kernel` slot instead of `get_http_client`; the two call sites in `_auth/session.py` and `_session_auth.py` now read `core._kernel.get_http_client()` / `host._kernel.get_http_client()`. `Session._kernel` is already an instance attribute (assigned from `collaborators.kernel` in `__init__`), so live `Session` instances satisfy the new Protocol shape without further changes. |
