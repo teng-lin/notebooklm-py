@@ -828,12 +828,13 @@ class Session:
     def _authed_post_chain(self) -> "NextCall | None":
         """Forward to :attr:`MiddlewareChainHost._authed_post_chain`.
 
-        The transport's ``chain_provider`` closure (currently
-        ``lambda: getattr(host, "_authed_post_chain", None)`` —
-        Stage B2 PR 2 will switch it to read ``chain_host`` directly)
-        resolves this attribute on every authed POST so a
-        ``session._authed_post_chain = fake_chain`` write keeps
-        steering the live transport.
+        Stage B2 PR 2 switched the transport's ``chain_provider``
+        closure to ``lambda: chain_host._authed_post_chain`` — it now
+        reads the host slot directly rather than going through this
+        descriptor. A ``session._authed_post_chain = fake_chain`` write
+        still keeps steering the live transport because the descriptor
+        setter below writes through to the same host slot the transport
+        reads.
         """
         return self._chain_host._authed_post_chain
 
