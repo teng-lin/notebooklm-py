@@ -83,9 +83,7 @@ async def test_run_drain_hooks_continues_when_one_hook_raises(caplog) -> None:
 
     assert fired == ["a", "b_raised", "c"]
     matching = [r for r in caplog.records if "intentional test failure" in r.getMessage()]
-    assert len(matching) == 1, (
-        f"expected exactly one warning log for hook 'b'; got {len(matching)}"
-    )
+    assert len(matching) == 1, f"expected exactly one warning log for hook 'b'; got {len(matching)}"
     assert "'b'" in matching[0].getMessage(), (
         f"log message must include hook name 'b'; got: {matching[0].getMessage()!r}"
     )
