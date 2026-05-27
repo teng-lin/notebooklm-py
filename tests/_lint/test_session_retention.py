@@ -64,6 +64,15 @@ VALID_DISPOSITION_PREFIXES: tuple[str, ...] = (_RETAIN_PREFIX,)
 # accidentally widening the live ``VALID_DISPOSITION_PREFIXES`` tuple.
 _RETIRED_DELETE_PREFIX: str = "delete in Wave 11"
 
+# Strict-shape validator (Wave 12, coderabbit Wave 11c deferred). The
+# disposition must read exactly ``retain — <reason>``: ``retain``,
+# whitespace, an em-dash (``—``), whitespace, and at least one
+# non-whitespace character of reason text. A loose ``startswith("retain")``
+# check would accept ``retainXYZ`` (no boundary), ``retain`` alone (no
+# reason), or ``retain — `` (empty reason); the regex below rejects all
+# three so the retention doc's vocabulary cannot rot into ambiguity.
+_DISPOSITION_RETAIN_RE = re.compile(r"^retain\s+—\s+\S.*$")
+
 
 def _enumerate_session_methods(source: str) -> list[str]:
     """Return the ordered list of method/property names defined on ``Session``.
@@ -148,7 +157,7 @@ def _parse_retention_doc(text: str) -> dict[str, str]:
 
 
 def _disposition_is_valid(disposition: str) -> bool:
-    """Return ``True`` iff ``disposition`` starts with a valid prefix.
+    """Return ``True`` iff ``disposition`` matches ``retain — <reason>``.
 
     After Wave 11c the retain branch is the only accepted shape — every
     row in the live Inventory must read ``retain — <reason>``. The
@@ -156,8 +165,16 @@ def _disposition_is_valid(disposition: str) -> bool:
     introduced is now rejected; any row that still carries it is doc
     drift and must be moved to the **Deleted** section at the bottom
     of the retention doc (which the inventory parser scopes out).
+
+    Wave 12 (coderabbit Wave 11c deferred): tightened from
+    ``startswith("retain")`` to a strict regex requiring a literal em-dash
+    separator plus at least one character of reason text. The looser form
+    silently accepted ``retainXYZ`` (no word boundary), bare ``retain``
+    (no reason), and ``retain — `` (empty reason); all three would let
+    a drifted disposition slip into the live inventory and undermine
+    the doc's "every row is justified" invariant.
     """
-    return disposition.startswith(VALID_DISPOSITION_PREFIXES)
+    return _DISPOSITION_RETAIN_RE.match(disposition) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +313,45 @@ def test_disposition_validator_rejects_retired_delete_prefix() -> None:
 def test_disposition_validator_rejects_unknown_prefix() -> None:
     assert not _disposition_is_valid("TODO — figure it out later")
     assert not _disposition_is_valid("")
+
+
+def test_disposition_validator_rejects_unbounded_retain() -> None:
+    """Wave 12 (coderabbit Wave 11c deferred): ``retainXYZ`` must be rejected.
+
+    The previous ``startswith("retain")`` form accepted any string that
+    happened to start with the substring ``retain`` (no word boundary).
+    The strict regex requires whitespace + em-dash after ``retain``.
+    """
+    assert not _disposition_is_valid("retainXYZ")
+    assert not _disposition_is_valid("retains for now")
+    assert not _disposition_is_valid("retaining a slot")
+
+
+def test_disposition_validator_rejects_retain_without_reason() -> None:
+    """Wave 12 (coderabbit Wave 11c deferred): the reason text is mandatory.
+
+    A bare ``retain``, ``retain —`` (no trailing reason), or ``retain — ``
+    (whitespace-only reason) all fail to communicate *why* the method
+    survives — the whole point of the retention doc. Reject every shape
+    short of ``retain — <non-whitespace reason>``.
+    """
+    assert not _disposition_is_valid("retain")
+    assert not _disposition_is_valid("retain —")
+    assert not _disposition_is_valid("retain — ")
+    assert not _disposition_is_valid("retain  —  ")
+
+
+def test_disposition_validator_accepts_reason_with_punctuation() -> None:
+    """The reason text may contain any characters once the prefix is satisfied.
+
+    ``retain — <reason>`` rows in the live doc carry compound reasons
+    that include parentheses, em-dashes inside the reason, backticks,
+    and pull-request links; the strict regex must not over-tighten and
+    block legitimate disposition cells.
+    """
+    assert _disposition_is_valid("retain — Stage A accessor (deleted in Wave 7)")
+    assert _disposition_is_valid("retain — public-API forward — `NotebookLMClient.rpc_call`")
+    assert _disposition_is_valid("retain — middleware chain leaf, see PR #1075")
 
 
 # ---------------------------------------------------------------------------
