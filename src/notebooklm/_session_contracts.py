@@ -2,9 +2,8 @@
 
 This module defines the narrow structural Protocols feature APIs depend
 on. Per ADR-013, a Protocol lives here only when **shared by ≥2
-features**; single-consumer capabilities (e.g. chat's ``transport_post``
-+ ``next_reqid``, artifact polling's ``register_drain_hook``) stay
-local to their owning feature module.
+features**; single-consumer capabilities (e.g. artifact polling's
+``register_drain_hook``) stay local to their owning feature module.
 
 Contents:
 
