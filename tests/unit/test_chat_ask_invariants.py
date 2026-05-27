@@ -2,7 +2,7 @@
 
 These assertions pin down the new contract:
 
-- ``ask`` uses ``core.next_reqid()`` for the URL ``_reqid`` param (the
+- ``ask`` uses ``self._reqid.next_reqid()`` for the URL ``_reqid`` param (the
   ``_reqid_counter`` property + deprecation gesture were retired in the
   session-shrink arc; this test now guards against any new
   ``DeprecationWarning`` escaping ``_chat.py``).
@@ -164,7 +164,7 @@ class TestChatAuthuserParam:
 
 
 class TestChatReqid:
-    """``ChatAPI.ask`` must call ``core.next_reqid()`` — not poke
+    """``ChatAPI.ask`` must call ``self._reqid.next_reqid()`` — not poke
     ``_reqid_counter`` directly, which would emit ``DeprecationWarning``."""
 
     @pytest.mark.asyncio

@@ -30,7 +30,6 @@ Forbidden patterns
    .. code-block:: python
 
        core.rpc_call = AsyncMock(return_value=None)
-       client._core._perform_authed_post = AsyncMock()
 
 Allowlist
 ---------
@@ -106,9 +105,12 @@ _PATTERN_OBJECT_ATTR = re.compile(r"monkeypatch\.setattr\(\s*notebooklm\.")
 # matches; with it, each occurrence is reported once with the natural
 # start position.
 _PATTERN_ASYNCMOCK_ASSIGN = re.compile(
-    r"(?<![\w.])[\w.]+\."
-    r"(rpc_call|_perform_authed_post|_begin_transport_post|_begin_transport_task|_finish_transport_post)"
-    r"\s*=\s*(?:[\w]+\.)*AsyncMock"
+    # Wave 11c of session-decoupling deleted ``Session._perform_authed_post``
+    # along with the ``_begin_transport_*`` / ``_finish_transport_*`` legacy
+    # names — once a method no longer exists on ``Session``, attempting to
+    # patch it with ``AsyncMock`` would surface immediately at runtime as an
+    # ``AttributeError``, so the lint pattern stops enumerating them.
+    r"(?<![\w.])[\w.]+\.(rpc_call)\s*=\s*(?:[\w]+\.)*AsyncMock"
 )
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (

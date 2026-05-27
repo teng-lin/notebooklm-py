@@ -107,7 +107,6 @@ def api():
 def _make_session_core() -> MagicMock:
     core = MagicMock()
     # Real registry backing so wait_for_completion can ``dict.get(key)``.
-    core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)
     core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
     return core

@@ -14,8 +14,8 @@ Specifically pinned here:
   cleanly** — the task exits and is set to ``None``; the call doesn't leak a
   ``CancelledError``.
 * ``_bound_loop`` **mismatch raises ``RuntimeError``** — the cross-loop guard
-  in :meth:`Session._perform_authed_post` reads ``_bound_loop`` through the
-  lifecycle and raises actionably when the loops differ.
+  in :meth:`SessionTransport.perform_authed_post` reads ``_bound_loop`` through
+  the lifecycle and raises actionably when the loops differ.
 * :meth:`ClientLifecycle.save_cookies` **invokes** the host's
   ``cookie_persistence.save`` collaborator with the right ``jar`` and
   ``path`` arguments AND with the ``save_cookies_to_storage`` value resolved
@@ -445,9 +445,9 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
     """``get_bound_loop()`` returns the captured loop after open().
 
     The cross-loop affinity ``RuntimeError`` is raised by
-    ``Session._perform_authed_post`` on actual cross-loop reuse — see
-    ``tests/integration/concurrency/test_cross_loop_affinity.py`` for the
-    end-to-end exercise. Here we only assert the lifecycle exposes the
+    ``SessionTransport.perform_authed_post`` on actual cross-loop reuse —
+    see ``tests/integration/concurrency/test_cross_loop_affinity.py`` for
+    the end-to-end exercise. Here we only assert the lifecycle exposes the
     captured loop via :meth:`get_bound_loop`.
     """
     lifecycle = _make_lifecycle()
@@ -497,7 +497,7 @@ def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
         # populated, this is a no-op and ``_bound_loop`` stays bound to loop A.
         await core.open()
         try:
-            await core._perform_authed_post(
+            await core._transport.perform_authed_post(
                 build_request=_build_request_stub,
                 log_label="test.cross_loop",
             )

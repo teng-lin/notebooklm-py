@@ -27,10 +27,9 @@ def mock_artifacts_api():
     # and confuse the ``existing is not None`` branch.
     mock_core.poll_registry = PollRegistry()
     mock_core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
-    # ``bound_loop`` must be ``None`` (silent-no-op for the affinity
-    # guard) so the artifact polling helper does not raise on a
-    # ``MagicMock``-shaped loop value.
-    mock_core.bound_loop = None
+    # The affinity guard is consumed by feature APIs through
+    # ``assert_bound_loop()`` directly; the ``Session.bound_loop`` property
+    # forward was deleted in Wave 11c of session-decoupling.
     mock_core.assert_bound_loop = MagicMock(return_value=None)
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService

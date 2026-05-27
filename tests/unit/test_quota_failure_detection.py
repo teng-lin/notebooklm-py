@@ -37,7 +37,6 @@ def _make_api():
     # Real registry backing so wait_for_completion can ``dict.get(key)``.
     core.poll_registry = PollRegistry()
     core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
-    core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)
     mind_maps = MagicMock(spec=NoteBackedMindMapService)
     note_service = MagicMock(spec=NoteService)

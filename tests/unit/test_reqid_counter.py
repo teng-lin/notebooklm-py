@@ -44,21 +44,6 @@ def test_default_step_constant_matches_signature_default() -> None:
     assert DEFAULT_STEP == 100000
 
 
-def test_client_core_next_reqid_default_matches_default_step() -> None:
-    """``Session.next_reqid``'s ``step`` default is sourced from
-    :data:`notebooklm._reqid_counter.DEFAULT_STEP`.
-
-    Pins the facade signature to the helper's constant so a silent change to
-    one cannot drift past the other. ``Session`` imports
-    ``DEFAULT_STEP as _REQID_DEFAULT_STEP``; this test introspects the bound
-    default to confirm the wiring stays in lockstep.
-    """
-    from notebooklm._session import Session
-
-    sig = inspect.signature(Session.next_reqid)
-    assert sig.parameters["step"].default == DEFAULT_STEP
-
-
 def test_custom_baseline() -> None:
     """Constructor accepts a non-default baseline (used by future fixtures)."""
     counter = ReqidCounter(baseline=42)

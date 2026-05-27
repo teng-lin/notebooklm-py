@@ -7,6 +7,8 @@ import inspect
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
@@ -51,30 +53,81 @@ class _RecordingKernel:
         return self._http_client
 
 
+class _RecordingLifecycle:
+    """Lifecycle stub matching the ``ClientLifecycle.save_cookies`` shape.
+
+    Wave 11c of session-decoupling deleted the ``Session.save_cookies``
+    Protocol surface; :func:`refresh_auth_session` now reaches the
+    canonical cookie-persistence chokepoint through
+    ``core.collaborators.lifecycle.save_cookies(core, jar, path)``. The
+    ``host`` (``core``) argument is forwarded as-is — for these unit
+    tests it's the :class:`RecordingRefreshCore` itself, since the real
+    save path is not exercised here.
+    """
+
+    def __init__(self) -> None:
+        self.operations: list[str] = []
+        self.saved_jars: list[httpx.Cookies] = []
+
+    async def save_cookies(
+        self,
+        host: Any,
+        jar: httpx.Cookies,
+        path: Path | None = None,
+    ) -> None:
+        assert path is None
+        self.operations.append("save_cookies")
+        self.saved_jars.append(jar)
+
+
 @dataclass
 class RecordingRefreshCore:
     auth: AuthTokens
     http_client: httpx.AsyncClient
-    operations: list[str] = field(default_factory=list)
-    saved_jars: list[httpx.Cookies] = field(default_factory=list)
+    _own_operations: list[str] = field(default_factory=list)
+    _lifecycle: _RecordingLifecycle = field(default_factory=_RecordingLifecycle)
 
     def __post_init__(self) -> None:
         # Mirror the live ``Session._kernel`` slot — the Wave 11b Protocol
-        # change reaches the live HTTP client via ``core._kernel.get_http_client()``.
+        # change reaches the live HTTP client via
+        # ``core._kernel.get_http_client()``.
         self._kernel = _RecordingKernel(self.http_client)
+        # Wire the lifecycle's operations list to share storage with ours so
+        # the legacy ``core.operations`` ordering ([..., "save_cookies"])
+        # still matches without forcing tests to read from two separate
+        # logs. Wave 11c routes ``save_cookies`` through
+        # ``core.collaborators.lifecycle`` (the ``Session.save_cookies``
+        # forward was deleted), so the recording lives on the lifecycle
+        # stub and is bridged back into ``operations`` here.
+        self._lifecycle.operations = self._own_operations
+
+    @property
+    def operations(self) -> list[str]:
+        """Combined operation log — recordings from this core plus the lifecycle."""
+        return self._own_operations
+
+    @property
+    def saved_jars(self) -> list[httpx.Cookies]:
+        """Back-compat passthrough so existing assertions still read the recorded jars."""
+        return self._lifecycle.saved_jars
+
+    @property
+    def collaborators(self) -> SimpleNamespace:
+        """Expose the recording lifecycle through the Stage-A accessor shape.
+
+        Mirrors :attr:`Session.collaborators`, which returns the constructed
+        :class:`SessionCollaborators` bundle whose ``lifecycle`` field is the
+        :class:`ClientLifecycle` :func:`refresh_auth_session` invokes.
+        """
+        return SimpleNamespace(lifecycle=self._lifecycle)
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
-        self.operations.append("update_auth_tokens")
+        self._own_operations.append("update_auth_tokens")
         self.auth.csrf_token = csrf
         self.auth.session_id = session_id
 
     def update_auth_headers(self) -> None:
-        self.operations.append("update_auth_headers")
-
-    async def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> None:
-        assert path is None
-        self.operations.append("save_cookies")
-        self.saved_jars.append(jar)
+        self._own_operations.append("update_auth_headers")
 
 
 def _client(handler: httpx.MockTransport | httpx.AsyncBaseTransport) -> httpx.AsyncClient:

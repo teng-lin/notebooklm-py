@@ -1,14 +1,17 @@
-"""Unit tests for ``Session.next_reqid``.
+"""Unit tests for ``Session._reqid.next_reqid``.
 
 Covers:
 - ``next_reqid()`` returns monotonic, post-increment values.
 - Custom ``step`` parameter works.
 - ``next_reqid()`` itself does NOT emit a ``DeprecationWarning``.
 
-The ``_reqid_counter`` compat property + setter (the read-bridge and the
-deprecation gesture on direct mutation) were retired in the session-shrink
-arc; tests read ``core._reqid.value`` directly and use
-``core._reqid.set_value(...)`` to seed a baseline.
+The ``Session.next_reqid`` compatibility forward was deleted in Wave 11c
+of session-decoupling; callers reach the canonical counter directly via
+``core._reqid.next_reqid(...)``. The ``_reqid_counter`` compat property +
+setter (the read-bridge and the deprecation gesture on direct mutation)
+were retired earlier in the session-shrink arc; tests read
+``core._reqid.value`` directly and use ``core._reqid.set_value(...)`` to
+seed a baseline.
 """
 
 import warnings
@@ -34,9 +37,9 @@ async def test_next_reqid_returns_post_increment_values() -> None:
     core = _make_core()
     assert core._reqid.value == 100000  # baseline
 
-    first = await core.next_reqid()
-    second = await core.next_reqid()
-    third = await core.next_reqid()
+    first = await core._reqid.next_reqid()
+    second = await core._reqid.next_reqid()
+    third = await core._reqid.next_reqid()
 
     assert first == 200000
     assert second == 300000
@@ -49,9 +52,9 @@ async def test_next_reqid_returns_post_increment_values() -> None:
 async def test_next_reqid_custom_step() -> None:
     """A non-default ``step`` parameter is honoured."""
     core = _make_core()
-    assert await core.next_reqid(step=1) == 100001
-    assert await core.next_reqid(step=7) == 100008
-    assert await core.next_reqid(step=1000) == 101008
+    assert await core._reqid.next_reqid(step=1) == 100001
+    assert await core._reqid.next_reqid(step=7) == 100008
+    assert await core._reqid.next_reqid(step=1000) == 101008
 
 
 @pytest.mark.asyncio
@@ -60,8 +63,8 @@ async def test_next_reqid_does_not_warn() -> None:
     core = _make_core()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        await core.next_reqid()
-        await core.next_reqid()
+        await core._reqid.next_reqid()
+        await core._reqid.next_reqid()
     deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert deprecations == [], (
         "next_reqid() must not emit DeprecationWarning; "
@@ -74,7 +77,7 @@ async def test_next_reqid_rejects_zero_step() -> None:
     """``step=0`` would break uniqueness (two callers see the same value)."""
     core = _make_core()
     with pytest.raises(ValueError, match="step must be positive"):
-        await core.next_reqid(step=0)
+        await core._reqid.next_reqid(step=0)
     # Counter must not have moved.
     assert core._reqid.value == 100000
 
@@ -84,7 +87,7 @@ async def test_next_reqid_rejects_negative_step() -> None:
     """``step<0`` would break monotonicity (counter moves backwards)."""
     core = _make_core()
     with pytest.raises(ValueError, match="step must be positive"):
-        await core.next_reqid(step=-1)
+        await core._reqid.next_reqid(step=-1)
     assert core._reqid.value == 100000
 
 
@@ -93,7 +96,7 @@ async def test_next_reqid_rejects_non_int_step() -> None:
     """Non-``int`` ``step`` (e.g. ``str``) must raise ``TypeError`` early."""
     core = _make_core()
     with pytest.raises(TypeError, match="step must be int"):
-        await core.next_reqid(step="100")  # type: ignore[arg-type]
+        await core._reqid.next_reqid(step="100")  # type: ignore[arg-type]
     assert core._reqid.value == 100000
 
 
@@ -104,7 +107,7 @@ async def test_next_reqid_rejects_bool_step() -> None:
     """
     core = _make_core()
     with pytest.raises(TypeError, match="step must be int"):
-        await core.next_reqid(step=True)  # type: ignore[arg-type]
+        await core._reqid.next_reqid(step=True)  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="step must be int"):
-        await core.next_reqid(step=False)  # type: ignore[arg-type]
+        await core._reqid.next_reqid(step=False)  # type: ignore[arg-type]
     assert core._reqid.value == 100000

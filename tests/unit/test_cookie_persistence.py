@@ -86,7 +86,7 @@ async def test_client_core_save_cookies_routes_through_injected_seam_and_to_thre
     monkeypatch.setattr("notebooklm._session_lifecycle.asyncio.to_thread", fake_to_thread)
     core = Session(_auth_tokens(tmp_path / "storage_state.json"), cookie_saver=fake_save)
 
-    await core.save_cookies(_jar())
+    await core._lifecycle.save_cookies(core, _jar())
 
     assert calls == ["to_thread", "save"]
 

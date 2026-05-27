@@ -88,7 +88,7 @@ async def test_save_lock_acquired_off_event_loop_thread(
     core = _make_core(tmp_path, cookie_saver=spy)
     core_ref["core"] = core
 
-    await core.save_cookies(httpx.Cookies())
+    await core._lifecycle.save_cookies(core, httpx.Cookies())
 
     assert observed["lock_held"] is True, (
         "save_cookies must hold _save_lock for the duration of "
@@ -156,7 +156,7 @@ async def test_save_lock_does_not_block_event_loop(
         loop_observations.append(core.cookie_persistence.save_lock.locked())
         release_save.set()
 
-    await asyncio.gather(core.save_cookies(httpx.Cookies()), heartbeat())
+    await asyncio.gather(core._lifecycle.save_cookies(core, httpx.Cookies()), heartbeat())
 
     assert loop_observations == [True], (
         "Event loop must remain responsive while _save_lock is held by a "

@@ -61,10 +61,11 @@ def mock_core():
     core.auth.session_id = "test_session"
     core.auth.authuser = 0
     core.auth.account_email = None
-    # Reqid counter is bumped via ``await core.next_reqid()``; the mock
-    # short-circuits the increment to a fixed post-bump value.
+    # Reqid counter is bumped via ``await self._reqid.next_reqid()`` inside
+    # ``ChatAPI.ask`` (Wave 8 of session-decoupling); the mock_core fixture
+    # is passed as the ``reqid=`` collaborator by ``_chat_from_mock_core``
+    # below, so this attribute stub is what the chat path actually calls.
     core.next_reqid = AsyncMock(return_value=100000)
-    core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)
     core.get_http_client = MagicMock()
 

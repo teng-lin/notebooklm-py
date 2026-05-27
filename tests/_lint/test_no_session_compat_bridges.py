@@ -50,9 +50,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # properties are gone so tests cannot quietly reintroduce those reach-ins.
 FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
     {
-        # ClientLifecycle bridges retired in session-shrink PR 6 — readers now
-        # go straight to ``session._kernel`` / ``session._lifecycle`` or use
-        # the public ``session.bound_loop`` property. Lifecycle bridge names
+        # ClientLifecycle bridges retired in session-shrink PR 6 — readers
+        # now go straight to ``session._kernel`` / ``session._lifecycle``
+        # and call ``session._lifecycle.get_bound_loop()`` for the open-time
+        # loop (the ``session.bound_loop`` property forward was deleted in
+        # Wave 11c of session-decoupling). Lifecycle bridge names
         # (``_http_client``, ``_bound_loop``, ``_timeout``, ``_connect_timeout``,
         # ``_limits``, ``_keepalive_interval``, ``_keepalive_task``) are
         # intentionally NOT listed below: ``Session`` no longer defines them,

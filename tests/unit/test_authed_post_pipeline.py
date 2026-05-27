@@ -1,7 +1,9 @@
 """Parity tests for the shared transport pipeline.
 
-Pins down the behavior of :meth:`Session._perform_authed_post`
-used by the RPC executor path:
+Pins down the behavior of :meth:`SessionTransport.perform_authed_post`
+used by the RPC executor path (the ``Session._perform_authed_post``
+compatibility forward was deleted in Wave 11c of session-decoupling;
+tests now drive the canonical collaborator method directly):
 
 - ``build_request`` factory is called once per HTTP attempt.
 - On a single auth-error retry, the factory is called TWICE, and the second
@@ -96,7 +98,7 @@ def _status_error(code: int, *, retry_after: str | None = None) -> httpx.HTTPSta
 
 
 # ---------------------------------------------------------------------------
-# _perform_authed_post
+# SessionTransport.perform_authed_post
 # ---------------------------------------------------------------------------
 
 
@@ -124,7 +126,7 @@ async def test_perform_authed_post_populates_request_envelope_for_chain() -> Non
 
     await core.open()
     try:
-        response = await core._perform_authed_post(
+        response = await core._transport.perform_authed_post(
             build_request=build,
             log_label="RPC LIST_NOTEBOOKS",
             disable_internal_retries=True,
@@ -157,7 +159,7 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
     mutates the budget AFTER ``open()`` still takes effect — preserving
     the pre-PR-12.7 contract where the retry loop read the same attr live.
     Drives the chain via
-    ``core._perform_authed_post`` so the assertion exercises the
+    ``core._transport.perform_authed_post`` so the assertion exercises the
     production seam ``RpcExecutor._execute_once`` uses.
     """
     core = _make_core(rate_limit_max_retries=0)
@@ -189,7 +191,7 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert call_count["n"] == 2
@@ -206,7 +208,7 @@ async def test_perform_authed_post_requires_open_client():
         return "https://example.test/x", "payload", {}
 
     with pytest.raises(RuntimeError, match="Client not initialized"):
-        await core._perform_authed_post(build_request=build, log_label="test")
+        await core._transport.perform_authed_post(build_request=build, log_label="test")
 
 
 @pytest.mark.asyncio
@@ -269,7 +271,7 @@ async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
 async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
     """Production-chain regression: a real ``HTTPStatusError(401)`` raised
     by the transport leaf must drive the refresh-and-retry path through
-    ``Session._perform_authed_post``.
+    ``SessionTransport.perform_authed_post``.
 
     This is the wiring-level counterpart to
     :func:`test_auth_refresh_middleware_honors_injected_predicate` (which
@@ -319,7 +321,7 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert refresh_calls == [True], (
@@ -363,7 +365,7 @@ async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert call_count["n"] == 2
@@ -396,7 +398,7 @@ async def test_perform_authed_post_disable_internal_retries_short_circuits(monke
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError):
-            await core._perform_authed_post(
+            await core._transport.perform_authed_post(
                 build_request=build,
                 log_label="test",
                 disable_internal_retries=True,
@@ -426,7 +428,7 @@ async def test_build_request_called_once_on_happy_path(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert len(calls) == 1
@@ -475,7 +477,7 @@ async def test_first_terminal_attempt_rebuilds_when_snapshot_changed(monkeypatch
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert len(calls) == 2
@@ -519,7 +521,7 @@ async def test_build_request_called_twice_with_fresh_snapshot_on_401(monkeypatch
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert len(refresh_calls) == 1
@@ -556,7 +558,7 @@ async def test_transport_auth_expired_when_refresh_fails(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportAuthExpired) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert exc_info.value.original is original
         assert exc_info.value.__cause__ is refresh_error
@@ -589,7 +591,7 @@ async def test_429_retries_exhaust_to_transport_rate_limited(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportRateLimited) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         # Initial attempt + 2 retries = 3 total POSTs.
         assert call_count["n"] == 3
@@ -614,7 +616,7 @@ async def test_429_without_retry_budget_raises_immediately(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportRateLimited) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert exc_info.value.retry_after == 60
     finally:
@@ -650,8 +652,8 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        # Use _perform_authed_post directly inside set_request_id to verify
-        # the helper itself doesn't reset the id. ``_perform_authed_post``
+        # Use perform_authed_post directly inside set_request_id to verify
+        # the helper itself doesn't reset the id. ``perform_authed_post``
         # is the transport-level call below ``rpc_call``; it never invokes
         # ``decode_response``, so no decode_response patch is needed here.
         # (Pre-Phase-2-PR-5 this test carried a stale
@@ -663,7 +665,7 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
 
         token = set_request_id("REQ-stable-1234")
         try:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
         finally:
             reset_request_id(token)
 
@@ -748,7 +750,7 @@ async def test_5xx_retries_then_succeeds(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert call_count["n"] == 2
@@ -783,7 +785,7 @@ async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         # Initial + 3 retries = 4 total attempts.
         assert call_count["n"] == 4
@@ -821,7 +823,7 @@ async def test_network_error_retries_then_succeeds(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        response = await core._perform_authed_post(build_request=build, log_label="test")
+        response = await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert call_count["n"] == 2
@@ -853,7 +855,7 @@ async def test_network_error_exhausts_budget_raises_transport_server_error(monke
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         # Initial + 2 retries = 3 attempts; 2 sleeps (1, 2).
         assert sleeps == [1, 2]
@@ -889,7 +891,7 @@ async def test_server_error_budget_zero_raises_immediately(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         # Exactly one attempt, no sleep.
         assert call_count["n"] == 1
@@ -921,7 +923,7 @@ async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError):
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         # min(2 ** attempt, 30) for attempt in 0..7 → 1, 2, 4, 8, 16, 30, 30, 30.
         assert sleeps == [1, 2, 4, 8, 16, 30, 30, 30]
@@ -952,7 +954,7 @@ async def test_5xx_path_does_not_touch_429_path(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportRateLimited) as exc_info:
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         # 429-path sleep uses Retry-After (5), NOT exponential backoff.
         assert sleeps == [5]
@@ -992,7 +994,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError):
-            await core._perform_authed_post(build_request=build, log_label="test")
+            await core._transport.perform_authed_post(build_request=build, log_label="test")
 
         assert refresh_calls == []
     finally:

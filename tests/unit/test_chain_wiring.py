@@ -5,14 +5,17 @@ The Tier-12/13 greenfield migration wires
 The chain leaf (:meth:`Session._authed_post_chain_terminal`) consumes the
 populated ``RpcRequest.url`` / ``headers`` / ``body`` envelope and delegates
 directly to ``Kernel.post`` — the transport seam under both
-:meth:`Session._perform_authed_post` AND ``RpcExecutor._execute_once``.
+:meth:`SessionTransport.perform_authed_post` AND
+``RpcExecutor._execute_once``. The ``Session._perform_authed_post``
+compatibility forward was deleted in Wave 11c of session-decoupling;
+tests now drive the canonical collaborator method directly.
 
 These tests verify the wiring contract from
 ADR-009 §"RpcRequest.context keys":
 
-1. Both call paths (``Session._perform_authed_post`` directly and the
-   ``RpcExecutor._execute_once`` keyword shape) flow through the chain terminal to
-   the transport.
+1. Both call paths (``SessionTransport.perform_authed_post`` directly
+   and the ``RpcExecutor._execute_once`` keyword shape) flow through
+   the chain terminal to the transport.
 2. ``RpcRequest.context`` carries ``build_request`` / ``log_label`` /
    ``disable_internal_retries`` for retry/rebuild metadata while the terminal
    reads the envelope itself.
@@ -83,11 +86,11 @@ def _swap_kernel_post(core: Session, fake: FakeKernelPost) -> None:
 
 @pytest.mark.asyncio
 async def test_chain_routes_perform_authed_post_to_transport() -> None:
-    """``Session._perform_authed_post`` flows through the chain to transport.
+    """``SessionTransport.perform_authed_post`` flows through the chain.
 
-    Covers direct callers of ``Session._perform_authed_post``: the chat
-    path in ``_chat_transport.py:64`` and any first-party caller via
-    ``client._session._perform_authed_post``.
+    Covers direct callers of ``SessionTransport.perform_authed_post``:
+    the chat path in ``_chat_transport.py:64`` and any first-party
+    caller via ``client._session._transport.perform_authed_post``.
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")
     fake = FakeKernelPost(response=expected_response)
@@ -97,7 +100,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/url", b"body", None)
 
-    response = await core._perform_authed_post(
+    response = await core._transport.perform_authed_post(
         build_request=build_request,
         log_label="test-log-label",
         disable_internal_retries=False,
@@ -113,21 +116,22 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
 
 @pytest.mark.asyncio
 async def test_chain_routes_rpc_executor_path_to_transport() -> None:
-    """``RpcExecutor._execute_once`` → ``_perform_authed_post`` flows through the chain too.
+    """``RpcExecutor._execute_once`` → ``perform_authed_post`` flows through the chain too.
 
     ``RpcExecutor._execute_once`` calls
-    ``self._owner._perform_authed_post(...)`` which is precisely
-    :meth:`Session._perform_authed_post`. Routing both paths through one
-    seam is the whole point of wiring at ``_perform_authed_post`` rather
-    than at each call site.
+    ``self._transport.perform_authed_post(...)`` (Wave 4 of
+    session-decoupling: the executor takes :class:`SessionTransport`
+    directly instead of reaching through Session). Routing both paths
+    through one seam is the whole point of wiring at
+    ``perform_authed_post`` rather than at each call site.
 
-    We exercise the route by calling ``_perform_authed_post`` with the
+    We exercise the route by calling ``perform_authed_post`` with the
     keyword shape ``RpcExecutor._execute_once`` uses (the
     ``log_label=f"RPC {method.name}"`` template)
     and asserting the chain leaf hands those exact kwargs to the
     transport. We do NOT spin up a full ``RpcExecutor`` here because that
     pulls in the idempotency registry and encoder fixtures; the seam
-    invariant is "the chain receives whatever ``_perform_authed_post``
+    invariant is "the chain receives whatever ``perform_authed_post``
     receives," which a direct call validates without the extra surface.
     """
     expected_response = httpx.Response(status_code=200, content=b"rpc-path")
@@ -138,7 +142,7 @@ async def test_chain_routes_rpc_executor_path_to_transport() -> None:
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/rpc", b"rpc-body", {"X-Goog-AuthUser": "0"})
 
-    response = await core._perform_authed_post(
+    response = await core._transport.perform_authed_post(
         build_request=build_request,
         log_label="RPC LIST_NOTEBOOKS",
         disable_internal_retries=True,
@@ -158,7 +162,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
 
     Drives the terminal adapter directly with a hand-built ``RpcRequest``
     so we can assert the contract independently of
-    :meth:`Session._perform_authed_post`'s context-construction code.
+    :meth:`SessionTransport.perform_authed_post`'s context-construction code.
     This is what every middleware PR 12.3–12.8 will rely on when it
     builds a chain over ``[*middlewares, ...]`` and lets the leaf adapt
     the request into a transport call.
@@ -198,11 +202,9 @@ async def test_chain_terminal_reads_context_keys() -> None:
 async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
     """When ``context`` omits ``disable_internal_retries`` the leaf reads ``False``.
 
-    ``_perform_authed_post`` always populates the key, but the leaf
+    ``perform_authed_post`` always populates the key, but the leaf
     defends against a missing entry so middlewares that build a request
-    without the key (e.g. a future ``Session.transport_post`` raw-POST
-    seam, master plan section 3) cannot trip the leaf with a
-    ``KeyError``.
+    without the key cannot trip the leaf with a ``KeyError``.
     """
     fake = FakeKernelPost()
     core = _make_core()
@@ -371,16 +373,21 @@ def test_build_chain_empty_returns_terminal_unchanged() -> None:
 
 
 def test_perform_authed_post_signature_unchanged() -> None:
-    """The keyword-only signature of ``_perform_authed_post`` is unchanged.
+    """The keyword-only signature of ``perform_authed_post`` is unchanged.
 
     Many call sites pass the three kwargs by name, including the RPC executor,
-    chat transport, and integration tests.
-    The chain wiring inside the body must NOT change the public-ish
-    signature; this guard catches an accidental rename.
+    chat transport, and integration tests. The chain wiring inside the body
+    must NOT change the public-ish signature; this guard catches an
+    accidental rename. The Session-level ``_perform_authed_post`` forward
+    was deleted in Wave 11c of session-decoupling; the signature contract
+    now lives on the canonical collaborator method
+    (``SessionTransport.perform_authed_post``).
     """
     import inspect
 
-    sig = inspect.signature(Session._perform_authed_post)
+    from notebooklm._session_transport import SessionTransport
+
+    sig = inspect.signature(SessionTransport.perform_authed_post)
     params = sig.parameters
     assert "build_request" in params
     assert "log_label" in params

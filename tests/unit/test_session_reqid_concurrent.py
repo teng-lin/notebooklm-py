@@ -1,10 +1,14 @@
-"""Concurrency test for ``Session.next_reqid``.
+"""Concurrency test for ``Session._reqid.next_reqid``.
 
 Covers 100 concurrent ``next_reqid()`` callers (via
 ``asyncio.gather``) must each see a unique, monotonic counter value. Without
 the ``asyncio.Lock`` guard, the underlying read-modify-write would race and
 produce duplicate values — exactly the bug Google's chat backend rejects
 when two concurrent ``ChatAPI.ask`` calls happen on the same client.
+
+The ``Session.next_reqid`` compatibility forward was deleted in Wave 11c
+of session-decoupling; tests now reach the canonical counter directly via
+``core._reqid.next_reqid(...)``.
 """
 
 import asyncio
@@ -31,7 +35,7 @@ async def test_next_reqid_concurrent_unique_and_monotonic() -> None:
     step = 100000
     baseline = core._reqid.value  # 100000
 
-    results = await asyncio.gather(*[core.next_reqid(step=step) for _ in range(100)])
+    results = await asyncio.gather(*[core._reqid.next_reqid(step=step) for _ in range(100)])
 
     # Uniqueness: no two callers got the same value.
     assert len(set(results)) == 100, (
@@ -58,7 +62,7 @@ async def test_next_reqid_concurrent_custom_step() -> None:
     step = 7  # small step exercises the increment math under heavy contention
     baseline = core._reqid.value
 
-    results = await asyncio.gather(*[core.next_reqid(step=step) for _ in range(50)])
+    results = await asyncio.gather(*[core._reqid.next_reqid(step=step) for _ in range(50)])
 
     assert len(set(results)) == 50
     assert sorted(results) == [baseline + step * (i + 1) for i in range(50)]

@@ -9,7 +9,7 @@ Post-fix:
 - ``Session.__init__`` defaults ``rate_limit_max_retries`` to ``3``.
 - ``NotebookLMClient.__init__`` and ``NotebookLMClient.from_storage``
   match the new default.
-- ``_perform_authed_post`` falls back to capped exponential backoff
+- ``SessionTransport.perform_authed_post`` falls back to capped exponential backoff
   (start 1s, cap 30s, ±20% jitter) when a 429 lacks a parseable
   ``Retry-After`` header, so the new default is useful even when the
   server omits the hint.
@@ -196,7 +196,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     creates would silently inherit the new default and the idempotency
     safety net would no longer apply.
 
-    This test exercises ``_perform_authed_post`` directly with
+    This test exercises ``SessionTransport.perform_authed_post`` directly with
     ``disable_internal_retries=True`` and verifies the very first 429
     raises ``TransportRateLimited`` (which the API layer translates
     into ``RateLimitError``) without sleeping.
@@ -217,7 +217,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
         return ("https://example.invalid/x", b"body", None)
 
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(TransportRateLimited):
-        await client._session._perform_authed_post(
+        await client._session._transport.perform_authed_post(
             build_request=_build_request,
             log_label="test",
             disable_internal_retries=True,
