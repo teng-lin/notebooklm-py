@@ -43,7 +43,7 @@ EXPECTED_TRANSPORT_ERRORS_ALL: list[str] = [
     "raise_mapped_post_error",
 ]
 
-EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor", "RpcOwner"]
+EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor"]
 
 EXPECTED_CONVERSATION_CACHE_ALL: list[str] = [
     "MAX_CONVERSATION_CACHE_SIZE",

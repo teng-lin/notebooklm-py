@@ -184,7 +184,10 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # seam-substitution pattern is extended to cover the CLI resolver
         # surface.
         "tests/unit/test_generate_service.py",
-        "tests/unit/test_idempotency_registry.py",
+        # tests/unit/test_idempotency_registry.py — removed in Wave 4 of
+        # session-decoupling: the test's RpcExecutor construction was
+        # migrated from a MagicMock-owner monkeypatch pattern to the
+        # ADR-014 Rule 5 keyword-collaborator constructor shape.
         "tests/unit/test_init_order.py",
         "tests/unit/test_migration_lock.py",
         "tests/unit/test_notebook_api.py",

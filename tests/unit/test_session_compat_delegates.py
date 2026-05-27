@@ -16,8 +16,11 @@ structural protocol caller, a Protocol-imposed call site, or an
 established test-seam swap point that would require its own follow-up
 to migrate:
 
-    Protocol-locked (``RpcOwner`` in ``_rpc_executor.py``)
-        _await_refresh
+    Middleware-chain seam (ADR-014 Rule 4, retained on Session by design)
+        _await_refresh — captured via ``refresh_callable=host._await_refresh``
+        in ``wire_middleware_chain``; deleting it would break the chain
+        wiring. (``RpcOwner`` Protocol was deleted in Wave 4 of session-decoupling
+        when ``RpcExecutor`` migrated to direct collaborator dependencies.)
 
     External Protocol surface (``RefreshAuthCore`` in ``_auth/session.py``)
         update_auth_tokens
@@ -151,14 +154,27 @@ def test_session_delegate_calls_collaborator(name: str) -> None:
     )
 
 
-def test_session_satisfies_rpc_owner_protocol_members() -> None:
-    """RpcOwner stays narrow: only members the executor directly calls."""
+def test_session_retains_adr_014_rule_4_middleware_chain_seams() -> None:
+    """ADR-014 Rule 4 retention list: Session keeps the surfaces the
+    middleware-chain wiring + downstream Protocol consumers depend on.
+
+    These names were previously the ``RpcOwner`` Protocol surface (deleted
+    in Wave 4 of the session-decoupling plan when ``RpcExecutor`` migrated
+    to direct collaborator dependencies). They remain on Session because:
+
+    - ``_await_refresh`` — captured by ``wire_middleware_chain`` as
+      ``refresh_callable=host._await_refresh``.
+    - ``_perform_authed_post`` — direct callers in ``_chat_transport`` and
+      external client code reach it here; live middleware-chain seam.
+    - ``_increment_metrics`` — provider-closure capture target.
+    - ``_kernel`` — Session owns the transport core.
+    """
     for name in (
         "_await_refresh",
         "_perform_authed_post",
         "_increment_metrics",
     ):
-        assert hasattr(Session, name), f"Session missing RpcOwner member: {name}"
+        assert hasattr(Session, name), f"Session missing Rule-4 retained member: {name}"
         assert callable(getattr(Session, name)), f"Session.{name} not callable"
 
     from notebooklm.auth import AuthTokens
@@ -166,7 +182,7 @@ def test_session_satisfies_rpc_owner_protocol_members() -> None:
     core = Session(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="sid"),
     )
-    assert hasattr(core, "_kernel"), "Session missing RpcOwner member: _kernel"
+    assert hasattr(core, "_kernel"), "Session missing Rule-4 retained member: _kernel"
 
 
 def test_session_keeps_drain_tracker_seam() -> None:

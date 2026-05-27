@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["DecodeResponse", "RpcExecutor", "RpcOwner"]
+__all__ = ["DecodeResponse", "RpcExecutor"]
 
 import json
 import logging
@@ -20,10 +20,7 @@ from ._idempotency import (
     resolve_effective_disable_internal_retries,
 )
 from ._logging import get_request_id, reset_request_id, set_request_id
-from ._request_types import (
-    AuthSnapshot,
-    BuildRequest,
-)
+from ._request_types import AuthSnapshot
 from ._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
@@ -46,8 +43,11 @@ from .rpc import (
 )
 
 if TYPE_CHECKING:
+    from ._client_metrics import ClientMetrics
     from ._kernel import Kernel
+    from ._session_auth import AuthRefreshCoordinator
     from ._session_contracts import RpcCaller
+    from ._session_transport import SessionTransport
 
 logger = logging.getLogger(__name__)
 
@@ -56,35 +56,23 @@ class DecodeResponse(Protocol):
     def __call__(self, raw: str, rpc_id: str, *, allow_null: bool = False) -> Any: ...
 
 
-class RpcOwner(Protocol):
-    # Concrete-class reference (NOT a bridge attribute). Used by
-    # :meth:`RpcExecutor.rpc_call` for the pre-open guard
-    # via :meth:`Kernel.get_http_client`, which raises the historical
-    # ``RuntimeError("Client not initialized. Use 'async with' context.")``
-    # when the client hasn't been opened yet.
-    _kernel: Kernel
-
-    async def _perform_authed_post(
-        self,
-        *,
-        build_request: BuildRequest,
-        log_label: str,
-        disable_internal_retries: bool = False,
-        rpc_method: str | None = None,
-    ) -> httpx.Response: ...
-
-    async def _await_refresh(self) -> None: ...
-
-    def _increment_metrics(self, **increments: int | float) -> None: ...
-
-
 class RpcExecutor:
-    """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry."""
+    """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry.
+
+    ADR-014 Rule 5 (Wave 4 of the session-decoupling plan): constructor takes
+    its four runtime collaborators (Kernel, SessionTransport,
+    AuthRefreshCoordinator, ClientMetrics) directly via keyword-only arguments
+    instead of reaching them through a Session-shaped owner. The old
+    ``RpcOwner`` Protocol was deleted in the same PR.
+    """
 
     def __init__(
         self,
-        owner: RpcOwner,
         *,
+        kernel: Kernel,
+        transport: SessionTransport,
+        auth_refresh: AuthRefreshCoordinator,
+        metrics: ClientMetrics,
         decode_response: DecodeResponse,
         is_auth_error: Callable[[Exception], bool],
         sleep: Callable[[float], Awaitable[Any]],
@@ -92,7 +80,10 @@ class RpcExecutor:
         refresh_callback_enabled_provider: Callable[[], bool],
         refresh_retry_delay_provider: Callable[[], float],
     ):
-        self._owner = owner
+        self._kernel = kernel
+        self._transport = transport
+        self._auth_refresh = auth_refresh
+        self._metrics = metrics
         self._decode_response = decode_response
         self._is_auth_error = is_auth_error
         self._sleep = sleep
@@ -133,7 +124,7 @@ class RpcExecutor:
         # kernel accessor instead of the now-narrowed :class:`RpcOwner`
         # Protocol attribute keeps the early-fail behavior intact while
         # removing ``_http_client`` from the Protocol surface.
-        self._owner._kernel.get_http_client()
+        self._kernel.get_http_client()
 
         # Only the outer call mints a request id; the decode-time retry path
         # (``_is_retry=True``) inherits the parent's id so a single
@@ -152,7 +143,7 @@ class RpcExecutor:
                 operation_variant=operation_variant,
             )
 
-        self._owner._increment_metrics(rpc_calls_started=1)
+        self._metrics.increment(rpc_calls_started=1)
         # ``rpc_calls_started`` and reqid stay HERE (outside the chain)
         # because they bracket the entire logical RPC including decode —
         # the chain wraps only the transport leg. Per-attempt latency,
@@ -228,7 +219,7 @@ class RpcExecutor:
             return url, body, {}
 
         try:
-            response = await self._owner._perform_authed_post(
+            response = await self._transport.perform_authed_post(
                 build_request=_build,
                 log_label=f"RPC {method.name}",
                 disable_internal_retries=effective_disable_internal_retries,
@@ -439,7 +430,7 @@ class RpcExecutor:
         logger.info("RPC %s auth error detected, attempting token refresh", method.name)
 
         try:
-            await self._owner._await_refresh()
+            await self._auth_refresh.await_refresh()
         except Exception as refresh_error:
             logger.warning("Token refresh failed: %s", refresh_error)
             raise original_error from refresh_error

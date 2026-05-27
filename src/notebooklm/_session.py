@@ -46,22 +46,13 @@ from .auth import (
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 if TYPE_CHECKING:
-    from ._rpc_executor import RpcOwner
     from .types import ConnectionLimits
 
-    def _assert_session_satisfies_protocols(s: "Session") -> None:
-        """Compile-time guard: :class:`Session` MUST satisfy ``RpcOwner``.
-
-        Session-shrink PR 3 narrowed the Protocol by removing
-        ``_timeout``, ``_refresh_callback``, ``_refresh_retry_delay``,
-        ``_http_client``, and ``_bound_loop`` declarations. Some of those
-        compatibility bridges have since been retired; what this assertion
-        guarantees is that the narrowed :class:`RpcOwner` shape is satisfied
-        by :class:`Session`. mypy verifies this during
-        ``mypy src/notebooklm``; the function is a no-op at runtime (gated by
-        ``TYPE_CHECKING``).
-        """
-        _owner: RpcOwner = s
+    # ADR-014 Rule 5 (Wave 4 of session-decoupling): the compile-time
+    # ``Session: RpcOwner`` assertion was removed when the ``RpcOwner``
+    # Protocol itself was deleted — ``RpcExecutor`` now takes its
+    # collaborators directly via keyword arguments instead of reaching
+    # them through a Session-shaped owner.
 
 
 from .rpc import RPCMethod
@@ -558,8 +549,14 @@ class Session:
         """
         executor = getattr(self, "_rpc_executor", None)
         if executor is None:
+            # ADR-014 Rule 5 (Wave 4 of session-decoupling): RpcExecutor
+            # takes its collaborators directly via keyword-only arguments
+            # instead of reaching them through a Session-shaped owner.
             executor = RpcExecutor(
-                self,
+                kernel=self._kernel,
+                transport=self._transport,
+                auth_refresh=self._auth_coord,
+                metrics=self._metrics_obj,
                 decode_response=self._decode_response,
                 is_auth_error=self._is_auth_error,
                 sleep=self._sleep,
@@ -701,10 +698,13 @@ class Session:
         rpc_method: str | None = None,
     ) -> httpx.Response:
         """Forward to :meth:`SessionTransport.perform_authed_post` (body
-        moved in move #4c — ``docs/improvement.md`` §3.1). Kept on
-        :class:`Session` because the :class:`RpcOwner` Protocol in
-        :mod:`notebooklm._rpc_executor` structurally requires the method
-        here (``RpcExecutor._execute_once`` reaches it via ``self._owner``).
+        moved in move #4c — ``docs/improvement.md`` §3.1). Retained on
+        :class:`Session` per ADR-014 Rule 4 as a load-bearing middleware-chain
+        seam: ``_chat_transport`` and ``client._session._perform_authed_post(...)``
+        direct callers still reach it here. ``RpcExecutor`` no longer calls
+        this method (Wave 4 of session-decoupling: the executor takes
+        :class:`SessionTransport` directly and calls
+        ``self._transport.perform_authed_post`` without going through Session).
         ``_chat_transport`` and ``client._session._perform_authed_post(...)``
         direct callers keep the same keyword-only signature.
         """

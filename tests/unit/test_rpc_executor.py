@@ -47,6 +47,14 @@ def _status_error(status_code: int, *, retry_after: str | None = None) -> httpx.
 
 
 class _Owner:
+    """Test stub satisfying RpcExecutor's four collaborator dependencies.
+
+    Wave 4 of session-decoupling (ADR-014 Rule 5): RpcExecutor takes
+    Kernel + SessionTransport + AuthRefreshCoordinator + ClientMetrics
+    directly via keyword arguments. This stub plays all four roles in
+    one object — see :func:`_executor` for the wiring.
+    """
+
     def __init__(
         self,
         *,
@@ -67,15 +75,20 @@ class _Owner:
             authuser=1,
             account_email="user@example.test",
         )
+        # Self-reference so the same stub can play both ``kernel`` and the
+        # other three roles when passed to ``RpcExecutor(...)`` below.
         self._kernel = self
 
+    # --- Kernel role ----------------------------------------------------
     def get_http_client(self) -> object:
         return object()
 
-    def _increment_metrics(self, **increments: int | float) -> None:
+    # --- ClientMetrics role ---------------------------------------------
+    def increment(self, **increments: int | float) -> None:
         self.metric_increments.append(increments)
 
-    async def _perform_authed_post(
+    # --- SessionTransport role ------------------------------------------
+    async def perform_authed_post(
         self,
         *,
         build_request,
@@ -95,7 +108,8 @@ class _Owner:
         )
         return self.response
 
-    async def _await_refresh(self) -> None:
+    # --- AuthRefreshCoordinator role ------------------------------------
+    async def await_refresh(self) -> None:
         self.refresh_calls += 1
 
 
@@ -112,16 +126,19 @@ def _executor(
     def _decode(_: str, rpc_id: str, *, allow_null: bool = False) -> dict[str, Any]:
         return {"rpc_id": rpc_id, "allow_null": allow_null}
 
+    # ADR-014 Rule 5 (Wave 4 of session-decoupling): the executor takes
+    # its four collaborators as keyword-only args. The ``_Owner`` stub
+    # plays all four roles; pass it under each keyword so the executor's
+    # ``self._kernel`` / ``self._metrics`` / ``self._transport`` /
+    # ``self._auth_refresh`` references all land on the same stub.
     return RpcExecutor(
-        owner,
+        kernel=owner,  # type: ignore[arg-type]
+        transport=owner,  # type: ignore[arg-type]
+        auth_refresh=owner,  # type: ignore[arg-type]
+        metrics=owner,  # type: ignore[arg-type]
         decode_response=decode_response or _decode,
         is_auth_error=is_auth_error or (lambda exc: False),
         sleep=sleep or _no_sleep,
-        # Session-shrink PR 3 narrowed :class:`RpcOwner` and added
-        # constructor-time providers for the values that used to be
-        # read off the owner directly. The ``_Owner`` stub still holds
-        # the legacy ivars so individual tests can mutate them — the
-        # providers simply read through to those ivars.
         timeout_provider=lambda: owner._timeout,
         refresh_callback_enabled_provider=lambda: owner._refresh_callback is not None,
         refresh_retry_delay_provider=lambda: owner._refresh_retry_delay,
@@ -223,7 +240,11 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
     ) -> httpx.Response:
         return _ok_response("wire")
 
-    monkeypatch.setattr(core, "_perform_authed_post", fake_perform_authed_post)
+    # ADR-014 Rule 5 (Wave 4 of session-decoupling): the executor calls
+    # ``self._transport.perform_authed_post(...)`` directly instead of
+    # routing through ``Session._perform_authed_post``. Patch the
+    # collaborator the executor actually reaches.
+    monkeypatch.setattr(core._transport, "perform_authed_post", fake_perform_authed_post)
 
     result = await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
@@ -409,7 +430,9 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         assert operation_variant is None
         return {"ok": True}
 
-    monkeypatch.setattr(core, "_await_refresh", fake_await_refresh)
+    # ADR-014 Rule 5 (Wave 4): executor calls ``self._auth_refresh.await_refresh()``
+    # directly. Patch the collaborator the executor actually reaches.
+    monkeypatch.setattr(core._auth_coord, "await_refresh", fake_await_refresh)
     monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)
 
     result = await executor.try_refresh_and_retry(

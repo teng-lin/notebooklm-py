@@ -523,13 +523,21 @@ def _build_rpc_executor() -> Any:
         captured["rpc_method"] = rpc_method
         return httpx.Response(200, text=")]}'\n[]")
 
-    owner = MagicMock()
-    owner._timeout = 30.0
-    owner._refresh_callback = None
-    owner._refresh_retry_delay = 0.0
-    owner._perform_authed_post = AsyncMock(side_effect=_fake_perform_authed_post)
-    owner._await_refresh = AsyncMock()
-    owner._increment_metrics = MagicMock()
+    # ADR-014 Rule 5 (Wave 4 of session-decoupling): RpcExecutor takes
+    # its four collaborators (kernel/transport/auth_refresh/metrics) as
+    # keyword-only args. Use four MagicMock collaborators so each role
+    # can be inspected independently.
+    kernel = MagicMock()
+    transport = MagicMock()
+    transport.perform_authed_post = AsyncMock(side_effect=_fake_perform_authed_post)
+    auth_refresh = MagicMock()
+    auth_refresh.await_refresh = AsyncMock()
+    auth_refresh.has_refresh_callback = False
+    metrics = MagicMock()
+
+    # Surviving legacy ivars used by the providers below.
+    timeout = 30.0
+    refresh_retry_delay = 0.0
 
     def _decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
         return []
@@ -541,19 +549,22 @@ def _build_rpc_executor() -> Any:
         return False
 
     executor = RpcExecutor(
-        owner,
+        kernel=kernel,
+        transport=transport,
+        auth_refresh=auth_refresh,
+        metrics=metrics,
         decode_response=_decode,
         is_auth_error=_is_auth_error,
         sleep=_sleep,
-        # Session-shrink PR 3: providers replace direct owner-attr reads
-        # for the values that used to live on the :class:`RpcOwner`
-        # Protocol. The ``MagicMock`` owner still holds the legacy ivars,
-        # so each provider just reads through.
-        timeout_provider=lambda: owner._timeout,
-        refresh_callback_enabled_provider=lambda: owner._refresh_callback is not None,
-        refresh_retry_delay_provider=lambda: owner._refresh_retry_delay,
+        timeout_provider=lambda: timeout,
+        refresh_callback_enabled_provider=lambda: auth_refresh.has_refresh_callback,
+        refresh_retry_delay_provider=lambda: refresh_retry_delay,
     )
-    return executor, owner, captured
+    # ``_unused`` slot preserved for backward-compatible 3-tuple unpacking
+    # at call sites that have not been migrated to the keyword-collaborators
+    # shape. After Wave 4 of session-decoupling (ADR-014 Rule 5), the executor
+    # holds its collaborators directly so the middle slot is just None.
+    return executor, None, captured
 
 
 @pytest.mark.asyncio
@@ -564,7 +575,7 @@ async def test_default_registry_preserves_today_behavior(
     UNCLASSIFIED policy for every method, an unspecified
     ``disable_internal_retries`` MUST resolve to False — exactly today's
     behavior. No drift."""
-    executor, owner, captured = _build_rpc_executor
+    executor, _unused, captured = _build_rpc_executor
 
     await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
@@ -586,7 +597,7 @@ async def test_caller_disable_true_propagates_through_executor(
 ) -> None:
     """Explicit caller ``disable_internal_retries=True`` MUST reach the
     transport regardless of policy (caller wins)."""
-    executor, owner, captured = _build_rpc_executor
+    executor, _unused, captured = _build_rpc_executor
 
     await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
@@ -610,7 +621,7 @@ async def test_operation_variant_kwarg_threads_through_executor(
     """``operation_variant`` MUST be accepted as a kwarg on
     ``RpcExecutor._execute_once()`` without breaking the call. Wave 2 will wire
     behavioral effects; this PR only adds the seam."""
-    executor, owner, captured = _build_rpc_executor
+    executor, _unused, captured = _build_rpc_executor
 
     # Should not raise — kwarg is accepted everywhere.
     await executor._execute_once(
