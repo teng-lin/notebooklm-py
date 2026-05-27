@@ -81,6 +81,7 @@ __all__ = [
     "ArtifactNotReadyError",
     "ArtifactParseError",
     "ArtifactDownloadError",
+    "ArtifactFeatureUnavailableError",
     # Domain: Research
     "ResearchTaskMismatchError",
 ]
@@ -1002,6 +1003,36 @@ class ArtifactDownloadError(ArtifactError):
         if details:
             msg += f": {details}"
         super().__init__(msg)
+
+
+class ArtifactFeatureUnavailableError(RPCError, ArtifactError):
+    """Artifact generation feature is unavailable for this request.
+
+    NotebookLM can accept a ``CREATE_ARTIFACT`` request but return a null
+    result when a specific artifact feature is disabled, gated, or rejected
+    before a generation task is created. This is not schema drift: the RPC
+    decoded successfully, but no task row exists to parse.
+
+    Attributes:
+        artifact_type: The artifact type being generated.
+        method_id: The RPC method ID (inherited from :class:`RPCError`).
+        raw_response: First 80 chars of the raw response, if any
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
+    """
+
+    def __init__(
+        self,
+        artifact_type: str,
+        *,
+        method_id: str | None = None,
+        raw_response: str | None = None,
+    ):
+        self.artifact_type = artifact_type
+        super().__init__(
+            f"{artifact_type.replace('_', ' ').capitalize()} generation is unavailable",
+            method_id=method_id,
+            raw_response=raw_response,
+        )
 
 
 # =============================================================================

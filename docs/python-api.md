@@ -232,12 +232,18 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `NotebookNotFoundError` | `NotFoundError`, `RPCError`, `NotebookError`, `NotebookLMError` |
 | `SourceNotFoundError` | `NotFoundError`, `RPCError`, `SourceError`, `NotebookLMError` |
 | `ArtifactNotFoundError` | `NotFoundError`, `RPCError`, `ArtifactError`, `NotebookLMError` |
+| `ArtifactFeatureUnavailableError` | `RPCError`, `ArtifactError`, `NotebookLMError` |
 
 Use the table to pick the right level of catch. `client.sources.get(...)`
 returns `None` for a missing source rather than raising; the workflows that
 do raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
 `client.sources.wait_until_ready(...)`. Artifact-download workflows raise
 `ArtifactNotFoundError` when a requested artifact ID is not in the listing.
+Artifact generation workflows may raise `ArtifactFeatureUnavailableError`
+when NotebookLM accepts the RPC but returns no generation task for a specific
+artifact feature. For infographic generation, a null `CREATE_ARTIFACT` result
+is reported this way instead of surfacing as schema drift or a failed
+`GenerationStatus`.
 
 ##### Catching any "not found" across domains
 

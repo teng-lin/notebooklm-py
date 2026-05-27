@@ -57,6 +57,7 @@ from .exceptions import (
     # Domain: Artifacts
     ArtifactDownloadError,
     ArtifactError,
+    ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
@@ -226,6 +227,7 @@ __all__ = [
     "SourceNotFoundError",
     # Domain Exceptions: Artifacts
     "ArtifactError",
+    "ArtifactFeatureUnavailableError",
     "ArtifactNotFoundError",
     "ArtifactNotReadyError",
     "ArtifactParseError",

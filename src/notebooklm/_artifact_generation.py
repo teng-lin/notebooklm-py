@@ -7,7 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ._env import get_default_language
-from .exceptions import ValidationError
+from .exceptions import ArtifactFeatureUnavailableError, ValidationError
 from .rpc import (
     ArtifactTypeCode,
     AudioFormat,
@@ -415,9 +415,13 @@ class ArtifactGenerationService:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
-        orientation_code = orientation.value if orientation else None
-        detail_code = detail_level.value if detail_level else None
-        style_code = style.value if style else None
+        orientation_code = (
+            orientation.value if orientation is not None else InfographicOrientation.LANDSCAPE.value
+        )
+        detail_code = (
+            detail_level.value if detail_level is not None else InfographicDetail.STANDARD.value
+        )
+        style_code = style.value if style is not None else InfographicStyle.AUTO_SELECT.value
 
         params = [
             [2],
@@ -440,7 +444,11 @@ class ArtifactGenerationService:
                 [[instructions, language, None, orientation_code, detail_code, style_code]],
             ],
         ]
-        return await self.call_generate(notebook_id, params)
+        return await self.call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="infographic",
+        )
 
     async def generate_slide_deck(
         self,
@@ -673,7 +681,13 @@ class ArtifactGenerationService:
 
         return suggestions
 
-    async def call_generate(self, notebook_id: str, params: list[Any]) -> GenerationStatus:
+    async def call_generate(
+        self,
+        notebook_id: str,
+        params: list[Any],
+        *,
+        null_result_artifact_type: str | None = None,
+    ) -> GenerationStatus:
         """Make a generation RPC call with error handling."""
         artifact_type = params[2][2] if len(params) > 2 and len(params[2]) > 2 else "unknown"
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
@@ -700,6 +714,11 @@ class ArtifactGenerationService:
                     error_code=str(e.rpc_code) if e.rpc_code is not None else None,
                 )
             raise
+        if result is None and null_result_artifact_type is not None:
+            raise ArtifactFeatureUnavailableError(
+                null_result_artifact_type,
+                method_id=RPCMethod.CREATE_ARTIFACT.value,
+            )
         return self.parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
     def parse_generation_result(

@@ -272,6 +272,7 @@ _FROZEN_TYPES_ALL = [
     "SourceTimeoutError",
     "SourceNotFoundError",
     "ArtifactError",
+    "ArtifactFeatureUnavailableError",
     "ArtifactNotFoundError",
     "ArtifactNotReadyError",
     "ArtifactParseError",
@@ -360,6 +361,7 @@ _TYPES_EXCEPTION_REEXPORTS = [
     "SourceTimeoutError",
     "SourceNotFoundError",
     "ArtifactError",
+    "ArtifactFeatureUnavailableError",
     "ArtifactNotFoundError",
     "ArtifactNotReadyError",
     "ArtifactParseError",
@@ -369,6 +371,7 @@ _TYPES_EXCEPTION_REEXPORTS = [
 _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "ArtifactDownloadError",
     "ArtifactError",
+    "ArtifactFeatureUnavailableError",
     "ArtifactNotFoundError",
     "ArtifactNotReadyError",
     "ArtifactParseError",

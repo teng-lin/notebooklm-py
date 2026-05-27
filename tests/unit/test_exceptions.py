@@ -7,6 +7,7 @@ from notebooklm._env import DEFAULT_BASE_URL
 from notebooklm.exceptions import (
     ArtifactDownloadError,
     ArtifactError,
+    ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
@@ -69,6 +70,7 @@ class TestExceptionHierarchy:
             ArtifactNotReadyError,
             ArtifactParseError,
             ArtifactDownloadError,
+            ArtifactFeatureUnavailableError,
         ]
         for exc_class in exceptions:
             assert issubclass(exc_class, NotebookLMError), (
@@ -102,6 +104,7 @@ class TestExceptionHierarchy:
         assert issubclass(ArtifactNotReadyError, ArtifactError)
         assert issubclass(ArtifactParseError, ArtifactError)
         assert issubclass(ArtifactDownloadError, ArtifactError)
+        assert issubclass(ArtifactFeatureUnavailableError, ArtifactError)
 
     def test_not_found_errors_are_rpc_errors(self):
         """All ``*NotFoundError`` classes mix in :class:`RPCError`.
@@ -572,6 +575,15 @@ class TestDomainExceptions:
         assert e.artifact_type == "audio"
         assert e.details == "404 Not Found"
         assert e.artifact_id == "art_789"
+
+    def test_artifact_feature_unavailable_error_has_rpc_metadata(self):
+        """ArtifactFeatureUnavailableError stores artifact type and RPC metadata."""
+        e = ArtifactFeatureUnavailableError("infographic", method_id="R7cb6c")
+        assert e.artifact_type == "infographic"
+        assert e.method_id == "R7cb6c"
+        assert isinstance(e, ArtifactError)
+        assert isinstance(e, RPCError)
+        assert str(e) == "Infographic generation is unavailable"
 
 
 class TestAuthExtractionErrorScrubbing:

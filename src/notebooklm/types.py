@@ -52,6 +52,7 @@ from ._types.sources import (
 from .exceptions import (
     ArtifactDownloadError,
     ArtifactError,
+    ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
@@ -142,6 +143,7 @@ __all__ = [
     "SourceTimeoutError",
     "SourceNotFoundError",
     "ArtifactError",
+    "ArtifactFeatureUnavailableError",
     "ArtifactNotFoundError",
     "ArtifactNotReadyError",
     "ArtifactParseError",

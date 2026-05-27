@@ -17,7 +17,13 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm.exceptions import ValidationError
-from notebooklm.rpc import InfographicStyle, VideoFormat, VideoStyle
+from notebooklm.rpc import (
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
+    VideoFormat,
+    VideoStyle,
+)
 
 
 @pytest.fixture
@@ -611,12 +617,18 @@ class TestArtifactsSourceSelection:
 
         inner_params = params[2]
         source_ids_triple = inner_params[3]
+        infographic_config = inner_params[14][0]
 
         assert source_ids_triple == [[["src_info_1"]], [["src_info_2"]]]
+        assert infographic_config[3] == InfographicOrientation.LANDSCAPE.value
+        assert infographic_config[4] == InfographicDetail.STANDARD.value
+        assert infographic_config[5] == InfographicStyle.AUTO_SELECT.value
 
     @pytest.mark.asyncio
-    async def test_generate_infographic_style_encoding(self, mock_core, mock_mind_map_service):
-        """Test generate_infographic encodes style in config slot 5."""
+    async def test_generate_infographic_visual_option_encoding(
+        self, mock_core, mock_mind_map_service
+    ):
+        """Test generate_infographic encodes explicit visual options in config slots."""
         api = ArtifactsAPI(mock_core, notebooks=MagicMock(), **mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
@@ -624,6 +636,8 @@ class TestArtifactsSourceSelection:
         await api.generate_infographic(
             notebook_id="nb_123",
             source_ids=["src_info_1"],
+            orientation=InfographicOrientation.PORTRAIT,
+            detail_level=InfographicDetail.DETAILED,
             style=InfographicStyle.PROFESSIONAL,
         )
 
@@ -633,6 +647,8 @@ class TestArtifactsSourceSelection:
         inner_params = params[2]
         infographic_config = inner_params[14][0]
 
+        assert infographic_config[3] == InfographicOrientation.PORTRAIT.value
+        assert infographic_config[4] == InfographicDetail.DETAILED.value
         assert infographic_config[5] == InfographicStyle.PROFESSIONAL.value
 
     @pytest.mark.asyncio

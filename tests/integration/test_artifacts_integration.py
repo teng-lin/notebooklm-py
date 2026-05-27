@@ -32,6 +32,7 @@ from notebooklm.rpc import (
     VideoStyle,
 )
 from notebooklm.types import (
+    ArtifactFeatureUnavailableError,
     ArtifactNotReadyError,
     ArtifactParseError,
     ArtifactType,
@@ -687,6 +688,40 @@ class TestArtifactsAPI:
 
         assert result is not None
         assert result.task_id == "ig_456"
+
+    @pytest.mark.asyncio
+    async def test_generate_infographic_null_result_raises_feature_unavailable(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A null CREATE_ARTIFACT result is an unavailable artifact feature."""
+        notebook_response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "Test Notebook",
+                    [[["source_123"], "Source", [None, 0], [None, 2]]],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
+        )
+        null_response = build_rpc_response(RPCMethod.CREATE_ARTIFACT, None)
+        httpx_mock.add_response(content=notebook_response.encode())
+        httpx_mock.add_response(content=null_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ArtifactFeatureUnavailableError) as exc_info:
+                await client.artifacts.generate_infographic("nb_123")
+
+        err = exc_info.value
+        assert err.artifact_type == "infographic"
+        assert err.method_id == RPCMethod.CREATE_ARTIFACT.value
+        assert str(err) == "Infographic generation is unavailable"
 
     @pytest.mark.asyncio
     async def test_generate_data_table(
