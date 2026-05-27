@@ -49,7 +49,11 @@ class _FixtureSchemaError(AssertionError):
 
     Carries the file path and the dotted field name so a malformed fixture
     surfaces a structured failure instead of a raw KeyError / TypeError
-    from elsewhere in the test.
+    from elsewhere in the test. Inherits from :class:`AssertionError` (not
+    :class:`ValueError`) so pytest renders it with the same friendly
+    rewriting it applies to ``assert`` failures, and so any caller that
+    handles ``AssertionError`` (e.g. pytest hooks, ``--tb=short``) treats
+    it as a structured test failure rather than a generic exception.
     """
 
 
@@ -119,17 +123,37 @@ def _build_wire_response(chunks: list[Any]) -> str:
     return "\n".join(parts) + "\n"
 
 
-def _resolve_mapper(dotted: str) -> Any:
+def _resolve_mapper(dotted: str, *, method: RPCMethod) -> Any:
     """Resolve ``"module.path:attr"`` to a callable.
 
     Used by fixtures that pin a downstream mapper / parser output shape in
-    addition to the raw decoded payload.
+    addition to the raw decoded payload. Wraps the import + getattr step
+    in structured :class:`_FixtureSchemaError` so a missing module or
+    attribute surfaces the fixture file path rather than a raw
+    ``ModuleNotFoundError`` / ``AttributeError``.
     """
     module_name, _, attr = dotted.partition(":")
     if not module_name or not attr:
-        raise ValueError(f"Mapper reference {dotted!r} must be in 'module.path:attribute' form.")
-    module = importlib.import_module(module_name)
-    return getattr(module, attr)
+        raise _FixtureSchemaError(
+            f"Fixture for RPCMethod.{method.name} declares mapper {dotted!r} "
+            f"but it is not in 'module.path:attribute' form "
+            f"(file: {_fixture_path(method)})."
+        )
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        raise _FixtureSchemaError(
+            f"Fixture for RPCMethod.{method.name} mapper {dotted!r} references "
+            f"unknown module {module_name!r} (file: {_fixture_path(method)})."
+        ) from exc
+    try:
+        return getattr(module, attr)
+    except AttributeError as exc:
+        raise _FixtureSchemaError(
+            f"Fixture for RPCMethod.{method.name} mapper {dotted!r}: module "
+            f"{module_name!r} has no attribute {attr!r} "
+            f"(file: {_fixture_path(method)})."
+        ) from exc
 
 
 ALL_METHODS: list[RPCMethod] = list(RPCMethod)
@@ -177,7 +201,13 @@ def test_fixture_corpus_is_scrubbed() -> None:
     documented in tests/fixtures/rpc_golden/README.md.
     """
     leaks: list[tuple[str, str]] = []
-    for path in sorted(FIXTURE_ROOT.glob("*.json")):
+    # Scan JSON fixtures AND the README — the README contains worked
+    # examples of placeholder shapes and is the most likely place for a
+    # well-meaning contributor to paste a "real-looking" URL when updating
+    # the schema docs.
+    for path in sorted(FIXTURE_ROOT.iterdir()):
+        if path.suffix not in (".json", ".md"):
+            continue
         text = path.read_text(encoding="utf-8")
         for needle in _FORBIDDEN_FIXTURE_SUBSTRINGS:
             if needle in text:
@@ -275,9 +305,11 @@ def test_request_envelope_matches_fixture(method: RPCMethod) -> None:
         f"Got: {encoded!r}\nExpected: {expected!r}"
     )
 
-    # Shape invariants — these are stable across every batchexecute call and
-    # are worth pinning per-method so a regression in encoder.py surfaces on
-    # any method, not just the one whose params happened to be edited.
+    # Shape invariants — strictly redundant once the equality assertion above
+    # passes (since ``encoded == expected`` means both share these properties),
+    # but kept as a machine-checked specification of the batchexecute wire
+    # format that survives even if a future contributor accidentally copies a
+    # regressed encoder output into the fixture.
     assert isinstance(encoded, list) and len(encoded) == 1
     assert isinstance(encoded[0], list) and len(encoded[0]) == 1
     inner = encoded[0][0]
@@ -360,7 +392,7 @@ def test_mapper_output_shape_when_documented(method: RPCMethod) -> None:
             f"but is missing 'mapper_expected' (file: {_fixture_path(method)})."
         )
     expected = fixture["mapper_expected"]
-    mapper = _resolve_mapper(mapper_ref)
+    mapper = _resolve_mapper(mapper_ref, method=method)
     decoded = fixture["response"]["expected_decoded"]
     mapped = mapper(decoded)
 
