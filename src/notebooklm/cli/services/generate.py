@@ -188,9 +188,9 @@ _REPORT_FORMAT_MAP: Mapping[str, ReportFormat] = {
     "custom": ReportFormat.CUSTOM,
 }
 
-# Media generation is frequently queue-bound. Keep default wait ceilings long
-# enough for the common case while still allowing explicit --timeout overrides.
-_VIDEO_DEFAULT_TIMEOUT = 1800.0
+# Cinematic generation is frequently queue-bound. Standard video gets its
+# 1800s default from the Click option so programmatic callers can pass their
+# own raw timeout without being clobbered here.
 _CINEMATIC_DEFAULT_TIMEOUT = 3600.0
 
 
@@ -224,8 +224,8 @@ class GenerationPlan:
             (currently ``revise-slide``, ``quiz``, ``flashcards``).
         wait: Whether to wait for completion before returning. Mind-map
             ignores this field and renders synchronously.
-        timeout: Wait timeout in seconds. Video defaults to 1800.0 and
-            cinematic-video defaults to 3600.0 when the user did not pass
+        timeout: Wait timeout in seconds. The CLI supplies 1800.0 for video;
+            cinematic-video is coerced to 3600.0 when the user did not pass
             ``--timeout`` explicitly.
         interval: Polling interval in seconds for the wait loop.
         max_retries: Number of retry-after-rate-limit attempts. ``0``
@@ -401,9 +401,6 @@ def _build_video_plan_for_kind(
     timeout_value = common["timeout"]
     if is_cinematic and source("timeout") != ParameterSource.COMMANDLINE:
         timeout_value = _CINEMATIC_DEFAULT_TIMEOUT
-    elif source("timeout") != ParameterSource.COMMANDLINE:
-        timeout_value = _VIDEO_DEFAULT_TIMEOUT
-
     language = resolve_language(raw_args.get("language"))
 
     if is_cinematic:

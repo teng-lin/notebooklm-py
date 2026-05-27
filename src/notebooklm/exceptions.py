@@ -1089,7 +1089,10 @@ class ArtifactTimeoutError(ArtifactError, TimeoutError):
         history = " -> ".join(self.status_history)
         history_info = f"; status history: {history}" if history else ""
         status_info = f"last status: {last_status}" if last_status is not None else "no status"
-        super().__init__(f"Task {task_id} timed out after {timeout}s ({status_info}{history_info})")
+        super().__init__(
+            f"Task {task_id} in notebook {notebook_id} timed out after "
+            f"{timeout}s ({status_info}{history_info})"
+        )
 
 
 class ArtifactPendingTimeoutError(ArtifactTimeoutError):

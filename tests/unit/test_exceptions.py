@@ -213,6 +213,7 @@ class TestExceptionHierarchy:
         )
 
         assert err.status_history == ("pending", "in_progress")
+        assert "notebook nb_123" in str(err)
         assert "pending -> in_progress" in str(err)
 
     def test_account_types_are_exported_from_package(self):

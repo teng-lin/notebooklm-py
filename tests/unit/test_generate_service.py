@@ -109,7 +109,7 @@ _PLAN_HAPPY_CASES: list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any
             "style_prompt": None,
             "language": "en",
         },
-        {"display_name": "video", "language": "en", "timeout": 1800.0},
+        {"display_name": "video", "language": "en"},
         {
             "video_format": VideoFormat.EXPLAINER,
             "video_style": VideoStyle.AUTO_SELECT,
@@ -314,6 +314,18 @@ def test_video_explicit_timeout_wins_over_default() -> None:
     )
     plan = build_generation_plan(
         "video", args, parameter_source=source, language_resolver=_identity_language
+    )
+    assert plan.timeout == 90.0
+
+
+def test_video_raw_timeout_is_preserved_when_not_commandline() -> None:
+    """The service must not overwrite programmatic standard-video timeouts."""
+
+    args = _base_args(
+        video_format="explainer", style="auto", style_prompt=None, language="en", timeout=90
+    )
+    plan = build_generation_plan(
+        "video", args, parameter_source=_default_source, language_resolver=_identity_language
     )
     assert plan.timeout == 90.0
 
