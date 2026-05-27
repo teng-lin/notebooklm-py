@@ -120,10 +120,11 @@ class MiddlewareChainBuilder:
                 server_error_max_retries=self._server_error_max_retries_provider,
                 metrics=self._metrics,
             ),
-            # AuthRefresh callbacks: ``refresh_callable`` invokes the
-            # same ``_await_refresh`` path the leaf used pre-PR-12.8, so
-            # the coalesced single-flight refresh contract from
-            # ``AuthRefreshCoordinator`` is preserved end-to-end.
+            # AuthRefresh callbacks: ``refresh_callable`` invokes
+            # ``MiddlewareChainHost.await_refresh``, which dynamically
+            # delegates to ``AuthRefreshCoordinator.await_refresh``, so
+            # the coalesced single-flight refresh contract from the
+            # coordinator is preserved end-to-end.
             # ``refresh_callback_enabled_provider`` reads the
             # coordinator's internal callback slot to skip refresh when
             # no callback was configured (matches the legacy

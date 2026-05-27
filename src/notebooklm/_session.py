@@ -288,11 +288,10 @@ def compose_session_internals(
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
     )
-    # Stage B2 PR 1: the :class:`MiddlewareChainHost` owns the retry
-    # tunables, the chain slot, and the chain leaf. It is constructed
-    # BEFORE :class:`Session` so the Session's writable descriptor
-    # forwards (``_rate_limit_max_retries`` etc.) can write through to
-    # the host on the very first assignment inside ``Session.__init__``.
+    # The :class:`MiddlewareChainHost` owns the retry tunables, the
+    # chain slot, and the chain leaf. It is constructed BEFORE
+    # :class:`Session` because :func:`build_session_transport` and
+    # :func:`wire_middleware_chain` both take it as a direct parameter.
     chain_host = MiddlewareChainHost(
         _auth_refresh=collaborators.auth_coord,
         _rate_limit_max_retries=config.rate_limit_max_retries,
