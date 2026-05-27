@@ -13,6 +13,7 @@ import httpx
 from ..paths import get_storage_path
 from . import account as _auth_account
 from . import cookies as _auth_cookies
+from . import psidts_recovery as _auth_psidts_recovery
 from . import refresh as _auth_refresh
 from . import storage as _auth_storage
 
@@ -240,6 +241,62 @@ class AuthTokens:
 
 
 AuthTokens.__module__ = "notebooklm.auth"
+
+
+def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
+    """Load Google cookies from storage as a flat name→value dict.
+
+    Loads authentication cookies with the following precedence:
+    1. Explicit path argument (from --storage CLI flag)
+    2. NOTEBOOKLM_AUTH_JSON environment variable (inline JSON, no file needed)
+    3. File at $NOTEBOOKLM_HOME/storage_state.json (or ~/.notebooklm/storage_state.json)
+
+    Duplicate-name resolution follows :func:`_auth_domain_priority`, matching
+    :attr:`AuthTokens.flat_cookies` for the same storage state — previously the
+    two paths disagreed on names that live only on non-base hosts (e.g.
+    ``OSID`` on ``myaccount.google.com`` vs ``notebooklm.google.com``). See
+    issue #375.
+
+    Args:
+        path: Path to storage_state.json. If provided, takes precedence over env vars.
+
+    Returns:
+        Dict mapping cookie names to values (e.g., {"SID": "...", "HSID": "..."}).
+
+    Raises:
+        FileNotFoundError: If storage file doesn't exist (when using file-based auth).
+        ValueError: If required cookies (SID) are missing or JSON is malformed.
+
+    Example::
+
+        # CLI flag takes precedence
+        cookies = load_auth_from_storage(Path("/custom/path.json"))
+
+        # Or use NOTEBOOKLM_AUTH_JSON for CI/CD (no file writes needed)
+        # export NOTEBOOKLM_AUTH_JSON='{"cookies":[...]}'
+        cookies = load_auth_from_storage()
+    """
+    storage_state = _auth_cookies._load_storage_state(path)
+    try:
+        return _auth_cookies.extract_cookies_from_storage(storage_state)
+    except ValueError:
+        # Inline ``__Secure-1PSIDTS`` recovery (issue #865). Playwright login
+        # can land a ``storage_state.json`` that carries SID + secondary
+        # binding but lacks PSIDTS, because Google only mints PSIDTS
+        # deterministically in response to the dedicated ``RotateCookies``
+        # POST — not on the passive ``goto()`` navigations the login flow
+        # uses. The preflight then rejects before the keepalive's RotateCookies
+        # path can heal the state. When the recovery preconditions hold, fire
+        # one POST + persist before re-raising — see
+        # :mod:`notebooklm._auth.psidts_recovery` for the precondition list.
+        # ``_recover_psidts_inline`` resolves the effective storage path
+        # itself (default file when ``path is None`` and env-var unset), so
+        # we pass ``path`` through verbatim — including ``None`` for the
+        # default-profile case.
+        if not _auth_psidts_recovery._recover_psidts_inline(path):
+            raise
+        storage_state = _auth_cookies._load_storage_state(path)
+        return _auth_cookies.extract_cookies_from_storage(storage_state)
 
 
 __all__ = ["AuthTokens"]

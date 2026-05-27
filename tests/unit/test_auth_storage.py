@@ -18,6 +18,17 @@ from notebooklm.auth import (
 )
 
 
+def test_load_auth_from_storage_lives_in_private_module() -> None:
+    """Wave 3a of session-decoupling: load_auth_from_storage body lives in
+    ``_auth/tokens.py``; ``notebooklm.auth.load_auth_from_storage`` is a
+    re-export. Identity pin so a future drift (someone re-introducing a
+    distinct body on ``auth.py``) fails at PR time."""
+    from notebooklm import auth as auth_module
+    from notebooklm._auth import tokens as tokens_module
+
+    assert auth_module.load_auth_from_storage is tokens_module.load_auth_from_storage
+
+
 class TestLoadAuthFromStorage:
     def test_loads_from_file(self, tmp_path):
         """Test loading auth from storage state file."""
