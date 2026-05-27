@@ -15,7 +15,9 @@ Specifically pinned here:
 * ``update_auth_tokens`` writes ONLY ``host.auth.csrf_token`` and
   ``host.auth.session_id`` (does NOT touch the http client);
 * ``update_auth_headers`` syncs ``host.auth.cookie_jar`` from
-  ``host.get_http_client().cookies`` (the SEPARATE cookie-jar sync surface);
+  ``host._kernel.get_http_client().cookies`` (the SEPARATE cookie-jar sync
+  surface; Wave 11b of session-decoupling routes the live HTTP client through
+  the Kernel collaborator rather than a ``Session.get_http_client`` forward);
 * ``await_refresh`` cancellation propagation — a cancelled waiter unwinds
   locally without killing the shared refresh task, and the task slot is
   preserved across cancellation.
@@ -29,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -51,9 +54,13 @@ class _StubHost:
       writes ``csrf_token`` / ``session_id`` directly on it.
     * ``_metrics_obj`` is a real :class:`ClientMetrics` — the coordinator's
       :meth:`record_lock_wait` calls land on it.
-    * :meth:`get_http_client` returns an ``httpx.AsyncClient`` whose cookie
-      jar :meth:`update_auth_headers` reads. The client's lifecycle is
-      owned by the test fixture (`http_host`), not by the stub.
+    * ``_kernel`` exposes a ``get_http_client()`` method that returns an
+      ``httpx.AsyncClient`` whose cookie jar :meth:`update_auth_headers`
+      reads. The client's lifecycle is owned by the test fixture
+      (`http_host`), not by the stub. Wave 11b of session-decoupling moved
+      the live-HTTP-client read off ``Session.get_http_client`` and onto
+      ``host._kernel.get_http_client()`` to match the canonical
+      :class:`Kernel` ownership.
     """
 
     def __init__(self, http_client: httpx.AsyncClient | None = None) -> None:
@@ -64,6 +71,7 @@ class _StubHost:
         )
         self._metrics_obj = ClientMetrics(on_rpc_event=None)
         self.http_client = http_client
+        self._kernel = SimpleNamespace(get_http_client=self.get_http_client)
 
     def get_http_client(self) -> httpx.AsyncClient:
         assert self.http_client is not None, "Test forgot to wire an http client."

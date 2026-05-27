@@ -88,7 +88,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     assert seen_request_ids == ["batch-42"]
     assert get_request_id() is None
 
-    snapshot = core.metrics_snapshot()
+    snapshot = core._metrics_obj.snapshot()
     assert isinstance(snapshot, ClientMetricsSnapshot)
     assert snapshot.rpc_calls_started == 1
     assert snapshot.rpc_calls_succeeded == 1
@@ -300,9 +300,9 @@ async def test_upload_progress_callback_receives_byte_counts(
             core,
             uploader=SourceUploadPipeline(
                 core,
-                core.kernel,
+                core._kernel,
                 core.auth,
-                record_upload_queue_wait=core.record_upload_queue_wait,
+                record_upload_queue_wait=core._metrics_obj.record_upload_queue_wait,
             ),
         )
         test_file = tmp_path / "upload.txt"

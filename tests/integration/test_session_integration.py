@@ -329,17 +329,22 @@ class TestRPCCallAuthRetry:
 
 
 class TestGetHttpClient:
-    """Tests for get_http_client() RuntimeError when not initialized."""
+    """Tests for get_http_client() RuntimeError when not initialized.
+
+    Wave 11b of session-decoupling: the ``Session.get_http_client`` forward
+    was deleted; the canonical home is ``Kernel.get_http_client`` (reached
+    via ``core._kernel`` / ``client._session._kernel``).
+    """
 
     def test_get_http_client_raises_when_not_initialized(self, auth_tokens):
         core = Session(auth_tokens)
         with pytest.raises(RuntimeError, match="not initialized"):
-            core.get_http_client()
+            core._kernel.get_http_client()
 
     @pytest.mark.asyncio
     async def test_get_http_client_returns_client_when_initialized(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
-            http_client = client._session.get_http_client()
+            http_client = client._session._kernel.get_http_client()
             assert isinstance(http_client, httpx.AsyncClient)
 
 

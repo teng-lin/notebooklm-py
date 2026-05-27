@@ -105,9 +105,9 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
             core,
             uploader=SourceUploadPipeline(
                 core,
-                core.kernel,
+                core._kernel,
                 core.auth,
-                record_upload_queue_wait=core.record_upload_queue_wait,
+                record_upload_queue_wait=core._metrics_obj.record_upload_queue_wait,
             ),
         )
         result = await api._start_resumable_upload(

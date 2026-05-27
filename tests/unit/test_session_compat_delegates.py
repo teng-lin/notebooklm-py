@@ -166,13 +166,16 @@ def test_session_retains_adr_014_rule_4_middleware_chain_seams() -> None:
       ``refresh_callable=host._await_refresh``.
     - ``_perform_authed_post`` — direct callers in ``_chat_transport`` and
       external client code reach it here; live middleware-chain seam.
-    - ``_increment_metrics`` — provider-closure capture target.
-    - ``_kernel`` — Session owns the transport core.
+    - ``_kernel`` — Session owns the transport core (instance attribute).
+
+    Wave 11b of session-decoupling deleted the ``_increment_metrics`` /
+    ``metrics_snapshot`` / ``_emit_rpc_event`` / ``record_upload_queue_wait``
+    forwards; live capture sites read ``ClientMetrics`` directly via
+    ``session.collaborators.metrics`` per ADR-014 Rule 3.
     """
     for name in (
         "_await_refresh",
         "_perform_authed_post",
-        "_increment_metrics",
     ):
         assert hasattr(Session, name), f"Session missing Rule-4 retained member: {name}"
         assert callable(getattr(Session, name)), f"Session.{name} not callable"

@@ -34,6 +34,23 @@ def _auth(**overrides: object) -> AuthTokens:
     return AuthTokens(**values)
 
 
+class _RecordingKernel:
+    """Stub kernel exposing :meth:`get_http_client`.
+
+    Wave 11b of session-decoupling routes ``refresh_auth_session`` through
+    ``core._kernel.get_http_client()`` rather than the deleted
+    ``Session.get_http_client`` forward. Test cores satisfy the new
+    ``RefreshAuthCore`` Protocol by exposing a ``_kernel`` slot with the
+    same one-method shape.
+    """
+
+    def __init__(self, http_client: httpx.AsyncClient) -> None:
+        self._http_client = http_client
+
+    def get_http_client(self) -> httpx.AsyncClient:
+        return self._http_client
+
+
 @dataclass
 class RecordingRefreshCore:
     auth: AuthTokens
@@ -41,8 +58,10 @@ class RecordingRefreshCore:
     operations: list[str] = field(default_factory=list)
     saved_jars: list[httpx.Cookies] = field(default_factory=list)
 
-    def get_http_client(self) -> httpx.AsyncClient:
-        return self.http_client
+    def __post_init__(self) -> None:
+        # Mirror the live ``Session._kernel`` slot — the Wave 11b Protocol
+        # change reaches the live HTTP client via ``core._kernel.get_http_client()``.
+        self._kernel = _RecordingKernel(self.http_client)
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
         self.operations.append("update_auth_tokens")
