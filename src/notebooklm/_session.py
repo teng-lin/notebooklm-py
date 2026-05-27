@@ -893,10 +893,17 @@ class Session:
         rebinds the coordinator's behavior to inject a fake refresh.
         The single-flight semantics, lock contract, and
         :func:`asyncio.shield` cancellation handling all still live
-        inside :meth:`AuthRefreshCoordinator.await_refresh`; this
-        method's job is to keep ``Session._await_refresh`` reachable
-        as the ``refresh_callable`` reference the middleware chain
-        captures at construction time (``_session_init.py:430``).
+        inside :meth:`AuthRefreshCoordinator.await_refresh`.
+
+        After Stage B2 PR 2, the middleware chain no longer captures
+        this method — :func:`wire_middleware_chain` now captures
+        ``chain_host.await_refresh`` directly so the refresh path skips
+        the Session-side descriptor on every call. This Session-side
+        method is retained as a test seam (the long-standing
+        ``session._await_refresh`` patch point survives — it routes
+        through the host, which dynamically delegates to the
+        coordinator) and as a stable name the
+        ``docs/session-method-retention.md`` invariant pins.
         """
         await self._chain_host.await_refresh()
 
