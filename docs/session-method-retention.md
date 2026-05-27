@@ -55,9 +55,6 @@ forbid any `delete in Wave 11` rows once the cluster deletions land.
 | `rpc_executor` (property) | Stage A accessor | retain — Stage A accessor; exposes lazy `RpcExecutor` not present on `SessionCollaborators` |
 | `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_tokens(...)` at [`_auth/session.py:67`](../src/notebooklm/_auth/session.py); also referenced in the AST-guard prose at `tests/unit/test_concurrency_refresh_race.py:386` (the guard inspects `AuthRefreshCoordinator.update_auth_tokens` directly, but the Session-side delegate is the Protocol seam) |
 | `update_auth_headers` | RefreshAuthCore Protocol surface | retain — `refresh_auth_session(core)` calls `core.update_auth_headers()` at [`_auth/session.py:68`](../src/notebooklm/_auth/session.py) |
-| `register_drain_hook` | compatibility forward | delete in Wave 11 (`drain-and-operation`) — one-line forward to `TransportDrainTracker.register_drain_hook`; migrate callers to `session.collaborators.drain_tracker` |
-| `operation_scope` | compatibility forward | delete in Wave 11 (`drain-and-operation`) — forward to `TransportDrainTracker.operation_scope` |
-| `drain` | compatibility forward | delete in Wave 11 (`drain-and-operation`) — forward to `TransportDrainTracker.drain` |
 | `metrics_snapshot` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.snapshot` |
 | `_increment_metrics` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.increment` |
 | `record_upload_queue_wait` | compatibility forward | delete in Wave 11 (`metrics-and-kernel`) — forward to `ClientMetrics.record_upload_queue_wait` |
@@ -111,4 +108,11 @@ land.
 
 Wave 11 sub-wave PRs append entries here (preserving the deleting PR's SHA in
 the section sub-header) as the `delete in Wave 11` rows above are dropped.
-Empty at Wave 10.
+
+### Wave 11a — drain-and-operation cluster (commit `80a54fda`)
+
+| Method | Category | Disposition |
+|---|---|---|
+| `register_drain_hook` | compatibility forward | deleted in Wave 11a (commit `80a54fda`) — was a one-line forward to `TransportDrainTracker.register_drain_hook`. Callers now reach the tracker directly (`session._drain_tracker.register_drain_hook(...)` in tests; production callers use `ArtifactsRuntimeAdapter.register_drain_hook`). |
+| `operation_scope` | compatibility forward | deleted in Wave 11a (commit `80a54fda`) — was a forward to `TransportDrainTracker.operation_scope`. Callers now reach the tracker directly (`session._drain_tracker.operation_scope(...)` in tests; production callers use `ArtifactsRuntimeAdapter.operation_scope` / `UploadRuntimeAdapter.operation_scope`). |
+| `drain` | compatibility forward | deleted in Wave 11a (commit `80a54fda`) — was a forward to `TransportDrainTracker.drain`. `NotebookLMClient.drain` now calls `self._session._drain_tracker.drain(...)` directly. |
