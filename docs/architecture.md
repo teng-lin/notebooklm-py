@@ -91,15 +91,18 @@ error mapping, so the first ask POST goes through:
 
 ```text
 ChatAPI.ask(...)
-  -> assert_bound_loop(), source-id lookup, conversation lock/cache, next_reqid()
-  -> chat_aware_authed_post(...)
-  -> ChatRuntime.transport_post(...) (production: Session.transport_post)
-  -> Session._perform_authed_post(...)
+  -> loop_guard.assert_bound_loop(), source-id lookup, conversation lock/cache, reqid.next_reqid()
+  -> chat_aware_authed_post(transport, ...)
   -> SessionTransport.perform_authed_post(...)
   -> ADR-009 middleware chain
   -> SessionTransport.terminal(...) -> Kernel.post
   <- streaming chat parser + citation/reference parser
 ```
+
+After Wave 8 of the session-decoupling plan (ADR-014 Rule 2 Corollary),
+`ChatAPI` holds the four collaborators it needs (`rpc`, `transport`,
+`reqid`, `loop_guard`) directly — the legacy `ChatRuntime` Protocol
+composite and the indirection through `Session.transport_post` are gone.
 
 For a new conversation, `ChatAPI.ask()` then calls `GET_LAST_CONVERSATION_ID`
 through the normal `RpcExecutor` path. Other chat methods such as
@@ -263,10 +266,16 @@ not exported from `_session_contracts.py`):
 
 | Protocol | Module | Responsibility |
 |----------|--------|----------------|
-| `ChatRuntime` | [`_chat.py`](../src/notebooklm/_chat.py) | Chat-feature capability union — composes `RpcCaller` + `LoopGuard` and adds chat-specific `transport_post()` + `next_reqid()` methods. (The `ConversationCache` lives on `ChatAPI`, not the Protocol.) |
 | `ArtifactsRuntime` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Artifact-feature capability union — composes `RpcCaller` + `AsyncWorkRuntime` + `DrainHookRegistration`. No own members; used by `ArtifactsAPI` for RPC dispatch, loop affinity, operation scopes, and close-time drain-hook registration. The `PollRegistry` lives on `ArtifactsAPI`, not the Protocol. |
 | `UploadRuntime` | [`_source_upload.py`](../src/notebooklm/_source_upload.py) | Upload-pipeline capability union — composes `RpcCaller` + `OperationScopeProvider` + `LoopGuard`. The upload semaphore is internal to `SourceUploadPipeline`, not the Protocol. |
 | `DrainHookRegistration` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Exposes `register_drain_hook(name, hook)` for close-time cleanup. Sole `DrainHookRegistration` after the broad-`Session` Protocol was deleted from `_session_contracts.py` (see the `_session_contracts.py` module docstring). |
+
+`ChatRuntime` was deleted in Wave 8 of the session-decoupling plan
+(ADR-014 Rule 2 Corollary). `ChatAPI` now takes its four direct
+collaborators (`rpc: RpcCaller`, `transport: SessionTransport`,
+`reqid: ReqidCounter`, `loop_guard: LoopGuard`) by keyword-only
+constructor argument rather than reaching them through a feature-local
+runtime composite.
 
 Production satisfies the shared Protocols via `Session`; tests substitute
 [`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py)
@@ -499,7 +508,11 @@ module-level seams and direct attribute assignment like
 which returns a `FakeSession` configured to satisfy the narrow capability
 Protocols a feature actually consumes (`RpcCaller`, `LoopGuard`,
 `OperationScopeProvider`, `AuthMetadata`, `Kernel`, plus feature-local
-runtimes like `ChatRuntime` / `ArtifactsRuntime` / `UploadRuntime`).
+runtimes like `ArtifactsRuntime` / `UploadRuntime`). `ChatAPI` no
+longer uses a feature-local runtime (Wave 8 of session-decoupling,
+ADR-014 Rule 2 Corollary) — chat unit tests inject narrow
+`MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style fakes
+directly via the keyword-only constructor.
 
 The meta-lint at `tests/_lint/test_no_forbidden_monkeypatches.py`
 enforces the policy; the file-level allowlist shrinks as legacy tests

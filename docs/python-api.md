@@ -678,9 +678,13 @@ compatibility shim was removed in v0.5.0.
 
 Feature APIs depend on narrow per-capability Protocols defined in
 `notebooklm._session_contracts` (and feature-local runtime Protocols
-such as `ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) rather than
-on the concrete `Session` class. See [ADR-013](adr/0013-composable-session-capabilities.md)
-and [`docs/architecture.md`](architecture.md) for the rationale and the
+such as `ArtifactsRuntime`, `UploadRuntime`) rather than on the
+concrete `Session` class. `ChatAPI` takes its four direct collaborators
+(`rpc`, `transport`, `reqid`, `loop_guard`) by keyword-only constructor
+argument as of Wave 8 of the session-decoupling plan (ADR-014 Rule 2
+Corollary); the prior `ChatRuntime` feature-local composite was deleted.
+See [ADR-013](adr/0013-composable-session-capabilities.md) and
+[`docs/architecture.md`](architecture.md) for the rationale and the
 post-v0.5.0 collaborator graph.
 
 If you previously imported from `notebooklm._core` modules, see
