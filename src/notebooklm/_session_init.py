@@ -3,7 +3,7 @@
 Mechanical decomposition of ``Session.__init__`` (``docs/improvement.md``
 §3.1) into three concerns:
 :func:`validate_constructor_args` (kwarg validation + normalization),
-:func:`build_collaborators` (the 8 collaborators in dependency order),
+:func:`build_collaborators` (the seven collaborators in dependency order),
 and :func:`wire_middleware_chain` (the seven-middleware ADR-009 chain).
 Behavior is bit-for-bit identical to the pre-extraction ``__init__``;
 dependency-ordering and seam-resolution comments are preserved verbatim
