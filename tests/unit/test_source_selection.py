@@ -25,9 +25,13 @@ def mock_core():
     """Create a mock Session.
 
     After Wave 8 of session-decoupling, ``ChatAPI.ask`` reaches the network
-    through ``self._runtime.session_transport.perform_authed_post`` (the
-    direct :class:`SessionTransport` collaborator). The fixture stubs that
-    transport method and invokes the caller-supplied ``build_request``
+    through its injected :class:`SessionTransport` collaborator via
+    ``self._transport.perform_authed_post`` (constructor-injected by the
+    ``_chat_from_mock_core`` helper below, which maps the bag-of-attributes
+    ``mock_core`` fixture onto the four keyword-only collaborator slots).
+    The fixture stubs ``mock_core.session_transport.perform_authed_post`` —
+    that ``AsyncMock`` is the value ``_chat_from_mock_core`` passes as
+    ``transport=`` — and invokes the caller-supplied ``build_request``
     factory so URL/body assertions still exercise the production request
     builder.
     """
