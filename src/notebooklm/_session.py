@@ -738,14 +738,20 @@ class Session:
         # by ``close()``. A ``None`` here means the Session was
         # instantiated outside the composition root (e.g. via
         # ``Session.__new__`` in a unit test) or the composition was
-        # short-circuited. The guard raises before the executor read,
-        # so the local-variable + ``assert`` below narrows the
-        # ``Optional`` for the type checker without suppressing
-        # diagnostics.
+        # short-circuited. The guard raises before the assert is
+        # reached; the ``assert`` is a type-checker-only narrowing
+        # aid so the chained ``self._rpc_executor.rpc_call(...)``
+        # collaborator dispatch keeps its precise type without a
+        # ``# type: ignore``. Two statements + return = three; the
+        # delegate-shape lint at
+        # ``tests/unit/test_session_compat_delegates.py`` requires
+        # the body to dispatch on ``self._foo.bar(...)`` /
+        # ``self._get_foo().bar(...)`` (Attribute-of-Attribute), so
+        # the dispatch must read through ``self._rpc_executor.rpc_call``
+        # directly rather than via a local-variable alias.
         self._require_constructed("_rpc_executor")
-        executor = self._rpc_executor
-        assert executor is not None
-        return await executor.rpc_call(
+        assert self._rpc_executor is not None
+        return await self._rpc_executor.rpc_call(
             method,
             params,
             source_path,
