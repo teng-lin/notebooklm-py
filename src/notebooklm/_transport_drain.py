@@ -253,14 +253,25 @@ class TransportDrainTracker:
 
         Called once from ``ClientLifecycle.close`` after the auth-refresh
         task has been cancelled and before the HTTP client is shut down.
-        Exceptions in individual hooks are suppressed (logged via
-        ``asyncio.gather(return_exceptions=True)``) so a misbehaving feature
-        cannot block the shutdown path.
+        Exceptions in individual hooks are caught and logged via
+        ``logger.warning`` (with the registration ``name`` so operators can
+        identify the misbehaving feature), then suppressed so a single
+        misbehaving hook cannot block the shutdown path. The hooks fire
+        concurrently via ``asyncio.gather(..., return_exceptions=True)`` —
+        the per-hook log happens after the gather completes.
         """
-        hooks = list(self._drain_hooks.values())
-        if not hooks:
+        named_hooks = list(self._drain_hooks.items())
+        if not named_hooks:
             return
-        await asyncio.gather(*(hook() for hook in hooks), return_exceptions=True)
+        results = await asyncio.gather(
+            *(hook() for _name, hook in named_hooks),
+            return_exceptions=True,
+        )
+        for (name, _hook), result in zip(named_hooks, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "Drain hook %r raised during close: %s", name, result, exc_info=result
+                )
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new top-level work and wait for in-flight ops to finish.

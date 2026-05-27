@@ -51,12 +51,14 @@ async def test_run_drain_hooks_fires_in_registration_order() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_drain_hooks_continues_when_one_hook_raises() -> None:
-    """A hook that raises must not block the other hooks from running.
+async def test_run_drain_hooks_continues_when_one_hook_raises(caplog) -> None:
+    """A hook that raises must not block the other hooks AND the exception
+    must be logged with the hook's registration name.
 
-    Pinned because the close path swallows hook exceptions via
-    ``asyncio.gather(return_exceptions=True)`` — a misbehaving feature
-    cannot prevent shutdown.
+    Round-2 reviewer fix (PR #1065 gemini + cubic): the prior implementation
+    silently swallowed exceptions despite the docstring promising logging.
+    Now: misbehaving feature cannot prevent shutdown AND its error is observable
+    via ``logger.warning`` at ``notebooklm._transport_drain``.
     """
     tracker = TransportDrainTracker()
     fired: list[str] = []
@@ -75,10 +77,18 @@ async def test_run_drain_hooks_continues_when_one_hook_raises() -> None:
     tracker.register_drain_hook("b", hook_b_raises)
     tracker.register_drain_hook("c", hook_c)
 
-    # ``run_drain_hooks`` itself must not raise even though hook_b does.
-    await tracker.run_drain_hooks()
+    with caplog.at_level("WARNING", logger="notebooklm._transport_drain"):
+        # ``run_drain_hooks`` itself must not raise even though hook_b does.
+        await tracker.run_drain_hooks()
 
     assert fired == ["a", "b_raised", "c"]
+    matching = [r for r in caplog.records if "intentional test failure" in r.getMessage()]
+    assert len(matching) == 1, (
+        f"expected exactly one warning log for hook 'b'; got {len(matching)}"
+    )
+    assert "'b'" in matching[0].getMessage(), (
+        f"log message must include hook name 'b'; got: {matching[0].getMessage()!r}"
+    )
 
 
 @pytest.mark.asyncio
