@@ -128,7 +128,7 @@ async def test_perform_authed_post_populates_request_envelope_for_chain() -> Non
         captured.append(request)
         return RpcResponse(response=_ok_response(), context=request.context)
 
-    core._chain_host._authed_post_chain = fake_chain  # type: ignore[method-assign]
+    core._chain_host._authed_post_chain = fake_chain
 
     calls: list[AuthSnapshot] = []
 
