@@ -236,6 +236,5 @@ def test_client_does_not_dereference_session_privates() -> None:
     assert not violations, (
         "client.py must not dereference private attributes of "
         "self._session — route through a narrow Session accessor "
-        "(e.g. Session.drain, Session.lifecycle) instead:\n  "
-        + "\n  ".join(violations)
+        "(e.g. Session.drain, Session.lifecycle) instead:\n  " + "\n  ".join(violations)
     )
