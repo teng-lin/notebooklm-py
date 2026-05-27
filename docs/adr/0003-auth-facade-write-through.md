@@ -2,43 +2,39 @@
 
 ## Status
 
-Partially completed — flat re-export goal deferred.
+**Superseded — closed by [ADR-014](./0014-feature-local-runtime-adapters.md) (session-decoupling plan Waves 3a + 4 T2.2 + 5).**
 
-The write-through facade mechanism (`_AuthFacadeModule` + the 5
-`_AUTH_*_FACADE_NAMES` / `_REFRESH_DEP_MIRROR_NAMES` /
-`_KEEPALIVE_DEP_MIRROR_NAMES` mirror tables) was deleted from
-`src/notebooklm/auth.py` in D1 PR-2 ([arch-d1-auth-side / #834](https://github.com/teng-lin/notebooklm-py/pull/834)).
-The remediation moved test-side mirroring into a small
-`tests/_fixtures/auth_seam.py` helper (`patch_auth_seam(monkeypatch, name, value)`),
-which walked the known `_auth/*` seam modules and patched every one that
-already bound the name. **That helper was itself retired in the post-v0.5.0
-audit cleanup** (`docs/test-suite-audit.md` §3): the ~50 call sites migrated
-to targeted `monkeypatch.setattr(<canonical module>, name, value)` against the
-consumer-side import, and the fixture was deleted. New tests should prefer
-constructor injection via `tests._fixtures.make_fake_core` (ADR-007); where
-module-level seam state (file locks, refresh-retry registries) makes
-injection awkward, patch the canonical home directly.
+The deferred goal — reducing `auth.py` to a flat re-export module — was
+completed across three PRs in the session-decoupling plan:
 
-**Deferred.** The original D1 plan also called for `auth.py` to be reduced
-to a flat re-export module — i.e. moving `AuthTokens`,
-`load_auth_from_storage()`, and the `_validate_required_cookies()` write-through
-into `_auth/*` and leaving `auth.py` as a thin facade. That second half was
-not shipped. At HEAD, `auth.py` still owns `AuthTokens` (`src/notebooklm/auth.py`,
-symbol `AuthTokens`), still owns the active load/recovery logic
-(`load_auth_from_storage()`), and still installs
-`_validate_required_cookies()` into `_auth.cookies` to propagate
-`auth.py`-level policy rebindings into `_auth.cookie_policy` (and mirror
-`_SECONDARY_BINDING_WARNED` back). Tests still pin
-`notebooklm.auth.<name>` monkeypatch behavior
-(`tests/unit/test_public_shims.py`).
+- **#1066** (Wave 3a / Task 2.1) moved `load_auth_from_storage()` body into
+  `_auth/tokens.py`. `notebooklm.auth.load_auth_from_storage` became a
+  one-line re-export.
+- **#1070** (Wave 4 T2.2) **inverted** the `_validate_required_cookies()`
+  write-through. Instead of copy-forwarding facade-level rebindings of
+  `MINIMUM_REQUIRED_COOKIES` / `_EXTRACTION_HINT` / `_has_valid_secondary_binding`
+  into `_cookie_policy` (and mirroring `_SECONDARY_BINDING_WARNED` back),
+  `notebooklm.auth._validate_required_cookies` is now identity-equal to
+  `notebooklm._auth.cookie_policy._validate_required_cookies`. Tests that
+  need to rebind policy names now patch `_auth.cookie_policy.X` directly.
+- **#1055** (pre-plan groundwork) had already moved `AuthTokens` into
+  `_auth/tokens.py`; the `auth.py`-level binding became a re-export.
 
-CLAUDE.md and this ADR are pinned to that current reality. Completing the
-retirement (moving `AuthTokens` / `load_auth_from_storage` to `_auth/` and
-demoting `auth.py` to flat re-exports) remains the long-term direction but
-is not scheduled.
+**Post-condition (verified by `grep -nE "^def |^class " src/notebooklm/auth.py`
+returning empty as of this PR's audit):** `auth.py` contains zero function
+bodies and zero class definitions. Every top-level name is a one-line
+re-export from the relevant `_auth/*` module. The historical write-through
+machinery is fully retired.
+
+**Why "Superseded by ADR-014" rather than "Accepted (completed)":** the
+original ADR-003 framing was a *write-through* approach (mirror writes
+through the facade). ADR-014's Rule 3 closes the same goal by *inversion*
+(facades become identity-preserving delegates; rebinding happens on the
+canonical home). The two approaches are not the same shape, so ADR-003
+is correctly marked superseded rather than promoted.
 
 The rest of this ADR is preserved as the historical record of why the
-facade existed at all.
+write-through facade existed at all.
 
 ## Context
 

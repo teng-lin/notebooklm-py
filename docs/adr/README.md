@@ -35,7 +35,7 @@ The ADR Index table utilizes four eras of Status notation to reflect the lifecyc
 |-----|-------|--------|
 | [0001](0001-layered-core-seams-and-property-bridge-policy.md) | Layered `_core` seams and the property-bridge policy | Superseded — bridge policy retired in session-shrink arc |
 | [0002](0002-capability-protocol-pattern.md) | Capability Protocol pattern (`SessionCapabilities` fat union) | Superseded by [arch-d2-cutover](https://github.com/teng-lin/notebooklm-py/pull/835) (#835) |
-| [0003](0003-auth-facade-write-through.md) | `auth.py` write-through facade (`_AuthFacadeModule`) | Superseded by [arch-d1-auth-side](https://github.com/teng-lin/notebooklm-py/pull/834) (#834) |
+| [0003](0003-auth-facade-write-through.md) | `auth.py` write-through facade (`_AuthFacadeModule`) | Superseded — closed by [ADR-014](0014-feature-local-runtime-adapters.md) (session-decoupling Waves 3a + 4 T2.2 + 5) |
 | [0004](0004-loop-affinity-contract.md) | Loop-affinity contract for `NotebookLMClient` | Accepted (retroactive) |
 | [0005](0005-idempotency-taxonomy.md) | Mutating-RPC idempotency taxonomy | Accepted (retroactive) |
 | [0006](0006-vcr-scrubber-strategy.md) | VCR cassette scrubber strategy | Accepted (retroactive) |
