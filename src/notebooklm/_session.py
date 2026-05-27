@@ -38,6 +38,8 @@ from .auth import (
 from .types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
+    from ._middleware import Middleware, NextCall
+    from ._middleware_chain import MiddlewareChainBuilder
     from ._session_init import (
         SessionCollaborators,
         ValidatedSessionConfig,
@@ -427,11 +429,14 @@ class Session:
         # composition root in :func:`compose_session_internals` drives
         # the write-once binders. Entry points (``rpc_call`` /
         # ``_get_rpc_semaphore`` / ``open`` / ``close``) guard against
-        # use-before-bind via :meth:`_require_constructed`.
+        # use-before-bind via :meth:`_require_constructed`. Types
+        # mirror the corresponding :class:`WiredMiddleware` fields so
+        # downstream readers see precise types rather than ``Any``
+        # (claude[bot] review on PR #1089).
         self._transport: SessionTransport | None = None
-        self._chain_builder: Any = None
-        self._middlewares: Any = None
-        self._authed_post_chain: Any = None
+        self._chain_builder: MiddlewareChainBuilder | None = None
+        self._middlewares: list[Middleware] | None = None
+        self._authed_post_chain: NextCall | None = None
         self._rpc_executor: RpcExecutor | None = None
 
     def assert_bound_loop(self) -> None:
