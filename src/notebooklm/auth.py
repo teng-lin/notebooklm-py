@@ -173,10 +173,14 @@ __all__ = [
 # masquerading as a refactor. Tests that need to rebind policy names now
 # patch the canonical home in ``_auth.cookie_policy`` directly — see
 # ``tests/unit/test_public_shims.py::test_auth_validation_uses_cookie_policy_rebindings_directly``.
-# The ``_auth_cookies._validate_required_cookies`` reverse-assignment
-# downstream policy callers rely on is preserved.
+#
+# The previous ``_auth_cookies._validate_required_cookies = ...`` reverse-
+# assignment is gone too: ``_auth.cookies`` already imports the canonical
+# validator from ``_cookie_policy`` (see ``_auth/cookies.py:40``), and after
+# the inversion ``auth._validate_required_cookies`` IS that same object — so
+# the reverse-assignment was a no-op (gemini-code-assist round-1 fix on
+# PR #1070).
 _validate_required_cookies = _cookie_policy._validate_required_cookies
-_auth_cookies._validate_required_cookies = _validate_required_cookies
 
 
 # WIZ field token extraction (CSRF, session ID, generic WIZ data) lives in
