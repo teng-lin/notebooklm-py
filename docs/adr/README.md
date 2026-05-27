@@ -46,6 +46,7 @@ The ADR Index table utilizes four eras of Status notation to reflect the lifecyc
 | [0011](0011-schema-validation-policy.md) | Schema validation policy (strict-decode default) | Accepted (Tier 13 PR 13.9a) |
 | [0012](0012-implementation-surface-convention.md) | Implementation surface convention (underscore-prefix policy) | Accepted (Tier 13 PR 13.9a) |
 | [0013](0013-composable-session-capabilities.md) | Composable Session Capabilities and Feature-Local Runtimes | Accepted |
+| [0014](0014-feature-local-runtime-adapters.md) | Feature-local runtime adapters as Protocol satisfiers | Proposed |
 
 ADR-007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

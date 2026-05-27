@@ -1,0 +1,377 @@
+# ADR-014: Feature-local runtime adapters as Protocol satisfiers
+
+## Status
+
+Proposed (2026-05-26).
+
+## Context
+
+[ADR-013](./0013-composable-session-capabilities.md) introduced narrow capability Protocols
+(`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AuthMetadata`, `Kernel` in
+[`_session_contracts.py`](../../src/notebooklm/_session_contracts.py)) plus feature-local
+composite runtime Protocols (`ChatRuntime` in `_chat.py`, `ArtifactsRuntime` in
+`_artifacts.py`, `UploadRuntime` in `_source_upload.py`). The goal was to decouple
+feature APIs from a concrete `Session` god-object.
+
+At compile time, the goal was achieved. Every feature API type-checks against the
+narrowest Protocol it needs, mypy verifies the satisfaction, and the
+`_session_contracts.py` module docstring enforces the "≥2 consumers ⇒ shared
+Protocol; otherwise feature-local" promotion rule.
+
+At runtime, the goal was not achieved. `NotebookLMClient.__init__`
+([`client.py:305-342`](../../src/notebooklm/client.py)) passes `self._session` (a
+`Session` instance) to every feature API. `Session` was kept as the universal
+satisfier of every Protocol. This produces four observable consequences:
+
+1. **`Session` must satisfy the union of every feature Protocol.** Adding a method
+   to `ChatRuntime` requires `Session` to expose (or forward) that method.
+   `Session`'s method count grows with the feature count by construction. The
+   current count is ~33 methods on a 779-line class; ~24 of those are
+   one-line forwards to a held collaborator.
+
+2. **Forwards are structurally required, not accidental.** `Session.transport_post`
+   exists because `ChatRuntime` requires it — `Session` must forward to
+   `SessionTransport`. Deleting the forward is not possible while `Session`
+   satisfies `ChatRuntime`. Earlier "shrink the facade" attempts (`docs/architecture-fix-plan-2026-05-26.md`
+   §Stage 2, the in-flight rpc-dispatch plan) consistently hit this wall.
+
+3. **Tests monkeypatch `Session`, not the collaborator.** At runtime, the method
+   body lives on `Session`. Tests that need to fake `transport_post` patch
+   `Session.transport_post`, not `SessionTransport.perform_authed_post`. The
+   [ADR-007](./0007-test-monkeypatch-policy.md) forbidden-monkeypatch
+   allowlist (~30 file-level entries today) is the visible gravity well this
+   creates — every entry pins a Session-shaped surface that ADR-013's narrow
+   Protocols *should* have eliminated.
+
+4. **`RpcOwner` Protocol carries underscore-prefixed `Session` internals.**
+   `RpcExecutor` declares an `RpcOwner` dependency
+   ([`_rpc_executor.py:59-78`](../../src/notebooklm/_rpc_executor.py)) listing
+   `_kernel`, `_perform_authed_post`, `_await_refresh`, `_increment_metrics`.
+   This is not "narrow contract"; it is "private surface of `Session`, structurally
+   typed". The leakage persists because `RpcExecutor` receives a `Session`-shaped
+   owner at construction.
+
+The architectural pressure is real and ongoing. Every feature added between v0.5.0
+and today has either grown `Session` or required a new compatibility forward.
+ADR-013 framed the *interface* model correctly; what was missing is the matching
+*implementation* model.
+
+## Decision
+
+Capability Protocols remain as defined in `_session_contracts.py` and the
+feature-local runtime modules. **This ADR does not change the interfaces.** Six
+implementation rules change how those interfaces are satisfied at runtime.
+
+### Rule 1 — Single-collaborator Protocols are satisfied directly (after method push-down)
+
+| Protocol | Satisfier (post-migration) | Migration prerequisite |
+|---|---|---|
+| `RpcCaller` | `RpcExecutor` directly | none — already structurally satisfies (TYPE_CHECKING assertion at [`_rpc_executor.py:463`](../../src/notebooklm/_rpc_executor.py)) |
+| `LoopGuard` | `ClientLifecycle` directly | **push down `assert_bound_loop()`** — currently lives on `Session.assert_bound_loop` ([`_session.py:486`](../../src/notebooklm/_session.py)), which calls `_loop_affinity.assert_bound_loop(self.bound_loop)`. `ClientLifecycle` already owns `get_bound_loop` ([`_session_lifecycle.py:271`](../../src/notebooklm/_session_lifecycle.py)); the push-down adds a trivial `assert_bound_loop()` method that calls the free function with `self.get_bound_loop()`. |
+| `OperationScopeProvider` | `TransportDrainTracker` directly | **push down `operation_scope(label)`** — currently lives on `Session.operation_scope` ([`_session.py:495`](../../src/notebooklm/_session.py)) as an async context manager wrapping `begin_transport_post` / `finish_transport_post` (both already on `TransportDrainTracker` at [`_transport_drain.py:139,196`](../../src/notebooklm/_transport_drain.py)). The push-down moves the contextmanager wrapper to the tracker. |
+| `DrainHookRegistration` (feature-local in `_artifacts.py`) | `TransportDrainTracker` directly | **push down `register_drain_hook(name, hook)` + the underlying `_drain_hooks` storage** — currently lives on `Session.register_drain_hook` ([`_session.py:421`](../../src/notebooklm/_session.py)). The push-down moves both the method and the storage onto the tracker. |
+| `AsyncWorkRuntime` (composes `LoopGuard` + `OperationScopeProvider`) | satisfied **transitively** by `ArtifactsRuntimeAdapter` / `UploadRuntimeAdapter` (Rule 2) | depends on the push-downs above. No dedicated `_AsyncWorkAdapter` — per Rule 2, trivial composites do not get adapter middlemen. |
+| `AuthMetadata` | `AuthRefreshCoordinator` directly | verify with grep at migration time — likely already satisfies the Protocol |
+| `Kernel` (Protocol) | the concrete `Kernel` class | none — unchanged |
+
+**Why the push-downs are part of this ADR's mandate, not pre-existing.** The
+Protocol satisfiers were synthesised on `Session` because `Session` was the
+universal satisfier. Now that the runtime contract is "the collaborator
+satisfies its own Protocol", the methods must live where the Protocol points.
+The push-downs are mechanical (the underlying primitives already exist on the
+collaborators) but they are non-trivial enough to be sequenced as
+[Wave 0.5 in the implementation plan](../session-decoupling-plan-2026-05-26.md#wave-05-push-protocol-satisfying-methods-down-to-collaborators).
+
+### Rule 2 — Composite Protocols are satisfied by a feature-local adapter when the adapter earns its keep
+
+**Adapter threshold (intent-based).** Introduce a frozen-dataclass adapter when
+**at least one** of the following holds:
+
+- a downstream module *intentionally* consumes the composite Protocol as a
+  single dependency (e.g. an HTTP-level helper that takes the whole runtime),
+  **or**
+- delegation changes the call shape (the adapter method does more than forward
+  args 1:1 to a single underlying collaborator), **or**
+- multiple consumers share the same composite and the share-cost amortises.
+
+If none of these hold — the composite has a single consumer, all delegates are
+1:1, and no other module takes it as a parameter — the consumer takes the
+underlying collaborators directly via constructor injection. No adapter
+middleman.
+
+The earlier numeric heuristic ("≥3 capabilities OR ≥1 non-trivial delegate")
+was a proxy for the intent test above. It is replaced because counting
+capabilities does not capture *why* you would want a named runtime satisfier:
+either some consumer demands it, or the call shape adapts. Counting alone
+incentivises adapters where they bring no value.
+
+When an adapter is used, the frozen dataclass holds the collaborators a
+composite Protocol requires and exposes the Protocol methods as delegates.
+Adapters live in the same module as the Protocol they satisfy.
+
+**Corollary — dead Protocols.** If a composite Protocol is no longer consumed
+(no downstream module takes it as a parameter; its sole consumer was migrated
+to direct injection), delete the Protocol along with the migration. Protocols
+that exist only as type-hint documentation drift out of sync with the code.
+
+```python
+# in _artifacts.py, next to ArtifactsRuntime
+@dataclass(frozen=True)
+class ArtifactsRuntimeAdapter:
+    """Concrete satisfier of :class:`ArtifactsRuntime` per ADR-014.
+
+    Earns its keep under Rule 2 because:
+      - composite has 3 capabilities (RpcCaller + AsyncWorkRuntime + DrainHookRegistration),
+      - ArtifactsAPI takes the whole composite as a single dependency (consumer-demand),
+      - register_drain_hook is a meaningful named affordance worth exposing as one method.
+    """
+
+    rpc: RpcCaller
+    drain: TransportDrainTracker     # satisfies OperationScopeProvider + DrainHookRegistration after Wave 0.5
+    lifecycle: ClientLifecycle       # satisfies LoopGuard after Wave 0.5
+
+    async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.rpc.rpc_call(*args, **kwargs)
+
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        return self.drain.operation_scope(label)
+
+    def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
+        self.drain.register_drain_hook(name, hook)
+
+    def assert_bound_loop(self) -> None:
+        self.lifecycle.assert_bound_loop()
+```
+
+`UploadRuntimeAdapter` follows the same pattern in `_source_upload.py`
+(`SourceUploadPipeline` already takes `Kernel` and `AuthMetadata` as separate
+parameters, so its adapter covers only the composite Protocol part).
+
+`ChatRuntime` does **not** get an adapter — the Rule 2 Corollary applies. Once
+`_chat_transport.chat_aware_authed_post` is refactored to take `SessionTransport`
+directly (Wave 4.1 Step 0), `ChatRuntime` has no remaining consumer and is
+deleted. `ChatAPI` takes the four underlying collaborators (`RpcExecutor`,
+`SessionTransport`, `ReqidCounter`, `ClientLifecycle`) as keyword-only
+constructor parameters.
+
+### Rule 3 — `NotebookLMClient.__init__` is the composition root
+
+`NotebookLMClient.__init__` wires each feature with its satisfier — a
+collaborator for single-Protocol features, an adapter for composite ones.
+Construction reads as an explicit wiring diagram.
+
+The migration ships in two stages so the structural change does not balloon:
+
+- **Stage A (this plan):** `Session` exposes the collaborator bundle as a
+  single typed attribute (`Session.collaborators -> SessionCollaborators`).
+  `NotebookLMClient.__init__` reads `self._session.collaborators.<x>` for
+  feature wiring. `Session` continues to construct the bundle internally via
+  [`_session_init.build_collaborators`](../../src/notebooklm/_session_init.py).
+- **Stage B (Wave 7 follow-up, separate change):** ownership of
+  `build_collaborators` moves to `NotebookLMClient.__init__`. `Session` takes
+  the bundle as a constructor argument. This is the strategic end-state but is
+  a wider blast radius (every `Session(...)` test-construction site updates)
+  and is deferred so the in-flight ADR-014 migration stays bounded.
+
+Stage A is sufficient to discharge the runtime decoupling: features stop
+receiving `Session` (they receive the collaborator or adapter directly), and
+the only `Session` reference at the composition root is `self._session.collaborators`,
+which is one attribute access — not a discoverability hub of method names.
+
+### Rule 4 — `Session` retains only orchestration plus the documented middleware-chain seams
+
+After migration, `Session` owns:
+
+- Construction delegation (`__init__` → `_session_init.build_collaborators`).
+- Lifecycle (`open`, `close`, keepalive task, `is_open`, drain-on-close).
+- The collaborator graph held as attributes.
+- The few methods downstream tests still pin via AST-guard
+  (`tests/unit/test_public_shims.py`, `tests/unit/test_concurrency_refresh_race.py`).
+- **Live middleware-chain seams that legitimately route through `Session`.**
+  `Session._authed_post_chain_terminal` is the live chain leaf
+  ([`_session.py:662-678`](../../src/notebooklm/_session.py)) — wired via
+  `wire_middleware_chain(...)` in
+  [`_session_init.py:394-428`](../../src/notebooklm/_session_init.py) and
+  documented as "this forward IS the live chain leaf — not a test-only entry
+  point". Similarly, `build_session_transport` captures `host._await_refresh`,
+  `host._rate_limit_max_retries`, `host._server_error_max_retries`,
+  `host._refresh_retry_delay`, and `host.assert_bound_loop` via
+  provider lambdas
+  ([`_session_init.py:365-390`](../../src/notebooklm/_session_init.py)) so
+  post-construction mutation of those Session attributes continues to steer
+  the live middleware chain. These provider closures are **load-bearing test
+  seams** documented in the helpers' own module docstring; they are not
+  forwards-to-remove.
+
+`Session` stops being passed *to* feature APIs. It stops satisfying capability
+Protocols intended for feature consumption. The compatibility forwards on
+`Session` (drain/metrics/kernel/authuser/save_cookies forwards that exist only
+because features used to reach through `Session`) are removed as Wave 5
+deletes them.
+
+**Explicit retention list** — surfaces that remain on `Session` post-migration:
+
+- `Session.rpc_call(...)` — retained as the public-API forward. Pinned by
+  `tests/unit/test_public_shims.py:1048-1089` because `NotebookLMClient.rpc_call`
+  is the documented raw-RPC escape hatch and it forwards through
+  `Session.rpc_call`. Internally `Session.rpc_call` now delegates to
+  `self.rpc_executor.rpc_call(...)` (via the late-bound accessor added by the migration plan's Task 3.0).
+- `Session._authed_post_chain_terminal` — live middleware chain leaf.
+- `Session._await_refresh`, `Session._rate_limit_max_retries`,
+  `Session._server_error_max_retries`, `Session._refresh_retry_delay` — captured
+  by the middleware-chain provider closures. Note: `host._await_refresh` is
+  captured as a bound-method reference at construction time (not late-bound via
+  lambda), but the binding is established once and survives for the chain's
+  lifetime.
+- `Session.update_auth_tokens` — AST-guarded by `test_concurrency_refresh_race.py`.
+- `Session.open` / `close` / `is_open` / `_keepalive_loop` — lifecycle.
+- `Session.collaborators`, `Session.session_transport`, `Session.rpc_executor` — three typed accessors per Rule 3 Stage A. The first exposes the constructed `SessionCollaborators` bundle; the latter two expose late-bound collaborators not present on the dataclass today. All three are deleted under Rule 3 Stage B (Wave 7 follow-up) when `build_collaborators` ownership moves to `NotebookLMClient`. The migration plan's Task 6.3 AST lint forbids any other module from reading these accessors.
+
+Everything else on `Session` after Wave 5 should be either listed here or
+deleted.
+
+### Rule 5 — Collaborators take their direct dependencies
+
+Any collaborator that currently dereferences `self._owner.X` is migrated to
+take its actual dependencies directly. `RpcExecutor` is the canonical case:
+
+```python
+# before
+class RpcExecutor:
+    def __init__(self, owner: RpcOwner, *, decode_response, is_auth_error, sleep, ...):
+        self._owner = owner
+
+    async def _execute_once(self, ...):
+        self._owner._kernel.get_http_client()             # pre-open guard
+        self._owner._increment_metrics(...)
+        response = await self._owner._perform_authed_post(...)
+        await self._owner._await_refresh()
+
+# after
+class RpcExecutor:
+    def __init__(
+        self,
+        *,
+        kernel: Kernel,
+        transport: SessionTransport,
+        auth_refresh: AuthRefreshCoordinator,
+        metrics: ClientMetrics,
+        decode_response, is_auth_error, sleep, ...
+    ):
+        self._kernel = kernel
+        self._transport = transport
+        self._auth_refresh = auth_refresh
+        self._metrics = metrics
+
+    async def _execute_once(self, ...):
+        self._kernel.get_http_client()                    # same guard, direct
+        self._metrics.increment(...)
+        response = await self._transport.perform_authed_post(...)
+        await self._auth_refresh.await_refresh()
+```
+
+The `RpcOwner` Protocol disappears. Same exercise for any other collaborator
+holding an `_owner` reference.
+
+### Rule 6 — Adapters live next to their feature
+
+`ArtifactsRuntimeAdapter` lives in `_artifacts.py`. `UploadRuntimeAdapter` lives
+in `_source_upload.py`. They are concrete implementations of feature-local
+composite Protocols.
+
+The Chat feature gets no adapter (Rule 2 Corollary): once
+`_chat_transport.chat_aware_authed_post` is refactored to take `SessionTransport`
+directly, `ChatRuntime` has no remaining consumer and is deleted. `ChatAPI`
+takes the underlying collaborators as keyword-only constructor parameters
+instead.
+
+The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
+`_session_contracts.py`) is unchanged. Adapters are *not* promoted to
+`_session_contracts.py`; the file stays interface-only.
+
+## Consequences
+
+**Wanted:**
+
+- `Session`'s method count stops growing with feature count. New features add a
+  new adapter (5-10 lines, local to the feature module), not a new `Session` method.
+- `RpcOwner` Protocol disappears entirely. No more underscore-prefixed
+  Session-internal members in a "narrow" contract.
+- Tests fake the adapter or single collaborator, not `Session`. The ADR-007
+  forbidden-monkeypatch allowlist becomes drainable — the surface tests pinned
+  (Session method bodies) is gone.
+- Independent feature testability. A test for `ChatAPI` constructs a fake
+  a narrow set of fake collaborators (just a fake `RpcExecutor`, depending on what the
+  test exercises). It does not need to know `Session` exists.
+- Construction is explicit. `NotebookLMClient.__init__` reads as a wiring
+  diagram. Replaces "Session has every method" with "every feature gets exactly
+  what it asked for".
+- Closes ADR-013's runtime story. ADR-013 framed the interface model; this ADR
+  completes the implementation model.
+
+**Unwanted:**
+
+- Each new feature requires a new adapter (5-10 lines). Small ongoing cost. The
+  cost is local to the feature module and visible at construction time — preferable
+  to invisible growth of `Session`.
+- Wider `NotebookLMClient.__init__`. Mitigated by `_session_init.build_collaborators`
+  already returning a typed bundle.
+- Migration churn for existing tests. Tests that constructed a `Session` and then
+  patched a method must migrate to fake-adapter construction. The ADR-007
+  program already pays for this migration; this ADR aligns the destination.
+- Adapter method bodies are formally one-line forwards. They could be
+  auto-generated. We do not — explicit method bodies keep the Protocol contract
+  visible at the satisfier and let mypy catch shape mismatches at the adapter.
+
+**Neutral:**
+
+- `Session` may eventually be renamed (e.g. `_SessionLifecycle`, `_ClientCore`)
+  once it owns only lifecycle and the collaborator graph. Out of scope for this
+  ADR; defer until after the migration completes and the right name is obvious.
+
+## Alternatives considered
+
+- **Auto-generate forwards via `__getattr__`.** Rejected. Hides the coupling
+  instead of solving it. Tests still monkeypatch the auto-generated surface;
+  `Session`'s effective surface stays wide.
+
+- **Dataclass-Session with method bodies on collaborators.** Equivalent end
+  state, framed differently. We picked the feature-local-adapter framing
+  because it co-locates the adapter with the feature that consumes it
+  (single-file readability) and lets each feature evolve its runtime
+  independently. A renamed-Session-as-dataclass-bag is still an option later,
+  but the adapter pattern is the primitive that unlocks it.
+
+- **Per-feature god-objects (Session-per-feature).** Each feature gets a narrow
+  facade that owns its method bodies. Rejected — moves the god-object problem
+  from one location to N, and doesn't share collaborator instances across
+  features cleanly.
+
+- **Keep `Session` as universal satisfier; drain the ADR-007 allowlist by
+  case-by-case exception.** Rejected. The allowlist exists because `Session`'s
+  method surface is the test gravity well. Draining the allowlist while the
+  gravity persists is treating the symptom; it grows back as new features are
+  added.
+
+- **Stop the decomposition; embrace `Session` as god-object.** Rejected. Gives
+  up ADR-013's gains. The maintenance cost of `Session` has been measurable
+  across the multi-phase refactor program.
+
+## Migration
+
+See [`docs/session-decoupling-plan-2026-05-26.md`](../session-decoupling-plan-2026-05-26.md)
+for the staged migration plan and per-wave PR breakdown.
+
+## Related decisions
+
+- Builds on [ADR-013](./0013-composable-session-capabilities.md) (capability
+  Protocol pattern). This ADR is the runtime-side completion of ADR-013's
+  interface-side decoupling.
+- Enables completion of the [ADR-007](./0007-test-monkeypatch-policy.md)
+  allowlist drain by removing the surface those entries currently pin.
+- Closes the deferred goal in [ADR-003](./0003-auth-facade-write-through.md)
+  by example — `auth.py` follows the same delegate-to-private-module pattern
+  Rule 1 applies to collaborators.
+- Supersedes the "Session as facade" framing in
+  [`docs/architecture.md`](../architecture.md#session-as-facade) once the
+  migration completes; that section becomes "Session as lifecycle root".
