@@ -153,11 +153,11 @@ Two axes do the actual work:
    *callable* shapes — the conformer is itself directly invokable
    (`rpc(method, params)`). `RpcCaller` is an
    *object* shape — the conformer exposes an `.rpc_call(...)` method
-   (`session.rpc_call(method, params)`).
+   (`executor.rpc_call(method, params)`).
    These are NOT interchangeable to mypy: a callable Protocol matches a bare
-   function or `__call__`, while `RpcCaller` requires the named method. A
-   `Session` instance satisfies `RpcCaller` because it defines `rpc_call`; the
-   bound method `session.rpc_call` satisfies `RpcCallback` because it is a
+   function or `__call__`, while `RpcCaller` requires the named method. An
+   `RpcExecutor` instance satisfies `RpcCaller` because it defines `rpc_call`; the
+   bound method `executor.rpc_call` satisfies `RpcCallback` because it is a
    callable Protocol.
 2. **Type alias vs Protocol class.** `NextCall` is a `Callable[...]` alias, not
    a class. It exists because the middleware chain is built from a list of

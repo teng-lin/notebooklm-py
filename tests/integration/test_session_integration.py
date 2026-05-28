@@ -167,7 +167,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, error)
             with pytest.raises(RateLimitError) as exc_info:
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after == 60
 
     @pytest.mark.asyncio
@@ -185,7 +185,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, error)
             with pytest.raises(RateLimitError) as exc_info:
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after is None
 
     @pytest.mark.asyncio
@@ -203,7 +203,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, error)
             with pytest.raises(RateLimitError) as exc_info:
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after is None
 
     @pytest.mark.asyncio
@@ -224,7 +224,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, error)
             with pytest.raises(ClientError):
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
     async def test_server_error_500(self, auth_tokens):
@@ -240,7 +240,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, error)
             with pytest.raises(ServerError):
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
     async def test_connect_timeout_raises_network_error(self, auth_tokens):
@@ -251,7 +251,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, httpx.ConnectTimeout("connect timeout"))
             with pytest.raises(NetworkError):
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
     async def test_read_timeout_raises_rpc_timeout_error(self, auth_tokens):
@@ -260,7 +260,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, httpx.ReadTimeout("read timeout"))
             with pytest.raises(RPCTimeoutError):
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
     async def test_connect_error_raises_network_error(self, auth_tokens):
@@ -269,7 +269,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, httpx.ConnectError("connection refused"))
             with pytest.raises(NetworkError):
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
     async def test_generic_request_error_raises_network_error(self, auth_tokens):
@@ -278,7 +278,7 @@ class TestRPCCallHTTPErrors:
 
             _install_error_post(core, httpx.RequestError("something went wrong"))
             with pytest.raises(NetworkError):
-                await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
 
 class TestRPCCallAuthRetry:
@@ -323,7 +323,7 @@ class TestRPCCallAuthRetry:
 
             core._decode_response = fake_decode
 
-            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            result = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
             assert result == ["result_data"]
             refresh_callback.assert_called_once()

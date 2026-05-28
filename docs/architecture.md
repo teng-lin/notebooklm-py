@@ -60,8 +60,9 @@ CLI command or user code
   -> NotebookLMClient.<feature>.<method>()
   -> feature API / service builds params and chooses RPCMethod
   -> RpcCaller.rpc_call(...) (production: RpcExecutor wired directly into the feature
-                              per ADR-014 Rule 1; NotebookLMClient.rpc_call still
-                              forwards through Session.rpc_call for the public escape hatch)
+                              per ADR-014 Rule 1; NotebookLMClient.rpc_call dispatches
+                              through the same RpcExecutor stored as
+                              NotebookLMClient._rpc_executor for the public escape hatch)
   -> RpcExecutor.rpc_call(...)
        - pre-open guard via Kernel.get_http_client()
        - logical-RPC request id + rpc_calls_started metric
@@ -81,7 +82,7 @@ CLI command or user code
 
 `NotebookLMClient.rpc_call(method, params)` is the public raw-RPC escape hatch.
 It skips feature-specific param builders and result parsers, but still enters
-the same `Session.rpc_call → RpcExecutor.rpc_call → SessionTransport → Kernel`
+the same `RpcExecutor.rpc_call → SessionTransport → Kernel`
 pipeline.
 
 ### Chat ask path
@@ -510,12 +511,7 @@ disposition.
 
 Concretely, `Session` retains:
 
-1. **Public-API forward.** `Session.rpc_call(method, params)` is
-   pinned by `tests/unit/test_public_shims.py` because
-   `NotebookLMClient.rpc_call` (the documented raw-RPC escape hatch)
-   forwards through it. Internally it delegates to
-   `self.rpc_executor.rpc_call(...)`.
-2. **Stage-A collaborator accessors** (ADR-014 Rule 3 Stage A —
+1. **Stage-A collaborator accessors** (ADR-014 Rule 3 Stage A —
    transitional). `Session.collaborators`, `Session.session_transport`,
    and `Session.rpc_executor` are the three typed accessors
    `NotebookLMClient.__init__` reads while wiring features. They are
@@ -524,7 +520,7 @@ Concretely, `Session` retains:
    so they cannot become a discoverability hub. Stage B (Wave 7
    follow-up) moves `build_collaborators` ownership to `NotebookLMClient`
    and deletes all three accessors.
-3. **Middleware-chain seams.** The chain leaf
+2. **Middleware-chain seams.** The chain leaf
    (`_authed_post_chain_terminal`), the chain slot (`_authed_post_chain`),
    the dynamic refresh delegate (`await_refresh`), and the three
    retry-budget tunables (`_rate_limit_max_retries`,
@@ -536,12 +532,20 @@ Concretely, `Session` retains:
    The only middleware-chain capture target that remains on `Session`
    is `assert_bound_loop`, which is reached as `host.assert_bound_loop`
    from `build_session_transport`'s `bound_loop_check` lambda.
-4. **Lifecycle methods.** `open`, `close`, `is_open`, `_keepalive_loop`,
+3. **Lifecycle methods.** `open`, `close`, `is_open`, `_keepalive_loop`,
    and `assert_bound_loop` (now a one-line forward to
    `ClientLifecycle.assert_bound_loop` since
    `ClientLifecycle` satisfies the `LoopGuard` Protocol directly).
-5. **AST-guarded auth surface.** `update_auth_tokens` is asserted by
+3. **AST-guarded auth surface.** `update_auth_tokens` is asserted by
    `tests/unit/test_concurrency_refresh_race.py`.
+
+`NotebookLMClient.rpc_call(method, params)` dispatches directly through
+`self._rpc_executor.rpc_call(...)` — the `RpcExecutor` captured during
+`NotebookLMClient.__init__` from `compose_session_internals(...)` and
+shared with every feature API. The Session-side `rpc_call` compatibility
+wrapper was deleted; see
+[`docs/session-method-retention.md`](./session-method-retention.md) for
+the historical row in the **Deleted** section.
 
 Feature APIs do **not** receive `Session`. They receive the
 collaborator (`RpcExecutor` for `RpcCaller`, `ClientLifecycle` for
@@ -563,7 +567,7 @@ Two policies define how tests interact with the architecture above.
 
 The forbidden patterns are `monkeypatch.setattr("notebooklm.…")` against
 module-level seams and direct attribute assignment like
-`core.rpc_call = AsyncMock(...)`. The sanctioned substitute is
+`target.rpc_call = AsyncMock(...)`. The sanctioned substitute is
 [`tests/_fixtures/fake_core.py:make_fake_core(...)`](../tests/_fixtures/fake_core.py),
 which returns a `FakeSession` configured to satisfy the narrow capability
 Protocols a feature actually consumes (`RpcCaller`, `LoopGuard`,

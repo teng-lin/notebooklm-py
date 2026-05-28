@@ -101,7 +101,7 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     unit/ and integration/concurrency/.
     """
     core = MagicMock()
-    core.rpc_call = AsyncMock()
+    core.rpc_executor.rpc_call = AsyncMock()
     core.auth = MagicMock()
     core.auth.authuser = 0
     core.auth.account_email = None
@@ -111,7 +111,7 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     core._drain_tracker = MagicMock()
     core._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
     core._drain_tracker.finish_transport_post = AsyncMock()
-    core.operation_scope = MagicMock()
+    core.rpc_executor.operation_scope = MagicMock()
 
     def operation_scope(_label):
         @asynccontextmanager
@@ -120,21 +120,22 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
 
         return scope()
 
-    core.operation_scope.side_effect = operation_scope
+    core.rpc_executor.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
     # MagicMock blocks ``assert``-prefixed attribute access as a foot-gun
     # guard; the no-op ``assert_bound_loop`` stub used by ``add_file``
     # must therefore be installed explicitly.
     core.assert_bound_loop = MagicMock()
+    core.rpc_executor.assert_bound_loop = MagicMock()
     uploader = SourceUploadPipeline(
-        rpc=core,
+        rpc=core.rpc_executor,
         drain=core,
         lifecycle=core,
         kernel=core.kernel,
         auth=core.auth,
         record_upload_queue_wait=core.record_upload_queue_wait,
     )
-    return SourcesAPI(core, uploader=uploader), core
+    return SourcesAPI(core.rpc_executor, uploader=uploader), core
 
 
 class _SlowReadFile:
@@ -381,7 +382,7 @@ async def test_add_file_open_runs_off_loop_thread(
     # land before ``add_file`` returns: GET_NOTEBOOK (baseline list) and
     # ADD_SOURCE_FILE (register). The "[[[['src_t1']]]]" shape feeds the
     # standard SOURCE_ID walker in ``_extract_register_file_source_id``.
-    _core.rpc_call.return_value = [[[["src_t1"]]]]
+    _core.rpc_executor.rpc_call.return_value = [[[["src_t1"]]]]
 
     mock_start_response = MagicMock()
     mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com/session"}

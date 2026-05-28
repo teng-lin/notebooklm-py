@@ -146,8 +146,8 @@ def _executor(
 
 
 @pytest.mark.asyncio
-async def test_session_rpc_call_delegates_to_rpc_executor(monkeypatch) -> None:
-    """``Session.rpc_call`` remains the feature-facing compatibility facade."""
+async def test_rpc_executor_attribute_is_dispatched_through(monkeypatch) -> None:
+    """``core._rpc_executor`` is the canonical RPC dispatch seam."""
     core = build_session_for_tests(_auth_tokens())
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
@@ -159,12 +159,13 @@ async def test_session_rpc_call_delegates_to_rpc_executor(monkeypatch) -> None:
     executor = FakeExecutor()
     # Stage B1 PR 2 deleted ``Session._get_rpc_executor`` (the lazy
     # factory) — the executor now lives directly on ``core._rpc_executor``
-    # post-composition. Override the attribute rather than the deleted
-    # factory so :meth:`Session.rpc_call` reads the fake.
+    # post-composition. Override the attribute so every caller that
+    # dispatches through ``core._rpc_executor.rpc_call(...)`` sees the
+    # fake.
     monkeypatch.setattr(core, "_rpc_executor", executor)
 
     assert (
-        await core.rpc_call(
+        await core._rpc_executor.rpc_call(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
@@ -176,9 +177,11 @@ async def test_session_rpc_call_delegates_to_rpc_executor(monkeypatch) -> None:
     )
 
     assert [name for name, _, _ in calls] == ["rpc_call"]
+    # Only ``disable_internal_retries`` is passed by the test; the
+    # ``operation_variant`` kwarg defaults to ``None`` at the executor
+    # level and is not bound by the dispatch site here.
     assert calls[0][2] == {
         "disable_internal_retries": True,
-        "operation_variant": None,
     }
 
 

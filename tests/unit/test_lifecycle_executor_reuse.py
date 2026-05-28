@@ -26,7 +26,7 @@ This module pins three load-bearing invariants:
    ``test_close_nulls_rpc_executor`` blocked — a follow-up
    :meth:`open` quietly missing the executor — surfaces as a clean
    ``RuntimeError`` if the composition contract is ever broken (the
-   :meth:`_require_constructed` guard fires in :meth:`Session.rpc_call`
+   :meth:`_require_constructed` guard fires in the executor binding
    when ``_rpc_executor`` is ``None``).
 """
 
@@ -92,13 +92,14 @@ async def test_executor_identity_survives_close_then_open() -> None:
 async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> None:
     """A reused executor still executes RPCs after a full lifecycle cycle.
 
-    The fail-fast guard in :meth:`Session.rpc_call` requires
-    ``_rpc_executor`` to be set; if Stage B1 PR 2 had accidentally
-    re-nulled the slot inside :meth:`ClientLifecycle.close`, the second
-    ``rpc_call`` after the cycle would raise
-    ``RuntimeError("Session not fully constructed: _rpc_executor is None")``.
-    This test exercises the call path end-to-end through a mocked
-    executor to confirm the binding survives.
+    Production callers reach the executor as ``client._rpc_executor``;
+    if Stage B1 PR 2 had accidentally re-nulled the slot inside
+    :meth:`ClientLifecycle.close`, the second dispatch after the cycle
+    would raise ``AttributeError`` (Session keeps the binding through
+    close/open, so deleting the slot at close time would break a re-opened
+    Session's first dispatch). This test exercises the call path
+    end-to-end through a stubbed executor to confirm the binding
+    survives.
     """
     core = build_session_for_tests(_make_auth())
     executor = core._rpc_executor
@@ -121,7 +122,7 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
 
     # Drive a full lifecycle cycle.
     await core.open()
-    result1 = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+    result1 = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
     await core.close()
 
     # Critical re-open + rpc_call — the deleted close-time null would
@@ -129,7 +130,7 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
     # fail-fast guard.
     await core.open()
     try:
-        result2 = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        result2 = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
     finally:
         await core.close()
 
@@ -141,21 +142,20 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
     assert core._rpc_executor is executor
 
 
-def test_rpc_call_raises_actionably_when_executor_is_unbound() -> None:
+def test_require_constructed_raises_when_rpc_executor_is_unbound() -> None:
     """The :meth:`_require_constructed` guard fires if ``_rpc_executor`` is ``None``.
 
-    Tests the contract that would have caught a regression where the
-    close-time null was reintroduced and the next :meth:`open` did not
-    rebind. Bypasses the composition root via ``Session.__new__`` to
-    simulate that broken state.
+    Tests the contract that catches a regression where the composition
+    root forgets to bind ``_rpc_executor`` (or a close-time null is
+    reintroduced and the next :meth:`open` does not rebind). Bypasses
+    the composition root via ``Session.__new__`` to simulate that
+    broken state.
     """
-    import asyncio
-
     from notebooklm._session import Session
 
     session = Session.__new__(Session)
-    # ``_rpc_executor`` is unset on a __new__ instance — the fail-fast
-    # guard inside :meth:`Session.rpc_call` should fire with a clear
-    # message before reaching the (also-unset) executor.
+    # ``_rpc_executor`` is unset on a __new__ instance; the guard uses
+    # ``getattr(..., None)`` so missing-attribute and ``None``-bound look
+    # the same to the caller — both raise the actionable message.
     with pytest.raises(RuntimeError, match="Session not fully constructed: _rpc_executor is None"):
-        asyncio.run(session.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
+        session._require_constructed("_rpc_executor")

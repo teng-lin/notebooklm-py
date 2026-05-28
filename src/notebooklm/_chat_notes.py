@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 class SaveChatNoteRpc(Protocol):
     """RPC surface needed to persist a saved-from-chat note.
 
-    Mirrors the dispatch shape ``Session.rpc_call`` exposes; a concrete
-    :class:`Session` (or any structural equivalent in tests)
-    satisfies this protocol.
+    Mirrors the dispatch shape :class:`RpcCaller` exposes; a concrete
+    :class:`notebooklm._rpc_executor.RpcExecutor` (or any structural
+    equivalent in tests) satisfies this protocol.
     """
 
     async def rpc_call(

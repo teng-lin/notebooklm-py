@@ -486,7 +486,9 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
         refresh_task: asyncio.Task | None = None
         try:
             if rpc_first:
-                rpc_task = asyncio.create_task(core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
+                rpc_task = asyncio.create_task(
+                    core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                )
                 await asyncio.wait_for(rpc_send_entered.wait(), EVENT_TIMEOUT_S)
                 refresh_task = asyncio.create_task(client.refresh_auth())
                 await asyncio.wait_for(get_entered.wait(), EVENT_TIMEOUT_S)
@@ -497,7 +499,9 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
             else:
                 refresh_task = asyncio.create_task(client.refresh_auth())
                 await asyncio.wait_for(get_entered.wait(), EVENT_TIMEOUT_S)
-                rpc_task = asyncio.create_task(core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
+                rpc_task = asyncio.create_task(
+                    core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                )
                 await asyncio.wait_for(rpc_send_entered.wait(), EVENT_TIMEOUT_S)
                 let_get_complete.set()
                 await asyncio.wait_for(refresh_task, EVENT_TIMEOUT_S)

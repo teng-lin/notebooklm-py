@@ -385,9 +385,9 @@ def test_entry_point_guards_fire_on_uninitialised_session() -> None:
     root is short-circuited.
 
     Stage B1 PR 2 of the post-refactoring plan deleted the lazy
-    ``Session._get_rpc_executor`` factory; :meth:`Session.rpc_call` now
-    requires ``_rpc_executor`` (the slot the composition root binds
-    last) instead of ``_transport``. The other three entry points
+    ``Session._get_rpc_executor`` factory; ``_rpc_executor`` is the slot
+    the composition root binds last and is exercised directly via the
+    :meth:`_require_constructed` guard. The other three entry points
     continue to probe ``_transport`` because that's the slot the
     composition root binds first — a pre-transport call indicates
     a fundamentally unconstructed Session regardless of whether the
@@ -395,10 +395,13 @@ def test_entry_point_guards_fire_on_uninitialised_session() -> None:
     """
     session = Session.__new__(Session)
     # No attributes set — guards must treat this as "not constructed".
+    # The guard uses ``getattr(..., None)`` so missing-attribute and
+    # ``None``-bound look the same to the caller.
 
-    # rpc_call probes the executor (Stage B1 PR 2 change).
+    # The composition root binds the executor last; the guard is
+    # exercised whenever any composition primitive probes the slot.
     with pytest.raises(RuntimeError, match="Session not fully constructed: _rpc_executor is None"):
-        asyncio.run(session.rpc_call(None, []))  # type: ignore[arg-type]
+        session._require_constructed("_rpc_executor")
 
     with pytest.raises(RuntimeError, match="Session not fully constructed: _transport is None"):
         session._get_rpc_semaphore()

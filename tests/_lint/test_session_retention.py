@@ -201,14 +201,14 @@ def retention_rows() -> dict[str, str]:
 
 
 def test_enumerate_session_methods_finds_known_methods() -> None:
-    """Sanity: ``__init__`` and ``rpc_call`` must always be on Session."""
+    """Sanity: ``__init__`` and ``update_auth_tokens`` must always be on Session."""
     source = SESSION_MODULE.read_text(encoding="utf-8")
     names = _enumerate_session_methods(source)
     assert "__init__" in names, "Session must always define __init__."
-    assert "rpc_call" in names, (
-        "Session.rpc_call is the public-API forward and must remain. If this "
-        "lint enumerates an empty list, the AST walk lost the class body — "
-        "check that the Session class still parses."
+    assert "update_auth_tokens" in names, (
+        "Session.update_auth_tokens is the RefreshAuthCore Protocol surface and "
+        "must remain. If this lint enumerates an empty list, the AST walk lost "
+        "the class body — check that the Session class still parses."
     )
 
 
@@ -232,15 +232,16 @@ def test_enumerate_session_methods_skips_other_classes() -> None:
 
 
 def test_parse_retention_doc_extracts_known_rows() -> None:
-    """Sanity: parsing the live doc returns at least ``rpc_call`` with a retain disposition."""
+    """Sanity: parsing the live doc returns at least ``update_auth_tokens`` with a retain disposition."""
     text = RETENTION_DOC.read_text(encoding="utf-8")
     rows = _parse_retention_doc(text)
-    assert "rpc_call" in rows, (
-        "Retention doc must list `rpc_call`. If the row was removed, the "
-        "doc has drifted from the retention contract."
+    assert "update_auth_tokens" in rows, (
+        "Retention doc must list `update_auth_tokens`. If the row was removed, "
+        "the doc has drifted from the retention contract."
     )
-    assert rows["rpc_call"].startswith(_RETAIN_PREFIX), (
-        f"`rpc_call` disposition must be `retain — ...`, got: {rows['rpc_call']!r}"
+    assert rows["update_auth_tokens"].startswith(_RETAIN_PREFIX), (
+        "`update_auth_tokens` disposition must be `retain — ...`, got: "
+        f"{rows['update_auth_tokens']!r}"
     )
 
 
@@ -280,14 +281,14 @@ def test_parse_retention_doc_skips_glossary_tables() -> None:
         "\n"
         "| Method | Category | Disposition |\n"
         "|---|---|---|\n"
-        "| `rpc_call` | public API forward | retain — pinned |\n"
+        "| `update_auth_tokens` | RefreshAuthCore Protocol surface | retain — pinned |\n"
         "\n"
         "## Deleted\n"
         "\n"
         "| `old_method` | compatibility forward | deleted in #999 |\n"
     )
     rows = _parse_retention_doc(text)
-    assert rows == {"rpc_call": "retain — pinned"}, (
+    assert rows == {"update_auth_tokens": "retain — pinned"}, (
         "Glossary and Deleted sections must not contribute rows."
     )
 

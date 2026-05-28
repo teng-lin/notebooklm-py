@@ -26,8 +26,8 @@ These tests verify:
    record (with ``duration_ms`` and ``exception_type``) and re-raises
    the original exception unchanged.
 7. The middleware does NOT raise ``KeyError`` when ``rpc_method`` is
-   absent from ``request.context`` (``Session.rpc_call`` populates it
-   in Tier 13; PR 12.2's wiring does not).
+   absent from ``request.context`` (``RpcExecutor.rpc_call`` populates
+   it in Tier 13; PR 12.2's wiring does not).
 
 The tests use stdlib :func:`caplog` to capture log records — no
 production logger reconfiguration leaks across tests. The chain is
@@ -174,7 +174,7 @@ async def test_rpc_method_absent_does_not_raise(
 ) -> None:
     """``rpc_method`` missing from context is fine — middleware logs ``None``.
 
-    ``Session.rpc_call`` (Tier 13) populates ``context["rpc_method"]``;
+    ``RpcExecutor.rpc_call`` (Tier 13) populates ``context["rpc_method"]``;
     PR 12.2's wiring does not, so the empty-chain path through
     ``Session._perform_authed_post`` only carries ``log_label`` /
     ``build_request`` / ``disable_internal_retries``. The middleware

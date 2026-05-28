@@ -22,14 +22,14 @@ Forbidden patterns
 
        monkeypatch.setattr(notebooklm._core, "asyncio", fake_asyncio)
 
-3. **Direct attribute assignment of ``AsyncMock`` to the core's RPC/
+3. **Direct attribute assignment of ``AsyncMock`` to the RPC/
    transport surface** — mutates an instance instead of injecting at
    construction. Caught with a negative-lookbehind so chained forms like
-   ``self._client._core.rpc_call = AsyncMock(...)`` are also reported.
+   ``self._client._target.rpc_call = AsyncMock(...)`` are also reported.
 
    .. code-block:: python
 
-       core.rpc_call = AsyncMock(return_value=None)
+       target.rpc_call = AsyncMock(return_value=None)
 
 Allowlist
 ---------
@@ -99,8 +99,8 @@ _PATTERN_OBJECT_ATTR = re.compile(r"monkeypatch\.setattr\(\s*notebooklm\.")
 #
 # The negative-lookbehind ``(?<![\w.])`` ensures the matched chain *starts*
 # at a word boundary, so we match the full chain regardless of how deep
-# the dotted prefix goes (``core.rpc_call`` and
-# ``self._client._core.rpc_call`` both fire). Without the lookbehind,
+# the dotted prefix goes (``target.rpc_call`` and
+# ``self._client._target.rpc_call`` both fire). Without the lookbehind,
 # regex backtracking could shorten the prefix and create overlapping
 # matches; with it, each occurrence is reported once with the natural
 # start position.

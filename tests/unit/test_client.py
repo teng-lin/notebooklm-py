@@ -669,7 +669,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
-        result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        result = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once"
         assert call_count[0] == 2, "RPC should be called twice (original + retry)"
@@ -718,7 +718,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
-        result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        result = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once"
         assert decode_call_count[0] == 2, "decode should be called twice (original + retry)"
@@ -748,7 +748,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(RPCError, match="HTTP 401"):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert call_count[0] == 1, "Should not retry without callback"
 
@@ -784,7 +784,7 @@ class TestRpcCallAutoRetry:
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
         with pytest.raises(RPCError, match="HTTP 401"):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert refresh_count[0] == 1, "Should only refresh once"
         assert call_count[0] == 2, "Should only retry once"
@@ -829,7 +829,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(RPCError, match="Server error 500"):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 0, "Should not refresh on non-auth error"
         assert call_count[0] == 1, "Should not retry on non-auth error"
@@ -860,7 +860,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         # Check exception chaining
         assert exc_info.value.__cause__ is not None
@@ -911,8 +911,8 @@ class TestRpcCallAutoRetry:
 
         # Start two concurrent calls
         await asyncio.gather(
-            core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
-            core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
+            core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
+            core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
             return_exceptions=True,
         )
 
@@ -969,7 +969,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
-        result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        result = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once on 400"
         assert call_count[0] == 2, "RPC should be called twice (original + retry)"
@@ -1007,7 +1007,7 @@ class TestRpcCallAutoRetry:
         from notebooklm.rpc import ClientError
 
         with pytest.raises(ClientError):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert call_count[0] == 1, "Should not retry without callback"
 
@@ -1042,7 +1042,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         # Surfaced exception is the original 400, chained from the refresh failure
         assert exc_info.value.response.status_code == 400

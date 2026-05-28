@@ -276,7 +276,7 @@ async def test_retry_inherits_parent_request_id():
         executor = core._rpc_executor
         executor._execute_once = fake_impl  # type: ignore[method-assign]
 
-        result = await core.rpc_call(method=object(), params=[])  # type: ignore[arg-type]
+        result = await core._rpc_executor.rpc_call(method=object(), params=[])  # type: ignore[arg-type]
         assert result == "ok"
         assert len(captured_ids) == 2
         assert captured_ids[0] == captured_ids[1]

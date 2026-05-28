@@ -13,7 +13,7 @@ This ADR documents the pre-cutover pattern for historical context. The "Decision
 Two non-negotiable forces shaped the original design:
 
 - **Sub-clients must not import `Session` directly.** Doing so would create a circular dependency (`Session` imports sub-clients to expose them on `NotebookLMClient.notebooks` etc.; sub-clients importing `Session` would close the loop). Mypy enforces the boundary via `TYPE_CHECKING` gates today.
-- **Sub-clients should be typeable.** When a sub-client calls `core.rpc_call(...)`, mypy needs to verify the signature; passing `Any` defeats the type system at exactly the place where method-ID drift would otherwise break silently.
+- **Sub-clients should be typeable.** When a sub-client calls `executor.rpc_call(...)`, mypy needs to verify the signature; passing `Any` defeats the type system at exactly the place where method-ID drift would otherwise break silently.
 
 The codebase resolved both forces with a *capability Protocol* pattern. Ten narrow `Protocol` classes describe individual collaborator surfaces:
 

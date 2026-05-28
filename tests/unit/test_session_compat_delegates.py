@@ -20,15 +20,6 @@ to migrate:
     External Protocol surface (``RefreshAuthCore`` in ``_auth/session.py``)
         update_auth_tokens
 
-    Feature-facing Protocol surface (``RpcCaller`` in ``_session_contracts.py``)
-        rpc_call
-
-The middleware-chain refresh seam (formerly ``Session._await_refresh``)
-was removed when :class:`MiddlewareChainHost` took ownership of the
-chain wiring; ``wire_middleware_chain`` now captures
-``chain_host.await_refresh`` directly, and tests reach the refresh
-entry point through ``core._chain_host.await_refresh()``.
-
 A delegate body must be at most three top-level statements with at
 least one outbound collaborator call AND no forbidden control-flow
 nodes (``async with``, ``with``, ``try`` / ``except``, ``for`` / ``while``
@@ -58,7 +49,6 @@ from notebooklm._session import Session
 # inlined or moved when their external callers migrated to the
 # canonical collaborator method.
 _DELEGATE_METHODS = [
-    "rpc_call",
     "update_auth_tokens",
 ]
 

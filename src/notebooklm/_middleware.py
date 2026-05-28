@@ -5,7 +5,7 @@ defines:
 
 - :class:`RpcRequest` / :class:`RpcResponse` — the HTTP-shape envelopes the
   chain passes around (NOT RPC-shape; encoding/decoding lives above the
-  chain in ``Session.rpc_call``).
+  chain in :meth:`RpcExecutor.rpc_call`).
 - :data:`NextCall` — the call-the-next-link type alias used by middlewares
   and by the chain builder.
 - :class:`Middleware` — the ``Protocol`` every middleware satisfies. Around-
@@ -55,7 +55,7 @@ class RpcRequest:
     """HTTP-shape request envelope passed through the middleware chain.
 
     The chain wraps ``Kernel.post``. Every middleware sees an already-encoded
-    HTTP request — encoding lives *above* the chain in ``Session.rpc_call``.
+    HTTP request — encoding lives *above* the chain in :meth:`RpcExecutor.rpc_call`.
     RPC-level metadata that middlewares need (rpc
     method id, idempotency, operation variant, log labels, build-request
     callback, etc.) travels through :attr:`context`.

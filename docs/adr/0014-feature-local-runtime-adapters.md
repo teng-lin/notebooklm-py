@@ -222,11 +222,6 @@ deletes them.
 
 **Explicit retention list** — surfaces that remain on `Session` post-migration:
 
-- `Session.rpc_call(...)` — retained as the public-API forward. Pinned by
-  `tests/unit/test_public_shims.py:1048-1089` because `NotebookLMClient.rpc_call`
-  is the documented raw-RPC escape hatch and it forwards through
-  `Session.rpc_call`. Internally `Session.rpc_call` now delegates to
-  `self.rpc_executor.rpc_call(...)` (via the late-bound accessor added by the migration plan's Task 3.0).
 - `Session._chain_host` — instance reference to the `MiddlewareChainHost`
   that owns the live middleware chain. The host owns
   `_authed_post_chain_terminal` (chain leaf), `_authed_post_chain`

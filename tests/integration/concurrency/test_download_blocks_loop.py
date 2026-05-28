@@ -108,7 +108,7 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
     from notebooklm._note_service import NoteService
 
     mock_core = MagicMock()
-    mock_core.rpc_call = AsyncMock()
+    mock_core.rpc_executor.rpc_call = AsyncMock()
     mock_core.get_source_ids = AsyncMock(return_value=[])
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)

@@ -37,7 +37,7 @@ def _make_core(rpc_call: AsyncMock | None = None):
 
 def _make_api(rpc_call: AsyncMock | None = None) -> NotebooksAPI:
     core = _make_core(rpc_call)
-    return NotebooksAPI(core, sources_api=MagicMock())
+    return NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
 
 
 def _source_entry(
@@ -78,7 +78,7 @@ def test_build_create_notebook_params_matches_live_payload() -> None:
 
 def test_direct_notebooks_api_construction_remains_supported() -> None:
     core = _make_core()
-    api = NotebooksAPI(core)
+    api = NotebooksAPI(core.rpc_executor)
 
     assert hasattr(api, "_sources")
     assert isinstance(api._sources, SourceLister)
@@ -87,14 +87,14 @@ def test_direct_notebooks_api_construction_remains_supported() -> None:
 @pytest.mark.asyncio
 async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> None:
     core = _make_core()
-    core.rpc_call.return_value = [
+    core.rpc_executor.rpc_call.return_value = [
         [
             "Architecture",
             [_source_entry("src_1", title="Design Paper", metadata=[None, 11, None, None, 3])],
             "nb_123",
         ]
     ]
-    api = NotebooksAPI(core)
+    api = NotebooksAPI(core.rpc_executor)
 
     metadata = await api.get_metadata("nb_123")
 
@@ -102,13 +102,13 @@ async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> 
     assert len(metadata.sources) == 1
     assert metadata.sources[0].kind == SourceType.PDF
     assert metadata.sources[0].title == "Design Paper"
-    assert core.rpc_call.await_count == 2
+    assert core.rpc_executor.rpc_call.await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_direct_notebooks_api_metadata_lister_uses_late_bound_rpc_executor_call() -> None:
     core = _make_core()
-    api = NotebooksAPI(core)
+    api = NotebooksAPI(core.rpc_executor)
     replacement_rpc = AsyncMock(
         return_value=[
             [
@@ -118,7 +118,7 @@ async def test_direct_notebooks_api_metadata_lister_uses_late_bound_rpc_executor
             ]
         ]
     )
-    core.rpc_call = replacement_rpc
+    core.rpc_executor.rpc_call = replacement_rpc
 
     metadata = await api.get_metadata("nb_123")
 
@@ -161,7 +161,7 @@ async def test_get_metadata_uses_injected_source_lister_and_builds_summaries() -
             )
         ]
     )
-    api = NotebooksAPI(core, sources_api=source_lister)
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
     api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Architecture", sources_count=1))
 
     metadata = await api.get_metadata("nb_123")
@@ -199,7 +199,7 @@ async def test_get_metadata_fetches_notebook_and_sources_concurrently() -> None:
         return [Source(id="src_1", title="Paper", _type_code=3)]  # SourceType.PDF
 
     source_lister.list = AsyncMock(side_effect=list_sources)
-    api = NotebooksAPI(core, sources_api=source_lister)
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
     api.get = AsyncMock(side_effect=get_notebook)
 
     metadata_task = asyncio.create_task(api.get_metadata("nb_123"))
@@ -221,7 +221,7 @@ async def test_get_metadata_warns_when_notebook_reports_sources_but_listing_is_e
     core = _make_core()
     source_lister = MagicMock()
     source_lister.list = AsyncMock(return_value=[])
-    api = NotebooksAPI(core, sources_api=source_lister)
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
     api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Sparse", sources_count=2))
 
     with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
@@ -238,7 +238,7 @@ async def test_get_metadata_does_not_warn_when_empty_notebook_listing_is_empty(
     core = _make_core()
     source_lister = MagicMock()
     source_lister.list = AsyncMock(return_value=[])
-    api = NotebooksAPI(core, sources_api=source_lister)
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
     api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Empty", sources_count=0))
 
     with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):

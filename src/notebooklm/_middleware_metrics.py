@@ -49,8 +49,8 @@ raised after a 200-OK transport return) previously incremented
 ``rpc_calls_failed`` because the old block wrapped raw RPC dispatch,
 which includes decode. The chain wraps only the transport leg, so
 decode-only failures no longer count as ``rpc_calls_failed``. This is the
-intended Tier-13 endpoint shape (``Session.rpc_call`` decodes AFTER the
-chain returns) and disentangles two failure modes that the old counter
+intended Tier-13 endpoint shape (:meth:`RpcExecutor.rpc_call` decodes AFTER
+the chain returns) and disentangles two failure modes that the old counter
 conflated — chain failures = transport failures, decode failures track
 separately if anyone wants to add them.
 

@@ -394,7 +394,7 @@ async def test_rpc_call_resolved_id_at_both_sites(monkeypatch, env_value, expect
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
+        await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
 
         # URL site
         assert f"rpcids={expected_id}" in captured["url"]
@@ -428,7 +428,7 @@ async def test_rpc_call_host_off_allowlist_ignores_override(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
+        await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
 
         assert f"rpcids={RPCMethod.LIST_NOTEBOOKS.value}" in captured["url"]
         assert "shouldNOTApply" not in captured["url"]
@@ -456,7 +456,7 @@ async def test_rpc_call_invalid_json_falls_back_with_warning(monkeypatch, caplog
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
 
         assert any("not valid JSON" in r.message for r in caplog.records)
         assert f"rpcids={RPCMethod.LIST_NOTEBOOKS.value}" in captured["url"]
@@ -483,7 +483,7 @@ async def test_rpc_call_non_dict_json_falls_back_with_warning(monkeypatch, caplo
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
 
         assert any("must be a JSON object" in r.message for r in caplog.records)
         assert f"rpcids={RPCMethod.LIST_NOTEBOOKS.value}" in captured["url"]

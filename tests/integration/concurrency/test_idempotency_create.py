@@ -475,7 +475,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     try:
         request_count = 0
         with pytest.raises(ServerError):
-            await client._session.rpc_call(
+            await client._rpc_executor.rpc_call(
                 RPCMethod.LIST_NOTEBOOKS,
                 [None, 1, None, [2]],
                 disable_internal_retries=True,
@@ -491,7 +491,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     try:
         request_count = 0
         with pytest.raises(ServerError):
-            await client._session.rpc_call(
+            await client._rpc_executor.rpc_call(
                 RPCMethod.LIST_NOTEBOOKS,
                 [None, 1, None, [2]],
             )

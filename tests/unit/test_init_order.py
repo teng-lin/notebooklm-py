@@ -1134,7 +1134,7 @@ def test_core_private_access_guard_ignores_public_core_methods() -> None:
         """
 class Example:
     def method(self):
-        return self._core.rpc_call(method, params)
+        return self._core.update_auth_tokens(csrf, sid)
 """
     )
     visitor = _CorePrivateAccessVisitor("example.py")
@@ -1290,23 +1290,32 @@ def _make_core_for_mind_map_flow() -> tuple[MagicMock, list[tuple[Any, Any]]]:
         return None
 
     core = MagicMock()
-    core.rpc_call = AsyncMock(side_effect=fake_rpc_call)
+    # The fake mirrors production: ``rpc_executor`` is the ``RpcCaller``
+    # collaborator. ``MagicMock`` auto-vivifies the other ArtifactsRuntime
+    # surfaces (``assert_bound_loop`` / ``operation_scope`` /
+    # ``register_drain_hook``) on ``core.rpc_executor`` so it satisfies
+    # the composite Protocol when threaded into ``ArtifactsAPI``.
+    core.rpc_executor.rpc_call = AsyncMock(side_effect=fake_rpc_call)
+    # MagicMock blocks ``assert``-prefixed attribute access — install the
+    # no-op ``assert_bound_loop`` stub on ``core`` explicitly since it is
+    # also passed as the ``drain`` / ``lifecycle`` collaborator.
+    core.assert_bound_loop = MagicMock()
     core.get_source_ids = AsyncMock(return_value=["src_1"])
     return core, calls
 
 
 def _build_artifacts_with_real_mind_map_service(core: MagicMock) -> ArtifactsAPI:
     """Build an ``ArtifactsAPI`` whose mind-map services are real
-    instances backed by ``core`` so the mind-map flow exercises the
-    live RPC callbacks against the canned ``core.rpc_call``.
+    instances backed by ``core.rpc_executor`` so the mind-map flow
+    exercises the live RPC callbacks against the canned executor.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
-    note_service = NoteService(core)
+    note_service = NoteService(core.rpc_executor)
     mind_maps = NoteBackedMindMapService(note_service)
     return ArtifactsAPI(
-        rpc=core,
+        rpc=core.rpc_executor,
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),

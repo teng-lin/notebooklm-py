@@ -51,8 +51,8 @@ def mock_core():
 
     from notebooklm._request_types import AuthSnapshot
 
-    # ``ChatAPI.get_conversation_id`` uses ``core.rpc_call`` with the
-    # ``hPTbtc`` (GET_LAST_CONVERSATION_ID) method. Issue #659: after a
+    # ``ChatAPI.get_conversation_id`` calls ``rpc_executor.rpc_call`` with
+    # the ``hPTbtc`` (GET_LAST_CONVERSATION_ID) method. Issue #659: after a
     # new-conversation ask, ``ChatAPI.ask`` calls this to recover the real
     # conversation_id. Route only that method to a hPTbtc-shaped reply;
     # every other RPC honors ``rpc_call.return_value`` so the artifact
@@ -147,6 +147,11 @@ def mock_core():
         drain_hooks[name] = hook
 
     core = SimpleNamespace(
+        rpc_executor=SimpleNamespace(rpc_call=rpc_call),
+        # ``rpc_call`` mirrors ``rpc_executor.rpc_call`` so the SimpleNamespace
+        # also satisfies the composite ``ArtifactsRuntime`` Protocol
+        # (``RpcCaller`` + ``AsyncWorkRuntime`` + ``DrainHookRegistration``)
+        # when threaded into ``ArtifactsAPI`` as the runtime adapter.
         rpc_call=rpc_call,
         auth=auth,
         next_reqid=AsyncMock(return_value=100000),
@@ -176,12 +181,12 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     arg ``ChatAPI(mock_core)`` form is gone; this helper preserves the
     test shape by mapping the bag-of-attributes mock_core fixture onto
     the new constructor surface (rpc, transport, reqid, loop_guard).
-    Tests pass ``mock_core.rpc_call`` for ``rpc.rpc_call`` and the
+    Tests pass ``mock_core.rpc_executor.rpc_call`` for ``rpc.rpc_call`` and the
     fixture's pre-wired ``mock_core.session_transport.perform_authed_post``
     for the transport entry point.
     """
     return ChatAPI(
-        rpc=mock_core,
+        rpc=mock_core.rpc_executor,
         transport=mock_core.session_transport,
         reqid=mock_core,
         loop_guard=mock_core,
@@ -307,7 +312,7 @@ class TestArtifactsSourceSelection:
         )
 
         # Mock successful generation response
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             ["artifact_123", "Audio", 1, None, 1]  # status 1 = in_progress
         ]
 
@@ -320,8 +325,8 @@ class TestArtifactsSourceSelection:
         assert result.status == "in_progress"
 
         # Verify RPC was called with correct source encoding
-        mock_core.rpc_call.assert_called_once()
-        call_args = mock_core.rpc_call.call_args
+        mock_core.rpc_executor.rpc_call.assert_called_once()
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         # params structure for audio:
@@ -366,7 +371,7 @@ class TestArtifactsSourceSelection:
             audio_length=AudioLength.LONG,
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         audio_config = params[2][6][1]
         assert audio_config[1] == AudioLength.LONG.value
         assert audio_config[6] == AudioFormat.DEBATE.value
@@ -388,7 +393,7 @@ class TestArtifactsSourceSelection:
         mock_notebooks_api.get_source_ids.return_value = ["src_001", "src_002"]
 
         # Mock the generation RPC call
-        mock_core.rpc_call.return_value = [["artifact_123", "Audio", 1, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_123", "Audio", 1, None, 1]]
 
         result = await api.generate_audio(
             notebook_id="nb_123",
@@ -401,8 +406,8 @@ class TestArtifactsSourceSelection:
         mock_notebooks_api.get_source_ids.assert_called_once_with("nb_123")
 
         # Verify CREATE_ARTIFACT RPC was called with fetched source IDs
-        mock_core.rpc_call.assert_called_once()
-        call_args = mock_core.rpc_call.call_args
+        mock_core.rpc_executor.rpc_call.assert_called_once()
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
         inner_params = params[2]
         source_ids_triple = inner_params[3]
@@ -420,14 +425,14 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
         await api.generate_video(
             notebook_id="nb_123",
             source_ids=["src_a", "src_b"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         # Video params structure:
@@ -467,7 +472,7 @@ class TestArtifactsSourceSelection:
             video_style=VideoStyle.ANIME,
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         video_config = params[2][8][2]
         assert video_config[4] == VideoFormat.BRIEF.value
         assert video_config[5] == VideoStyle.ANIME.value
@@ -493,7 +498,7 @@ class TestArtifactsSourceSelection:
             style_prompt="  Use hand-drawn diagrams  ",
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         video_config = params[2][8][2]
         assert video_config[5] == VideoStyle.CUSTOM.value
         assert video_config[6] == "Use hand-drawn diagrams"
@@ -608,14 +613,14 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
             notebook_id="nb_123",
             source_ids=["src_x", "src_y", "src_z"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         # Report params structure:
@@ -652,7 +657,7 @@ class TestArtifactsSourceSelection:
             extra_instructions="Focus on financial metrics",
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         report_config = params[2][7][1]
         prompt = report_config[5]
 
@@ -683,7 +688,7 @@ class TestArtifactsSourceSelection:
             extra_instructions="Should be ignored",
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         report_config = params[2][7][1]
         prompt = report_config[5]
 
@@ -701,14 +706,14 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
 
         await api.generate_quiz(
             notebook_id="nb_123",
             source_ids=["src_1", "src_2"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         # Quiz params structure:
@@ -744,7 +749,7 @@ class TestArtifactsSourceSelection:
             difficulty=QuizDifficulty.HARD,
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         quiz_options = params[2][9][1][7]
         assert quiz_options == [QuizQuantity.FEWER.value, QuizDifficulty.HARD.value]
 
@@ -759,14 +764,14 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
 
         await api.generate_flashcards(
             notebook_id="nb_123",
             source_ids=["src_flash"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         inner_params = params[2]
@@ -797,7 +802,7 @@ class TestArtifactsSourceSelection:
             difficulty=QuizDifficulty.EASY,
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         flashcard_options = params[2][9][1][6]
         assert flashcard_options == [QuizDifficulty.EASY.value, QuizQuantity.FEWER.value]
 
@@ -812,14 +817,16 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [
+            ["artifact_info", "Infographic", 7, None, 1]
+        ]
 
         await api.generate_infographic(
             notebook_id="nb_123",
             source_ids=["src_info_1", "src_info_2"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         inner_params = params[2]
@@ -844,7 +851,9 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [
+            ["artifact_info", "Infographic", 7, None, 1]
+        ]
 
         await api.generate_infographic(
             notebook_id="nb_123",
@@ -854,7 +863,7 @@ class TestArtifactsSourceSelection:
             style=InfographicStyle.PROFESSIONAL,
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         inner_params = params[2]
@@ -875,14 +884,14 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
 
         await api.generate_slide_deck(
             notebook_id="nb_123",
             source_ids=["src_slide"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         inner_params = params[2]
@@ -914,7 +923,7 @@ class TestArtifactsSourceSelection:
             slide_length=SlideDeckLength.SHORT,
         )
 
-        params = mock_core.rpc_call.call_args.args[1]
+        params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         slide_config = params[2][16][0]
         assert slide_config[2] == SlideDeckFormat.PRESENTER_SLIDES.value
         assert slide_config[3] == SlideDeckLength.SHORT.value
@@ -930,14 +939,14 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_table", "Table", 9, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_table", "Table", 9, None, 1]]
 
         await api.generate_data_table(
             notebook_id="nb_123",
             source_ids=["src_table_1", "src_table_2"],
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
 
         inner_params = params[2]
@@ -962,7 +971,7 @@ class TestArtifactsSourceSelection:
         mock_notebooks_api.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
 
         # Mock the mind map generation RPC call
-        mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
+        mock_core.rpc_executor.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
 
         await api.generate_mind_map(
             notebook_id="nb_123",
@@ -977,7 +986,9 @@ class TestArtifactsSourceSelection:
         # rpc_call is invoked three times. The source-encoding assertion
         # targets the GENERATE_MIND_MAP call specifically.
         generate_call = next(
-            c for c in mock_core.rpc_call.call_args_list if c.args[0].name == "GENERATE_MIND_MAP"
+            c
+            for c in mock_core.rpc_executor.rpc_call.call_args_list
+            if c.args[0].name == "GENERATE_MIND_MAP"
         )
         params = generate_call.args[1]
 
@@ -999,7 +1010,7 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
+        mock_core.rpc_executor.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
 
         await api.generate_mind_map(
             notebook_id="nb_123",
@@ -1011,7 +1022,9 @@ class TestArtifactsSourceSelection:
         # Pick the GENERATE_MIND_MAP call specifically — CREATE_NOTE and
         # UPDATE_NOTE are now invoked alongside it.
         generate_call = next(
-            c for c in mock_core.rpc_call.call_args_list if c.args[0].name == "GENERATE_MIND_MAP"
+            c
+            for c in mock_core.rpc_executor.rpc_call.call_args_list
+            if c.args[0].name == "GENERATE_MIND_MAP"
         )
         params = generate_call.args[1]
 
@@ -1037,15 +1050,15 @@ class TestArtifactsSourceSelection:
 
         # Mock the GET_SUGGESTED_REPORTS RPC call
         # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [["Report Title", "Description", None, None, "Custom prompt", 2]]
         ]
 
         result = await api.suggest_reports(notebook_id="nb_123")
 
         # Verify GET_SUGGESTED_REPORTS was called with correct params
-        mock_core.rpc_call.assert_called_once()
-        call_args = mock_core.rpc_call.call_args
+        mock_core.rpc_executor.rpc_call.assert_called_once()
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         assert call_args.args[0] == RPCMethod.GET_SUGGESTED_REPORTS
         assert call_args.args[1] == [[2], "nb_123"]
 
@@ -1068,14 +1081,14 @@ class TestEmptySourceIds:
             **mock_mind_map_service,
         )
 
-        mock_core.rpc_call.return_value = [["artifact_empty", "Audio", 1, None, 1]]
+        mock_core.rpc_executor.rpc_call.return_value = [["artifact_empty", "Audio", 1, None, 1]]
 
         await api.generate_audio(
             notebook_id="nb_123",
             source_ids=[],  # Explicit empty list
         )
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args.args[1]
         inner_params = params[2]
 
@@ -1125,7 +1138,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core)
+        api = NotebooksAPI(core.rpc_executor)
 
         # Mock notebook data with multiple sources
         # Structure: notebook_data[0][1] = sources list
@@ -1154,7 +1167,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core)
+        api = NotebooksAPI(core.rpc_executor)
 
         rpc.return_value = [["nb_123", []]]
 
@@ -1170,7 +1183,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core)
+        api = NotebooksAPI(core.rpc_executor)
 
         rpc.return_value = None
 
@@ -1186,7 +1199,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core)
+        api = NotebooksAPI(core.rpc_executor)
 
         # Malformed data - missing nested structure
         # Structure: source[0] must be a list, source[0][0] must be a string

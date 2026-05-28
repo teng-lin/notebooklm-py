@@ -191,7 +191,7 @@ class TestCallGenerateRateLimit:
         api, mock_core = mock_artifacts_api
 
         # Simulate rate limit error from RPC
-        mock_core.rpc_call.side_effect = RPCError(
+        mock_core.rpc_executor.rpc_call.side_effect = RPCError(
             "Rate limit exceeded", rpc_code="USER_DISPLAYABLE_ERROR"
         )
 
@@ -207,7 +207,9 @@ class TestCallGenerateRateLimit:
         """Test that non-rate-limit RPC errors propagate."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.side_effect = RPCError("Server error", rpc_code="INTERNAL_ERROR")
+        mock_core.rpc_executor.rpc_call.side_effect = RPCError(
+            "Server error", rpc_code="INTERNAL_ERROR"
+        )
 
         with pytest.raises(RPCError, match="Server error"):
             await api.generate_video("nb_123")
@@ -227,7 +229,7 @@ class TestWaitForCompletion:
         api, mock_core = mock_artifacts_api
 
         # Always return in_progress status via LIST_ARTIFACTS format
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [
                     "task_123",
@@ -356,7 +358,7 @@ class TestWaitForCompletion:
         api, mock_core = mock_artifacts_api
 
         # Return completed on second poll via LIST_ARTIFACTS format
-        mock_core.rpc_call.side_effect = [
+        mock_core.rpc_executor.rpc_call.side_effect = [
             # First poll - in_progress
             [
                 [
@@ -399,7 +401,7 @@ class TestWaitForCompletion:
         api, mock_core = mock_artifacts_api
 
         # LIST_ARTIFACTS returns list without our artifact ID
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [  # Different artifact
                     "other_artifact",
@@ -506,7 +508,7 @@ class TestDeprecationWarnings:
         api, mock_core = mock_artifacts_api
 
         # Return completed immediately via LIST_ARTIFACTS format
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [
                     "task_123",
@@ -842,7 +844,7 @@ class TestPollStatusMediaReadiness:
         api, mock_core = mock_artifacts_api
 
         # LIST_ARTIFACTS response
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [  # LIST_ARTIFACTS response
                     "task_123",
@@ -873,7 +875,7 @@ class TestPollStatusMediaReadiness:
         api, mock_core = mock_artifacts_api
 
         # LIST_ARTIFACTS response - status=COMPLETED but no URL
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [  # LIST_ARTIFACTS response - status=COMPLETED but no URL
                     "task_123",
@@ -903,7 +905,7 @@ class TestPollStatusMediaReadiness:
         """poll_status surfaces the video download URL when extractable."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [
                     "task_123",
@@ -928,7 +930,7 @@ class TestPollStatusMediaReadiness:
         """poll_status surfaces the infographic image URL when extractable."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [
                     "task_123",
@@ -950,7 +952,7 @@ class TestPollStatusMediaReadiness:
         """poll_status surfaces the slide-deck PDF URL when extractable."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["task_123", "Slides", 8, None, 3]
                 + [None] * 11
@@ -968,7 +970,7 @@ class TestPollStatusMediaReadiness:
         api, mock_core = mock_artifacts_api
 
         # LIST_ARTIFACTS - video with status=COMPLETED but no URL
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [  # LIST_ARTIFACTS - video with status=COMPLETED but no URL
                     "task_123",
@@ -993,7 +995,7 @@ class TestPollStatusMediaReadiness:
         api, mock_core = mock_artifacts_api
 
         # LIST_ARTIFACTS - quiz
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [  # LIST_ARTIFACTS - quiz
                     "task_123",
@@ -1015,7 +1017,7 @@ class TestPollStatusMediaReadiness:
         api, mock_core = mock_artifacts_api
 
         # LIST_ARTIFACTS - audio still processing
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [  # LIST_ARTIFACTS - audio still processing
                     "task_123",

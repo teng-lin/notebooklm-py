@@ -19,7 +19,7 @@ def _make_rpc() -> AsyncMock:
 def _make_manager() -> tuple[ShareManager, AsyncMock]:
     rpc = _make_rpc()
     core = make_fake_core(rpc_call=rpc)
-    return ShareManager(core, base_url_provider=lambda: BASE_URL), rpc
+    return ShareManager(core.rpc_executor, base_url_provider=lambda: BASE_URL), rpc
 
 
 def test_build_share_url_without_artifact() -> None:
@@ -130,12 +130,12 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 @pytest.mark.asyncio
 async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_call() -> None:
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
-    api = NotebooksAPI(core, sources_api=MagicMock())
+    api = NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
     replacement_rpc = AsyncMock(return_value=None)
-    # ShareManager binds to the core's rpc_call attribute lazily — swap it
-    # to verify the late-binding contract. This is intentional behavior
+    # ShareManager binds to the executor's rpc_call attribute lazily — swap
+    # it to verify the late-binding contract. This is intentional behavior
     # under test, not the forbidden pattern (we're testing the binding).
-    core.rpc_call = replacement_rpc
+    core.rpc_executor.rpc_call = replacement_rpc
 
     with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
         result = await api.share("nb_123", public=True, artifact_id="art_456")

@@ -139,7 +139,7 @@ def test_no_unauthorized_deprecated_public_rpc_call_kwargs() -> None:
         "were removed from the public NotebookLMClient.rpc_call interface "
         "in v0.6.0 — any use of them now raises TypeError at runtime "
         "(not DeprecationWarning). Remove the kwarg from the call site; "
-        "the canonical defaults still flow through Session.rpc_call.\n"
+        "the canonical defaults still flow through RpcExecutor.rpc_call.\n"
         "Offenders:\n"
         + "\n".join(
             f"  {rel}:{lineno}  func={func!r}  kwargs={sorted(kws)}"

@@ -104,9 +104,9 @@ class RpcExecutor:
     ) -> Any:
         """Run an RPC wrapped with telemetry and request-id bookkeeping.
 
-        This is the logical-RPC entry point that ``Session.rpc_call`` routes
-        through. The body owns the metrics + request-id wiring that surrounds
-        the raw RPC dispatch.
+        This is the logical-RPC entry point that ``NotebookLMClient.rpc_call``
+        and every feature API route through. The body owns the metrics +
+        request-id wiring that surrounds the raw RPC dispatch.
 
         The ``_is_retry`` flag suppresses telemetry/reqid wrapping so the
         decode-time refresh-and-retry leg inherits the parent's

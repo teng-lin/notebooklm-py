@@ -691,7 +691,7 @@ compatibility shim was removed in v0.5.0.
 | `_client_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts and the legacy `Session._pending_polls` compatibility bridge. |
 | `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
-| `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
+| `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` Protocol so callers can be unit-tested against a stub. | `NotebookLMClient.rpc_call` dispatches here directly. |
 | `_request_types` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the chain terminal. |
 | `_transport_errors` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Session` and lets the middleware chain consume a narrow exception Interface. |
 | `_streaming_post` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
@@ -787,7 +787,7 @@ class NotebookLMClient:
 
 `RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
 `typing.Any`. The default-shape call (`client.rpc_call(method, params)`)
-forwards to the underlying `Session.rpc_call` with its canonical
+forwards to the underlying `RpcExecutor.rpc_call` with its canonical
 defaults.
 
 > **Removed in v0.6.0.** The three previously-deprecated kwargs

@@ -258,7 +258,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
         # acquired write between RPC ``AuthRefreshCoordinator.snapshot()``
         # and ``client.post(...)`` boundaries.
         async def one_rpc() -> None:
-            await core.rpc_call(RPC_METHOD, [])
+            await core._rpc_executor.rpc_call(RPC_METHOD, [])
 
         await asyncio.gather(
             bump_generation_under_lock(),

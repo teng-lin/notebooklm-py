@@ -1058,7 +1058,7 @@ def test_auth_validation_extraction_hint_lives_on_cookie_policy(
 
 @pytest.mark.asyncio
 async def test_client_rpc_call_forwards_supported_kwargs() -> None:
-    """NotebookLMClient.rpc_call forwards its supported kwargs to Session.
+    """NotebookLMClient.rpc_call forwards its supported kwargs to the executor.
 
     After the v0.6.0 cut, the public wrapper exposes only the supported
     surface (``method``, ``params``, ``allow_null``, and the keyword-only
@@ -1077,7 +1077,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
             session_id="session",
         )
     )
-    client._session.rpc_call = AsyncMock(return_value={"ok": True})
+    client._rpc_executor.rpc_call = AsyncMock(return_value={"ok": True})
 
     result = await client.rpc_call(
         RPCMethod.CREATE_NOTEBOOK,
@@ -1087,7 +1087,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
     )
 
     assert result == {"ok": True}
-    client._session.rpc_call.assert_awaited_once_with(
+    client._rpc_executor.rpc_call.assert_awaited_once_with(
         method=RPCMethod.CREATE_NOTEBOOK,
         params=["My Notebook"],
         allow_null=True,
@@ -1097,7 +1097,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
 
 @pytest.mark.asyncio
 async def test_client_rpc_call_forwards_default_arguments() -> None:
-    """The default-shape call forwards minimal kwargs and inherits Session defaults."""
+    """The default-shape call forwards minimal kwargs and inherits executor defaults."""
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
@@ -1109,17 +1109,17 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
             session_id="session",
         )
     )
-    # No async context is needed: this test replaces the core RPC coroutine
-    # before any real transport initialization can be required.
-    client._session.rpc_call = AsyncMock(return_value=[])
+    # No async context is needed: this test replaces the executor's RPC
+    # coroutine before any real transport initialization can be required.
+    client._rpc_executor.rpc_call = AsyncMock(return_value=[])
 
     result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     assert result == []
     # The wrapper forwards only the kwargs it owns; the rest of
-    # Session.rpc_call's signature (source_path, _is_retry,
+    # RpcExecutor.rpc_call's signature (source_path, _is_retry,
     # operation_variant) keeps its module-level defaults.
-    client._session.rpc_call.assert_awaited_once_with(
+    client._rpc_executor.rpc_call.assert_awaited_once_with(
         method=RPCMethod.LIST_NOTEBOOKS,
         params=[],
         allow_null=False,

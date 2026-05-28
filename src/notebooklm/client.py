@@ -307,6 +307,15 @@ class NotebookLMClient:
         # same bundle the Session uses, without going through a Stage A
         # accessor on the Session.
         self._collaborators = composed.collaborators
+        # Owned reference to the RPC executor so ``client.rpc_call``
+        # dispatches through it directly rather than through a
+        # Session-side compatibility wrapper. The executor satisfies the
+        # ``RpcCaller`` Protocol and is the same instance the feature
+        # APIs receive (``composed.executor`` is shared with
+        # ``SourcesAPI`` / ``NotebooksAPI`` / ``ArtifactsRuntimeAdapter``
+        # / ``ChatAPI`` / etc., so a test that swaps the executor's
+        # ``rpc_call`` sees the swap on every feature consumer).
+        self._rpc_executor = composed.executor
 
         # ADR-014 Rule 2: the upload pipeline takes its three runtime
         # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
@@ -590,17 +599,18 @@ class NotebookLMClient:
         (``client.notebooks``, ``client.sources``, etc.) when possible. Import
         ``RPCMethod`` from ``notebooklm.rpc``.
 
-        The wrapper forwards to :meth:`Session.rpc_call` with that method's
-        canonical defaults. Internal call sites that need to bind the
-        underlying internal-only parameters do so against the Session surface
-        directly, not via this public wrapper.
+        The wrapper forwards to :meth:`RpcExecutor.rpc_call` on the
+        executor that was bound during :meth:`__init__` (and that every
+        feature API shares). Internal call sites that need to bind the
+        underlying internal-only parameters do so against the executor
+        surface directly, not via this public wrapper.
 
         .. versionchanged:: 0.6.0
             The deprecated keyword arguments previously documented here
             were removed (see :doc:`/deprecations`). The default-shape
             call (``client.rpc_call(method, params)``) is unchanged.
         """
-        return await self._session.rpc_call(
+        return await self._rpc_executor.rpc_call(
             method=method,
             params=params,
             allow_null=allow_null,

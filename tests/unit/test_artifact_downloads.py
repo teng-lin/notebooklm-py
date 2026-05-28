@@ -27,7 +27,7 @@ def mock_artifacts_api():
     ``note_service.create_note``; the download path consumes
     ``mind_maps.list_mind_maps`` / ``mind_maps.extract_content``. Tests
     that exercise mind-map creation drive responses through
-    ``mock_core.rpc_call`` (via ``side_effect``) since both new
+    ``mock_core.rpc_executor.rpc_call`` (via ``side_effect``) since both new
     services delegate down to that single RPC seam.
     """
     from _fixtures.fake_core import make_fake_core
@@ -125,7 +125,7 @@ class TestDownloadAudio:
         """Test successful audio download."""
         api, mock_core = mock_artifacts_api
         # Mock artifact list response - type 1 (audio), status 3 (completed)
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [
                     "audio_001",  # id
@@ -162,7 +162,7 @@ class TestDownloadAudio:
     async def test_download_audio_no_audio_found(self, mock_artifacts_api):
         """Test error when no audio artifact exists."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [[]]  # Empty list
+        mock_core.rpc_executor.rpc_call.return_value = [[]]  # Empty list
 
         with pytest.raises(ArtifactNotReadyError):
             await api.download_audio("nb_123", "/tmp/audio.mp4")
@@ -171,7 +171,9 @@ class TestDownloadAudio:
     async def test_download_audio_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific audio ID not found."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [[["other_id", "Audio", 1, None, 3, None, [None] * 6]]]
+        mock_core.rpc_executor.rpc_call.return_value = [
+            [["other_id", "Audio", 1, None, 3, None, [None] * 6]]
+        ]
 
         with pytest.raises(ArtifactNotReadyError):
             await api.download_audio("nb_123", "/tmp/audio.mp4", artifact_id="audio_001")
@@ -180,7 +182,7 @@ class TestDownloadAudio:
     async def test_download_audio_invalid_metadata(self, mock_artifacts_api):
         """Test error on invalid metadata structure."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["audio_001", "Audio", 1, None, 3, None, "not_a_list"]  # metadata should be list
             ]
@@ -440,7 +442,7 @@ class TestMindMapGeneration:
                 return None
             return None
 
-        mock_core.rpc_call.side_effect = fake_rpc
+        mock_core.rpc_executor.rpc_call.side_effect = fake_rpc
 
         result = await api.generate_mind_map("nb_123")
 
@@ -472,7 +474,7 @@ class TestMindMapGeneration:
                 return None
             return None
 
-        mock_core.rpc_call.side_effect = fake_rpc
+        mock_core.rpc_executor.rpc_call.side_effect = fake_rpc
 
         result = await api.generate_mind_map("nb_123")
 
@@ -488,7 +490,7 @@ class TestMindMapGeneration:
         # Mock get_source_ids for source ID fetching
         mock_core.get_source_ids.return_value = ["src_001"]
         # GENERATE_MIND_MAP returns null/empty — no note should be created.
-        mock_core.rpc_call.return_value = None
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await api.generate_mind_map("nb_123")
 

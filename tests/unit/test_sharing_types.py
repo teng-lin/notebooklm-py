@@ -195,7 +195,7 @@ class TestSharingAPIValidation:
             await api.add_user("nb_123", "test@example.com", SharePermission.OWNER)
 
         # Verify no RPC call was made
-        mock_core.rpc_call.assert_not_called()
+        mock_core.rpc_executor.rpc_call.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_user_rejects_remove_permission(self):
@@ -211,7 +211,7 @@ class TestSharingAPIValidation:
         with pytest.raises(ValueError, match="Use remove_user"):
             await api.add_user("nb_123", "test@example.com", SharePermission._REMOVE)
 
-        mock_core.rpc_call.assert_not_called()
+        mock_core.rpc_executor.rpc_call.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_user_accepts_editor_permission(self):
@@ -238,7 +238,7 @@ class TestSharingAPIValidation:
 
         status = await api.add_user("nb_123", "test@example.com", SharePermission.EDITOR)
 
-        assert mock_core.rpc_call.call_count == 2
+        assert mock_core.rpc_executor.rpc_call.call_count == 2
         assert len(status.shared_users) == 1
         assert status.shared_users[0].permission == SharePermission.EDITOR
 
@@ -267,7 +267,7 @@ class TestSharingAPIValidation:
         # Use default permission (VIEWER)
         status = await api.add_user("nb_123", "test@example.com")
 
-        assert mock_core.rpc_call.call_count == 2
+        assert mock_core.rpc_executor.rpc_call.call_count == 2
         assert status.shared_users[0].permission == SharePermission.VIEWER
 
 

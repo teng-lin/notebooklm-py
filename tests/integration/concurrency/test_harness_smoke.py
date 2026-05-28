@@ -113,7 +113,7 @@ async def test_harness_100_way_fanout_records_peak_inflight(
     try:
         start = time.perf_counter()
         results = await asyncio.gather(
-            *[core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) for _ in range(100)]
+            *[core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) for _ in range(100)]
         )
         elapsed = time.perf_counter() - start
     finally:

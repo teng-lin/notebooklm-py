@@ -407,11 +407,11 @@ class TestArtifactsAPI:
         result = await api._list_raw("nb_123")
 
         assert result == []
-        # After ``arch-d2-cutover``, ArtifactsAPI calls ``core.rpc_call``
-        # directly (no adapter pass-through), so default kwargs aren't
-        # explicitly forwarded — they apply at the underlying
-        # ``Session.rpc_call`` signature instead.
-        core.rpc_call.assert_awaited_once_with(
+        # After ``arch-d2-cutover``, ArtifactsAPI calls
+        # ``runtime.rpc_call`` directly (no adapter pass-through), so
+        # default kwargs aren't explicitly forwarded — they apply at the
+        # underlying :meth:`RpcExecutor.rpc_call` signature instead.
+        core.rpc_executor.rpc_call.assert_awaited_once_with(
             RPCMethod.LIST_ARTIFACTS,
             [[2], "nb_123", 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],
             source_path="/notebook/nb_123",

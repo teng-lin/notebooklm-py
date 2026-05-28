@@ -120,7 +120,7 @@
     {
       "code": "changed-signature",
       "object": "notebooklm.NotebookLMClient.rpc_call",
-      "reason": "v0.5.0 DeprecationWarning cycle completed in v0.6.0: kwarg 'source_path' was removed from the public escape-hatch wrapper. Internal-only kwargs '_is_retry' and 'operation_variant' were removed alongside but are not audit-visible (underscored). Default-shape callers (client.rpc_call(method, params)) see no behavior change since the canonical defaults still flow through Session.rpc_call. See docs/deprecations.md 'Removed in v0.6.0' and CHANGELOG.md [Unreleased] for migration."
+      "reason": "v0.5.0 DeprecationWarning cycle completed in v0.6.0: kwarg 'source_path' was removed from the public escape-hatch wrapper. Internal-only kwargs '_is_retry' and 'operation_variant' were removed alongside but are not audit-visible (underscored). Default-shape callers (client.rpc_call(method, params)) see no behavior change since the canonical defaults still flow through RpcExecutor.rpc_call. See docs/deprecations.md 'Removed in v0.6.0' and CHANGELOG.md [Unreleased] for migration."
     },
     {
       "code": "changed-signature",

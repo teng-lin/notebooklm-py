@@ -881,7 +881,7 @@ async def test_rpc_call_happy_path_url_and_body_unchanged(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         # The URL must carry the standard batchexecute query string.
         assert "rpcids=" + RPCMethod.LIST_NOTEBOOKS.value in captured["url"]
@@ -1200,7 +1200,7 @@ async def test_rpc_call_maps_transport_server_error_to_server_error(monkeypatch)
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(ServerError) as exc_info:
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert exc_info.value.status_code == 503
     finally:
@@ -1227,7 +1227,7 @@ async def test_rpc_call_maps_transport_server_error_network_to_network_error(mon
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(NetworkError):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
     finally:
         await core.close()
 

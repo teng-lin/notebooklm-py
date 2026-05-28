@@ -145,12 +145,12 @@ def test_cross_loop_use_raises_actionable_runtime_error(
         # but our ``RuntimeError`` is not a transport error, so it
         # propagates unchanged.
         with pytest.raises(RuntimeError, match="bound to a different event loop"):
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         # Confirm the actionable second sentence is in the message so
         # users know what to do — not just that *something* went wrong.
         try:
-            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
         except RuntimeError as exc:
             assert "create a new client in the target loop" in str(exc), (
                 f"loop-affinity RuntimeError should tell users how to fix it; got message: {exc!s}"
@@ -192,7 +192,7 @@ async def test_same_loop_use_unaffected(
     core = await _open_core_with_transport(transport)
     try:
         results = await asyncio.gather(
-            *[core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) for _ in range(100)]
+            *[core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) for _ in range(100)]
         )
     finally:
         await core.close()

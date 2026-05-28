@@ -1,4 +1,4 @@
-"""429 retry budget on ``Session.rpc_call``.
+"""429 retry budget on ``RpcExecutor.rpc_call``.
 
 The rate-limit fix raises the ``rate_limit_max_retries`` default from
 ``0`` to ``3`` and adds capped exponential backoff as the sleep fallback
@@ -63,7 +63,7 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
     # RPCError-tree decode failure, but the retry MUST have fired. Narrowed
     # from `except Exception` to keep unrelated programming errors visible.
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep, contextlib.suppress(RPCError):
-        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
     assert mock_client.post.call_count == 2, (
         f"Expected initial 429 then 1 retry, got {mock_client.post.call_count}"
@@ -82,7 +82,7 @@ async def test_rate_limit_retry_exhausted_with_budget(auth_tokens):
     install_post_as_stream(None, mock_client, mock_client.post)
 
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
-        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
     assert mock_client.post.call_count == 3
     assert mock_sleep.call_count == 2
@@ -109,7 +109,7 @@ async def test_rate_limit_no_retry_if_disabled(auth_tokens):
     install_post_as_stream(None, mock_client, mock_client.post)
 
     with pytest.raises(RateLimitError):
-        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
     assert mock_client.post.call_count == 1
 
@@ -137,7 +137,7 @@ async def test_rate_limit_exp_backoff_fallback_without_header(auth_tokens):
         sleeps.append(seconds)
 
     with patch("asyncio.sleep", side_effect=_record_sleep), pytest.raises(RateLimitError):
-        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
     # Initial + 2 retries = 3 POSTs before RateLimitError raises.
     assert mock_client.post.call_count == 3
@@ -158,7 +158,7 @@ async def test_rate_limit_no_retry_without_header_when_disabled(auth_tokens):
     install_post_as_stream(None, mock_client, mock_client.post)
 
     with pytest.raises(RateLimitError):
-        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
     assert mock_client.post.call_count == 1
 

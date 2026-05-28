@@ -17,7 +17,7 @@ The audit's verified counts at HEAD `22355cf` are:
 | Total `monkeypatch.setattr` sites under `tests/` | 236 |
 | String-target patches — `monkeypatch.setattr("notebooklm.X.Y", …)` | 58 |
 | Object-attribute patches — `monkeypatch.setattr(obj, "attr", …)` | 152 |
-| Direct attribute assignment — `core.rpc_call = AsyncMock(…)` etc. | 63 |
+| Direct attribute assignment — `target.rpc_call = AsyncMock(…)` etc. | 63 |
 | `tests/unit/test_auth_*.py` split (concern-aligned: `test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.) | Formerly 4,090 LOC · 70 patches |
 | `tests/unit/cli/test_session.py` size | 4,431 LOC |
 
@@ -40,16 +40,16 @@ from _fixtures import make_fake_core  # pytest adds tests/ to sys.path
 
 async def test_notebooks_list_returns_payload() -> None:
     fake = make_fake_core(rpc_call=AsyncMock(return_value=[fake_payload]))
-    api = NotebooksAPI(core=fake)
+    api = NotebooksAPI(fake.rpc_executor)
     result = await api.list()
-    fake.rpc_call.assert_awaited_once()
+    fake.rpc_executor.rpc_call.assert_awaited_once()
 ```
 
 The following patterns are **forbidden** in new test code and enforced by `tests/_lint/test_no_forbidden_monkeypatches.py`:
 
 1. **String-target monkeypatches into the `notebooklm` namespace** — `monkeypatch.setattr("notebooklm.X.Y", ...)`. These rely on import-string resolution and silently no-op when storage relocates.
 2. **Object-attribute monkeypatches via the `notebooklm` module** — `monkeypatch.setattr(notebooklm.X, "attr", ...)`. Same failure mode; written slightly differently.
-3. **Direct AsyncMock attribute assignment to the core's transport/RPC surface** — `core.rpc_call = AsyncMock(...)`, `core._perform_authed_post = AsyncMock(...)`, `core._begin_transport_post = AsyncMock(...)`, `core._finish_transport_post = AsyncMock(...)`, `core.query_post = AsyncMock(...)`, including chained variants like `self._client._core.rpc_call = AsyncMock(...)`. These mutate a constructed instance instead of injecting a fake at construction.
+3. **Direct AsyncMock attribute assignment to the transport/RPC surface** — `target.rpc_call = AsyncMock(...)`, `target._perform_authed_post = AsyncMock(...)`, `target._begin_transport_post = AsyncMock(...)`, `target._finish_transport_post = AsyncMock(...)`, `target.query_post = AsyncMock(...)`, including chained variants like `self._client._target.rpc_call = AsyncMock(...)`. These mutate a constructed instance instead of injecting a fake at construction.
 
 `tests/_fixtures/fake_core.py` provides `make_fake_core(**overrides) -> FakeSession`. `FakeSession` is a `types.SimpleNamespace`-shaped plain class whose default fields cover every attribute the narrow Protocols in `src/notebooklm/_capabilities.py` require (`rpc_call`, `_perform_authed_post`, `_begin_transport_post`, `_finish_transport_post`, `next_reqid`, `authuser`, `account_email`, `authuser_query`, `authuser_header`, `live_cookies`, `get_upload_semaphore`, `record_upload_queue_wait`, `bound_loop`, plus the private `_route_url`/`_next_reqid` aliases tests use today). Defaults are benign `AsyncMock`s for the async surface and `MagicMock`s for the sync surface; tests override only the slice they exercise via keyword arguments.
 

@@ -84,7 +84,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     core._chain_host._authed_post_chain = build_chain(core._middlewares, fake_terminal)
 
     with correlation_id("batch-42"):
-        result = await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
+        result = await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
 
     assert result == {"ok": True}
     assert seen_request_ids == ["batch-42"]

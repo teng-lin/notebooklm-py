@@ -160,7 +160,7 @@ async def test_get_account_limits_calls_user_settings_rpc():
     from _fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, [6, 200, 100, 500000, 1]]]))
-    api = SettingsAPI(core)
+    api = SettingsAPI(core.rpc_executor)
 
     limits = await api.get_account_limits()
 
@@ -169,7 +169,7 @@ async def test_get_account_limits_calls_user_settings_rpc():
         source_limit=100,
         raw_limits=(6, 200, 100, 500000, 1),
     )
-    core.rpc_call.assert_awaited_once_with(
+    core.rpc_executor.rpc_call.assert_awaited_once_with(
         RPCMethod.GET_USER_SETTINGS,
         [None, [1, None, None, None, None, None, None, None, None, None, [1]]],
         source_path="/",
@@ -181,12 +181,12 @@ async def test_get_account_tier_calls_user_tier_rpc():
     from _fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[[[None, "NOTEBOOKLM_TIER_STANDARD"]]]]))
-    api = SettingsAPI(core)
+    api = SettingsAPI(core.rpc_executor)
 
     tier = await api.get_account_tier()
 
     assert tier == AccountTier(tier="NOTEBOOKLM_TIER_STANDARD", plan_name="Standard")
-    core.rpc_call.assert_awaited_once_with(
+    core.rpc_executor.rpc_call.assert_awaited_once_with(
         RPCMethod.GET_USER_TIER,
         [
             [

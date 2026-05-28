@@ -53,8 +53,6 @@ if TYPE_CHECKING:
     # them through a Session-shaped owner.
 
 
-from .rpc import RPCMethod
-
 logger = logging.getLogger(__name__)
 
 # Auth-snapshot canonical implementation lives on
@@ -759,55 +757,3 @@ class Session:
         (``test_concurrency_refresh_race.test_update_auth_tokens_has_no_await_inside_mutation_block``).
         """
         await self._auth_coord.update_auth_tokens(auth=self.auth, csrf=csrf, session_id=session_id)
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any:
-        """Compatibility wrapper around :meth:`RpcExecutor.rpc_call`.
-
-        The executor owns the telemetry, reqid, and decode-time
-        refresh-and-retry plumbing; this facade preserves the method shape so
-        the 30+ tests that mock ``core.rpc_call = AsyncMock(...)`` by
-        attribute keep working. See
-        :meth:`notebooklm._rpc_executor.RpcExecutor.rpc_call` for
-        the full contract (kwargs ``_is_retry`` / ``disable_internal_retries``
-        / ``operation_variant`` flow through unchanged; ``RuntimeError`` is
-        raised if the client is not initialized).
-        """
-        # Stage B1 PR 2 fail-fast: ``_rpc_executor`` is the canonical
-        # "full composition completed" probe after PR 2 — the
-        # composition root (:func:`compose_session_internals`) binds it
-        # last via :meth:`_bind_executor`, and it is never re-nulled
-        # by ``close()``. A ``None`` here means the Session was
-        # instantiated outside the composition root (e.g. via
-        # ``Session.__new__`` in a unit test) or the composition was
-        # short-circuited. The guard raises before the assert is
-        # reached; the ``assert`` is a type-checker-only narrowing
-        # aid so the chained ``self._rpc_executor.rpc_call(...)``
-        # collaborator dispatch keeps its precise type without a
-        # ``# type: ignore``. Two statements + return = three; the
-        # delegate-shape lint at
-        # ``tests/unit/test_session_compat_delegates.py`` requires
-        # the body to dispatch on ``self._foo.bar(...)`` /
-        # ``self._get_foo().bar(...)`` (Attribute-of-Attribute), so
-        # the dispatch must read through ``self._rpc_executor.rpc_call``
-        # directly rather than via a local-variable alias.
-        self._require_constructed("_rpc_executor")
-        assert self._rpc_executor is not None
-        return await self._rpc_executor.rpc_call(
-            method,
-            params,
-            source_path,
-            allow_null,
-            _is_retry,
-            disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-        )

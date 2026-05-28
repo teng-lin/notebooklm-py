@@ -83,7 +83,7 @@ Five details that shaped this ADR (the others are in the master plan):
 
 1. **HTTP-level, not RPC-level.** The chain wraps the transport, not the
    encoder. Middlewares see already-encoded bytes; encoding and decoding
-   live in `Session.rpc_call` (Tier 13). This keeps every middleware
+   live in `RpcExecutor.rpc_call` (Tier 13). This keeps every middleware
    agnostic of `batchexecute` framing and makes test fixtures small.
 2. **Around-style, not before/after pairs.** Each middleware receives a
    `next_call` and decides whether (and how) to invoke it. The
@@ -96,7 +96,7 @@ Five details that shaped this ADR (the others are in the master plan):
    (`Session(kernel, middlewares=[FakeMetrics(), real_drain])`) — never
    by monkeypatching (ADR-007).
 4. **Idempotency resolution happens *above* the chain.**
-   `Session.rpc_call` calls
+   `RpcExecutor.rpc_call` calls
    `_idempotency.resolve_effective_disable_internal_retries(...)` and
    stuffs the resolved bool into `RpcRequest.context["disable_internal_retries"]`
    before chain entry. The `RetryMiddleware` (PR 12.7) reads the bool; it
@@ -133,7 +133,7 @@ NextCall = Callable[[RpcRequest], Awaitable[RpcResponse]]
 `RpcRequest` and `RpcResponse` are HTTP-shape dataclasses (`url: str`,
 `headers: dict[str, str]`, `body: bytes`, `context: dict[str, Any]`). The
 chain operates on already-encoded HTTP requests; encoding/decoding lives
-*above* the chain in `Session.rpc_call`.
+*above* the chain in `RpcExecutor.rpc_call`.
 
 ### Chain ordering (load-bearing)
 
