@@ -502,17 +502,14 @@ async def execute_source_add_drive(
             src = await client.sources.add_drive(plan.notebook_id, plan.file_id, plan.title, mime)
 
     if plan.json_output:
-        source_payload = source_summary_payload(src)
-        source_payload.update(
-            {
-                "drive_file_id": plan.file_id,
-                "mime_type": plan.mime_type,
-            }
-        )
         json_output_response(
             {
                 "action": "add-drive",
-                "source": source_payload,
+                "source": {
+                    **source_summary_payload(src),
+                    "drive_file_id": plan.file_id,
+                    "mime_type": plan.mime_type,
+                },
                 "notebook_id": plan.notebook_id,
             }
         )

@@ -153,17 +153,14 @@ def _render_source_get_result(result: SourceGetResult, *, json_output: bool) -> 
         raise AssertionError("unreachable")  # pragma: no cover
 
     if json_output:
-        source_payload = source_summary_payload(src)
-        source_payload.update(
-            {
-                "status": source_status_to_str(src.status),
-                "status_id": src.status,
-                "created_at": (src.created_at.isoformat() if src.created_at else None),
-            }
-        )
         json_output_response(
             {
-                "source": source_payload,
+                "source": {
+                    **source_summary_payload(src),
+                    "status": source_status_to_str(src.status),
+                    "status_id": src.status,
+                    "created_at": (src.created_at.isoformat() if src.created_at else None),
+                },
                 "found": True,
             }
         )

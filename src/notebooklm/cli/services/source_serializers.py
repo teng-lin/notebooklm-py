@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ...types import Source, SourceFulltext
+    from ...types import Source, SourceFulltext, SourceType
 
 
-def source_kind_value(kind: Any) -> str | None:
+def source_kind_value(kind: SourceType | None) -> str | None:
     """Return the public JSON value for a source kind."""
     return kind.value if kind is not None else None
 
