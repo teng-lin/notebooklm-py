@@ -328,7 +328,7 @@ async def test_upload_progress_callback_receives_byte_counts(
             mock_client_cls.return_value = mock_client
 
             await api._upload_file_streaming(
-                "https://upload.example.com/session",
+                "https://notebooklm.google.com/upload/_/?upload_id=session",
                 test_file,
                 on_progress=on_progress,
             )

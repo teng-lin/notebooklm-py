@@ -519,13 +519,11 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     ),
     # Full upload URL that embeds the upload_id token in its query string.
     # Match the whole URL (up to the next quote or whitespace) and collapse
-    # to a stable canonical form so the token never round-trips through a
-    # cassette body. The whole URL — including the ``upload_id=`` substring
-    # — is replaced so the subsequent standalone ``upload_id=`` pattern
-    # cannot re-match this placeholder and produce a non-idempotent rewrite.
+    # to a stable canonical form on NotebookLM's trusted upload endpoint so
+    # cassette replay still passes runtime upload-URL validation.
     (
         r"https://notebooklm\.google\.com/upload/_/\?[^\"\s]*upload_id=[A-Za-z0-9_\-]+",
-        "SCRUBBED_UPLOAD_URL",
+        "https://notebooklm.google.com/upload/_/?upload_id=SCRUBBED_UPLOAD_ID",
     ),
     # Standalone upload_id query parameter (anywhere it appears outside the
     # full upload URL above).
@@ -690,12 +688,12 @@ _DETECT_UPLOAD_DRIVE_FIELDS: list[tuple[str, re.Pattern[str]]] = [
     ("Drive file_id (URL)", re.compile(r"/drive/v3/files/([A-Za-z0-9_\-]+)")),
 ]
 
-# Full upload URL is replaced wholesale with ``SCRUBBED_UPLOAD_URL`` rather
-# than per-field, so the detector matches the whole URL form and the leak
-# check is "does it appear at all" (the only legitimate appearance of an
-# upload URL in a cassette is the placeholder itself, which this regex does
-# NOT match — so any match here is a leak).
-_DETECT_UPLOAD_URL = re.compile(r"https://notebooklm\.google\.com/upload/_/\?[^\"\s]*upload_id=")
+# Full upload URL is rewritten to a trusted-host placeholder with a scrubbed
+# upload_id. Any NotebookLM upload URL carrying a non-placeholder upload_id is
+# a leak.
+_DETECT_UPLOAD_URL = re.compile(
+    r"https://notebooklm\.google\.com/upload/_/\?[^\"\s]*upload_id=(?!SCRUBBED_UPLOAD_ID\b)"
+)
 
 # escaped JSON display-name literal detector.
 #
@@ -794,8 +792,8 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
                 leaks.append(f"Leak ({label}): {value!r}")
 
     # --- 5. Full upload URL -----------------------------------------------
-    # The scrubber collapses the entire URL to ``SCRUBBED_UPLOAD_URL``, so any
-    # match of the raw URL form here is by definition a leak.
+    # The scrubber preserves the trusted host/path but rewrites upload_id to
+    # SCRUBBED_UPLOAD_ID, so any match here is by definition a leak.
     for match in _DETECT_UPLOAD_URL.finditer(text):
         leaks.append(f"Leak (upload URL): {match.group(0)!r}")
 

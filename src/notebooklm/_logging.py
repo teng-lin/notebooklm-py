@@ -91,6 +91,8 @@ _REDACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(\bat=)[^&\s\"'<>]+"), r"\1***"),
     # session-id query param
     (re.compile(r"(\bf\.sid=)[^&\s\"'<>]+"), r"\1***"),
+    # resumable-upload session query param
+    (re.compile(r"(\bupload_id=)[^&\s\"'<>]+", re.IGNORECASE), r"\1***"),
     # OAuth-shaped credentials (refresh / access / authorization code)
     (
         re.compile(
@@ -155,6 +157,7 @@ _DEFAULT_DATEFMT = "%H:%M:%S"
 # Coverage map (pattern -> covering token in this set, all lowercase):
 #   \bat=<csrf>                                          -> "at="
 #   \bf\.sid=<sid>                                       -> "f.sid"
+#   \bupload_id=<resumable upload token>                  -> "upload_id="
 #   (refresh_token|access_token|id_token)= (IGNORECASE)  -> "_token="
 #   \bcode= (IGNORECASE)                                 -> "code="
 #   __Secure-*PAPISID/PSID(TS|CC)?/SAPISID/APISID/SIDCC/HSID/SSID/LSID/SID= -> "sid"
@@ -187,6 +190,7 @@ SECRET_FAST_PATH_TOKENS: tuple[str, ...] = (
     "f.sid",
     "continue=",
     "authuser=",
+    "upload_id=",
     "at=",
     "cookie",
     "authorization",

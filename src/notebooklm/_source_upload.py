@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast
+from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 
@@ -85,6 +86,54 @@ _TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
 # Preserve the historical ``notebooklm._sources`` log channel after moving
 # upload choreography into this module.
 module_logger = logging.getLogger("notebooklm").getChild("_sources")
+
+
+def _normalize_upload_path(path: str) -> str:
+    normalized = path or "/"
+    return normalized if normalized.endswith("/") else f"{normalized}/"
+
+
+def _redact_upload_url(upload_url: str) -> str:
+    """Return a log-safe representation of a resumable upload URL."""
+    try:
+        parsed = urlsplit(upload_url)
+    except ValueError:
+        return "[REDACTED_UPLOAD_URL]"
+    if not parsed.scheme or not parsed.netloc:
+        return "[REDACTED_UPLOAD_URL]"
+    suffix = "?..." if parsed.query else ""
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}{suffix}"
+
+
+def _validate_resumable_upload_url(upload_url: str) -> str:
+    """Validate that a resumable upload URL targets the configured upload endpoint."""
+    try:
+        parsed = urlsplit(upload_url)
+        actual_port = parsed.port
+        expected = urlsplit(get_upload_url())
+        expected_port = expected.port
+    except ValueError as exc:
+        raise ValidationError("Upload URL is not valid") from exc
+
+    if parsed.scheme != "https":
+        raise ValidationError("Upload URL must use https")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValidationError("Upload URL must not contain credentials")
+    if parsed.hostname is None:
+        raise ValidationError("Upload URL must include a host")
+    if parsed.hostname != expected.hostname or actual_port != expected_port:
+        raise ValidationError("Upload URL host is not trusted")
+    if _normalize_upload_path(parsed.path) != _normalize_upload_path(expected.path):
+        raise ValidationError("Upload URL path is not trusted")
+    upload_ids = [
+        value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() == "upload_id"
+    ]
+    if not any(upload_ids):
+        raise ValidationError("Upload URL must include upload_id")
+
+    return upload_url
 
 
 async def _build_invalid_argument_source_limit_hint(
@@ -749,7 +798,14 @@ class SourceUploadPipeline:
                     filename, message="Failed to get upload URL from response headers"
                 )
 
-            return upload_url
+            try:
+                return _validate_resumable_upload_url(upload_url)
+            except ValidationError as exc:
+                raise SourceAddError(
+                    filename,
+                    cause=exc,
+                    message=f"Received invalid resumable upload URL from NotebookLM: {exc}",
+                ) from exc
 
     async def upload_file_streaming(
         self,
@@ -767,6 +823,7 @@ class SourceUploadPipeline:
         path_fallback: Path | None = file_obj if isinstance(file_obj, Path) else None
         close_wired = False
         try:
+            upload_url = _validate_resumable_upload_url(upload_url)
             base_url = get_base_url()
             auth_route = self._authuser_header()
             headers = {
@@ -779,7 +836,7 @@ class SourceUploadPipeline:
                 "x-goog-upload-offset": "0",
             }
             diag_name = filename or (path_fallback.name if path_fallback is not None else "<file>")
-            logger.debug("Streaming upload to %s for %s", upload_url, diag_name)
+            logger.debug("Streaming upload to %s for %s", _redact_upload_url(upload_url), diag_name)
             if total_bytes is None and path_fallback is not None:
                 total_bytes = path_fallback.stat().st_size
             progress_total = total_bytes if total_bytes is not None else 0
@@ -882,13 +939,18 @@ class SourceUploadPipeline:
             "x-goog-upload-command": "cancel",
         }
         try:
+            upload_url = _validate_resumable_upload_url(upload_url)
             async with self._client_factory()(
                 timeout=httpx.Timeout(10.0, read=10.0),
                 cookies=self._live_cookies(),
             ) as client:
                 await client.post(upload_url, headers=headers)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Best-effort Scotty cancel for %s failed: %r", upload_url, exc)
+            logger.debug(
+                "Best-effort Scotty cancel for %s failed: %r",
+                _redact_upload_url(upload_url),
+                exc,
+            )
 
 
 __all__ = [

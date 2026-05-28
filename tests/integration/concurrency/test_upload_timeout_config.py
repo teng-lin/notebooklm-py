@@ -126,7 +126,7 @@ async def test_custom_upload_timeout_propagates_to_finalize(
         with patch("notebooklm._sources.httpx.AsyncClient", capturing):
             with pytest.raises((httpx.HTTPError, OSError)):
                 await client.sources._upload_file_streaming(
-                    upload_url="https://example.invalid/upload/abc",
+                    upload_url="https://notebooklm.google.com/upload/_/?upload_id=timeout",
                     file_obj=tmp_upload_file,
                 )
 
@@ -148,7 +148,7 @@ async def test_default_upload_timeout_preserves_back_compat_finalize(
         with patch("notebooklm._sources.httpx.AsyncClient", capturing):
             with pytest.raises((httpx.HTTPError, OSError)):
                 await client.sources._upload_file_streaming(
-                    upload_url="https://example.invalid/upload/abc",
+                    upload_url="https://notebooklm.google.com/upload/_/?upload_id=timeout",
                     file_obj=tmp_upload_file,
                 )
 

@@ -15,7 +15,9 @@ from notebooklm._source_upload import (
     SourceUploadPipeline,
     _extract_register_file_source_id,
     _transient_error_types_for_upload,
+    _validate_resumable_upload_url,
 )
+from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source, SourceAddError
 
@@ -153,6 +155,26 @@ def test_extract_register_file_source_id_skips_large_string_candidates() -> None
     assert _extract_register_file_source_id([long_payload, "src_123"], "report.pdf") == "src_123"
 
 
+def test_validate_resumable_upload_url_accepts_configured_upload_endpoint() -> None:
+    url = "https://notebooklm.google.com/upload/_/?upload_id=session"
+
+    assert _validate_resumable_upload_url(url) == url
+
+
+@pytest.mark.parametrize(
+    ("url", "match"),
+    [
+        ("http://notebooklm.google.com/upload/_/?upload_id=session", "must use https"),
+        ("https://evil.example/upload/_/?upload_id=session", "host is not trusted"),
+        ("https://notebooklm.google.com/other/_/?upload_id=session", "path is not trusted"),
+        ("https://notebooklm.google.com/upload/_/", "must include upload_id"),
+    ],
+)
+def test_validate_resumable_upload_url_rejects_untrusted_shapes(url: str, match: str) -> None:
+    with pytest.raises(ValidationError, match=match):
+        _validate_resumable_upload_url(url)
+
+
 @pytest.mark.parametrize(
     ("content_type", "expected"),
     [
@@ -191,10 +213,12 @@ async def test_add_file_uses_pipeline_steps_and_finishes_transport(
     service = make_pipeline(runtime)
 
     register_file_source = AsyncMock(return_value="src_123")
-    start_resumable_upload = AsyncMock(return_value="https://upload.example.com/session")
+    start_resumable_upload = AsyncMock(
+        return_value="https://notebooklm.google.com/upload/_/?upload_id=session"
+    )
 
     async def upload_file_streaming(upload_url, file_obj, **kwargs):
-        assert upload_url == "https://upload.example.com/session"
+        assert upload_url == "https://notebooklm.google.com/upload/_/?upload_id=session"
         assert file_obj.read() == b"hello"
         assert kwargs["filename"] == "report.pdf"
         assert kwargs["total_bytes"] == 5
@@ -250,7 +274,7 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(
     monkeypatch.setattr(
         service,
         "start_resumable_upload",
-        AsyncMock(return_value="https://upload.example.com/session"),
+        AsyncMock(return_value="https://notebooklm.google.com/upload/_/?upload_id=session"),
     )
     monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
     monkeypatch.setattr(service, "wait_until_ready", AsyncMock())
@@ -301,7 +325,7 @@ async def test_add_file_custom_title_waits_for_registration_before_rename(
     monkeypatch.setattr(
         service,
         "start_resumable_upload",
-        AsyncMock(return_value="https://upload.example.com/session"),
+        AsyncMock(return_value="https://notebooklm.google.com/upload/_/?upload_id=session"),
     )
     monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
     monkeypatch.setattr(service, "wait_until_ready", AsyncMock())
@@ -448,7 +472,9 @@ async def test_register_file_source_truncates_large_string_response_preview(
 @pytest.mark.asyncio
 async def test_start_resumable_upload_uses_injected_http_client() -> None:
     response = MagicMock()
-    response.headers = {"x-goog-upload-url": "https://upload.example.com/session"}
+    response.headers = {
+        "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+    }
     response.raise_for_status = MagicMock()
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
@@ -466,9 +492,77 @@ async def test_start_resumable_upload_uses_injected_http_client() -> None:
         "application/pdf",
     )
 
-    assert upload_url == "https://upload.example.com/session"
+    assert upload_url == "https://notebooklm.google.com/upload/_/?upload_id=session"
     assert client_factory.call_args.kwargs["cookies"] is runtime.cookies
     request = client.post.await_args
     assert request.kwargs["headers"]["x-goog-upload-command"] == "start"
     assert request.kwargs["headers"]["x-goog-upload-header-content-type"] == "application/pdf"
     assert '"SOURCE_ID": "src_123"' in request.kwargs["content"]
+
+
+@pytest.mark.asyncio
+async def test_start_resumable_upload_rejects_untrusted_upload_header_url() -> None:
+    response = MagicMock()
+    response.headers = {"x-goog-upload-url": "https://evil.example/upload/_/?upload_id=secret"}
+    response.raise_for_status = MagicMock()
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=response)
+    client_cm = AsyncMock()
+    client_cm.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client_cm)
+    runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
+
+    with pytest.raises(SourceAddError, match="invalid resumable upload URL"):
+        await service.start_resumable_upload(
+            "nb_123",
+            "report.pdf",
+            12,
+            "src_123",
+            "application/pdf",
+        )
+
+
+@pytest.mark.asyncio
+async def test_upload_file_streaming_rejects_untrusted_url_before_post(tmp_path) -> None:
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"content")
+    client_factory = MagicMock()
+    runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
+
+    with pytest.raises(ValidationError, match="host is not trusted"):
+        await service.upload_file_streaming(
+            "https://evil.example/upload/_/?upload_id=secret",
+            file_path,
+        )
+
+    client_factory.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_upload_file_streaming_redacts_upload_url_in_debug_logs(tmp_path) -> None:
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"content")
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=response)
+    client_cm = AsyncMock()
+    client_cm.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client_cm)
+    runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
+    logger = MagicMock()
+
+    await service.upload_file_streaming(
+        "https://notebooklm.google.com/upload/_/?upload_id=SECRET_UPLOAD_ID",
+        file_path,
+        logger=logger,
+    )
+
+    debug_messages = [str(call) for call in logger.debug.call_args_list]
+    assert all("SECRET_UPLOAD_ID" not in message for message in debug_messages)
+    assert any(
+        "https://notebooklm.google.com/upload/_/?..." in message for message in debug_messages
+    )

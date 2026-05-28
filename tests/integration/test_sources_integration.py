@@ -1674,7 +1674,7 @@ class TestAddFileWait:
                     client.sources._uploader,
                     "start_resumable_upload",
                     new_callable=AsyncMock,
-                    return_value="https://upload.example.com/upload_id=abc",
+                    return_value="https://notebooklm.google.com/upload/_/?upload_id=abc",
                 ):
                     with patch.object(
                         client.sources._uploader,

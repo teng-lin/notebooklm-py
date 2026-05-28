@@ -50,7 +50,7 @@ from .helpers import with_simulated_cancel
 # of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 
-UPLOAD_URL = "https://example.test/scotty/upload-session-abc123"
+UPLOAD_URL = "https://notebooklm.google.com/upload/_/?upload_id=upload-session-abc123"
 
 
 # ---------------------------------------------------------------------------

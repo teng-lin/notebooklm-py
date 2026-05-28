@@ -1721,11 +1721,11 @@ interactions:
       X-Goog-Upload-Chunk-Granularity:
       - '262144'
       X-Goog-Upload-Control-URL:
-      - https://upload-scrubbed.example/?upload_id=SCRUBBED_UPLOAD_ID&upload_protocol=resumable
+      - https://notebooklm.google.com/upload/_/?upload_id=SCRUBBED_UPLOAD_ID
       X-Goog-Upload-Status:
       - active
       X-Goog-Upload-URL:
-      - https://upload-scrubbed.example/?upload_id=SCRUBBED_UPLOAD_ID&upload_protocol=resumable
+      - https://notebooklm.google.com/upload/_/?upload_id=SCRUBBED_UPLOAD_ID
     status:
       code: 200
       message: OK
@@ -1761,7 +1761,7 @@ interactions:
       x-goog-upload-offset:
       - '0'
     method: POST
-    uri: https://upload-scrubbed.example/?upload_id=SCRUBBED_UPLOAD_ID&upload_protocol=resumable
+    uri: https://notebooklm.google.com/upload/_/?upload_id=SCRUBBED_UPLOAD_ID
   response:
     body:
       string: 'OK: Enqueued blob bytes to spanner queue for processing.'

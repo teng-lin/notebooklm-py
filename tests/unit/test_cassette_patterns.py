@@ -496,18 +496,12 @@ def test_upload_id_header_scrubbed() -> None:
 
 
 def test_upload_url_full_scrubbed() -> None:
-    """A full notebooklm upload URL is replaced with the URL placeholder.
-
-    The whole URL collapses to ``SCRUBBED_UPLOAD_URL`` (rather than leaving
-    a half-scrubbed ``upload_id=...`` fragment) so that the standalone
-    ``upload_id=`` pattern below cannot re-match the placeholder — which
-    would otherwise produce a non-idempotent rewrite.
-    """
+    """A full notebooklm upload URL preserves host/path and scrubs the token."""
     url = (
         "https://notebooklm.google.com/upload/_/?authuser=0&upload_id=AJRbA5XZXPNXlxYzAbcdef_-12345"
     )
     scrubbed = scrub_string(url)
-    assert scrubbed == "SCRUBBED_UPLOAD_URL"
+    assert scrubbed == "https://notebooklm.google.com/upload/_/?upload_id=SCRUBBED_UPLOAD_ID"
     assert "AJRbA5XZXPNXlx" not in scrubbed
 
 
@@ -636,6 +630,7 @@ def test_is_clean_recognizes_upload_drive_placeholders() -> None:
     for placeholder in [
         "X-GUploader-UploadID: SCRUBBED_UPLOAD_ID",
         "upload_id=SCRUBBED_UPLOAD_ID",
+        "https://notebooklm.google.com/upload/_/?upload_id=SCRUBBED_UPLOAD_ID",
         "SCRUBBED_UPLOAD_URL",
         "SCRUBBED_AONS",
         '{"file_id": "SCRUBBED_DRIVE_FILE_ID"}',

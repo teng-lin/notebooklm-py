@@ -155,6 +155,14 @@ def test_formatter_scrubs_fsid_query_param():
     assert "f.sid=***" in out
 
 
+def test_formatter_scrubs_upload_id_query_param():
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record("uploading to https://notebooklm.google.com/upload/_/?upload_id=SECRET_UPLOAD_ID")
+    out = fmt.format(rec)
+    assert "SECRET_UPLOAD_ID" not in out
+    assert "upload_id=***" in out
+
+
 def test_formatter_preserves_non_secret_text():
     fmt = RedactingFormatter(logging.Formatter("%(message)s"))
     rec = _record("RPC LIST_NOTEBOOKS failed for nb_id=abc123 method=LIST in 0.42s")

@@ -267,7 +267,7 @@ async def test_upload_file_streaming_fd_path_does_not_block_event_loop() -> None
 
         async def _upload() -> None:
             await sources_api._upload_file_streaming(
-                "https://upload.example.com/session",
+                "https://notebooklm.google.com/upload/_/?upload_id=session",
                 file_obj,
                 filename="slow.bin",
             )
@@ -321,7 +321,7 @@ async def test_upload_file_streaming_path_fallback_does_not_block_event_loop(
 
         async def _upload() -> None:
             await sources_api._upload_file_streaming(
-                "https://upload.example.com/session",
+                "https://notebooklm.google.com/upload/_/?upload_id=session",
                 test_file,
             )
 
@@ -384,7 +384,9 @@ async def test_add_file_open_runs_off_loop_thread(
     _core.rpc_executor.rpc_call.return_value = [[[["src_t1"]]]]
 
     mock_start_response = MagicMock()
-    mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com/session"}
+    mock_start_response.headers = {
+        "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+    }
     mock_upload_response = MagicMock()
     mock_upload_response.raise_for_status = MagicMock()
 

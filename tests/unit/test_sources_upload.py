@@ -567,7 +567,9 @@ class TestStartResumableUpload:
     async def test_start_resumable_upload_success(self, sources_api, mock_core):
         """Test successful upload start."""
         mock_response = MagicMock()
-        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com/session123"}
+        mock_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session123"
+        }
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -580,13 +582,15 @@ class TestStartResumableUpload:
                 "nb_123", "test.pdf", 1024, "src_456", "application/pdf"
             )
 
-        assert result == "https://upload.example.com/session123"
+        assert result == "https://notebooklm.google.com/upload/_/?upload_id=session123"
 
     @pytest.mark.asyncio
     async def test_start_resumable_upload_includes_correct_headers(self, sources_api, mock_core):
         """Test that upload start includes correct headers."""
         mock_response = MagicMock()
-        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -619,7 +623,9 @@ class TestStartResumableUpload:
         mock_core.auth.authuser = 2
         mock_core.auth.account_email = None
         mock_response = MagicMock()
-        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -644,7 +650,9 @@ class TestStartResumableUpload:
         mock_core.auth.authuser = 2
         mock_core.auth.account_email = "user+test@example.com"
         mock_response = MagicMock()
-        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -671,7 +679,9 @@ class TestStartResumableUpload:
         import json
 
         mock_response = MagicMock()
-        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -757,7 +767,7 @@ class TestUploadFileStreaming:
 
             # Should not raise
             await sources_api._upload_file_streaming(
-                "https://upload.example.com/session", test_file
+                "https://notebooklm.google.com/upload/_/?upload_id=session", test_file
             )
 
             mock_client.post.assert_called_once()
@@ -779,7 +789,7 @@ class TestUploadFileStreaming:
             mock_client_cls.return_value = mock_client
 
             await sources_api._upload_file_streaming(
-                "https://upload.example.com/session", test_file
+                "https://notebooklm.google.com/upload/_/?upload_id=session", test_file
             )
 
             call_kwargs = mock_client.post.call_args[1]
@@ -811,7 +821,7 @@ class TestUploadFileStreaming:
             mock_client_cls.return_value = mock_client
 
             await sources_api._upload_file_streaming(
-                "https://upload.example.com/session", test_file
+                "https://notebooklm.google.com/upload/_/?upload_id=session", test_file
             )
 
         assert (
@@ -833,7 +843,7 @@ class TestUploadFileStreaming:
             mock_client_cls.return_value = mock_client
 
             await sources_api._cancel_upload_session(
-                "https://upload.example.com/session",
+                "https://notebooklm.google.com/upload/_/?upload_id=session",
                 "https://notebooklm.google.com",
                 auth_route,
             )
@@ -858,7 +868,9 @@ class TestUploadFileStreaming:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            await sources_api._upload_file_streaming("https://upload.example.com", test_file)
+            await sources_api._upload_file_streaming(
+                "https://notebooklm.google.com/upload/_/?upload_id=session", test_file
+            )
 
             call_kwargs = mock_client.post.call_args[1]
             # Content should be a generator, not bytes
@@ -887,7 +899,9 @@ class TestUploadFileStreaming:
             mock_client_cls.return_value = mock_client
 
             with pytest.raises(httpx.HTTPStatusError):
-                await sources_api._upload_file_streaming("https://upload.example.com", test_file)
+                await sources_api._upload_file_streaming(
+                    "https://notebooklm.google.com/upload/_/?upload_id=session", test_file
+                )
 
 
 # =============================================================================
@@ -910,7 +924,9 @@ class TestAddFile:
 
         # Mock HTTP calls
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com/session"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
 
         mock_upload_response = MagicMock()
 
@@ -945,7 +961,9 @@ class TestAddFile:
         mock_core.rpc_executor.rpc_call.return_value = [[[["src_txt"]]]]
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -972,7 +990,9 @@ class TestAddFile:
         )
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1002,7 +1022,9 @@ class TestAddFile:
         mock_core.rpc_executor.rpc_call.return_value = [[[["src_png"]]]]
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1034,7 +1056,9 @@ class TestAddFile:
         mock_core.rpc_executor.rpc_call.return_value = [[[["src_default"]]]]
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1089,7 +1113,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1151,7 +1177,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1208,7 +1236,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1256,7 +1286,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1291,7 +1323,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1324,7 +1358,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1367,7 +1403,9 @@ class TestAddFile:
         mock_core.rpc_executor.rpc_call.return_value = [[[["src_pdf"]]]]
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1419,7 +1457,9 @@ class TestAddFile:
         )
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1481,7 +1521,9 @@ class TestAddFile:
         )
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1526,7 +1568,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -1577,7 +1621,9 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
 
         mock_start_response = MagicMock()
-        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_start_response.headers = {
+            "x-goog-upload-url": "https://notebooklm.google.com/upload/_/?upload_id=session"
+        }
         mock_upload_response = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
