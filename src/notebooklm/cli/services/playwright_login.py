@@ -28,12 +28,15 @@ working byte-for-byte.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import re
 import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,6 +134,174 @@ CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
     "msedge": ("Microsoft Edge", "https://www.microsoft.com/edge"),
     "chrome": ("Google Chrome", "https://www.google.com/chrome"),
 }
+
+
+# ---------------------------------------------------------------------------
+# Subprocess output sanitisation (audit G4)
+# ---------------------------------------------------------------------------
+#
+# When we surface captured stderr / stdout from a Playwright subprocess to
+# the user (e.g. the install failure path below), the raw text can carry
+# two classes of noise we never want to leak into the console:
+#
+#   1. Environment-variable VALUES — Playwright forwards the parent process
+#      environment; if any secret (PSIDTS, API tokens, cookie material set
+#      via NOTEBOOKLM_AUTH_JSON / SAPISID / etc.) is interpolated into a
+#      traceback / config line by the CLI we invoke, it lands verbatim in
+#      ``result.stderr``.
+#
+#   2. ANSI control sequences — pip/playwright CLIs emit progress bars and
+#      colour codes that mangle log scrapers and dirty test snapshots.
+#
+# ``redact_subprocess_output`` strips both before the diagnostic reaches the
+# console. Env-var redaction is conservative: we skip empty / single-char
+# values and common boolean-ish / path-separator constants that would
+# false-positive across normal stderr lines.
+
+# CSI: ESC '[' parameter-bytes intermediate-bytes final-byte
+# OSC: ESC ']' ... (BEL | ESC '\\')
+# Plus a catch-all for any remaining two-byte C1 Fe sequence (the
+# 0x40-0x5F final-byte range). CSI and OSC are stripped first so this
+# only fires on leftovers (PM ``ESC ^``, APC ``ESC _``, ST ``ESC \``,
+# etc.).
+_ANSI_CSI_PATTERN = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+_ANSI_OSC_PATTERN = re.compile(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)")
+_ANSI_OTHER_PATTERN = re.compile(r"\x1B[@-_]")
+
+# Env-var values we never redact even if they happen to be set (they would
+# produce noisy false positives on every line that mentions a path / boolean).
+# Single-character values (``/``, ``.``, ``*``, ``0``, ``1``, ``y``, ``n``)
+# don't appear here — they are already excluded by ``_REDACTION_MIN_VALUE_LEN``.
+_REDACTION_SAFE_VALUES = frozenset(
+    {
+        "",
+        "..",
+        "true",
+        "false",
+        "True",
+        "False",
+        "TRUE",
+        "FALSE",
+        "yes",
+        "no",
+        "on",
+        "off",
+    }
+)
+
+# Skip env values shorter than this — substring matches on 2-char strings
+# false-positive across the bytes Playwright prints.
+_REDACTION_MIN_VALUE_LEN = 3
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI CSI / OSC / two-byte escape sequences from ``text``."""
+    text = _ANSI_CSI_PATTERN.sub("", text)
+    text = _ANSI_OSC_PATTERN.sub("", text)
+    text = _ANSI_OTHER_PATTERN.sub("", text)
+    return text
+
+
+def _expand_nested_secret_values(value: str) -> Iterator[str]:
+    """Yield ``value`` plus any nested string leaves if it parses as JSON.
+
+    Env values like ``NOTEBOOKLM_AUTH_JSON`` carry serialised JSON whose
+    leaf values (cookie tokens, refresh tokens) are the actual secrets.
+    If a subprocess re-emits the parsed nested value rather than the
+    whole JSON blob, exact-string matching against the original env
+    value would miss the leak. Walk JSON objects/arrays here to add
+    every leaf string to the redaction candidate set.
+
+    Non-JSON values yield just themselves (and only if they pass the
+    caller's length / safe-value filter).
+    """
+    yield value
+    stripped = value.strip()
+    if not stripped or stripped[0] not in "{[":
+        return
+    try:
+        parsed = json.loads(stripped)
+    except (ValueError, TypeError):
+        return
+
+    stack: list[Any] = [parsed]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, str):
+            yield node
+        elif isinstance(node, dict):
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+
+
+def redact_subprocess_output(text: str, env: Mapping[str, str] | None = None) -> str:
+    """Sanitise captured subprocess ``stdout`` / ``stderr`` before printing.
+
+    The transform runs in this order:
+
+    1. **Strip ANSI control sequences** (CSI colour codes, OSC titles, and
+       the two-byte C1 Fe escapes used by pip/playwright progress UI).
+       Stripping FIRST means a secret split by an inert reset like
+       ``"abc\\x1b[0m123"`` is reassembled to ``"abc123"`` before
+       redaction runs — otherwise an exact-match redactor would miss it.
+
+    2. **Replace every occurrence of each non-trivial environment-variable
+       value with** ``<redacted>``. The env is snapshotted from
+       ``os.environ`` at call time unless an explicit mapping is supplied
+       (the parameter exists so tests can drive the redaction without
+       mutating real process env). For each env value we also try to
+       parse it as JSON and add every nested string leaf to the
+       candidate set — covers ``NOTEBOOKLM_AUTH_JSON`` and any other
+       env-supplied JSON token bag.
+
+       Values shorter than :data:`_REDACTION_MIN_VALUE_LEN` and the
+       well-known constants in :data:`_REDACTION_SAFE_VALUES` are
+       skipped to avoid spamming ``<redacted>`` across every path /
+       boolean in the output. Candidates are tried in descending length
+       order so a longer secret that contains a shorter one is redacted
+       as a single ``<redacted>`` token.
+
+    Returns the sanitised string. The input is not mutated.
+    """
+    if not text:
+        return text
+
+    # Pass 1: strip ANSI BEFORE redaction so a secret broken up by reset
+    # codes (``"abc\x1b[0m123"`` → ``"abc123"``) is reassembled and
+    # redactable by the exact-match pass below.
+    text = _strip_ansi(text)
+
+    # Materialise the env mapping once. ``dict(os.environ)`` defends
+    # against the (very rare) case where another thread mutates the
+    # process environment while we iterate.
+    source_env: Mapping[str, str] = dict(os.environ) if env is None else env
+
+    # Build the candidate set: every env value plus any JSON leaf
+    # strings nested inside JSON-shaped env values. Also add the
+    # ansi-stripped form of each candidate in case the env value itself
+    # carries embedded control bytes (the input ``text`` has already
+    # been ansi-stripped above). Filter by length / safe-value rules,
+    # then sort by descending length so a longer value (e.g. the
+    # literal PSIDTS cookie) gets redacted before any shorter prefix
+    # that happens to also appear as another env value.
+    candidates: set[str] = set()
+    for raw_value in source_env.values():
+        if not isinstance(raw_value, str):
+            continue
+        for nested in _expand_nested_secret_values(raw_value):
+            for variant in (nested, _strip_ansi(nested)):
+                if (
+                    len(variant) >= _REDACTION_MIN_VALUE_LEN
+                    and variant not in _REDACTION_SAFE_VALUES
+                ):
+                    candidates.add(variant)
+
+    for value in sorted(candidates, key=len, reverse=True):
+        if value in text:
+            text = text.replace(value, "<redacted>")
+
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +527,15 @@ def ensure_chromium_installed() -> None:
         )
         stdout_lower = result.stdout.lower()
         if "chromium" not in stdout_lower or "will download" not in stdout_lower:
+            # The dry-run probe succeeded but didn't see a "will download"
+            # marker; nothing to do. If the probe printed an unexpected
+            # diagnostic to stderr, surface a sanitised version at debug
+            # level so operators can investigate without leaking env values.
+            if result.stderr:
+                logger.debug(
+                    "playwright install --dry-run stderr: %s",
+                    redact_subprocess_output(result.stderr),
+                )
             return
 
         console.print("[yellow]Chromium browser not installed. Installing now...[/yellow]")
@@ -366,10 +546,30 @@ def ensure_chromium_installed() -> None:
             timeout=300,
         )
         if install_result.returncode != 0:
+            # Surface the (sanitised) tail of stderr/stdout so the user
+            # has something to act on without us echoing raw env values
+            # or ANSI progress bars from the playwright CLI.
+            # ``redact_subprocess_output`` strips control codes and env
+            # values before printing.
+            #
+            # Prefer stderr when it has substantive content; otherwise
+            # fall back to stdout. Compare on the STRIPPED value so a
+            # stderr that sanitises down to whitespace doesn't shadow a
+            # stdout line carrying the actionable failure (codex review).
+            sanitised_stderr = redact_subprocess_output(install_result.stderr or "").strip()
+            sanitised_stdout = redact_subprocess_output(install_result.stdout or "").strip()
+            diagnostic_tail = sanitised_stderr or sanitised_stdout
             console.print(
                 "[red]Failed to install Chromium browser.[/red]\n"
                 f'Run manually: "{sys.executable}" -m playwright install chromium'
             )
+            if diagnostic_tail:
+                # markup=False: the captured CLI output is not Rich markup
+                # and may contain stray ``[``/``]`` characters.
+                console.print(
+                    f"[dim]Subprocess output (sanitised):[/dim]\n{diagnostic_tail}",
+                    markup=False,
+                )
             exit_with_code(1)
         console.print("[green]Chromium installed successfully.[/green]\n")
     except SystemExit:
@@ -851,6 +1051,7 @@ __all__ = [
     "is_navigation_interrupted_error",
     "prepare_login_paths",
     "recover_page",
+    "redact_subprocess_output",
     "repair_playwright_account_metadata",
     "run_playwright_login",
     "url_matches_base_host",
