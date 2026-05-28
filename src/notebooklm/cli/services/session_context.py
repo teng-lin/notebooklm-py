@@ -464,7 +464,8 @@ def execute_logout(ctx: click.Context | None) -> LogoutOutcome:
             removed_any = True
     except OSError as exc:
         storage_override = AuthSource.from_click_context(ctx).storage_override
-        context_file = get_context_path(storage_path=storage_override)
+        _get_context_path = _resolve_paths_helper("get_context_path", _ORIGINAL_GET_CONTEXT_PATH)
+        context_file = _get_context_path(storage_path=storage_override)
         logger.error(
             "Failed to remove context file %s: %s",
             context_file,

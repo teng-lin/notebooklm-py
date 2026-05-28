@@ -294,15 +294,14 @@ def _render_status(report: StatusReport, *, json_output: bool) -> None:
 
 
 def _render_logout_outcome(outcome: LogoutOutcome) -> None:
-    """Render a :class:`LogoutOutcome` and exit with the appropriate code.
+    """Render a :class:`LogoutOutcome` and apply its exit policy.
 
     Owns the presentation + exit policy that the pre-refactor
     ``run_logout`` service function owned (C4 Pattern A,
     typed-outcome lift). On per-step :class:`OSError` failures, prints
     the same diagnostic the service used to print, then exits 1; on
     success prints either the green "Logged out." line or the yellow
-    "No active session found." no-op line based on whether any
-    artifacts were actually removed.
+    "No active session found." no-op line and returns normally.
     """
     if outcome.env_auth_remains:
         console.print(
