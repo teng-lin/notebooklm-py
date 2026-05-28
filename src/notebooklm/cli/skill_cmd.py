@@ -1,6 +1,8 @@
 """Skill management commands."""
 
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,6 +102,62 @@ def get_installed_content(target: str, scope: str) -> str | None:
     return skill_path.read_text(encoding="utf-8")
 
 
+# Per-target classification used by ``skill install`` to decide whether each
+# target needs a write, would clobber differing content, or is already in sync.
+TARGET_CREATE = "create"
+TARGET_UP_TO_DATE = "up_to_date"
+TARGET_OVERWRITE = "overwrite"
+
+
+def classify_target(target: str, scope: str, stamped_content: str) -> tuple[str, Path]:
+    """Classify what an install would do for a single target.
+
+    Returns ``(status, skill_path)`` where ``status`` is one of
+    :data:`TARGET_CREATE`, :data:`TARGET_UP_TO_DATE`, or :data:`TARGET_OVERWRITE`.
+    """
+    skill_path = get_skill_path(target, scope)
+    if not skill_path.exists():
+        return TARGET_CREATE, skill_path
+    try:
+        existing = skill_path.read_text(encoding="utf-8")
+    except OSError:
+        # Unreadable existing file -- treat as differing so we surface intent.
+        return TARGET_OVERWRITE, skill_path
+    if existing == stamped_content:
+        return TARGET_UP_TO_DATE, skill_path
+    return TARGET_OVERWRITE, skill_path
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    """Atomically write ``content`` to ``path`` (temp file + ``os.replace``).
+
+    Mirrors the same-directory tempfile + ``os.replace`` pattern used by
+    :func:`notebooklm._atomic_io.atomic_write_json` so a crash mid-write cannot
+    leave a partially-written ``SKILL.md`` on disk.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+        os.replace(temp_path, path)
+    except Exception:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        raise
+
+
 @click.group()
 def skill():
     """Manage NotebookLM agent skill integration."""
@@ -122,8 +180,51 @@ def skill():
     show_default=True,
     help="Install for Claude Code, universal agent skill directories, or both.",
 )
-def install(scope: str, target_name: str):
-    """Install or update the NotebookLM skill for supported agent directories."""
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help=(
+        "Project scope only. Print what would be written without touching the "
+        "filesystem; combine with --force or --no-clobber to preview that mode."
+    ),
+)
+@click.option(
+    "--no-clobber",
+    is_flag=True,
+    default=False,
+    help=(
+        "Project scope only. Skip target files whose existing content differs "
+        "from the packaged skill; still creates targets that do not yet exist."
+    ),
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Project scope only. Overwrite differing target files unconditionally.",
+)
+def install(scope: str, target_name: str, dry_run: bool, no_clobber: bool, force: bool):
+    """Install or update the NotebookLM skill for supported agent directories.
+
+    With ``--scope project`` the install is hardened against accidental
+    overwrites: by default, if any target file exists with content that differs
+    from the packaged skill, no files are written and the command exits 1.
+    Pass ``--force`` to overwrite, ``--no-clobber`` to skip differing targets,
+    or ``--dry-run`` to preview without writing.
+    """
+    # Hardening flags are project-scope only -- user scope is per-user setup and
+    # keeps the historical "always overwrite" behavior.
+    if scope == "user" and (dry_run or no_clobber or force):
+        console.print(
+            "[red]Error:[/red] --dry-run, --no-clobber, and --force require --scope project."
+        )
+        exit_with_code(1)
+
+    if force and no_clobber:
+        console.print("[red]Error:[/red] --force and --no-clobber are mutually exclusive.")
+        exit_with_code(1)
+
     # Read skill content from package data
     content = get_skill_source_content()
     if content is None:
@@ -134,15 +235,64 @@ def install(scope: str, target_name: str):
 
     version = get_package_version()
     stamped_content = add_version_comment(content, version)
-    installed_paths = []
-    failed_targets = []
 
-    for target in iter_targets(target_name):
-        skill_path = get_skill_path(target, scope)
+    # Per-target classification drives every downstream decision.
+    targets = iter_targets(target_name)
+    classifications: list[tuple[str, str, Path]] = [
+        (target, *classify_target(target, scope, stamped_content)) for target in targets
+    ]
+    differing = [
+        (target, path) for target, status, path in classifications if status == TARGET_OVERWRITE
+    ]
+
+    # Default behavior on project scope: refuse to clobber differing files.
+    if scope == "project" and differing and not (dry_run or no_clobber or force):
+        console.print(
+            "[red]Refusing to overwrite[/red] differing skill files (use --force to "
+            "overwrite or --no-clobber to skip differing files):"
+        )
+        for target, path in differing:
+            console.print(f"  {TARGETS[target].label}: {path}")
+        exit_with_code(1)
+
+    if dry_run:
+        console.print("[cyan]Dry run[/cyan] -- no files will be written")
+        console.print(f"  Version: {version}")
+        console.print(f"  Scope:   {scope}")
+        for target, status, path in classifications:
+            label = TARGETS[target].label
+            if status == TARGET_CREATE:
+                console.print(f"  Would create  {label}: {path}")
+            elif status == TARGET_UP_TO_DATE:
+                console.print(f"  Up to date    {label}: {path}")
+            elif status == TARGET_OVERWRITE:
+                if no_clobber:
+                    console.print(f"  Would skip    {label}: {path} (differs; --no-clobber)")
+                else:
+                    # Default or --force preview both reach here; --force is the
+                    # only mode where writing differing files is possible.
+                    action = "Would overwrite" if force else "Would refuse"
+                    console.print(f"  {action} {label}: {path}")
+        return
+
+    installed_paths: list[tuple[str, Path]] = []
+    skipped_up_to_date: list[tuple[str, Path]] = []
+    skipped_no_clobber: list[tuple[str, Path]] = []
+    failed_targets: list[tuple[str, OSError]] = []
+
+    for target, status, path in classifications:
+        if status == TARGET_UP_TO_DATE:
+            # Already in sync -- nothing to do, but report it.
+            skipped_up_to_date.append((target, path))
+            continue
+        if status == TARGET_OVERWRITE and no_clobber:
+            skipped_no_clobber.append((target, path))
+            continue
+        # Reaches here for TARGET_CREATE (any mode) or TARGET_OVERWRITE with
+        # --force (project) or implicit overwrite (user scope, legacy path).
         try:
-            skill_path.parent.mkdir(parents=True, exist_ok=True)
-            skill_path.write_text(stamped_content, encoding="utf-8")
-            installed_paths.append((target, skill_path))
+            atomic_write_text(path, stamped_content)
+            installed_paths.append((target, path))
         except OSError as e:
             failed_targets.append((target, e))
 
@@ -154,6 +304,17 @@ def install(scope: str, target_name: str):
             console.print(f"  {TARGETS[target].label}: {skill_path}")
         console.print("")
         console.print("NotebookLM commands are now available in the selected skill directories.")
+
+    if skipped_no_clobber:
+        console.print(
+            f"[yellow]Skipped[/yellow] {len(skipped_no_clobber)} differing target(s) (--no-clobber)"
+        )
+
+    if not installed_paths and not failed_targets and skipped_up_to_date and not skipped_no_clobber:
+        # All targets were already up to date and no writes happened.
+        console.print("[green]Up to date[/green] -- no changes needed")
+        console.print(f"  Version: {version}")
+        console.print(f"  Scope:   {scope}")
 
     for target, err in failed_targets:
         console.print(f"[red]Failed[/red] to install {TARGETS[target].label}: {err}")

@@ -7894,6 +7894,60 @@
             ],
             "name": "choice"
           }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Project scope only. Print what would be written without touching the filesystem; combine with --force or --no-clobber to preview that mode.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "dry_run",
+          "opts": [
+            "--dry-run"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Project scope only. Skip target files whose existing content differs from the packaged skill; still creates targets that do not yet exist.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_clobber",
+          "opts": [
+            "--no-clobber"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Project scope only. Overwrite differing target files unconditionally.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "force",
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
         }
       ],
       "short_help": "Install or update the NotebookLM skill for..."
