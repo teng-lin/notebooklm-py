@@ -29,12 +29,13 @@ service module must appear in exactly one set. New modules added under
 ``cli/services/`` will fail the test until classified.
 
 Pattern A definition: ``console.print`` and ``exit_with_code`` co-occur as
-Pattern A iff both are called from within the SAME ``ast.FunctionDef`` body
-(at any nesting depth inside that function, but NOT crossing into a nested
-``FunctionDef``). The implementation in :func:`_pattern_a_pairs` reports one
-pair per ``exit_with_code`` call site so that line drift after a refactor
-elsewhere is caught — silent shifts (e.g. an unrelated edit moving the
-line) would otherwise mask a real regression.
+Pattern A iff both are called from within the SAME
+``ast.FunctionDef | ast.AsyncFunctionDef`` body (at any nesting depth inside
+that function, but NOT crossing into a nested ``FunctionDef`` /
+``AsyncFunctionDef``). The implementation in :func:`_pattern_a_pairs`
+reports one pair per ``exit_with_code`` call site so that line drift after
+a refactor elsewhere is caught — silent shifts (e.g. an unrelated edit
+moving the line) would otherwise mask a real regression.
 """
 
 from __future__ import annotations
@@ -636,12 +637,13 @@ def _function_calls(
 def _pattern_a_pairs(path: pathlib.Path) -> list[tuple[str, int]]:
     """Return ``(function_name, exit_with_code_line)`` for every Pattern A pair.
 
-    Pattern A: a function body contains BOTH at least one ``console.print``
-    call AND at least one ``exit_with_code`` call (at any nesting depth
-    within that function, but not crossing into a nested
-    ``FunctionDef``). Each such ``exit_with_code`` line is reported once so
-    that drift in either direction (added or removed lines) trips the
-    transitional inventory check.
+    Pattern A: a function body (``FunctionDef`` or ``AsyncFunctionDef``)
+    contains BOTH at least one ``console.print`` call AND at least one
+    ``exit_with_code`` call (at any nesting depth within that function, but
+    not crossing into a nested ``FunctionDef`` / ``AsyncFunctionDef``).
+    Each such ``exit_with_code`` line is reported once so that drift in
+    either direction (added or removed lines) trips the transitional
+    inventory check.
     """
     pairs: list[tuple[str, int]] = []
 
@@ -803,11 +805,13 @@ def test_no_console_print_with_exit_with_code():
             continue
         # Should be unreachable thanks to test_inventory_completeness, but
         # surface a clear message rather than a parametrize failure if it
-        # ever does happen.
+        # ever does happen. The primary requirement is classification, not
+        # the presence/absence of pairs — surface the pair count as
+        # secondary context only.
         failures.append(
-            f"{name}: unclassified module with Pattern A pairs "
-            f"{sorted(actual)}; classify into GUARDED_PATHS, "
-            "TRANSITIONAL_GUARDED_PATHS, or WAIVED_PATHS."
+            f"{name}: unclassified module — classify into GUARDED_PATHS, "
+            "TRANSITIONAL_GUARDED_PATHS, or WAIVED_PATHS "
+            f"(Pattern A pairs found: {sorted(actual)})."
         )
 
     assert not failures, "Pattern A inventory drift:\n  " + "\n  ".join(failures)
