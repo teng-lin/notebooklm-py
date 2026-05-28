@@ -8210,6 +8210,24 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "Allow URLs that point at internal hosts (``localhost``, ``127.0.0.1``, private IP ranges, link-local). By default these are rejected to prevent the CLI from being used as an SSRF trampoline. Non-http(s) schemes (``file://``, ``ftp://``, ...) are rejected even with this flag.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "allow_internal",
+          "opts": [
+            "--allow-internal"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output as JSON",
           "is_flag": true,
           "kind": "option",

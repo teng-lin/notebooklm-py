@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
+from urllib.parse import urlsplit
 
 from ...types import Source
 from ...urls import is_youtube_url
@@ -71,6 +73,90 @@ _PATH_SHAPED_EXTENSIONS = frozenset(
 )
 
 
+#: Schemes accepted by ``source add`` when content is URL-shaped. Any other
+#: scheme (``file://``, ``ftp://``, ``gopher://``, ...) is rejected outright
+#: as an SSRF / local-file-read risk — even with ``--allow-internal``.
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
+
+
+def _is_url_shaped(content: str) -> bool:
+    """Return True if ``content`` looks like a URL (has a scheme delimiter).
+
+    This is a tight heuristic — we only treat content as URL-shaped when
+    ``"://"`` is present. ``urllib.parse.urlsplit`` happily produces single-
+    letter schemes for Windows-style paths like ``c:\\foo\\bar.pdf``, which
+    we still want to flow through to the file/text detection branch.
+    """
+    return "://" in content
+
+
+def validate_url(url: str, *, allow_internal: bool) -> None:
+    """Validate a URL for SSRF / local-file-read safety.
+
+    Replaces the previous ``startswith(("http://", "https://"))`` prefix
+    check with a structural parse + a scheme allowlist + a private/loopback/
+    link-local IP rejection (with ``localhost`` rejected by literal when the
+    host is a DNS name).
+
+    DNS is **never** resolved at validation time: resolving here would be
+    flaky in CI and would leak the caller's interest in the URL to whatever
+    resolver is configured. The DNS-name branch only matches the literal
+    ``"localhost"`` (case-insensitive).
+
+    Args:
+        url: The URL the user wants to add as a source.
+        allow_internal: If True, bypass the internal-host rejection (private
+            IPs, loopback, link-local, and the ``localhost`` literal). The
+            scheme allowlist still applies — ``file://`` / ``ftp://`` etc.
+            are rejected even with ``allow_internal=True``.
+
+    Raises:
+        SourceAddValidationError: if the URL is structurally invalid, has a
+            disallowed scheme, has no host, or (without ``allow_internal``)
+            targets an internal host.
+    """
+    try:
+        parsed = urlsplit(url)
+    except ValueError as exc:  # pragma: no cover — urlsplit is permissive
+        raise SourceAddValidationError(f"Invalid URL: {url} ({exc})") from exc
+
+    scheme = parsed.scheme.lower()
+    if scheme not in _ALLOWED_URL_SCHEMES:
+        raise SourceAddValidationError(
+            f"URL scheme {scheme!r} is not allowed; only http and https URLs "
+            f"are accepted as sources. Got: {url}"
+        )
+
+    # ``hostname`` strips port + IPv6 brackets, lowercases for us, and
+    # returns ``None`` for ``http:///path`` style inputs with no host.
+    host = parsed.hostname
+    if not host:
+        raise SourceAddValidationError(f"URL has no host component: {url}")
+
+    if allow_internal:
+        return
+
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Host is a DNS name (not an IP literal). DO NOT resolve it —
+        # resolving here would be flaky in CI and leaks intent. Reject
+        # only the ``localhost`` literal; everything else is accepted at
+        # this layer and the network stack handles connectivity later.
+        if host.lower() == "localhost":
+            raise SourceAddValidationError(
+                f"URL targets the local host {host!r}; pass --allow-internal "
+                f"to override. Got: {url}"
+            ) from None
+        return
+
+    if ip.is_private or ip.is_loopback or ip.is_link_local:
+        raise SourceAddValidationError(
+            f"URL targets an internal IP address {host}; pass --allow-internal "
+            f"to override. Got: {url}"
+        )
+
+
 def looks_like_path(content: str) -> bool:
     """Return True if ``content`` is path-shaped (slash OR known extension)."""
     if "/" in content or "\\" in content:
@@ -113,15 +199,32 @@ def build_source_add_plan(
     follow_symlinks: bool,
     validate_path: Callable[[str, bool], Path],
     looks_path_shaped: Callable[[str], bool],
+    allow_internal: bool = False,
 ) -> SourceAddPlan:
-    """Detect source-add mode, validate upload paths, and collect warnings."""
+    """Detect source-add mode, validate upload paths + URLs, collect warnings.
+
+    URL validation (SSRF guard): any URL-shaped content (``"://"`` present)
+    is passed through :func:`validate_url`, which enforces a http/https
+    scheme allowlist and rejects private / loopback / link-local IP hosts
+    (plus the ``localhost`` literal). The opt-in ``allow_internal=True``
+    flag bypasses the host check but still rejects non-http(s) schemes.
+
+    Args:
+        allow_internal: Forwarded to :func:`validate_url` to opt into
+            internal-host URLs (e.g. ``http://127.0.0.1:8080``).
+    """
     detected_type = source_type
     file_title = title
     upload_path: Path | None = None
     warnings: list[str] = []
 
     if detected_type is None:
-        if content.startswith(("http://", "https://")):
+        if _is_url_shaped(content):
+            # Validate before deciding url vs youtube — a bad scheme or an
+            # internal-IP host must raise before we even bind a type, so
+            # ``--type youtube`` cannot smuggle ``file:///etc/passwd`` past
+            # the gate via auto-detection.
+            validate_url(content, allow_internal=allow_internal)
             detected_type = "youtube" if is_youtube_url(content) else "url"
         elif Path(content).exists() or Path(content).is_symlink():
             upload_path = validate_path(content, follow_symlinks)
@@ -137,6 +240,11 @@ def build_source_add_plan(
             file_title = title or "Pasted Text"
     elif detected_type == "file":
         upload_path = validate_path(content, follow_symlinks)
+    elif detected_type in {"url", "youtube"}:
+        # Explicit ``--type url`` / ``--type youtube`` must honor the same
+        # gate as auto-detection: pre-fix, ``--type url file:///etc/passwd``
+        # would skip the prefix check entirely.
+        validate_url(content, allow_internal=allow_internal)
 
     return SourceAddPlan(
         content=content,

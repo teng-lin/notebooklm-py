@@ -333,6 +333,18 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
         "file it points at (e.g. ~/Downloads/foo.pdf -> /etc/passwd)."
     ),
 )
+@click.option(
+    "--allow-internal",
+    is_flag=True,
+    default=False,
+    help=(
+        "Allow URLs that point at internal hosts (``localhost``, "
+        "``127.0.0.1``, private IP ranges, link-local). By default these "
+        "are rejected to prevent the CLI from being used as an SSRF "
+        "trampoline. Non-http(s) schemes (``file://``, ``ftp://``, ...) "
+        "are rejected even with this flag."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def source_add(
@@ -344,6 +356,7 @@ def source_add(
     mime_type,
     timeout,
     follow_symlinks,
+    allow_internal,
     json_output,
     client_auth,
 ):
@@ -362,15 +375,20 @@ def source_add(
         source_type = "text"
 
     nb_id = require_notebook(notebook_id)
-    plan = source_add_service.build_source_add_plan(
-        content=content,
-        source_type=source_type,
-        title=title,
-        mime_type=mime_type,
-        follow_symlinks=follow_symlinks,
-        validate_path=_validate_upload_path,
-        looks_path_shaped=_looks_like_path,
-    )
+    try:
+        plan = source_add_service.build_source_add_plan(
+            content=content,
+            source_type=source_type,
+            title=title,
+            mime_type=mime_type,
+            follow_symlinks=follow_symlinks,
+            validate_path=_validate_upload_path,
+            looks_path_shaped=_looks_like_path,
+            allow_internal=allow_internal,
+        )
+    except source_add_service.SourceAddValidationError as exc:
+        _output_error(f"Error: {exc}", "VALIDATION_ERROR", json_output, 1)
+        raise AssertionError("unreachable") from None  # pragma: no cover
 
     for warning in plan.warnings:
         click.echo(warning, err=True)
