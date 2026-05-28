@@ -39,19 +39,21 @@ if TYPE_CHECKING:
 from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
+from ._client_composed import ClientComposed
+from ._client_seams import resolve_client_seams
 from ._env import get_base_url as get_base_url
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
-from ._session import compose_session_internals
 from ._session_config import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
+from ._session_init import compose_session_internals
 from ._session_lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
@@ -303,6 +305,13 @@ class NotebookLMClient:
         # ``is_auth_error`` / ``async_client_factory``) live on
         # ``compose_session_internals`` and ``build_session_for_tests``
         # only.
+        self._seams = resolve_client_seams(
+            decode_response=None,
+            sleep=None,
+            is_auth_error=None,
+        )
+        self._composed = ClientComposed(max_concurrent_rpcs=max_concurrent_rpcs)
+
         composed = compose_session_internals(
             auth=auth,
             timeout=timeout,
@@ -322,6 +331,8 @@ class NotebookLMClient:
             # ``_default_cookie_rotator``.
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
+            seams=self._seams,
+            composed=self._composed,
         )
         self._session = composed.session
         # Owned reference to the collaborator bundle so

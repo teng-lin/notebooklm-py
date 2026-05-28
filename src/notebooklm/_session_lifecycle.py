@@ -409,7 +409,7 @@ class ClientLifecycle:
 
         Stage B1 PR 2 of the post-refactoring plan removed the
         close-time ``host._rpc_executor = None`` step. The composition
-        root (:func:`notebooklm._session.compose_session_internals`)
+        root (:func:`notebooklm._session_init.compose_session_internals`)
         binds the executor exactly once via
         :meth:`Session._bind_executor` and the binding is preserved
         across ``close()`` → ``open()`` cycles. The executor's

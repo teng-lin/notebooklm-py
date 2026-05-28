@@ -127,10 +127,34 @@ AUTH_COORD_RECEIVER_NAMES: frozenset[str] = frozenset({"auth_coord", "coord"})
 # must be reached through that collaborator's name.
 AUTH_FORWARD_METHOD_NAMES: frozenset[str] = frozenset({"update_auth_tokens", "update_auth_headers"})
 
+MOVED_SESSION_SYMBOL_NAMES: frozenset[str] = frozenset(
+    # Only symbols that used to be reachable through `notebooklm._session`
+    # aliases belong here. Moves between other modules, such as default sleep
+    # resolution moving onto `ClientSeams`, are outside this guard's scope.
+    {
+        "compose_session_internals",
+        "ComposedSession",
+        "resolve_seam_defaults",
+        "_default_decode_response",
+        "_default_is_auth_error",
+    }
+)
+
 
 def _iter_src_files() -> list[Path]:
     """Return every ``.py`` under ``src/notebooklm/``, sorted, excluding caches."""
     return sorted(p for p in SRC_ROOT.rglob("*.py") if "__pycache__" not in p.parts)
+
+
+def _iter_src_and_test_files() -> list[Path]:
+    """Return every checked ``.py`` file under ``src/notebooklm/`` and ``tests/``."""
+    test_root = REPO_ROOT / "tests"
+    return sorted(
+        p
+        for root in (SRC_ROOT, test_root)
+        for p in root.rglob("*.py")
+        if "__pycache__" not in p.parts
+    )
 
 
 def _find_symbol_appearances(tree: ast.AST, symbol: str) -> list[tuple[int, str]]:
@@ -298,6 +322,56 @@ def _format_receiver_for_diagnostic(receiver: ast.expr) -> str:
     if isinstance(receiver, ast.Attribute):
         return f"...{receiver.attr}"
     return "expression"
+
+
+def _session_module_aliases(tree: ast.AST) -> set[str]:
+    """Return local aliases bound to the ``notebooklm._session`` module."""
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "notebooklm._session" and alias.asname is not None:
+                    aliases.add(alias.asname)
+        elif isinstance(node, ast.ImportFrom):
+            imports_session_from_notebooklm = node.module == "notebooklm"
+            imports_session_from_relative_package = node.module is None and node.level > 0
+            if not (imports_session_from_notebooklm or imports_session_from_relative_package):
+                continue
+            for alias in node.names:
+                if alias.name == "_session":
+                    aliases.add(alias.asname or alias.name)
+    return aliases
+
+
+def _moved_session_symbol_alias_violations(tree: ast.AST, *, rel: str) -> list[str]:
+    """Return uses like ``session_mod.compose_session_internals``."""
+    aliases = _session_module_aliases(tree)
+    if not aliases:
+        return []
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in MOVED_SESSION_SYMBOL_NAMES
+            and isinstance(node.value, ast.Name)
+            and node.value.id in aliases
+        ):
+            violations.append(f"{rel}:{node.lineno} {node.value.id}.{node.attr}")
+    return violations
+
+
+def test_moved_session_symbols_are_not_reached_through_session_module_aliases() -> None:
+    """Moved composition helpers must not be reached through aliased ``_session``."""
+    violations: list[str] = []
+    for path in _iter_src_and_test_files():
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        violations.extend(_moved_session_symbol_alias_violations(tree, rel=rel))
+    assert not violations, (
+        "Composition helpers moved out of notebooklm._session. Import them from "
+        "notebooklm._session_init or notebooklm._client_seams instead. Offenders:\n  "
+        + "\n  ".join(violations)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -720,3 +794,13 @@ def test_format_receiver_for_diagnostic_shapes() -> None:
     assert _format_receiver_for_diagnostic(receivers[0]) == "..._session"
     assert _format_receiver_for_diagnostic(receivers[1]) == "bare"
     assert _format_receiver_for_diagnostic(receivers[2]) == "expression"
+
+
+def test_moved_session_symbol_alias_guard_catches_synthetic_alias() -> None:
+    """Prove aliasing ``notebooklm._session`` cannot hide moved helper access."""
+    tree = ast.parse(
+        "import notebooklm._session as session_mod\nsession_mod.compose_session_internals\n"
+    )
+    assert _moved_session_symbol_alias_violations(tree, rel="synthetic.py") == [
+        "synthetic.py:2 session_mod.compose_session_internals"
+    ]

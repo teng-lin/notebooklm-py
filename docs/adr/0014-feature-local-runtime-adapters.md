@@ -241,11 +241,12 @@ deletes them.
 - ~~`Session.collaborators`, `Session.session_transport`, `Session.rpc_executor`~~
   — three typed accessors per Rule 3 Stage A. **Deleted under Rule 3 Stage B
   by Stage B1 PR 2 of the post-refactoring plan 2026-05-27 (#1089 commit
-  `313bbef1`)** — `compose_session_internals()` in `_session.py` is now the
-  composition root; the three accessor properties and the `_get_rpc_executor`
-  lazy factory all collapsed to direct reads on the returned
-  `ComposedSession`. The previous Task 6.3 AST lint protecting these
-  accessors no longer has live callers to protect.
+  `313bbef1`)** — `compose_session_internals()` became the composition root
+  and later moved to `_session_init.py` during Session-elimination Phase 1;
+  the three accessor properties and the `_get_rpc_executor` lazy factory all
+  collapsed to direct reads on the returned `ComposedSession`. The previous
+  Task 6.3 AST lint protecting these accessors no longer has live callers to
+  protect.
 
 Everything else on `Session` after Wave 5 should be either listed here or
 deleted.
@@ -391,7 +392,8 @@ deferred follow-ups — see [Revision history](#revision-history).
 ### 2026-05-27 — Rule 3 Stage B closure (post-refactoring plan 2026-05-27 Stage B1, #1086 / #1089 / #1091)
 
 Issue #1084 (deferred Rule 3 Stage B) closed. `compose_session_internals()`
-in `_session.py` became the composition root: `Session.__init__` was
+became the composition root and now lives in `_session_init.py`:
+`Session.__init__` was
 narrowed to `(*, collaborators, config, auth)` and the Stage A accessor
 properties (`Session.collaborators`, `Session.session_transport`,
 `Session.rpc_executor`) plus the `_get_rpc_executor` lazy factory were

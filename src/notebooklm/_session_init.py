@@ -16,14 +16,11 @@ the ``Kernel.http_client.setter`` and made ``decode_response`` /
 ``sleep`` / ``is_auth_error`` / ``async_client_factory`` the canonical
 injection seams.
 
-**Seam-resolution boundary**: ``None``-default resolution for ``sleep``
-(→ ``asyncio.sleep``) and ``async_client_factory`` (→
-``httpx.AsyncClient``) MUST stay in :mod:`notebooklm._session` so the
-documented monkeypatch paths ``notebooklm._session.asyncio.sleep`` and
-``notebooklm._session.httpx.AsyncClient`` keep steering the seam at
-construction time. The helpers here accept already-resolved seam
-callables; the caller (``Session.__init__``) owns the
-``X if X is not None else <module-attr>`` dance against its own bindings.
+``None``-default resolution for ``sleep`` and ``async_client_factory`` still
+routes through :mod:`notebooklm._session` so the documented monkeypatch paths
+``notebooklm._session.asyncio.sleep`` and
+``notebooklm._session.httpx.AsyncClient`` keep steering construction while
+``_session.py`` remains the compatibility module.
 """
 
 from __future__ import annotations
@@ -37,14 +34,26 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from ._client_composed import ClientComposed
 from ._client_metrics import ClientMetrics
+from ._client_seams import ClientSeams, resolve_client_seams
 from ._cookie_persistence import CookiePersistence
+from ._error_injection import _refuse_synthetic_error_outside_test_context
 from ._kernel import Kernel
 from ._middleware import Middleware, NextCall, build_chain
 from ._middleware_chain import MiddlewareChainBuilder
+from ._middleware_chain_host import MiddlewareChainHost
 from ._reqid_counter import ReqidCounter
+from ._rpc_executor import RpcExecutor
 from ._session_auth import AuthRefreshCoordinator
-from ._session_config import normalize_max_concurrent_uploads
+from ._session_config import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_KEEPALIVE_MIN_INTERVAL,
+    DEFAULT_MAX_CONCURRENT_RPCS,
+    DEFAULT_MAX_CONCURRENT_UPLOADS,
+    DEFAULT_TIMEOUT,
+    normalize_max_concurrent_uploads,
+)
 from ._session_helpers import _resolve_keepalive_interval
 from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
 from ._session_transport import SessionTransport
@@ -56,7 +65,6 @@ if TYPE_CHECKING:
     # :func:`validate_constructor_args` to keep the long-standing
     # defensive guard against the ``types.py`` → session cycle (see the
     # inline comment in the function body).
-    from ._middleware_chain_host import MiddlewareChainHost
     from .types import ConnectionLimits, RpcTelemetryEvent
 
 
@@ -115,6 +123,51 @@ class WiredMiddleware:
     chain_builder: MiddlewareChainBuilder
     middlewares: list[Middleware]
     authed_post_chain: NextCall
+
+
+@dataclass(frozen=True)
+class ComposedSession:
+    """Result of :func:`compose_session_internals`."""
+
+    session: Session
+    transport: SessionTransport
+    executor: RpcExecutor
+    collaborators: SessionCollaborators
+    seams: ClientSeams
+    composed: ClientComposed
+
+
+def _resolve_async_client_factory(
+    async_client_factory: Callable[..., httpx.AsyncClient] | None,
+) -> Callable[..., httpx.AsyncClient]:
+    """Resolve the construction-only async-client seam through ``_session``."""
+    if async_client_factory is not None:
+        return async_client_factory
+
+    from . import _session as session_mod
+
+    return session_mod.httpx.AsyncClient
+
+
+def resolve_seam_defaults(
+    *,
+    sleep: Callable[[float], Awaitable[Any]] | None,
+    async_client_factory: Callable[..., httpx.AsyncClient] | None,
+    is_auth_error: Callable[[Exception], bool] | None,
+    decode_response: Callable[..., Any] | None,
+) -> dict[str, Callable[..., Any]]:
+    """Resolve legacy seam-default shape while keeping ``ClientSeams`` separate."""
+    seams = resolve_client_seams(
+        sleep=sleep,
+        is_auth_error=is_auth_error,
+        decode_response=decode_response,
+    )
+    return {
+        "sleep": seams.sleep,
+        "async_client_factory": _resolve_async_client_factory(async_client_factory),
+        "is_auth_error": seams.is_auth_error,
+        "decode_response": seams.decode_response,
+    }
 
 
 def validate_constructor_args(
@@ -397,13 +450,13 @@ def build_session_transport(
 
 
 def wire_middleware_chain(
-    config: ValidatedSessionConfig,
     collaborators: SessionCollaborators,
     *,
     chain_host: MiddlewareChainHost,
     auth: AuthTokens,
     authed_post_chain_terminal: Callable[..., Awaitable[Any]],
     rpc_semaphore_factory: Callable[[], AbstractAsyncContextManager[Any]],
+    is_auth_error: Callable[[Exception], bool],
 ) -> WiredMiddleware:
     """Construct the :class:`MiddlewareChainBuilder`, build the seven-middleware
     list, and wire the final chain via :func:`build_chain`.
@@ -434,10 +487,10 @@ def wire_middleware_chain(
     Post-construction mutation on ``chain_host._<attr>`` still takes
     effect through the middleware live-binding contract documented in
     :class:`MiddlewareChainBuilder`. The ``rpc_semaphore_factory`` is
-    passed in explicitly so the helper does not need to know that the
-    live semaphore lives on ``Session._get_rpc_semaphore`` — that
-    surface stays on Session because the semaphore is per-loop session
-    state (not chain state).
+    passed in explicitly so the helper does not need to know which holder
+    owns the live semaphore. ``is_auth_error`` is passed as a live-binding
+    callable so rebinding ``ClientSeams.is_auth_error`` after construction
+    still steers the chain.
     """
     # ADR-009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in
@@ -451,7 +504,7 @@ def wire_middleware_chain(
         refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
         refresh_callable=chain_host.await_refresh,
         auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth=auth),
-        is_auth_error=config.is_auth_error,
+        is_auth_error=is_auth_error,
         refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
     )
     middlewares: list[Middleware] = chain_builder.build()
@@ -466,12 +519,153 @@ def wire_middleware_chain(
     )
 
 
+def compose_session_internals(
+    *,
+    auth: AuthTokens,
+    timeout: float = DEFAULT_TIMEOUT,
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
+    refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
+    refresh_retry_delay: float = 0.2,
+    keepalive: float | None = None,
+    keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
+    keepalive_storage_path: Path | None = None,
+    rate_limit_max_retries: int = 3,
+    server_error_max_retries: int = 3,
+    limits: ConnectionLimits | None = None,
+    max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+    max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
+    on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+    cookie_saver: CookieSaver | None = None,
+    cookie_rotator: CookieRotator | None = None,
+    decode_response: Callable[..., Any] | None = None,
+    sleep: Callable[[float], Awaitable[Any]] | None = None,
+    is_auth_error: Callable[[Exception], bool] | None = None,
+    async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
+    seams: ClientSeams | None = None,
+    composed: ClientComposed | None = None,
+) -> ComposedSession:
+    """Single entry point that owns the full Session composition sequence."""
+    # MUST stay first — preserves the earliest-opportunity refusal that
+    # ``test_synthetic_error_transport_guard`` pins.
+    _refuse_synthetic_error_outside_test_context()
+
+    seams = seams or resolve_client_seams(
+        sleep=sleep,
+        is_auth_error=is_auth_error,
+        decode_response=decode_response,
+    )
+    if composed is None:
+        composed = ClientComposed(max_concurrent_rpcs=max_concurrent_rpcs)
+    elif composed.max_concurrent_rpcs != max_concurrent_rpcs:
+        raise ValueError(
+            "composed.max_concurrent_rpcs must match max_concurrent_rpcs "
+            f"(got composed.max_concurrent_rpcs={composed.max_concurrent_rpcs!r}, "
+            f"max_concurrent_rpcs={max_concurrent_rpcs!r})"
+        )
+    async_client_factory = _resolve_async_client_factory(async_client_factory)
+
+    config = validate_constructor_args(
+        timeout=timeout,
+        connect_timeout=connect_timeout,
+        refresh_retry_delay=refresh_retry_delay,
+        rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
+        keepalive=keepalive,
+        keepalive_min_interval=keepalive_min_interval,
+        keepalive_storage_path=keepalive_storage_path,
+        auth_storage_path=auth.storage_path,
+        limits=limits,
+        max_concurrent_uploads=max_concurrent_uploads,
+        max_concurrent_rpcs=max_concurrent_rpcs,
+        decode_response=seams.decode_response,
+        sleep=seams.sleep,
+        is_auth_error=seams.is_auth_error,
+        async_client_factory=async_client_factory,
+    )
+    collaborators = build_collaborators(
+        config,
+        auth=auth,
+        refresh_callback=refresh_callback,
+        on_rpc_event=on_rpc_event,
+        cookie_saver=cookie_saver,
+        cookie_rotator=cookie_rotator,
+    )
+    chain_host = MiddlewareChainHost(
+        _auth_refresh=collaborators.auth_coord,
+        _rate_limit_max_retries=config.rate_limit_max_retries,
+        _server_error_max_retries=config.server_error_max_retries,
+        _refresh_retry_delay=config.refresh_retry_delay,
+    )
+
+    from ._session import Session
+
+    session: Session = Session(
+        collaborators=collaborators,
+        config=config,
+        auth=auth,
+        chain_host=chain_host,
+    )
+    session._seams = seams
+
+    from . import _session as session_mod
+
+    transport = build_session_transport(
+        collaborators,
+        host=session,
+        chain_host=chain_host,
+        logger=session_mod.logger,
+    )
+    session._bind_transport(transport)
+    chain_host._bind_transport(transport)
+
+    wired = wire_middleware_chain(
+        collaborators,
+        chain_host=chain_host,
+        auth=auth,
+        authed_post_chain_terminal=chain_host._authed_post_chain_terminal,
+        rpc_semaphore_factory=composed.get_rpc_semaphore,
+        is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
+    )
+    chain_host._authed_post_chain = wired.authed_post_chain
+    session._bind_chain_metadata(wired)
+
+    executor = RpcExecutor(
+        kernel=collaborators.kernel,
+        transport=transport,
+        auth_refresh=collaborators.auth_coord,
+        metrics=collaborators.metrics,
+        decode_response=lambda *a, **kw: seams.decode_response(*a, **kw),
+        is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
+        sleep=lambda *a, **kw: seams.sleep(*a, **kw),
+        timeout_provider=lambda: collaborators.lifecycle._timeout,
+        refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
+        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
+    )
+    session._bind_executor(executor)
+
+    composed.transport = transport
+    composed.executor = executor
+    composed.session_collaborators = collaborators
+
+    return ComposedSession(
+        session=session,
+        transport=transport,
+        executor=executor,
+        collaborators=collaborators,
+        seams=seams,
+        composed=composed,
+    )
+
+
 __all__ = [
+    "ComposedSession",
     "SessionCollaborators",
     "ValidatedSessionConfig",
     "WiredMiddleware",
     "build_collaborators",
     "build_session_transport",
+    "compose_session_internals",
+    "resolve_seam_defaults",
     "validate_constructor_args",
     "wire_middleware_chain",
 ]

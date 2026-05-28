@@ -305,9 +305,7 @@ class TestRPCCallAuthRetry:
             mock_post = AsyncMock(return_value=success_response)
             install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
-            # Override the constructor-injected decode-response seam BEFORE
-            # the first RPC fires so the lazily-built ``RpcExecutor`` picks
-            # up the stub. See ``docs/improvement.md`` §4.1.
+            # Override the runtime decode-response seam before the RPC fires.
             decode_responses = iter(
                 [
                     RPCError("authentication expired"),
@@ -321,7 +319,7 @@ class TestRPCCallAuthRetry:
                     raise value
                 return value
 
-            core._decode_response = fake_decode
+            core._seams.decode_response = fake_decode
 
             result = await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 

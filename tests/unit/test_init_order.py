@@ -579,7 +579,7 @@ def test_compose_session_internals_exposes_constructor_di_seams() -> None:
     Stage B1 PR 2 of the post-refactoring plan moved the composition
     root out of ``Session.__init__`` (which now takes
     ``(*, collaborators, config, auth)`` only) into
-    ``notebooklm._session.compose_session_internals``. The seams live
+    ``notebooklm._session_init.compose_session_internals``. The seams live
     on the helper (and on the canonical test builder
     ``build_session_for_tests``), NOT on ``NotebookLMClient.__init__``
     (which preserves the production surface).
@@ -593,7 +593,7 @@ def test_compose_session_internals_exposes_constructor_di_seams() -> None:
     """
     import inspect
 
-    from notebooklm._session import compose_session_internals
+    from notebooklm._session_init import compose_session_internals
 
     sig = inspect.signature(compose_session_internals)
     for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):
@@ -634,8 +634,8 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     """Constructor-injected seams MUST reach the executor and chain builder.
 
     The ``RpcExecutor`` resolves ``decode_response`` / ``is_auth_error`` /
-    ``sleep`` through closures over ``self._decode_response`` etc., so that
-    legacy tests which rebind ``session._decode_response = stub`` after
+    ``sleep`` through closures over ``ClientSeams`` etc., so that
+    tests which rebind ``session._seams.decode_response = stub`` after
     ``NotebookLMClient.__init__`` (which eagerly builds the executor via
     the ``rpc_executor`` accessor wired into sub-APIs in Wave 7) still take
     effect. This test pins both halves: constructor-injected callables
@@ -665,9 +665,9 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
         is_auth_error=custom_is_auth_error,
     )
 
-    assert core._decode_response is custom_decode
-    assert core._sleep is custom_sleep
-    assert core._is_auth_error is custom_is_auth_error
+    assert core._seams.decode_response is custom_decode
+    assert core._seams.sleep is custom_sleep
+    assert core._seams.is_auth_error is custom_is_auth_error
 
     executor = core._rpc_executor
     # Constructor-injected callables propagate through the closure.
@@ -678,7 +678,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     def rebound_decode(*_a, **_kw):
         return ["rebound"]
 
-    core._decode_response = rebound_decode
+    core._seams.decode_response = rebound_decode
     assert executor._decode_response() == ["rebound"]
 
 

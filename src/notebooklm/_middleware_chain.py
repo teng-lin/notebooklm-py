@@ -131,9 +131,8 @@ class MiddlewareChainBuilder:
             # ``host._refresh_callback is not None`` gate in the leaf).
             # ``refresh_retry_delay_provider`` is callable for
             # live-binding parity with retry budgets.
-            # ``is_auth_error`` is bound late (see ``_live_is_auth_error``
-            # in ``_session.py``) so test monkeypatches of
-            # ``notebooklm._core.is_auth_error`` reach the chain.
+            # ``is_auth_error`` is supplied as a live-binding callable from
+            # ``ClientSeams`` so test rebinds can still steer the chain.
             # ``auth_snapshot_provider`` gives AuthRefreshMiddleware a
             # fresh post-refresh snapshot so it can replace the
             # populated request envelope before retrying the Kernel.post

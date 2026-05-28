@@ -28,8 +28,8 @@ both contracts in one place:
 
 The semaphore is supplied as a zero-arg async-context-manager factory rather
 than the raw ``asyncio.Semaphore`` so the middleware can be live-bound to
-``Session._get_rpc_semaphore`` — which lazily constructs the semaphore on
-first use (loop affinity) and returns a ``contextlib.nullcontext`` when
+``ClientComposed.get_rpc_semaphore`` — which lazily constructs the semaphore
+on first use (loop affinity) and returns a ``contextlib.nullcontext`` when
 ``max_concurrent_rpcs is None`` (unbounded opt-out). A direct semaphore
 binding would have to be reset on loop reuse and would have a 2-call
 recursive-acquire deadlock risk; the factory closure avoids both.
@@ -69,7 +69,7 @@ class SemaphoreMiddleware:
     - ``semaphore_factory``: zero-arg callable returning an async context
       manager. Called once per chain invocation; the returned context manager
       is entered around ``next_call``. Production wires
-      ``lambda: client_core._get_rpc_semaphore()`` so the live (lazily
+      ``ClientComposed.get_rpc_semaphore`` so the live (lazily
       constructed, loop-bound) semaphore is observed on each call. Tests can
       pass ``lambda: contextlib.nullcontext()`` to disable gating.
 

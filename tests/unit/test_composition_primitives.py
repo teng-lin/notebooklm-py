@@ -4,9 +4,9 @@ Covers the helpers introduced by Stage B1 PR 1 and made live by Stage B1
 PR 2 of the post-refactoring plan
 (``docs/post-refactoring-plan-2026-05-27.md``):
 
-- :class:`notebooklm._session.ComposedSession` dataclass
-- :func:`notebooklm._session.resolve_seam_defaults`
-- :func:`notebooklm._session.compose_session_internals` — the live
+- :class:`notebooklm._session_init.ComposedSession` dataclass
+- :func:`notebooklm._session_init.resolve_seam_defaults`
+- :func:`notebooklm._session_init.compose_session_internals` — the live
   composition root after PR 2
 - ``Session._bind_transport`` / ``_bind_chain_metadata`` / ``_bind_executor``
   write-once setters (now load-bearing — :meth:`Session.__init__` no
@@ -29,14 +29,21 @@ from typing import Any
 import httpx
 import pytest
 
-from _helpers.session_factory import build_session_for_tests
-from notebooklm._session import (
+from _helpers.session_factory import (
+    build_composed_session_for_tests,
+    build_refresh_client_shell,
+    build_session_for_tests,
+)
+from notebooklm._client_composed import ClientComposed
+from notebooklm._client_seams import ClientSeams
+from notebooklm._session import Session
+from notebooklm._session_init import (
     ComposedSession,
-    Session,
     compose_session_internals,
     resolve_seam_defaults,
 )
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 
 
 def _make_auth() -> AuthTokens:
@@ -146,6 +153,64 @@ def test_compose_session_internals_returns_composed_session() -> None:
     # ``_collaborators`` so :class:`NotebookLMClient` can hoist metrics
     # off the bundle without a fresh build).
     assert composed.collaborators is composed.session._collaborators
+    assert isinstance(composed.seams, ClientSeams)
+    assert isinstance(composed.composed, ClientComposed)
+    assert composed.session._seams is composed.seams
+    assert composed.composed.transport is composed.transport
+    assert composed.composed.executor is composed.executor
+    assert composed.composed.session_collaborators is composed.collaborators
+
+
+def test_shell_helpers_carry_client_holders() -> None:
+    """Refresh shell helpers mirror production holder attributes."""
+    composed = build_composed_session_for_tests(auth=_make_auth(), max_concurrent_rpcs=3)
+
+    client = build_refresh_client_shell(composed)
+
+    assert isinstance(client._seams, ClientSeams)
+    assert client._seams is composed.seams
+    assert isinstance(client._composed, ClientComposed)
+    assert client._composed is composed.composed
+    assert client._composed.max_concurrent_rpcs == 3
+
+
+def test_notebooklm_client_initializes_client_holders() -> None:
+    """Production clients own the same holder shape returned by composition."""
+    client = NotebookLMClient(_make_auth(), max_concurrent_rpcs=2)
+
+    assert isinstance(client._seams, ClientSeams)
+    assert isinstance(client._composed, ClientComposed)
+    assert client._session._seams is client._seams
+    assert client._composed.max_concurrent_rpcs == 2
+
+
+def test_invalid_max_concurrent_rpcs_rejected_before_zero_cap_semaphore() -> None:
+    """Production and test construction reject invalid caps before composition use."""
+    auth = _make_auth()
+
+    with pytest.raises(ValueError, match="max_concurrent_rpcs must be >= 1, got 0"):
+        NotebookLMClient(auth, max_concurrent_rpcs=0)
+
+    with pytest.raises(ValueError, match="max_concurrent_rpcs must be >= 1, got 0"):
+        build_session_for_tests(auth, max_concurrent_rpcs=0)
+
+
+def test_prebuilt_client_composed_cap_must_match_constructor_cap() -> None:
+    """A supplied holder cannot silently diverge from validated constructor args."""
+    holder = ClientComposed(max_concurrent_rpcs=5)
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"composed\.max_concurrent_rpcs must match max_concurrent_rpcs "
+            r"\(got composed\.max_concurrent_rpcs=5, max_concurrent_rpcs=10\)"
+        ),
+    ):
+        compose_session_internals(
+            auth=_make_auth(),
+            max_concurrent_rpcs=10,
+            composed=holder,
+        )
 
 
 def test_compose_session_internals_refuses_synthetic_error_first(
@@ -172,11 +237,11 @@ def test_compose_session_internals_refuses_synthetic_error_first(
 
 
 def test_compose_session_internals_preserves_late_binding_for_decode_response() -> None:
-    """Post-construction ``session._decode_response = rebound`` MUST still
+    """Post-construction ``session._seams.decode_response = rebound`` MUST still
     steer the executor's decode path.
 
     Pins the lambda-closure contract documented in the plan: the executor
-    is wired with ``decode_response=lambda *a, **kw: session._decode_response(*a, **kw)``
+    is wired with ``decode_response=lambda *a, **kw: seams.decode_response(*a, **kw)``
     so that test reassignments after construction continue to take effect.
     """
     composed = compose_session_internals(auth=_make_auth())
@@ -184,11 +249,11 @@ def test_compose_session_internals_preserves_late_binding_for_decode_response() 
     sentinel: list[Any] = []
 
     def rebound(*args: Any, **kwargs: Any) -> str:
-        """Recording stand-in for ``session._decode_response``."""
+        """Recording stand-in for ``session._seams.decode_response``."""
         sentinel.append(("decoded", args, kwargs))
         return "rebound-result"
 
-    composed.session._decode_response = rebound
+    composed.session._seams.decode_response = rebound
 
     # The executor closure should dispatch through the live attribute,
     # not the value frozen at construction time.
@@ -198,10 +263,10 @@ def test_compose_session_internals_preserves_late_binding_for_decode_response() 
 
 
 def test_compose_session_internals_preserves_late_binding_for_is_auth_error() -> None:
-    """Post-construction ``session._is_auth_error = rebound`` MUST still
+    """Post-construction ``session._seams.is_auth_error = rebound`` MUST still
     steer the executor's classifier.
 
-    Mirror of the ``_decode_response`` test for the auth-error seam.
+    Mirror of the ``decode_response`` test for the auth-error seam.
     """
     composed = compose_session_internals(auth=_make_auth())
 
@@ -209,14 +274,14 @@ def test_compose_session_internals_preserves_late_binding_for_is_auth_error() ->
         """Stand-in classifier — treats KeyError as auth-related."""
         return isinstance(exc, KeyError)
 
-    composed.session._is_auth_error = rebound
+    composed.session._seams.is_auth_error = rebound
 
     assert composed.executor._is_auth_error(KeyError("auth")) is True
     assert composed.executor._is_auth_error(RuntimeError("nope")) is False
 
 
 def test_compose_session_internals_preserves_late_binding_for_sleep() -> None:
-    """Post-construction ``session._sleep = rebound`` MUST still steer the
+    """Post-construction ``session._seams.sleep = rebound`` MUST still steer the
     executor's backoff path.
     """
     composed = compose_session_internals(auth=_make_auth())
@@ -224,10 +289,10 @@ def test_compose_session_internals_preserves_late_binding_for_sleep() -> None:
     calls: list[float] = []
 
     async def rebound(delay: float) -> None:
-        """Recording stand-in for ``session._sleep`` (captures delays)."""
+        """Recording stand-in for ``session._seams.sleep`` (captures delays)."""
         calls.append(delay)
 
-    composed.session._sleep = rebound
+    composed.session._seams.sleep = rebound
 
     asyncio.run(composed.executor._sleep(0.25))
     assert calls == [0.25]
@@ -375,9 +440,9 @@ def test_require_constructed_raises_on_missing_attribute() -> None:
 
 
 def test_entry_point_guards_fire_on_uninitialised_session() -> None:
-    """The fail-fast guards on ``rpc_call`` / ``_get_rpc_semaphore`` /
-    ``open`` / ``close`` raise when the relevant write-once binding is
-    ``None``.
+    """The fail-fast guards on ``open`` / ``close`` and direct
+    ``_require_constructed`` checks raise when the relevant write-once
+    binding is ``None``.
 
     Bypasses :func:`compose_session_internals` (the canonical composition
     root) via ``Session.__new__`` so the guards see a pre-binding
@@ -402,9 +467,6 @@ def test_entry_point_guards_fire_on_uninitialised_session() -> None:
     # exercised whenever any composition primitive probes the slot.
     with pytest.raises(RuntimeError, match="Session not fully constructed: _rpc_executor is None"):
         session._require_constructed("_rpc_executor")
-
-    with pytest.raises(RuntimeError, match="Session not fully constructed: _transport is None"):
-        session._get_rpc_semaphore()
 
     with pytest.raises(RuntimeError, match="Session not fully constructed: _transport is None"):
         asyncio.run(session.open())

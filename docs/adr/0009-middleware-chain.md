@@ -518,8 +518,8 @@ cut of PR 12.9):
 
 The middleware takes a zero-arg async-context-manager factory rather
 than a raw `asyncio.Semaphore`, so production wires
-`SemaphoreMiddleware(self._get_rpc_semaphore)` and the accessor returns
-a `contextlib.nullcontext` when `max_concurrent_rpcs is None` (unbounded
+`ClientComposed.get_rpc_semaphore`. The holder returns a
+`contextlib.nullcontext` when `max_concurrent_rpcs is None` (unbounded
 opt-out) — the `async with` collapses to a no-op for that case.
 
 History: the first cut of PR 12.9 audit-find #1 wrapped the semaphore

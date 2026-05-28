@@ -237,11 +237,10 @@ async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
     rewrote this test off the legacy ``_core.is_auth_error`` string-target
     monkeypatch and instead constructs the middleware directly with an
     injected predicate. The
-    production chain seeds ``AuthRefreshMiddleware`` with
-    ``is_auth_error=_live_is_auth_error``; that wiring is
-    covered separately. Here we pin the middleware-level contract:
-    *whatever* predicate is injected drives the refresh-and-retry
-    decision.
+    production chain seeds ``AuthRefreshMiddleware`` with a live-binding
+    ``ClientSeams.is_auth_error`` callable; that wiring is covered
+    separately. Here we pin the middleware-level contract: *whatever*
+    predicate is injected drives the refresh-and-retry decision.
     """
     from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 
@@ -295,17 +294,15 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
     cover both halves of the contract:
 
     1. ``AuthRefreshMiddleware`` honors its injected predicate.
-    2. ``Session.__init__`` actually wires the middleware with a
-       predicate that recognises real auth errors — currently
-       ``is_auth_error=_live_is_auth_error``, where ``_live_is_auth_error`` resolves
-       :func:`notebooklm._session_helpers.is_auth_error` at call time.
+    2. The composition root actually wires the middleware with a live
+       predicate that recognises real auth errors through
+       ``ClientSeams.is_auth_error``.
 
     Restored in Phase 2 PR 4 after the migration of
     ``test_chain_uses_late_bound_is_auth_error`` (which used
     ``monkeypatch.setattr("notebooklm._core.is_auth_error", lambda exc:
     True)`` to force ANY exception to be treated as an auth error)
-    deleted the only end-to-end check of that wiring. Codex / agy
-    review caught the regression; this test re-adds the coverage
+    deleted the only end-to-end check of that wiring. This test re-adds the coverage
     without depending on the soon-to-be-retired ``_core`` indirection
     by using a real 401 that the canonical predicate already
     recognises.
@@ -328,10 +325,7 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
         async def fake_post(*args, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                # Real 401 — recognised by ``is_auth_error``, which
-                # ``_live_is_auth_error`` resolves at call time. No
-                # monkeypatch needed: the predicate's natural behavior
-                # drives the refresh path.
+                # Real 401 — recognised by the default ``is_auth_error``.
                 raise _status_error(401)
             return _ok_response()
 

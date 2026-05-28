@@ -23,8 +23,8 @@ closed on 2026-05-28 with Waves 0-4. The retained Session surface is now
 the **Inventory** table below in full: the four lifecycle hot-path
 entries (`open` / `close` / `is_open` / `_keepalive_loop`), the
 `__init__` constructor, the `drain` public-API forward, the
-`assert_bound_loop` / `_get_rpc_semaphore` provider-closure capture
-targets, and the Stage B1 composition primitives (`_bind_transport`,
+`assert_bound_loop` provider-closure capture target, and the Stage B1
+composition primitives (`_bind_transport`,
 `_bind_chain_metadata`, `_bind_executor`, `_require_constructed`).
 Stage A accessors (`collaborators` / `session_transport` / `rpc_executor`)
 were deleted in Stage B1 PR 2 of the post-refactoring plan and are
@@ -80,11 +80,10 @@ lint at PR time.
 | `is_open` (property) | lifecycle | retain — public open-state read |
 | `_keepalive_loop` | lifecycle | retain — background task body; introspected by `test_client_keepalive` |
 | `assert_bound_loop` | provider-closure capture target | retain — captured via lambda (`bound_loop_check=lambda: host.assert_bound_loop()`) by `build_session_transport` at [`_session_init.py:395`](../src/notebooklm/_session_init.py); late-bound so a test reassigning `core.assert_bound_loop = mock` still steers the live check |
-| `_get_rpc_semaphore` | provider-closure capture target | retain — passed as `rpc_semaphore_factory=self._get_rpc_semaphore` to `wire_middleware_chain` at [`_session.py:416`](../src/notebooklm/_session.py); has real body (lazy semaphore creation) reading `self._max_concurrent_rpcs` / `self._rpc_semaphore`, not a forward |
 | `_bind_transport` | composition write-once setter | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for `Session._transport`. Load-bearing after PR 2 — `Session.__init__` leaves `_transport` at `None` and `compose_session_internals` is the single assignment site. |
 | `_bind_chain_metadata` | composition write-once setter | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for the auxiliary chain artifacts (`_chain_builder` / `_middlewares`). The `_authed_post_chain` slot itself is owned by `MiddlewareChainHost` and assigned exactly once by `compose_session_internals` (`chain_host._authed_post_chain = wired.authed_post_chain`); this binder stores only the auxiliary metadata. Load-bearing — `Session.__init__` leaves the metadata slots at `None` and `compose_session_internals` is the single assignment site. |
 | `_bind_executor` | composition write-once setter | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); the write-once binder for `Session._rpc_executor`. Load-bearing after PR 2 — the lazy `_get_rpc_executor` factory was deleted; `compose_session_internals` is the single assignment site and the binding is never re-nulled by `close()`. |
-| `_require_constructed` | composition guard | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); fail-fast helper used by `_get_rpc_semaphore` / `open` / `close` to assert the named binding is non-None. Load-bearing — `Session.__init__` leaves the late-bound slots at `None`, and any caller that exercises a Session outside `compose_session_internals` trips the guard. |
+| `_require_constructed` | composition guard | retain — Stage B1 composition primitive (post-refactoring plan 2026-05-27); fail-fast helper used by `open` / `close` to assert the named binding is non-None. Load-bearing — `Session.__init__` leaves the late-bound slots at `None`, and any caller that exercises a Session outside `compose_session_internals` trips the guard. |
 | `drain` | public API forward | retain — narrow public method (one-line forward to `TransportDrainTracker.drain`). Backs `NotebookLMClient.drain` so the composition root does not dereference the private `_drain_tracker` slot on the session. The Wave 11a deletion row in the **Deleted** section below refers to an earlier compatibility-forward incarnation; this row is the boundary-focused re-introduction (narrow forward, single caller, AST-guarded by `tests/_lint/test_client_composition.py::test_client_does_not_dereference_session_privates`). |
 
 ## Chain-ownership carve-out (closed)
@@ -108,9 +107,10 @@ The two follow-up issues filed per ADR-014 close-out (Wave 6 / Task 6.2):
   `Session` to `NotebookLMClient`; delete `Session.collaborators` /
   `Session.session_transport` / `Session.rpc_executor` accessors. **CLOSED by
   Stage B1 PR 2 of the post-refactoring plan (2026-05-27)** — the composition
-  root moved to `compose_session_internals()` in `_session.py`; the three Stage
-  A accessor properties and the `_get_rpc_executor` lazy factory are listed
-  in the **Deleted** section below.
+  root moved to `compose_session_internals()` (moved from `_session.py` to
+  `_session_init.py` during Session-elimination Phase 1); the three Stage A
+  accessor properties and the `_get_rpc_executor` lazy factory are listed in
+  the **Deleted** section below.
 - **`MiddlewareChainHost` extraction (Rule 4 completion):** extract a
   `MiddlewareChainHost` collaborator owning `_authed_post_chain_terminal` +
   the `_rate_limit_max_retries` / `_server_error_max_retries` /
@@ -130,6 +130,12 @@ compatibility forward that once lived on `Session`; the lint above
 enforces that no Session method exists today without either a
 `retain — <reason>` row in the **Inventory** above or a `deleted in
 Wave 11<sub>` row in one of the cluster sub-sections below.
+
+### Session-elimination Phase 1 — client holders (2026-05-28)
+
+| Method | Category | Disposition |
+|---|---|---|
+| `_get_rpc_semaphore` | provider-closure capture target | deleted in Phase 1 of plan `session-elimination-plan` — the lazy semaphore state moved to `ClientComposed.get_rpc_semaphore`, and `compose_session_internals` now passes that holder method as `rpc_semaphore_factory`. The moved holder preserves the previous `None` opt-out and lazy-once `asyncio.Semaphore` construction while removing `Session._max_concurrent_rpcs` / `Session._rpc_semaphore` ownership. |
 
 ### Wave 11a — drain-and-operation cluster (commit `80a54fda`)
 
@@ -169,11 +175,13 @@ Wave 11<sub>` row in one of the cluster sub-sections below.
 ### Stage B1 PR 2 — composition-root inversion (post-refactoring plan 2026-05-27)
 
 Stage B1 PR 2 inverted the composition root: `compose_session_internals()`
-in `_session.py` now owns the full collaborator-bundle / transport / chain /
-executor construction sequence, and `Session.__init__` was narrowed to
-`(*, collaborators, config, auth)`. The Stage A accessor properties added by
-PR #1069 (Wave 6) and the lazy `_get_rpc_executor` factory all collapse to
-direct reads on the `ComposedSession` returned by the helper.
+owned the full collaborator-bundle / transport / chain / executor construction
+sequence, and `Session.__init__` was narrowed to
+`(*, collaborators, config, auth)`. Session-elimination Phase 1 moved that
+helper from `_session.py` to `_session_init.py` while keeping the same
+composition-root role. The Stage A accessor properties added by PR #1069
+(Wave 6) and the lazy `_get_rpc_executor` factory all collapse to direct reads
+on the `ComposedSession` returned by the helper.
 
 | Method | Category | Disposition |
 |---|---|---|

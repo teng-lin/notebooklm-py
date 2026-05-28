@@ -85,12 +85,8 @@ class TestAutoRefreshIntegration:
             response.raise_for_status = MagicMock()
             return response
 
-        # Override the constructor-injected decode-response seam BEFORE the
-        # first RPC fires so the lazily-built ``RpcExecutor`` picks up the
-        # stub. The previous ``patch("notebooklm.rpc.decode_response", …)``
-        # idiom relied on the retired module-level late-binding wrapper;
-        # see ``docs/improvement.md`` §4.1.
-        client._session._decode_response = lambda *a, **kw: [[["nb1"], ["Notebook 1"]]]
+        # Override the runtime decode-response seam before the RPC fires.
+        client._seams.decode_response = lambda *a, **kw: [[["nb1"], ["Notebook 1"]]]
 
         async with client:
             install_post_as_stream(None, client._session._kernel.get_http_client(), mock_post)
@@ -142,10 +138,8 @@ class TestAutoRefreshIntegration:
                 raise RPCError("Authentication expired")
             return [[["nb1"], ["Notebook 1"]]]
 
-        # Override the constructor-injected decode-response seam BEFORE the
-        # first RPC fires so the lazily-built ``RpcExecutor`` picks up the
-        # stub. See ``docs/improvement.md`` §4.1.
-        client._session._decode_response = mock_decode
+        # Override the runtime decode-response seam before the RPC fires.
+        client._seams.decode_response = mock_decode
 
         async with client:
             install_post_as_stream(None, client._session._kernel.get_http_client(), mock_post)
@@ -184,10 +178,8 @@ class TestAutoRefreshIntegration:
             response.raise_for_status = MagicMock()
             return response
 
-        # Override the constructor-injected decode-response seam BEFORE the
-        # first RPC fires so the lazily-built ``RpcExecutor`` picks up the
-        # stub. See ``docs/improvement.md`` §4.1.
-        client._session._decode_response = lambda *a, **kw: []
+        # Override the runtime decode-response seam before the RPC fires.
+        client._seams.decode_response = lambda *a, **kw: []
 
         async with client:
             install_post_as_stream(None, client._session._kernel.get_http_client(), mock_post)
