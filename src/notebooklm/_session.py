@@ -67,10 +67,16 @@ logger = logging.getLogger(__name__)
 # coordinator method signatures take explicit ``auth`` / ``kernel``
 # collaborators (the Session-shaped ``_AuthRefreshHost`` Protocol was
 # deleted in favor of per-method explicit args).
-# ``Session.update_auth_tokens`` is retained as a delegate
-# because :class:`RefreshAuthCore` in ``_auth/session.py`` is the
-# structural Protocol used by ``refresh_auth_session`` and still
-# requires that method on the core. The AST guards in
+# ``Session.update_auth_tokens`` is retained as a delegate by the
+# retention contract pinned in ``docs/session-method-retention.md`` and
+# ``tests/_lint/test_session_retention.py``. Wave 2 of plan
+# ``host-protocol-removal`` lifted the only remaining production caller
+# (``refresh_auth_session``) off this delegate by giving the auth-session
+# refresh path explicit collaborator kwargs (it now invokes
+# ``auth_coord.update_auth_tokens(auth=..., csrf=..., session_id=...)``
+# directly); the Session delegate body itself is scheduled for deletion
+# in Wave 3 along with ``Session.update_auth_headers`` and the
+# retention-doc rows that pin them. The AST guards in
 # ``tests/unit/test_concurrency_refresh_race.py``
 # (``test_snapshot_acquires_auth_snapshot_lock`` /
 # ``test_update_auth_tokens_has_no_await_inside_mutation_block``)
@@ -637,6 +643,12 @@ class Session:
         intentionally replaces the loop binding; :meth:`close` does not
         unbind so an
         accidental cross-loop call after close still raises actionably.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed
+        :meth:`ClientLifecycle.open` to take explicit collaborator
+        kwargs; this forwarder unpacks its own collaborator aliases
+        and passes them through so the lifecycle never reaches back
+        through a Session-shaped host.
         """
         # Stage B1 PR 2 fail-fast: ensure full composition before
         # lifecycle work. The composition root
@@ -645,7 +657,13 @@ class Session:
         # here means the Session was instantiated outside the
         # composition root and is unusable.
         self._require_constructed("_transport")
-        await self._lifecycle.open(self)
+        await self._lifecycle.open(
+            auth=self.auth,
+            drain_tracker=self._drain_tracker,
+            auth_coord=self._auth_coord,
+            reqid=self._reqid,
+            cookie_persistence=self.cookie_persistence,
+        )
 
     async def close(self) -> None:
         """Close the HTTP client connection.
@@ -669,10 +687,19 @@ class Session:
         ``close()`` → ``open()`` cycles. See
         :mod:`tests.unit.test_lifecycle_executor_reuse` for the
         regression pin.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed
+        :meth:`ClientLifecycle.close` to take explicit collaborator
+        kwargs; this forwarder unpacks its own collaborator aliases
+        and passes them through.
         """
         # Stage B1 PR 2 fail-fast: same guard as :meth:`open`.
         self._require_constructed("_transport")
-        await self._lifecycle.close(self)
+        await self._lifecycle.close(
+            auth_coord=self._auth_coord,
+            drain_tracker=self._drain_tracker,
+            cookie_persistence=self.cookie_persistence,
+        )
 
     async def _keepalive_loop(self, interval: float) -> None:
         """Background loop that periodically pokes the identity surface.
@@ -680,8 +707,16 @@ class Session:
         Thin facade over :meth:`ClientLifecycle._keepalive_loop`. Retained
         as a ``Session`` method so ``test_client_keepalive`` and other
         tests that introspect ``core._keepalive_loop`` continue to resolve.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed
+        :meth:`ClientLifecycle._keepalive_loop` to take an explicit
+        ``cookie_persistence`` kwarg; this forwarder supplies the
+        Session's own collaborator alias.
         """
-        await self._lifecycle._keepalive_loop(self, interval)
+        await self._lifecycle._keepalive_loop(
+            cookie_persistence=self.cookie_persistence,
+            interval=interval,
+        )
 
     @property
     def is_open(self) -> bool:
@@ -741,17 +776,24 @@ class Session:
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
         """Delegate to :meth:`AuthRefreshCoordinator.update_auth_tokens`.
 
-        Retained on Session because the :class:`RefreshAuthCore`
-        Protocol in ``_auth/session.py`` (consumed by
-        :func:`refresh_auth_session`) structurally requires this method
-        on the core. PR 8 collapsed the previously real body into a
-        delegate that forwards through ``self._auth_coord``; PR #4b of
-        the session-refactor arc inlined sibling delegates but kept
-        this one for the Protocol caller. The coordinator now takes
-        ``auth`` explicitly and routes the lock-wait metric through its
-        own ``self._metrics`` (supplied at construction) instead of
-        reaching through a Session-shaped host. The AST guard for the
-        no-await mutation-block invariant lives on
+        Retained on Session by the retention contract pinned in
+        ``docs/session-method-retention.md`` and
+        ``tests/_lint/test_session_retention.py``. Wave 2 of plan
+        ``host-protocol-removal`` lifted the last production caller off
+        this delegate: :func:`refresh_auth_session` now invokes
+        ``auth_coord.update_auth_tokens(auth=..., csrf=...,
+        session_id=...)`` directly through the explicit-collaborator
+        kwargs introduced by that wave. The delegate body is scheduled
+        for deletion in Wave 3 once the retention-doc rows for this
+        method and :meth:`update_auth_headers` are also removed.
+        PR 8 collapsed the previously real body into a delegate that
+        forwards through ``self._auth_coord``; PR #4b of the
+        session-refactor arc inlined sibling delegates but kept this
+        one for the Protocol caller. The coordinator now takes ``auth``
+        explicitly and routes the lock-wait metric through its own
+        ``self._metrics`` (supplied at construction) instead of reaching
+        through a Session-shaped host. The AST guard for the no-await
+        mutation-block invariant lives on
         :meth:`AuthRefreshCoordinator.update_auth_tokens`
         (``test_concurrency_refresh_race.test_update_auth_tokens_has_no_await_inside_mutation_block``).
         """

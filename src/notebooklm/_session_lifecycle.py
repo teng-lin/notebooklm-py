@@ -75,7 +75,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -84,7 +84,6 @@ from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
-    from ._client_metrics import ClientMetrics
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
     from ._session_auth import AuthRefreshCoordinator
@@ -166,39 +165,6 @@ async def _default_cookie_rotator(*args: Any, **kwargs: Any) -> None:
 # tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
 # keep matching after the extraction.
 logger = logging.getLogger(CORE_LOGGER_NAME)
-
-
-class _LifecycleHost(Protocol):
-    """Structural host boundary required by :class:`ClientLifecycle`.
-
-    The Protocol pins exactly which collaborators the lifecycle reaches into
-    on the host, so future refactors that move state around ``Session``
-    surface as Protocol violations rather than silent ``AttributeError``s
-    at close-time. ``cookie_persistence`` mirrors today's public attribute
-    name on ``Session``; ``_metrics_obj``, ``_drain_tracker``, and
-    ``_auth_coord`` are helper handles.
-
-    Note: ``_drain_hooks`` was removed from this Protocol in Wave 2 of the
-    session-decoupling plan (ADR-014 Rule 1) — the storage and the
-    ``run_drain_hooks`` firing now live on ``TransportDrainTracker``, so
-    ``close()`` reaches them through ``host._drain_tracker`` instead.
-
-    Stage B1 PR 2 of the post-refactoring plan also removed
-    ``_rpc_executor`` from this Protocol. The lifecycle no longer nulls
-    the executor on :meth:`close` — the executor is bound by the
-    composition root (:func:`notebooklm._session.compose_session_internals`)
-    via :meth:`Session._bind_executor` and survives ``close()`` →
-    ``open()`` cycles. The lifecycle never reads or writes
-    ``_rpc_executor`` after that PR, so the Protocol no longer needs to
-    declare the field.
-    """
-
-    auth: AuthTokens
-    _metrics_obj: ClientMetrics
-    _drain_tracker: TransportDrainTracker
-    _auth_coord: AuthRefreshCoordinator
-    _reqid: ReqidCounter
-    cookie_persistence: CookiePersistence
 
 
 class ClientLifecycle:
@@ -305,7 +271,15 @@ class ClientLifecycle:
     # Open / close
     # ------------------------------------------------------------------
 
-    async def open(self, host: _LifecycleHost) -> None:
+    async def open(
+        self,
+        *,
+        auth: AuthTokens,
+        drain_tracker: TransportDrainTracker,
+        auth_coord: AuthRefreshCoordinator,
+        reqid: ReqidCounter,
+        cookie_persistence: CookiePersistence,
+    ) -> None:
         """Open the HTTP client connection.
 
         Idempotent: if ``_http_client`` is already non-``None`` this is a
@@ -321,6 +295,12 @@ class ClientLifecycle:
         :class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`
         for the new substitution point. The httpx transport built here is
         always a real, unwrapped transport.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed this signature
+        from the legacy ``host`` Protocol to explicit
+        keyword-only collaborators so the lifecycle never reaches into
+        ``host.<X>`` attributes; the caller (:meth:`Session.open`) unpacks
+        its own aliases and passes them through.
         """
         if self._http_client is not None:
             return
@@ -339,9 +319,9 @@ class ClientLifecycle:
         # loop through ``Session.bound_loop`` (which reads
         # ``ClientLifecycle.get_bound_loop()``) so no further propagation
         # is needed there.
-        host._drain_tracker.set_bound_loop(self._bound_loop)
-        host._reqid.set_bound_loop(self._bound_loop)
-        host._auth_coord.set_bound_loop(self._bound_loop)
+        drain_tracker.set_bound_loop(self._bound_loop)
+        reqid.set_bound_loop(self._bound_loop)
+        auth_coord.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
         # admits new transport work again. Wave 1 of plan
         # ``host-protocol-removal`` encapsulated the legacy direct write
@@ -349,28 +329,31 @@ class ClientLifecycle:
         # tracker so the lifecycle never reaches into private collaborator
         # fields; the method is intentionally narrow (clears ``_draining``
         # only, leaves in-flight counters intact — see its docstring).
-        host._drain_tracker.reset_after_open()
+        drain_tracker.reset_after_open()
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns
         # loop binding and open/close ordering.
         await self._kernel.open(
-            auth=host.auth,
+            auth=auth,
             timeout=self._timeout,
             connect_timeout=self._connect_timeout,
             limits=self._limits,
-            capture_cookie_snapshot=host.cookie_persistence.capture_open_snapshot,
+            capture_cookie_snapshot=cookie_persistence.capture_open_snapshot,
         )
 
         # Spawn the keepalive task once the client is ready.
         if self._keepalive_interval is not None:
             self._keepalive_task = asyncio.create_task(
-                self._keepalive_loop(host, self._keepalive_interval)
+                self._keepalive_loop(
+                    cookie_persistence=cookie_persistence,
+                    interval=self._keepalive_interval,
+                )
             )
 
     async def save_cookies(
         self,
-        host: _LifecycleHost,
+        cookie_persistence: CookiePersistence,
         jar: httpx.Cookies,
         path: Path | None = None,
     ) -> None:
@@ -384,15 +367,28 @@ class ClientLifecycle:
         its body so a ``monkeypatch.setattr`` on the canonical seam keeps
         affecting the live save path through the wrapper. Custom callables
         bypass the late-bind hop entirely.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed the first
+        positional argument from the legacy ``host`` Protocol
+        Protocol to the :class:`CookiePersistence` collaborator
+        directly. Callers (lifecycle ``close`` / keepalive loop,
+        :func:`refresh_auth_session`) pass the collaborator they already
+        hold rather than a Session-shaped host wrapper.
         """
-        await host.cookie_persistence.save(
+        await cookie_persistence.save(
             jar,
             path,
             save_cookies_to_storage=self._cookie_saver,
             to_thread=asyncio.to_thread,
         )
 
-    async def close(self, host: _LifecycleHost) -> None:
+    async def close(
+        self,
+        *,
+        auth_coord: AuthRefreshCoordinator,
+        drain_tracker: TransportDrainTracker,
+        cookie_persistence: CookiePersistence,
+    ) -> None:
         """Close the HTTP client connection.
 
         Cancellation safety: the entire close sequence is wrapped in
@@ -421,6 +417,11 @@ class ClientLifecycle:
         its ``httpx.AsyncClient`` on each :meth:`open`, so the executor
         continues to operate against the fresh transport state without
         a fresh executor instance.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed this signature
+        from the legacy ``host`` Protocol to explicit
+        keyword-only collaborators; the caller (:meth:`Session.close`)
+        unpacks its own aliases and passes them through.
         """
         try:
             # Stop the keepalive task before tearing down the HTTP client so
@@ -444,9 +445,9 @@ class ClientLifecycle:
             # slot is NOT cleared on cancel — sibling waiters joined to the
             # same single-flight refresh still observe the shared task).
             # See :meth:`AuthRefreshCoordinator.cancel_inflight_refresh`.
-            await host._auth_coord.cancel_inflight_refresh()
+            await auth_coord.cancel_inflight_refresh()
 
-            await host._drain_tracker.run_drain_hooks()
+            await drain_tracker.run_drain_hooks()
 
             if self._http_client:
                 try:
@@ -455,7 +456,7 @@ class ClientLifecycle:
                     # naturally with any keepalive save still finishing in a
                     # worker thread — close() owns the freshest jar and must
                     # win, not the older snapshot.
-                    await self.save_cookies(host, self._kernel.cookies)
+                    await self.save_cookies(cookie_persistence, self._kernel.cookies)
                 except Exception as e:
                     logger.warning("Failed to sync refreshed cookies during close: %s", e)
         finally:
@@ -473,7 +474,12 @@ class ClientLifecycle:
     # Keepalive
     # ------------------------------------------------------------------
 
-    async def _keepalive_loop(self, host: _LifecycleHost, interval: float) -> None:
+    async def _keepalive_loop(
+        self,
+        *,
+        cookie_persistence: CookiePersistence,
+        interval: float,
+    ) -> None:
         """Background loop that periodically pokes the identity surface.
 
         Sleeps ``interval`` seconds between iterations, then calls
@@ -492,6 +498,13 @@ class ClientLifecycle:
 
         Both classes never propagate; the loop only exits via
         :class:`asyncio.CancelledError` from :meth:`close`.
+
+        Wave 2 of plan ``host-protocol-removal`` narrowed this signature
+        from the legacy ``host`` Protocol to the
+        :class:`CookiePersistence` collaborator (used for the per-iteration
+        cookie save). :meth:`open` spawns the task with the same
+        ``cookie_persistence`` it received, so the loop saves through the
+        same collaborator the open path captured.
         """
         logger.debug("Keepalive task started (interval=%.1fs)", interval)
         # Rotation is delegated to ``self._cookie_rotator`` (Phase 2 PR 3
@@ -530,7 +543,7 @@ class ClientLifecycle:
 
                 try:
                     # save_cookies handles snapshot + lock + off-load.
-                    await self.save_cookies(host, client.cookies)
+                    await self.save_cookies(cookie_persistence, client.cookies)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -548,7 +561,6 @@ __all__ = [
     "ClientLifecycle",
     "CookieRotator",
     "CookieSaver",
-    "_LifecycleHost",
     "_default_cookie_rotator",
     "_default_cookie_saver",
 ]

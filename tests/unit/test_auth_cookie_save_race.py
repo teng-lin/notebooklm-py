@@ -1146,7 +1146,8 @@ class TestBaselineNotAdvancedOnSaveFailure:
             baseline_before = client._session.cookie_persistence.loaded_cookie_snapshot
             assert client._session._kernel.http_client is not None
             await client._session._lifecycle.save_cookies(
-                client._session, client._session._kernel.get_http_client().cookies
+                client._session.cookie_persistence,
+                client._session._kernel.get_http_client().cookies,
             )
             baseline_after = client._session.cookie_persistence.loaded_cookie_snapshot
 
@@ -1355,11 +1356,11 @@ class TestCASRejectReturnsFalse:
                     cookie["value"] = "sibling"
             _write_storage(storage, cookies)
 
-            await core._lifecycle.save_cookies(core, jar_with("sid1"))
+            await core._lifecycle.save_cookies(core.cookie_persistence, jar_with("sid1"))
             assert _cookie_value(storage, "SID", ".google.com") == "sid1"
             assert _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == "sibling"
 
-            await core._lifecycle.save_cookies(core, jar_with("sid2"))
+            await core._lifecycle.save_cookies(core.cookie_persistence, jar_with("sid2"))
             assert _cookie_value(storage, "SID", ".google.com") == "sid2", (
                 "The successful SID delta from the partial save must advance "
                 "baseline; otherwise the next SID rotation CAS-rejects against "
@@ -1549,7 +1550,9 @@ class TestCASVariantAware:
             # holds. Run the second save through the real Session plumbing.
             assert core._kernel.http_client is not None
             _set_cookie_value(core._kernel.get_http_client().cookies, "OSID", "SIBLING")
-            await core._lifecycle.save_cookies(core, core._kernel.get_http_client().cookies)
+            await core._lifecycle.save_cookies(
+                core.cookie_persistence, core._kernel.get_http_client().cookies
+            )
 
             assert _cookie_value(storage, "OSID", "accounts.google.com") == "SIBLING", (
                 "Second save must not re-clobber the sibling write — the "
@@ -1566,7 +1569,9 @@ class TestCASVariantAware:
             )
 
             _set_cookie_value(core._kernel.get_http_client().cookies, "OSID", "NEXT")
-            await core._lifecycle.save_cookies(core, core._kernel.get_http_client().cookies)
+            await core._lifecycle.save_cookies(
+                core.cookie_persistence, core._kernel.get_http_client().cookies
+            )
 
             assert _cookie_value(storage, "OSID", "accounts.google.com") == "NEXT", (
                 "After convergence advances the baseline, a later OSID "
@@ -1700,8 +1705,8 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
 
         try:
             await asyncio.gather(
-                core._lifecycle.save_cookies(core, jar_a),
-                core._lifecycle.save_cookies(core, jar_b),
+                core._lifecycle.save_cookies(core.cookie_persistence, jar_a),
+                core._lifecycle.save_cookies(core.cookie_persistence, jar_b),
             )
         finally:
             await core.close()

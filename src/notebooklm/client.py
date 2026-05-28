@@ -759,26 +759,20 @@ class NotebookLMClient:
         This helps prevent 'Session Expired' errors by obtaining a fresh CSRF
         token (SNlM0e) and session ID (FdrFJe).
 
-        Stage B1 PR 2 of the post-refactoring plan narrowed
-        :class:`RefreshAuthCore` and made ``lifecycle`` an explicit
-        argument; the call site supplies the lifecycle directly rather
-        than letting :func:`refresh_auth_session` reach through a
-        deleted ``Session.collaborators`` Stage A accessor. The
-        lifecycle is sourced from :attr:`Session.lifecycle` — a narrow
-        read-only accessor — rather than from the client's owned
-        ``_collaborators`` bundle so a ``NotebookLMClient`` shell built
-        via ``__new__`` (used in
-        ``tests/unit/test_concurrency_refresh_race.py``, constructed
-        through the
+        Wave 2 of plan ``host-protocol-removal`` rewired this call site
+        onto explicit collaborators sourced from ``self._auth`` and
+        ``self._collaborators``; the call no longer reaches through
+        ``self._session.<X>`` accessors. The five kwargs mirror the new
+        :func:`refresh_auth_session` signature: ``auth`` is the
+        client-owned :class:`AuthTokens` instance (the Auth Instance
+        Invariant guarantees this is the same object the composed
+        Session also aliases), and the remaining four come from the
+        collaborator bundle the composition root produced
+        (:func:`compose_session_internals`). The
         ``tests/_helpers/session_factory.build_refresh_client_shell``
-        helper that wires ``_session`` / ``_auth`` /
-        ``_collaborators`` / ``_rpc_executor`` from the composed
-        bundle) still works: the helper does not call ``__init__``,
-        so ``client._session.lifecycle`` is the resolution path that
-        works without widening the constructor surface. Wave 2 of the
-        host-protocol-removal plan rewires this call site onto
-        ``self._auth`` and an explicit lifecycle collaborator; this
-        docstring will move with the call when that happens.
+        helper wires ``_auth`` and ``_collaborators`` from the composed
+        bundle directly, so test shells observe the same resolution
+        path without going through ``Session``.
 
         Returns:
             Updated AuthTokens.
@@ -786,7 +780,13 @@ class NotebookLMClient:
         Raises:
             ValueError: If token extraction fails (page structure may have changed).
         """
-        return await refresh_auth_session(self._session, self._session.lifecycle)
+        return await refresh_auth_session(
+            auth=self._auth,
+            kernel=self._collaborators.kernel,
+            auth_coord=self._collaborators.auth_coord,
+            lifecycle=self._collaborators.lifecycle,
+            cookie_persistence=self._collaborators.cookie_persistence,
+        )
 
 
 class _FromStorageContext:

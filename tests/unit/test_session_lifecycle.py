@@ -16,11 +16,11 @@ Specifically pinned here:
 * ``_bound_loop`` **mismatch raises ``RuntimeError``** — the cross-loop guard
   in :meth:`SessionTransport.perform_authed_post` reads ``_bound_loop`` through
   the lifecycle and raises actionably when the loops differ.
-* :meth:`ClientLifecycle.save_cookies` **invokes** the host's
-  ``cookie_persistence.save`` collaborator with the right ``jar`` and
-  ``path`` arguments AND with the ``save_cookies_to_storage`` value resolved
-  from ``notebooklm._core`` at call time (so the monkeypatch surface keeps
-  working).
+* :meth:`ClientLifecycle.save_cookies` **invokes** the
+  :class:`CookiePersistence` collaborator's ``save`` method with the right
+  ``jar`` and ``path`` arguments AND with the ``save_cookies_to_storage``
+  value resolved from ``notebooklm._core`` at call time (so the monkeypatch
+  surface keeps working).
 * The httpx ``AsyncClient`` **always uses httpx's default transport** —
   Tier-12 PR 12.6 lifted synthetic-error injection into the chain
   (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`)
@@ -32,8 +32,13 @@ Specifically pinned here:
   at ``keepalive_min_interval`` so a sub-floor user value gets bumped up.
 
 Tests are intentionally helper-shaped (instantiate :class:`ClientLifecycle`
-directly with a Protocol-conformant stub host) so they cover the lifecycle
-without taking on a ``Session`` dependency.
+directly with a stub collaborator bundle) so they cover the lifecycle
+without taking on a ``Session`` dependency. Wave 2 of plan
+``host-protocol-removal`` narrowed the lifecycle method signatures from
+the legacy Session-shaped ``host`` Protocol to explicit keyword-only
+collaborators; the :class:`_StubHost` fixture now serves purely as a
+convenience bundle, paired with module-level :func:`_open` / :func:`_close`
+adapters that unpack the bundle into the new kwarg shape.
 """
 
 from __future__ import annotations
@@ -59,19 +64,28 @@ from notebooklm.types import ConnectionLimits
 
 
 class _StubHost:
-    """Minimal :class:`_LifecycleHost`-conformant host for unit tests.
+    """Test-side collaborator bundle for :class:`ClientLifecycle` unit tests.
 
-    Mirrors the live ``Session`` shape with simple ``MagicMock`` /
-    ``AsyncMock`` stand-ins for the collaborators the lifecycle reaches into:
+    Wave 2 of plan ``host-protocol-removal`` narrowed the four
+    :class:`ClientLifecycle` methods to take explicit keyword-only
+    collaborators rather than a Session-shaped ``host`` Protocol. This
+    fixture survives as a convenience bundle — it holds the same set of
+    stub collaborators every lifecycle test needs (auth, drain tracker,
+    auth coordinator, reqid counter, cookie persistence) in one place,
+    so each test can do ``lifecycle.open(auth=host.auth,
+    drain_tracker=host._drain_tracker, ...)`` without re-building five
+    mocks at every call site.
+
+    Mirrors the live ``Session`` attribute names for grep continuity:
 
     * ``auth`` — a real :class:`AuthTokens` so :meth:`ClientLifecycle.open`
       can read ``cookies`` / ``cookie_jar`` / ``storage_path``.
-    * ``_metrics_obj`` / ``_drain_tracker`` / ``_auth_coord`` / ``_reqid`` —
-      ``MagicMock``s; the lifecycle calls
-      ``_drain_tracker.reset_after_open()`` (Wave 1 of host-protocol-removal
-      replaced the legacy direct ``_drain_tracker._draining = False`` write)
-      and ``set_bound_loop`` on each of the three helpers (drain / reqid /
-      auth_coord) from the open() path so cross-loop misuse can be caught.
+    * ``_drain_tracker`` / ``_auth_coord`` / ``_reqid`` — ``MagicMock``s;
+      the lifecycle calls ``_drain_tracker.reset_after_open()`` (Wave 1
+      of host-protocol-removal replaced the legacy direct
+      ``_drain_tracker._draining = False`` write) and ``set_bound_loop``
+      on each of the three helpers (drain / reqid / auth_coord) from the
+      open() path so cross-loop misuse can be caught.
     * ``cookie_persistence`` — a ``MagicMock`` with an async ``save``
       coroutine; assertions check it was called with the right args.
     * ``_drain_tracker.run_drain_hooks`` — called by close(); set to an
@@ -93,10 +107,9 @@ class _StubHost:
             cookies={"SID": "v1"},
             storage_path=None,
         )
-        self._metrics_obj = MagicMock()
         self._drain_tracker = MagicMock()
-        # ``open()`` calls ``host._drain_tracker.reset_after_open()`` (Wave 1
-        # of host-protocol-removal — the encapsulated form of the legacy
+        # ``open()`` calls ``drain_tracker.reset_after_open()`` (Wave 1 of
+        # host-protocol-removal — the encapsulated form of the legacy
         # ``_drain_tracker._draining = False`` write). The ``MagicMock``
         # default lets the call land without configuring a side effect; the
         # invocation is asserted by ``test_open_captures_bound_loop_and_resets_drain``.
@@ -104,8 +117,8 @@ class _StubHost:
         # a direct field read in the lifecycle would still see "drained".
         self._drain_tracker._draining = True
         # Wave 2 of session-decoupling: drain hooks live on the tracker.
-        # ``close()`` calls ``host._drain_tracker.run_drain_hooks()`` so the
-        # mock needs an async implementation.
+        # ``close()`` calls ``drain_tracker.run_drain_hooks()`` so the mock
+        # needs an async implementation.
         self._drain_tracker.run_drain_hooks = AsyncMock()
         self._auth_coord = MagicMock()
         # Wave 1 of host-protocol-removal: ``close()`` no longer reads the
@@ -128,7 +141,8 @@ class _StubHost:
         # Stage B1 PR 2 dropped the close-time null on ``_rpc_executor``;
         # the slot is left as-set by the composition root. Set a stable
         # sentinel here in case future regression tests want to assert
-        # the value is untouched across an open/close cycle.
+        # the value is untouched across an open/close cycle. The lifecycle
+        # itself no longer reads this slot.
         self._rpc_executor: Any = "RPC_EXECUTOR_SENTINEL"
 
 
@@ -152,6 +166,34 @@ def _make_lifecycle(
     )
 
 
+async def _open(lifecycle: ClientLifecycle, host: _StubHost) -> None:
+    """Adapter that forwards a :class:`_StubHost` bundle into the new
+    explicit-kwargs :meth:`ClientLifecycle.open` signature.
+
+    Wave 2 of plan ``host-protocol-removal`` narrowed the lifecycle to
+    take collaborators by keyword instead of a Session-shaped host. The
+    test fixtures still bundle the collaborators into a stub for
+    convenience; this helper bridges the two shapes so each test stays
+    a single readable line.
+    """
+    await lifecycle.open(
+        auth=host.auth,
+        drain_tracker=host._drain_tracker,
+        auth_coord=host._auth_coord,
+        reqid=host._reqid,
+        cookie_persistence=host.cookie_persistence,
+    )
+
+
+async def _close(lifecycle: ClientLifecycle, host: _StubHost) -> None:
+    """Adapter for :meth:`ClientLifecycle.close` — see :func:`_open`."""
+    await lifecycle.close(
+        auth_coord=host._auth_coord,
+        drain_tracker=host._drain_tracker,
+        cookie_persistence=host.cookie_persistence,
+    )
+
+
 # ---------------------------------------------------------------------------
 # open() — idempotency, bound-loop capture, AsyncClient construction
 # ---------------------------------------------------------------------------
@@ -163,12 +205,12 @@ async def test_open_idempotent_preserves_existing_client() -> None:
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     first_client = lifecycle._http_client
     assert first_client is not None
     assert lifecycle.is_open()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     second_client = lifecycle._http_client
 
     assert second_client is first_client, (
@@ -176,7 +218,7 @@ async def test_open_idempotent_preserves_existing_client() -> None:
         "should preserve the existing AsyncClient instance, not build a fresh one."
     )
 
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
 
 
 @pytest.mark.asyncio
@@ -204,13 +246,13 @@ async def test_open_captures_bound_loop_and_resets_drain() -> None:
     host = _StubHost()
     assert lifecycle._bound_loop is None
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
 
     assert lifecycle._bound_loop is asyncio.get_running_loop()
     assert lifecycle.get_bound_loop() is asyncio.get_running_loop()
     host._drain_tracker.reset_after_open.assert_called_once_with()
 
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
 
 
 @pytest.mark.asyncio
@@ -220,9 +262,9 @@ async def test_open_close_open_rebinds_loop() -> None:
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     bound_after_first_open = lifecycle._bound_loop
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
 
     # close() does NOT clear _bound_loop — the cross-loop guard fires on the
     # next call against a different loop if the user mistakenly hands the
@@ -231,10 +273,10 @@ async def test_open_close_open_rebinds_loop() -> None:
     assert lifecycle.is_open() is False
 
     # Re-open on the same loop. New AsyncClient instance; same bound loop.
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     assert lifecycle._bound_loop is asyncio.get_running_loop()
     assert lifecycle.is_open() is True
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
 
 
 @pytest.mark.asyncio
@@ -247,14 +289,14 @@ async def test_open_captures_cookie_snapshot() -> None:
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     try:
         host.cookie_persistence.capture_open_snapshot.assert_called_once()
         passed_jar = host.cookie_persistence.capture_open_snapshot.call_args.args[0]
         # The jar passed to capture is the AsyncClient's live jar.
         assert passed_jar is lifecycle._http_client.cookies  # type: ignore[union-attr]
     finally:
-        await lifecycle.close(host)
+        await _close(lifecycle, host)
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +321,13 @@ async def test_open_uses_default_httpx_transport_by_default(
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     try:
         client = lifecycle._http_client
         assert client is not None
         assert isinstance(client._transport, httpx.AsyncHTTPTransport)
     finally:
-        await lifecycle.close(host)
+        await _close(lifecycle, host)
 
 
 @pytest.mark.asyncio
@@ -305,13 +347,13 @@ async def test_open_uses_default_httpx_transport_when_env_var_set(
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     try:
         client = lifecycle._http_client
         assert client is not None
         assert isinstance(client._transport, httpx.AsyncHTTPTransport)
     finally:
-        await lifecycle.close(host)
+        await _close(lifecycle, host)
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +372,7 @@ async def test_close_cancels_keepalive_cleanly() -> None:
     lifecycle = _make_lifecycle(keepalive_interval=0.01)
     host = _StubHost()
 
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     task = lifecycle._keepalive_task
     assert task is not None
     assert not task.done()
@@ -338,7 +380,7 @@ async def test_close_cancels_keepalive_cleanly() -> None:
     # Yield once so the keepalive task actually parks on its sleep.
     await asyncio.sleep(0)
 
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
     assert lifecycle._keepalive_task is None, (
         "close() must null out _keepalive_task after the cancel+gather."
     )
@@ -354,7 +396,7 @@ async def test_close_when_never_opened_is_noop() -> None:
     host = _StubHost()
 
     # No exception, no state churn beyond what's already None/sentinel.
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
     assert lifecycle._http_client is None
     assert lifecycle._keepalive_task is None
 
@@ -391,8 +433,8 @@ async def test_close_runs_drain_hooks_before_transport_teardown() -> None:
 
     lifecycle._kernel.aclose = recording_aclose  # type: ignore[method-assign]
 
-    await lifecycle.open(host)
-    await lifecycle.close(host)
+    await _open(lifecycle, host)
+    await _close(lifecycle, host)
 
     assert events == ["run_drain_hooks", "kernel_aclose"], (
         f"close() must run drain hooks before kernel.aclose(); got {events}"
@@ -435,7 +477,7 @@ async def test_save_cookies_invokes_cookie_persistence(
     jar.set("SID", "v2", domain=".google.com")
     target_path = tmp_path / "storage_state.json"
 
-    await lifecycle.save_cookies(host, jar, target_path)
+    await lifecycle.save_cookies(host.cookie_persistence, jar, target_path)
 
     host.cookie_persistence.save.assert_awaited_once()
     call = host.cookie_persistence.save.call_args
@@ -476,11 +518,11 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
     host = _StubHost()
 
     assert lifecycle.get_bound_loop() is None
-    await lifecycle.open(host)
+    await _open(lifecycle, host)
     try:
         assert lifecycle.get_bound_loop() is asyncio.get_running_loop()
     finally:
-        await lifecycle.close(host)
+        await _close(lifecycle, host)
 
 
 def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:

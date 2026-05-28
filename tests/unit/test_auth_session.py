@@ -38,11 +38,12 @@ def _auth(**overrides: object) -> AuthTokens:
 class _RecordingKernel:
     """Stub kernel exposing :meth:`get_http_client`.
 
-    Wave 11b of session-decoupling routes ``refresh_auth_session`` through
-    ``core._kernel.get_http_client()`` rather than the deleted
-    ``Session.get_http_client`` forward. Test cores satisfy the new
-    ``RefreshAuthCore`` Protocol by exposing a ``_kernel`` slot with the
-    same one-method shape.
+    Wave 2 of plan ``host-protocol-removal`` narrowed
+    :func:`refresh_auth_session` to take ``kernel`` as an explicit
+    keyword-only argument; this stub mirrors the production
+    :class:`Kernel` shape that satisfies ``kernel.get_http_client()``
+    so tests can drive the refresh path without standing up the full
+    transport stack.
     """
 
     def __init__(self, http_client: httpx.AsyncClient) -> None:
@@ -55,13 +56,12 @@ class _RecordingKernel:
 class _RecordingLifecycle:
     """Lifecycle stub matching the ``ClientLifecycle.save_cookies`` shape.
 
-    Wave 11c of session-decoupling deleted the ``Session.save_cookies``
-    Protocol surface; :func:`refresh_auth_session` now reaches the
-    canonical cookie-persistence chokepoint through
-    ``core.collaborators.lifecycle.save_cookies(core, jar, path)``. The
-    ``host`` (``core``) argument is forwarded as-is — for these unit
-    tests it's the :class:`RecordingRefreshCore` itself, since the real
-    save path is not exercised here.
+    Wave 2 of plan ``host-protocol-removal`` narrowed
+    :meth:`ClientLifecycle.save_cookies` to take the
+    :class:`CookiePersistence` collaborator directly as its first
+    positional argument (was: a Session-shaped ``host``). The recorded
+    ``cookie_persistence`` argument is forwarded as-is — for these unit
+    tests it's the bundle's own ``_RecordingCookiePersistence`` stub.
     """
 
     def __init__(self) -> None:
@@ -70,7 +70,7 @@ class _RecordingLifecycle:
 
     async def save_cookies(
         self,
-        host: Any,
+        cookie_persistence: Any,
         jar: httpx.Cookies,
         path: Path | None = None,
     ) -> None:
@@ -79,50 +79,90 @@ class _RecordingLifecycle:
         self.saved_jars.append(jar)
 
 
+class _RecordingAuthCoord:
+    """Coordinator stub recording ``update_auth_tokens`` /
+    ``update_auth_headers`` calls.
+
+    Wave 2 of plan ``host-protocol-removal`` lifted
+    :func:`refresh_auth_session` off the legacy Session-shaped ``core``
+    Protocol; the function now invokes
+    ``auth_coord.update_auth_tokens(auth=..., csrf=..., session_id=...)``
+    and ``auth_coord.update_auth_headers(auth=..., kernel=...)``
+    directly. The recording stub mirrors those new keyword-only
+    signatures and routes the token mutation through the shared
+    ``AuthTokens`` instance, so post-refresh assertions on
+    ``auth.csrf_token`` / ``.session_id`` still work.
+    """
+
+    def __init__(self, operations: list[str]) -> None:
+        self._operations = operations
+
+    async def update_auth_tokens(self, *, auth: AuthTokens, csrf: str, session_id: str) -> None:
+        self._operations.append("update_auth_tokens")
+        auth.csrf_token = csrf
+        auth.session_id = session_id
+
+    def update_auth_headers(self, *, auth: AuthTokens, kernel: Any) -> None:
+        self._operations.append("update_auth_headers")
+
+
 @dataclass
-class RecordingRefreshCore:
+class RecordingRefreshBundle:
+    """Aggregates the five collaborators :func:`refresh_auth_session`
+    now takes, with a shared operations log so tests can assert
+    end-to-end ordering across the auth-coord and lifecycle stubs.
+
+    Wave 2 of plan ``host-protocol-removal`` decoupled
+    :func:`refresh_auth_session` from a Session-shaped core; this
+    bundle replaces the prior ``RecordingRefreshCore`` shell with a
+    typed collection of the new explicit kwargs.
+    """
+
     auth: AuthTokens
     http_client: httpx.AsyncClient
-    _own_operations: list[str] = field(default_factory=list)
+    operations: list[str] = field(default_factory=list)
     lifecycle: _RecordingLifecycle = field(default_factory=_RecordingLifecycle)
 
     def __post_init__(self) -> None:
-        # Mirror the live ``Session._kernel`` slot — the Wave 11b Protocol
-        # change reaches the live HTTP client via
-        # ``core._kernel.get_http_client()``.
-        self._kernel = _RecordingKernel(self.http_client)
-        # Wire the lifecycle's operations list to share storage with ours so
-        # the legacy ``core.operations`` ordering ([..., "save_cookies"])
-        # still matches without forcing tests to read from two separate
-        # logs. Stage B1 PR 2 of the post-refactoring plan narrowed
-        # :class:`RefreshAuthCore` — the ``collaborators`` property was
-        # dropped along with the deleted ``Session.collaborators`` Stage A
-        # accessor, and :func:`refresh_auth_session` now takes
-        # ``lifecycle`` as an explicit positional argument. Tests pass
-        # ``core.lifecycle`` directly.
-        self.lifecycle.operations = self._own_operations
-
-    @property
-    def operations(self) -> list[str]:
-        """Combined operation log — recordings from this core plus the lifecycle."""
-        return self._own_operations
+        self.kernel = _RecordingKernel(self.http_client)
+        # Share storage so the legacy ordering
+        # (``[..., "save_cookies"]``) still resolves through a single
+        # log without re-aggregating two test-side lists.
+        self.lifecycle.operations = self.operations
+        self.auth_coord = _RecordingAuthCoord(self.operations)
+        # ``refresh_auth_session`` invokes
+        # ``lifecycle.save_cookies(cookie_persistence, jar)`` — the
+        # stub forwards the collaborator unchanged into its operations
+        # log, so a sentinel object is enough here.
+        self.cookie_persistence: Any = object()
 
     @property
     def saved_jars(self) -> list[httpx.Cookies]:
         """Back-compat passthrough so existing assertions still read the recorded jars."""
         return self.lifecycle.saved_jars
 
-    async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
-        self._own_operations.append("update_auth_tokens")
-        self.auth.csrf_token = csrf
-        self.auth.session_id = session_id
-
-    def update_auth_headers(self) -> None:
-        self._own_operations.append("update_auth_headers")
-
 
 def _client(handler: httpx.MockTransport | httpx.AsyncBaseTransport) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=handler, follow_redirects=True)
+
+
+def _invoke(bundle: RecordingRefreshBundle):
+    """Forward a :class:`RecordingRefreshBundle` into the new
+    :func:`refresh_auth_session` kwarg shape.
+
+    Wave 2 of plan ``host-protocol-removal`` made the five
+    collaborators (``auth`` / ``kernel`` / ``auth_coord`` /
+    ``lifecycle`` / ``cookie_persistence``) keyword-only on the
+    refresh entry point; this helper keeps the per-test call sites a
+    single readable expression.
+    """
+    return refresh_auth_session(
+        auth=bundle.auth,
+        kernel=bundle.kernel,  # type: ignore[arg-type]
+        auth_coord=bundle.auth_coord,  # type: ignore[arg-type]
+        lifecycle=bundle.lifecycle,  # type: ignore[arg-type]
+        cookie_persistence=bundle.cookie_persistence,
+    )
 
 
 @pytest.mark.asyncio
@@ -134,16 +174,16 @@ async def test_refresh_auth_session_default_account_uses_bare_base_url() -> None
         return httpx.Response(200, text=REFRESH_HTML, request=request)
 
     async with _client(httpx.MockTransport(handler)) as http_client:
-        core = RecordingRefreshCore(_auth(), http_client)
+        bundle = RecordingRefreshBundle(_auth(), http_client)
 
-        refreshed_auth = await refresh_auth_session(core, core.lifecycle)
+        refreshed_auth = await _invoke(bundle)
 
     assert requests == [httpx.URL("https://notebooklm.google.com/")]
-    assert refreshed_auth is core.auth
+    assert refreshed_auth is bundle.auth
     assert refreshed_auth.csrf_token == "new_csrf_token_123"
     assert refreshed_auth.session_id == "new_session_id_456"
-    assert core.operations == ["update_auth_tokens", "update_auth_headers", "save_cookies"]
-    assert core.saved_jars == [http_client.cookies]
+    assert bundle.operations == ["update_auth_tokens", "update_auth_headers", "save_cookies"]
+    assert bundle.saved_jars == [http_client.cookies]
 
 
 @pytest.mark.asyncio
@@ -156,9 +196,9 @@ async def test_refresh_auth_session_selected_account_uses_account_email_url() ->
 
     auth = _auth(authuser=2, account_email="bob@example.com")
     async with _client(httpx.MockTransport(handler)) as http_client:
-        core = RecordingRefreshCore(auth, http_client)
+        bundle = RecordingRefreshBundle(auth, http_client)
 
-        await refresh_auth_session(core, core.lifecycle)
+        await _invoke(bundle)
 
     assert requests == [httpx.URL("https://notebooklm.google.com/?authuser=bob%40example.com")]
 
@@ -173,9 +213,9 @@ async def test_refresh_auth_session_selected_account_uses_authuser_url() -> None
 
     auth = _auth(authuser=2)
     async with _client(httpx.MockTransport(handler)) as http_client:
-        core = RecordingRefreshCore(auth, http_client)
+        bundle = RecordingRefreshBundle(auth, http_client)
 
-        await refresh_auth_session(core, core.lifecycle)
+        await _invoke(bundle)
 
     assert requests == [httpx.URL("https://notebooklm.google.com/?authuser=2")]
 
@@ -192,12 +232,12 @@ async def test_refresh_auth_session_detects_login_redirect() -> None:
         return httpx.Response(200, text="<html>Please sign in</html>", request=request)
 
     async with _client(httpx.MockTransport(handler)) as http_client:
-        core = RecordingRefreshCore(_auth(), http_client)
+        bundle = RecordingRefreshBundle(_auth(), http_client)
 
         with pytest.raises(ValueError, match="Authentication expired"):
-            await refresh_auth_session(core, core.lifecycle)
+            await _invoke(bundle)
 
-    assert core.operations == []
+    assert bundle.operations == []
 
 
 @pytest.mark.asyncio
@@ -208,16 +248,16 @@ async def test_refresh_auth_session_missing_csrf_wraps_extraction_error() -> Non
         return httpx.Response(200, text=html, request=request)
 
     async with _client(httpx.MockTransport(handler)) as http_client:
-        core = RecordingRefreshCore(_auth(), http_client)
+        bundle = RecordingRefreshBundle(_auth(), http_client)
 
         with pytest.raises(ValueError) as exc_info:
-            await refresh_auth_session(core, core.lifecycle)
+            await _invoke(bundle)
 
     message = str(exc_info.value)
     assert "Failed to extract CSRF token (SNlM0e)." in message
     assert "Preview:" in message
     assert "\n" not in message
-    assert core.operations == []
+    assert bundle.operations == []
 
 
 @pytest.mark.asyncio
@@ -228,16 +268,16 @@ async def test_refresh_auth_session_missing_session_id_wraps_extraction_error() 
         return httpx.Response(200, text=html, request=request)
 
     async with _client(httpx.MockTransport(handler)) as http_client:
-        core = RecordingRefreshCore(_auth(), http_client)
+        bundle = RecordingRefreshBundle(_auth(), http_client)
 
         with pytest.raises(ValueError) as exc_info:
-            await refresh_auth_session(core, core.lifecycle)
+            await _invoke(bundle)
 
     message = str(exc_info.value)
     assert "Failed to extract session ID (FdrFJe)." in message
     assert "Preview:" in message
     assert "\n" not in message
-    assert core.operations == []
+    assert bundle.operations == []
 
 
 @pytest.mark.asyncio
@@ -280,14 +320,19 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
     install_http_client_for_test(core._kernel, http_client)
     core.cookie_persistence.capture_open_snapshot(http_client.cookies)
     try:
-        # The real ``Session`` exposes its lifecycle as the private
-        # ``_lifecycle`` slot — the only attribute on ``Session`` that
-        # carries the :class:`ClientLifecycle`. The
-        # :class:`RecordingRefreshCore` stub above exposes it as
-        # ``lifecycle`` (no underscore) to match the new explicit
-        # argument shape; real Session callers (NotebookLMClient.refresh_auth)
-        # similarly pass ``self._collaborators.lifecycle``.
-        await refresh_auth_session(core, core._lifecycle)
+        # Wave 2 of plan ``host-protocol-removal`` made every dependency
+        # of :func:`refresh_auth_session` an explicit keyword-only
+        # collaborator. Drive the real Session's collaborators through
+        # the new entry point so the persistence path goes through the
+        # production ``ClientLifecycle.save_cookies`` → ``CookiePersistence``
+        # → ``asyncio.to_thread(fake_save_cookies_to_storage)`` plumbing.
+        await refresh_auth_session(
+            auth=core.auth,
+            kernel=core._kernel,
+            auth_coord=core._auth_coord,
+            lifecycle=core._lifecycle,
+            cookie_persistence=core.cookie_persistence,
+        )
     finally:
         await http_client.aclose()
         install_http_client_for_test(core._kernel, None)

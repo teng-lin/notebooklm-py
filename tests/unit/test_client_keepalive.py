@@ -491,7 +491,7 @@ class TestSaveCookiesUnification:
         core = build_session_for_tests(auth, cookie_saver=spy)
         core_ref["core"] = core
 
-        await core._lifecycle.save_cookies(core, httpx.Cookies())
+        await core._lifecycle.save_cookies(core.cookie_persistence, httpx.Cookies())
 
         assert lock_held_during_save == [True], (
             "save_cookies must hold _save_lock for the duration of "

@@ -317,7 +317,20 @@ class TestRefreshAuth:
         httpx_mock: HTTPXMock,
         monkeypatch,
     ):
-        """refresh_auth delegates token mutation through Session."""
+        """refresh_auth delegates token mutation through the auth-refresh coordinator.
+
+        Wave 2 of plan ``host-protocol-removal`` rewired
+        :meth:`NotebookLMClient.refresh_auth` to call
+        :func:`refresh_auth_session` with explicit collaborator kwargs
+        — the token-mutation hop now invokes
+        ``auth_coord.update_auth_tokens(auth=..., csrf=..., session_id=...)``
+        directly instead of going through the ``Session.update_auth_tokens``
+        delegate. Tests that want to observe the mutation patch the
+        coordinator method (matching the new keyword-only signature) and
+        read the live ``AuthTokens`` instance via ``client._auth``, which
+        the Auth Instance Invariant keeps aliased with the composed
+        Session's ``auth`` attribute.
+        """
         client = NotebookLMClient(mock_auth)
         html = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
         httpx_mock.add_response(
@@ -326,12 +339,12 @@ class TestRefreshAuth:
         )
         calls: list[tuple[str, str]] = []
 
-        async def fake_update(csrf: str, session_id: str) -> None:
+        async def fake_update(*, auth, csrf: str, session_id: str) -> None:
             calls.append((csrf, session_id))
-            client._session.auth.csrf_token = csrf
-            client._session.auth.session_id = session_id
+            auth.csrf_token = csrf
+            auth.session_id = session_id
 
-        monkeypatch.setattr(client._session, "update_auth_tokens", fake_update)
+        monkeypatch.setattr(client._collaborators.auth_coord, "update_auth_tokens", fake_update)
 
         async with client:
             refreshed_auth = await client.refresh_auth()
@@ -339,9 +352,9 @@ class TestRefreshAuth:
         assert calls == [("new_csrf_token_123", "new_session_id_456")]
         assert refreshed_auth.csrf_token == "new_csrf_token_123"
         assert refreshed_auth.session_id == "new_session_id_456"
-        assert client._session.auth is refreshed_auth
-        assert client._session.auth.csrf_token == "new_csrf_token_123"
-        assert client._session.auth.session_id == "new_session_id_456"
+        assert client._auth is refreshed_auth
+        assert client._auth.csrf_token == "new_csrf_token_123"
+        assert client._auth.session_id == "new_session_id_456"
 
     @pytest.mark.asyncio
     async def test_refresh_auth_routes_to_account_email(self, httpx_mock: HTTPXMock):

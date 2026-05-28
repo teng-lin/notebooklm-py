@@ -67,11 +67,21 @@ def _make_auth() -> AuthTokens:
 
 
 class _StubHost:
-    """Minimal :class:`_LifecycleHost` stand-in for the close path.
+    """Collaborator bundle for the close-path race tests.
 
-    Tests assign ``_auth_coord._refresh_task`` directly when they need to
-    exercise the in-flight-refresh branch; the default of ``None`` matches
-    the post-``__init__``-real-host shape (no refresh has fired yet).
+    Wave 2 of plan ``host-protocol-removal`` narrowed
+    :meth:`ClientLifecycle.close` to take explicit keyword-only
+    collaborators (``auth_coord`` / ``drain_tracker`` /
+    ``cookie_persistence``); this stub remains as a convenience
+    aggregate that each test passes through the module-level
+    :func:`_close` adapter, so the assignment-then-cancel choreography
+    around ``_auth_coord._refresh_task`` stays a single readable
+    statement instead of five-line kwarg unpacking at every call site.
+
+    Tests assign ``_auth_coord._refresh_task`` directly when they need
+    to exercise the in-flight-refresh branch; the default of ``None``
+    matches the post-``__init__``-real-host shape (no refresh has fired
+    yet).
     """
 
     def __init__(self) -> None:
@@ -86,6 +96,21 @@ class _StubHost:
         # ``TransportDrainTracker``; the host no longer carries ``_drain_hooks``.
         # The real tracker constructed above already has its own ``_drain_hooks``.
         self._rpc_executor = None
+
+
+async def _close(lifecycle: ClientLifecycle, host: _StubHost) -> None:
+    """Adapter that forwards a :class:`_StubHost` bundle into the new
+    explicit-kwargs :meth:`ClientLifecycle.close` signature.
+
+    Wave 2 of plan ``host-protocol-removal`` narrowed the close method;
+    this helper keeps the per-test call sites a single line while still
+    exercising the new signature.
+    """
+    await lifecycle.close(
+        auth_coord=host._auth_coord,
+        drain_tracker=host._drain_tracker,
+        cookie_persistence=host.cookie_persistence,
+    )
 
 
 def _make_lifecycle() -> ClientLifecycle:
@@ -147,7 +172,7 @@ async def test_close_cancels_in_flight_refresh_task() -> None:
     assert not slow_task.done(), "test setup: refresh task should be in-flight"
 
     # Drive close. Must NOT raise.
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
 
     # Yield to let the cancellation propagate. ``gather`` inside ``close``
     # already awaited, so the task should be done by now.
@@ -179,7 +204,7 @@ async def test_close_with_no_refresh_task_is_a_noop_on_that_path() -> None:
     assert host._auth_coord._refresh_task is None
 
     # Must not raise.
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
     assert lifecycle._http_client is None
 
 
@@ -210,7 +235,7 @@ async def test_close_with_completed_refresh_task_does_not_recancel() -> None:
     host._auth_coord._refresh_task = done_task  # type: ignore[assignment]
 
     # Close must not re-cancel a done task.
-    await lifecycle.close(host)
+    await _close(lifecycle, host)
 
     assert not done_task.cancelled()
     assert done_task.done()

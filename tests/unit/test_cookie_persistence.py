@@ -88,7 +88,7 @@ async def test_client_core_save_cookies_routes_through_injected_seam_and_to_thre
         _auth_tokens(tmp_path / "storage_state.json"), cookie_saver=fake_save
     )
 
-    await core._lifecycle.save_cookies(core, _jar())
+    await core._lifecycle.save_cookies(core.cookie_persistence, _jar())
 
     assert calls == ["to_thread", "save"]
 
