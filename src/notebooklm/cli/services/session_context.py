@@ -10,13 +10,15 @@ handlers stay thin orchestrators around small plan + executor pairs:
 * :func:`read_status` — sync; reads the active notebook id, joins it
   with the per-context JSON, and returns a :class:`StatusReport`
   the handler renders.
-* :func:`render_status` — sync; renders a :class:`StatusReport` to the
-  configured console.
-* :func:`run_logout` — sync; removes the resolved storage file + browser
-  profile + cached context. The handler is just the Click wrapper.
+* :func:`execute_logout` — sync; removes the resolved storage file +
+  browser profile + cached context. Returns a typed
+  :class:`LogoutOutcome` capturing success or per-step failure; the
+  handler owns the presentation and exit-code decisions (C4 Pattern A,
+  ADR-015).
 
-The handler keeps the legacy ``_use_notebook_table`` symbol locally so
-existing tests that read ``session_cmd._use_notebook_table`` keep working.
+Presentation (Rich tables, ``console.print``) and exit-code policy live
+in :mod:`notebooklm.cli.session_cmd`; this service module returns typed
+values only.
 """
 
 from __future__ import annotations
@@ -26,15 +28,11 @@ import logging
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-from rich.table import Table
+from typing import TYPE_CHECKING, Any, Literal
 
 from ...paths import get_browser_profile_dir, get_context_path, get_path_info
 from ..context import clear_context, get_current_notebook
-from ..error_handler import exit_with_code
-from ..rendering import console, json_output_response
-from .auth_source import AUTH_JSON_ENV_NAME, AuthSource, has_env_auth_json
+from .auth_source import AuthSource, has_env_auth_json
 
 # Capture the original function references at module-import time. The
 # ``_resolve_paths_helper`` precedence chain compares each lookup
@@ -312,142 +310,100 @@ def warn_env_auth_remains_after_logout() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# ``status`` renderer (kept here so the Click handler stays a thin one-liner)
+# ``auth logout`` typed-outcome contract + executor
 # ---------------------------------------------------------------------------
 
 
-def render_status(report: StatusReport, *, json_output: bool) -> None:
-    """Render a :class:`StatusReport` to the configured console.
+#: Discriminator for :class:`LogoutFailure`. Names the step whose
+#: filesystem operation raised an :class:`OSError`. The handler renders a
+#: different diagnostic per kind so the user knows which artifact is
+#: locked and which manual fallback path to use.
+LogoutFailureKind = Literal["storage", "browser_profile", "context"]
 
-    Supports ``--paths`` (shows the resolved configuration paths) and
-    ``--json`` (machine-readable envelope). Preserves the legacy
-    contract from :mod:`notebooklm.cli.session_cmd`.
+
+@dataclass(frozen=True)
+class LogoutFailure:
+    """Typed description of an :class:`OSError` during one logout step.
+
+    Attributes:
+        kind: Which step raised — ``"storage"`` (auth file unlink),
+            ``"browser_profile"`` (browser profile rmtree), or
+            ``"context"`` (context.json removal via
+            :func:`notebooklm.cli.context.clear_context`).
+        path: The resolved filesystem path that could not be removed.
+            The handler echoes this back so the user knows what to
+            delete manually.
+        error_message: ``str(error)`` captured at the point of failure.
+            Stored as a string (not the raw exception) so the typed
+            outcome remains hashable and so the ``logger.error(...,
+            type(e).__name__)`` redaction (G6) controls what reaches
+            the logging pipeline.
+        partial_storage_removed: Only meaningful for
+            ``kind == "browser_profile"`` — ``True`` when the auth file
+            was already removed before the rmtree failed, so the
+            handler can print the "Auth file was removed, but browser
+            profile could not be deleted" partial-success note.
     """
-    if report.paths is not None:
-        # --paths flag was set; render the paths view and stop.
-        if json_output:
-            json_output_response({"paths": report.paths})
-            return
 
-        table = Table(title="Configuration Paths")
-        table.add_column("File", style="dim")
-        table.add_column("Path", style="cyan")
-        table.add_column("Source", style="green")
-
-        path_info = report.paths
-        table.add_row(
-            "Profile",
-            path_info.get("profile", "default"),
-            path_info.get("profile_source", ""),
-        )
-        table.add_row("Home Directory", path_info["home_dir"], path_info["home_source"])
-        table.add_row("Profile Directory", path_info.get("profile_dir", ""), "")
-        table.add_row("Storage State", path_info["storage_path"], "")
-        table.add_row("Context", path_info["context_path"], "")
-        table.add_row("Browser Profile", path_info["browser_profile_dir"], "")
-
-        if report.has_env_auth:
-            console.print(
-                f"[yellow]Note: {AUTH_JSON_ENV_NAME} is set (inline auth active)[/yellow]\n"
-            )
-
-        console.print(table)
-        return
-
-    ctx_view = report.context
-
-    if not ctx_view.has_context:
-        if json_output:
-            json_output_response({"has_context": False, "notebook": None, "conversation_id": None})
-            return
-        console.print(
-            "[yellow]No notebook selected. Use 'notebooklm use <id>' to set one.[/yellow]"
-        )
-        return
-
-    if not ctx_view.payload_readable:
-        # Context file existed but couldn't be parsed; surface minimal info.
-        if json_output:
-            json_output_response(
-                {
-                    "has_context": True,
-                    "notebook": {
-                        "id": ctx_view.notebook_id,
-                        "title": None,
-                        "is_owner": None,
-                    },
-                    "conversation_id": None,
-                }
-            )
-            return
-
-        table = Table(title="Current Context")
-        table.add_column("Property", style="dim")
-        table.add_column("Value", style="cyan")
-        table.add_row("Notebook ID", ctx_view.notebook_id or "")
-        table.add_row("Title", "-")
-        table.add_row("Ownership", "-")
-        table.add_row("Created", "-")
-        table.add_row("Conversation", "[dim]None[/dim]")
-        console.print(table)
-        return
-
-    if json_output:
-        json_output_response(
-            {
-                "has_context": True,
-                "notebook": {
-                    "id": ctx_view.notebook_id,
-                    "title": ctx_view.title if ctx_view.title and ctx_view.title != "-" else None,
-                    "is_owner": ctx_view.is_owner if ctx_view.is_owner is not None else True,
-                },
-                "conversation_id": ctx_view.conversation_id,
-            }
-        )
-        return
-
-    table = Table(title="Current Context")
-    table.add_column("Property", style="dim")
-    table.add_column("Value", style="cyan")
-
-    table.add_row("Notebook ID", ctx_view.notebook_id or "")
-    table.add_row("Title", str(ctx_view.title or "-"))
-    is_owner = ctx_view.is_owner if ctx_view.is_owner is not None else True
-    owner_status = "Owner" if is_owner else "Shared"
-    table.add_row("Ownership", owner_status)
-    table.add_row("Created", ctx_view.created_at or "-")
-    if ctx_view.conversation_id:
-        table.add_row("Conversation", ctx_view.conversation_id)
-    else:
-        table.add_row("Conversation", "[dim]None (will auto-select on next ask)[/dim]")
-    console.print(table)
+    kind: LogoutFailureKind
+    path: Path
+    error_message: str
+    partial_storage_removed: bool = False
 
 
-# ---------------------------------------------------------------------------
-# ``auth logout`` executor
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class LogoutOutcome:
+    """Typed result of an :func:`execute_logout` invocation.
+
+    The handler in :mod:`notebooklm.cli.session_cmd` dispatches on
+    ``failure`` to decide whether to exit 0 (success) or 1 (per-step
+    OSError), and on ``removed_any`` to pick the "Logged out" vs.
+    "No active session found" success message.
+
+    Attributes:
+        removed_any: ``True`` when at least one artifact (auth file,
+            browser profile, or context cache) was actually removed.
+            Drives the green "Logged out." vs. yellow "No active
+            session found." success message.
+        env_auth_remains: ``True`` when env-supplied auth is still
+            active after this logout (file-based artifacts removed
+            but the env var survives). Drives the env-still-active
+            warning the handler prints BEFORE the success message.
+        failure: ``None`` on success; a :class:`LogoutFailure` when
+            one of the three filesystem steps raised :class:`OSError`.
+    """
+
+    removed_any: bool
+    env_auth_remains: bool
+    failure: LogoutFailure | None = None
 
 
-def run_logout(ctx: click.Context | None) -> None:
-    """Execute ``auth logout`` end-to-end (no return; calls ``exit_with_code`` on errors).
+def execute_logout(ctx: click.Context | None) -> LogoutOutcome:
+    """Execute ``auth logout`` end-to-end as a pure-typed-outcome operation.
 
     Removes the resolved storage file, the cached browser profile, and
-    the per-context cache file. Prints the env-still-active note when
-    env-supplied auth survives the logout. The order matters:
+    the per-context cache file. Returns a :class:`LogoutOutcome` carrying
+    whichever step (if any) raised an :class:`OSError`; the caller is
+    responsible for all presentation and exit-code policy. The order
+    matches the legacy implementation:
 
     1. Storage file (the credential itself).
     2. Browser profile (the persistent SSO cache).
     3. Context cache (notebook + account routing).
 
-    Each step is independent — failing one prints a partial-success
-    diagnostic and exits 1; succeeding steps before the failure still
-    print as removed.
+    Each step is independent — a failure short-circuits the rest of the
+    pipeline and returns immediately. The :class:`LogoutOutcome` records
+    whether prior steps had already removed artifacts so the handler can
+    print the partial-success note.
+
+    Logging contract (G6 redaction): ``OSError`` exceptions are captured
+    as ``type(e).__name__`` in the structured log — never the raw
+    exception object, which can contain user paths or other
+    information not intended for the log sink. The user-facing message
+    still receives ``str(error)`` via :class:`LogoutFailure` because
+    that's what the diagnostic line on stderr requires.
     """
-    if warn_env_auth_remains_after_logout():
-        console.print(
-            f"[yellow]Note: {AUTH_JSON_ENV_NAME} is set — env-based auth will "
-            "remain active after logout. Unset it to fully log out.[/yellow]"
-        )
+    env_auth_remains = warn_env_auth_remains_after_logout()
 
     storage_path = resolve_logout_storage_path(ctx)
     _get_browser_profile_dir = _resolve_paths_helper(
@@ -462,33 +418,37 @@ def run_logout(ctx: click.Context | None) -> None:
             storage_path.unlink()
             removed_any = True
         except OSError as exc:
-            logger.error("Failed to remove auth file %s: %s", storage_path, exc)
-            console.print(
-                f"[red]Cannot remove auth file: {exc}[/red]\n"
-                "Close any running notebooklm commands and try again.\n"
-                f"If the problem persists, manually delete: {storage_path}"
+            logger.error("Failed to remove auth file %s: %s", storage_path, type(exc).__name__)
+            return LogoutOutcome(
+                removed_any=removed_any,
+                env_auth_remains=env_auth_remains,
+                failure=LogoutFailure(
+                    kind="storage",
+                    path=storage_path,
+                    error_message=str(exc),
+                ),
             )
-            exit_with_code(1)
 
     if browser_profile.exists():
         try:
             shutil.rmtree(browser_profile)
             removed_any = True
         except OSError as exc:
-            logger.error("Failed to remove browser profile %s: %s", browser_profile, exc)
-            partial = (
-                "[yellow]Note: Auth file was removed, but browser profile "
-                "could not be deleted.[/yellow]\n"
-                if removed_any
-                else ""
+            logger.error(
+                "Failed to remove browser profile %s: %s",
+                browser_profile,
+                type(exc).__name__,
             )
-            console.print(
-                f"{partial}"
-                f"[red]Cannot remove browser profile: {exc}[/red]\n"
-                "Close any open browser windows and try again.\n"
-                f"If the problem persists, manually delete: {browser_profile}"
+            return LogoutOutcome(
+                removed_any=removed_any,
+                env_auth_remains=env_auth_remains,
+                failure=LogoutFailure(
+                    kind="browser_profile",
+                    path=browser_profile,
+                    error_message=str(exc),
+                    partial_storage_removed=removed_any,
+                ),
             )
-            exit_with_code(1)
 
     # In the natural call path ``clear_context`` is self-contained
     # (``_clear_context_file`` in ``cli/context.py`` catches every OSError
@@ -505,28 +465,38 @@ def run_logout(ctx: click.Context | None) -> None:
     except OSError as exc:
         storage_override = AuthSource.from_click_context(ctx).storage_override
         context_file = get_context_path(storage_path=storage_override)
-        logger.error("Failed to remove context file %s: %s", context_file, exc)
-        console.print(
-            f"[red]Cannot remove context file: {exc}[/red]\n"
-            "Close any running notebooklm commands and try again.\n"
-            f"If the problem persists, manually delete: {context_file}"
+        logger.error(
+            "Failed to remove context file %s: %s",
+            context_file,
+            type(exc).__name__,
         )
-        exit_with_code(1)
+        return LogoutOutcome(
+            removed_any=removed_any,
+            env_auth_remains=env_auth_remains,
+            failure=LogoutFailure(
+                kind="context",
+                path=context_file,
+                error_message=str(exc),
+            ),
+        )
 
-    if removed_any:
-        console.print("[green]Logged out.[/green] Run 'notebooklm login' to sign in again.")
-    else:
-        console.print("[yellow]No active session found.[/yellow] Already logged out.")
+    return LogoutOutcome(
+        removed_any=removed_any,
+        env_auth_remains=env_auth_remains,
+        failure=None,
+    )
 
 
 __all__ = [
+    "LogoutFailure",
+    "LogoutFailureKind",
+    "LogoutOutcome",
     "StatusContext",
     "StatusReport",
     "UseNotebookResult",
+    "execute_logout",
     "read_status",
-    "render_status",
     "resolve_logout_storage_path",
-    "run_logout",
     "verify_and_set_notebook",
     "warn_env_auth_remains_after_logout",
 ]

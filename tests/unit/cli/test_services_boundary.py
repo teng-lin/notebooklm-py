@@ -74,6 +74,7 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 GUARDED_PATHS = {
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
+    "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
 }
 
@@ -386,22 +387,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "Polling helpers still import ``..error_handler`` + "
             "``..rendering`` for status spinners and exit mapping; lift "
             "those callbacks into the command layer."
-        ),
-    },
-    "cli/services/session_context.py": {
-        "path": SERVICES_ROOT / "session_context.py",
-        "forbidden_imports": [
-            "session_context.py:35: forbidden relative import: '..error_handler'",
-            "session_context.py:36: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [
-            ("run_logout", 471),
-            ("run_logout", 491),
-            ("run_logout", 514),
-        ],
-        "rationale": (
-            "``run_logout`` end-to-end orchestrator owns presentation + "
-            "exit codes for every logout failure mode."
         ),
     },
     "cli/services/source_add.py": {

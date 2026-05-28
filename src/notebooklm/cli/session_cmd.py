@@ -125,10 +125,11 @@ from .services.playwright_login import (
     validate_login_flag_conflicts as _validate_login_flag_conflicts,
 )
 from .services.session_context import (
+    LogoutOutcome,
+    StatusReport,
     UseNotebookResult,
+    execute_logout,
     read_status,
-    render_status,
-    run_logout,
     verify_and_set_notebook,
 )
 
@@ -181,6 +182,167 @@ def _use_notebook_table() -> Table:
     t.add_column("Owner")
     t.add_column("Created", style="dim")
     return t
+
+
+def _render_status(report: StatusReport, *, json_output: bool) -> None:
+    """Render a :class:`StatusReport` to the configured console.
+
+    Moved out of :mod:`notebooklm.cli.services.session_context` so the
+    service layer no longer reaches into ``..rendering`` (ADR-008 / C4
+    Pattern A). Supports ``--paths`` (resolved configuration paths) and
+    ``--json`` (machine-readable envelope); preserves the legacy
+    contract from the pre-refactor service-side renderer byte-for-byte.
+    """
+    if report.paths is not None:
+        # --paths flag was set; render the paths view and stop.
+        if json_output:
+            json_output_response({"paths": report.paths})
+            return
+
+        table = Table(title="Configuration Paths")
+        table.add_column("File", style="dim")
+        table.add_column("Path", style="cyan")
+        table.add_column("Source", style="green")
+
+        path_info = report.paths
+        table.add_row(
+            "Profile",
+            path_info.get("profile", "default"),
+            path_info.get("profile_source", ""),
+        )
+        table.add_row("Home Directory", path_info["home_dir"], path_info["home_source"])
+        table.add_row("Profile Directory", path_info.get("profile_dir", ""), "")
+        table.add_row("Storage State", path_info["storage_path"], "")
+        table.add_row("Context", path_info["context_path"], "")
+        table.add_row("Browser Profile", path_info["browser_profile_dir"], "")
+
+        if report.has_env_auth:
+            console.print(
+                f"[yellow]Note: {AUTH_JSON_ENV_NAME} is set (inline auth active)[/yellow]\n"
+            )
+
+        console.print(table)
+        return
+
+    ctx_view = report.context
+
+    if not ctx_view.has_context:
+        if json_output:
+            json_output_response({"has_context": False, "notebook": None, "conversation_id": None})
+            return
+        console.print(
+            "[yellow]No notebook selected. Use 'notebooklm use <id>' to set one.[/yellow]"
+        )
+        return
+
+    if not ctx_view.payload_readable:
+        # Context file existed but couldn't be parsed; surface minimal info.
+        if json_output:
+            json_output_response(
+                {
+                    "has_context": True,
+                    "notebook": {
+                        "id": ctx_view.notebook_id,
+                        "title": None,
+                        "is_owner": None,
+                    },
+                    "conversation_id": None,
+                }
+            )
+            return
+
+        table = Table(title="Current Context")
+        table.add_column("Property", style="dim")
+        table.add_column("Value", style="cyan")
+        table.add_row("Notebook ID", ctx_view.notebook_id or "")
+        table.add_row("Title", "-")
+        table.add_row("Ownership", "-")
+        table.add_row("Created", "-")
+        table.add_row("Conversation", "[dim]None[/dim]")
+        console.print(table)
+        return
+
+    if json_output:
+        json_output_response(
+            {
+                "has_context": True,
+                "notebook": {
+                    "id": ctx_view.notebook_id,
+                    "title": ctx_view.title if ctx_view.title and ctx_view.title != "-" else None,
+                    "is_owner": ctx_view.is_owner if ctx_view.is_owner is not None else True,
+                },
+                "conversation_id": ctx_view.conversation_id,
+            }
+        )
+        return
+
+    table = Table(title="Current Context")
+    table.add_column("Property", style="dim")
+    table.add_column("Value", style="cyan")
+
+    table.add_row("Notebook ID", ctx_view.notebook_id or "")
+    table.add_row("Title", str(ctx_view.title or "-"))
+    is_owner = ctx_view.is_owner if ctx_view.is_owner is not None else True
+    owner_status = "Owner" if is_owner else "Shared"
+    table.add_row("Ownership", owner_status)
+    table.add_row("Created", ctx_view.created_at or "-")
+    if ctx_view.conversation_id:
+        table.add_row("Conversation", ctx_view.conversation_id)
+    else:
+        table.add_row("Conversation", "[dim]None (will auto-select on next ask)[/dim]")
+    console.print(table)
+
+
+def _render_logout_outcome(outcome: LogoutOutcome) -> None:
+    """Render a :class:`LogoutOutcome` and exit with the appropriate code.
+
+    Owns the presentation + exit policy that the pre-refactor
+    ``run_logout`` service function owned (C4 Pattern A,
+    typed-outcome lift). On per-step :class:`OSError` failures, prints
+    the same diagnostic the service used to print, then exits 1; on
+    success prints either the green "Logged out." line or the yellow
+    "No active session found." no-op line based on whether any
+    artifacts were actually removed.
+    """
+    if outcome.env_auth_remains:
+        console.print(
+            f"[yellow]Note: {AUTH_JSON_ENV_NAME} is set — env-based auth will "
+            "remain active after logout. Unset it to fully log out.[/yellow]"
+        )
+
+    failure = outcome.failure
+    if failure is not None:
+        if failure.kind == "storage":
+            console.print(
+                f"[red]Cannot remove auth file: {failure.error_message}[/red]\n"
+                "Close any running notebooklm commands and try again.\n"
+                f"If the problem persists, manually delete: {failure.path}"
+            )
+        elif failure.kind == "browser_profile":
+            partial = (
+                "[yellow]Note: Auth file was removed, but browser profile "
+                "could not be deleted.[/yellow]\n"
+                if failure.partial_storage_removed
+                else ""
+            )
+            console.print(
+                f"{partial}"
+                f"[red]Cannot remove browser profile: {failure.error_message}[/red]\n"
+                "Close any open browser windows and try again.\n"
+                f"If the problem persists, manually delete: {failure.path}"
+            )
+        else:  # failure.kind == "context"
+            console.print(
+                f"[red]Cannot remove context file: {failure.error_message}[/red]\n"
+                "Close any running notebooklm commands and try again.\n"
+                f"If the problem persists, manually delete: {failure.path}"
+            )
+        exit_with_code(1)
+
+    if outcome.removed_any:
+        console.print("[green]Logged out.[/green] Run 'notebooklm login' to sign in again.")
+    else:
+        console.print("[yellow]No active session found.[/yellow] Already logged out.")
 
 
 def register_session_commands(cli):
@@ -504,7 +666,7 @@ def register_session_commands(cli):
         (useful for debugging NOTEBOOKLM_HOME).
         """
         report = read_status(ctx, show_paths=show_paths)
-        render_status(report, json_output=json_output)
+        _render_status(report, json_output=json_output)
 
     @cli.command("clear")
     def clear_cmd():
@@ -532,7 +694,8 @@ def register_session_commands(cli):
           notebooklm -p work auth logout               # Clear auth for 'work' profile
           notebooklm --storage A.json auth logout      # Clear the override auth file
         """
-        run_logout(ctx)
+        outcome = execute_logout(ctx)
+        _render_logout_outcome(outcome)
 
     @auth_group.command("inspect")
     @click.option(
