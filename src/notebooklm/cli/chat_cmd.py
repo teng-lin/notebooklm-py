@@ -190,10 +190,24 @@ def register_chat_commands(cli):
           notebooklm ask "explain X" --save-as-note     # Save response as a note
         """
         if new_conversation and conversation_id:
-            raise click.UsageError(
+            # Per ADR-015 §2: under --json this mutual-exclusion conflict
+            # must emit the typed JSON envelope and exit 1 (VALIDATION_ERROR),
+            # not ride Click's parse-time UsageError path (exit 2, usage
+            # text on stderr, no JSON on stdout). Under text mode we
+            # preserve the existing Click UX so interactive users still
+            # get the ``Usage: ... / Error: ...`` formatting.
+            mutual_exclusion_message = (
                 "--new and --conversation-id are mutually exclusive: "
                 "--new starts a fresh conversation while --conversation-id resumes a specific one."
             )
+            if json_output:
+                _output_error(
+                    mutual_exclusion_message,
+                    "VALIDATION_ERROR",
+                    json_output,
+                    1,
+                )
+            raise click.UsageError(mutual_exclusion_message)
         question = resolve_prompt(question, prompt_file, "question", required=True)
         nb_id = require_notebook(notebook_id)
 

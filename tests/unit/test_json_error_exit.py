@@ -474,6 +474,22 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ],
         None,
     ),
+    # ADR-015 §2: post-parse UsageError under --json must route through the
+    # typed JSON envelope rather than Click's parse-time usage text. The
+    # gate fires synchronously at the top of ``research_wait`` before any
+    # client call, so no customizer is needed.
+    (
+        "research_wait_cited_only_conflict_json",
+        [
+            "research",
+            "wait",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--cited-only",
+            "--json",
+        ],
+        None,
+    ),
     # source add-research --no-wait with --import-all: same post-parse
     # flag-conflict path, same ADR-015 JSON envelope.
     (
@@ -551,6 +567,23 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
             "abc123def456ghi789jkl",
             "--language",
             "xx_INVALID",
+            "--json",
+        ],
+        None,
+    ),
+    # ADR-015 §2: ``ask`` ``--new`` and ``--conversation-id`` are mutually
+    # exclusive. Under --json the gate emits the typed JSON envelope and
+    # exits 1; under text mode it still raises Click's UsageError.
+    (
+        "chat_new_and_conversation_id_conflict_json",
+        [
+            "ask",
+            "hi",
+            "-n",
+            "abc",
+            "--new",
+            "--conversation-id",
+            "existing-conv",
             "--json",
         ],
         None,
