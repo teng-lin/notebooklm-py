@@ -1035,7 +1035,7 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
 
-            async def _list_sources(notebook_id_inner):
+            async def _list_sources(notebook_id_inner: str) -> list[Source]:
                 if json_output:
                     return await client.sources.list(notebook_id_inner)
                 with cli_status("Fetching sources for cleanup...", ctx=ctx):
@@ -1084,7 +1084,7 @@ def _dispatch_source_clean_result(
     *,
     json_output: bool,
     yes: bool,
-    ctx,
+    ctx: click.Context | None,
 ) -> None:
     """Render the source-clean outcome and exit per the result's status.
 
