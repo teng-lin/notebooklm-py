@@ -471,6 +471,42 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         None,  # ditto
         marks=pytest.mark.xfail(strict=False, reason=_PROFILE_LIST_GAP_REASON),
     ),
+    # Per ADR-015, post-parse ``ClickException`` validation failures in command
+    # bodies and the service layer they call now flow through ``output_error``
+    # and must emit a typed JSON envelope on stdout under ``--json``. The two
+    # cases below cover both subclasses in the generate command tree:
+    #   * ``click.UsageError`` from ``services/generate.py`` — flag-conflict
+    #     validation inside the plan builder.
+    #   * ``click.BadParameter`` from ``generate_cmd.py:resolve_language`` —
+    #     language-code validation.
+    # Both subclasses route through the same envelope shape (the shape is
+    # determined by ``output_error``, not by the exception type).
+    (
+        "generate_video_style_conflict_json",
+        [
+            "generate",
+            "video",
+            "--style",
+            "custom",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "generate_audio_language_invalid_json",
+        [
+            "generate",
+            "audio",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--language",
+            "xx_INVALID",
+            "--json",
+        ],
+        None,
+    ),
 ]
 
 

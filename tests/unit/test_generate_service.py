@@ -29,7 +29,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import click
 import pytest
 from click.core import ParameterSource
 
@@ -256,9 +255,9 @@ def test_build_plan_unknown_kind_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cinematic_video_rejects_explicit_non_cinematic_format() -> None:
-    """``cinematic-video --format explainer`` raises UsageError when the
-    source reports COMMANDLINE for ``video_format``."""
+def test_cinematic_video_rejects_explicit_non_cinematic_format(capsys) -> None:
+    """``cinematic-video --format explainer`` exits 1 through ``output_error``
+    (per ADR-015) when the source reports COMMANDLINE for ``video_format``."""
 
     def source(name: str) -> ParameterSource:
         if name == "video_format":
@@ -266,10 +265,13 @@ def test_cinematic_video_rejects_explicit_non_cinematic_format() -> None:
         return ParameterSource.DEFAULT
 
     args = _base_args(video_format="explainer", style="auto", style_prompt=None, language="en")
-    with pytest.raises(click.UsageError, match="--format must be 'cinematic'"):
+    with pytest.raises(SystemExit) as exc_info:
         build_generation_plan(
             "cinematic-video", args, parameter_source=source, language_resolver=_identity_language
         )
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "--format must be 'cinematic'" in captured.err
 
 
 def test_cinematic_video_explicit_cinematic_format_is_accepted() -> None:
@@ -335,48 +337,59 @@ def test_video_raw_timeout_is_preserved_when_not_commandline() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_video_cinematic_rejects_style_prompt() -> None:
-    """Cinematic video + non-empty ``--style-prompt`` raises UsageError."""
+def test_video_cinematic_rejects_style_prompt(capsys) -> None:
+    """Cinematic video + non-empty ``--style-prompt`` exits 1 through
+    ``output_error`` (per ADR-015)."""
     args = _base_args(
         video_format="cinematic",
         style="auto",
         style_prompt="foo",
         language="en",
     )
-    with pytest.raises(click.UsageError, match="--style-prompt cannot be used"):
+    with pytest.raises(SystemExit) as exc_info:
         build_generation_plan(
             "video", args, parameter_source=_default_source, language_resolver=_identity_language
         )
+    assert exc_info.value.code == 1
+    assert "--style-prompt cannot be used" in capsys.readouterr().err
 
 
-def test_video_style_custom_requires_style_prompt() -> None:
-    """``--style custom`` without ``--style-prompt`` raises UsageError."""
+def test_video_style_custom_requires_style_prompt(capsys) -> None:
+    """``--style custom`` without ``--style-prompt`` exits 1 through
+    ``output_error`` (per ADR-015)."""
     args = _base_args(video_format="explainer", style="custom", style_prompt=None, language="en")
-    with pytest.raises(click.UsageError, match="--style custom requires --style-prompt"):
+    with pytest.raises(SystemExit) as exc_info:
         build_generation_plan(
             "video", args, parameter_source=_default_source, language_resolver=_identity_language
         )
+    assert exc_info.value.code == 1
+    assert "--style custom requires --style-prompt" in capsys.readouterr().err
 
 
-def test_video_style_prompt_requires_style_custom() -> None:
-    """Non-empty ``--style-prompt`` with ``--style != custom`` raises UsageError."""
+def test_video_style_prompt_requires_style_custom(capsys) -> None:
+    """Non-empty ``--style-prompt`` with ``--style != custom`` exits 1 through
+    ``output_error`` (per ADR-015)."""
     args = _base_args(
         video_format="explainer", style="anime", style_prompt="hand-drawn", language="en"
     )
-    with pytest.raises(click.UsageError, match="--style-prompt requires --style custom"):
+    with pytest.raises(SystemExit) as exc_info:
         build_generation_plan(
             "video", args, parameter_source=_default_source, language_resolver=_identity_language
         )
+    assert exc_info.value.code == 1
+    assert "--style-prompt requires --style custom" in capsys.readouterr().err
 
 
-def test_video_style_prompt_strips_whitespace() -> None:
+def test_video_style_prompt_strips_whitespace(capsys) -> None:
     """Whitespace-only ``--style-prompt`` is treated as unset (still triggers
     the ``--style custom`` requirement when style is custom)."""
     args = _base_args(video_format="explainer", style="custom", style_prompt="   ", language="en")
-    with pytest.raises(click.UsageError, match="--style custom requires --style-prompt"):
+    with pytest.raises(SystemExit) as exc_info:
         build_generation_plan(
             "video", args, parameter_source=_default_source, language_resolver=_identity_language
         )
+    assert exc_info.value.code == 1
+    assert "--style custom requires --style-prompt" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

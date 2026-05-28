@@ -55,6 +55,7 @@ from ...types import (
     VideoFormat,
     VideoStyle,
 )
+from ..error_handler import output_error
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -291,9 +292,13 @@ def build_generation_plan(
         A frozen :class:`GenerationPlan` ready for :func:`execute_generation`.
 
     Raises:
-        click.UsageError: For invalid parameter combinations (cinematic
-            video + ``--style-prompt``, ``--style custom`` without
+        SystemExit: For invalid parameter combinations (cinematic video +
+            ``--style-prompt``, ``--style custom`` without
             ``--style-prompt``, ``cinematic-video --format <non-cinematic>``).
+            Routed through :func:`cli.error_handler.output_error` per
+            ADR-015: under ``--json`` the typed JSON envelope is emitted on
+            stdout (``code: "VALIDATION_ERROR"``, exit 1); in text mode the
+            same message is written to stderr (exit 1, no usage footer).
         ValueError: When ``kind`` is not recognized.
     """
     source: Callable[[str], ParameterSource] = parameter_source or (
@@ -369,11 +374,14 @@ def _build_video_plan_for_kind(
     """Shared builder for ``video`` and the ``cinematic-video`` alias.
 
     ``alias=True`` enforces the cinematic-video flag rules: an explicit
-    ``--format <non-cinematic>`` raises UsageError, the format is coerced
-    to cinematic when not passed, and the timeout defaults to 3600s when
-    the user did not pass ``--timeout``.
+    ``--format <non-cinematic>`` is rejected through ``output_error`` (per
+    ADR-015 the typed JSON envelope covers post-parse validation under
+    ``--json``; text mode writes the same message to stderr and exits 1),
+    the format is coerced to cinematic when not passed, and the timeout
+    defaults to 3600s when the user did not pass ``--timeout``.
     """
     common = _common(raw_args)
+    json_output = common["json_output"]
     video_format = raw_args.get("video_format", "explainer")
     style = raw_args.get("style", "auto")
     style_prompt_raw = raw_args.get("style_prompt")
@@ -381,9 +389,12 @@ def _build_video_plan_for_kind(
     if alias:
         format_explicit = source("video_format") == ParameterSource.COMMANDLINE
         if format_explicit and video_format != "cinematic":
-            raise click.UsageError(
+            output_error(
                 "--format must be 'cinematic' for the cinematic-video subcommand "
-                "(use 'generate video --format <other>' for other formats)"
+                "(use 'generate video --format <other>' for other formats)",
+                "VALIDATION_ERROR",
+                json_output,
+                1,
             )
         video_format = "cinematic"
 
@@ -392,11 +403,26 @@ def _build_video_plan_for_kind(
         style_prompt_raw.strip() if isinstance(style_prompt_raw, str) else None
     )
     if is_cinematic and normalized_style_prompt:
-        raise click.UsageError("--style-prompt cannot be used with cinematic video")
+        output_error(
+            "--style-prompt cannot be used with cinematic video",
+            "VALIDATION_ERROR",
+            json_output,
+            1,
+        )
     if not is_cinematic and style == "custom" and not normalized_style_prompt:
-        raise click.UsageError("--style custom requires --style-prompt")
+        output_error(
+            "--style custom requires --style-prompt",
+            "VALIDATION_ERROR",
+            json_output,
+            1,
+        )
     if not is_cinematic and normalized_style_prompt and style != "custom":
-        raise click.UsageError("--style-prompt requires --style custom")
+        output_error(
+            "--style-prompt requires --style custom",
+            "VALIDATION_ERROR",
+            json_output,
+            1,
+        )
 
     timeout_value = common["timeout"]
     if is_cinematic and source("timeout") != ParameterSource.COMMANDLINE:

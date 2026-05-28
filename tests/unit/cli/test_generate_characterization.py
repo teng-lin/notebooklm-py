@@ -304,7 +304,11 @@ def test_generate_audio_rate_limit_retry_exhausted_text(
 def test_video_cinematic_rejects_style_prompt(
     authed_invoke: Callable[..., Result],
 ) -> None:
-    """``--style-prompt`` is rejected when the video format is cinematic."""
+    """``--style-prompt`` is rejected when the video format is cinematic.
+
+    Per ADR-015, the post-parse validation routes through ``output_error``:
+    exit 1 (VALIDATION_ERROR), message on stderr, no usage footer.
+    """
     result = authed_invoke(
         [
             "generate",
@@ -317,9 +321,9 @@ def test_video_cinematic_rejects_style_prompt(
             "nb_123",
         ],
     )
-    assert result.exit_code == 2
-    # ``click.UsageError.show()`` writes to stderr — pin the assertion
-    # there so a stdout leak would surface.
+    assert result.exit_code == 1
+    # ``output_error`` writes the message to stderr in text mode — pin the
+    # assertion there so a stdout leak would surface.
     assert "--style-prompt cannot be used with cinematic video" in result.stderr
 
 
@@ -328,8 +332,8 @@ def test_video_style_custom_requires_style_prompt(
 ) -> None:
     """``--style custom`` requires ``--style-prompt`` for non-cinematic video."""
     result = authed_invoke(["generate", "video", "--style", "custom", "-n", "nb_123"])
-    assert result.exit_code == 2
-    # ``click.UsageError.show()`` writes to stderr.
+    assert result.exit_code == 1
+    # ``output_error`` writes the message to stderr in text mode.
     assert "--style custom requires --style-prompt" in result.stderr
 
 
@@ -338,8 +342,8 @@ def test_video_style_prompt_requires_style_custom(
 ) -> None:
     """``--style-prompt`` requires ``--style custom`` for non-cinematic video."""
     result = authed_invoke(["generate", "video", "--style-prompt", "foo", "-n", "nb_123"])
-    assert result.exit_code == 2
-    # ``click.UsageError.show()`` writes to stderr.
+    assert result.exit_code == 1
+    # ``output_error`` writes the message to stderr in text mode.
     assert "--style-prompt requires --style custom" in result.stderr
 
 
@@ -358,8 +362,8 @@ def test_cinematic_video_alias_rejects_non_cinematic_format(
             "nb_123",
         ],
     )
-    assert result.exit_code == 2
-    # ``click.UsageError.show()`` writes to stderr.
+    assert result.exit_code == 1
+    # ``output_error`` writes the message to stderr in text mode.
     assert "--format must be 'cinematic' for the cinematic-video subcommand" in result.stderr
 
 

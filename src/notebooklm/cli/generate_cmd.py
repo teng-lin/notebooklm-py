@@ -16,6 +16,7 @@ import click
 
 from ..client import NotebookLMClient
 from .auth_runtime import with_client
+from .error_handler import current_json_output, output_error
 from .input import resolve_prompt
 from .language_cmd import SUPPORTED_LANGUAGES, get_language
 from .options import (
@@ -51,31 +52,45 @@ def resolve_language(language: str | None) -> str:
     Priority: ``--language`` flag > ``NOTEBOOKLM_HL`` env var > config file
     > "en" default. Uses explicit None checks to avoid treating empty
     string as falsy. Validates each candidate against the supported list.
+
+    Invalid codes route through :func:`output_error` per ADR-015: under
+    ``--json`` the typed JSON envelope is emitted on stdout
+    (``code: "VALIDATION_ERROR"``, exit 1); in text mode the same message
+    is written to stderr (exit 1, no Click usage footer). The active
+    ``--json`` flag is inferred via :func:`current_json_output` so this
+    helper stays callable from both the Click handler and the service-layer
+    plan builder without threading the flag through its signature.
     """
     if language is not None:
         if language not in SUPPORTED_LANGUAGES:
-            raise click.BadParameter(
+            output_error(
                 f"Unknown language code: {language}\n"
                 "Run 'notebooklm language list' to see supported codes.",
-                param_hint="'--language'",
+                "VALIDATION_ERROR",
+                current_json_output(),
+                1,
             )
         return language
     env_lang = os.environ.get("NOTEBOOKLM_HL", "").strip()
     if env_lang:
         if env_lang not in SUPPORTED_LANGUAGES:
-            raise click.BadParameter(
+            output_error(
                 f"Unknown language code: {env_lang}\n"
                 "Run 'notebooklm language list' to see supported codes.",
-                param_hint="'NOTEBOOKLM_HL'",
+                "VALIDATION_ERROR",
+                current_json_output(),
+                1,
             )
         return env_lang
     config_lang = get_language()
     if config_lang is not None:
         if config_lang not in SUPPORTED_LANGUAGES:
-            raise click.BadParameter(
+            output_error(
                 f"Unknown language code in config: {config_lang}\n"
                 "Run 'notebooklm language list' to see supported codes.",
-                param_hint="config",
+                "VALIDATION_ERROR",
+                current_json_output(),
+                1,
             )
         return config_lang
     return DEFAULT_LANGUAGE

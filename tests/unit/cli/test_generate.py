@@ -358,8 +358,9 @@ class TestGenerateVideo:
             ["generate", "video", "--style", "custom", "-n", "nb_123"],
         )
 
-        # ``click.UsageError`` exits 2 — Click's standard convention.
-        assert result.exit_code == 2
+        # Per ADR-015, post-parse validation failures exit 1 via
+        # ``output_error`` (VALIDATION_ERROR), not 2 via Click's UsageError.
+        assert result.exit_code == 1
         assert "--style custom requires --style-prompt" in result.output
 
     def test_generate_video_custom_style_rejects_blank_prompt(
@@ -379,7 +380,7 @@ class TestGenerateVideo:
             ],
         )
 
-        assert result.exit_code == 2
+        assert result.exit_code == 1
         assert "--style custom requires --style-prompt" in result.output
 
     def test_generate_video_style_prompt_requires_custom_style(
@@ -399,7 +400,7 @@ class TestGenerateVideo:
             ],
         )
 
-        assert result.exit_code == 2
+        assert result.exit_code == 1
         assert "--style-prompt requires --style custom" in result.output
 
 
@@ -487,14 +488,16 @@ class TestGenerateCinematicVideo:
             ],
         )
 
-        assert result.exit_code == 2
+        # Per ADR-015, post-parse validation exits 1 via ``output_error``.
+        assert result.exit_code == 1
         assert "--style-prompt cannot be used with cinematic video" in result.output
 
     def test_generate_cinematic_video_rejects_non_cinematic_format(
         self, runner, mock_auth, mock_fetch_tokens
     ):
-        """`cinematic-video --format explainer` (or any non-cinematic value) must
-        raise UsageError, not silently override the format."""
+        """`cinematic-video --format explainer` (or any non-cinematic value) is
+        rejected through ``output_error`` (per ADR-015) — exit 1, not a silent
+        format override."""
         for bad_format in ("explainer", "brief"):
             result = runner.invoke(
                 cli,
@@ -508,8 +511,8 @@ class TestGenerateCinematicVideo:
                 ],
             )
 
-            assert result.exit_code == 2, (
-                f"--format {bad_format} should exit 2, got {result.exit_code}: {result.output}"
+            assert result.exit_code == 1, (
+                f"--format {bad_format} should exit 1, got {result.exit_code}: {result.output}"
             )
             assert "--format" in result.output
             assert "cinematic" in result.output.lower()
@@ -1367,17 +1370,19 @@ class TestRateLimitDetection:
 class TestResolveLanguageDirect:
     """Direct tests for resolve_language() covering uncovered branches."""
 
-    def test_invalid_language_raises_bad_parameter(self):
-        """Line 111: language not in SUPPORTED_LANGUAGES raises click.BadParameter."""
+    def test_invalid_language_exits_via_output_error(self, capsys):
+        """Invalid language code routes through ``output_error`` (per ADR-015):
+        exit 1, message on stderr. Replaces the old ``click.BadParameter``
+        contract — the post-parse JSON envelope contract supersedes it."""
         import importlib
 
-        import click
-
         generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
-        with pytest.raises(click.BadParameter) as exc_info:
+        with pytest.raises(SystemExit) as exc_info:
             generate_module.resolve_language("xx_INVALID")
-        assert "Unknown language code: xx_INVALID" in str(exc_info.value)
-        assert "notebooklm language list" in str(exc_info.value)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Unknown language code: xx_INVALID" in captured.err
+        assert "notebooklm language list" in captured.err
 
     def test_none_language_with_config_returns_config(self):
         """Line 118: language is None, config_lang is not None → returns config_lang."""
@@ -1437,35 +1442,38 @@ class TestResolveLanguageDirect:
             result = generate_module.resolve_language(None)
         assert result == "zh_Hans"
 
-    def test_invalid_env_raises_bad_parameter(self, monkeypatch):
-        """An unsupported NOTEBOOKLM_HL value still gets validated."""
+    def test_invalid_env_exits_via_output_error(self, monkeypatch, capsys):
+        """An unsupported NOTEBOOKLM_HL value still gets validated. Per ADR-015
+        it routes through ``output_error`` (exit 1, message on stderr) rather
+        than ``click.BadParameter``."""
         import importlib
-
-        import click
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "xx_INVALID")
         generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with (
             patch.object(generate_module, "get_language", return_value=None),
-            pytest.raises(click.BadParameter) as exc_info,
+            pytest.raises(SystemExit) as exc_info,
         ):
             generate_module.resolve_language(None)
-        assert "xx_INVALID" in str(exc_info.value)
+        assert exc_info.value.code == 1
+        assert "xx_INVALID" in capsys.readouterr().err
 
-    def test_resolve_language_rejects_invalid_config_value(self):
-        """An unsupported language stored in the config file gets validated."""
+    def test_resolve_language_rejects_invalid_config_value(self, capsys):
+        """An unsupported language stored in the config file gets validated.
+        Per ADR-015, routes through ``output_error`` (exit 1, message on
+        stderr) rather than ``click.BadParameter``."""
         import importlib
-
-        import click
 
         generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with (
             patch.object(generate_module, "get_language", return_value="xx_INVALID"),
-            pytest.raises(click.BadParameter) as exc_info,
+            pytest.raises(SystemExit) as exc_info,
         ):
             generate_module.resolve_language(None)
-        assert "xx_INVALID" in str(exc_info.value)
-        assert "notebooklm language list" in str(exc_info.value)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "xx_INVALID" in captured.err
+        assert "notebooklm language list" in captured.err
 
     def test_resolve_language_accepts_valid_config_value(self):
         """A supported language stored in the config file is returned as-is."""
