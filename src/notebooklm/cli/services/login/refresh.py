@@ -48,13 +48,11 @@ from .profile_targets import (
     email_to_profile_name,
 )
 
-# Type alias for the overwrite-confirmer callback. The default ``True``
-# return value means "no confirmation required" so existing tests / direct
-# callers that don't inject a confirmer behave the same as if the prompt
-# accepted (no overwrite blocked). The Click command layer in
-# ``cli/session_cmd.py`` injects ``click.confirm`` at the boundary so
-# interactive runs still prompt; programmatic callers can pass any
-# ``Callable[[str], bool]``.
+# Type alias for the overwrite-confirmer callback. ``True`` means proceed
+# with the overwrite; ``False`` means abort. When no callback is injected,
+# overwrite is auto-accepted for tests and non-interactive callers. The
+# Click command layer injects ``functools.partial(click.confirm,
+# default=False)`` so interactive runs prompt before overwriting.
 ConfirmCallback = Callable[[str], bool]
 
 logger = logging.getLogger(__name__)

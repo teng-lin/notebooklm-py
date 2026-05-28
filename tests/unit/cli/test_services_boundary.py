@@ -311,10 +311,10 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "path": SERVICES_ROOT / "login" / "refresh.py",
         "forbidden_imports": [],
         "pattern_a_violations": [
-            ("_confirm_profile_account_overwrite", 182),
-            ("_refresh_from_browser_cookies", 273),
-            ("_login_with_browser_cookies", 328),
-            ("_login_with_browser_cookies", 343),
+            ("_confirm_profile_account_overwrite", 180),
+            ("_refresh_from_browser_cookies", 271),
+            ("_login_with_browser_cookies", 326),
+            ("_login_with_browser_cookies", 341),
         ],
         "rationale": (
             "Pattern B click.confirm reach-in lifted via injected "
