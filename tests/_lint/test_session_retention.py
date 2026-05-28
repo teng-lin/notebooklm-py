@@ -439,3 +439,71 @@ def test_retention_doc_does_not_list_unknown_methods(
         "section (with the deleting PR's SHA) or remove them:\n"
         + "\n".join(f"  - `{name}`" for name in stale)
     )
+
+
+# ---------------------------------------------------------------------------
+# Wave 4 of plan ``host-protocol-removal`` — pin the Wave 3 deletions.
+# ---------------------------------------------------------------------------
+
+
+# Methods Wave 3 of plan ``host-protocol-removal`` deleted from Session.
+# Each was a one-line forward kept only as a Protocol surface; the
+# Protocol (``RefreshAuthCore``) was retired in Wave 2 and the forwards
+# went with it in Wave 3 (PR #1134). Wave 4 pins the deletions here so a
+# future PR that re-introduces any of them in the live Inventory trips
+# this lint at PR time.
+WAVE_3_DELETED_METHODS: frozenset[str] = frozenset(
+    {"lifecycle", "update_auth_tokens", "update_auth_headers"}
+)
+
+
+def test_wave_3_deletions_stay_out_of_live_inventory(
+    session_methods: list[str],
+    retention_rows: dict[str, str],
+) -> None:
+    """The three Wave 3 deletions must not reappear on Session or in the live Inventory.
+
+    Wave 3 of plan
+    [`host-protocol-removal`](../../.sisyphus/phases/host-protocol-removal/phase-1.md)
+    deleted ``Session.lifecycle`` (the public-API forward returning the
+    ``ClientLifecycle`` collaborator) and the two ``RefreshAuthCore`` Protocol
+    surfaces (``update_auth_tokens`` / ``update_auth_headers``). The
+    Protocol itself was retired in Wave 2 (no surviving caller needed the
+    Session-level delegates after Wave 2 narrowed ``refresh_auth_session``
+    to five explicit kwargs); Wave 3 followed up by deleting the forwards.
+
+    Two assertions, both regression-focused:
+
+    1. None of the three names may be present in the AST-enumerated
+       Session method list. Reappearance means the deletion was reverted;
+       the live caller paths now read ``self._collaborators.lifecycle``
+       (lifecycle), ``self._auth`` (auth tokens), and the coordinator
+       methods directly (``auth_coord.update_auth_*``).
+    2. None of the three names may carry a live row in the **Inventory**
+       table — the rows moved to the Wave-3-specific section under
+       **Deleted** at the bottom of the retention doc. A live row would
+       indicate doc drift even if the method was correctly deleted.
+
+    Failure mode: a future PR that re-adds ``Session.lifecycle`` "for
+    one read site" or revives the ``update_auth_tokens`` forward would
+    surface here under assertion 1; a doc PR that mistakenly resurfaces
+    the deleted row in the live Inventory table would surface under
+    assertion 2.
+    """
+    surviving = sorted(name for name in session_methods if name in WAVE_3_DELETED_METHODS)
+    assert not surviving, (
+        "Wave 3 of plan host-protocol-removal deleted these Session "
+        "methods (PR #1134); reappearance is a regression. The live "
+        "caller paths route through `self._collaborators.lifecycle` "
+        "(for the lifecycle collaborator), `self._auth` (for the auth "
+        "tokens), and `auth_coord.update_auth_*(...)` (for the coordinator "
+        "calls). Offenders:\n  - " + "\n  - ".join(surviving)
+    )
+
+    live_drift = sorted(name for name in retention_rows if name in WAVE_3_DELETED_METHODS)
+    assert not live_drift, (
+        "These Wave 3 deletions resurfaced in the live Inventory table of "
+        f"{RETENTION_DOC.relative_to(REPO_ROOT)}. Their rows belong in the "
+        "Wave-3-specific section under `## Deleted` at the bottom of the "
+        "doc, not in the live Inventory:\n  - " + "\n  - ".join(live_drift)
+    )

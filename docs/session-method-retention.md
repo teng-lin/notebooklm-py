@@ -18,6 +18,27 @@ must carry a `retain — <reason>` disposition. No method may be tagged
 `delete in Wave 11` (the cluster deletions have all landed; the
 transitional disposition is gone from the recognised set).
 
+Plan [`host-protocol-removal`](../.sisyphus/phases/host-protocol-removal/phase-1.md)
+closed on 2026-05-28 with Waves 0-4. The retained Session surface is now
+the **Inventory** table below in full: the four lifecycle hot-path
+entries (`open` / `close` / `is_open` / `_keepalive_loop`), the
+`__init__` constructor, the `drain` public-API forward, the
+`assert_bound_loop` / `_get_rpc_semaphore` provider-closure capture
+targets, and the Stage B1 composition primitives (`_bind_transport`,
+`_bind_chain_metadata`, `_bind_executor`, `_require_constructed`).
+Stage A accessors (`collaborators` / `session_transport` / `rpc_executor`)
+were deleted in Stage B1 PR 2 of the post-refactoring plan and are
+recorded in the **Deleted** section below; the chain leaf
+(`_authed_post_chain_terminal`) and the retry-budget tunables live on
+`MiddlewareChainHost` per the [Chain-ownership carve-out](#chain-ownership-carve-out-closed)
+section. Wave 4 of `host-protocol-removal` added regression lints
+([`tests/_lint/test_session_runtime_boundaries.py`](../tests/_lint/test_session_runtime_boundaries.py),
+[`tests/_lint/test_client_composition.py::test_client_self_session_access_is_allowlisted`](../tests/_lint/test_client_composition.py),
+[`tests/_lint/test_session_retention.py::test_wave_3_deletions_stay_out_of_live_inventory`](../tests/_lint/test_session_retention.py))
+that pin the post-Wave-3 surface from both directions so neither the
+`_LifecycleHost` / `RefreshAuthCore` host shape nor the deleted
+auth-forward methods can quietly come back.
+
 ## Categories
 
 | Category | Meaning |

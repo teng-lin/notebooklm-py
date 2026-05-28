@@ -462,6 +462,30 @@ post-migration table and example code earlier in this ADR document the
 historical Rule 2 satisfier pattern; this revision-history note is the
 authoritative current-state pointer.
 
+### 2026-05-28 — Host-protocol removal (plan `host-protocol-removal`)
+
+Lifecycle / auth refresh no longer consume Session-shaped host
+protocols (host-protocol-removal plan, Waves 1-3, PRs #1131-#1134).
+The `_LifecycleHost` and `RefreshAuthCore` Protocols and the
+`typing.cast(_LifecycleHost, core)` site in `_auth/session.py` were
+deleted in Wave 2 (PR #1133); `refresh_auth_session` now takes the
+five concrete collaborators (`auth`, `kernel`, `auth_coord`,
+`lifecycle`, `cookie_persistence`) as keyword-only arguments and
+`ClientLifecycle.save_cookies` takes the `CookiePersistence`
+collaborator directly. Wave 3 (PR #1134) deleted the Session-level
+auth/lifecycle forwards (`Session.lifecycle`, `Session.update_auth_tokens`,
+`Session.update_auth_headers`) the retired Protocols had backed;
+`NotebookLMClient.auth` now reads `self._auth` directly (set in
+`__init__`) and `SourceUploadPipeline(auth=self._auth)` is wired the
+same way. Wave 4 (PR for this revision) added regression lints under
+`tests/_lint/test_session_runtime_boundaries.py` plus extensions to
+`test_client_composition.py` (the `self._session.<X>` allowlist) and
+`test_session_retention.py` (Wave 3 deletion pin) so neither host
+Protocol nor the deleted Session forwards can quietly come back.
+The auth-refresh path is now fully explicit-collaborator-driven and
+ADR-014 Rule 3 holds end-to-end on the refresh code path as it
+already did on the feature constructors.
+
 ## Related decisions
 
 - Builds on [ADR-013](./0013-composable-session-capabilities.md) (capability

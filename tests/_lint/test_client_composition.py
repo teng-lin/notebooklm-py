@@ -1,9 +1,12 @@
 """ADR-014 Rule 3 enforcement: features take collaborators, not Session.
 
-Three AST guards. The first two were introduced in Wave 13 of the
+Four AST guards. The first two were introduced in Wave 13 of the
 session-decoupling plan (see ``docs/session-decoupling-plan-2026-05-26.md``
 Task 6.3); the third is a follow-up boundary rule that closes out the
-client-side reach-through cleanup.
+client-side reach-through cleanup; the fourth was added in Wave 4 of plan
+[`host-protocol-removal`](../../.sisyphus/phases/host-protocol-removal/phase-1.md)
+to tighten the private-attr rule into a positive allowlist for the few
+``self._session`` attributes the composition root may legitimately read.
 
 1. :func:`test_no_feature_constructed_with_session_at_composition_root`
    parses ``src/notebooklm/client.py`` and fails if any feature-API
@@ -31,13 +34,28 @@ client-side reach-through cleanup.
    shape ``self._session._<name>`` appears anywhere in the module
    (read, write, delete, or augmented assignment). The composition
    root MUST consume ``Session`` through its narrow public surface
-   (e.g. :meth:`Session.drain`, :attr:`Session.auth`, :meth:`Session.open`
-   / :meth:`Session.close`, :attr:`Session.is_open`), never through the
+   (e.g. :meth:`Session.drain`, :meth:`Session.open`,
+   :meth:`Session.close`, :attr:`Session.is_open`), never through the
    underscore-prefixed collaborator slots on ``Session``. The rule is
    boundary-focused: it does not pin line-history-specific reach-through
    call sites and so does not need to be rewritten every time a private
    slot is renamed. New private slots automatically come under the rule
    the moment they get an underscore-prefixed name.
+
+4. :func:`test_client_self_session_access_is_allowlisted` is the
+   stricter sibling of Guard 3 — it walks ``client.py`` and fails if
+   any ``self._session.<X>`` access reads an attribute not in the
+   :data:`SESSION_ALLOWED_ATTRS` set (``open`` / ``close`` / ``drain``
+   / ``is_open``). Wave 3 of plan ``host-protocol-removal`` deleted the
+   transitional ``self._session.lifecycle`` / ``self._session.auth``
+   reads from ``NotebookLMClient`` (the lifecycle is now reached via
+   ``self._collaborators.lifecycle`` and the auth tokens via
+   ``self._auth``). Guard 3 only catches underscore-prefixed slot leaks;
+   this guard ALSO catches public-attribute drift like a future
+   ``self._session.lifecycle`` re-introduction, which Guard 3 would
+   silently allow. The allowlist is intentionally narrow: any
+   ``self._session.<X>`` outside the four lifecycle hot-path
+   accessors must surface here at PR time.
 
 The AST shape is deliberate: a regex over the source would either
 over-match (e.g. ``collaborators`` as a variable name) or under-match
@@ -219,7 +237,7 @@ def test_client_does_not_dereference_session_privates() -> None:
 
     Boundary rule (not line-history-focused): the composition root
     consumes :class:`Session` through narrow public/internal accessors
-    (e.g. :meth:`Session.drain`, :attr:`Session.auth`, :meth:`Session.open`,
+    (e.g. :meth:`Session.drain`, :meth:`Session.open`,
     :meth:`Session.close`, :attr:`Session.is_open`). Any
     ``self._session._<name>`` read, write, delete, or augmented
     assignment reintroduces a private reach-through and fails this
@@ -238,4 +256,112 @@ def test_client_does_not_dereference_session_privates() -> None:
         "self._session — route through a narrow Session accessor "
         "(e.g. Session.drain, Session.open, Session.close, "
         "Session.is_open) instead:\n  " + "\n  ".join(violations)
+    )
+
+
+# Allowlist of ``self._session.<X>`` attribute names that the composition
+# root in ``client.py`` may legitimately read. The four entries are the
+# lifecycle hot-path methods + the ``is_open`` boolean that
+# ``NotebookLMClient`` forwards to its public surface:
+#
+#   - ``open``    — entry point for ``async with NotebookLMClient(...)``
+#   - ``close``   — drain + transport teardown
+#   - ``drain``   — graceful in-flight wait, also exposed publicly
+#   - ``is_open`` — public open-state read
+#
+# Wave 3 of plan ``host-protocol-removal`` deleted the transitional
+# ``self._session.lifecycle`` accessor (the lifecycle collaborator is
+# now reached via ``self._collaborators.lifecycle``) and the
+# ``self._session.auth`` read (the auth tokens are now reached via
+# ``self._auth`` per the Auth Instance Invariant). Wave 4 (this guard)
+# pins the post-Wave-3 surface so neither read can quietly come back.
+#
+# Any addition to this set MUST come with a documented retention reason
+# in ``docs/session-method-retention.md`` and a corresponding row in the
+# Inventory table there. The accompanying lint
+# ``tests/_lint/test_session_retention.py`` AST-parses ``_session.py``
+# and cross-checks the inventory; the two lints together pin the
+# Session surface from both directions (caller-side allowlist here +
+# definer-side inventory there).
+SESSION_ALLOWED_ATTRS: frozenset[str] = frozenset({"open", "close", "drain", "is_open"})
+
+
+def _self_session_attribute_access(node: ast.AST) -> tuple[int, str] | None:
+    """Return ``(lineno, attr)`` if ``node`` is ``self._session.<X>``.
+
+    Mirrors :func:`_is_self_session_private_attribute` but matches the
+    *broader* shape: ANY attribute name (public or private) on
+    ``self._session``, not just the underscore-prefixed ones. Returns
+    the outer Attribute's ``lineno`` and ``attr`` so the caller can
+    filter by allowlist membership and surface a precise diagnostic.
+
+    Dunder attributes (``__class__``, ``__dict__``, etc.) are
+    intentionally excluded — they are Python protocol surface and not
+    project-defined attributes; a ``self._session.__class__`` access is
+    introspection, not a boundary leak. The lint targets only
+    project-owned attribute names.
+
+    The receiver must be exactly the AST shape of ``self._session`` —
+    an :class:`ast.Attribute` whose ``value`` is a bare :class:`ast.Name`
+    ``self`` and whose ``attr`` is ``_session``. Chains like
+    ``other._session.<X>`` are deliberately not flagged here; ``client.py``
+    does not construct alternate references to the session under any
+    other name. This keeps the guard scoped tightly to the composition
+    root's known reach pattern.
+    """
+    if not isinstance(node, ast.Attribute):
+        return None
+    # Exclude Python dunder attributes (``__class__``, ``__dict__``, etc.).
+    if node.attr.startswith("__") and node.attr.endswith("__"):
+        return None
+    inner = node.value
+    if not isinstance(inner, ast.Attribute):
+        return None
+    if inner.attr != "_session":
+        return None
+    if not (isinstance(inner.value, ast.Name) and inner.value.id == "self"):
+        return None
+    return node.lineno, node.attr
+
+
+def test_client_self_session_access_is_allowlisted() -> None:
+    """``self._session.<X>`` in ``client.py`` must be one of the allowed attrs.
+
+    Stricter sibling of :func:`test_client_does_not_dereference_session_privates`:
+    that guard only catches underscore-prefixed slot reads. This one is
+    a positive allowlist — any access ``self._session.<X>`` where ``X``
+    is not in :data:`SESSION_ALLOWED_ATTRS` fails the lint, including
+    public-attribute drift like a future ``self._session.lifecycle``
+    re-introduction.
+
+    Failure mode: Wave 3 of plan ``host-protocol-removal`` deleted
+    ``Session.lifecycle`` and the ``self._session.auth`` read in
+    ``NotebookLMClient``. A future PR that "just adds back
+    ``self._session.lifecycle`` for one read site" would slip past
+    Guard 3 (the attribute is public, not underscore-prefixed) but
+    surfaces here because ``lifecycle`` is not in the allowlist.
+
+    The allowlist is intentionally narrow. Widening it requires
+    cross-updating ``docs/session-method-retention.md`` (which the
+    sibling lint ``test_session_retention.py`` cross-checks) so the
+    retention contract stays synchronised end-to-end.
+    """
+    tree = ast.parse(CLIENT_PATH.read_text(encoding="utf-8"))
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        match = _self_session_attribute_access(node)
+        if match is None:
+            continue
+        lineno, attr = match
+        if attr in SESSION_ALLOWED_ATTRS:
+            continue
+        violations.append(f"line {lineno}: self._session.{attr}")
+    assert not violations, (
+        "client.py may only access self._session.<X> for X in "
+        f"{sorted(SESSION_ALLOWED_ATTRS)!r}. Any other attribute access "
+        "reopens the Session-as-discoverability-hub pattern that ADR-014 "
+        "Rule 3 closed and that Waves 1-3 of plan host-protocol-removal "
+        "narrowed further. Route through the explicit collaborator "
+        "(e.g. self._collaborators.lifecycle for the lifecycle, "
+        "self._auth for the auth tokens) instead:\n  " + "\n  ".join(violations)
     )
