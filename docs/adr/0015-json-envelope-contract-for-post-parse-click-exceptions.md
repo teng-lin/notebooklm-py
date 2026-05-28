@@ -29,8 +29,9 @@ Click then renders its own `Usage: ... / Error: ...` prose to stderr and exits
 with its class-level `exit_code` (`2` for `UsageError`/`BadParameter`, `1` for
 the base `ClickException`).
 
-Two different sites raise `ClickException` subclasses, and they behave
-identically at the Click level but mean very different things to a caller:
+There are two different phases in which `ClickException` subclasses are
+raised, and they behave identically at the Click level but mean very
+different things to a caller:
 
 - **Parse-time** raises happen *before* the command body runs. Click's own
   parser raises `UsageError`/`BadParameter` when argv fails option/type
