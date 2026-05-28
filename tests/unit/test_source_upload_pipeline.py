@@ -14,6 +14,7 @@ import pytest
 from notebooklm._source_upload import (
     SourceUploadPipeline,
     _extract_register_file_source_id,
+    _redact_upload_url,
     _transient_error_types_for_upload,
     _validate_resumable_upload_url,
 )
@@ -155,10 +156,39 @@ def test_extract_register_file_source_id_skips_large_string_candidates() -> None
     assert _extract_register_file_source_id([long_payload, "src_123"], "report.pdf") == "src_123"
 
 
-def test_validate_resumable_upload_url_accepts_configured_upload_endpoint() -> None:
-    url = "https://notebooklm.google.com/upload/_/?upload_id=session"
-
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://notebooklm.google.com/upload/_/?upload_id=session",
+        "https://notebooklm.google.com:443/upload/_/?upload_id=session",
+        "https://notebooklm.google.com/upload/_//?upload_id=session",
+    ],
+)
+def test_validate_resumable_upload_url_accepts_configured_upload_endpoint(url: str) -> None:
     assert _validate_resumable_upload_url(url) == url
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (
+            "https://user:pass@notebooklm.google.com/upload/_/?upload_id=SECRET_UPLOAD_ID",
+            "https://notebooklm.google.com/upload/_/?...",
+        ),
+        (
+            "https://user:pass@[2001:db8::1]:443/upload/_/?upload_id=SECRET_UPLOAD_ID",
+            "https://[2001:db8::1]:443/upload/_/?...",
+        ),
+        ("https://notebooklm.google.com:bad/upload/_/?upload_id=SECRET", "[REDACTED_UPLOAD_URL]"),
+    ],
+)
+def test_redact_upload_url_omits_userinfo_and_query_secrets(url: str, expected: str) -> None:
+    redacted = _redact_upload_url(url)
+
+    assert redacted == expected
+    assert "user" not in redacted
+    assert "pass" not in redacted
+    assert "SECRET" not in redacted
 
 
 @pytest.mark.parametrize(
@@ -167,7 +197,12 @@ def test_validate_resumable_upload_url_accepts_configured_upload_endpoint() -> N
         ("http://notebooklm.google.com/upload/_/?upload_id=session", "must use https"),
         ("https://evil.example/upload/_/?upload_id=session", "host is not trusted"),
         ("https://notebooklm.google.com/other/_/?upload_id=session", "path is not trusted"),
-        ("https://notebooklm.google.com/upload/_/", "must include upload_id"),
+        ("https://notebooklm.google.com/upload/_/", "exactly one non-empty upload_id"),
+        ("https://notebooklm.google.com/upload/_/?upload_id=", "exactly one non-empty upload_id"),
+        (
+            "https://notebooklm.google.com/upload/_/?upload_id=one&upload_id=two",
+            "exactly one non-empty upload_id",
+        ),
     ],
 )
 def test_validate_resumable_upload_url_rejects_untrusted_shapes(url: str, match: str) -> None:

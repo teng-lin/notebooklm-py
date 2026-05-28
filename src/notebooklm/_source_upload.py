@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 import httpx
 
@@ -89,29 +89,50 @@ module_logger = logging.getLogger("notebooklm").getChild("_sources")
 
 
 def _normalize_upload_path(path: str) -> str:
-    normalized = path or "/"
-    return normalized if normalized.endswith("/") else f"{normalized}/"
+    return (path or "/").rstrip("/") + "/"
+
+
+def _default_port_for_scheme(scheme: str) -> int | None:
+    if scheme == "https":
+        return 443
+    if scheme == "http":
+        return 80
+    return None
+
+
+def _redacted_upload_authority(parsed: SplitResult) -> str | None:
+    host = parsed.hostname
+    if host is None:
+        return None
+
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    port = parsed.port
+    port_suffix = f":{port}" if port is not None else ""
+    return f"{host}{port_suffix}"
 
 
 def _redact_upload_url(upload_url: str) -> str:
     """Return a log-safe representation of a resumable upload URL."""
     try:
         parsed = urlsplit(upload_url)
+        authority = _redacted_upload_authority(parsed)
     except ValueError:
         return "[REDACTED_UPLOAD_URL]"
-    if not parsed.scheme or not parsed.netloc:
+    if not parsed.scheme or authority is None:
         return "[REDACTED_UPLOAD_URL]"
     suffix = "?..." if parsed.query else ""
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}{suffix}"
+    return f"{parsed.scheme}://{authority}{parsed.path}{suffix}"
 
 
 def _validate_resumable_upload_url(upload_url: str) -> str:
     """Validate that a resumable upload URL targets the configured upload endpoint."""
     try:
         parsed = urlsplit(upload_url)
-        actual_port = parsed.port
+        actual_port = parsed.port or _default_port_for_scheme(parsed.scheme)
         expected = urlsplit(get_upload_url())
-        expected_port = expected.port
+        expected_port = expected.port or _default_port_for_scheme(expected.scheme)
     except ValueError as exc:
         raise ValidationError("Upload URL is not valid") from exc
 
@@ -130,8 +151,8 @@ def _validate_resumable_upload_url(upload_url: str) -> str:
         for key, value in parse_qsl(parsed.query, keep_blank_values=True)
         if key.lower() == "upload_id"
     ]
-    if not any(upload_ids):
-        raise ValidationError("Upload URL must include upload_id")
+    if len(upload_ids) != 1 or not upload_ids[0]:
+        raise ValidationError("Upload URL must include exactly one non-empty upload_id")
 
     return upload_url
 
