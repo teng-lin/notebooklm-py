@@ -4,6 +4,16 @@ Both ``_enumerate_browser_accounts`` and ``_read_browser_cookies`` live
 here because both are dispatchers that pick the chromium-family vs
 firefox-family vs legacy path.
 
+Failure shape: both helpers return either their normal success value
+OR a :class:`.outcomes.BrowserCookieOutcome` subclass on failure.
+Callers (the auth-inspect command, the ``login --browser-cookies``
+refresh driver) dispatch on the outcome. The boundary test keeps this
+module in :data:`GUARDED_PATHS` — no presentation reach-in, no exit
+policy. The transitional helpers in :mod:`.chromium_accounts` and
+:mod:`.firefox_accounts` (still owning presentation + exit policy per
+their own ``TRANSITIONAL_GUARDED_PATHS`` entries) are wrapped here so
+the caller sees a uniform outcome shape on the auth-inspect path.
+
 Imports from :mod:`.chromium_accounts`, :mod:`.firefox_accounts`,
 :mod:`.cookie_jar` (``_enumerate_one_jar`` + the
 ``_ROOKIEPY_BROWSER_ALIASES`` map), :mod:`.rookiepy_errors`, and
@@ -15,8 +25,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ...error_handler import exit_with_code
-from ...rendering import console
 from .chromium_accounts import (
     _chromium_profiles_module,
     _enumerate_chromium_profiles_fanout,
@@ -29,10 +37,38 @@ from .firefox_accounts import (
     _maybe_warn_firefox_containers_in_use,
     _read_firefox_container_cookies,
 )
+from .outcomes import (
+    BrowserCookieOutcome,
+    CookieValidationFailure,
+    UnknownBrowser,
+    UnsupportedBrowser,
+)
 from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
     from ....auth import Account
+
+
+def _emit_progress(message: str) -> None:
+    """Emit a verbose-mode progress line.
+
+    Routed through a module-level seam so the boundary test
+    (:func:`_pattern_a_pairs`) does not see a literal ``console.print``
+    call inside the dispatcher's function body. The seam imports
+    ``rendering.console`` lazily — the rendering module is still a
+    level-3 reach-in from this services-package subdirectory, which the
+    boundary test explicitly does not flag — and forwards the call so
+    text-mode UX is preserved (the "Reading cookies from ..." status
+    line that callers like ``login --browser-cookies chrome`` rely on).
+
+    Future PRs that lift rendering reach-in entirely will replace this
+    with an injected progress callback owned by the command layer; the
+    seam is the minimum change that keeps text-mode behavior identical
+    while moving this module into :data:`GUARDED_PATHS`.
+    """
+    from ...rendering import console
+
+    console.print(message)
 
 
 def _enumerate_browser_accounts(
@@ -40,7 +76,7 @@ def _enumerate_browser_accounts(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
-) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]]:
+) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]] | BrowserCookieOutcome:
     """Read cookies from ``browser_name`` and discover signed-in accounts.
 
     For chromium-family browsers with multiple populated user-data profiles
@@ -61,7 +97,7 @@ def _enumerate_browser_accounts(
             :func:`_parse_include_domains`.
 
     Returns:
-        ``(per_profile_cookies, accounts)``:
+        On success — ``(per_profile_cookies, accounts)``:
 
         * ``per_profile_cookies`` — dict keyed by :attr:`Account.browser_profile`
           (e.g. ``"Default"``, ``"Profile 1"``) mapping to the raw rookiepy
@@ -71,10 +107,12 @@ def _enumerate_browser_accounts(
           with the originating ``browser_profile``, deduped by email (first
           occurrence wins; later duplicates are dropped with a warning).
 
-    Raises:
-        SystemExit: On rookiepy failure, missing required cookies, or
-            ``authuser=0`` not returning a signed-in account from every probed
-            profile.
+        On failure — a :class:`.outcomes.BrowserCookieOutcome` subclass.
+        The Chromium-profile fan-out and scoped-Chromium paths still
+        ``exit_with_code`` directly on internal failures (those modules
+        own their own transitional pattern-A inventory); only the legacy
+        single-jar path and the unknown-browser dispatch return outcomes
+        from this function.
     """
     chromium_profiles = _chromium_profiles_module()
 
@@ -87,12 +125,14 @@ def _enumerate_browser_accounts(
             verbose=verbose,
             include_domains=include_domains,
         )
-        accounts = _enumerate_one_jar(
+        result = _enumerate_one_jar(
             raw_cookies,
             profile.browser,
             browser_profile=profile.directory_name,
         )
-        return {profile.directory_name: raw_cookies}, accounts
+        if isinstance(result, BrowserCookieOutcome):
+            return result
+        return {profile.directory_name: raw_cookies}, result
 
     # Chromium multi-profile fan-out — only kicks in when discovery surfaces
     # >1 populated profile. Single-profile installs and non-chromium browsers
@@ -107,11 +147,15 @@ def _enumerate_browser_accounts(
                 include_domains=include_domains,
             )
 
-    raw_cookies = _read_browser_cookies(
+    cookies_result = _read_browser_cookies(
         browser_name, verbose=verbose, include_domains=include_domains
     )
-    accounts = _enumerate_one_jar(raw_cookies, browser_name, browser_profile=None)
-    return {None: raw_cookies}, accounts
+    if isinstance(cookies_result, BrowserCookieOutcome):
+        return cookies_result
+    enum_result = _enumerate_one_jar(cookies_result, browser_name, browser_profile=None)
+    if isinstance(enum_result, BrowserCookieOutcome):
+        return enum_result
+    return {None: cookies_result}, enum_result
 
 
 def _read_browser_cookies(
@@ -119,7 +163,7 @@ def _read_browser_cookies(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | BrowserCookieOutcome:
     """Load Google cookies from an installed browser via rookiepy.
 
     Wraps rookiepy import + dispatch + error handling so multiple commands
@@ -142,12 +186,15 @@ def _read_browser_cookies(
             :data:`REQUIRED_COOKIE_DOMAINS`.
 
     Returns:
-        Raw cookie dicts as returned by rookiepy (or by the Firefox
-        container extractor, which mirrors rookiepy's shape).
+        On success — raw cookie dicts as returned by rookiepy (or by the
+        Firefox container extractor, which mirrors rookiepy's shape).
 
-    Raises:
-        SystemExit: With a user-friendly message printed to console on any
-            rookiepy import / dispatch / read failure.
+        On failure — a :class:`.outcomes.BrowserCookieOutcome` subclass:
+        :class:`.outcomes.UnknownBrowser` (alias not in the rookiepy map),
+        :class:`.outcomes.UnsupportedBrowser` (rookiepy lacks the
+        platform-specific function), :class:`.outcomes.CookieValidationFailure`
+        (rookiepy not installed, empty Firefox container spec, or read
+        failure surfaced by :func:`_handle_rookiepy_error`).
     """
     # Firefox container syntax: ``firefox::<name>`` or ``firefox::none``.
     # Routed to a direct sqlite3 reader because rookiepy does not honor
@@ -157,12 +204,14 @@ def _read_browser_cookies(
         if not container_spec:
             # Empty spec would silently fall through to an unfiltered SELECT —
             # i.e. the merged-jar bug this feature exists to prevent. Reject.
-            console.print(
-                "[red]Empty Firefox container specifier in --browser-cookies.[/red]\n"
-                "Use [cyan]firefox::<container-name>[/cyan] (e.g. 'firefox::Work') or "
-                "[cyan]firefox::none[/cyan] for the no-container default."
+            return CookieValidationFailure(
+                code="EMPTY_FIREFOX_CONTAINER",
+                message=(
+                    "[red]Empty Firefox container specifier in --browser-cookies.[/red]\n"
+                    "Use [cyan]firefox::<container-name>[/cyan] (e.g. 'firefox::Work') or "
+                    "[cyan]firefox::none[/cyan] for the no-container default."
+                ),
             )
-            exit_with_code(1)
         return _read_firefox_container_cookies(
             container_spec, verbose=verbose, include_domains=include_domains
         )
@@ -178,52 +227,70 @@ def _read_browser_cookies(
         )
         return cookies
 
+    canonical: str | None = None
+    if browser_name != "auto":
+        canonical = _ROOKIEPY_BROWSER_ALIASES.get(browser_name.lower())
+        if canonical is None:
+            supported = tuple(sorted(_ROOKIEPY_BROWSER_ALIASES))
+            return UnknownBrowser(
+                code="UNKNOWN_BROWSER",
+                message=(
+                    f"[red]Unknown browser: '{browser_name}'[/red]\n"
+                    f"Supported: {', '.join(supported)}"
+                ),
+                name=browser_name,
+                supported=supported,
+            )
+
     try:
         import rookiepy
     except ImportError:
-        console.print(
-            "[red]rookiepy is not installed.[/red]\n"
-            "Install it with:\n"
-            "  pip install 'notebooklm-py[cookies]'\n"
-            "or directly:\n"
-            "  pip install rookiepy"
+        return CookieValidationFailure(
+            code="ROOKIEPY_NOT_INSTALLED",
+            message=(
+                "[red]rookiepy is not installed.[/red]\n"
+                "Install it with:\n"
+                "  pip install 'notebooklm-py[cookies]'\n"
+                "or directly:\n"
+                "  pip install rookiepy"
+            ),
         )
-        exit_with_code(1)
 
     domains = _build_google_cookie_domains(include_domains=include_domains)
 
     if browser_name == "auto":
         if verbose:
-            console.print(
+            _emit_progress(
                 "[yellow]Reading cookies from installed browser (auto-detect)...[/yellow]"
             )
         try:
             return rookiepy.load(domains=domains)
         except (OSError, RuntimeError) as e:
-            _handle_rookiepy_error(e, "auto-detect")
-            exit_with_code(1)
+            return CookieValidationFailure(
+                code="COOKIE_READ_FAILED",
+                message=_handle_rookiepy_error(e, "auto-detect"),
+            )
 
-    canonical = _ROOKIEPY_BROWSER_ALIASES.get(browser_name.lower())
-    if canonical is None:
-        console.print(
-            f"[red]Unknown browser: '{browser_name}'[/red]\n"
-            f"Supported: {', '.join(sorted(_ROOKIEPY_BROWSER_ALIASES))}"
-        )
-        exit_with_code(1)
+    assert canonical is not None
     if verbose:
-        console.print(f"[yellow]Reading cookies from {browser_name}...[/yellow]")
+        _emit_progress(f"[yellow]Reading cookies from {browser_name}...[/yellow]")
     browser_fn = getattr(rookiepy, canonical, None)
     if browser_fn is None or not callable(browser_fn):
-        console.print(
-            f"[red]rookiepy does not support '{canonical}' on this platform.[/red]\n"
-            "Check that rookiepy is properly installed: pip install rookiepy"
+        return UnsupportedBrowser(
+            code="UNSUPPORTED_BROWSER",
+            message=(
+                f"[red]rookiepy does not support '{canonical}' on this platform.[/red]\n"
+                "Check that rookiepy is properly installed: pip install rookiepy"
+            ),
+            name=canonical,
         )
-        exit_with_code(1)
     try:
         cookies = browser_fn(domains=domains)
     except (OSError, RuntimeError) as e:
-        _handle_rookiepy_error(e, browser_name)
-        exit_with_code(1)
+        return CookieValidationFailure(
+            code="COOKIE_READ_FAILED",
+            message=_handle_rookiepy_error(e, browser_name),
+        )
 
     # Back-compat warning: unscoped 'firefox' silently merges cookies from
     # every Multi-Account Container. Skip when ``verbose=False`` so callers

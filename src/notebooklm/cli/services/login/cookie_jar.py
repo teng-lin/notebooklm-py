@@ -10,11 +10,17 @@ name → rookiepy function-name map (referenced by
 :mod:`.browser_accounts._read_browser_cookies` for the named-browser
 dispatch path).
 
-No in-package imports today. The DAG (``test_login_package_dag.py``)
-allows an edge to :mod:`.rookiepy_errors` for future use, but
-``_enumerate_one_jar`` currently formats its own error messages and does
-not call :func:`.rookiepy_errors._handle_rookiepy_error`. This module
-relies on the auth-side helpers for cookie shape conversion.
+Failure shape: :func:`_enumerate_one_jar` returns either a list of
+:class:`Account` records (success) OR a
+:class:`.outcomes.BrowserCookieOutcome` subclass for cookie-policy /
+stale-cookie failures. Network failures (``httpx.RequestError``) are
+returned as :class:`.outcomes.NetworkFailure` in normal mode but
+propagate unchanged in ``quiet=True`` fan-out mode — that caller must
+distinguish transport failures from per-profile "signed out" so it can
+abort cleanly. The boundary test
+(``tests/unit/cli/test_services_boundary.py``) keeps this module in
+:data:`GUARDED_PATHS`; there is no presentation or exit policy in this
+file.
 """
 
 from __future__ import annotations
@@ -29,9 +35,13 @@ from ....auth import (
     missing_cookies_hint,
     validate_with_recovery,
 )
-from ...error_handler import exit_with_code
-from ...rendering import console
 from ...runtime import run_async
+from .outcomes import (
+    BrowserCookieOutcome,
+    CookieValidationFailure,
+    NetworkFailure,
+    StaleCookies,
+)
 
 if TYPE_CHECKING:
     from ....auth import Account
@@ -65,7 +75,7 @@ def _enumerate_one_jar(
     browser_profile: str | None,
     *,
     quiet: bool = False,
-) -> list[Account]:
+) -> list[Account] | BrowserCookieOutcome:
     """Probe ``?authuser=N`` against one cookie set and return tagged Accounts.
 
     Shared by both the legacy single-jar path and the chromium multi-profile
@@ -77,24 +87,33 @@ def _enumerate_one_jar(
         browser_name: The browser the cookies came from (for error messages).
         browser_profile: Tag attached to each Account (``"Default"``,
             ``"Profile 1"``, ...) or ``None`` for the legacy single-jar path.
-        quiet: Suppress the loud multi-line user-facing error panels
-            (``"No valid Google authentication cookies"``, ``"Account
-            discovery failed: …stale"``) for "this profile is signed out"
-            cases and just raise ``SystemExit``. Used by the fan-out caller,
-            which prints its own per-profile soft note for signed-out /
-            stale-cookie profiles and would otherwise bleed those panels into
-            the table output. Network errors (``httpx.RequestError``) are
-            NOT downgraded — they propagate as-is so the caller can
-            distinguish transport failures from per-profile "signed out".
+        quiet: Suppress the loud multi-line user-facing message body in the
+            returned outcome (the fan-out caller prints its own per-profile
+            soft note for signed-out / stale-cookie profiles and would
+            otherwise bleed those panels into the table output). The
+            returned outcome class is unchanged; only the ``message``
+            payload is collapsed when ``quiet=True``. Network errors
+            (``httpx.RequestError``) are NOT downgraded — they propagate
+            as-is so the caller can distinguish transport failures from
+            per-profile "signed out".
+
+    Returns:
+        list[Account]: signed-in Google accounts on the success path.
+
+        :class:`.outcomes.BrowserCookieOutcome`:
+        * :class:`.outcomes.CookieValidationFailure` — missing required
+          cookies / malformed policy.
+        * :class:`.outcomes.StaleCookies` — Google rejected the cookie
+          set (account chooser redirect, RotateCookies 401).
+        * :class:`.outcomes.NetworkFailure` — account enumeration hit a
+          transport error. In ``quiet=True`` mode this propagates as
+          ``httpx.RequestError`` instead so Chromium fan-out aborts the
+          whole discovery rather than treating every profile as signed out.
 
     Raises:
-        SystemExit: On missing required cookies or stale-cookie rejection
-            by Google (Google redirected to the account chooser, etc.).
-            These are per-profile "signed out" conditions in fan-out mode
-            and are caught and skipped by the fan-out caller.
-        httpx.RequestError: On network transport failure. Re-raised
-            unchanged so the fan-out aborts (vs. silently downgrading every
-            offline profile to a soft skip).
+        httpx.RequestError: On network transport failure when ``quiet=True``.
+            Re-raised unchanged so fan-out aborts (vs. silently downgrading
+            every offline profile to a soft skip).
     """
     from ....auth import (
         Account,
@@ -105,15 +124,21 @@ def _enumerate_one_jar(
 
     storage_state, validation_error = validate_with_recovery(raw_cookies)
     if validation_error is not None:
-        if not quiet:
-            cookie_names = cookie_names_from_storage(storage_state)
-            hint = missing_cookies_hint(cookie_names, browser_label=browser_name)
-            console.print(
+        if quiet:
+            return CookieValidationFailure(
+                code="COOKIE_VALIDATION_FAILED",
+                message=f"No valid Google authentication cookies found in {browser_name}.",
+            )
+        cookie_names = cookie_names_from_storage(storage_state)
+        hint = missing_cookies_hint(cookie_names, browser_label=browser_name)
+        return CookieValidationFailure(
+            code="COOKIE_VALIDATION_FAILED",
+            message=(
                 "[red]No valid Google authentication cookies found.[/red]\n"
                 f"{validation_error}\n\n"
                 f"{hint}"
-            )
-        exit_with_code(1)
+            ),
+        )
 
     cookie_map = extract_cookies_with_domains(storage_state)
     jar = build_cookie_jar(cookies=cookie_map)
@@ -122,8 +147,17 @@ def _enumerate_one_jar(
     except ValueError:
         # Cookies are present but Google rejected them (passive sign-in
         # redirected to the account chooser, or RotateCookies returned 401).
-        if not quiet:
-            console.print(
+        if quiet:
+            return StaleCookies(
+                code="STALE_COOKIES",
+                message=(
+                    f"Saved cookies for {browser_name} are too stale for Google to "
+                    "re-authenticate."
+                ),
+            )
+        return StaleCookies(
+            code="STALE_COOKIES",
+            message=(
                 f"[red]Account discovery failed: {browser_name}'s saved cookies are "
                 f"too stale for Google to re-authenticate.[/red]\n\n"
                 "Refresh them by opening the browser and visiting a Google site "
@@ -131,21 +165,22 @@ def _enumerate_one_jar(
                 "If the browser is signed out, sign back in there first.\n"
                 "If you'd rather skip the browser entirely, use "
                 "[cyan]notebooklm login[/cyan] (Playwright flow)."
-            )
-        exit_with_code(1)
+            ),
+        )
     except httpx.RequestError as e:
-        # Distinct from "signed out / stale" SystemExit branches above:
-        # a network failure means EVERY profile probe will fail the same
-        # way, so we must surface the transport error rather than let the
-        # fan-out caller collapse it into a soft per-profile skip.
+        # Distinct from "signed out / stale" branches above: a network
+        # failure means every profile probe is likely to fail the same way.
+        # Fan-out callers use quiet=True and must still see the exception so
+        # they can abort instead of soft-skipping all profiles.
         if quiet:
             raise
-        console.print(
-            f"[red]Account discovery failed (network error):[/red] {e}\n"
-            "Check your internet connection and try again."
+        return NetworkFailure(
+            code="NETWORK_ERROR",
+            message=(
+                f"[red]Account discovery failed (network error):[/red] {e}\n"
+                "Check your internet connection and try again."
+            ),
         )
-        exit_with_code(1)
-        return []
 
     if browser_profile is None:
         return list(accounts)

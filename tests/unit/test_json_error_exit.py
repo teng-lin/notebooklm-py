@@ -17,6 +17,7 @@ from collections.abc import Generator
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from click.testing import CliRunner
 
@@ -218,6 +219,22 @@ def _assert_json_error_contract(result, case_id: str) -> dict:
         f"{case_id}: JSON payload lacks an error marker — got {payload!r}"
     )
     return payload
+
+
+def _auth_inspect_rookiepy_cookies() -> list[dict[str, object]]:
+    """Return a minimal valid rookiepy cookie list for account-discovery tests."""
+    return [
+        {
+            "domain": ".google.com",
+            "name": name,
+            "value": f"{name}-value",
+            "path": "/",
+            "secure": True,
+            "expires": 9999,
+            "http_only": False,
+        }
+        for name in ("SID", "HSID", "SSID", "APISID", "SAPISID", "__Secure-1PSIDTS")
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -669,6 +686,48 @@ def test_auth_check_json_exits_nonzero_on_missing_storage(
     )
     payload = json.loads(result.stdout)
     assert payload.get("status") == "error", payload
+
+
+def test_auth_inspect_unknown_browser(runner: CliRunner) -> None:
+    """``auth inspect --json`` must envelope unknown-browser helper outcomes."""
+    result = runner.invoke(
+        cli,
+        ["auth", "inspect", "--browser", "not-a-browser", "--json"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.stdout
+    payload = _assert_json_error_contract(result, "auth_inspect_unknown_browser")
+    assert payload["code"] == "UNKNOWN_BROWSER"
+    assert payload["browser"] == "not-a-browser"
+    assert "Unknown browser" in payload["message"]
+    assert _safe_stderr(result) == ""
+
+
+def test_auth_inspect_network_failure(runner: CliRunner) -> None:
+    """``auth inspect --json`` must envelope account-discovery transport errors."""
+    mock_rookiepy = MagicMock()
+    mock_rookiepy.chrome = MagicMock(return_value=_auth_inspect_rookiepy_cookies())
+
+    async def fail_enumerate(*args, **kwargs):
+        raise httpx.RequestError("offline")
+
+    with (
+        patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
+        patch("notebooklm.cli._chromium_profiles.discover_chromium_profiles", return_value=[]),
+        patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate),
+    ):
+        result = runner.invoke(
+            cli,
+            ["auth", "inspect", "--browser", "chrome", "--json"],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 1, result.stdout
+    payload = _assert_json_error_contract(result, "auth_inspect_network_failure")
+    assert payload["code"] == "NETWORK_ERROR"
+    assert "offline" in payload["message"]
+    assert _safe_stderr(result) == ""
 
 
 def test_download_audio_non_json_mode_still_exits_nonzero(runner: CliRunner, mock_auth_env) -> None:

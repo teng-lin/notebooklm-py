@@ -17,6 +17,7 @@ from ...error_handler import exit_with_code
 from ...rendering import console
 from .cookie_domains import _build_google_cookie_domains
 from .cookie_jar import _enumerate_one_jar
+from .outcomes import BrowserCookieOutcome
 from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
@@ -79,7 +80,7 @@ def _read_chromium_profile_cookies_from_selector(
         )
         exit_with_code(1)
     except (OSError, RuntimeError) as e:
-        _handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'")
+        console.print(_handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'"))
         exit_with_code(1)
 
     return profile, cookies
@@ -148,21 +149,12 @@ def _enumerate_chromium_profiles_fanout(
 
         successful_reads += 1
         try:
-            accounts = _enumerate_one_jar(
+            jar_result = _enumerate_one_jar(
                 raw,
                 browser_name,
                 browser_profile=profile.directory_name,
                 quiet=True,
             )
-        except SystemExit:
-            # ``_enumerate_one_jar`` exits the CLI on a stale-jar / missing-cookies
-            # failure, but in fan-out mode an individual profile being signed
-            # out is normal. Catch and continue.
-            if verbose:
-                console.print(
-                    f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]"
-                )
-            continue
         except httpx.RequestError as e:
             # Network failure — every subsequent profile probe will hit the
             # same error, so abort the entire fan-out rather than collapse
@@ -172,6 +164,16 @@ def _enumerate_chromium_profiles_fanout(
                 "Check your internet connection and try again."
             )
             exit_with_code(1)
+        if isinstance(jar_result, BrowserCookieOutcome):
+            # Stale-jar / missing-cookies failure for one profile. In
+            # fan-out mode an individual profile being signed out is
+            # normal — continue to the next one.
+            if verbose:
+                console.print(
+                    f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]"
+                )
+            continue
+        accounts = jar_result
 
         per_profile_cookies[profile.directory_name] = raw
         for account in accounts:

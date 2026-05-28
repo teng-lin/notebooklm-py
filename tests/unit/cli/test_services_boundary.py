@@ -74,8 +74,13 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
+    "cli/services/login/browser_accounts.py": SERVICES_ROOT / "login" / "browser_accounts.py",
+    "cli/services/login/cookie_jar.py": SERVICES_ROOT / "login" / "cookie_jar.py",
+    "cli/services/login/cookie_writes.py": SERVICES_ROOT / "login" / "cookie_writes.py",
     "cli/services/login/exceptions.py": SERVICES_ROOT / "login" / "exceptions.py",
+    "cli/services/login/outcomes.py": SERVICES_ROOT / "login" / "outcomes.py",
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
+    "cli/services/login/rookiepy_errors.py": SERVICES_ROOT / "login" / "rookiepy_errors.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
     "cli/services/source_clean.py": SERVICES_ROOT / "source_clean.py",
@@ -192,40 +197,28 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "handling to the command layer."
         ),
     },
-    "cli/services/login/browser_accounts.py": {
-        "path": SERVICES_ROOT / "login" / "browser_accounts.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [
-            ("_read_browser_cookies", 165),
-            ("_read_browser_cookies", 191),
-            ("_read_browser_cookies", 204),
-            ("_read_browser_cookies", 212),
-            ("_read_browser_cookies", 221),
-            ("_read_browser_cookies", 226),
-        ],
-        "rationale": (
-            "Browser-cookie reader still owns presentation + exit codes for "
-            "every failure mode; reach-in uses the level-3 "
-            "``...rendering`` / ``...error_handler`` paths not currently "
-            "flagged by ``_boundary_violations`` (which only sees level-2). "
-            "Pending login submodule boundary expansion."
-        ),
-    },
     "cli/services/login/chromium_accounts.py": {
         "path": SERVICES_ROOT / "login" / "chromium_accounts.py",
         "forbidden_imports": [],
         "pattern_a_violations": [
-            ("_read_chromium_profile_cookies_from_selector", 61),
-            ("_read_chromium_profile_cookies_from_selector", 80),
-            ("_read_chromium_profile_cookies_from_selector", 83),
-            ("_enumerate_chromium_profiles_fanout", 137),
-            ("_enumerate_chromium_profiles_fanout", 174),
-            ("_enumerate_chromium_profiles_fanout", 219),
+            ("_read_chromium_profile_cookies_from_selector", 62),
+            ("_read_chromium_profile_cookies_from_selector", 81),
+            ("_read_chromium_profile_cookies_from_selector", 84),
+            ("_enumerate_chromium_profiles_fanout", 138),
+            ("_enumerate_chromium_profiles_fanout", 166),
+            ("_enumerate_chromium_profiles_fanout", 221),
         ],
         "rationale": (
             "Chromium-profile enumeration owns presentation + exit codes "
             "for profile-selection failures; level-3 rendering reach-in not "
-            "flagged by ``_boundary_violations``."
+            "flagged by ``_boundary_violations``. The ``rookiepy_error`` "
+            "branch now wraps the typed-message helper "
+            "(:func:`_handle_rookiepy_error`) in a ``console.print(...)`` "
+            "so the helper itself stays in :data:`GUARDED_PATHS`; the "
+            "exit_with_code line moved by 1 in each helper. "
+            "``_enumerate_chromium_profiles_fanout`` now dispatches on a "
+            "typed outcome returned by :func:`_enumerate_one_jar` instead "
+            "of catching ``SystemExit``."
         ),
     },
     "cli/services/login/cookie_domains.py": {
@@ -251,38 +244,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "planned without a separate callback-architecture refactor)."
         ),
     },
-    "cli/services/login/cookie_jar.py": {
-        "path": SERVICES_ROOT / "login" / "cookie_jar.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [
-            ("_enumerate_one_jar", 116),
-            ("_enumerate_one_jar", 135),
-            ("_enumerate_one_jar", 147),
-        ],
-        "rationale": (
-            "Cookie-jar enumerator owns presentation + exit codes for jar "
-            "decryption failures; level-3 rendering reach-in not flagged "
-            "by ``_boundary_violations``."
-        ),
-    },
-    "cli/services/login/cookie_writes.py": {
-        "path": SERVICES_ROOT / "login" / "cookie_writes.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [
-            ("_select_account", 54),
-            ("_select_account", 66),
-            ("_select_refresh_account", 92),
-            ("_select_refresh_account", 107),
-            ("_select_refresh_account", 120),
-            ("_write_extracted_cookies", 148),
-            ("_write_extracted_cookies", 160),
-        ],
-        "rationale": (
-            "Cookie-write pipeline owns presentation + exit policy for "
-            "account-selection and write failures; level-3 rendering "
-            "reach-in not flagged by ``_boundary_violations``."
-        ),
-    },
     "cli/services/login/firefox_accounts.py": {
         "path": SERVICES_ROOT / "login" / "firefox_accounts.py",
         "forbidden_imports": [],
@@ -303,29 +264,19 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "path": SERVICES_ROOT / "login" / "refresh.py",
         "forbidden_imports": [],
         "pattern_a_violations": [
-            ("_confirm_profile_account_overwrite", 180),
-            ("_refresh_from_browser_cookies", 271),
-            ("_login_with_browser_cookies", 326),
-            ("_login_with_browser_cookies", 341),
+            ("_exit_on_outcome", 74),
+            ("_confirm_profile_account_overwrite", 205),
+            ("_refresh_from_browser_cookies", 305),
+            ("_login_with_browser_cookies", 368),
+            ("_login_with_browser_cookies", 383),
         ],
         "rationale": (
-            "Pattern B click.confirm reach-in lifted via injected "
-            "``ConfirmCallback`` parameter; remaining Pattern A pairs "
-            "(``_refresh_from_browser_cookies`` browser-state failure, "
-            "``_login_with_browser_cookies`` cookie-validation + storage "
-            "OSError) are independent presentation+exit reach-ins that "
-            "belong to the separate login-flow Pattern A migration."
-        ),
-    },
-    "cli/services/login/rookiepy_errors.py": {
-        "path": SERVICES_ROOT / "login" / "rookiepy_errors.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [],
-        "rationale": (
-            "Rookiepy error formatter emits ``console.print`` but does not "
-            "own exit policy; level-3 ``...rendering`` reach-in not flagged "
-            "by ``_boundary_violations``. Tracked transitionally pending "
-            "login submodule boundary expansion."
+            "Browser-cookie refresh flow owns interactive confirmation, "
+            "presentation, and exit codes; multiple Pattern A pairs. "
+            "``_exit_on_outcome`` is the shared adapter that converts the "
+            "typed outcome returned by the (now-GUARDED) helper-chain "
+            "modules into the legacy ``console.print + exit_with_code`` "
+            "shape this driver still owns."
         ),
     },
     "cli/services/playwright_login.py": {
@@ -354,7 +305,10 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "rationale": (
             "Playwright login orchestrator owns the full presentation + "
             "exit-code matrix for browser-automation failures; one of the "
-            "largest migration targets in this inventory."
+            "largest migration targets in this inventory. Line numbers "
+            "shifted in commit e3871dc3 (subprocess-stderr redaction, "
+            "PR #1111) but the inventory was not updated in that PR; "
+            "refreshed here as a drive-by mechanical fix."
         ),
     },
     "cli/services/polling.py": {

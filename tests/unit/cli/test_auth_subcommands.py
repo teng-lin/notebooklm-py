@@ -1436,6 +1436,7 @@ class TestAuthInspect:
         mock_run_async.assert_called_once()
 
     def test_enumerate_one_jar_network_error_non_quiet_exits_without_reraising(self):
+        from notebooklm.cli.services.login.outcomes import NetworkFailure
         from notebooklm.cli.session_cmd import _enumerate_one_jar
 
         raw_cookies = _multiaccount_rookiepy_mock().chrome.return_value
@@ -1443,23 +1444,15 @@ class TestAuthInspect:
         async def fail_enumerate(*args, **kwargs):
             raise httpx.RequestError("offline")
 
-        with (
-            patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate),
-            patch(
-                "notebooklm.cli.services.login.cookie_jar.exit_with_code",
-                return_value=None,
-            ) as mock_exit,
-            patch("notebooklm.cli.services.login.cookie_jar.console") as mock_console,
-        ):
+        with patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate):
             result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
 
-        assert result == []
-        mock_exit.assert_called_once_with(1)
-        message = mock_console.print.call_args[0][0]
+        assert isinstance(result, NetworkFailure)
+        message = result.message
         assert "network error" in message
         assert "offline" in message
 
-    def test_select_account_without_marked_default_uses_first_account(self):
+    def test_select_account_without_marked_default_uses_first_account(self, caplog):
         from notebooklm.auth import Account
         from notebooklm.cli.session_cmd import _select_account
 
@@ -1468,38 +1461,37 @@ class TestAuthInspect:
             Account(authuser=1, email="bob@gmail.com", is_default=False),
         ]
 
-        with patch_session_login_dual("console") as mock_console:
+        with (
+            caplog.at_level("WARNING", logger="notebooklm.cli.services.login.cookie_writes"),
+            patch("notebooklm.cli.rendering.console") as mock_console,
+        ):
             selected = _select_account(accounts, account_email=None)
 
         assert selected == accounts[0]
         warning_text = mock_console.print.call_args[0][0]
         assert "default account" in warning_text
         assert "alice@example.com" in warning_text
+        assert "default account" in caplog.text
+        assert "alice@example.com" in caplog.text
 
-    def test_select_account_empty_accounts_exits_with_user_message(self):
+    def test_select_account_empty_accounts_returns_user_message(self):
         from notebooklm.cli.services.login.cookie_writes import _select_account
+        from notebooklm.cli.services.login.outcomes import CookieValidationFailure
 
-        with (
-            patch("notebooklm.cli.services.login.cookie_writes.console") as mock_console,
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            _select_account([], account_email=None)
+        result = _select_account([], account_email=None)
 
-        assert exc_info.value.code == 1
-        message = mock_console.print.call_args[0][0]
+        assert isinstance(result, CookieValidationFailure)
+        message = result.message
         assert "No signed-in Google accounts found" in message
 
-    def test_select_refresh_account_empty_accounts_exits_with_user_message(self):
+    def test_select_refresh_account_empty_accounts_returns_user_message(self):
         from notebooklm.cli.services.login.cookie_writes import _select_refresh_account
+        from notebooklm.cli.services.login.outcomes import CookieValidationFailure
 
-        with (
-            patch("notebooklm.cli.services.login.cookie_writes.console") as mock_console,
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            _select_refresh_account([], {}, "chrome")
+        result = _select_refresh_account([], {}, "chrome")
 
-        assert exc_info.value.code == 1
-        message = mock_console.print.call_args[0][0]
+        assert isinstance(result, CookieValidationFailure)
+        message = result.message
         assert "No signed-in Google accounts found in chrome" in message
 
     def test_inspect_lists_accounts(self, runner):

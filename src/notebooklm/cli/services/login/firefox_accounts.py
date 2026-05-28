@@ -93,7 +93,7 @@ def _read_firefox_container_cookies(
         console.print(f"[red]{e}[/red]")
         exit_with_code(1)
     except (OSError, RuntimeError) as e:
-        _handle_rookiepy_error(e, "firefox")
+        console.print(_handle_rookiepy_error(e, "firefox"))
         exit_with_code(1)
     except sqlite3.DatabaseError as e:
         console.print(f"[red]Failed to read Firefox cookies database:[/red] {e}")

@@ -34,9 +34,11 @@ import shutil  # noqa: F401 — preserved patch surface
 import sys  # noqa: F401 — preserved patch surface
 import time  # noqa: F401 — preserved patch surface
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import click
+import httpx
+from rich.markup import render as render_markup
 from rich.table import Table
 
 from ..client import NotebookLMClient
@@ -92,6 +94,7 @@ from .services.login import (
     _write_extracted_cookies,  # noqa: F401 — patch surface only
 )
 from .services.login.exceptions import LoginConfigurationError
+from .services.login.outcomes import BrowserCookieOutcome, NetworkFailure
 from .services.playwright_login import (
     CHANNEL_BROWSERS as _CHANNEL_BROWSERS,
 )
@@ -508,6 +511,22 @@ def _render_auth_inspect(
             "[dim]Pass -v to see which browser user-profile each account came from.[/dim]\n" + hint
         )
     console.print("\n" + hint)
+
+
+def _render_auth_inspect_error(outcome: BrowserCookieOutcome, *, json_output: bool) -> NoReturn:
+    """Render a browser-cookie discovery failure for ``auth inspect``."""
+    if json_output:
+        extra: dict[str, Any] = {}
+        name = getattr(outcome, "name", None)
+        if isinstance(name, str):
+            extra["browser"] = name
+        supported = getattr(outcome, "supported", None)
+        if supported is not None:
+            extra["supported"] = list(supported)
+        _output_error(render_markup(outcome.message).plain, outcome.code, True, 1, extra=extra)
+
+    console.print(outcome.message)
+    exit_with_code(1)
 
 
 def register_session_commands(cli):
@@ -933,9 +952,21 @@ def register_session_commands(cli):
           notebooklm auth inspect --browser firefox --json
         """
         include_domains = _parse_include_domains(include_domains_raw)
-        _, accounts = _enumerate_browser_accounts(
-            browser_name, verbose=not json_output, include_domains=include_domains
-        )
+        try:
+            enum_result = _enumerate_browser_accounts(
+                browser_name, verbose=not json_output, include_domains=include_domains
+            )
+        except httpx.RequestError as e:
+            enum_result = NetworkFailure(
+                code="NETWORK_ERROR",
+                message=(
+                    f"[red]Account discovery failed (network error):[/red] {e}\n"
+                    "Check your internet connection and try again."
+                ),
+            )
+        if isinstance(enum_result, BrowserCookieOutcome):
+            _render_auth_inspect_error(enum_result, json_output=json_output)
+        _, accounts = enum_result
         _render_auth_inspect(browser_name, list(accounts), json_output=json_output, verbose=verbose)
 
     @auth_group.command("check")

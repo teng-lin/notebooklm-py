@@ -28,14 +28,16 @@ PKG_PATH = Path("src/notebooklm/cli/services/login")
 # using it.
 ALLOWED_EDGES: dict[str, set[str]] = {
     "exceptions": set(),
+    "outcomes": set(),
     "cookie_domains": set(),
     "rookiepy_errors": set(),
     "cookie_jar": {
+        "outcomes",
         # allowed but currently unused — _enumerate_one_jar formats its own
         # rookiepy error messages and does not call _handle_rookiepy_error.
         "rookiepy_errors",
     },
-    "chromium_accounts": {"cookie_jar", "rookiepy_errors", "cookie_domains"},
+    "chromium_accounts": {"cookie_jar", "rookiepy_errors", "cookie_domains", "outcomes"},
     "firefox_accounts": {
         # allowed but currently unused — the firefox helpers hand raw cookies
         # back to the caller (browser_accounts) which then routes through
@@ -48,6 +50,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "chromium_accounts",
         "firefox_accounts",
         "cookie_jar",
+        "outcomes",
         "rookiepy_errors",
         # The phase-3 DAG diagram routes cookie_domains via chromium/firefox
         # subordinates, but ``_read_browser_cookies``'s "auto" + named-alias
@@ -67,8 +70,9 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         # cookie data and the selectors don't query the cookie-domain policy.
         "browser_accounts",
         "cookie_domains",
+        "outcomes",
     },
-    "refresh": {"browser_accounts", "cookie_writes", "profile_targets"},
+    "refresh": {"browser_accounts", "cookie_writes", "outcomes", "profile_targets"},
 }
 
 

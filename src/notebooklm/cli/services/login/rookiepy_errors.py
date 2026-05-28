@@ -1,31 +1,39 @@
 """Friendly rookiepy error messages.
 
-Leaf module within the ``cli/services/login/`` package — depends only on
-:mod:`notebooklm.cli.rendering` (``console``).
+Pure helper: classifies a rookiepy ``OSError``/``RuntimeError`` into one
+of four user-facing message shapes (locked DB, permission denied,
+decryption failure, generic) and returns the Rich-markup message text.
+
+Callers are responsible for emission (``console.print``) and exit policy
+(``exit_with_code`` / typed-outcome return). Keeping this module a pure
+message formatter is what lets it live under :data:`GUARDED_PATHS` in
+the services-boundary test — no presentation reach-in, no exit policy.
 """
 
 from __future__ import annotations
 
-from ...rendering import console
 
+def _handle_rookiepy_error(e: Exception, browser_name: str) -> str:
+    """Return a Rich-markup user-facing error message for a rookiepy exception.
 
-def _handle_rookiepy_error(e: Exception, browser_name: str) -> None:
-    """Print a user-friendly error for rookiepy exceptions."""
+    The returned string carries Rich markup so callers can hand it
+    straight to ``console.print`` (text mode) or strip the markup for the
+    JSON envelope ``message`` field. The helper itself emits nothing.
+    """
     msg = str(e).lower()
     if "lock" in msg or "database" in msg:
-        console.print(
+        return (
             f"[red]Could not read {browser_name} cookies: browser database is locked.[/red]\n"
             "Close your browser and try again."
         )
-    elif "permission" in msg or "access" in msg:
-        console.print(
+    if "permission" in msg or "access" in msg:
+        return (
             f"[red]Permission denied reading {browser_name} cookies.[/red]\n"
             "You may need to grant Terminal/Python access to your browser profile directory."
         )
-    elif "keychain" in msg or "decrypt" in msg:
-        console.print(
+    if "keychain" in msg or "decrypt" in msg:
+        return (
             f"[red]Could not decrypt {browser_name} cookies.[/red]\n"
             "On macOS, allow Keychain access when prompted, or try a different browser."
         )
-    else:
-        console.print(f"[red]Failed to read cookies from {browser_name}:[/red] {e}")
+    return f"[red]Failed to read cookies from {browser_name}:[/red] {e}"
