@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from ...types import Source
 from ...urls import is_youtube_url
+from .source_serializers import source_summary_payload
 
 if TYPE_CHECKING:
     import click
@@ -371,16 +372,7 @@ async def execute_source_add(
         )
 
     if plan.json_output:
-        json_output_response(
-            {
-                "source": {
-                    "id": src.id,
-                    "title": src.title,
-                    "type": str(src.kind),
-                    "url": src.url,
-                }
-            }
-        )
+        json_output_response({"source": source_summary_payload(src)})
         return
 
     cli_print(f"[green]Added source:[/green] {src.id}", ctx=ctx)

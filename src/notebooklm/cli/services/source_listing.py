@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from ...types import Source, source_status_to_str
 from ..rendering import get_source_type_display, render_list
 from .listing import ListResult, ListSpec, prepare_list
+from .source_serializers import source_summary_payload
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -47,10 +48,7 @@ def _build_spec() -> ListSpec[Source]:
         items_key="sources",
         fetch=lambda client, notebook_id: client.sources.list(notebook_id),
         serialize=lambda src: {
-            "id": src.id,
-            "title": src.title,
-            "type": str(src.kind),
-            "url": src.url,
+            **source_summary_payload(src),
             "status": source_status_to_str(src.status),
             "status_id": src.status,
             "created_at": src.created_at.isoformat() if src.created_at else None,

@@ -69,6 +69,7 @@ def test_source_fulltext_json_renderer_emits_full_payload(
             source_id="src_1",
             title="Source One",
             content="indexed content",
+            _type_code=5,
             char_count=15,
         )
     )
@@ -80,8 +81,10 @@ def test_source_fulltext_json_renderer_emits_full_payload(
     payload = json.loads(result.output)
     assert payload["source_id"] == "src_1"
     assert payload["title"] == "Source One"
+    assert payload["kind"] == "web_page"
     assert payload["content"] == "indexed content"
     assert payload["char_count"] == 15
+    assert "_type_code" not in payload
 
 
 def test_source_fulltext_json_output_file_writes_content_and_emits_metadata(
@@ -97,6 +100,7 @@ def test_source_fulltext_json_output_file_writes_content_and_emits_metadata(
             source_id="src_1",
             title="Source One",
             content=content,
+            _type_code=5,
             char_count=len(content),
         )
     )
@@ -124,6 +128,7 @@ def test_source_fulltext_json_output_file_writes_content_and_emits_metadata(
         "bytes": len(content.encode("utf-8")),
         "source_id": "src_1",
         "title": "Source One",
+        "kind": "web_page",
     }
 
 

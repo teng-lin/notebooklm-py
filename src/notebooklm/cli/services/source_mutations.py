@@ -28,6 +28,7 @@ from ..rendering import (
 )
 from ..resolve import resolve_source_id, validate_id
 from .confirming_mutation import MutationPlan, run_confirmed_mutation
+from .source_serializers import source_summary_payload
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -501,17 +502,17 @@ async def execute_source_add_drive(
             src = await client.sources.add_drive(plan.notebook_id, plan.file_id, plan.title, mime)
 
     if plan.json_output:
+        source_payload = source_summary_payload(src)
+        source_payload.update(
+            {
+                "drive_file_id": plan.file_id,
+                "mime_type": plan.mime_type,
+            }
+        )
         json_output_response(
             {
                 "action": "add-drive",
-                "source": {
-                    "id": src.id,
-                    "title": src.title,
-                    "type": str(src.kind),
-                    "url": src.url,
-                    "drive_file_id": plan.file_id,
-                    "mime_type": plan.mime_type,
-                },
+                "source": source_payload,
                 "notebook_id": plan.notebook_id,
             }
         )

@@ -93,6 +93,7 @@ GUARDED_PATHS = {
     "cli/services/source_clean.py": SERVICES_ROOT / "source_clean.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
+    "cli/services/source_serializers.py": SERVICES_ROOT / "source_serializers.py",
     "cli/services/source_wait.py": SERVICES_ROOT / "source_wait.py",
 }
 
@@ -334,7 +335,7 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/source_add.py": {
         "path": SERVICES_ROOT / "source_add.py",
         "forbidden_imports": [
-            "source_add.py:359: forbidden relative import: '..rendering'",
+            "source_add.py:360: forbidden relative import: '..rendering'",
         ],
         "pattern_a_violations": [],
         "rationale": (

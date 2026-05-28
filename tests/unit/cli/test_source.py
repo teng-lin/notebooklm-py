@@ -79,6 +79,7 @@ class TestSourceList:
                         id="src_1",
                         title="Test Source",
                         url="https://example.com",
+                        _type_code=5,
                     ),
                 ]
             )
@@ -109,6 +110,7 @@ class TestSourceList:
                 "created_at",
             ]
             assert data["sources"][0]["id"] == "src_1"
+            assert data["sources"][0]["type"] == "web_page"
 
     def test_source_list_limit_caps_rows(self, runner, mock_auth):
         """`source list --limit N` returns at most N data rows."""
@@ -214,6 +216,7 @@ class TestSourceAdd:
                     id="src_new",
                     title="Example",
                     url="https://example.com",
+                    _type_code=5,
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -407,6 +410,7 @@ class TestSourceAdd:
                     id="src_new",
                     title="Example",
                     url="https://example.com",
+                    _type_code=5,
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -422,6 +426,7 @@ class TestSourceAdd:
             assert result.exit_code == 0
             data = json.loads(result.output)
             assert data["source"]["id"] == "src_new"
+            assert data["source"]["type"] == "web_page"
 
     def test_source_add_timeout_flag_threaded_to_client(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
@@ -1992,6 +1997,7 @@ class TestSourceFulltext:
                     source_id="src_123",
                     title="Test Source",
                     content="Some content",
+                    _type_code=5,
                     char_count=12,
                     url=None,
                 )
@@ -2010,8 +2016,10 @@ class TestSourceFulltext:
             data = json.loads(result.output)
             assert data["source_id"] == "src_123"
             assert data["title"] == "Test Source"
+            assert data["kind"] == "web_page"
             assert data["content"] == "Some content"
             assert data["char_count"] == 12
+            assert "_type_code" not in data
 
     def test_source_fulltext_format_markdown_propagates(self, runner, mock_auth):
         """`-f markdown` propagates output_format='markdown' to the API."""
@@ -2745,6 +2753,7 @@ class TestSourceJsonOutput:
                     id="src_123",
                     title="My Source",
                     url="https://example.com",
+                    _type_code=5,
                     created_at=datetime(2024, 1, 1, 12, 0),
                 )
             )
@@ -2758,6 +2767,7 @@ class TestSourceJsonOutput:
             assert data["found"] is True
             assert data["source"]["id"] == "src_123"
             assert data["source"]["title"] == "My Source"
+            assert data["source"]["type"] == "web_page"
             assert data["source"]["url"] == "https://example.com"
             assert data["source"]["created_at"] == "2024-01-01T12:00:00"
 
@@ -2907,7 +2917,7 @@ class TestSourceJsonOutput:
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_drive = AsyncMock(
-                return_value=Source(id="src_drive", title="My Drive Doc")
+                return_value=Source(id="src_drive", title="My Drive Doc", _type_code=3)
             )
             mock_client_cls.return_value = mock_client
 
@@ -2932,6 +2942,7 @@ class TestSourceJsonOutput:
             assert data["action"] == "add-drive"
             assert data["source"]["id"] == "src_drive"
             assert data["source"]["title"] == "My Drive Doc"
+            assert data["source"]["type"] == "pdf"
             assert data["source"]["drive_file_id"] == "drive_file_xyz"
             assert data["source"]["mime_type"] == "pdf"
             assert data["notebook_id"] == "nb_123"
@@ -3288,6 +3299,7 @@ class TestSourceBundleP1T2:
                     source_id="src_123",
                     title="Big Source",
                     content=body,
+                    _type_code=5,
                     char_count=len(body),
                     url=None,
                 )
@@ -3318,12 +3330,13 @@ class TestSourceBundleP1T2:
             assert data["bytes"] == len(body.encode("utf-8"))
             assert data["source_id"] == "src_123"
             assert data["title"] == "Big Source"
+            assert data["kind"] == "web_page"
             # Full content must not be in the metadata envelope.
             assert "content" not in data
 
     def test_source_fulltext_json_without_output_file_keeps_full_payload(self, runner, mock_auth):
         """Regression guard: when `-o` is OMITTED, `--json` mode still emits the
-        full asdict(SourceFulltext) payload on stdout — unchanged behavior."""
+        full public SourceFulltext payload on stdout."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Tiny")])
@@ -3332,6 +3345,7 @@ class TestSourceBundleP1T2:
                     source_id="src_123",
                     title="Tiny",
                     content="hello",
+                    _type_code=5,
                     char_count=5,
                     url=None,
                 )
@@ -3345,8 +3359,10 @@ class TestSourceBundleP1T2:
 
             assert result.exit_code == 0, result.output
             data = json.loads(result.output)
+            assert data["kind"] == "web_page"
             assert data["content"] == "hello"
             assert data["char_count"] == 5
+            assert "_type_code" not in data
 
     # ------------------------------------------------------------------
     # Bug 5: source add spinner brackets the awaited upload

@@ -111,7 +111,7 @@ class TestSourceAddCharacterization:
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
             client = create_mock_client()
             client.sources.add_url = AsyncMock(
-                return_value=Source(id="src_new", title="T", url="https://x")
+                return_value=Source(id="src_new", title="T", url="https://x", _type_code=5)
             )
             cls.return_value = client
             result = runner.invoke(
@@ -122,6 +122,7 @@ class TestSourceAddCharacterization:
         payload = json.loads(result.output)
         assert payload["source"]["id"] == "src_new"
         assert payload["source"]["title"] == "T"
+        assert payload["source"]["type"] == "web_page"
         assert payload["source"]["url"] == "https://x"
 
 
@@ -151,6 +152,7 @@ class TestSourceListCharacterization:
                         id="src_1",
                         title="One",
                         url=None,
+                        _type_code=5,
                         status=SourceStatus.READY,
                         created_at=datetime(2025, 1, 1, 12, 0, 0),
                     )
@@ -165,6 +167,7 @@ class TestSourceListCharacterization:
         assert payload["count"] == 1
         assert payload["sources"][0]["id"] == "src_1"
         assert payload["sources"][0]["title"] == "One"
+        assert payload["sources"][0]["type"] == "web_page"
 
 
 # ----------------------------------------------------------------------------
@@ -194,6 +197,7 @@ class TestSourceGetCharacterization:
                     id="src_1",
                     title="My Source",
                     url="https://x",
+                    _type_code=5,
                     status=SourceStatus.READY,
                 )
             )
@@ -203,6 +207,7 @@ class TestSourceGetCharacterization:
         payload = json.loads(result.output)
         assert payload["found"] is True
         assert payload["source"]["id"] == "src_1"
+        assert payload["source"]["type"] == "web_page"
         assert payload["source"]["url"] == "https://x"
 
     def test_get_not_found_exits_1_text_mode(self, runner, mock_auth, patched_fetch_tokens):
@@ -395,6 +400,7 @@ class TestSourceFulltextCharacterization:
                     source_id="src_1",
                     title="T",
                     content="hi",
+                    _type_code=5,
                     char_count=2,
                     url=None,
                 )
@@ -404,8 +410,10 @@ class TestSourceFulltextCharacterization:
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["source_id"] == "src_1"
+        assert payload["kind"] == "web_page"
         assert payload["content"] == "hi"
         assert payload["char_count"] == 2
+        assert "_type_code" not in payload
 
 
 # ----------------------------------------------------------------------------

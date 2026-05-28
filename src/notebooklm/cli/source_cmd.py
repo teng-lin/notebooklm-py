@@ -18,7 +18,6 @@ below (it is what ``notebooklm source --help`` shows).
 """
 
 import asyncio  # noqa: F401 — re-exported for P1.T2 regression tests that patch source_cmd.asyncio.sleep
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -89,6 +88,7 @@ from .services.source_research import (
     SourceAddResearchResult,
     execute_source_add_research,
 )
+from .services.source_serializers import source_fulltext_payload, source_summary_payload
 from .services.source_wait import (
     SourceWaitNotFound,
     SourceWaitOutcome,
@@ -149,17 +149,17 @@ def _render_source_get_result(result: SourceGetResult, *, json_output: bool) -> 
         raise AssertionError("unreachable")  # pragma: no cover
 
     if json_output:
+        source_payload = source_summary_payload(src)
+        source_payload.update(
+            {
+                "status": source_status_to_str(src.status),
+                "status_id": src.status,
+                "created_at": (src.created_at.isoformat() if src.created_at else None),
+            }
+        )
         json_output_response(
             {
-                "source": {
-                    "id": src.id,
-                    "title": src.title,
-                    "type": str(src.kind),
-                    "url": src.url,
-                    "status": source_status_to_str(src.status),
-                    "status_id": src.status,
-                    "created_at": (src.created_at.isoformat() if src.created_at else None),
-                },
+                "source": source_payload,
                 "found": True,
             }
         )
@@ -192,11 +192,12 @@ def _render_source_fulltext_result(
                     "bytes": len(content_bytes),
                     "source_id": fulltext.source_id,
                     "title": fulltext.title,
+                    "kind": fulltext.kind.value,
                 }
             )
             return
 
-        json_output_response(asdict(fulltext))
+        json_output_response(source_fulltext_payload(fulltext))
         return
 
     if output:
