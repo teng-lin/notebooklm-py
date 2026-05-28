@@ -161,17 +161,20 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/download.py": {
         "path": SERVICES_ROOT / "download.py",
         "forbidden_imports": [
-            "download.py:31: forbidden top-level import: 'click'",
+            "download.py:34: forbidden top-level import: 'click'",
+            "download.py:43: forbidden relative import: '..error_handler'",
         ],
         "pattern_a_violations": [],
         "pattern_b_violations": (
             "raises click.UsageError on flag conflicts (parser-time "
-            "contract); also uses click.echo for warning sink default."
+            "contract), uses output_error for ADR-015 JSON envelopes, "
+            "and uses click.echo for warning sink default."
         ),
         "rationale": (
             "Flag-validation surface raises ``click.UsageError`` and "
-            "defaults its ``warn_sink`` to ``click.echo``; lift to "
-            "command-layer validators."
+            "emits ADR-015 JSON envelopes from the service layer; it also "
+            "defaults its ``warn_sink`` to ``click.echo``. Lift to "
+            "command-layer validators/output handling."
         ),
     },
     "cli/services/generate.py": {
@@ -342,25 +345,25 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/playwright_login.py": {
         "path": SERVICES_ROOT / "playwright_login.py",
         "forbidden_imports": [
-            "playwright_login.py:48: forbidden relative import: '..error_handler'",
-            "playwright_login.py:49: forbidden relative import: '..rendering'",
-            "playwright_login.py:50: forbidden relative import: '..runtime'",
+            "playwright_login.py:51: forbidden relative import: '..error_handler'",
+            "playwright_login.py:52: forbidden relative import: '..rendering'",
+            "playwright_login.py:53: forbidden relative import: '..runtime'",
         ],
         "pattern_a_violations": [
-            ("ensure_chromium_installed", 373),
-            ("validate_login_flag_conflicts", 479),
-            ("validate_login_flag_conflicts", 484),
-            ("validate_login_flag_conflicts", 490),
-            ("validate_login_flag_conflicts", 493),
-            ("prepare_login_paths", 530),
-            ("run_playwright_login", 603),
-            ("run_playwright_login", 704),
-            ("run_playwright_login", 711),
-            ("run_playwright_login", 733),
-            ("run_playwright_login", 740),
-            ("run_playwright_login", 765),
-            ("run_playwright_login", 783),
-            ("run_playwright_login", 826),
+            ("ensure_chromium_installed", 574),
+            ("validate_login_flag_conflicts", 680),
+            ("validate_login_flag_conflicts", 685),
+            ("validate_login_flag_conflicts", 691),
+            ("validate_login_flag_conflicts", 694),
+            ("prepare_login_paths", 731),
+            ("run_playwright_login", 804),
+            ("run_playwright_login", 905),
+            ("run_playwright_login", 912),
+            ("run_playwright_login", 934),
+            ("run_playwright_login", 941),
+            ("run_playwright_login", 966),
+            ("run_playwright_login", 984),
+            ("run_playwright_login", 1027),
         ],
         "rationale": (
             "Playwright login orchestrator owns the full presentation + "
@@ -400,7 +403,7 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/source_add.py": {
         "path": SERVICES_ROOT / "source_add.py",
         "forbidden_imports": [
-            "source_add.py:209: forbidden relative import: '..rendering'",
+            "source_add.py:317: forbidden relative import: '..rendering'",
         ],
         "pattern_a_violations": [],
         "rationale": (
