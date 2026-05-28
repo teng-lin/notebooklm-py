@@ -88,7 +88,11 @@ from .services.source_research import (
     SourceAddResearchResult,
     execute_source_add_research,
 )
-from .services.source_serializers import source_fulltext_payload, source_summary_payload
+from .services.source_serializers import (
+    source_fulltext_payload,
+    source_kind_value,
+    source_summary_payload,
+)
 from .services.source_wait import (
     SourceWaitNotFound,
     SourceWaitOutcome,
@@ -192,7 +196,7 @@ def _render_source_fulltext_result(
                     "bytes": len(content_bytes),
                     "source_id": fulltext.source_id,
                     "title": fulltext.title,
-                    "kind": fulltext.kind.value,
+                    "kind": source_kind_value(fulltext.kind),
                 }
             )
             return
@@ -959,7 +963,7 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_for
     Use ``--format markdown`` for a rich version with headings/tables/links.
     Text mode truncates at 2000 chars; ``-o FILE`` writes the full content.
     JSON mode emits the full ``SourceFulltext`` payload, or with ``-o`` a
-    ``{path, bytes, source_id, title}`` envelope (content goes to the file
+    ``{path, bytes, source_id, title, kind}`` envelope (content goes to the file
     only, not duplicated to stdout).
     """
     nb_id = require_notebook(notebook_id)

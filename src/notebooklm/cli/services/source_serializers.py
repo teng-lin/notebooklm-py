@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ...types import Source, SourceFulltext
+if TYPE_CHECKING:
+    from ...types import Source, SourceFulltext
+
+
+def source_kind_value(kind: Any) -> str | None:
+    """Return the public JSON value for a source kind."""
+    return kind.value if kind is not None else None
 
 
 def source_summary_payload(src: Source) -> dict[str, Any]:
@@ -12,7 +18,7 @@ def source_summary_payload(src: Source) -> dict[str, Any]:
     return {
         "id": src.id,
         "title": src.title,
-        "type": src.kind.value,
+        "type": source_kind_value(src.kind),
         "url": src.url,
     }
 
@@ -22,7 +28,7 @@ def source_fulltext_payload(fulltext: SourceFulltext) -> dict[str, Any]:
     return {
         "source_id": fulltext.source_id,
         "title": fulltext.title,
-        "kind": fulltext.kind.value,
+        "kind": source_kind_value(fulltext.kind),
         "content": fulltext.content,
         "url": fulltext.url,
         "char_count": fulltext.char_count,
