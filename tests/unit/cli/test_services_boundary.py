@@ -6,20 +6,35 @@ modules (``..rendering``, ``..error_handler``, ``..runtime``). It also
 inventories the Stage-3 transitional exceptions for workflow services still
 being migrated out of rendering/exit ownership.
 
-Scope: only files listed in ``GUARDED_PATHS`` are enforced here. The audit (I0)
-also flagged ``cli/services/login.py``, but between the audit and this PR
-landing, PR #954 split that file into the ``cli/services/login/`` package and
-the ``console.print`` / Click cleanup was explicitly deferred at that point
-(per PR #954's source-plan overrides). Adding the ``login/`` package to this
-guard is the job of a follow-up PR; doing it here would gate a passing PR-C on
-unrelated ~1500-2000 lines of refactor work. See
-``.sisyphus/drafts/pr-c-migration-map.md`` for the scope decision.
+Scope: every file under ``cli/services/`` (recursively, excluding
+``__init__.py`` and ``__pycache__``) must be classified into exactly one of
+three sets:
 
-The guard is a single source of truth — to extend it to the ``login/``
-package, add the module paths to ``GUARDED_PATHS`` once clean, or to
-``TRANSITIONAL_GUARDED_PATHS`` with exact violations while a migration is in
-flight. The two helper functions below stay agnostic of which file is being
-scanned.
+* ``GUARDED_PATHS`` — fully cleaned modules. ``_boundary_violations`` must
+  return an empty list AND the module must have no Pattern A
+  ``console.print`` + ``exit_with_code`` co-occurrence.
+* ``TRANSITIONAL_GUARDED_PATHS`` — modules still owning some presentation or
+  exit policy that the architecture plan moves back to the command layer.
+  Each entry declares its exact current violations (``forbidden_imports``
+  list + ``pattern_a_violations`` list of ``(function_name, line)`` tuples).
+  Removing a violation in a refactor PR must update the declaration in the
+  same PR; adding one is rejected outright by the tests below.
+* ``WAIVED_PATHS`` — modules with a documented, indefinite exception (e.g.
+  Click parser-time callbacks where ``raise click.BadParameter`` is the
+  contract Click itself defines). Empty by default; entries require an
+  explicit rationale.
+
+The ``test_inventory_completeness`` test enforces the partition: every
+service module must appear in exactly one set. New modules added under
+``cli/services/`` will fail the test until classified.
+
+Pattern A definition: ``console.print`` and ``exit_with_code`` co-occur as
+Pattern A iff both are called from within the SAME ``ast.FunctionDef`` body
+(at any nesting depth inside that function, but NOT crossing into a nested
+``FunctionDef``). The implementation in :func:`_pattern_a_pairs` reports one
+pair per ``exit_with_code`` call site so that line drift after a refactor
+elsewhere is caught — silent shifts (e.g. an unrelated edit moving the
+line) would otherwise mask a real regression.
 """
 
 from __future__ import annotations
@@ -40,36 +55,453 @@ FORBIDDEN_TOP_LEVEL_MODULES = {"click"}
 # Relative imports from these sibling packages of ``cli/services`` are
 # forbidden. The check fires for any ``from ..<name>`` or ``from ..<name>.X``
 # import — i.e. ``..rendering`` and ``..rendering.something`` both count.
+#
+# Note: level-3 imports (``...rendering``, from a deeper subpackage like
+# ``cli/services/login/``) are NOT flagged here. Login submodules currently
+# rely on that path; tracking their reach-in is done via the
+# ``pattern_a_violations`` inventory inside ``TRANSITIONAL_GUARDED_PATHS``
+# (e.g. ``cli/services/login/browser_accounts.py``). Broadening the import
+# scanner to level-3 would surface those automatically; that's a deliberate
+# follow-up, not a gap to plug here.
 FORBIDDEN_RELATIVE_PARENTS = {"rendering", "error_handler", "runtime"}
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
+
+# Fully cleaned service modules. Each must have zero ``_boundary_violations``
+# AND zero Pattern A pairs (see :func:`_pattern_a_pairs`).
 GUARDED_PATHS = {
-    "cli/services/listing.py": REPO_ROOT / "src" / "notebooklm" / "cli" / "services" / "listing.py",
+    "cli/services/listing.py": SERVICES_ROOT / "listing.py",
+    "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
 }
 
-# Stage 3 migration inventory. These modules currently own presentation and/or
-# exit policy, which the architecture plan moves back to the command layer.
-# Keep this list exact: adding a new violation should fail this test; removing
-# one should update the expected list in the same PR.
-TRANSITIONAL_GUARDED_PATHS = {
-    "cli/services/artifact_generation.py": (
-        SERVICES_ROOT / "artifact_generation.py",
-        [
+# Stage 3 migration inventory. These modules currently own presentation
+# and/or exit policy, which the architecture plan moves back to the command
+# layer. Each entry is a dict with the exact violation inventory:
+#
+#   ``path``                  — ``pathlib.Path`` to the module.
+#   ``forbidden_imports``     — exact list of strings ``_boundary_violations``
+#                               returns for this module. Adding a new
+#                               violation should fail this test; removing one
+#                               should update the expected list in the same
+#                               PR.
+#   ``pattern_a_violations``  — exact list of ``(function_name, lineno)`` for
+#                               every ``exit_with_code`` call site that
+#                               co-occurs with a ``console.print`` in the
+#                               same function body. Empty list means the
+#                               module has no Pattern A pairs (but may still
+#                               own exit policy via helpers — see
+#                               ``rationale``).
+#   ``pattern_b_violations``  — optional rationale string for click-runtime
+#                               usage (``click.confirm``, ``raise
+#                               click.ClickException``, parser-time
+#                               ``click.BadParameter``) that's NOT a Pattern
+#                               A pair but still reaches into Click.
+#   ``rationale``             — short note on what migration is in flight or
+#                               why the module is here.
+TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
+    "cli/services/artifact_generation.py": {
+        "path": SERVICES_ROOT / "artifact_generation.py",
+        "forbidden_imports": [
             "artifact_generation.py:9: forbidden relative import: '..error_handler'",
             "artifact_generation.py:10: forbidden relative import: '..rendering'",
         ],
-    ),
-    "cli/services/source_mutations.py": (
-        SERVICES_ROOT / "source_mutations.py",
-        [
+        "pattern_a_violations": [],
+        "rationale": (
+            "Owns rendering imports + ``console.print`` for artifact "
+            "generation progress; exit policy already delegated to the "
+            "command layer."
+        ),
+    },
+    "cli/services/auth_diagnostics.py": {
+        "path": SERVICES_ROOT / "auth_diagnostics.py",
+        "forbidden_imports": [
+            "auth_diagnostics.py:28: forbidden relative import: '..error_handler'",
+            "auth_diagnostics.py:29: forbidden relative import: '..rendering'",
+            "auth_diagnostics.py:207: forbidden relative import: '..runtime'",
+        ],
+        "pattern_a_violations": [("render_auth_check", 249)],
+        "rationale": (
+            "Status renderer still owns ``--json`` exit handling and runtime "
+            "import for cookie-keepalive probing."
+        ),
+    },
+    "cli/services/auth_source.py": {
+        "path": SERVICES_ROOT / "auth_source.py",
+        "forbidden_imports": [
+            "auth_source.py:198: forbidden top-level import: 'click'",
+        ],
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "uses click.get_current_context() to read the auth-source "
+            "override out of the active Click context; intrinsically "
+            "Click-bound until the context-reader is moved to the command "
+            "layer."
+        ),
+        "rationale": (
+            "Adapter that reads the auth-source override from the live Click "
+            "context; the function-level ``import click`` is the only Click "
+            "reach-in."
+        ),
+    },
+    "cli/services/confirming_mutation.py": {
+        "path": SERVICES_ROOT / "confirming_mutation.py",
+        "forbidden_imports": [
+            "confirming_mutation.py:10: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [],
+        "rationale": (
+            "Confirm-prompt helper still pulls ``console`` for echoed "
+            "prompts; rendering reach-in to be inverted via callback "
+            "injection."
+        ),
+    },
+    "cli/services/download.py": {
+        "path": SERVICES_ROOT / "download.py",
+        "forbidden_imports": [
+            "download.py:31: forbidden top-level import: 'click'",
+        ],
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "raises click.UsageError on flag conflicts (parser-time "
+            "contract); also uses click.echo for warning sink default."
+        ),
+        "rationale": (
+            "Flag-validation surface raises ``click.UsageError`` and "
+            "defaults its ``warn_sink`` to ``click.echo``; lift to "
+            "command-layer validators."
+        ),
+    },
+    "cli/services/generate.py": {
+        "path": SERVICES_ROOT / "generate.py",
+        "forbidden_imports": [
+            "generate.py:41: forbidden top-level import: 'click'",
+            "generate.py:42: forbidden top-level import: 'click.core'",
+        ],
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "raises click.UsageError on incompatible generation flags; "
+            "reads click.core.ParameterSource to distinguish flag-set vs. "
+            "default."
+        ),
+        "rationale": (
+            "Generation flag-validation depends on Click's ParameterSource "
+            "to detect explicit vs. default; lift to command-layer."
+        ),
+    },
+    "cli/services/login/browser_accounts.py": {
+        "path": SERVICES_ROOT / "login" / "browser_accounts.py",
+        "forbidden_imports": [],
+        "pattern_a_violations": [
+            ("_read_browser_cookies", 165),
+            ("_read_browser_cookies", 191),
+            ("_read_browser_cookies", 204),
+            ("_read_browser_cookies", 212),
+            ("_read_browser_cookies", 221),
+            ("_read_browser_cookies", 226),
+        ],
+        "rationale": (
+            "Browser-cookie reader still owns presentation + exit codes for "
+            "every failure mode; reach-in uses the level-3 "
+            "``...rendering`` / ``...error_handler`` paths not currently "
+            "flagged by ``_boundary_violations`` (which only sees level-2). "
+            "Pending login submodule boundary expansion."
+        ),
+    },
+    "cli/services/login/chromium_accounts.py": {
+        "path": SERVICES_ROOT / "login" / "chromium_accounts.py",
+        "forbidden_imports": [],
+        "pattern_a_violations": [
+            ("_read_chromium_profile_cookies_from_selector", 61),
+            ("_read_chromium_profile_cookies_from_selector", 80),
+            ("_read_chromium_profile_cookies_from_selector", 83),
+            ("_enumerate_chromium_profiles_fanout", 137),
+            ("_enumerate_chromium_profiles_fanout", 174),
+            ("_enumerate_chromium_profiles_fanout", 219),
+        ],
+        "rationale": (
+            "Chromium-profile enumeration owns presentation + exit codes "
+            "for profile-selection failures; level-3 rendering reach-in not "
+            "flagged by ``_boundary_violations``."
+        ),
+    },
+    "cli/services/login/cookie_domains.py": {
+        "path": SERVICES_ROOT / "login" / "cookie_domains.py",
+        "forbidden_imports": [
+            "cookie_domains.py:18: forbidden top-level import: 'click'",
+        ],
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "raises click.BadParameter from a Click callback= hook "
+            "(parser-time, explicitly allowed). Lifting Click out of this "
+            "module would require Click's own parameter-callback API to "
+            "accept a non-Click exception."
+        ),
+        "rationale": (
+            "Click parameter-callback contract requires "
+            "``raise click.BadParameter``; this is the documented Pattern B "
+            "parser-time exception."
+        ),
+    },
+    "cli/services/login/cookie_jar.py": {
+        "path": SERVICES_ROOT / "login" / "cookie_jar.py",
+        "forbidden_imports": [],
+        "pattern_a_violations": [
+            ("_enumerate_one_jar", 116),
+            ("_enumerate_one_jar", 135),
+            ("_enumerate_one_jar", 147),
+        ],
+        "rationale": (
+            "Cookie-jar enumerator owns presentation + exit codes for jar "
+            "decryption failures; level-3 rendering reach-in not flagged "
+            "by ``_boundary_violations``."
+        ),
+    },
+    "cli/services/login/cookie_writes.py": {
+        "path": SERVICES_ROOT / "login" / "cookie_writes.py",
+        "forbidden_imports": [],
+        "pattern_a_violations": [
+            ("_select_account", 54),
+            ("_select_account", 66),
+            ("_select_refresh_account", 92),
+            ("_select_refresh_account", 107),
+            ("_select_refresh_account", 120),
+            ("_write_extracted_cookies", 148),
+            ("_write_extracted_cookies", 160),
+        ],
+        "rationale": (
+            "Cookie-write pipeline owns presentation + exit policy for "
+            "account-selection and write failures; level-3 rendering "
+            "reach-in not flagged by ``_boundary_violations``."
+        ),
+    },
+    "cli/services/login/firefox_accounts.py": {
+        "path": SERVICES_ROOT / "login" / "firefox_accounts.py",
+        "forbidden_imports": [],
+        "pattern_a_violations": [
+            ("_read_firefox_container_cookies", 70),
+            ("_read_firefox_container_cookies", 76),
+            ("_read_firefox_container_cookies", 94),
+            ("_read_firefox_container_cookies", 97),
+            ("_read_firefox_container_cookies", 100),
+        ],
+        "rationale": (
+            "Firefox container-cookie reader owns presentation + exit "
+            "codes for container/decryption failures; level-3 rendering "
+            "reach-in not flagged by ``_boundary_violations``."
+        ),
+    },
+    "cli/services/login/profile_targets.py": {
+        "path": SERVICES_ROOT / "login" / "profile_targets.py",
+        "forbidden_imports": [
+            "profile_targets.py:14: forbidden top-level import: 'click'",
+        ],
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "raises click.ClickException on invalid profile target; lift to "
+            "command-layer validator."
+        ),
+        "rationale": (
+            "Validates ``--profile`` strings; raises "
+            "``click.ClickException`` directly. Lift to command-layer."
+        ),
+    },
+    "cli/services/login/refresh.py": {
+        "path": SERVICES_ROOT / "login" / "refresh.py",
+        "forbidden_imports": [
+            "refresh.py:25: forbidden top-level import: 'click'",
+        ],
+        "pattern_a_violations": [
+            ("_confirm_profile_account_overwrite", 150),
+            ("_refresh_from_browser_cookies", 241),
+            ("_login_with_browser_cookies", 296),
+            ("_login_with_browser_cookies", 311),
+        ],
+        "pattern_b_violations": (
+            "uses click.confirm for interactive overwrite prompts; lift to "
+            "an injected confirmer callback owned by the command layer."
+        ),
+        "rationale": (
+            "Browser-cookie refresh flow owns interactive confirmation, "
+            "presentation, and exit codes; multiple Pattern A pairs."
+        ),
+    },
+    "cli/services/login/rookiepy_errors.py": {
+        "path": SERVICES_ROOT / "login" / "rookiepy_errors.py",
+        "forbidden_imports": [],
+        "pattern_a_violations": [],
+        "rationale": (
+            "Rookiepy error formatter emits ``console.print`` but does not "
+            "own exit policy; level-3 ``...rendering`` reach-in not flagged "
+            "by ``_boundary_violations``. Tracked transitionally pending "
+            "login submodule boundary expansion."
+        ),
+    },
+    "cli/services/playwright_login.py": {
+        "path": SERVICES_ROOT / "playwright_login.py",
+        "forbidden_imports": [
+            "playwright_login.py:48: forbidden relative import: '..error_handler'",
+            "playwright_login.py:49: forbidden relative import: '..rendering'",
+            "playwright_login.py:50: forbidden relative import: '..runtime'",
+        ],
+        "pattern_a_violations": [
+            ("ensure_chromium_installed", 373),
+            ("validate_login_flag_conflicts", 479),
+            ("validate_login_flag_conflicts", 484),
+            ("validate_login_flag_conflicts", 490),
+            ("validate_login_flag_conflicts", 493),
+            ("prepare_login_paths", 530),
+            ("run_playwright_login", 603),
+            ("run_playwright_login", 704),
+            ("run_playwright_login", 711),
+            ("run_playwright_login", 733),
+            ("run_playwright_login", 740),
+            ("run_playwright_login", 765),
+            ("run_playwright_login", 783),
+            ("run_playwright_login", 826),
+        ],
+        "rationale": (
+            "Playwright login orchestrator owns the full presentation + "
+            "exit-code matrix for browser-automation failures; one of the "
+            "largest migration targets in this inventory."
+        ),
+    },
+    "cli/services/polling.py": {
+        "path": SERVICES_ROOT / "polling.py",
+        "forbidden_imports": [
+            "polling.py:12: forbidden relative import: '..error_handler'",
+            "polling.py:13: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [],
+        "rationale": (
+            "Polling helpers still import ``..error_handler`` + "
+            "``..rendering`` for status spinners and exit mapping; lift "
+            "those callbacks into the command layer."
+        ),
+    },
+    "cli/services/session_context.py": {
+        "path": SERVICES_ROOT / "session_context.py",
+        "forbidden_imports": [
+            "session_context.py:35: forbidden relative import: '..error_handler'",
+            "session_context.py:36: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [
+            ("run_logout", 471),
+            ("run_logout", 491),
+            ("run_logout", 514),
+        ],
+        "rationale": (
+            "``run_logout`` end-to-end orchestrator owns presentation + "
+            "exit codes for every logout failure mode."
+        ),
+    },
+    "cli/services/source_add.py": {
+        "path": SERVICES_ROOT / "source_add.py",
+        "forbidden_imports": [
+            "source_add.py:209: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [],
+        "rationale": (
+            "``source add`` workflow still pulls ``console`` for spinner "
+            "messages; presentation reach-in to be inverted."
+        ),
+    },
+    "cli/services/source_clean.py": {
+        "path": SERVICES_ROOT / "source_clean.py",
+        "forbidden_imports": [
+            "source_clean.py:207: forbidden top-level import: 'click'",
+            "source_clean.py:209: forbidden relative import: '..error_handler'",
+            "source_clean.py:210: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "uses click.confirm via a function-local import; lift to "
+            "an injected confirmer callback."
+        ),
+        "rationale": (
+            "``source clean`` executor owns the full Click + rendering + "
+            "exit-code matrix; uses ``cli_print`` rather than direct "
+            "``console.print`` so Pattern A is empty (helpers + "
+            "``exit_with_code`` live in the same function but no direct "
+            "console.print co-occurrence)."
+        ),
+    },
+    "cli/services/source_listing.py": {
+        "path": SERVICES_ROOT / "source_listing.py",
+        "forbidden_imports": [
+            "source_listing.py:16: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [],
+        "rationale": (
+            "Source listing still imports ``..rendering`` for table "
+            "formatting; presentation reach-in to be inverted."
+        ),
+    },
+    "cli/services/source_mutations.py": {
+        "path": SERVICES_ROOT / "source_mutations.py",
+        "forbidden_imports": [
             "source_mutations.py:18: forbidden top-level import: 'click'",
             "source_mutations.py:21: forbidden relative import: '..error_handler'",
             "source_mutations.py:22: forbidden relative import: '..rendering'",
         ],
-    ),
+        "pattern_a_violations": [],
+        "pattern_b_violations": (
+            "uses click.confirm as the default confirmer for source "
+            "deletion plans; lift to an injected confirmer callback."
+        ),
+        "rationale": (
+            "Source mutation pipeline still owns presentation + Click "
+            "confirmer defaults + exit policy."
+        ),
+    },
+    "cli/services/source_research.py": {
+        "path": SERVICES_ROOT / "source_research.py",
+        "forbidden_imports": [
+            "source_research.py:15: forbidden relative import: '..error_handler'",
+            "source_research.py:16: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [
+            ("execute_source_add_research", 68),
+            ("execute_source_add_research", 124),
+            ("execute_source_add_research", 128),
+            ("execute_source_add_research", 131),
+        ],
+        "rationale": (
+            "``source add --research`` executor owns presentation + exit "
+            "codes for the research-import failure modes."
+        ),
+    },
+    "cli/services/source_wait.py": {
+        "path": SERVICES_ROOT / "source_wait.py",
+        "forbidden_imports": [
+            "source_wait.py:22: forbidden relative import: '..error_handler'",
+            "source_wait.py:23: forbidden relative import: '..rendering'",
+        ],
+        "pattern_a_violations": [],
+        "rationale": (
+            "``source wait`` executor owns exit policy but routes "
+            "presentation through ``_emit_*`` helpers, so no direct "
+            "console.print + exit_with_code co-occurrence inside a single "
+            "function body."
+        ),
+    },
 }
+
+# Modules with a documented, indefinite exception. Empty by default — the
+# Pattern B parser-time exception for cookie_domains.py lives in
+# ``TRANSITIONAL_GUARDED_PATHS`` because the lift is still planned (Click
+# parameter-callback contract is the documented exception, but the module
+# could host its callback elsewhere in a future refactor). Adding to this
+# dict requires a documented architecture exception.
+#
+# Entry schema (when populated):
+#   ``path``      — ``pathlib.Path`` to the module.
+#   ``rationale`` — short note citing the architecture decision that grants
+#                   the waiver. WAIVED entries are NOT scanned for boundary
+#                   violations or Pattern A pairs, so the rationale must be
+#                   load-bearing.
+WAIVED_PATHS: dict[str, dict[str, object]] = {}
 
 
 def _runtime_imports(path: pathlib.Path) -> Iterator[tuple[str, int]]:
@@ -149,6 +581,107 @@ def _boundary_violations(path: pathlib.Path) -> list[str]:
     return violations
 
 
+def _is_console_print_call(node: ast.AST) -> bool:
+    """``console.print(...)`` — module-level ``console`` symbol from rendering."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "print"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "console"
+    )
+
+
+def _is_exit_with_code_call(node: ast.AST) -> bool:
+    """``exit_with_code(...)`` — sibling-import from ``..error_handler``."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return isinstance(func, ast.Name) and func.id == "exit_with_code"
+
+
+def _function_calls(
+    funcnode: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[list[int], list[int]]:
+    """Walk a function body for ``console.print`` and ``exit_with_code`` call lines.
+
+    Recurses into nested ``If`` / ``Try`` / ``For`` / ``With`` blocks so the
+    check is order-insensitive within a single function. Stops at nested
+    ``FunctionDef`` / ``AsyncFunctionDef`` so the enclosing pair count is
+    not contaminated by inner-helper calls — those are accounted for
+    separately when the walker reaches the nested def.
+    """
+    prints: list[int] = []
+    exits: list[int] = []
+
+    def _walk(node: ast.AST) -> None:
+        # Don't descend into nested function definitions — they get their
+        # own pair-count via the outer ``_pattern_a_pairs`` driver.
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not funcnode:
+            return
+        if _is_console_print_call(node):
+            prints.append(node.lineno)
+        if _is_exit_with_code_call(node):
+            exits.append(node.lineno)
+        for child in ast.iter_child_nodes(node):
+            _walk(child)
+
+    for child in ast.iter_child_nodes(funcnode):
+        _walk(child)
+    return prints, exits
+
+
+def _pattern_a_pairs(path: pathlib.Path) -> list[tuple[str, int]]:
+    """Return ``(function_name, exit_with_code_line)`` for every Pattern A pair.
+
+    Pattern A: a function body contains BOTH at least one ``console.print``
+    call AND at least one ``exit_with_code`` call (at any nesting depth
+    within that function, but not crossing into a nested
+    ``FunctionDef``). Each such ``exit_with_code`` line is reported once so
+    that drift in either direction (added or removed lines) trips the
+    transitional inventory check.
+    """
+    pairs: list[tuple[str, int]] = []
+
+    def _visit(node: ast.AST) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            prints, exits = _function_calls(node)
+            if prints and exits:
+                pairs.extend((node.name, line) for line in exits)
+            # Recurse into the body so nested function defs are also
+            # inspected; ``_function_calls`` already stopped at the nested
+            # boundary so we won't double-count.
+            for child in ast.iter_child_nodes(node):
+                _visit(child)
+            return
+        for child in ast.iter_child_nodes(node):
+            _visit(child)
+
+    _visit(ast.parse(path.read_text()))
+    return pairs
+
+
+def _iter_service_modules() -> Iterator[pathlib.Path]:
+    """Yield every service module path, excluding ``__init__.py`` files."""
+    for path in SERVICES_ROOT.rglob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        # ``rglob`` already skips ``__pycache__`` (compiled artefacts live as
+        # ``*.pyc``), but be explicit so a stray ``.py`` under
+        # ``__pycache__`` is also ignored.
+        if "__pycache__" in path.parts:
+            continue
+        yield path
+
+
+def _logical_name(path: pathlib.Path) -> str:
+    """Convert an absolute services path to the ``cli/services/...`` key form."""
+    rel = path.relative_to(REPO_ROOT / "src" / "notebooklm")
+    return rel.as_posix()
+
+
 @pytest.mark.parametrize(
     "logical_name,path",
     sorted(GUARDED_PATHS.items()),
@@ -163,13 +696,22 @@ def test_services_boundary_no_forbidden_imports(logical_name, path):
 
 
 @pytest.mark.parametrize(
-    "logical_name,path,expected_violations",
-    sorted((name, *entry) for name, entry in TRANSITIONAL_GUARDED_PATHS.items()),
+    "logical_name,entry",
+    sorted(TRANSITIONAL_GUARDED_PATHS.items()),
 )
-def test_transitional_services_boundary_violations_are_documented(
-    logical_name, path, expected_violations
-):
-    """Stage-3 service migrations must not grow new presentation/runtime reach-ins."""
+def test_transitional_services_boundary_violations_are_documented(logical_name, entry):
+    """Stage-3 service migrations must not grow new presentation/runtime reach-ins.
+
+    Checks the ``forbidden_imports`` inventory for each transitional module
+    against the live scan. Adding a new import-level violation should fail
+    this test; removing one should update the expected list in the same PR.
+    The Pattern A inventory has its own assertion below in
+    :func:`test_no_console_print_with_exit_with_code`.
+    """
+    path = entry["path"]
+    expected_violations = entry["forbidden_imports"]
+    assert isinstance(path, pathlib.Path)
+    assert isinstance(expected_violations, list)
     assert path.exists(), f"Expected guarded service module at {path}"
     violations = _boundary_violations(path)
     assert violations == expected_violations, (
@@ -178,6 +720,97 @@ def test_transitional_services_boundary_violations_are_documented(
         "If this adds a violation, move rendering/exit policy back to the command layer.\n"
         "Current violations:\n  " + "\n  ".join(violations)
     )
+
+
+def test_inventory_completeness():
+    """Every service module must appear in exactly one of the three sets.
+
+    Catches new modules added under ``cli/services/`` that haven't been
+    classified yet, and catches double-listings that would otherwise let
+    a module silently pass a check it shouldn't.
+    """
+    seen: dict[str, list[str]] = {}
+    for name in GUARDED_PATHS:
+        seen.setdefault(name, []).append("GUARDED_PATHS")
+    for name in TRANSITIONAL_GUARDED_PATHS:
+        seen.setdefault(name, []).append("TRANSITIONAL_GUARDED_PATHS")
+    for name in WAIVED_PATHS:
+        seen.setdefault(name, []).append("WAIVED_PATHS")
+
+    duplicates = {n: locs for n, locs in seen.items() if len(locs) > 1}
+    assert not duplicates, (
+        f"Service modules must appear in exactly one classification set; duplicates: {duplicates}"
+    )
+
+    classified = set(seen)
+    actual = {_logical_name(p) for p in _iter_service_modules()}
+
+    missing = actual - classified
+    extra = classified - actual
+
+    assert not missing, (
+        "New service modules must be classified into GUARDED_PATHS, "
+        "TRANSITIONAL_GUARDED_PATHS, or WAIVED_PATHS before this test will "
+        f"pass:\n  {sorted(missing)}"
+    )
+    assert not extra, (
+        "Classification sets reference modules that no longer exist on "
+        f"disk; remove them from the inventory:\n  {sorted(extra)}"
+    )
+
+
+def test_no_console_print_with_exit_with_code():
+    """Pattern A (``console.print`` + ``exit_with_code`` in one function) is gated.
+
+    Fails when:
+
+    * A module NOT in ``TRANSITIONAL_GUARDED_PATHS`` has any Pattern A pair
+      (a service module must not own both presentation and exit policy
+      together inside a single function body).
+    * A transitional module's actual Pattern A pairs do not exactly match
+      its declared ``pattern_a_violations`` list. This catches both new
+      regressions and silent line-shifts from refactors elsewhere — if
+      the declared lines are no longer the live lines, the diff is
+      visible in the failure message and the inventory must be updated in
+      the same PR.
+    """
+    failures: list[str] = []
+    for path in sorted(_iter_service_modules()):
+        name = _logical_name(path)
+        actual = _pattern_a_pairs(path)
+        if name in TRANSITIONAL_GUARDED_PATHS:
+            entry = TRANSITIONAL_GUARDED_PATHS[name]
+            expected = entry["pattern_a_violations"]
+            assert isinstance(expected, list)
+            # Compare as sorted tuples so insertion-order changes in the
+            # inventory don't trip the check.
+            expected_sorted = sorted(expected)
+            actual_sorted = sorted(actual)
+            if expected_sorted != actual_sorted:
+                failures.append(
+                    f"{name}: declared pattern_a_violations do not match "
+                    "live AST scan.\n"
+                    f"  declared: {expected_sorted}\n"
+                    f"  actual:   {actual_sorted}"
+                )
+            continue
+        if name in WAIVED_PATHS or name in GUARDED_PATHS:
+            if actual:
+                failures.append(
+                    f"{name}: module is in GUARDED_PATHS/WAIVED_PATHS but "
+                    f"has Pattern A pairs: {sorted(actual)}"
+                )
+            continue
+        # Should be unreachable thanks to test_inventory_completeness, but
+        # surface a clear message rather than a parametrize failure if it
+        # ever does happen.
+        failures.append(
+            f"{name}: unclassified module with Pattern A pairs "
+            f"{sorted(actual)}; classify into GUARDED_PATHS, "
+            "TRANSITIONAL_GUARDED_PATHS, or WAIVED_PATHS."
+        )
+
+    assert not failures, "Pattern A inventory drift:\n  " + "\n  ".join(failures)
 
 
 def test_guard_helper_detects_a_known_violation(tmp_path):
@@ -216,3 +849,61 @@ def test_guard_helper_allows_type_checking_imports(tmp_path):
         "    from ..rendering import ListRender  # noqa\n"
     )
     assert _boundary_violations(ok) == []
+
+
+def test_pattern_a_helper_detects_co_occurrence(tmp_path):
+    """Sanity check: synthetic same-function ``console.print`` + ``exit_with_code``."""
+    src = (
+        "from __future__ import annotations\n"
+        "\n"
+        "def fail():\n"
+        "    console.print('boom')\n"
+        "    exit_with_code(1)\n"
+    )
+    bad = tmp_path / "fake_pattern_a.py"
+    bad.write_text(src)
+    pairs = _pattern_a_pairs(bad)
+    assert pairs == [("fail", 5)], pairs
+
+
+def test_pattern_a_helper_ignores_split_helpers(tmp_path):
+    """``console.print`` in helper, ``exit_with_code`` in caller → NOT Pattern A.
+
+    The narrow Pattern A definition is intentional: it only catches direct
+    co-occurrence inside a single ``FunctionDef`` body. Helpers that emit
+    presentation and a separate caller that handles exit codes are a
+    different (preferable) shape and must NOT trip the check.
+    """
+    src = (
+        "from __future__ import annotations\n"
+        "\n"
+        "def _emit(msg):\n"
+        "    console.print(msg)\n"
+        "\n"
+        "def driver():\n"
+        "    _emit('boom')\n"
+        "    exit_with_code(1)\n"
+    )
+    ok = tmp_path / "fake_split.py"
+    ok.write_text(src)
+    assert _pattern_a_pairs(ok) == []
+
+
+def test_pattern_a_helper_ignores_nested_def_co_occurrence(tmp_path):
+    """A nested ``def`` containing both calls is reported under the NESTED name.
+
+    Confirms ``_function_calls`` stops at the nested boundary so the outer
+    function's count is not contaminated by inner-helper calls.
+    """
+    src = (
+        "from __future__ import annotations\n"
+        "\n"
+        "def outer():\n"
+        "    def inner():\n"
+        "        console.print('x')\n"
+        "        exit_with_code(1)\n"
+        "    inner()\n"
+    )
+    bad = tmp_path / "fake_nested.py"
+    bad.write_text(src)
+    assert _pattern_a_pairs(bad) == [("inner", 6)]
