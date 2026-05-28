@@ -10,7 +10,8 @@ to its executor:
 * ``services/source_research.py``  — add-research
 * ``services/source_wait.py``      — wait
 * ``services/source_add.py``       — add  (pre-T5; T5 added the executor)
-* ``services/source_clean.py``     — clean (pre-T5; T5 added the executor)
+* ``services/source_clean.py``     — clean (pure orchestration: classify +
+  batched delete; rendering + exit codes live here in the command layer)
 
 The full per-command listing lives in the ``source`` click group docstring
 below (it is what ``notebooklm source --help`` shows).
@@ -37,6 +38,8 @@ from .options import (
     wait_polling_options,
 )
 from .rendering import (
+    cli_print,
+    cli_status,
     console,
     display_report,
     display_research_sources,
@@ -48,7 +51,11 @@ from .runtime import is_quiet
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
 from .services.source_add import SourceAddExecutionPlan, execute_source_add
-from .services.source_clean import SourceCleanPlan, execute_source_clean
+from .services.source_clean import (
+    SourceCleanResult,
+    candidates_payload,
+    run_source_clean,
+)
 from .services.source_content import (
     SourceFulltextPlan,
     SourceFulltextResult,
@@ -75,6 +82,7 @@ from .services.source_mutations import (
     execute_source_delete_by_title,
     execute_source_refresh,
     execute_source_rename,
+    require_yes_in_json,
 )
 from .services.source_research import (
     SourceAddResearchPlan,
@@ -1026,18 +1034,139 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            await execute_source_clean(
-                client,
-                SourceCleanPlan(
-                    notebook_id=nb_id_resolved,
-                    dry_run=dry_run,
-                    yes=yes,
-                    json_output=json_output,
-                    quiet_mode=quiet_mode,
-                ),
-                ctx=ctx,
-                classify_sources=_classify_junk_sources,
-                on_candidates=_print_clean_candidates,
+
+            async def _list_sources(notebook_id_inner):
+                if json_output:
+                    return await client.sources.list(notebook_id_inner)
+                with cli_status("Fetching sources for cleanup...", ctx=ctx):
+                    return await client.sources.list(notebook_id_inner)
+
+            # P1.T2 bug 3: in --json mode, never prompt — automation cannot
+            # answer the question. Pass a non-interactive ``confirm_delete``
+            # that always declines; once the service returns ``cancelled`` we
+            # synthesize a structured ``CONFIRM_REQUIRED`` error below.
+            confirm_delete = (
+                (lambda count: False)
+                if json_output
+                else (lambda count: click.confirm(f"Delete {count} source(s)?"))
             )
 
+            suppress_status = json_output or quiet_mode
+            cb_candidates = None if suppress_status else _print_clean_candidates
+            cb_delete_start = (
+                None
+                if suppress_status
+                else lambda count: cli_print(
+                    f"[dim]Cleaning {count} source(s) (in chunks of 10)...[/dim]",
+                    ctx=ctx,
+                )
+            )
+
+            result: SourceCleanResult = await run_source_clean(
+                notebook_id=nb_id_resolved,
+                dry_run=dry_run,
+                yes=yes,
+                list_sources=_list_sources,
+                delete_source=client.sources.delete,
+                confirm_delete=confirm_delete,
+                on_candidates=cb_candidates,
+                on_delete_start=cb_delete_start,
+                classify_sources=_classify_junk_sources,
+            )
+
+            _dispatch_source_clean_result(result, json_output=json_output, yes=yes, ctx=ctx)
+
     return _run()
+
+
+def _dispatch_source_clean_result(
+    result: SourceCleanResult,
+    *,
+    json_output: bool,
+    yes: bool,
+    ctx,
+) -> None:
+    """Render the source-clean outcome and exit per the result's status.
+
+    Owns the Click-side rendering + exit-code policy that used to live
+    inside ``execute_source_clean`` in :mod:`.services.source_clean`.
+    Keeping presentation here lets the service module stay free of
+    ``click`` / ``..rendering`` / ``..error_handler`` imports (audit C4
+    Pattern A).
+    """
+    candidate_payload = candidates_payload(result.candidates)
+
+    if json_output:
+        # P1.T2 bug 3: synthesize structured error when --json + no --yes
+        # left candidates uncleaned. ``require_yes_in_json`` raises
+        # ``SystemExit(1)`` via ``output_error`` — it never returns.
+        if result.status == "cancelled" and not yes:
+            require_yes_in_json(
+                action="clean",
+                extra={
+                    "notebook_id": result.notebook_id,
+                    "candidate_count": result.candidate_count,
+                    "candidates": candidate_payload,
+                },
+            )
+
+        payload: dict[str, Any] = {
+            "action": "clean",
+            "notebook_id": result.notebook_id,
+            "status": result.status,
+            "candidates": candidate_payload,
+            "deleted_count": result.deleted_count,
+            "failure_count": result.failure_count,
+        }
+        if result.status != "already_clean":
+            payload["candidate_count"] = result.candidate_count
+        if result.status == "completed":
+            payload["failures"] = [{"id": sid, "error": err} for sid, err in result.failures]
+        json_output_response(payload)
+        # P1.T2 bug 8: partial-failure exits non-zero so shell automation
+        # (set -e, CI) sees the failure.
+        if result.failures:
+            exit_with_code(1)
+        return
+
+    if result.status == "already_clean":
+        cli_print(
+            "[green]Notebook is already clean. No junk sources found.[/green]",
+            ctx=ctx,
+        )
+        return
+
+    if result.status == "dry_run":
+        cli_print(
+            f"[yellow]Dry run: would delete {result.candidate_count} source(s).[/yellow]",
+            ctx=ctx,
+        )
+        return
+
+    if result.status == "cancelled":
+        return
+
+    if result.failures:
+        # Failure summary is an error diagnostic, so it must remain visible
+        # under root ``--quiet`` (policy: errors are never silenced; see
+        # ``cli/rendering.py``). Use ``console.print`` directly here instead
+        # of ``cli_print`` so the diagnostic is not swallowed when the user
+        # passes ``--quiet``.
+        console.print(
+            f"[yellow]Cleaned {result.deleted_count} source(s). "
+            f"{len(result.failures)} deletion(s) failed.[/yellow]",
+        )
+        for sid, err in result.failures[:5]:
+            console.print(f"  [red]{sid}:[/red] {err}")
+        if len(result.failures) > 5:
+            console.print(
+                f"  [dim]...and {len(result.failures) - 5} more[/dim]",
+            )
+        # P1.T2 bug 8: text-mode parity with JSON-mode exit code.
+        exit_with_code(1)
+        return
+
+    cli_print(
+        f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]",
+        ctx=ctx,
+    )

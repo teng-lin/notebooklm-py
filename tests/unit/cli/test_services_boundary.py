@@ -77,6 +77,7 @@ GUARDED_PATHS = {
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
+    "cli/services/source_clean.py": SERVICES_ROOT / "source_clean.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
 }
@@ -389,26 +390,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "rationale": (
             "``source add`` workflow still pulls ``console`` for spinner "
             "messages; presentation reach-in to be inverted."
-        ),
-    },
-    "cli/services/source_clean.py": {
-        "path": SERVICES_ROOT / "source_clean.py",
-        "forbidden_imports": [
-            "source_clean.py:207: forbidden top-level import: 'click'",
-            "source_clean.py:209: forbidden relative import: '..error_handler'",
-            "source_clean.py:210: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "uses click.confirm via a function-local import; lift to "
-            "an injected confirmer callback."
-        ),
-        "rationale": (
-            "``source clean`` executor owns the full Click + rendering + "
-            "exit-code matrix; uses ``cli_print`` rather than direct "
-            "``console.print`` so Pattern A is empty (helpers + "
-            "``exit_with_code`` live in the same function but no direct "
-            "console.print co-occurrence)."
         ),
     },
     "cli/services/source_listing.py": {

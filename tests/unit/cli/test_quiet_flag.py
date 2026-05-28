@@ -301,6 +301,28 @@ class TestQuietSourceClean:
         # appear in the candidate table, which is the prose we suppress.
         assert result.output == ""
 
+    def test_quiet_source_clean_partial_failure_still_emits_error(
+        self, runner, mock_auth, fetch_tokens
+    ):
+        """``--quiet`` suppresses status prose, not deletion failure diagnostics."""
+        junk = Source(id="src_junk_1", title="Access Denied", url="https://example.test/a")
+
+        async def fail_delete(_notebook_id, _source_id):
+            raise RuntimeError("delete failed")
+
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(return_value=[junk])
+            mock_client.sources.delete = AsyncMock(side_effect=fail_delete)
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(cli, ["--quiet", "source", "clean", "-n", "nb_123", "-y"])
+
+        assert result.exit_code != 0, result.output
+        assert "1 deletion(s) failed" in result.output
+        assert "src_junk_1" in result.output
+        assert "delete failed" in result.output
+
     def test_non_quiet_source_clean_still_prints_success(self, runner, mock_auth, fetch_tokens):
         """Baseline: non-quiet ``source clean -y`` still emits the success
         line (or already-clean line)."""
