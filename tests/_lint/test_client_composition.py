@@ -90,21 +90,21 @@ STAGE_A_ACCESSORS = {"collaborators", "session_transport", "rpc_executor"}
 # collaborators that the accessors expose, not the other way around —
 # it never reads the accessors back).
 #
-# ``_auth/session.py`` was allowlisted because :func:`refresh_auth_session`
-# read ``core.collaborators.lifecycle.save_cookies`` to persist rotated
-# cookies through the canonical chokepoint (Wave 11c of session-decoupling
-# deleted ``Session.save_cookies`` and routed the auth-refresh persist call
-# through the Stage-A accessor). Wave 2 of plan ``host-protocol-removal``
-# eliminated the read entirely: ``refresh_auth_session`` now takes the
-# five concrete collaborators as keyword-only kwargs and the deleted
-# ``RefreshAuthCore`` Protocol no longer exposes ``collaborators`` at all.
-# The allowlist entry below is therefore defensive — no live read in
-# ``_auth/session.py`` consumes a Stage-A accessor today. A follow-up may
-# narrow the allowlist back to ``client.py`` + ``_session.py``.
+# ``_auth/session.py`` was historically allowlisted because
+# :func:`refresh_auth_session` read ``core.collaborators.lifecycle.save_cookies``
+# to persist rotated cookies through the canonical chokepoint (Wave 11c of
+# session-decoupling deleted ``Session.save_cookies`` and routed the
+# auth-refresh persist call through the Stage-A accessor). Wave 2 of plan
+# ``host-protocol-removal`` eliminated the read entirely: ``refresh_auth_session``
+# now takes the five concrete collaborators as keyword-only kwargs and the
+# deleted ``RefreshAuthCore`` Protocol no longer exposes ``collaborators``
+# at all. Wave 3 narrowed the allowlist back to ``client.py`` +
+# ``_session.py`` so any accidental future Stage-A reads in
+# ``_auth/session.py`` are caught immediately by this static guard
+# (gemini-code-assist / coderabbit review on PR #1134).
 ACCESSOR_ALLOWLIST = {
     "src/notebooklm/client.py",
     "src/notebooklm/_session.py",
-    "src/notebooklm/_auth/session.py",
 }
 
 
@@ -236,5 +236,6 @@ def test_client_does_not_dereference_session_privates() -> None:
     assert not violations, (
         "client.py must not dereference private attributes of "
         "self._session — route through a narrow Session accessor "
-        "(e.g. Session.drain, Session.lifecycle) instead:\n  " + "\n  ".join(violations)
+        "(e.g. Session.drain, Session.open, Session.close, "
+        "Session.is_open) instead:\n  " + "\n  ".join(violations)
     )

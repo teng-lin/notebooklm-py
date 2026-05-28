@@ -677,8 +677,15 @@ Concretely, `Session` retains:
    and `assert_bound_loop` (now a one-line forward to
    `ClientLifecycle.assert_bound_loop` since
    `ClientLifecycle` satisfies the `LoopGuard` Protocol directly).
-4. **AST-guarded auth surface.** `update_auth_tokens` is asserted by
-   `tests/unit/test_concurrency_refresh_race.py`.
+
+The auth-forward surface that previously appeared here as a fourth
+retention bucket (`update_auth_tokens` / `update_auth_headers`, plus
+the `lifecycle` property) was deleted in Wave 3 of plan
+[`host-protocol-removal`](../.sisyphus/phases/host-protocol-removal/phase-1.md).
+The AST guard at
+`tests/unit/test_concurrency_refresh_race.py::test_update_auth_tokens_has_no_await_inside_mutation_block`
+now inspects `AuthRefreshCoordinator.update_auth_tokens` directly via
+`inspect.getsource(...)`; no Session-side delegate is involved.
 
 `NotebookLMClient.rpc_call(method, params)` dispatches directly through
 `self._rpc_executor.rpc_call(...)` — the `RpcExecutor` captured during
