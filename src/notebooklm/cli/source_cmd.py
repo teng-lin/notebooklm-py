@@ -291,9 +291,7 @@ def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool
                 }
             )
         else:
-            console.print(
-                f"[red]✗ Source processing failed:[/red] {processing_error.source_id}"
-            )
+            console.print(f"[red]✗ Source processing failed:[/red] {processing_error.source_id}")
         exit_with_code(1)
 
     if isinstance(outcome, SourceWaitTimeout):
