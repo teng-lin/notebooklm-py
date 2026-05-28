@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 
 import click
 
@@ -37,6 +37,7 @@ from ..download_helpers import (
     resolve_partial_artifact_id,
     select_artifact,
 )
+from ..error_handler import output_error
 from ..resolve import require_notebook, resolve_notebook_id
 
 # Format → extension map shared with the runtime extension-override path
@@ -218,6 +219,22 @@ def _resolve_format_extension(
     return effective_ext
 
 
+def _emit_flag_conflict(message: str, *, json_output: bool) -> NoReturn:
+    """Surface a download flag-conflict via the active CLI error contract.
+
+    Per ADR-015, post-parse flag-combination failures are routed through
+    the typed JSON envelope under ``--json`` (exit ``1``) and via Click's
+    parser-style ``UsageError`` otherwise (exit ``2`` with usage text on
+    stderr). Never returns — both branches raise.
+    """
+    if json_output:
+        # ``output_error`` emits {"error": true, "code": ..., "message": ...}
+        # on stdout and raises SystemExit(1).
+        output_error(message, "VALIDATION_ERROR", True, 1)
+        raise AssertionError("unreachable")  # pragma: no cover
+    raise click.UsageError(message)
+
+
 def build_download_plan(
     config: DownloadTypeSpec,
     args: dict[str, Any],
@@ -227,11 +244,21 @@ def build_download_plan(
 ) -> DownloadPlan:
     """Validate + assemble a :class:`DownloadPlan` from raw Click args.
 
-    Synchronous: rejects flag conflicts with ``click.UsageError`` so the
-    error surfaces through Click's standard usage path; resolves the
-    notebook id via the shared ``require_notebook`` helper (no I/O). Does
-    NOT perform the async :func:`resolve_notebook_id` lookup — that runs
-    inside :func:`execute_download`.
+    Synchronous: rejects flag conflicts via the canonical CLI error path,
+    routing through the typed JSON envelope under ``--json`` and Click's
+    standard usage path otherwise; resolves the notebook id via the shared
+    ``require_notebook`` helper (no I/O). Does NOT perform the async
+    :func:`resolve_notebook_id` lookup — that runs inside
+    :func:`execute_download`.
+
+    Flag-conflict policy (see ADR-015):
+
+    - Under ``--json``: emit the typed envelope
+      ``{"error": true, "code": "VALIDATION_ERROR", "message": ...}`` on
+      stdout via :func:`output_error` and exit ``1``. The function never
+      returns in this branch.
+    - Under text mode: raise :class:`click.UsageError` so Click's parser
+      renders ``Usage: ... / Error: ...`` on stderr and exits ``2``.
 
     Args:
         config: One ``DownloadTypeSpec`` row from the registry.
@@ -250,15 +277,22 @@ def build_download_plan(
         Frozen ``DownloadPlan`` ready for :func:`execute_download`.
 
     Raises:
-        click.UsageError: when flag combinations conflict.
+        click.UsageError: when flag combinations conflict in text mode
+            (i.e. ``args["json_output"]`` is falsy).
+        SystemExit: when flag combinations conflict under ``--json``;
+            :func:`output_error` emits the envelope on stdout and raises
+            ``SystemExit(1)``.
     """
     # Flag conflicts — same checks as the pre-refactor _download_artifacts_generic.
+    # Under --json, route through the typed JSON envelope (ADR-015); otherwise
+    # preserve Click's UsageError path (exit 2 + usage text on stderr).
+    json_output = bool(args.get("json_output", False))
     if args.get("force") and args.get("no_clobber"):
-        raise click.UsageError("Cannot specify both --force and --no-clobber")
+        _emit_flag_conflict("Cannot specify both --force and --no-clobber", json_output=json_output)
     if args.get("latest") and args.get("earliest"):
-        raise click.UsageError("Cannot specify both --latest and --earliest")
+        _emit_flag_conflict("Cannot specify both --latest and --earliest", json_output=json_output)
     if args.get("download_all") and args.get("artifact_id"):
-        raise click.UsageError("Cannot specify both --all and --artifact")
+        _emit_flag_conflict("Cannot specify both --all and --artifact", json_output=json_output)
 
     nb_id = require_notebook(args.get("notebook_id"))
 

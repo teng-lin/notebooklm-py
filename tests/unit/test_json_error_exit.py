@@ -360,6 +360,21 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ["download", "data-table", "-n", "abc123def456ghi789jkl", "--json"],
         _download_no_artifacts,
     ),
+    # download flag-conflict: post-parse UsageError site routed through the
+    # JSON envelope per ADR-015 (services/download.py build_download_plan).
+    (
+        "download_flag_conflict_json",
+        [
+            "download",
+            "audio",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--force",
+            "--no-clobber",
+            "--json",
+        ],
+        None,
+    ),
     # research group: no research running -> nonzero exit.
     (
         "research_wait_no_research",
@@ -436,4 +451,68 @@ def test_download_audio_non_json_mode_still_exits_nonzero(runner: CliRunner, moc
     assert result.exit_code != 0, (
         f"non-JSON failure must keep exiting nonzero; got {result.exit_code}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{_safe_stderr(result)}"
+    )
+
+
+def test_download_flag_conflict_json_emits_typed_envelope(runner: CliRunner, mock_auth_env) -> None:
+    """ADR-015 spot-check: ``--force --no-clobber --json`` emits the typed
+    ``VALIDATION_ERROR`` envelope and exits 1, not Click's exit-2 usage text.
+    """
+    client = _make_client()
+    result = _run_with_mock_client(
+        runner,
+        [
+            "download",
+            "audio",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--force",
+            "--no-clobber",
+            "--json",
+        ],
+        client,
+    )
+    assert result.exit_code == 1, (
+        f"expected exit 1 (VALIDATION_ERROR), got {result.exit_code}\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{_safe_stderr(result)}"
+    )
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "error": True,
+        "code": "VALIDATION_ERROR",
+        "message": "Cannot specify both --force and --no-clobber",
+    }, payload
+
+
+def test_download_flag_conflict_text_mode_raises_click_usage_error(
+    runner: CliRunner, mock_auth_env
+) -> None:
+    """Regression guard: in text mode (no ``--json``) the flag conflict still
+    raises ``click.UsageError`` so Click's parser renders usage text on stderr
+    and exits 2 (ADR-015 Rule 4 — text-mode path preserved for this site).
+    """
+    client = _make_client()
+    result = _run_with_mock_client(
+        runner,
+        [
+            "download",
+            "audio",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--force",
+            "--no-clobber",
+        ],
+        client,
+    )
+    assert result.exit_code == 2, (
+        f"expected Click UsageError exit 2, got {result.exit_code}\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{_safe_stderr(result)}"
+    )
+    # Click writes the message to stderr (or to stdout when CliRunner mixes
+    # streams). Don't depend on stream split; just verify the message text
+    # surfaced and stdout has no JSON payload.
+    combined = result.stdout + _safe_stderr(result)
+    assert "Cannot specify both --force and --no-clobber" in combined, combined
+    assert not result.stdout.strip().startswith("{"), (
+        f"text mode must not emit JSON on stdout; got: {result.stdout!r}"
     )
