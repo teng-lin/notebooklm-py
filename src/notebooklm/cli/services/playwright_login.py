@@ -146,9 +146,9 @@ CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
 #
 #   1. Environment-variable VALUES — Playwright forwards the parent process
 #      environment; if any secret (PSIDTS, API tokens, cookie material set
-#      via NOTEBOOKLM_AUTH_JSON / SAPISID / etc.) is interpolated into a
-#      traceback / config line by the CLI we invoke, it lands verbatim in
-#      ``result.stderr``.
+#      via the auth-source env var / SAPISID / etc.) is interpolated into
+#      a traceback / config line by the CLI we invoke, it lands verbatim
+#      in ``result.stderr``.
 #
 #   2. ANSI control sequences — pip/playwright CLIs emit progress bars and
 #      colour codes that mangle log scrapers and dirty test snapshots.
@@ -205,12 +205,13 @@ def _strip_ansi(text: str) -> str:
 def _expand_nested_secret_values(value: str) -> Iterator[str]:
     """Yield ``value`` plus any nested string leaves if it parses as JSON.
 
-    Env values like ``NOTEBOOKLM_AUTH_JSON`` carry serialised JSON whose
-    leaf values (cookie tokens, refresh tokens) are the actual secrets.
-    If a subprocess re-emits the parsed nested value rather than the
-    whole JSON blob, exact-string matching against the original env
-    value would miss the leak. Walk JSON objects/arrays here to add
-    every leaf string to the redaction candidate set.
+    Env values supplied as inline JSON (the auth-source env var being
+    the canonical example) carry serialised dicts whose leaf strings
+    (cookie tokens, refresh tokens) are the actual secrets. If a
+    subprocess re-emits the parsed nested value rather than the whole
+    JSON blob, exact-string matching against the original env value
+    would miss the leak. Walk JSON objects/arrays here to add every
+    leaf string to the redaction candidate set.
 
     Non-JSON values yield just themselves (and only if they pass the
     caller's length / safe-value filter).
@@ -252,7 +253,7 @@ def redact_subprocess_output(text: str, env: Mapping[str, str] | None = None) ->
        (the parameter exists so tests can drive the redaction without
        mutating real process env). For each env value we also try to
        parse it as JSON and add every nested string leaf to the
-       candidate set — covers ``NOTEBOOKLM_AUTH_JSON`` and any other
+       candidate set — covers the auth-source env var and any other
        env-supplied JSON token bag.
 
        Values shorter than :data:`_REDACTION_MIN_VALUE_LEN` and the
