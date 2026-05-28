@@ -768,11 +768,17 @@ class NotebookLMClient:
         read-only accessor — rather than from the client's owned
         ``_collaborators`` bundle so a ``NotebookLMClient`` shell built
         via ``__new__`` (used in
-        ``tests/unit/test_concurrency_refresh_race.py``) still works:
-        the test sets ``client._session`` directly and never calls
-        ``__init__``, so ``client._session.lifecycle`` is the only
-        resolution path that works without widening the constructor
-        surface.
+        ``tests/unit/test_concurrency_refresh_race.py``, constructed
+        through the
+        ``tests/_helpers/session_factory.build_refresh_client_shell``
+        helper that wires ``_session`` / ``_auth`` /
+        ``_collaborators`` / ``_rpc_executor`` from the composed
+        bundle) still works: the helper does not call ``__init__``,
+        so ``client._session.lifecycle`` is the resolution path that
+        works without widening the constructor surface. Wave 2 of the
+        host-protocol-removal plan rewires this call site onto
+        ``self._auth`` and an explicit lifecycle collaborator; this
+        docstring will move with the call when that happens.
 
         Returns:
             Updated AuthTokens.

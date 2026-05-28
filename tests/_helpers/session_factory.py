@@ -89,8 +89,11 @@ def build_session_for_tests(
     The composition extras (``transport`` / ``executor`` /
     ``collaborators``) are not returned here because the vast majority
     of call sites only need the :class:`Session` instance; tests that
-    want the full :class:`ComposedSession` tuple call
-    :func:`compose_session_internals` directly.
+    want the full :class:`ComposedSession` bundle call
+    :func:`build_composed_session_for_tests` (the same kwarg surface,
+    returns the full bundle) — addressed to keep the kwarg-default
+    layer this helper applies, rather than reaching directly to
+    :func:`notebooklm._session.compose_session_internals`.
     """
     return build_composed_session_for_tests(
         auth=auth,
