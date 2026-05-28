@@ -58,8 +58,8 @@ from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id  # noqa: F401 — preserved patch surface
 from .runtime import run_async
 from .services.auth_diagnostics import (
+    AuthCheckResult,
     plan_from_click_context,
-    render_auth_inspect,
     run_auth_check,
 )
 from .services.auth_source import AUTH_JSON_ENV_NAME, has_env_auth_json
@@ -357,6 +357,157 @@ def _render_logout_outcome(outcome: LogoutOutcome) -> None:
         console.print("[green]Logged out.[/green] Run 'notebooklm login' to sign in again.")
     else:
         console.print("[yellow]No active session found.[/yellow] Already logged out.")
+
+
+def _render_auth_check_result(result: AuthCheckResult) -> None:
+    """Render an :class:`AuthCheckResult` (table or JSON) and exit on failure.
+
+    The presentation + exit-code policy lives here in the command layer
+    so ``services/auth_diagnostics.py`` can stay free of rendering and
+    exit imports (ADR-008 boundary).
+    """
+    plan = result.plan
+    all_passed = result.all_passed
+    checks = result.checks
+    details = result.details
+
+    if plan.json_output:
+        json_output_response(
+            {
+                "status": "ok" if all_passed else "error",
+                "checks": checks,
+                "details": details,
+            }
+        )
+        if not all_passed:
+            exit_with_code(1)
+        return
+
+    # Rich-table render.
+    table = Table(title="Authentication Check")
+    table.add_column("Check", style="dim")
+    table.add_column("Status")
+    table.add_column("Details", style="cyan")
+
+    def status_icon(val: bool | None) -> str:
+        if val is None:
+            return "[dim]⊘ skipped[/dim]"
+        return "[green]✓ pass[/green]" if val else "[red]✗ fail[/red]"
+
+    table.add_row(
+        "Storage exists",
+        status_icon(checks["storage_exists"]),
+        details["auth_source"],
+    )
+    table.add_row("JSON valid", status_icon(checks["json_valid"]), "")
+    table.add_row(
+        "Cookies present",
+        status_icon(checks["cookies_present"]),
+        f"{len(details.get('cookies_found', []))} cookies" if checks["cookies_present"] else "",
+    )
+    table.add_row(
+        "SID cookie",
+        status_icon(checks["sid_cookie"]),
+        ", ".join(details.get("cookie_domains", [])[:3]) or "",
+    )
+    table.add_row(
+        "Token fetch",
+        status_icon(checks["token_fetch"]),
+        "use --test to check" if checks["token_fetch"] is None else "",
+    )
+
+    console.print(table)
+
+    cookies_by_domain = details.get("cookies_by_domain", {})
+    if cookies_by_domain:
+        console.print()
+        cookie_table = Table(title="Cookies by Domain")
+        cookie_table.add_column("Domain", style="cyan")
+        cookie_table.add_column("Cookies")
+
+        key_cookies = {"SID", "HSID", "SSID", "APISID", "SAPISID", "SIDCC"}
+
+        def format_cookie_name(name: str) -> str:
+            if name in key_cookies:
+                return f"[green]{name}[/green]"
+            if name.startswith("__Secure-"):
+                return f"[blue]{name}[/blue]"
+            return f"[dim]{name}[/dim]"
+
+        for domain in sorted(cookies_by_domain.keys()):
+            cookie_names = cookies_by_domain[domain]
+            formatted = [format_cookie_name(name) for name in sorted(cookie_names)]
+            cookie_table.add_row(domain, ", ".join(formatted))
+
+        console.print(cookie_table)
+
+    if details.get("error"):
+        console.print(f"\n[red]Error:[/red] {details['error']}")
+
+    if all_passed:
+        console.print("\n[green]Authentication is valid.[/green]")
+    elif not checks["storage_exists"]:
+        console.print("\n[yellow]Run 'notebooklm login' to authenticate.[/yellow]")
+    elif checks["token_fetch"] is False:
+        console.print(
+            "\n[yellow]Cookies may be expired. Run 'notebooklm login' to refresh.[/yellow]"
+        )
+
+
+def _render_auth_inspect(
+    browser_name: str,
+    accounts: list,
+    *,
+    json_output: bool,
+    verbose: bool,
+) -> None:
+    """Render ``auth inspect`` results (text table or JSON envelope).
+
+    Moved here from ``services/auth_diagnostics.py`` so the service module
+    stays free of rendering imports (ADR-008 boundary).
+    """
+    if json_output:
+        json_output_response(
+            {
+                "browser": browser_name,
+                "accounts": [
+                    {
+                        "email": a.email,
+                        "is_default": a.is_default,
+                        "browser_profile": a.browser_profile,
+                    }
+                    for a in accounts
+                ],
+            }
+        )
+        return
+
+    console.print(f"\n[bold]Browser:[/bold] {browser_name}")
+    console.print(f"[bold]Found {len(accounts)} signed-in Google account(s):[/bold]\n")
+    show_browser_profile = verbose and any(a.browser_profile for a in accounts)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("email")
+    if show_browser_profile:
+        table.add_column(f"{browser_name} user")
+    table.add_column("default", justify="center")
+    for a in accounts:
+        row = [a.email]
+        if show_browser_profile:
+            row.append(a.browser_profile or "")
+        row.append("[green]✓[/green]" if a.is_default else "")
+        table.add_row(*row)
+    console.print(table)
+    hint = (
+        f"Pick one with: [cyan]notebooklm login --browser-cookies "
+        f"{browser_name} --account EMAIL[/cyan]\n"
+        f"Or extract them all: [cyan]notebooklm login --browser-cookies "
+        f"{browser_name} --all-accounts[/cyan]"
+    )
+    if not verbose and any(a.browser_profile for a in accounts):
+        hint = (
+            "[dim]Pass -v to see which browser user-profile each account came from.[/dim]\n" + hint
+        )
+    console.print("\n" + hint)
 
 
 def register_session_commands(cli):
@@ -785,7 +936,7 @@ def register_session_commands(cli):
         _, accounts = _enumerate_browser_accounts(
             browser_name, verbose=not json_output, include_domains=include_domains
         )
-        render_auth_inspect(browser_name, list(accounts), json_output=json_output, verbose=verbose)
+        _render_auth_inspect(browser_name, list(accounts), json_output=json_output, verbose=verbose)
 
     @auth_group.command("check")
     @click.option(
@@ -812,7 +963,8 @@ def register_session_commands(cli):
           notebooklm auth check --json    # Machine-readable output
         """
         plan = plan_from_click_context(ctx, test_fetch=test_fetch, json_output=json_output)
-        run_auth_check(plan)
+        result = run_async(run_auth_check(plan))
+        _render_auth_check_result(result)
 
     @auth_group.command("refresh")
     @click.option(

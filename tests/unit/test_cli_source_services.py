@@ -28,7 +28,11 @@ from notebooklm.cli.services.source_research import (
     SourceAddResearchResult,
     execute_source_add_research,
 )
-from notebooklm.cli.services.source_wait import SourceWaitPlan, execute_source_wait
+from notebooklm.cli.services.source_wait import (
+    SourceWaitPlan,
+    SourceWaitTimeout,
+    execute_source_wait,
+)
 from notebooklm.types import Source, SourceFulltext, SourceTimeoutError
 
 
@@ -607,49 +611,34 @@ async def test_source_add_research_delegates_timeout_budget_to_research_api() ->
 
 
 @pytest.mark.asyncio
-async def test_source_wait_timeout_maps_to_json_envelope_and_exit_code(
+async def test_source_wait_timeout_returns_typed_outcome(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    payloads: list[dict[str, object]] = []
-
     @contextlib.asynccontextmanager
     async def fake_status_with_elapsed(*args: object, **kwargs: object) -> AsyncIterator[None]:
         yield
 
-    def fake_exit_with_code(code: int) -> None:
-        raise SystemExit(code)
-
     monkeypatch.setattr(source_wait, "status_with_elapsed", fake_status_with_elapsed)
-    monkeypatch.setattr(source_wait, "json_output_response", payloads.append)
-    monkeypatch.setattr(source_wait, "exit_with_code", fake_exit_with_code)
+    timeout_exc = SourceTimeoutError("src_1", 10.0, 2)
     client = SimpleNamespace(
-        sources=SimpleNamespace(
-            wait_until_ready=AsyncMock(side_effect=SourceTimeoutError("src_1", 10.0, 2))
-        )
+        sources=SimpleNamespace(wait_until_ready=AsyncMock(side_effect=timeout_exc))
     )
 
-    with pytest.raises(SystemExit) as exc_info:
-        await execute_source_wait(
-            client,
-            SourceWaitPlan(
-                notebook_id="nb_1",
-                source_id="src_1",
-                timeout=10.0,
-                interval=0.5,
-                json_output=True,
-            ),
-        )
+    outcome = await execute_source_wait(
+        client,
+        SourceWaitPlan(
+            notebook_id="nb_1",
+            source_id="src_1",
+            timeout=10.0,
+            interval=0.5,
+            json_output=True,
+        ),
+    )
 
-    assert exc_info.value.code == 2
-    assert payloads == [
-        {
-            "source_id": "src_1",
-            "status": "timeout",
-            "last_status_code": 2,
-            "timeout_seconds": 10,
-            "error": "Source src_1 not ready after 10.0s (last status: 2)",
-        }
-    ]
+    # Service now returns a typed outcome; presentation + exit code are the
+    # caller's responsibility (covered by tests/unit/cli/test_source.py).
+    assert isinstance(outcome, SourceWaitTimeout)
+    assert outcome.error is timeout_exc
     client.sources.wait_until_ready.assert_awaited_once_with(
         "nb_1",
         "src_1",

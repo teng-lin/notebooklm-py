@@ -4,8 +4,17 @@ Owns the dataclass + executor pair so ``cli/source_cmd.py`` stays a thin
 Click handler. The executor wraps the underlying
 ``client.sources.wait_until_ready`` call in a transient
 ``status_with_elapsed`` spinner (suppressed under JSON) and translates the
-three ``SourceWaitError`` subclasses into the documented exit-code +
-envelope contract.
+three ``SourceWaitError`` subclasses into a typed
+:class:`SourceWaitOutcome`. The caller renders the outcome and decides the
+exit code.
+
+Typed-outcome contract (matches ``source_cmd.source_wait`` pre-extraction
+exit policy, now owned by the caller):
+
+* :class:`SourceWaitReady`           — source reached READY before timeout (caller exits 0).
+* :class:`SourceWaitNotFound`        — :class:`SourceNotFoundError` (caller exits 1).
+* :class:`SourceWaitProcessingError` — :class:`SourceProcessingError` (caller exits 1).
+* :class:`SourceWaitTimeout`         — :class:`SourceTimeoutError` (caller exits 2).
 """
 
 from __future__ import annotations
@@ -19,8 +28,6 @@ from ...types import (
     SourceProcessingError,
     SourceTimeoutError,
 )
-from ..error_handler import exit_with_code
-from ..rendering import console, json_output_response
 from .polling import status_with_elapsed
 
 if TYPE_CHECKING:
@@ -38,76 +45,48 @@ class SourceWaitPlan:
     json_output: bool
 
 
-def _emit_ready_payload(source: Source, *, json_output: bool) -> None:
-    if json_output:
-        json_output_response(
-            {
-                "source_id": source.id,
-                "title": source.title,
-                "status": "ready",
-                "status_code": source.status,
-            }
-        )
-        return
-    console.print(f"[green]✓ Source ready:[/green] {source.id}")
-    if source.title:
-        console.print(f"[bold]Title:[/bold] {source.title}")
+@dataclass(frozen=True)
+class SourceWaitReady:
+    """Source reached READY before timeout. Caller exits 0."""
+
+    source: Source
 
 
-def _emit_not_found(exc: SourceNotFoundError, *, json_output: bool) -> None:
-    if json_output:
-        json_output_response(
-            {
-                "source_id": exc.source_id,
-                "status": "not_found",
-                "error": str(exc),
-            }
-        )
-    else:
-        console.print(f"[red]✗ Source not found:[/red] {exc.source_id}")
+@dataclass(frozen=True)
+class SourceWaitNotFound:
+    """``client.sources.wait_until_ready`` raised :class:`SourceNotFoundError`."""
+
+    error: SourceNotFoundError
 
 
-def _emit_processing_error(exc: SourceProcessingError, *, json_output: bool) -> None:
-    if json_output:
-        json_output_response(
-            {
-                "source_id": exc.source_id,
-                "status": "error",
-                "status_code": exc.status,
-                "error": str(exc),
-            }
-        )
-    else:
-        console.print(f"[red]✗ Source processing failed:[/red] {exc.source_id}")
+@dataclass(frozen=True)
+class SourceWaitProcessingError:
+    """``client.sources.wait_until_ready`` raised :class:`SourceProcessingError`."""
+
+    error: SourceProcessingError
 
 
-def _emit_timeout(exc: SourceTimeoutError, *, json_output: bool) -> None:
-    if json_output:
-        json_output_response(
-            {
-                "source_id": exc.source_id,
-                "status": "timeout",
-                "last_status_code": exc.last_status,
-                "timeout_seconds": int(exc.timeout),
-                "error": str(exc),
-            }
-        )
-    else:
-        console.print(f"[yellow]⚠ Timeout waiting for source:[/yellow] {exc.source_id}")
-        console.print(f"[dim]Last status: {exc.last_status}[/dim]")
+@dataclass(frozen=True)
+class SourceWaitTimeout:
+    """``client.sources.wait_until_ready`` raised :class:`SourceTimeoutError`."""
+
+    error: SourceTimeoutError
 
 
-async def execute_source_wait(client: NotebookLMClient, plan: SourceWaitPlan) -> None:
-    """Run the ``source wait`` workflow with status spinner + error mapping.
+SourceWaitOutcome = (
+    SourceWaitReady | SourceWaitNotFound | SourceWaitProcessingError | SourceWaitTimeout
+)
 
-    Exit-code contract (matches ``source_cmd.source_wait`` pre-extraction):
-        * 0 — source reached READY before timeout.
-        * 1 — :class:`SourceNotFoundError` or :class:`SourceProcessingError`.
-        * 2 — :class:`SourceTimeoutError`.
 
-    Caller is responsible for resolving ``plan.source_id`` to a full UUID
-    BEFORE calling this executor (so the spinner message and JSON envelope
-    carry the resolved id consistently).
+async def execute_source_wait(client: NotebookLMClient, plan: SourceWaitPlan) -> SourceWaitOutcome:
+    """Run the ``source wait`` workflow and return a typed outcome.
+
+    The caller is responsible for resolving ``plan.source_id`` to a full
+    UUID BEFORE calling this executor (so the spinner message and the
+    caller's JSON envelope carry the resolved id consistently).
+
+    Presentation and exit-code policy live in the caller — this executor
+    only owns the polling loop and exception-to-outcome mapping.
     """
     try:
         async with status_with_elapsed(
@@ -124,16 +103,20 @@ async def execute_source_wait(client: NotebookLMClient, plan: SourceWaitPlan) ->
                 initial_interval=plan.interval,
             )
     except SourceNotFoundError as exc:
-        _emit_not_found(exc, json_output=plan.json_output)
-        exit_with_code(1)
+        return SourceWaitNotFound(error=exc)
     except SourceProcessingError as exc:
-        _emit_processing_error(exc, json_output=plan.json_output)
-        exit_with_code(1)
+        return SourceWaitProcessingError(error=exc)
     except SourceTimeoutError as exc:
-        _emit_timeout(exc, json_output=plan.json_output)
-        exit_with_code(2)
-    else:
-        _emit_ready_payload(source, json_output=plan.json_output)
+        return SourceWaitTimeout(error=exc)
+    return SourceWaitReady(source=source)
 
 
-__all__ = ["SourceWaitPlan", "execute_source_wait"]
+__all__ = [
+    "SourceWaitNotFound",
+    "SourceWaitOutcome",
+    "SourceWaitPlan",
+    "SourceWaitProcessingError",
+    "SourceWaitReady",
+    "SourceWaitTimeout",
+    "execute_source_wait",
+]

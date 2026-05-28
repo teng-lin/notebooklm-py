@@ -72,6 +72,7 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # Fully cleaned service modules. Each must have zero ``_boundary_violations``
 # AND zero Pattern A pairs (see :func:`_pattern_a_pairs`).
 GUARDED_PATHS = {
+    "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/login/exceptions.py": SERVICES_ROOT / "login" / "exceptions.py",
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
@@ -79,6 +80,7 @@ GUARDED_PATHS = {
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
+    "cli/services/source_wait.py": SERVICES_ROOT / "source_wait.py",
 }
 
 # Stage 3 migration inventory. These modules currently own presentation
@@ -117,19 +119,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "Owns rendering imports + ``console.print`` for artifact "
             "generation progress; exit policy already delegated to the "
             "command layer."
-        ),
-    },
-    "cli/services/auth_diagnostics.py": {
-        "path": SERVICES_ROOT / "auth_diagnostics.py",
-        "forbidden_imports": [
-            "auth_diagnostics.py:28: forbidden relative import: '..error_handler'",
-            "auth_diagnostics.py:29: forbidden relative import: '..rendering'",
-            "auth_diagnostics.py:207: forbidden relative import: '..runtime'",
-        ],
-        "pattern_a_violations": [("render_auth_check", 249)],
-        "rationale": (
-            "Status renderer still owns ``--json`` exit handling and runtime "
-            "import for cookie-keepalive probing."
         ),
     },
     "cli/services/auth_source.py": {
@@ -437,20 +426,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "rationale": (
             "Source mutation pipeline still owns presentation + Click "
             "confirmer defaults + exit policy."
-        ),
-    },
-    "cli/services/source_wait.py": {
-        "path": SERVICES_ROOT / "source_wait.py",
-        "forbidden_imports": [
-            "source_wait.py:22: forbidden relative import: '..error_handler'",
-            "source_wait.py:23: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "rationale": (
-            "``source wait`` executor owns exit policy but routes "
-            "presentation through ``_emit_*`` helpers, so no direct "
-            "console.print + exit_with_code co-occurrence inside a single "
-            "function body."
         ),
     },
 }

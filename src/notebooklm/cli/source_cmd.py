@@ -81,7 +81,15 @@ from .services.source_research import (
     SourceAddResearchResult,
     execute_source_add_research,
 )
-from .services.source_wait import SourceWaitPlan, execute_source_wait
+from .services.source_wait import (
+    SourceWaitNotFound,
+    SourceWaitOutcome,
+    SourceWaitPlan,
+    SourceWaitProcessingError,
+    SourceWaitReady,
+    SourceWaitTimeout,
+    execute_source_wait,
+)
 
 # Compatibility wrappers — tests patch these names on this module. Each
 # one is a one-liner forwarder to the canonical service-layer home.
@@ -230,6 +238,82 @@ def _render_source_guide_result(result: SourceGuideResult, *, json_output: bool)
     if result.keywords:
         console.print("[bold cyan]Keywords:[/bold cyan]")
         console.print(", ".join(result.keywords))
+
+
+def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool) -> None:
+    """Render the ``source wait`` outcome and exit with the documented code.
+
+    Exit codes (preserved from the pre-extraction service-side contract):
+        * 0 — :class:`SourceWaitReady`.
+        * 1 — :class:`SourceWaitNotFound` or :class:`SourceWaitProcessingError`.
+        * 2 — :class:`SourceWaitTimeout`.
+    """
+    if isinstance(outcome, SourceWaitReady):
+        source = outcome.source
+        if json_output:
+            json_output_response(
+                {
+                    "source_id": source.id,
+                    "title": source.title,
+                    "status": "ready",
+                    "status_code": source.status,
+                }
+            )
+            return
+        console.print(f"[green]✓ Source ready:[/green] {source.id}")
+        if source.title:
+            console.print(f"[bold]Title:[/bold] {source.title}")
+        return
+
+    if isinstance(outcome, SourceWaitNotFound):
+        not_found_error = outcome.error
+        if json_output:
+            json_output_response(
+                {
+                    "source_id": not_found_error.source_id,
+                    "status": "not_found",
+                    "error": str(not_found_error),
+                }
+            )
+        else:
+            console.print(f"[red]✗ Source not found:[/red] {not_found_error.source_id}")
+        exit_with_code(1)
+
+    if isinstance(outcome, SourceWaitProcessingError):
+        processing_error = outcome.error
+        if json_output:
+            json_output_response(
+                {
+                    "source_id": processing_error.source_id,
+                    "status": "error",
+                    "status_code": processing_error.status,
+                    "error": str(processing_error),
+                }
+            )
+        else:
+            console.print(
+                f"[red]✗ Source processing failed:[/red] {processing_error.source_id}"
+            )
+        exit_with_code(1)
+
+    if isinstance(outcome, SourceWaitTimeout):
+        timeout_error = outcome.error
+        if json_output:
+            json_output_response(
+                {
+                    "source_id": timeout_error.source_id,
+                    "status": "timeout",
+                    "last_status_code": timeout_error.last_status,
+                    "timeout_seconds": int(timeout_error.timeout),
+                    "error": str(timeout_error),
+                }
+            )
+        else:
+            console.print(
+                f"[yellow]⚠ Timeout waiting for source:[/yellow] {timeout_error.source_id}"
+            )
+            console.print(f"[dim]Last status: {timeout_error.last_status}[/dim]")
+        exit_with_code(2)
 
 
 def _render_source_stale_result(
@@ -996,7 +1080,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
             )
-            await execute_source_wait(
+            outcome = await execute_source_wait(
                 client,
                 SourceWaitPlan(
                     notebook_id=nb_id_resolved,
@@ -1006,6 +1090,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
                     json_output=json_output,
                 ),
             )
+            _render_source_wait_outcome(outcome, json_output=json_output)
 
     return _run()
 
