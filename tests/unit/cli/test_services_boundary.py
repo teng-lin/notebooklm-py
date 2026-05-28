@@ -182,16 +182,20 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "forbidden_imports": [
             "generate.py:41: forbidden top-level import: 'click'",
             "generate.py:42: forbidden top-level import: 'click.core'",
+            "generate.py:58: forbidden relative import: '..error_handler'",
         ],
         "pattern_a_violations": [],
         "pattern_b_violations": (
-            "raises click.UsageError on incompatible generation flags; "
+            "raises click.UsageError on incompatible generation flags, "
+            "uses output_error for ADR-015 JSON envelopes, and "
             "reads click.core.ParameterSource to distinguish flag-set vs. "
             "default."
         ),
         "rationale": (
             "Generation flag-validation depends on Click's ParameterSource "
-            "to detect explicit vs. default; lift to command-layer."
+            "to detect explicit vs. default and currently emits ADR-015 "
+            "JSON envelopes from the service layer. Lift validation/output "
+            "handling to the command layer."
         ),
     },
     "cli/services/login/browser_accounts.py": {
