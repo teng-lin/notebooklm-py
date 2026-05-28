@@ -1,12 +1,17 @@
 # CLI Exit-Code Convention
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-27
 
 This document defines the exit-code policy for the `notebooklm` CLI. Shell
 scripts, CI pipelines, and AI-agent automations should rely on these codes for
 control flow rather than scraping stdout/stderr text — the text is intended for
 humans and may evolve, but the exit-code contract is stable.
+
+The companion architectural decision for the `--json` error contract is
+[ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md);
+this document is the surface-level reference for callers, and ADR-015 is the
+rationale for the post-parse `ClickException` rules called out below.
 
 For the canonical implementation, see the `handle_errors` context manager in
 [`src/notebooklm/cli/error_handler.py`](../src/notebooklm/cli/error_handler.py)
@@ -49,17 +54,33 @@ mapping in `error_handler.py`:
 | `NotebookLMError` (other) | `NOTEBOOKLM_ERROR` | `1` |
 | `KeyboardInterrupt`     | `CANCELLED`         | `130` |
 | Anything else (`Exception`) | `UNEXPECTED_ERROR` | `2` |
-| `click.UsageError` / `click.BadParameter` (bad CLI args) | — | re-raised; Click exits `2` |
-| Other `click.ClickException` subclasses                  | — | re-raised; Click exits `1` |
+| Parse-time `click.UsageError` / `click.BadParameter` (Click's parser, before command body runs) | — | re-raised; Click exits `2` |
+| Parse-time `click.ClickException` (other subclasses raised by Click's parser) | — | re-raised; Click exits `1` |
+| Post-parse `ClickException` raised from a command body or service module | `VALIDATION_ERROR` (or another standard code, per the raise site) | `1` (typed JSON envelope under `--json`; see ADR-015) |
 
-`click.ClickException` and its subclasses are intentionally re-raised so
-Click can render its own `Usage: ...` / `Error: ...` message. The exit code
-is whatever Click's own `exit_code` class attribute provides — `2` for
-`UsageError` (and `BadParameter`, which subclasses it), `1` for the base
-`ClickException` and other non-usage subclasses. This aligns Click's "bad
-arguments" exit (`2`) with our "system/unexpected" code, and Click's other
-exceptions with our "user/app error" code, so callers can branch on the
-exit code without distinguishing the two sources.
+`click.ClickException` raised by **Click's own parser** is intentionally
+re-raised so Click can render its own `Usage: ... / Error: ...` message.
+This is the *parse-time* path: argv parsing decides the command body
+should not run at all (unknown flag, type-validation failure, missing
+required argument), so `handle_errors(...)` is not yet on the stack and
+no JSON envelope is emitted. The exit code is whatever Click's own
+`exit_code` class attribute provides — `2` for `UsageError` (and
+`BadParameter`, which subclasses it), `1` for the base `ClickException`
+and other non-usage subclasses.
+
+`ClickException`-subclass failures raised from inside a **command body or
+its service-layer code** are *post-parse*: argv parsing succeeded, the
+command function entered, and `--json`'s value (if any) is bound on the
+Click context. These failures route through `output_error(...)` (the
+canonical envelope emitter) and exit `1` with the typed JSON error
+envelope under `--json` or a plain stderr message in text mode. The
+typical code is `VALIDATION_ERROR`. New command/service code MUST NOT
+raise `ClickException` for post-parse validation failures except at the
+small set of input-validation boundaries pinned by
+`ALLOWED_CLICK_EXCEPTION_SITES` in
+[`src/notebooklm/cli/error_handler.py`](../src/notebooklm/cli/error_handler.py);
+see [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md)
+for the contract and rationale.
 
 ## JSON output mode (`--json`)
 
@@ -80,6 +101,21 @@ The `code` field is the stable identifier (see table above); `message` is the
 human string and may change. Some errors include extra fields
 (`retry_after`, `method_id` when `-v/--verbose` is set, etc.). Automation
 should branch on `code` (or, more simply, on the exit code).
+
+**Post-parse `ClickException` is covered.** Validation failures that a
+command body or its service-layer code chooses to express by raising
+`click.UsageError` / `click.BadParameter` / `click.ClickException` (for
+example, a flag-combination conflict detected after argv parsing
+succeeds) are routed through this same envelope under `--json` and exit
+`1` with `code: "VALIDATION_ERROR"` (or another standard code chosen by
+the raise site). The contract decision and its enumerated raise sites
+are recorded in
+[ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
+**Parse-time** `ClickException` raised by Click's own parser (before the
+command body runs) is unchanged — Click still renders its
+`Usage: ... / Error: ...` text on stderr and exits with its
+class-default code, because `handle_errors(...)` is not yet on the stack
+when the parser fires.
 
 ## Intentional exceptions to the standard convention
 
