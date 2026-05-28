@@ -118,9 +118,7 @@ def _login_browser_cookies_single(
 
     # Path 2: targeted extraction. Select the requested browser account, then
     # write it to an explicit destination or to the active profile.
-    enum_result = _enumerate_browser_accounts(
-        browser_cookies, include_domains=include_domains
-    )
+    enum_result = _enumerate_browser_accounts(browser_cookies, include_domains=include_domains)
     if isinstance(enum_result, BrowserCookieOutcome):
         _exit_on_outcome(enum_result)
     per_profile_cookies, accounts = enum_result
@@ -228,9 +226,7 @@ def _login_all_accounts_from_browser(
     """
     from ....paths import list_profiles
 
-    enum_result = _enumerate_browser_accounts(
-        browser_cookies, include_domains=include_domains
-    )
+    enum_result = _enumerate_browser_accounts(browser_cookies, include_domains=include_domains)
     if isinstance(enum_result, BrowserCookieOutcome):
         _exit_on_outcome(enum_result)
     per_profile_cookies, accounts = enum_result

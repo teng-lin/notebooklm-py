@@ -220,9 +220,7 @@ def _write_extracted_cookies(
         logger.error("Failed to save authentication to %s: %s", storage_path, type(e).__name__)
         return CookieValidationFailure(
             code="STORAGE_WRITE_FAILED",
-            message=(
-                f"[red]Failed to save authentication to {storage_path}.[/red]\nDetails: {e}"
-            ),
+            message=(f"[red]Failed to save authentication to {storage_path}.[/red]\nDetails: {e}"),
         )
 
     from ....auth import write_account_metadata
@@ -232,9 +230,7 @@ def _write_extracted_cookies(
     except OSError as e:
         # Non-fatal: cookies are already written. Log the redacted type,
         # but preserve the previous user-facing warning text.
-        logger.warning(
-            "Failed to save account metadata for %s: %s", storage_path, type(e).__name__
-        )
+        logger.warning("Failed to save account metadata for %s: %s", storage_path, type(e).__name__)
         _emit_warning(
             f"[yellow]Warning: cookies saved but account metadata write failed.[/yellow]\n"
             f"Details: {e}"

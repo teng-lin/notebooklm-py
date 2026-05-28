@@ -151,8 +151,7 @@ def _enumerate_one_jar(
             return StaleCookies(
                 code="STALE_COOKIES",
                 message=(
-                    f"Saved cookies for {browser_name} are too stale for Google to "
-                    "re-authenticate."
+                    f"Saved cookies for {browser_name} are too stale for Google to re-authenticate."
                 ),
             )
         return StaleCookies(

@@ -80,7 +80,9 @@ def _read_chromium_profile_cookies_from_selector(
         )
         exit_with_code(1)
     except (OSError, RuntimeError) as e:
-        console.print(_handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'"))
+        console.print(
+            _handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'")
+        )
         exit_with_code(1)
 
     return profile, cookies
