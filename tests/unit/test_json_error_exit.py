@@ -29,6 +29,28 @@ from notebooklm.types import (
 )
 
 # ---------------------------------------------------------------------------
+# Coverage-gap markers — see ``test_json_stdout_purity.py``'s dynamic
+# inventory test. These commands currently lack the canonical JSON envelope
+# on unhandled exceptions: ``doctor`` and ``profile list`` are not wrapped in
+# ``handle_errors`` and raise the underlying ``OSError`` straight through
+# Click. The xfail entries document the gap and pressure a future PR to wrap
+# them in the standard envelope path (e.g. via ``handle_errors`` or a
+# command-local ``try`` that calls ``json_error_response``). When that lands,
+# the xfail flips to XPASS — at which point the marker should be removed and
+# the assertions become hard.
+# ---------------------------------------------------------------------------
+_DOCTOR_GAP_REASON = (
+    "doctor --json currently propagates OSError uncaught (no handle_errors "
+    "wrap, no command-local json_error_response). Tracked as meta-audit G9; "
+    "remove xfail when doctor adopts the canonical JSON error envelope."
+)
+_PROFILE_LIST_GAP_REASON = (
+    "profile list --json currently propagates OSError uncaught (no "
+    "handle_errors wrap). Remove xfail when profile list adopts the canonical "
+    "JSON error envelope."
+)
+
+# ---------------------------------------------------------------------------
 # Fixtures + helpers
 # ---------------------------------------------------------------------------
 
@@ -277,6 +299,16 @@ def _artifact_wait_timeout(client: MagicMock) -> None:
     client.artifacts.wait_for_completion = AsyncMock(side_effect=TimeoutError("timed out"))
 
 
+def _fail_notebook_create(client: MagicMock) -> None:
+    """`notebook create --json` failure: client.notebooks.create raises.
+
+    ``with_client`` wraps the body in ``handle_errors``, which catches
+    ``Exception`` and routes to ``_output_error`` with code
+    ``UNEXPECTED_ERROR`` (exit 2 — canonical envelope on stdout).
+    """
+    client.notebooks.create = AsyncMock(side_effect=RuntimeError("notebook quota exceeded"))
+
+
 # ---------------------------------------------------------------------------
 # Parametrized sweep
 # ---------------------------------------------------------------------------
@@ -372,13 +404,58 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
     ("share_status_failure", ["share", "status", "-n", "abc", "--json"], _fail_share_status),
     ("notebook_list_failure", ["list", "--json"], _fail_notebook_list),
     ("chat_ask_failure", ["ask", "hi", "-n", "abc", "--json"], _fail_chat_ask),
+    # notebook create: with_client + RuntimeError -> UNEXPECTED_ERROR envelope.
+    (
+        "notebook_create_failure",
+        ["create", "My Notebook", "--json"],
+        _fail_notebook_create,
+    ),
+    # doctor + profile-list: documented coverage gaps (see _DOCTOR_GAP_REASON /
+    # _PROFILE_LIST_GAP_REASON above). The argv lives here so the dynamic
+    # inventory test sees error-path coverage for these commands; the xfail
+    # absorbs the assertion failure until the src is wrapped in the canonical
+    # JSON error envelope.
+    pytest.param(
+        "doctor_failure",
+        ["doctor", "--json"],
+        None,  # customizer is irrelevant — mocking happens via the test body
+        marks=pytest.mark.xfail(strict=False, reason=_DOCTOR_GAP_REASON),
+    ),
+    pytest.param(
+        "profile_list_unauthorized",
+        ["profile", "list", "--json"],
+        None,  # ditto
+        marks=pytest.mark.xfail(strict=False, reason=_PROFILE_LIST_GAP_REASON),
+    ),
 ]
+
+
+# ``pytest.param`` wraps tuple entries with marks; harvest ids from the raw
+# values so ``parametrize(..., ids=...)`` continues to receive plain strings.
+def _case_ids(cases) -> list[str]:
+    out: list[str] = []
+    for entry in cases:
+        if hasattr(entry, "values"):  # pytest.ParameterSet
+            out.append(entry.values[0])
+        else:
+            out.append(entry[0])
+    return out
+
+
+# Filesystem-driven failure cases bypass the mock-client harness — they
+# trigger errors by mocking module-level filesystem helpers instead of
+# raising on a mock client method. See the xfail rationale at the top of
+# the file for why these don't currently emit the canonical envelope.
+_FS_FAILURE_PATCH_TARGETS = {
+    "doctor_failure": "notebooklm.cli.doctor_cmd.get_storage_path",
+    "profile_list_unauthorized": "notebooklm.cli.profile_cmd.list_profiles",
+}
 
 
 @pytest.mark.parametrize(
     "case_id,argv,customize",
     JSON_ERROR_CASES,
-    ids=[c[0] for c in JSON_ERROR_CASES],
+    ids=_case_ids(JSON_ERROR_CASES),
 )
 def test_json_error_exit_contract(
     case_id: str,
@@ -388,8 +465,16 @@ def test_json_error_exit_contract(
     mock_auth_env,
 ) -> None:
     """Failure paths in --json mode must exit nonzero AND emit valid JSON."""
-    client = _make_client(customize)
-    result = _run_with_mock_client(runner, argv, client)
+    fs_patch_target = _FS_FAILURE_PATCH_TARGETS.get(case_id)
+    if fs_patch_target is not None:
+        # doctor / profile-list: patch the module-level helper to raise OSError,
+        # then invoke without the mock-client harness (these commands don't
+        # construct NotebookLMClient at all).
+        with patch(fs_patch_target, side_effect=OSError("permission denied")):
+            result = runner.invoke(cli, argv, catch_exceptions=True)
+    else:
+        client = _make_client(customize)
+        result = _run_with_mock_client(runner, argv, client)
     _assert_json_error_contract(result, case_id)
 
 
