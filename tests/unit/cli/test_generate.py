@@ -1445,7 +1445,9 @@ class TestResolveLanguageDirect:
     def test_invalid_env_exits_via_output_error(self, monkeypatch, capsys):
         """An unsupported NOTEBOOKLM_HL value still gets validated. Per ADR-015
         it routes through ``output_error`` (exit 1, message on stderr) rather
-        than ``click.BadParameter``."""
+        than ``click.BadParameter``. The message must name ``NOTEBOOKLM_HL`` so
+        the user can tell which input source is at fault — mirroring the
+        ``in config`` disambiguation that the config-file branch already does."""
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "xx_INVALID")
@@ -1456,7 +1458,9 @@ class TestResolveLanguageDirect:
         ):
             generate_module.resolve_language(None)
         assert exc_info.value.code == 1
-        assert "xx_INVALID" in capsys.readouterr().err
+        captured = capsys.readouterr()
+        assert "xx_INVALID" in captured.err
+        assert "NOTEBOOKLM_HL" in captured.err
 
     def test_resolve_language_rejects_invalid_config_value(self, capsys):
         """An unsupported language stored in the config file gets validated.

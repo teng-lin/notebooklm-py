@@ -74,8 +74,12 @@ def resolve_language(language: str | None) -> str:
     env_lang = os.environ.get("NOTEBOOKLM_HL", "").strip()
     if env_lang:
         if env_lang not in SUPPORTED_LANGUAGES:
+            # Distinguish the env-var source so the user knows which input is
+            # at fault (the ``in config`` branch below already disambiguates;
+            # the CLI flag is the unqualified default since it's the most
+            # common path).
             output_error(
-                f"Unknown language code: {env_lang}\n"
+                f"Unknown language code from NOTEBOOKLM_HL: {env_lang}\n"
                 "Run 'notebooklm language list' to see supported codes.",
                 "VALIDATION_ERROR",
                 current_json_output(),
