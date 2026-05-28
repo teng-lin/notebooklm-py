@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from notebooklm._session import Session, compose_session_internals
+from notebooklm._session import ComposedSession, Session, compose_session_internals
 from notebooklm._session_config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -45,6 +45,7 @@ from notebooklm._session_config import (
 )
 from notebooklm._session_lifecycle import CookieRotator, CookieSaver
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
@@ -91,7 +92,74 @@ def build_session_for_tests(
     want the full :class:`ComposedSession` tuple call
     :func:`compose_session_internals` directly.
     """
-    composed = compose_session_internals(
+    return build_composed_session_for_tests(
+        auth=auth,
+        timeout=timeout,
+        connect_timeout=connect_timeout,
+        refresh_callback=refresh_callback,
+        refresh_retry_delay=refresh_retry_delay,
+        keepalive=keepalive,
+        keepalive_min_interval=keepalive_min_interval,
+        keepalive_storage_path=keepalive_storage_path,
+        rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
+        limits=limits,
+        max_concurrent_uploads=max_concurrent_uploads,
+        max_concurrent_rpcs=max_concurrent_rpcs,
+        on_rpc_event=on_rpc_event,
+        cookie_saver=cookie_saver,
+        cookie_rotator=cookie_rotator,
+        decode_response=decode_response,
+        sleep=sleep,
+        is_auth_error=is_auth_error,
+        async_client_factory=async_client_factory,
+    ).session
+
+
+def build_composed_session_for_tests(
+    auth: AuthTokens,
+    timeout: float = DEFAULT_TIMEOUT,
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
+    refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
+    refresh_retry_delay: float = 0.2,
+    keepalive: float | None = None,
+    keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
+    keepalive_storage_path: Path | None = None,
+    rate_limit_max_retries: int = 3,
+    server_error_max_retries: int = 3,
+    limits: ConnectionLimits | None = None,
+    max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+    max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
+    on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+    cookie_saver: CookieSaver | None = None,
+    cookie_rotator: CookieRotator | None = None,
+    *,
+    decode_response: Callable[..., Any] | None = None,
+    sleep: Callable[[float], Awaitable[Any]] | None = None,
+    is_auth_error: Callable[[Exception], bool] | None = None,
+    async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
+) -> ComposedSession:
+    """Same kwarg surface as :func:`build_session_for_tests` but returns the full bundle.
+
+    Tests that need to construct a ``NotebookLMClient``-shaped shell via
+    :func:`build_refresh_client_shell` need access to the full
+    :class:`ComposedSession` (``session`` + ``executor`` +
+    ``collaborators``), not just the :class:`Session` instance. This
+    helper is a thin forwarder to
+    :func:`notebooklm._session.compose_session_internals` that preserves
+    the documented monkeypatch contract (seam resolution happens against
+    ``notebooklm._session``'s module bindings, not this helper's).
+
+    Wave 0 of the host-protocol-removal plan (see
+    ``.sisyphus/phases/host-protocol-removal/phase-1.md``) introduced this
+    helper as the canonical construction site for shell-client test
+    fixtures so that the later deletion of ``Session.lifecycle`` (Wave 2)
+    is mechanical — no shell-test code has to reach back through
+    ``session.lifecycle`` because the helper hands the four runtime
+    fields (``_auth`` / ``_session`` / ``_collaborators`` /
+    ``_rpc_executor``) to :func:`build_refresh_client_shell` directly.
+    """
+    return compose_session_internals(
         auth=auth,
         timeout=timeout,
         connect_timeout=connect_timeout,
@@ -113,4 +181,35 @@ def build_session_for_tests(
         is_auth_error=is_auth_error,
         async_client_factory=async_client_factory,
     )
-    return composed.session
+
+
+def build_refresh_client_shell(composed: ComposedSession) -> NotebookLMClient:
+    """Build a minimal :class:`NotebookLMClient` shell for refresh-path tests.
+
+    Uses :meth:`NotebookLMClient.__new__` to bypass the heavy
+    ``__init__`` side effects (feature-API construction, cross-validation,
+    storage-path canonicalization) while still wiring the four runtime
+    attributes the refresh code path reads off the client.
+
+    The four assignments below MUST stay in lock-step with
+    :meth:`NotebookLMClient.__init__` so test shells and production
+    aliases observe the same ``AuthTokens`` instance for the Auth
+    Instance Invariant (see
+    ``.sisyphus/phases/host-protocol-removal/phase-1.md``):
+    ``composed.session.auth`` aliases the same object that flowed into
+    :func:`notebooklm._session.compose_session_internals` and that the
+    snapshot-provider lambdas captured, so setting
+    ``client._auth = composed.session.auth`` here mirrors what
+    ``self._auth = auth`` sets in production.
+
+    The helper sources its four fields exclusively from
+    :class:`ComposedSession` — there is no read-back through
+    ``session.lifecycle`` — so the upcoming Wave 2 deletion of
+    ``Session.lifecycle`` does not ripple into shell-test code.
+    """
+    client = NotebookLMClient.__new__(NotebookLMClient)
+    client._session = composed.session
+    client._auth = composed.session.auth
+    client._collaborators = composed.collaborators
+    client._rpc_executor = composed.executor
+    return client

@@ -60,29 +60,24 @@ from __future__ import annotations
 import ast
 import asyncio
 import contextlib
-import importlib.util
 import inspect
 import json
 import textwrap
-from pathlib import Path
 
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
+from _helpers.session_factory import (
+    build_composed_session_for_tests,
+    build_refresh_client_shell,
+)
 from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session_auth import AuthRefreshCoordinator
 from notebooklm._session_transport import SessionTransport
+from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
-
-_UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
-    "unit_conftest_make_core",
-    Path(__file__).resolve().parent / "conftest.py",
-)
-assert _UNIT_CONFTEST_SPEC is not None and _UNIT_CONFTEST_SPEC.loader is not None
-_unit_conftest = importlib.util.module_from_spec(_UNIT_CONFTEST_SPEC)
-_UNIT_CONFTEST_SPEC.loader.exec_module(_unit_conftest)
-make_core = _unit_conftest.make_core
 
 # Test-side deadline for any single asyncio.Event in the race scaffolding.
 # Generous enough not to flake on slow CI, tight enough that a regression
@@ -471,13 +466,45 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
 
     transport = httpx.MockTransport(handler)
 
-    async with make_core(transport=transport) as core:
-        # NotebookLMClient.__new__ skips __init__ side effects — we only need a
-        # shell whose .auth property routes to our test core.
-        from notebooklm.client import NotebookLMClient
+    # Build the same auth scaffold the unit conftest's ``make_core`` produces
+    # (CSRF_OLD / SID_OLD / old_sid_cookie) so the OLD/NEW marker assertions
+    # below stay valid. Routed through :func:`build_composed_session_for_tests`
+    # (Wave 0 of the host-protocol-removal plan) so we get the full
+    # :class:`ComposedSession` bundle the shell helper needs — instead of
+    # only the :class:`Session` instance ``make_core`` yields.
+    auth = AuthTokens(
+        csrf_token="CSRF_OLD",
+        session_id="SID_OLD",
+        cookies={"SID": "old_sid_cookie"},
+    )
+    composed = build_composed_session_for_tests(auth=auth, refresh_retry_delay=0.0)
+    core = composed.session
+    await core.open()
+    try:
+        # Swap the auto-built http client for one that uses the test
+        # transport so we can observe the real ``httpx.Request`` (cookie
+        # merge, headers, body, URL). Mirrors the ``make_core`` post-open
+        # transport-install dance verbatim.
+        prior_cookies = core._kernel.get_http_client().cookies
+        await core._kernel.get_http_client().aclose()
+        install_http_client_for_test(
+            core._kernel,
+            httpx.AsyncClient(
+                cookies=prior_cookies,
+                transport=transport,
+                timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+            ),
+        )
 
-        client = NotebookLMClient.__new__(NotebookLMClient)
-        client._session = core
+        # ``build_refresh_client_shell`` populates all four runtime
+        # attributes (``_session`` / ``_auth`` / ``_collaborators`` /
+        # ``_rpc_executor``) from the composed bundle so the shell mirrors
+        # production. Pre-Wave-0 this site set only ``client._session = core``,
+        # which left ``client._auth`` unset; that worked because
+        # ``refresh_auth`` reaches through ``self._session.auth``, but it
+        # diverged from production shape and made the later
+        # ``Session.lifecycle`` deletion (Wave 2) require shell rewrites.
+        client = build_refresh_client_shell(composed)
 
         # try/finally ensures the mock-transport handlers are unblocked even
         # if a wait_for times out — otherwise pending tasks dangle in the
@@ -516,15 +543,17 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
             for t in pending:
                 t.cancel()
             # Bounded join so cancelled tasks actually settle before the
-            # ``async with make_core(...)`` block exits. Narrow to
-            # ``(CancelledError, Exception)`` so KeyboardInterrupt / SystemExit
-            # during the test still propagate.
+            # outer ``core.close()`` runs. Narrow to ``(CancelledError,
+            # Exception)`` so KeyboardInterrupt / SystemExit during the
+            # test still propagate.
             if pending:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.wait_for(
                         asyncio.gather(*pending, return_exceptions=True),
                         EVENT_TIMEOUT_S,
                     )
+    finally:
+        await core.close()
 
     assert len(captured_post) == 1, (
         f"Expected exactly one POST on the wire, got {len(captured_post)}: {captured_post!r}"
