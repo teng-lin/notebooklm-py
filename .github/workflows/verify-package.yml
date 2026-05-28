@@ -186,4 +186,4 @@ jobs:
         fi
         echo "Initial E2E run failed. Sleeping 600s before retrying failed tests."
         sleep 600
-        pytest --last-failed -v
+        uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short

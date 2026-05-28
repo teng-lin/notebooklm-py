@@ -137,6 +137,20 @@ def test_workflow_permissions_allowlist(tmp_path):
     assert result.returncode == 0
 
 
+def test_verify_package_e2e_retry_is_scoped_to_last_failed_e2e_tests():
+    """The protected E2E retry must fail closed instead of running an unintended suite."""
+    workflow = REPO_ROOT / ".github" / "workflows" / "verify-package.yml"
+    text = workflow.read_text(encoding="utf-8")
+    marker = "Retry failed E2E tests after 10-min cool-down"
+    assert marker in text
+    retry_step = text.split(marker, 1)[1].split("\n    - name:", 1)[0]
+
+    assert "uv run pytest tests/e2e" in retry_step
+    assert "--last-failed" in retry_step
+    assert "--last-failed-no-failures=none" in retry_step
+    assert "pytest --last-failed -v" not in retry_step
+
+
 # ---------------------------------------------------------------------------
 # check_coverage_thresholds.py
 # ---------------------------------------------------------------------------
