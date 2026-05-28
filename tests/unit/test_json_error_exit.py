@@ -360,8 +360,10 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ["download", "data-table", "-n", "abc123def456ghi789jkl", "--json"],
         _download_no_artifacts,
     ),
-    # download flag-conflict: post-parse UsageError site routed through the
+    # download flag-conflict: post-parse UsageError sites routed through the
     # JSON envelope per ADR-015 (services/download.py build_download_plan).
+    # One entry per conflict pair so a future regression in any of the three
+    # _emit_flag_conflict call sites surfaces here.
     (
         "download_flag_conflict_json",
         [
@@ -371,6 +373,33 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
             "abc123def456ghi789jkl",
             "--force",
             "--no-clobber",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "download_flag_conflict_latest_earliest_json",
+        [
+            "download",
+            "audio",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--latest",
+            "--earliest",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "download_flag_conflict_all_artifact_json",
+        [
+            "download",
+            "audio",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--all",
+            "--artifact",
+            "art123def456ghi789jkl",
             "--json",
         ],
         None,

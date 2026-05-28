@@ -14,10 +14,13 @@ Public API (the three names ADR-008 / phase-3.md P3.T2 requires):
 - :func:`build_download_plan` — synchronous validation + plan assembly.
 - :func:`execute_download` — coroutine that performs the actual download.
 
-The split is deliberate: ``build_download_plan`` raises ``UsageError`` on flag
-conflicts at the Click decorator boundary (so users see standard Click error
-messaging); ``execute_download`` performs all I/O. The Click handler wires
-the two together inside ``run_client_workflow``.
+The split is deliberate: ``build_download_plan`` rejects flag conflicts
+synchronously at the Click decorator boundary, while ``execute_download``
+performs all I/O. Per ADR-015, the conflict-rejection path is dual: under
+``--json`` it emits the typed JSON envelope on stdout via ``output_error``
+and exits 1; in text mode it raises ``click.UsageError`` so Click's parser
+renders standard usage messaging on stderr and exits 2. The Click handler
+wires the two together inside ``run_client_workflow``.
 """
 
 from __future__ import annotations
