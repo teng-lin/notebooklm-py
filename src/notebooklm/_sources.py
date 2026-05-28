@@ -541,6 +541,12 @@ class SourcesAPI:
             - Markdown: text/markdown
             - EPUB: application/epub+zip
             - Word: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+        Raises:
+            ValidationError: If the path is not a regular file, the title is
+                empty, or the upload is an HTML-family file that NotebookLM's
+                upload endpoint rejects. Convert saved web pages to text,
+                Markdown, or PDF before calling this method.
         """
         wait, wait_timeout = _resolve_legacy_wait_args(
             "SourcesAPI.add_file",

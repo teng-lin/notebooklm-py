@@ -286,6 +286,24 @@ URL is populated.
 
 ### File Upload Issues
 
+#### HTML/XHTML files are rejected before upload
+
+**Cause:** NotebookLM's file-upload endpoint rejects HTML-family uploads, even
+though the web UI may accept pasted rich text.
+
+**Solution:** Convert saved web pages to text, Markdown, or PDF before adding
+them with your preferred extractor:
+
+```bash
+notebooklm source add ./article.txt
+```
+
+You can also pipe extracted text through stdin:
+
+```bash
+python extract_article_text.py ./article.html | notebooklm source add - --type text --title "Article"
+```
+
 #### Text/Markdown files upload but return None
 
 **Cause:** Known issue with native text file uploads.

@@ -283,6 +283,43 @@ async def test_add_file_uses_pipeline_steps_and_finishes_transport(
     )
 
 
+@pytest.mark.parametrize(
+    ("filename", "mime_type"),
+    [
+        ("article.html", None),
+        ("ARTICLE.HTML", None),
+        ("article.htm", None),
+        ("article.xhtml", None),
+        ("article.xht", None),
+        ("article.txt", "text/html"),
+        ("article.txt", "Text/HTML; charset=utf-8"),
+        ("article.xhtml", "application/xhtml+xml"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_add_file_rejects_html_before_registering_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    filename: str,
+    mime_type: str | None,
+) -> None:
+    file_path = tmp_path / filename
+    file_path.write_text("<html><body><h1>Article</h1></body></html>", encoding="utf-8")
+    service = make_pipeline()
+    register_file_source = AsyncMock(return_value="src_123")
+    start_resumable_upload = AsyncMock()
+
+    monkeypatch.setattr(service, "register_file_source", register_file_source)
+    monkeypatch.setattr(service, "start_resumable_upload", start_resumable_upload)
+    monkeypatch.setattr(service, "upload_file_streaming", AsyncMock())
+
+    with pytest.raises(ValidationError, match="HTML file uploads are not supported"):
+        await service.add_file("nb_123", file_path, mime_type=mime_type)
+
+    register_file_source.assert_not_awaited()
+    start_resumable_upload.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_add_file_operation_scope_wraps_sources_semaphore_wait(
     monkeypatch: pytest.MonkeyPatch, tmp_path

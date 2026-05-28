@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Exit code semantics` summary section in [`docs/cli-exit-codes.md`](docs/cli-exit-codes.md#exit-code-semantics).** A normative one-line table — `0` = succeeded as documented, `1` = failed or queried target not found, `2` = Click parser-time error — backing the convention every command obeys outside the documented intentional exceptions. Cross-references the existing tables and [ADR-015](docs/adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
 - **`NotFoundError` cross-domain umbrella exception.** Catch `NotFoundError` to handle any "resource not found" case across notebooks, sources, and artifacts in one `except` clause — replacing `except (NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError):`. `NotebookNotFoundError`, `SourceNotFoundError`, and `ArtifactNotFoundError` all inherit from `NotFoundError`. The umbrella itself is additive; the asymmetric inheritance noted on its original introduction has been resolved in the same release — all three subclasses also mix in `RPCError` (see **Breaking changes** above for the `except`-ordering migration).
 
+### Fixed
+
+- **HTML file uploads now fail client-side with a clear validation error** ([#1127](https://github.com/teng-lin/notebooklm-py/issues/1127)). `notebooklm source add ./article.html` and `client.sources.add_file(..., "article.html")` previously reached NotebookLM's upload endpoint as `text/html` and surfaced a cryptic upstream `400 Bad Request`. The upload pipeline now rejects `.html` / `.htm` / `.xhtml` / `.xht` / HTML MIME uploads before registering a source, with guidance to convert the page to `.txt`, `.md`, or `.pdf`.
+
 ### Removed
 
 - `NotebookLMClient.rpc_call(source_path=...)`, `NotebookLMClient.rpc_call(_is_retry=...)`, `NotebookLMClient.rpc_call(operation_variant=...)` — see Breaking changes above. The corresponding `DeprecationWarning` emitters in `client.py` and the `tests/unit/test_rpc_call_public_surface.py` warning-surface tests were retired in the same change.

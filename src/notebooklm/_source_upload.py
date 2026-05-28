@@ -233,6 +233,8 @@ _MEDIA_APPLICATION_CONTENT_TYPES = frozenset(
 )
 _MEDIA_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
 _STRICT_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = ()
+_HTML_UPLOAD_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".xht"})
+_HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 
 
 # Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
@@ -305,15 +307,32 @@ def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
     return guessed or "application/octet-stream"
 
 
+def _normalize_content_type(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
 def _transient_error_types_for_upload(content_type: str) -> tuple[int | None, ...]:
     """Return source status=ERROR transient policy for this upload."""
-    normalized = content_type.split(";", 1)[0].strip().lower()
+    normalized = _normalize_content_type(content_type)
     if (
         normalized.startswith(_MEDIA_CONTENT_TYPE_PREFIXES)
         or normalized in _MEDIA_APPLICATION_CONTENT_TYPES
     ):
         return _MEDIA_TRANSIENT_ERROR_TYPES
     return _STRICT_TRANSIENT_ERROR_TYPES
+
+
+def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
+    """Reject local file types known to fail NotebookLM's upload endpoint."""
+    normalized = _normalize_content_type(content_type)
+    if (
+        file_path.suffix.lower() in _HTML_UPLOAD_SUFFIXES
+        or normalized in _HTML_UPLOAD_CONTENT_TYPES
+    ):
+        raise ValidationError(
+            "HTML file uploads are not supported by NotebookLM's upload endpoint: "
+            f"{file_path.name}. Convert the page to .txt, .md, or .pdf first, then retry."
+        )
 
 
 class SourceUploadPipeline:
@@ -400,7 +419,11 @@ class SourceUploadPipeline:
         on_progress: Callable[[int, int], object] | None = None,
         upload_index: int = 0,
     ) -> Source:
-        """Add a file source to a notebook using resumable upload."""
+        """Add a file source to a notebook using resumable upload.
+
+        Raises ``ValidationError`` for HTML-family uploads because
+        NotebookLM's upload endpoint rejects those file extensions.
+        """
         # Audit C1: catch cross-loop add_file *before* touching
         # ``operation_scope`` or lazily allocating the upload semaphore.
         # Both are loop-bound on first use, so a cross-loop call would
@@ -430,6 +453,7 @@ class SourceUploadPipeline:
 
         filename = file_path.name
         content_type = _resolve_upload_content_type(file_path, mime_type)
+        _validate_upload_file_supported(file_path, content_type)
         transient_error_types = _transient_error_types_for_upload(content_type)
         async with self._drain.operation_scope(f"upload:{upload_index}"):
             upload_sem = self.get_upload_semaphore()
