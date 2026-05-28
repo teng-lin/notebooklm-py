@@ -71,6 +71,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLIENT_PATH = REPO_ROOT / "src" / "notebooklm" / "client.py"
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
@@ -365,3 +367,118 @@ def test_client_self_session_access_is_allowlisted() -> None:
         "(e.g. self._collaborators.lifecycle for the lifecycle, "
         "self._auth for the auth tokens) instead:\n  " + "\n  ".join(violations)
     )
+
+
+# ---------------------------------------------------------------------------
+# Self-coverage for ``_self_session_attribute_access`` — pin the helper's
+# contract before the live production test exercises it. Each case below
+# pairs a synthetic expression with the expected helper return so the
+# documented filtering conditions (receiver shape, dunder exclusion,
+# private/public attr coverage) can be regressed independently of the
+# production scan over ``client.py``. Mirrors the self-coverage pattern
+# every other helper in this suite (see ``test_no_session_compat_bridges.py``
+# and ``test_session_runtime_boundaries.py``) already follows.
+# ---------------------------------------------------------------------------
+
+
+def _single_attribute_node(source: str) -> ast.AST:
+    """Parse ``source`` and return its outermost expression's AST node.
+
+    Centralised so the parametrized cases below don't repeat the
+    ``parse → body[0] → value`` unwrap. ``source`` must be exactly one
+    expression statement; anything else is a test-author error and will
+    surface as an ``IndexError`` or ``AttributeError`` here rather than
+    silently returning the wrong node.
+    """
+    tree = ast.parse(source)
+    expr = tree.body[0]
+    assert isinstance(expr, ast.Expr), (
+        f"Expected single Expr statement, got {type(expr).__name__} for {source!r}"
+    )
+    return expr.value
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_attr"),
+    [
+        # Positive: allowlisted attribute (the helper returns the match;
+        # the allowlist filtering happens at the caller, not here).
+        ("self._session.open", "open"),
+        ("self._session.close", "close"),
+        ("self._session.drain", "drain"),
+        ("self._session.is_open", "is_open"),
+        # Positive: non-allowlisted public attribute — the helper still
+        # surfaces it, the caller filters against ``SESSION_ALLOWED_ATTRS``.
+        # This is the regression vector the live test catches.
+        ("self._session.lifecycle", "lifecycle"),
+        ("self._session.auth", "auth"),
+        # Positive: underscore-prefixed slot — the helper surfaces this
+        # too; the existing ``_is_self_session_private_attribute`` covers
+        # the same shape from a different angle.
+        ("self._session._kernel", "_kernel"),
+    ],
+    ids=[
+        "allowed-open",
+        "allowed-close",
+        "allowed-drain",
+        "allowed-is_open",
+        "forbidden-public-lifecycle",
+        "forbidden-public-auth",
+        "forbidden-private-_kernel",
+    ],
+)
+def test_self_session_attribute_access_matches_canonical_shape(
+    source: str, expected_attr: str
+) -> None:
+    """``self._session.<X>`` for any X (public or private) returns ``(lineno, X)``.
+
+    The helper deliberately does NOT do allowlist filtering — that's
+    the caller's job. Self-coverage here pins the AST-shape contract:
+    the canonical receiver (``self._session``) with any non-dunder
+    attribute name surfaces.
+    """
+    node = _single_attribute_node(source)
+    result = _self_session_attribute_access(node)
+    assert result is not None, f"Expected a match for {source!r}, got None"
+    _lineno, attr = result
+    assert attr == expected_attr
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Receiver is not exactly ``self._session`` — the helper is
+        # scoped to the composition root's canonical reach pattern.
+        # ``other._session.open`` is out of scope (no such alias in
+        # ``client.py``).
+        "other._session.open",
+        # No ``_session`` intermediary — direct attribute access on ``self``
+        # is not what the guard targets.
+        "self.open",
+        # Receiver chain is too deep — ``self.foo._session.open`` does not
+        # match because the immediate inner attribute is not ``_session``
+        # (the parent is ``self.foo``, not ``self``).
+        "self.foo._session.open",
+        # Dunder attribute — Python protocol surface, intentionally excluded.
+        "self._session.__class__",
+        "self._session.__dict__",
+        # Receiver is ``self._session`` but the outer node is the receiver
+        # itself, not an attribute access on it — ``self._session`` standalone
+        # is not a ``self._session.<X>`` chain.
+        "self._session",
+    ],
+    ids=[
+        "other-not-self",
+        "no-_session-intermediary",
+        "chain-too-deep",
+        "dunder-__class__-excluded",
+        "dunder-__dict__-excluded",
+        "receiver-only-no-trailing-attr",
+    ],
+)
+def test_self_session_attribute_access_rejects_non_canonical_shapes(
+    source: str,
+) -> None:
+    """Receiver-shape and dunder exclusions documented in the helper's docstring."""
+    node = _single_attribute_node(source)
+    assert _self_session_attribute_access(node) is None, f"Expected no match for {source!r}"

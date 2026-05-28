@@ -9,7 +9,7 @@ auth/lifecycle forwards (``update_auth_tokens`` / ``update_auth_headers``
 adds the AST regression guards that catch any future reintroduction of
 the Session-as-host pattern at PR time.
 
-The five guards in this module are deliberately AST-based — string-vs-name
+The four guards in this module are deliberately AST-based — string-vs-name
 spelling, ``typing.cast`` qualification, and re-imported ``cast`` aliases
 all slip past a regex but not past an :mod:`ast` walk.
 
@@ -27,22 +27,27 @@ all slip past a regex but not past an :mod:`ast` walk.
    Session-as-host coupling Waves 1-3 dismantled.
 
 2. :func:`test_no_cast_to_lifecycle_host_in_src` walks every module
-   under ``src/notebooklm/`` and fails if any :class:`ast.Call` matches
-   ``cast(..., _LifecycleHost)`` in any of four spellings:
+   under ``src/notebooklm/`` and fails if any :class:`ast.Call` to a
+   callable whose name is literally ``cast`` (bare or as a trailing
+   attribute like ``typing.cast``) targets ``_LifecycleHost``:
 
    - ``cast("_LifecycleHost", obj)`` — first-arg string forward ref
    - ``cast(_LifecycleHost, obj)`` — first-arg bare name
    - ``typing.cast("_LifecycleHost", obj)`` / ``typing.cast(_LifecycleHost, obj)`` — qualified
-   - ``c("_LifecycleHost", obj)`` / ``c(_LifecycleHost, obj)`` where
-     ``c = cast`` was re-imported under any name — the walk matches on
-     the second argument's literal, so the callable's spelling does not
-     matter as long as it ends in ``cast`` (the callable shape gate)
-     OR the second argument is itself the bare ``_LifecycleHost`` name.
+
+   Guard 2 keys on BOTH the callable shape (must end in ``cast``) AND
+   the first-arg literal (must spell ``_LifecycleHost``). A truly-aliased
+   ``cast`` import such as ``from typing import cast as c`` followed by
+   ``c("_LifecycleHost", obj)`` is NOT caught by Guard 2 because the
+   callable spelling ``c`` doesn't match. That spelling is handled
+   instead by Guard 1, which surfaces the literal ``"_LifecycleHost"``
+   string regardless of the surrounding call context. The two guards
+   together are alias-spelling invariant.
 
    Failure mode: Wave 2 retired the ``typing.cast(_LifecycleHost, core)``
    call site in ``_auth/session.py``. A naive future "I'll cast it for
-   one line" would slip past Guard 1 only if the import was already
-   present, but would always trip Guard 2.
+   one line using the canonical ``cast`` spelling" trips Guard 2; a
+   "...with an aliased ``cast`` import" trips Guard 1 instead.
 
 3. :func:`test_refresh_auth_core_symbol_does_not_appear_in_src` mirrors
    Guard 1 for ``RefreshAuthCore`` — Wave 2 deleted that Protocol with
@@ -63,11 +68,15 @@ all slip past a regex but not past an :mod:`ast` walk.
    - no Protocol class body that declares a ``_kernel`` attribute, so a
      new host Protocol cannot quietly resurrect the Wave 2 shape
    - no call of the form ``X.update_auth_tokens(...)`` or
-     ``X.update_auth_headers(...)`` where ``X`` is anything other than
-     a coordinator-shaped name (the live caller invokes
-     ``auth_coord.update_auth_tokens(...)`` / ``auth_coord.update_auth_headers(...)``
-     on the explicit kwarg; calling either method on ``core``, ``session``,
-     ``host``, or ``self`` would restore the Session-as-host pattern)
+     ``X.update_auth_headers(...)`` unless the receiver ``X`` is
+     coordinator-shaped — either a bare name in
+     :data:`AUTH_COORD_RECEIVER_NAMES` (``auth_coord``) OR an attribute
+     chain whose terminal segment contains ``coord``/``coordinator``
+     (``self._auth_coord.update_*``, ``client._collaborators.auth_coordinator.update_*``).
+     The live caller invokes ``auth_coord.update_auth_*(...)`` on the
+     explicit kwarg; calling either method on ``core``, ``session``,
+     ``host``, ``self``, or ``self._session`` restores the
+     Session-as-host pattern
    - no ``cast`` to either ``_LifecycleHost`` or ``RefreshAuthCore``
      (this duplicates Guards 1-3 for the one file that historically
      carried both casts; the duplication is intentional belt-and-braces)
@@ -146,12 +155,16 @@ def _find_symbol_appearances(tree: ast.AST, symbol: str) -> list[tuple[int, str]
             hits.append((node.lineno, "Constant"))
         elif isinstance(node, ast.ClassDef) and node.name == symbol:
             hits.append((node.lineno, "ClassDef"))
-        elif isinstance(node, ast.alias) and (node.asname == symbol or node.name == symbol):
-            # ast.alias has no lineno of its own; the enclosing import
-            # node carries it. ``end_lineno`` on ast.alias is populated
-            # in 3.10+, but ``lineno`` is not — fall back to 0 if absent
-            # so the diagnostic still surfaces.
-            hits.append((getattr(node, "lineno", 0), "alias"))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            # Walk the parent import node rather than ``ast.alias`` itself —
+            # the parent always carries a valid ``lineno`` across all
+            # supported Python versions, whereas ``ast.alias.lineno`` is
+            # populated only from 3.10 onward. Using the parent's
+            # ``lineno`` keeps the diagnostic accurate without a
+            # version-dependent fallback (gemini-code-assist review).
+            for alias in node.names:
+                if alias.name == symbol or alias.asname == symbol:
+                    hits.append((node.lineno, "alias"))
     return hits
 
 
@@ -237,6 +250,54 @@ def _imports_session_class(tree: ast.AST) -> list[int]:
                 if alias.asname == "Session":
                     hits.append(node.lineno)
     return hits
+
+
+def _is_coordinator_receiver(receiver: ast.expr) -> bool:
+    """Return ``True`` if ``receiver`` is a coordinator-shaped access target.
+
+    Two legitimate shapes (Guard 4 sub-check 3):
+
+    1. Bare :class:`ast.Name` whose ``id`` is in
+       :data:`AUTH_COORD_RECEIVER_NAMES` — the canonical live shape in
+       ``refresh_auth_session`` (``auth_coord.update_auth_tokens(...)``).
+    2. :class:`ast.Attribute` whose terminal ``attr`` contains
+       ``coord`` or ``coordinator`` — covers both the private slot
+       (``self._auth_coord``) and any future fully-spelled accessor
+       (``self._collaborators.auth_coordinator``). The match is on the
+       terminal attribute name only, not the upstream chain, so the
+       intent is clear: "the call lands on the coordinator collaborator".
+
+    Anything else (bare-name receivers like ``core`` / ``session`` /
+    ``host`` / ``self``; Attribute chains terminating in
+    non-coordinator segments like ``self._session``; computed
+    receivers like ``[a, b][0]``; Subscripts; etc.) is the regression
+    surface and returns ``False``.
+    """
+    if isinstance(receiver, ast.Name):
+        return receiver.id in AUTH_COORD_RECEIVER_NAMES
+    if isinstance(receiver, ast.Attribute):
+        attr_lower = receiver.attr.lower()
+        return "coord" in attr_lower or "coordinator" in attr_lower
+    return False
+
+
+def _format_receiver_for_diagnostic(receiver: ast.expr) -> str:
+    """Render ``receiver`` as a short human-readable string for failure messages.
+
+    - ``ast.Name`` → its ``id`` (``core``, ``session``, ...).
+    - ``ast.Attribute`` → ``...<terminal_attr>`` (``...session`` for
+      ``self._session``, ``..._kernel`` for ``payload._kernel``). The
+      leading ``...`` signals that the upstream chain is elided so the
+      reader can grep the file by the terminal segment.
+    - Anything else → the literal string ``"expression"`` (we cannot
+      reconstruct an arbitrary AST shape cheaply, and the location
+      lineno is already in the message).
+    """
+    if isinstance(receiver, ast.Name):
+        return receiver.id
+    if isinstance(receiver, ast.Attribute):
+        return f"...{receiver.attr}"
+    return "expression"
 
 
 # ---------------------------------------------------------------------------
@@ -389,13 +450,28 @@ def test_auth_session_module_has_no_host_protocol_residue() -> None:
             )
 
     # Sub-check 3: no ``X.update_auth_tokens(...)`` / ``X.update_auth_headers(...)``
-    # where the receiver is not a coordinator-shaped name. The receiver
-    # may also be an Attribute chain ending in a coordinator name
-    # (``self._auth_coord.update_auth_tokens(...)``), so we check the
-    # *immediate* receiver — for ``a.b.method()`` the receiver is ``a.b``,
-    # for ``a.method()`` the receiver is ``a``. A bare-name receiver is
-    # the regression surface; chain receivers are out of scope (the
-    # live caller uses the kwarg directly, ``auth_coord.update_auth_*``).
+    # unless the receiver is coordinator-shaped. Two receiver shapes
+    # may legitimately reach the coordinator:
+    #
+    #   1. Bare ``Name`` matching :data:`AUTH_COORD_RECEIVER_NAMES`
+    #      (the canonical live shape — ``auth_coord.update_auth_tokens(...)``
+    #      in ``refresh_auth_session``).
+    #   2. ``Attribute`` chain whose terminal ``attr`` is coordinator-shaped
+    #      (``self._auth_coord.update_*``, ``client._collaborators.auth_coord.update_*``).
+    #      "Coordinator-shaped" means the terminal segment contains
+    #      either ``coord`` or ``coordinator`` — covering both the
+    #      private slot name (``_auth_coord``) and a hypothetical
+    #      fully-spelled accessor (``auth_coordinator``).
+    #
+    # Everything else — bare-name receivers like ``core`` / ``session``
+    # / ``host`` / ``self``, and Attribute chains terminating in
+    # non-coordinator segments like ``self._session.update_*`` —
+    # restores the Session-as-host shape Wave 3 deleted and surfaces
+    # here as a violation. The widened receiver coverage closes the
+    # gap that gemini-code-assist flagged: the previous code only
+    # checked ``ast.Name`` receivers and silently passed
+    # ``self._session.update_auth_tokens(...)`` because that receiver
+    # is an ``ast.Attribute``.
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -404,17 +480,15 @@ def test_auth_session_module_has_no_host_protocol_residue() -> None:
         if node.func.attr not in AUTH_FORWARD_METHOD_NAMES:
             continue
         receiver = node.func.value
-        if isinstance(receiver, ast.Name):
-            if receiver.id not in AUTH_COORD_RECEIVER_NAMES:
-                violations.append(
-                    f"_auth/session.py:{node.lineno} calls "
-                    f"`{receiver.id}.{node.func.attr}(...)` — "
-                    f"`{node.func.attr}` now lives on AuthRefreshCoordinator; "
-                    "route through the `auth_coord` kwarg explicitly."
-                )
-        # Attribute-chain receivers (``self._auth_coord.update_*``) are
-        # acceptable — they reach the coordinator through an explicit
-        # collaborator slot rather than a Session-shaped delegate.
+        if _is_coordinator_receiver(receiver):
+            continue
+        receiver_repr = _format_receiver_for_diagnostic(receiver)
+        violations.append(
+            f"_auth/session.py:{node.lineno} calls "
+            f"`{receiver_repr}.{node.func.attr}(...)` — "
+            f"`{node.func.attr}` now lives on AuthRefreshCoordinator; "
+            "route through the `auth_coord` kwarg explicitly."
+        )
 
     # Sub-check 4: no cast to ``_LifecycleHost`` / ``RefreshAuthCore``.
     for node in ast.walk(tree):
@@ -498,8 +572,13 @@ def test_find_symbol_appearances_ignores_unrelated_names() -> None:
         ("cast(_LifecycleHost, x)\n", "_LifecycleHost"),
         # Qualified
         ('typing.cast("_LifecycleHost", x)\n', "_LifecycleHost"),
-        # Aliased cast: still matches because we key on the second-arg literal
-        ('c("_LifecycleHost", x)\n', None),  # bare ``c(...)`` is not a cast call
+        # Aliased callable (``c = cast``) is NOT matched by Guard 2 — the
+        # callable spelling ``c`` doesn't end in ``cast``. Guard 1 catches
+        # the literal ``"_LifecycleHost"`` independently, so the system is
+        # still alias-spelling invariant; ``_cast_target_name`` returns
+        # ``None`` here because ``_is_cast_call`` rejects the callable
+        # shape before the target check runs.
+        ('c("_LifecycleHost", x)\n', None),
         # Sibling Protocol
         ("cast(RefreshAuthCore, x)\n", "RefreshAuthCore"),
     ],
@@ -563,3 +642,81 @@ def test_imports_session_class_catches_both_shapes() -> None:
     # is what the guard is preventing, not the local name choice.
     hits = _imports_session_class(tree)
     assert len(hits) == 3, f"Expected 3 hits, got {hits!r}"
+
+
+@pytest.mark.parametrize(
+    ("source", "is_coordinator"),
+    [
+        # Bare-name receivers that ARE coordinators.
+        ("auth_coord.x", True),
+        ("coord.x", True),
+        # Bare-name receivers that are NOT coordinators (the regression surface).
+        ("core.x", False),
+        ("session.x", False),
+        ("host.x", False),
+        ("self.x", False),
+        # Attribute-chain receivers whose terminal segment IS coordinator-shaped.
+        # The terminal segment is the one immediately before the called method,
+        # so ``self._auth_coord.update_*`` has terminal ``_auth_coord``.
+        ("self._auth_coord.x", True),
+        ("self._collaborators.auth_coordinator.x", True),
+        # Attribute-chain receivers whose terminal segment is NOT coordinator-shaped.
+        # ``self._session.update_*`` was historically the deleted Session-as-host
+        # shape; the previous version of this guard silently passed it.
+        ("self._session.x", False),
+        ("client._collaborators.x", False),  # terminal segment is plain `_collaborators`
+        ("payload.kernel.x", False),
+    ],
+    ids=[
+        "bare-auth-coord",
+        "bare-coord",
+        "bare-core-reject",
+        "bare-session-reject",
+        "bare-host-reject",
+        "bare-self-reject",
+        "chain-self-_auth_coord",
+        "chain-collaborators-auth_coordinator",
+        "chain-self-_session-reject",
+        "chain-collaborators-terminal-only",
+        "chain-payload-kernel-reject",
+    ],
+)
+def test_is_coordinator_receiver_covers_both_shapes(source: str, is_coordinator: bool) -> None:
+    """``_is_coordinator_receiver`` accepts bare coordinator names AND
+    attribute chains whose terminal segment is coordinator-shaped.
+
+    The terminal-segment rule is what closes the gap gemini-code-assist
+    flagged on PR #1135: the previous code only checked bare-name
+    receivers, so ``self._session.update_auth_tokens(...)`` slipped
+    past the guard because its receiver is an ``ast.Attribute`` (the
+    ``self._session`` chain) rather than an ``ast.Name``.
+    """
+    tree = ast.parse(source)
+    # The source above is a single bare attribute expression; the
+    # outermost node is an ``Expr`` wrapping the ``Attribute`` we want.
+    expr = tree.body[0]
+    assert isinstance(expr, ast.Expr)
+    outer = expr.value
+    assert isinstance(outer, ast.Attribute), (
+        f"Expected outer Attribute for {source!r}, got {type(outer).__name__}"
+    )
+    # The receiver of the (would-be) call is ``outer.value`` —
+    # everything up to (but not including) the trailing ``.x``.
+    receiver = outer.value
+    assert _is_coordinator_receiver(receiver) is is_coordinator, (
+        f"For receiver in {source!r}: expected is_coordinator={is_coordinator}, "
+        f"got {_is_coordinator_receiver(receiver)!r}"
+    )
+
+
+def test_format_receiver_for_diagnostic_shapes() -> None:
+    """Diagnostic rendering elides the upstream chain but pins the terminal segment."""
+    tree = ast.parse("self._session.x\nbare.x\n(1 + 2).x\n")
+    receivers = [
+        node.value.value  # type: ignore[union-attr]
+        for node in tree.body
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Attribute)
+    ]
+    assert _format_receiver_for_diagnostic(receivers[0]) == "..._session"
+    assert _format_receiver_for_diagnostic(receivers[1]) == "bare"
+    assert _format_receiver_for_diagnostic(receivers[2]) == "expression"
