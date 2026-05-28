@@ -11,21 +11,28 @@ from __future__ import annotations
 
 import re
 
-import click
-
 from ....auth import read_account_metadata
 from ....paths import get_storage_path
+from .exceptions import LoginConfigurationError
 
 # Profile name validation: alphanumeric, hyphens, underscores. Must start with alphanum.
 _PROFILE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 
 
 def _validate_profile_name(name: str) -> str:
-    """Validate a profile name."""
+    """Validate a profile name.
+
+    Raises:
+        LoginConfigurationError: when ``name`` does not match the allowed
+            alphanumeric/hyphen/underscore pattern. The calling Click
+            command translates this to a ``click.ClickException`` (or JSON
+            error envelope) at the boundary — see ADR-015.
+    """
     if not _PROFILE_NAME_RE.match(name):
-        raise click.ClickException(
-            f"Invalid profile name '{name}'. "
-            "Use alphanumeric characters, hyphens, and underscores. Must start with a letter or digit."
+        raise LoginConfigurationError(
+            f"Invalid profile name '{name}'.",
+            hint="Use alphanumeric characters, hyphens, and underscores. "
+            "Must start with a letter or digit.",
         )
     return name
 

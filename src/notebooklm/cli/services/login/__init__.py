@@ -65,6 +65,7 @@ from .cookie_writes import (
     _select_refresh_account,
     _write_extracted_cookies,
 )
+from .exceptions import LoginConfigurationError
 from .profile_targets import (
     _PROFILE_NAME_RE,
     _validate_profile_name,
@@ -83,6 +84,7 @@ __all__ = [
     "console",
     "fetch_tokens_with_domains",
     "get_storage_path",
+    "LoginConfigurationError",
     "NotebookLMClient",
     "run_async",
     # Cookie domain policy.

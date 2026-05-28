@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import click
 import httpx
 
 from ....auth import (
@@ -48,6 +48,15 @@ from .profile_targets import (
     email_to_profile_name,
 )
 
+# Type alias for the overwrite-confirmer callback. The default ``True``
+# return value means "no confirmation required" so existing tests / direct
+# callers that don't inject a confirmer behave the same as if the prompt
+# accepted (no overwrite blocked). The Click command layer in
+# ``cli/session_cmd.py`` injects ``click.confirm`` at the boundary so
+# interactive runs still prompt; programmatic callers can pass any
+# ``Callable[[str], bool]``.
+ConfirmCallback = Callable[[str], bool]
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,6 +68,7 @@ def _login_browser_cookies_single(
     profile_name: str | None,
     active_profile: str | None,
     include_domains: set[str] | None = None,
+    confirm: ConfirmCallback | None = None,
 ) -> None:
     """Extract one account from ``--browser-cookies`` into a profile.
 
@@ -68,6 +78,16 @@ def _login_browser_cookies_single(
     - ``--profile-name`` selects a sibling profile under the home dir.
     - Otherwise we write to the active profile, even when ``--account`` selects
       a non-default browser account.
+
+    Args:
+        confirm: Optional overwrite-confirmer for the
+            ``_confirm_profile_account_overwrite`` path. Receives the
+            confirmation prompt as a string and returns ``True`` to
+            proceed, ``False`` to abort. ``None`` (the default) skips the
+            confirmation entirely — used by tests and non-interactive
+            callers. The Click command layer injects ``click.confirm`` at
+            the boundary so interactive ``notebooklm login`` runs still
+            prompt.
     """
     explicit_storage = Path(storage) if storage else None
 
@@ -102,6 +122,7 @@ def _login_browser_cookies_single(
             target_storage,
             profile=storage_profile,
             selected_email=selected.email,
+            confirm=confirm,
         )
 
     _write_extracted_cookies(
@@ -119,8 +140,20 @@ def _confirm_profile_account_overwrite(
     *,
     profile: str | None,
     selected_email: str,
+    confirm: ConfirmCallback | None = None,
 ) -> None:
-    """Prompt before replacing a profile bound to a different Google account."""
+    """Prompt before replacing a profile bound to a different Google account.
+
+    Args:
+        confirm: Overwrite-confirmer callback injected by the Click
+            command layer. Receives the confirmation prompt string and
+            returns ``True`` to proceed with overwrite, ``False`` to
+            abort (which routes through ``console.print`` +
+            ``exit_with_code(1)``). When ``None``, the confirmation is
+            skipped (treated as auto-accept) — used by non-interactive
+            callers; production Click commands always inject
+            ``click.confirm`` at the boundary so interactive runs prompt.
+    """
     metadata = read_account_metadata(storage_path)
     existing_email = metadata.get("email")
     if isinstance(existing_email, str) and existing_email.strip():
@@ -138,9 +171,8 @@ def _confirm_profile_account_overwrite(
         if existing_email is not None
         else "saved auth without account metadata"
     )
-    if click.confirm(
-        f"{target} already has {conflict}. Overwrite it with {selected_email}?",
-        default=False,
+    if confirm is None or confirm(
+        f"{target} already has {conflict}. Overwrite it with {selected_email}?"
     ):
         return
 

@@ -73,6 +73,8 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # AND zero Pattern A pairs (see :func:`_pattern_a_pairs`).
 GUARDED_PATHS = {
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
+    "cli/services/login/exceptions.py": SERVICES_ROOT / "login" / "exceptions.py",
+    "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
 }
@@ -237,19 +239,24 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/login/cookie_domains.py": {
         "path": SERVICES_ROOT / "login" / "cookie_domains.py",
         "forbidden_imports": [
-            "cookie_domains.py:18: forbidden top-level import: 'click'",
+            "cookie_domains.py:26: forbidden top-level import: 'click'",
         ],
         "pattern_a_violations": [],
         "pattern_b_violations": (
             "raises click.BadParameter from a Click callback= hook "
-            "(parser-time, explicitly allowed). Lifting Click out of this "
-            "module would require Click's own parameter-callback API to "
-            "accept a non-Click exception."
+            "(parser-time, explicitly allowed by ADR-015). Permanent "
+            "transitional entry: the Click parameter-callback contract "
+            "requires this exception type, so the module's ``import click`` "
+            "stays put unless the callback architecture is restructured "
+            "to host the parser elsewhere."
         ),
         "rationale": (
-            "Click parameter-callback contract requires "
-            "``raise click.BadParameter``; this is the documented Pattern B "
-            "parser-time exception."
+            "Permanent waiver — Click's ``callback=`` API on the "
+            "``--include-domains`` flag requires ``raise click.BadParameter``. "
+            "ADR-015 explicitly preserves parser-time ``ClickException`` "
+            "behaviour, so this stays a transitional entry indefinitely "
+            "(no `forbidden_imports`/`pattern_b_violations` removal "
+            "planned without a separate callback-architecture refactor)."
         ),
     },
     "cli/services/login/cookie_jar.py": {
@@ -300,39 +307,22 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "reach-in not flagged by ``_boundary_violations``."
         ),
     },
-    "cli/services/login/profile_targets.py": {
-        "path": SERVICES_ROOT / "login" / "profile_targets.py",
-        "forbidden_imports": [
-            "profile_targets.py:14: forbidden top-level import: 'click'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "raises click.ClickException on invalid profile target; lift to "
-            "command-layer validator."
-        ),
-        "rationale": (
-            "Validates ``--profile`` strings; raises "
-            "``click.ClickException`` directly. Lift to command-layer."
-        ),
-    },
     "cli/services/login/refresh.py": {
         "path": SERVICES_ROOT / "login" / "refresh.py",
-        "forbidden_imports": [
-            "refresh.py:25: forbidden top-level import: 'click'",
-        ],
+        "forbidden_imports": [],
         "pattern_a_violations": [
-            ("_confirm_profile_account_overwrite", 150),
-            ("_refresh_from_browser_cookies", 241),
-            ("_login_with_browser_cookies", 296),
-            ("_login_with_browser_cookies", 311),
+            ("_confirm_profile_account_overwrite", 182),
+            ("_refresh_from_browser_cookies", 273),
+            ("_login_with_browser_cookies", 328),
+            ("_login_with_browser_cookies", 343),
         ],
-        "pattern_b_violations": (
-            "uses click.confirm for interactive overwrite prompts; lift to "
-            "an injected confirmer callback owned by the command layer."
-        ),
         "rationale": (
-            "Browser-cookie refresh flow owns interactive confirmation, "
-            "presentation, and exit codes; multiple Pattern A pairs."
+            "Pattern B click.confirm reach-in lifted via injected "
+            "``ConfirmCallback`` parameter; remaining Pattern A pairs "
+            "(``_refresh_from_browser_cookies`` browser-state failure, "
+            "``_login_with_browser_cookies`` cookie-validation + storage "
+            "OSError) are independent presentation+exit reach-ins that "
+            "belong to the separate login-flow Pattern A migration."
         ),
     },
     "cli/services/login/rookiepy_errors.py": {

@@ -28,6 +28,7 @@ from __future__ import annotations
 # tests (e.g. ``patch("notebooklm.cli.session_cmd.time.sleep", ...)``,
 # ``patch("notebooklm.cli.session_cmd.shutil.rmtree", ...)``,
 # ``patch("notebooklm.cli.session_cmd.sys.platform", ...)``) keep working.
+import functools
 import logging
 import shutil  # noqa: F401 — preserved patch surface
 import sys  # noqa: F401 — preserved patch surface
@@ -90,6 +91,7 @@ from .services.login import (
     _warn_missing_optional_domains,
     _write_extracted_cookies,  # noqa: F401 — patch surface only
 )
+from .services.login.exceptions import LoginConfigurationError
 from .services.playwright_login import (
     CHANNEL_BROWSERS as _CHANNEL_BROWSERS,
 )
@@ -140,6 +142,19 @@ async def fetch_tokens_with_domains(*args: Any, **kwargs: Any) -> Any:
     from ..auth import fetch_tokens_with_domains as auth_fetch_tokens_with_domains
 
     return await auth_fetch_tokens_with_domains(*args, **kwargs)
+
+
+def _click_exception_from(exc: LoginConfigurationError) -> click.ClickException:
+    """Translate a login-service ``LoginConfigurationError`` into a Click error.
+
+    The login services raise plain Python exceptions (ADR-015 Pattern B
+    decoupling) so the command layer owns the Click translation here.
+    ``hint`` is appended to the user-facing message when present so the
+    final ``Error: ...`` line carries the remediation advice.
+    """
+    if exc.hint:
+        return click.ClickException(f"{exc.message} {exc.hint}")
+    return click.ClickException(exc.message)
 
 
 def _is_valid_account_metadata(metadata: dict[str, Any]) -> bool:
@@ -348,14 +363,24 @@ def register_session_commands(cli):
                     )
                     return
                 active_profile = ctx.obj.get("profile") if ctx.obj else None
-                _login_browser_cookies_single(
-                    browser_cookies,
-                    storage=storage,
-                    account_email=account_email,
-                    profile_name=profile_name,
-                    active_profile=active_profile,
-                    include_domains=include_domains,
-                )
+                # Inject ``click.confirm`` as the overwrite confirmer so the
+                # login service stays Click-free (ADR-015 Pattern B). The
+                # service defaults ``confirm=None`` to "auto-accept" for
+                # non-interactive callers; production CLI runs always inject
+                # an actual prompt here.
+                confirm_overwrite = functools.partial(click.confirm, default=False)
+                try:
+                    _login_browser_cookies_single(
+                        browser_cookies,
+                        storage=storage,
+                        account_email=account_email,
+                        profile_name=profile_name,
+                        active_profile=active_profile,
+                        include_domains=include_domains,
+                        confirm=confirm_overwrite,
+                    )
+                except LoginConfigurationError as exc:
+                    raise _click_exception_from(exc) from None
                 return
 
             profile = ctx.obj.get("profile") if ctx.obj else None

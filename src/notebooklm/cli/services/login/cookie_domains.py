@@ -9,6 +9,14 @@ imports). Owns:
 - :func:`_warn_missing_optional_domains` — migration warning.
 - :func:`_resolve_optional_cookie_domains` — label → domain-set resolver.
 - :func:`_build_google_cookie_domains` — final domain list builder.
+
+ADR-015 Pattern B waiver: ``_parse_include_domains`` raises
+``click.BadParameter`` from a Click ``callback=`` hook (parser-time, not
+service-layer policy). ADR-015 explicitly preserves parser-time
+``click.BadParameter`` behaviour, so this module's ``import click`` is a
+permanent transitional entry in
+``tests/unit/cli/test_services_boundary.py`` unless the callback
+architecture is restructured separately.
 """
 
 from __future__ import annotations

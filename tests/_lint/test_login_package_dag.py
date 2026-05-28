@@ -27,6 +27,7 @@ PKG_PATH = Path("src/notebooklm/cli/services/login")
 # legitimate when needed". Keep the entry; add a comment when you start
 # using it.
 ALLOWED_EDGES: dict[str, set[str]] = {
+    "exceptions": set(),
     "cookie_domains": set(),
     "rookiepy_errors": set(),
     "cookie_jar": {
@@ -56,7 +57,11 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         # logic colocated; the DAG stays acyclic (cookie_domains is a leaf).
         "cookie_domains",
     },
-    "profile_targets": set(),
+    "profile_targets": {
+        # ADR-015 Pattern B decoupling — _validate_profile_name raises
+        # LoginConfigurationError instead of click.ClickException.
+        "exceptions",
+    },
     "cookie_writes": {
         # allowed but currently unused — the writer operates on already-loaded
         # cookie data and the selectors don't query the cookie-domain policy.
