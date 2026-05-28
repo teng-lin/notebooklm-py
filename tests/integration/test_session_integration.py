@@ -473,8 +473,11 @@ class TestCrossDomainCookiePreservation:
             http_client.cookies.set("REDIRECT_SENTINEL", "survives_refresh", domain=".google.com")
 
             # Simulate what happens during a redirect: update_auth_headers merges new cookies
-            # without wiping existing ones (like refreshed SID from accounts.google.com)
-            core.update_auth_headers()
+            # without wiping existing ones (like refreshed SID from accounts.google.com).
+            # Wave 3 of plan ``host-protocol-removal`` deleted the
+            # Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with explicit kwargs.
+            core._auth_coord.update_auth_headers(auth=core.auth, kernel=core._kernel)
 
             # Verify original cookies are still present (not wiped)
             # httpx.Cookies.get() returns None if cookie not found
@@ -495,8 +498,11 @@ class TestCrossDomainCookiePreservation:
                 "__Secure-1PSIDRTS", "redirect_refreshed_value", domain=".google.com"
             )
 
-            # Now update auth headers (simulating a token refresh)
-            core.update_auth_headers()
+            # Now update auth headers (simulating a token refresh).
+            # Wave 3 of plan ``host-protocol-removal`` deleted the
+            # Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with explicit kwargs.
+            core._auth_coord.update_auth_headers(auth=core.auth, kernel=core._kernel)
 
             # The EXACT value should still be there (merged, not replaced)
             assert (
@@ -531,8 +537,11 @@ class TestCrossDomainCookiePreservation:
             # Simulate Google setting a cookie during a redirect
             http.cookies.set("__Secure-1PSIDCC", "from_redirect", domain=".google.com")
 
-            # Now update auth headers
-            core.update_auth_headers()
+            # Now update auth headers.
+            # Wave 3 of plan ``host-protocol-removal`` deleted the
+            # Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with explicit kwargs.
+            core._auth_coord.update_auth_headers(auth=core.auth, kernel=core._kernel)
 
             # The redirect cookie must survive
             assert http.cookies.get("__Secure-1PSIDCC", domain=".google.com") == "from_redirect"

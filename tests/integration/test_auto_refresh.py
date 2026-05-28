@@ -58,7 +58,13 @@ class TestAutoRefreshIntegration:
             refresh_calls.append(True)
             # Simulate successful refresh
             client._session.auth.csrf_token = "new_csrf"
-            client._session.update_auth_headers()
+            # Wave 3 of plan ``host-protocol-removal`` deleted the
+            # Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with explicit kwargs.
+            client._collaborators.auth_coord.update_auth_headers(
+                auth=client._auth,
+                kernel=client._collaborators.kernel,
+            )
             return client._session.auth
 
         client._session._auth_coord._refresh_callback = tracking_refresh
@@ -110,7 +116,13 @@ class TestAutoRefreshIntegration:
         async def tracking_refresh():
             refresh_calls.append(True)
             client._session.auth.csrf_token = "new_csrf"
-            client._session.update_auth_headers()
+            # Wave 3 of plan ``host-protocol-removal`` deleted the
+            # Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with explicit kwargs.
+            client._collaborators.auth_coord.update_auth_headers(
+                auth=client._auth,
+                kernel=client._collaborators.kernel,
+            )
             return client._session.auth
 
         client._session._auth_coord._refresh_callback = tracking_refresh

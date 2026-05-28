@@ -147,9 +147,14 @@ async def test_stale_csrf_triggers_refresh_and_retry(
             # documented stale-CSRF response per ``_core.py:245-252``).
             # The ``update_auth_headers`` call is what actually plumbs the
             # new value into the live ``httpx.AsyncClient``'s default
-            # header set.
+            # header set. Wave 3 of plan ``host-protocol-removal`` deleted
+            # the Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with explicit kwargs.
             client._session.auth.csrf_token = "INVALID_CSRF_FOR_TEST"
-            client._session.update_auth_headers()
+            client._collaborators.auth_coord.update_auth_headers(
+                auth=client._auth,
+                kernel=client._collaborators.kernel,
+            )
 
             # This call's first attempt MUST 400; the rpc_call layer
             # then awaits refresh_auth (interaction 2 in the cassette)

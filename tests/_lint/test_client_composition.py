@@ -31,14 +31,13 @@ client-side reach-through cleanup.
    shape ``self._session._<name>`` appears anywhere in the module
    (read, write, delete, or augmented assignment). The composition
    root MUST consume ``Session`` through its narrow public surface
-   (e.g. :meth:`Session.drain`, :attr:`Session.lifecycle`,
-   :attr:`Session.auth`, :meth:`Session.open` / :meth:`Session.close`),
-   never through the underscore-prefixed collaborator slots on
-   ``Session``. The rule is boundary-focused: it does not pin
-   line-history-specific reach-through call sites and so does not need
-   to be rewritten every time a private slot is renamed. New private
-   slots automatically come under the rule the moment they get an
-   underscore-prefixed name.
+   (e.g. :meth:`Session.drain`, :attr:`Session.auth`, :meth:`Session.open`
+   / :meth:`Session.close`, :attr:`Session.is_open`), never through the
+   underscore-prefixed collaborator slots on ``Session``. The rule is
+   boundary-focused: it does not pin line-history-specific reach-through
+   call sites and so does not need to be rewritten every time a private
+   slot is renamed. New private slots automatically come under the rule
+   the moment they get an underscore-prefixed name.
 
 The AST shape is deliberate: a regex over the source would either
 over-match (e.g. ``collaborators`` as a variable name) or under-match
@@ -91,16 +90,17 @@ STAGE_A_ACCESSORS = {"collaborators", "session_transport", "rpc_executor"}
 # collaborators that the accessors expose, not the other way around —
 # it never reads the accessors back).
 #
-# ``_auth/session.py`` is allowlisted because :func:`refresh_auth_session`
-# operates on the ``RefreshAuthCore`` Protocol that explicitly declares
-# ``collaborators`` as a structural member (see Wave 11c of
-# session-decoupling, which deleted ``Session.save_cookies`` and routed
-# the auth-refresh persist call through ``core.collaborators.lifecycle.save_cookies``).
-# The read is on a Protocol member, not opportunistic discovery, so it
-# does not re-establish Session as a hub — it consumes a contract the
-# Protocol pins. When Stage B (Wave 7 follow-up) deletes the Stage-A
-# accessors entirely, ``RefreshAuthCore`` will be reshaped to take the
-# lifecycle collaborator directly and this allowlist entry goes away.
+# ``_auth/session.py`` was allowlisted because :func:`refresh_auth_session`
+# read ``core.collaborators.lifecycle.save_cookies`` to persist rotated
+# cookies through the canonical chokepoint (Wave 11c of session-decoupling
+# deleted ``Session.save_cookies`` and routed the auth-refresh persist call
+# through the Stage-A accessor). Wave 2 of plan ``host-protocol-removal``
+# eliminated the read entirely: ``refresh_auth_session`` now takes the
+# five concrete collaborators as keyword-only kwargs and the deleted
+# ``RefreshAuthCore`` Protocol no longer exposes ``collaborators`` at all.
+# The allowlist entry below is therefore defensive — no live read in
+# ``_auth/session.py`` consumes a Stage-A accessor today. A follow-up may
+# narrow the allowlist back to ``client.py`` + ``_session.py``.
 ACCESSOR_ALLOWLIST = {
     "src/notebooklm/client.py",
     "src/notebooklm/_session.py",
@@ -219,9 +219,9 @@ def test_client_does_not_dereference_session_privates() -> None:
 
     Boundary rule (not line-history-focused): the composition root
     consumes :class:`Session` through narrow public/internal accessors
-    (e.g. :meth:`Session.drain`, :attr:`Session.lifecycle`,
-    :attr:`Session.auth`, :meth:`Session.open`, :meth:`Session.close`).
-    Any ``self._session._<name>`` read, write, delete, or augmented
+    (e.g. :meth:`Session.drain`, :attr:`Session.auth`, :meth:`Session.open`,
+    :meth:`Session.close`, :attr:`Session.is_open`). Any
+    ``self._session._<name>`` read, write, delete, or augmented
     assignment reintroduces a private reach-through and fails this
     test. New private slots come under the rule automatically when
     they get an underscore-prefixed name — no edits required here.

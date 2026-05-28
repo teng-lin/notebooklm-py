@@ -201,14 +201,25 @@ def retention_rows() -> dict[str, str]:
 
 
 def test_enumerate_session_methods_finds_known_methods() -> None:
-    """Sanity: ``__init__`` and ``update_auth_tokens`` must always be on Session."""
+    """Sanity: ``__init__`` and ``open`` must always be on Session.
+
+    Wave 3 of plan ``host-protocol-removal`` deleted
+    ``Session.update_auth_tokens`` (the previous sanity sentinel was the
+    ``RefreshAuthCore`` Protocol surface, which Wave 2 retired). The
+    sanity check now anchors on the lifecycle methods that survive in
+    every post-Wave-3 inventory: ``__init__`` (always present on any
+    class) and ``open`` (the lifecycle-hot-path entry point that is part
+    of the post-Wave-3 retention floor — see the **Inventory** table in
+    ``docs/session-method-retention.md``).
+    """
     source = SESSION_MODULE.read_text(encoding="utf-8")
     names = _enumerate_session_methods(source)
     assert "__init__" in names, "Session must always define __init__."
-    assert "update_auth_tokens" in names, (
-        "Session.update_auth_tokens is the RefreshAuthCore Protocol surface and "
-        "must remain. If this lint enumerates an empty list, the AST walk lost "
-        "the class body — check that the Session class still parses."
+    assert "open" in names, (
+        "Session.open is part of the lifecycle hot path retained by the "
+        "post-Wave-3 inventory and must remain. If this lint enumerates "
+        "an empty list, the AST walk lost the class body — check that the "
+        "Session class still parses."
     )
 
 
@@ -232,16 +243,23 @@ def test_enumerate_session_methods_skips_other_classes() -> None:
 
 
 def test_parse_retention_doc_extracts_known_rows() -> None:
-    """Sanity: parsing the live doc returns at least ``update_auth_tokens`` with a retain disposition."""
+    """Sanity: parsing the live doc returns at least ``open`` with a retain disposition.
+
+    Wave 3 of plan ``host-protocol-removal`` deleted
+    ``Session.update_auth_tokens`` (the previous sanity sentinel) and
+    moved its retention-doc row to the **Deleted** section. The parser
+    scopes ``## Deleted`` out, so a row in that section does not surface
+    here — sentinel switches to ``open``, which is part of the
+    lifecycle-hot-path retention floor that Wave 3 left untouched.
+    """
     text = RETENTION_DOC.read_text(encoding="utf-8")
     rows = _parse_retention_doc(text)
-    assert "update_auth_tokens" in rows, (
-        "Retention doc must list `update_auth_tokens`. If the row was removed, "
+    assert "open" in rows, (
+        "Retention doc must list `open`. If the row was removed, "
         "the doc has drifted from the retention contract."
     )
-    assert rows["update_auth_tokens"].startswith(_RETAIN_PREFIX), (
-        "`update_auth_tokens` disposition must be `retain — ...`, got: "
-        f"{rows['update_auth_tokens']!r}"
+    assert rows["open"].startswith(_RETAIN_PREFIX), (
+        f"`open` disposition must be `retain — ...`, got: {rows['open']!r}"
     )
 
 

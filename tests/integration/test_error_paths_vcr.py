@@ -222,7 +222,14 @@ class TestErrorPaths:
             # matched on body (it doesn't; the default matcher uses
             # method/path/rpcids).
             client._session.auth.csrf_token = "refreshed_csrf_token"
-            client._session.update_auth_headers()
+            # Wave 3 of plan ``host-protocol-removal`` deleted the
+            # Session-level ``update_auth_headers`` forward; call the
+            # canonical coordinator method directly with the explicit
+            # collaborator kwargs.
+            client._collaborators.auth_coord.update_auth_headers(
+                auth=client._auth,
+                kernel=client._collaborators.kernel,
+            )
             return client._session.auth
 
         client._session._auth_coord._refresh_callback = stub_refresh

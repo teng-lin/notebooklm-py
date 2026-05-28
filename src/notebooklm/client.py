@@ -237,14 +237,15 @@ class NotebookLMClient:
         # mutable object so :meth:`AuthRefreshCoordinator.update_auth_tokens`
         # in-place mutations are observed everywhere.
         #
-        # Wave 0 of the host-protocol-removal plan only SETS this field; no
-        # production read site exists yet. Wave 2 wires ``refresh_auth()`` to
-        # read it; Wave 3 updates the public ``auth`` property to back off
-        # this field instead of the ``self._session.auth`` reach-through.
-        # The field is set today so the shell-client test helper
-        # (``tests/_helpers/session_factory.build_refresh_client_shell``) can
-        # mirror the production attribute shape from PR 1 onward, keeping
-        # test shells and production aligned across the intermediate PRs.
+        # Wave 0 of the host-protocol-removal plan introduced this field;
+        # Wave 2 wired ``refresh_auth()`` to read it; Wave 3 (this PR)
+        # rewired the public ``auth`` property and the
+        # ``SourceUploadPipeline(auth=...)`` constructor argument to back
+        # off this field instead of dereferencing
+        # ``self._session.auth``. The shell-client test helper
+        # (``tests/_helpers/session_factory.build_refresh_client_shell``)
+        # mirrors the production attribute shape so refresh-shell tests
+        # exercise the same code path as production.
         self._auth = auth
 
         # Canonicalize the keepalive storage path so different representations
@@ -351,7 +352,14 @@ class NotebookLMClient:
             drain=composed.collaborators.drain_tracker,
             lifecycle=composed.collaborators.lifecycle,
             kernel=composed.collaborators.kernel,
-            auth=self._session.auth,
+            # Wave 3 of plan ``host-protocol-removal``: the upload
+            # pipeline now reads the client-owned ``self._auth``
+            # reference set above instead of dereferencing
+            # ``self._session.auth``. The Auth Instance Invariant keeps
+            # this aliased with the Session-side ``auth`` attribute, so
+            # production refresh-time mutation is observed by the
+            # uploader unchanged.
+            auth=self._auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=composed.collaborators.metrics.record_upload_queue_wait,
@@ -427,8 +435,18 @@ class NotebookLMClient:
 
     @property
     def auth(self) -> AuthTokens:
-        """Get the authentication tokens."""
-        return self._session.auth
+        """Get the authentication tokens.
+
+        Wave 3 of plan ``host-protocol-removal`` rewired this property
+        to read the client-owned ``self._auth`` reference set in
+        :meth:`__init__` instead of dereferencing
+        ``self._session.auth``. The Auth Instance Invariant (see
+        ``.sisyphus/phases/host-protocol-removal/phase-1.md``) requires
+        that every reference across the live object graph alias this
+        exact same mutable :class:`AuthTokens` object, so the public
+        ``client.auth`` identity and behavior are unchanged.
+        """
+        return self._auth
 
     async def __aenter__(self) -> NotebookLMClient:
         """Open the client connection."""
