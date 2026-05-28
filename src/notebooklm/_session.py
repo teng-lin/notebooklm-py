@@ -130,10 +130,9 @@ def _default_is_auth_error() -> Callable[[Exception], bool]:
 # fully-bound :class:`Session` — it constructs the collaborators bundle,
 # the transport, the wired middleware chain, and the :class:`RpcExecutor`,
 # and drives the write-once binders on the Session. The fail-fast guards
-# on :class:`Session` entry points (``rpc_call`` / ``_get_rpc_semaphore`` /
-# ``open`` / ``close``) became load-bearing in PR 2 — they raise actionably
-# if a caller exercises the Session before the composition root has bound
-# the slots.
+# on :class:`Session` entry points (``_get_rpc_semaphore`` / ``open`` /
+# ``close``) became load-bearing in PR 2 — they raise actionably if a caller
+# exercises the Session before the composition root has bound the slots.
 #
 # The helper lives in :mod:`notebooklm._session` (not
 # :mod:`notebooklm._session_init`) so seam-default resolution happens
@@ -481,8 +480,8 @@ class Session:
 
         # Late-bound storage — these slots stay ``None`` until the
         # composition root in :func:`compose_session_internals` drives
-        # the write-once binders. Entry points (``rpc_call`` /
-        # ``_get_rpc_semaphore`` / ``open`` / ``close``) guard against
+        # the write-once binders. Entry points (``_get_rpc_semaphore`` /
+        # ``open`` / ``close``) guard against
         # use-before-bind via :meth:`_require_constructed`. Types
         # mirror the corresponding :class:`WiredMiddleware` fields so
         # downstream readers see precise types rather than ``Any``

@@ -38,7 +38,7 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
     ValidationError,
 )
-from notebooklm.types import AccountLimits, AccountTier
+from notebooklm.types import AccountLimits, AccountTier, GenerationStatus
 
 
 class TestExceptionHierarchy:
@@ -215,6 +215,27 @@ class TestExceptionHierarchy:
         assert err.status_history == ("pending", "in_progress")
         assert "notebook nb_123" in str(err)
         assert "pending -> in_progress" in str(err)
+
+    def test_artifact_timeout_accepts_sequence_transitions(self):
+        """Manual exception construction normalizes status snapshots to a tuple."""
+        transitions = [
+            GenerationStatus(task_id="task_123", status="pending"),
+            GenerationStatus(task_id="task_123", status="in_progress"),
+        ]
+        err = ArtifactTimeoutError("nb_123", "task_123", 30.0, status_transitions=transitions)
+
+        assert err.status_transitions == tuple(transitions)
+        assert err.status_history == ("pending", "in_progress")
+        assert "pending -> in_progress" in str(err)
+
+    def test_artifact_pending_timeout_without_history_reports_no_status(self):
+        """The defensive no-history message branch is part of the public repr."""
+        err = ArtifactPendingTimeoutError("nb_123", "task_123", 30.0)
+
+        assert err.status_history == ()
+        assert err.status_transitions == ()
+        assert err.stalled_phase == "pending"
+        assert "no status" in str(err)
 
     def test_account_types_are_exported_from_package(self):
         """Account limit and tier types are available from the public package namespace."""

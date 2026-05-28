@@ -111,7 +111,7 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     core._drain_tracker = MagicMock()
     core._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
     core._drain_tracker.finish_transport_post = AsyncMock()
-    core.rpc_executor.operation_scope = MagicMock()
+    core.operation_scope = MagicMock()
 
     def operation_scope(_label):
         @asynccontextmanager
@@ -120,13 +120,12 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
 
         return scope()
 
-    core.rpc_executor.operation_scope.side_effect = operation_scope
+    core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
     # MagicMock blocks ``assert``-prefixed attribute access as a foot-gun
     # guard; the no-op ``assert_bound_loop`` stub used by ``add_file``
     # must therefore be installed explicitly.
     core.assert_bound_loop = MagicMock()
-    core.rpc_executor.assert_bound_loop = MagicMock()
     uploader = SourceUploadPipeline(
         rpc=core.rpc_executor,
         drain=core,

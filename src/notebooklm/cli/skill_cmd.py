@@ -1,6 +1,5 @@
 """Skill management commands."""
 
-import os
 import re
 import tempfile
 from dataclasses import dataclass
@@ -8,9 +7,11 @@ from pathlib import Path
 
 import click
 
+from ..io import replace_file_atomically
 from .agent_templates import get_agent_source_content
 from .error_handler import exit_with_code
 from .rendering import console
+from .services.skill_install import report_mixed_no_clobber_up_to_date
 
 
 @dataclass(frozen=True)
@@ -129,11 +130,11 @@ def classify_target(target: str, scope: str, stamped_content: str) -> tuple[str,
 
 
 def atomic_write_text(path: Path, content: str) -> None:
-    """Atomically write ``content`` to ``path`` (temp file + ``os.replace``).
+    """Atomically write ``content`` to ``path`` (temp file + atomic replace).
 
     Mirrors the same-directory tempfile + ``os.replace`` pattern used by
-    :func:`notebooklm._atomic_io.atomic_write_json` so a crash mid-write cannot
-    leave a partially-written ``SKILL.md`` on disk.
+    :func:`notebooklm.io.atomic_write_json`, including bounded retries for
+    transient Windows replace races.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
@@ -148,7 +149,7 @@ def atomic_write_text(path: Path, content: str) -> None:
         ) as temp_file:
             temp_path = Path(temp_file.name)
             temp_file.write(content)
-        os.replace(temp_path, path)
+        replace_file_atomically(temp_path, path)
     except Exception:
         if temp_path is not None:
             try:
@@ -309,6 +310,14 @@ def install(scope: str, target_name: str, dry_run: bool, no_clobber: bool, force
         console.print(
             f"[yellow]Skipped[/yellow] {len(skipped_no_clobber)} differing target(s) (--no-clobber)"
         )
+
+    report_mixed_no_clobber_up_to_date(
+        console.print,
+        skipped_up_to_date=skipped_up_to_date,
+        skipped_no_clobber=skipped_no_clobber,
+        installed_paths=installed_paths,
+        failed_targets=failed_targets,
+    )
 
     if not installed_paths and not failed_targets and skipped_up_to_date and not skipped_no_clobber:
         # All targets were already up to date and no writes happened.

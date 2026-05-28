@@ -153,10 +153,9 @@ def _is_error_path(ancestors: list[ast.AST]) -> bool:
 
     # If.body-with-error-test signal. We need to distinguish ``If.body``
     # from ``If.orelse`` because only the body fires when ``test`` is truthy.
-    # Walk pairs (parent, child) in the ancestor chain. ``zip(strict=False)``
-    # because the second sequence is intentionally one shorter -- the final
-    # ancestor has no descendant in the chain.
-    for parent, child in zip(ancestors[:-1], ancestors[1:], strict=False):
+    # Walk pairs (parent, child) in the ancestor chain. Both slices are one
+    # shorter than ``ancestors`` and must stay equal-length.
+    for parent, child in zip(ancestors[:-1], ancestors[1:], strict=True):
         if isinstance(parent, ast.If) and child in parent.body:
             if _name_references_error(parent.test):
                 return True

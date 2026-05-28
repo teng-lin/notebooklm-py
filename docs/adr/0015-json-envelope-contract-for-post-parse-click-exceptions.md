@@ -23,8 +23,8 @@ That contract was clear for library exceptions (`AuthError`, `RateLimitError`,
 `ValidationError`, ...). It was **not** clear for `click.ClickException` and
 its subclasses (`click.UsageError`, `click.BadParameter`, and bare
 `ClickException`), because `handle_errors(...)` deliberately re-raises them
-unmodified at
-[`src/notebooklm/cli/error_handler.py:257-259`](../../src/notebooklm/cli/error_handler.py).
+unmodified in its `except click.ClickException: raise` clause in
+[`src/notebooklm/cli/error_handler.py`](../../src/notebooklm/cli/error_handler.py).
 Click then renders its own `Usage: ... / Error: ...` prose to stderr and exits
 with its class-level `exit_code` (`2` for `UsageError`/`BadParameter`, `1` for
 the base `ClickException`).
@@ -47,8 +47,8 @@ different things to a caller:
   the program itself made — flag-combination conflicts, computed
   preconditions, file-format checks — that happen to be expressed by
   raising a `ClickException` subclass instead of one of the library
-  exception types. They reach the re-raise branch at `error_handler.py:257`
-  and skip the envelope.
+  exception types. They reach the `except click.ClickException: raise`
+  branch in `error_handler.py` and skip the envelope.
 
 The CLI audit (`.sisyphus/plans/cli-audit-2026-05-27.md`, the **P1#2
 "command-body `UsageError`/`BadParameter` bypass"** finding at lines 54-90)
@@ -104,8 +104,8 @@ Concretely:
    validation failures; Click keeps rendering its own
    `Usage: ... / Error: ...` text on stderr and exiting `2`
    (`UsageError` / `BadParameter`) or `1` (base `ClickException`). The
-   re-raise at
-   [`src/notebooklm/cli/error_handler.py:257-259`](../../src/notebooklm/cli/error_handler.py)
+   re-raise in
+   [`src/notebooklm/cli/error_handler.py`](../../src/notebooklm/cli/error_handler.py)
    stays. No JSON envelope is emitted in this case, because `handle_errors`
    has not yet been entered when the parser fires.
 2. **Post-parse `ClickException` flows through the typed envelope.**

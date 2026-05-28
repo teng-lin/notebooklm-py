@@ -71,6 +71,12 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 
 # Fully cleaned service modules. Each must have zero ``_boundary_violations``
 # AND zero Pattern A pairs (see :func:`_pattern_a_pairs`).
+#
+# Login ``browser_accounts.py`` and ``cookie_writes.py`` still have narrow
+# lazy level-3 presentation/runtime seams (progress/warning output and
+# ``run_async``). The current boundary scanner intentionally does not flag
+# those imports; their important invariant is zero Pattern A pairs until the
+# remaining seams are inverted into caller-provided callbacks.
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
@@ -83,6 +89,7 @@ GUARDED_PATHS = {
     "cli/services/login/rookiepy_errors.py": SERVICES_ROOT / "login" / "rookiepy_errors.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
+    "cli/services/skill_install.py": SERVICES_ROOT / "skill_install.py",
     "cli/services/source_clean.py": SERVICES_ROOT / "source_clean.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
@@ -327,7 +334,7 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/source_add.py": {
         "path": SERVICES_ROOT / "source_add.py",
         "forbidden_imports": [
-            "source_add.py:317: forbidden relative import: '..rendering'",
+            "source_add.py:359: forbidden relative import: '..rendering'",
         ],
         "pattern_a_violations": [],
         "rationale": (

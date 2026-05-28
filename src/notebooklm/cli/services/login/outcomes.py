@@ -56,6 +56,10 @@ class BrowserCookieOutcome:
     * ``message`` — human-readable text (Rich markup is preserved so the
       existing text-mode rendering is byte-for-byte unchanged).
 
+    The base-class annotations are an interface hint for dispatchers, not
+    constructor fields. Instantiate one of the frozen dataclass variants
+    below; ``BrowserCookieOutcome`` itself is never constructed directly.
+
     Variants are kept narrow on purpose; new failure modes should either
     reuse an existing variant or introduce a new dataclass here with an
     explicit code constant.

@@ -180,8 +180,8 @@ command exits `0` on success regardless of freshness.
 ### `notebooklm source wait <SOURCE_ID>` — three-way
 
 Implemented by `source_wait` in
-[`src/notebooklm/cli/source.py`](../src/notebooklm/cli/source.py) (the
-exit-code table is in the command's docstring, around lines 1113-1116 at
+[`src/notebooklm/cli/source_cmd.py`](../src/notebooklm/cli/source_cmd.py) (the
+exit-code table is in the command's docstring, around lines 1080-1084 at
 the time of writing).
 
 | Exit | Meaning |

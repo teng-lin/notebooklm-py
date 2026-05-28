@@ -53,7 +53,7 @@ def _is_retryable_windows_replace_error(exc: PermissionError) -> bool:
     return winerror in _WINDOWS_REPLACE_TRANSIENT_WINERRORS
 
 
-def _replace_json_file(temp_path: Path, path: Path) -> None:
+def replace_file_atomically(temp_path: Path, path: Path) -> None:
     """Replace ``path`` with ``temp_path``, retrying transient Windows races."""
     delay = _WINDOWS_REPLACE_INITIAL_DELAY_SECONDS
     for attempt in range(_WINDOWS_REPLACE_MAX_ATTEMPTS):
@@ -117,7 +117,7 @@ def atomic_write_json(path: Path, data: Any, *, mode: int = 0o600) -> None:
         if sys.platform != "win32":
             # chmod is a no-op on Windows (and can confuse ACLs)
             os.chmod(temp_path, mode)
-        _replace_json_file(temp_path, path)
+        replace_file_atomically(temp_path, path)
     except Exception:
         if temp_path is not None:
             try:

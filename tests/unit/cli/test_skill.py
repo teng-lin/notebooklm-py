@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from notebooklm.cli.services.skill_install import report_mixed_no_clobber_up_to_date
 from notebooklm.notebooklm_cli import cli
 
 # Get the actual skill module (not the click group that shadows it)
@@ -266,6 +267,21 @@ class TestSkillInstallProjectHardening:
         assert claude.read_text(encoding="utf-8") == "old"
         assert not agents.exists()
 
+    def test_dry_run_all_up_to_date_reports_each_target(self, runner, tmp_path):
+        """--dry-run with both targets already stamped reports the no-op targets."""
+        project = tmp_path / "project"
+        stamped = self._stamped()
+        self._seed(project, claude=stamped, agents=stamped)
+
+        result = self._invoke(runner, project, "--dry-run")
+
+        assert result.exit_code == 0, result.output
+        output = result.output.lower()
+        assert "dry run" in output
+        assert output.count("up to date") >= 2
+        assert "claude code" in output
+        assert "agent skills" in output
+
     # --- --no-clobber --------------------------------------------------------
 
     def test_no_clobber_skips_differing_creates_missing(self, runner, tmp_path):
@@ -354,6 +370,8 @@ class TestSkillInstallProjectHardening:
         assert claude.stat().st_mtime_ns == claude_mtime
         # Differing target preserved as-is.
         assert agents.read_text(encoding="utf-8") == "old agents"
+        assert "skipped" in result.output.lower()
+        assert "up to date" in result.output.lower()
 
     def test_mixed_force_overwrites_differing_only(self, runner, tmp_path):
         """Mixed targets: --force overwrites differing, identical target is a no-op."""
@@ -433,6 +451,55 @@ class TestSkillInstallProjectHardening:
         # No stray ``.SKILL.md.*.tmp`` siblings should remain.
         leftovers = [p.name for p in claude_dir.iterdir() if p.name != "SKILL.md"]
         assert leftovers == [], f"unexpected leftover files: {leftovers}"
+
+    def test_atomic_write_text_uses_shared_replace_helper(self, tmp_path, monkeypatch):
+        """Text skill writes share the Windows transient-retry replace helper."""
+        calls: list[tuple[Path, Path]] = []
+
+        def fake_replace(temp_path: Path, path: Path) -> None:
+            calls.append((temp_path, path))
+            temp_path.replace(path)
+
+        monkeypatch.setattr(skill_module, "replace_file_atomically", fake_replace)
+        target = tmp_path / "skills" / "SKILL.md"
+
+        skill_module.atomic_write_text(target, "content")
+
+        assert target.read_text(encoding="utf-8") == "content"
+        assert len(calls) == 1
+        assert calls[0][1] == target
+
+
+class TestSkillInstallReporting:
+    """Tests for service-level skill install reporting decisions."""
+
+    def test_reports_mixed_no_clobber_up_to_date_targets(self):
+        """No-write mixed --no-clobber state reports synced targets separately."""
+        messages: list[str] = []
+
+        report_mixed_no_clobber_up_to_date(
+            messages.append,
+            skipped_up_to_date=[object()],
+            skipped_no_clobber=[object()],
+            installed_paths=[],
+            failed_targets=[],
+        )
+
+        assert messages == ["[green]Up to date[/green] 1 target(s)"]
+
+    def test_skips_message_when_install_wrote_a_target(self):
+        """The mixed no-write message is suppressed after any install success."""
+        messages: list[str] = []
+
+        report_mixed_no_clobber_up_to_date(
+            messages.append,
+            skipped_up_to_date=[object()],
+            skipped_no_clobber=[object()],
+            installed_paths=[object()],
+            failed_targets=[],
+        )
+
+        assert messages == []
 
 
 class TestSkillStatus:

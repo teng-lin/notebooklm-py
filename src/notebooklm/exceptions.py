@@ -17,10 +17,15 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from ._env import DEFAULT_BASE_URL, get_base_url
 from ._logging import scrub_secrets
+
+if TYPE_CHECKING:
+    from ._types.artifacts import GenerationStatus
+
+ArtifactStalledPhase = Literal["pending", "in_progress"]
 
 
 def _truncate_response_preview(raw: str | None) -> str | None:
@@ -1068,15 +1073,15 @@ class ArtifactTimeoutError(ArtifactError, TimeoutError):
         *,
         last_status: str | None = None,
         status_history: Sequence[str] | None = None,
-        status_transitions: tuple[Any, ...] | None = None,
-        stalled_phase: str | None = None,
+        status_transitions: Sequence[GenerationStatus] | None = None,
+        stalled_phase: ArtifactStalledPhase | None = None,
     ):
         self.notebook_id = notebook_id
         self.task_id = task_id
         self.timeout = timeout
         self.timeout_seconds = timeout
         self.last_status = last_status
-        self.status_transitions = status_transitions or ()
+        self.status_transitions: tuple[GenerationStatus, ...] = tuple(status_transitions or ())
         if status_history is None:
             status_history = tuple(
                 status.status
@@ -1084,7 +1089,7 @@ class ArtifactTimeoutError(ArtifactError, TimeoutError):
                 if isinstance(getattr(status, "status", None), str)
             )
         self.status_history = tuple(status_history)
-        self.stalled_phase = stalled_phase
+        self.stalled_phase: ArtifactStalledPhase | None = stalled_phase
 
         history = " -> ".join(self.status_history)
         history_info = f"; status history: {history}" if history else ""
@@ -1106,7 +1111,7 @@ class ArtifactPendingTimeoutError(ArtifactTimeoutError):
         *,
         last_status: str | None = None,
         status_history: Sequence[str] | None = None,
-        status_transitions: tuple[Any, ...] | None = None,
+        status_transitions: Sequence[GenerationStatus] | None = None,
     ):
         super().__init__(
             notebook_id,
@@ -1130,7 +1135,7 @@ class ArtifactInProgressTimeoutError(ArtifactTimeoutError):
         *,
         last_status: str | None = None,
         status_history: Sequence[str] | None = None,
-        status_transitions: tuple[Any, ...] | None = None,
+        status_transitions: Sequence[GenerationStatus] | None = None,
     ):
         super().__init__(
             notebook_id,

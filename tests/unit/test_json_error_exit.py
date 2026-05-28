@@ -544,13 +544,13 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "doctor_failure",
         ["doctor", "--json"],
         None,  # customizer is irrelevant — mocking happens via the test body
-        marks=pytest.mark.xfail(strict=False, reason=_DOCTOR_GAP_REASON),
+        marks=pytest.mark.xfail(strict=True, reason=_DOCTOR_GAP_REASON),
     ),
     pytest.param(
         "profile_list_unauthorized",
         ["profile", "list", "--json"],
         None,  # ditto
-        marks=pytest.mark.xfail(strict=False, reason=_PROFILE_LIST_GAP_REASON),
+        marks=pytest.mark.xfail(strict=True, reason=_PROFILE_LIST_GAP_REASON),
     ),
     # Per ADR-015, post-parse ``ClickException`` validation failures in command
     # bodies and the service layer they call now flow through ``output_error``

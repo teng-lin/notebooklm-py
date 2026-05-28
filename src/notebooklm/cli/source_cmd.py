@@ -718,7 +718,7 @@ def _emit_add_research_flag_conflict(message: str, *, json_output: bool) -> NoRe
     on stderr). Never returns — both branches raise.
     """
     if json_output:
-        _output_error(message, "VALIDATION_ERROR", True, 1)
+        _output_error(message, "VALIDATION_ERROR", json_output, 1)
         raise AssertionError("unreachable")  # pragma: no cover
     raise click.UsageError(message)
 
@@ -747,7 +747,7 @@ def _render_add_research_result(result: SourceAddResearchResult, *, json_output:
     """
     if result.outcome == "start_failed":
         if json_output:
-            _output_error("Research failed to start", "VALIDATION_ERROR", True, 1)
+            _output_error("Research failed to start", "VALIDATION_ERROR", json_output, 1)
         else:
             console.print("[red]Research failed to start[/red]")
             exit_with_code(1)

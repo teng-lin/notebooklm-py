@@ -1,9 +1,14 @@
-"""Service helpers for the ``source add`` command."""
+"""Service helpers for the ``source add`` command.
+
+The URL guard here is CLI input validation. The lower-level Python API
+continues to pass caller-supplied URLs through to NotebookLM unchanged.
+"""
 
 from __future__ import annotations
 
 import contextlib
 import ipaddress
+import socket
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +82,39 @@ _PATH_SHAPED_EXTENSIONS = frozenset(
 #: scheme (``file://``, ``ftp://``, ``gopher://``, ...) is rejected outright
 #: as an SSRF / local-file-read risk — even with ``--allow-internal``.
 _ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
+_LOCALHOST_NAMES = frozenset({"localhost", "localhost.localdomain"})
+_LOCALHOST_SUFFIXES = (".localhost", ".localhost.localdomain")
+
+
+def _canonical_host(host: str) -> str:
+    """Return the hostname form used for local-host checks."""
+    return host.strip().rstrip(".").lower()
+
+
+def _parse_host_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse literal and legacy IPv4 host spellings without resolving DNS.
+
+    The ``inet_aton`` fallback catches legacy IPv4 forms reliably on POSIX;
+    Windows may treat non-standard spellings as DNS names instead.
+    """
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            ip = ipaddress.ip_address(socket.inet_aton(host))
+        except (OSError, ValueError):
+            return None
+
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return mapped if mapped is not None else ip
+
+
+def _is_internal_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified
+
+
+def _is_localhost_name(host: str) -> bool:
+    return host in _LOCALHOST_NAMES or host.endswith(_LOCALHOST_SUFFIXES)
 
 
 def _is_url_shaped(content: str) -> bool:
@@ -95,19 +133,20 @@ def validate_url(url: str, *, allow_internal: bool) -> None:
 
     Replaces the previous ``startswith(("http://", "https://"))`` prefix
     check with a structural parse + a scheme allowlist + a private/loopback/
-    link-local IP rejection (with ``localhost`` rejected by literal when the
-    host is a DNS name).
+    link-local / unspecified IP rejection (with ``localhost`` and localhost
+    spellings rejected by literal when the host is a DNS name).
 
     DNS is **never** resolved at validation time: resolving here would be
     flaky in CI and would leak the caller's interest in the URL to whatever
-    resolver is configured. The DNS-name branch only matches the literal
-    ``"localhost"`` (case-insensitive).
+    resolver is configured. The DNS-name branch only matches localhost
+    spellings; legacy numeric IPv4 spellings such as ``127.1`` are parsed
+    locally and classified as IP literals.
 
     Args:
         url: The URL the user wants to add as a source.
         allow_internal: If True, bypass the internal-host rejection (private
-            IPs, loopback, link-local, and the ``localhost`` literal). The
-            scheme allowlist still applies — ``file://`` / ``ftp://`` etc.
+            IPs, loopback, link-local, unspecified, and localhost spellings).
+            The scheme allowlist still applies — ``file://`` / ``ftp://`` etc.
             are rejected even with ``allow_internal=True``.
 
     Raises:
@@ -133,24 +172,27 @@ def validate_url(url: str, *, allow_internal: bool) -> None:
     if not host:
         raise SourceAddValidationError(f"URL has no host component: {url}")
 
+    canonical_host = _canonical_host(host)
+    if not canonical_host:
+        raise SourceAddValidationError(f"URL has no host component: {url}")
+
     if allow_internal:
         return
 
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
+    ip = _parse_host_ip(canonical_host)
+    if ip is None:
         # Host is a DNS name (not an IP literal). DO NOT resolve it —
         # resolving here would be flaky in CI and leaks intent. Reject
-        # only the ``localhost`` literal; everything else is accepted at
-        # this layer and the network stack handles connectivity later.
-        if host.lower() == "localhost":
+        # only localhost spellings; everything else is accepted at this
+        # layer and the network stack handles connectivity later.
+        if _is_localhost_name(canonical_host):
             raise SourceAddValidationError(
                 f"URL targets the local host {host!r}; pass --allow-internal "
                 f"to override. Got: {url}"
             ) from None
         return
 
-    if ip.is_private or ip.is_loopback or ip.is_link_local:
+    if _is_internal_ip(ip):
         raise SourceAddValidationError(
             f"URL targets an internal IP address {host}; pass --allow-internal "
             f"to override. Got: {url}"

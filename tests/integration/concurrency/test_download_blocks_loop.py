@@ -96,7 +96,7 @@ def _assert_offloaded_to_worker_thread(
 
 @pytest.fixture
 def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
-    """``ArtifactsAPI`` wired to a mock ``Session``.
+    """``ArtifactsAPI`` wired to a mock RPC executor and lifecycle core.
 
     Same shape as the unit-test fixture in ``tests/unit/test_artifact_downloads.py``
     so future readers can cross-reference the protocol shaping. We keep
@@ -110,10 +110,10 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
     mock_core = MagicMock()
     mock_core.rpc_executor.rpc_call = AsyncMock()
     mock_core.get_source_ids = AsyncMock(return_value=[])
-    note_service = NoteService(mock_core)
+    note_service = NoteService(mock_core.rpc_executor)
     mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
-        rpc=mock_core,
+        rpc=mock_core.rpc_executor,
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),

@@ -441,7 +441,7 @@ class TestValidateUrlScheme:
 
 
 class TestValidateUrlInternalHost:
-    """Host policy: reject private/loopback/link-local IPs + ``localhost`` literal."""
+    """Host policy: reject private/loopback/link-local IPs + localhost names."""
 
     @pytest.mark.parametrize(
         "url",
@@ -455,8 +455,23 @@ class TestValidateUrlInternalHost:
             "http://192.168.1.1",
             # Link-local (the classic SSRF target — cloud metadata IP)
             "http://169.254.169.254/latest/meta-data/",
+            # Unspecified bind-all addresses
+            "http://0.0.0.0:8080/",
+            "http://[::]/",
             # IPv6 loopback (urlsplit strips brackets via .hostname)
             "http://[::1]/",
+            # IPv4-mapped IPv6 must classify by the mapped IPv4 address.
+            "http://[::ffff:127.0.0.1]/",
+            "http://[::ffff:10.0.0.1]/",
+            # Alternate local spellings accepted by URL/network stacks.
+            "http://localhost.",
+            "http://LOCALHOST./",
+            "http://app.localhost/",
+            "http://localhost.localdomain/",
+            "http://app.localhost.localdomain/",
+            "http://127.1",
+            "http://2130706433",
+            "http://127.0.0.1.",
             # DNS literal "localhost"
             "http://localhost",
             "https://localhost:3000/",
@@ -479,6 +494,15 @@ class TestValidateUrlInternalHost:
             "http://172.16.0.1/",
             "http://169.254.169.254/latest/meta-data/",
             "http://localhost:3000/health",
+            "http://localhost.",
+            "http://app.localhost/",
+            "http://localhost.localdomain/",
+            "http://app.localhost.localdomain/",
+            "http://127.1",
+            "http://2130706433",
+            "http://127.0.0.1.",
+            "http://[::ffff:127.0.0.1]/",
+            "http://0.0.0.0:8080/",
             "http://[::1]/",
         ],
     )
@@ -561,6 +585,19 @@ class TestBuildSourceAddPlanUrlRouting:
         plan = cli_source_add.build_source_add_plan(
             content="http://127.0.0.1:8080/admin",
             source_type=None,
+            title=None,
+            mime_type=None,
+            follow_symlinks=False,
+            validate_path=self._make_validate_path(),
+            looks_path_shaped=self._make_looks_path(),
+            allow_internal=True,
+        )
+        assert plan.detected_type == "url"
+
+    def test_explicit_internal_url_accepted_with_allow_internal(self) -> None:
+        plan = cli_source_add.build_source_add_plan(
+            content="http://127.0.0.1:8080/admin",
+            source_type="url",
             title=None,
             mime_type=None,
             follow_symlinks=False,
