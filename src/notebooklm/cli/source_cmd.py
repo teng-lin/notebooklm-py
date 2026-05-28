@@ -265,7 +265,7 @@ def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool
             console.print(f"[bold]Title:[/bold] {source.title}")
         return
 
-    if isinstance(outcome, SourceWaitNotFound):
+    elif isinstance(outcome, SourceWaitNotFound):
         not_found_error = outcome.error
         if json_output:
             json_output_response(
@@ -278,8 +278,9 @@ def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool
         else:
             console.print(f"[red]✗ Source not found:[/red] {not_found_error.source_id}")
         exit_with_code(1)
+        raise AssertionError("unreachable")  # pragma: no cover
 
-    if isinstance(outcome, SourceWaitProcessingError):
+    elif isinstance(outcome, SourceWaitProcessingError):
         processing_error = outcome.error
         if json_output:
             json_output_response(
@@ -293,8 +294,9 @@ def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool
         else:
             console.print(f"[red]✗ Source processing failed:[/red] {processing_error.source_id}")
         exit_with_code(1)
+        raise AssertionError("unreachable")  # pragma: no cover
 
-    if isinstance(outcome, SourceWaitTimeout):
+    elif isinstance(outcome, SourceWaitTimeout):
         timeout_error = outcome.error
         if json_output:
             json_output_response(
@@ -312,6 +314,9 @@ def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool
             )
             console.print(f"[dim]Last status: {timeout_error.last_status}[/dim]")
         exit_with_code(2)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    raise AssertionError(f"unreachable: {type(outcome)}")
 
 
 def _render_source_stale_result(

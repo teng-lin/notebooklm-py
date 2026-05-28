@@ -456,7 +456,7 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
 
 def _render_auth_inspect(
     browser_name: str,
-    accounts: list,
+    accounts: list[Any],
     *,
     json_output: bool,
     verbose: bool,
