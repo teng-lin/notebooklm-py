@@ -75,6 +75,7 @@ GUARDED_PATHS = {
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
+    "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
 }
 
 # Stage 3 migration inventory. These modules currently own presentation
@@ -461,23 +462,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "rationale": (
             "Source mutation pipeline still owns presentation + Click "
             "confirmer defaults + exit policy."
-        ),
-    },
-    "cli/services/source_research.py": {
-        "path": SERVICES_ROOT / "source_research.py",
-        "forbidden_imports": [
-            "source_research.py:15: forbidden relative import: '..error_handler'",
-            "source_research.py:16: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [
-            ("execute_source_add_research", 68),
-            ("execute_source_add_research", 124),
-            ("execute_source_add_research", 128),
-            ("execute_source_add_research", 131),
-        ],
-        "rationale": (
-            "``source add --research`` executor owns presentation + exit "
-            "codes for the research-import failure modes."
         ),
     },
     "cli/services/source_wait.py": {

@@ -19,6 +19,7 @@ below (it is what ``notebooklm source --help`` shows).
 import asyncio  # noqa: F401 — re-exported for P1.T2 regression tests that patch source_cmd.asyncio.sleep
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, NoReturn
 
 import click
 from rich.table import Table
@@ -35,7 +36,13 @@ from .options import (
     prompt_file_option,
     wait_polling_options,
 )
-from .rendering import console, get_source_type_display, json_output_response
+from .rendering import (
+    console,
+    display_report,
+    display_research_sources,
+    get_source_type_display,
+    json_output_response,
+)
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
 from .services import source_add as source_add_service
@@ -69,7 +76,11 @@ from .services.source_mutations import (
     execute_source_refresh,
     execute_source_rename,
 )
-from .services.source_research import SourceAddResearchPlan, execute_source_add_research
+from .services.source_research import (
+    SourceAddResearchPlan,
+    SourceAddResearchResult,
+    execute_source_add_research,
+)
 from .services.source_wait import SourceWaitPlan, execute_source_wait
 
 # Compatibility wrappers — tests patch these names on this module. Each
@@ -602,6 +613,133 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
     return _run()
 
 
+def _emit_add_research_flag_conflict(message: str, *, json_output: bool) -> NoReturn:
+    """Surface a ``source add-research`` flag conflict via the active CLI error contract.
+
+    Per ADR-015, post-parse flag-combination failures route through the typed
+    JSON envelope under ``--json`` (exit ``1`` with
+    ``{"error": true, "code": "VALIDATION_ERROR", ...}`` on stdout) and via
+    Click's parser-style ``UsageError`` otherwise (exit ``2`` with usage text
+    on stderr). Never returns — both branches raise.
+    """
+    if json_output:
+        _output_error(message, "VALIDATION_ERROR", True, 1)
+        raise AssertionError("unreachable")  # pragma: no cover
+    raise click.UsageError(message)
+
+
+def _print_add_research_task_ids(result: SourceAddResearchResult) -> None:
+    if result.start_task_id:
+        console.print(f"[dim]Task ID: {result.start_task_id}[/dim]")
+    if result.poll_task_id and result.poll_task_id != result.start_task_id:
+        console.print(f"[dim]Poll ID: {result.poll_task_id}[/dim]")
+
+
+def _exit_with_add_research_status(status: str, message: str, **extra: Any) -> NoReturn:
+    payload: dict[str, Any] = {"status": status, "error": message}
+    payload.update(extra)
+    json_output_response(payload)
+    exit_with_code(1)
+
+
+def _render_add_research_result(result: SourceAddResearchResult, *, json_output: bool) -> None:
+    """Render :class:`SourceAddResearchResult` and exit on non-success outcomes.
+
+    The handler owns all CLI I/O — text vs JSON, exit codes, the
+    ``Starting ... research`` info line, and the ``Imported N sources``
+    summary — so the service layer can stay pure (ADR-008) and exit-policy
+    free (no Pattern A).
+    """
+    if result.outcome == "start_failed":
+        if json_output:
+            _output_error("Research failed to start", "VALIDATION_ERROR", True, 1)
+        else:
+            console.print("[red]Research failed to start[/red]")
+            exit_with_code(1)
+        return  # pragma: no cover — both branches above terminate
+
+    if not json_output:
+        _print_add_research_task_ids(result)
+
+    if result.outcome == "started_no_wait":
+        if json_output:
+            payload: dict[str, Any] = {
+                "status": "started",
+                "task_id": result.start_task_id,
+            }
+            if result.poll_task_id and result.poll_task_id != result.start_task_id:
+                payload["poll_task_id"] = result.poll_task_id
+            json_output_response(payload)
+            return
+        console.print(
+            "[green]Research started.[/green] "
+            "Run 'notebooklm research wait --import-all' to commit "
+            "sources once it completes, otherwise the NotebookLM web "
+            "UI will keep an 'Add sources?' modal open."
+        )
+        return
+
+    if result.outcome == "no_research":
+        if json_output:
+            _exit_with_add_research_status("no_research", "Research failed to start")
+        else:
+            console.print("[red]Research failed to start[/red]")
+            exit_with_code(1)
+        return  # pragma: no cover
+
+    if result.outcome in ("failed", "timeout"):
+        message = "Research timed out" if result.outcome == "timeout" else "Research failed"
+        if json_output:
+            _exit_with_add_research_status(result.outcome, message)
+        else:
+            console.print(f"[red]{message}[/red]")
+            exit_with_code(1)
+        return  # pragma: no cover
+
+    if result.outcome == "unknown_status":
+        status_val = result.status or "unknown"
+        if json_output:
+            _exit_with_add_research_status(
+                "unknown_status",
+                f"Unexpected research status: {status_val}",
+                raw_status=status_val,
+            )
+        else:
+            console.print(f"[yellow]Status: {status_val}[/yellow]")
+            exit_with_code(1)
+        return  # pragma: no cover
+
+    # outcome == "completed"
+    if json_output:
+        completed_payload: dict[str, Any] = {
+            "status": "completed",
+            "task_id": result.poll_task_id,
+            "sources_found": len(result.sources),
+            "sources": result.sources,
+            "report": result.report,
+        }
+        import_result = result.import_result
+        if import_result is not None:
+            if import_result.cited_selection is not None:
+                completed_payload["cited_only"] = True
+                completed_payload["cited_sources_selected"] = len(import_result.sources)
+                completed_payload["cited_only_fallback"] = (
+                    import_result.cited_selection.used_fallback
+                )
+            completed_payload["imported"] = len(import_result.imported)
+            completed_payload["imported_sources"] = import_result.imported
+        json_output_response(completed_payload)
+        return
+
+    # Text mode
+    console.print()
+    display_research_sources(result.sources)
+    display_report(result.report, json_hint=False)
+    import_result = result.import_result
+    if import_result is not None:
+        console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
+
+
 @source.command("add-research")
 @click.argument("query", default="", required=False)
 @prompt_file_option
@@ -641,6 +779,7 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
         "the NotebookLM web UI is left showing an 'Add sources?' modal."
     ),
 )
+@json_option
 @with_client
 def source_add_research(
     ctx,
@@ -653,6 +792,7 @@ def source_add_research(
     cited_only,
     no_wait,
     timeout,
+    json_output,
     client_auth,
 ):
     """Search web or drive and add sources from results.
@@ -663,20 +803,28 @@ def source_add_research(
     """
     query = resolve_prompt(query, prompt_file, "query", required=True)
     if cited_only and not import_all:
-        raise click.UsageError("--cited-only requires --import-all")
+        # ADR-015 §2: under --json route through the typed envelope; preserve
+        # Click's parser-style ``UsageError`` (exit 2 with usage text) in text
+        # mode so interactive callers still see the canonical conflict prose.
+        _emit_add_research_flag_conflict(
+            "--cited-only requires --import-all", json_output=json_output
+        )
     # P1.T2 bug 7: --no-wait + --import-all is silently broken — refuse it.
     if no_wait and import_all:
-        raise click.UsageError(
+        _emit_add_research_flag_conflict(
             "--import-all requires --wait (the default) or a separate "
-            "'research wait --import-all' after --no-wait."
+            "'research wait --import-all' after --no-wait.",
+            json_output=json_output,
         )
 
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id)
-            await execute_source_add_research(
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            if not json_output:
+                console.print(f"[yellow]Starting {mode} research on {search_source}...[/yellow]")
+            result = await execute_source_add_research(
                 client,
                 SourceAddResearchPlan(
                     notebook_id=nb_id_resolved,
@@ -687,8 +835,10 @@ def source_add_research(
                     cited_only=cited_only,
                     no_wait=no_wait,
                     timeout=timeout,
+                    json_output=json_output,
                 ),
             )
+            _render_add_research_result(result, json_output=json_output)
 
     return _run()
 

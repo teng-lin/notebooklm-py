@@ -254,6 +254,16 @@ def _research_no_research(client: MagicMock) -> None:
     client.research.poll = AsyncMock(return_value={"status": "no_research"})
 
 
+def _source_add_research_start_failed(client: MagicMock) -> None:
+    """``source add-research --json`` failure: ``client.research.start`` returns falsy.
+
+    The service returns ``outcome="start_failed"`` which the command handler
+    converts to the typed JSON envelope (``VALIDATION_ERROR``, exit 1) per
+    ADR-015.
+    """
+    client.research.start = AsyncMock(return_value={})
+
+
 def _download_no_artifacts(client: MagicMock) -> None:
     # No completed artifacts of the requested kind -> the generic download path
     # returns {"error": "No completed ... artifacts found"} and now must exit 1.
@@ -441,6 +451,44 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "research_wait_no_research",
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],
         _research_no_research,
+    ),
+    # source add-research failure-to-start: ADR-015 typed envelope on the
+    # `start_failed` outcome from services/source_research.py.
+    (
+        "source_add_research_failure_json",
+        ["source", "add-research", "topic", "-n", "abc123def456ghi789jkl", "--json"],
+        _source_add_research_start_failed,
+    ),
+    # source add-research --cited-only without --import-all: post-parse
+    # UsageError site routed through the JSON envelope per ADR-015.
+    (
+        "source_research_cited_only_conflict_json",
+        [
+            "source",
+            "add-research",
+            "topic",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--cited-only",
+            "--json",
+        ],
+        None,
+    ),
+    # source add-research --no-wait with --import-all: same post-parse
+    # flag-conflict path, same ADR-015 JSON envelope.
+    (
+        "source_add_research_no_wait_import_all_conflict_json",
+        [
+            "source",
+            "add-research",
+            "topic",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--no-wait",
+            "--import-all",
+            "--json",
+        ],
+        None,
     ),
     # note + share + notebook + chat: client raising trips @with_client's json
     # error path (which already exits 1 -> regression guard).
