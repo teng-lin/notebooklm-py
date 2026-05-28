@@ -203,10 +203,10 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "pattern_a_violations": [
             ("_read_chromium_profile_cookies_from_selector", 62),
             ("_read_chromium_profile_cookies_from_selector", 81),
-            ("_read_chromium_profile_cookies_from_selector", 84),
-            ("_enumerate_chromium_profiles_fanout", 138),
-            ("_enumerate_chromium_profiles_fanout", 166),
-            ("_enumerate_chromium_profiles_fanout", 221),
+            ("_read_chromium_profile_cookies_from_selector", 86),
+            ("_enumerate_chromium_profiles_fanout", 140),
+            ("_enumerate_chromium_profiles_fanout", 168),
+            ("_enumerate_chromium_profiles_fanout", 223),
         ],
         "rationale": (
             "Chromium-profile enumeration owns presentation + exit codes "
@@ -265,10 +265,10 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         "forbidden_imports": [],
         "pattern_a_violations": [
             ("_exit_on_outcome", 74),
-            ("_confirm_profile_account_overwrite", 205),
-            ("_refresh_from_browser_cookies", 305),
-            ("_login_with_browser_cookies", 368),
-            ("_login_with_browser_cookies", 383),
+            ("_confirm_profile_account_overwrite", 203),
+            ("_refresh_from_browser_cookies", 301),
+            ("_login_with_browser_cookies", 364),
+            ("_login_with_browser_cookies", 379),
         ],
         "rationale": (
             "Browser-cookie refresh flow owns interactive confirmation, "
