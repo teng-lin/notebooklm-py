@@ -601,3 +601,27 @@ async def test_upload_file_streaming_redacts_upload_url_in_debug_logs(tmp_path) 
     assert any(
         "https://notebooklm.google.com/upload/_/?..." in message for message in debug_messages
     )
+
+
+@pytest.mark.asyncio
+async def test_cancel_upload_session_redacts_credentials_on_validation_failure() -> None:
+    client_factory = MagicMock()
+    runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
+    logger = MagicMock()
+
+    await service.cancel_upload_session(
+        "https://alice:s3cr3t@notebooklm.google.com/upload/_/?upload_id=SECRET_UPLOAD_ID",
+        "https://notebooklm.google.com",
+        "0",
+        logger=logger,
+    )
+
+    client_factory.assert_not_called()
+    debug_messages = [str(call) for call in logger.debug.call_args_list]
+    assert any(
+        "https://notebooklm.google.com/upload/_/?..." in message for message in debug_messages
+    )
+    assert all("alice" not in message for message in debug_messages)
+    assert all("s3cr3t" not in message for message in debug_messages)
+    assert all("SECRET_UPLOAD_ID" not in message for message in debug_messages)
