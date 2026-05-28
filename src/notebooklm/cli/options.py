@@ -156,9 +156,9 @@ def wait_polling_options(
 
     Args:
         default_timeout: Default value for ``--timeout`` in seconds. Each
-            command keeps its own historical default (e.g. ``generate audio``
-            uses 300, ``source wait`` uses 120) so this PR is purely
-            additive — no command changes its existing wait ceiling.
+            command supplies its own wait budget (e.g. ``generate audio``
+            uses 1200, ``source wait`` uses 120); this helper only
+            standardizes the flag wiring and help text.
         default_interval: Default value for ``--interval`` in seconds. Most
             commands use 2 to match the existing ``artifact wait`` default;
             ``source wait`` uses 1 to match its underlying

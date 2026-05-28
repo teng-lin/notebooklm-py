@@ -214,7 +214,7 @@ def generate():
 @language_option
 @multi_source_option
 @wait_option
-@wait_polling_options(default_timeout=300, default_interval=2)
+@wait_polling_options(default_timeout=1200, default_interval=2)
 @retry_option
 @json_option
 @with_client

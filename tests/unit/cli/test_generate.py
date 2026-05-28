@@ -128,6 +128,8 @@ class TestGenerateAudio:
 
             assert result.exit_code == 0
             assert "Audio ready" in result.output or "example.com" in result.output
+            kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
+            assert kwargs.get("timeout") == 1200.0
 
     def test_generate_audio_with_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`generate audio --wait --timeout 60 --interval 5` plumbs both into

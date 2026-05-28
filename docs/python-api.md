@@ -255,9 +255,9 @@ finish before `timeout`. Both subclass `ArtifactTimeoutError` and built-in
 `status_transitions` so callers can retry, fail soft, or log upstream queueing
 patterns without parsing the message.
 
-The CLI defaults to longer wait budgets for media generation (`video`: 1800s,
-`cinematic-video`: 3600s). In Python, pass the same budget explicitly with
-`wait_for_completion(..., timeout=...)`.
+The CLI defaults to longer wait budgets for media generation (`audio`: 1200s,
+`video`: 1800s, `cinematic-video`: 3600s). In Python, pass the same budget
+explicitly with `wait_for_completion(..., timeout=...)`.
 
 ##### Catching any "not found" across domains
 
@@ -1226,12 +1226,12 @@ from notebooklm import ArtifactTimeoutError
 status = await client.artifacts.generate_audio(nb_id)
 
 try:
-    # Wait with polling. Use a higher timeout for long media jobs such as
-    # video or cinematic-video.
+    # Wait with polling. Use higher timeouts for media jobs:
+    # audio=1200s, video=1800s, cinematic-video=3600s.
     final = await client.artifacts.wait_for_completion(
         nb_id,
         status.task_id,
-        timeout=300,      # Max wait time in seconds
+        timeout=1200,     # Max wait time in seconds
         initial_interval=5  # Initial seconds between polls
     )
 except ArtifactTimeoutError as exc:

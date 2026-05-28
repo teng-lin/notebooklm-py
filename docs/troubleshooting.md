@@ -267,9 +267,11 @@ URL is populated.
 **Solution:**
 - Increase the wait budget with `--timeout` or the Python
   `wait_for_completion(..., timeout=...)` argument.
-- For CLI waits, the built-in defaults are 1800s for standard video and
-  3600s for cinematic video; pass a larger `--timeout` if your account's media
-  queue is slower.
+- For `generate <kind> --wait`, the built-in media defaults are 1200s for
+  audio, 1800s for standard video, and 3600s for cinematic video; pass a
+  larger `--timeout` if your account's media queue is slower.
+- `artifact wait` is intentionally generic and still defaults to 300s; when
+  waiting manually on a media task ID, pass the matching media timeout.
 - Catch `ArtifactPendingTimeoutError` to retry queued tasks separately from
   `ArtifactInProgressTimeoutError`, which means the task started but did not
   finish before the timeout.

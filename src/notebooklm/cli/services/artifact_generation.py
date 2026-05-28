@@ -112,7 +112,9 @@ async def handle_generation_result(
         artifact_type: Display name for the artifact type (e.g., "audio", "video").
         wait: Whether to wait for completion.
         json_output: Whether to output as JSON.
-        timeout: Timeout for waiting (default: 300s).
+        timeout: Timeout forwarded to ``wait_for_completion``. Callers supply
+            per-command defaults; media generators use longer budgets while
+            generic artifact waits remain at 300s.
         interval: Polling interval in seconds. ``None`` (default) lets
             ``wait_for_completion`` use its built-in default
             (``initial_interval=2.0``); when supplied, the value is forwarded

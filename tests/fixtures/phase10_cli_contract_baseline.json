@@ -3712,10 +3712,10 @@
           }
         },
         {
-          "default": 300,
+          "default": 1200,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Maximum seconds to wait (default: 300)",
+          "help": "Maximum seconds to wait (default: 1200)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
