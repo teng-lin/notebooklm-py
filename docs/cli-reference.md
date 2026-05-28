@@ -5,7 +5,7 @@
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
-> **Exit codes:** every command follows the convention documented in [CLI Exit-Code Convention](cli-exit-codes.md) (`0` success, `1` user/app error, `2` system/unexpected, `130` SIGINT). Two commands intentionally deviate for shell control-flow use (`source stale` is inverted; `source wait` is three-way); see the doc for details.
+> **Exit codes:** every command follows the convention documented in [CLI Exit-Code Convention](cli-exit-codes.md) (`0` success, `1` user/app error, `2` system/unexpected, `130` SIGINT). Two commands intentionally deviate for shell control-flow use (`source stale --exit-on-stale` opts into an inverted predicate; `source wait` is three-way); see the doc for details.
 
 ## Command Structure
 
@@ -152,7 +152,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `get <id>` | Source ID | `--json` | `source get src123` |
 | `fulltext <id>` | Source ID | `--json`, `-o FILE`, `-f [text\|markdown]` | `source fulltext src123 -f markdown -o out.md` (`-f markdown` requires the `markdown` extra: `pip install "notebooklm-py[markdown]"` — full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)) |
 | `guide <id>` | Source ID | `--json` | `source guide src123` |
-| `stale <id>` | Source ID | `--json` | `source stale src123` (exit 0 if stale, 1 if fresh — see [exit codes](cli-exit-codes.md)) |
+| `stale <id>` | Source ID | `--exit-on-stale`, `--json` | `source stale src123` (exit 0 on success; pass `--exit-on-stale` for the back-compat inverted predicate — see [exit codes](cli-exit-codes.md)) |
 | `wait <id>` | Source ID | `--timeout`, `--interval`, `--json` | `source wait src123 --timeout 300 --interval 5` |
 | `clean` | - | `--dry-run`, `-y/--yes`, `--json` | `source clean --dry-run` |
 | `rename <id> <title>` | Source ID, new title | `--json` | `source rename src123 "New Name"` |
@@ -166,7 +166,7 @@ All `source` subcommands also accept `-n/--notebook ID` (resolves via flag > `NO
 
 `source clean` automatically removes duplicate, error, and access-blocked sources; combine with `--dry-run` to preview the candidate set first.
 
-`source stale` is a shell-friendly predicate: exit `0` means the URL/Drive source needs a refresh (`stale: true`), exit `1` means it's fresh. The semantics are inverted on `--json` too — branch on the `stale` field when the predicate-style exit code is awkward.
+`source stale` reports whether a URL/Drive source needs a refresh. By default it follows the standard CLI exit convention (`0` on success, `1` on error); branch on the JSON `stale`/`fresh` fields (or stdout text) for the freshness verdict. Pass `--exit-on-stale` to opt into the back-compat inverted predicate (`0` = stale, `1` = fresh) for shell idioms like `if notebooklm source stale --exit-on-stale ID; then refresh; fi`.
 
 ### Research Commands (`notebooklm research <cmd>`)
 
@@ -1353,19 +1353,24 @@ notebooklm source stale [OPTIONS] SOURCE_ID
 notebooklm source clean [OPTIONS]
 ```
 
-**`stale` exit codes (deliberately inverted from the rest of the CLI for shell control-flow use):**
-- `0` - source is stale (needs refresh)
-- `1` - source is fresh
-- See [CLI Exit-Code Convention](cli-exit-codes.md) for details; under `--json`, branch on the `stale` field instead of the exit code if the inversion is awkward.
+**`stale` exit codes (standard by default; opt-in inverted predicate via `--exit-on-stale`):**
+- Default: `0` on success regardless of freshness, `1` on error. Branch on the JSON `stale`/`fresh` fields (or stdout text) for the verdict.
+- With `--exit-on-stale`: `0` if stale (needs refresh), `1` if fresh — for back-compat with the `if … ; then refresh; fi` shell idiom.
+- See [CLI Exit-Code Convention](cli-exit-codes.md) for details.
 
-**`stale` options:** `-n/--notebook ID`, `--json`.
+**`stale` options:** `-n/--notebook ID`, `--exit-on-stale`, `--json`.
 
 **`clean` options:** `-n/--notebook ID`, `--dry-run` (preview the candidate set), `-y/--yes` (skip the confirmation prompt), `--json`.
 
 **Examples:**
 ```bash
-# Refresh a single stale URL source if needed
-if notebooklm source stale src_abc; then
+# Refresh a single stale URL source if needed (back-compat shell idiom)
+if notebooklm source stale --exit-on-stale src_abc; then
+  notebooklm source refresh src_abc
+fi
+
+# Default semantics: branch on JSON output instead
+if [[ "$(notebooklm source stale src_abc --json | jq -r .stale)" == "true" ]]; then
   notebooklm source refresh src_abc
 fi
 

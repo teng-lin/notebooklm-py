@@ -1503,7 +1503,12 @@ class TestSourceGuide:
 
 class TestSourceStale:
     def test_source_stale_is_stale(self, runner, mock_auth):
-        """Test exit code 0 when source is stale (needs refresh)."""
+        """Default exit code is 0 (success) when the check completes — stale branch.
+
+        The freshness result is reported on stdout; callers branch on the
+        text (or, with --json, on the ``stale`` field). See
+        docs/cli-exit-codes.md.
+        """
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -1518,12 +1523,12 @@ class TestSourceStale:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"])
 
-            assert result.exit_code == 0  # 0 = stale (condition is true)
+            assert result.exit_code == 0  # success — check completed
             assert "stale" in result.output.lower()
             assert "refresh" in result.output.lower()
 
     def test_source_stale_is_fresh(self, runner, mock_auth):
-        """Test exit code 1 when source is fresh (no refresh needed)."""
+        """Default exit code is 0 (success) when the check completes — fresh branch."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -1538,7 +1543,7 @@ class TestSourceStale:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"])
 
-            assert result.exit_code == 1  # 1 = not stale (condition is false)
+            assert result.exit_code == 0  # success — check completed
             assert "fresh" in result.output.lower()
 
 
@@ -2716,8 +2721,10 @@ class TestSourceJsonOutput:
     1. Stdout is parseable JSON (no Rich color codes leaking onto stdout).
     2. The shape exposes the fields automation needs (``source_id``,
        ``status``, etc.).
-    3. ``source stale --json`` PRESERVES the inverted exit-code semantics
-       documented in ``docs/cli-exit-codes.md`` (stale=0, fresh=1).
+    3. ``source stale --json`` follows the standard CLI exit convention
+       (0=success regardless of freshness, 1=error). The inverted
+       predicate is available as an opt-in via ``--exit-on-stale``;
+       see ``docs/cli-exit-codes.md``.
     """
 
     def _patch_fetch_tokens(self):
@@ -2930,10 +2937,11 @@ class TestSourceJsonOutput:
             assert data["notebook_id"] == "nb_123"
 
     def test_source_stale_json_is_stale_exits_zero(self, runner, mock_auth):
-        """``source stale --json`` PRESERVES the inverted exit-code semantics:
-        exit 0 when stale (predicate true), so the shell idiom
-        ``if notebooklm source stale ID; then refresh; fi`` still works in
-        JSON mode. See docs/cli-exit-codes.md.
+        """``source stale --json`` default: exit 0 on success (stale branch).
+
+        Default policy follows the standard CLI convention: exit 0 means
+        the check completed; callers branch on the ``stale``/``fresh``
+        JSON fields. See docs/cli-exit-codes.md.
         """
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -2946,7 +2954,7 @@ class TestSourceJsonOutput:
                     cli, ["source", "stale", "src_123", "-n", "nb_123", "--json"]
                 )
 
-            # Inverted exit code preserved in JSON mode.
+            # Standard exit code: success when the check completes.
             assert result.exit_code == 0, result.output
             data = json.loads(result.output)
             assert data["stale"] is True
@@ -2954,7 +2962,7 @@ class TestSourceJsonOutput:
             assert data["source_id"] == "src_123"
 
     def test_source_stale_json_is_fresh_exits_one(self, runner, mock_auth):
-        """Inverted exit-code semantics, fresh branch: exit 1 (predicate false)."""
+        """``source stale --json`` default: exit 0 on success (fresh branch)."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Fresh")])
@@ -2966,8 +2974,8 @@ class TestSourceJsonOutput:
                     cli, ["source", "stale", "src_123", "-n", "nb_123", "--json"]
                 )
 
-            # Inverted exit code preserved in JSON mode.
-            assert result.exit_code == 1, result.output
+            # Standard exit code: success when the check completes.
+            assert result.exit_code == 0, result.output
             data = json.loads(result.output)
             assert data["stale"] is False
             assert data["fresh"] is True

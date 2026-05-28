@@ -221,8 +221,26 @@ def _render_source_guide_result(result: SourceGuideResult, *, json_output: bool)
         console.print(", ".join(result.keywords))
 
 
-def _render_source_stale_result(result: SourceStaleResult, *, json_output: bool) -> None:
-    """Render ``source stale`` output and inverted predicate exit policy."""
+def _render_source_stale_result(
+    result: SourceStaleResult, *, json_output: bool, exit_on_stale: bool = False
+) -> None:
+    """Render ``source stale`` output and pick the exit-code policy.
+
+    Default policy is the standard CLI convention: exit ``0`` if the
+    freshness check succeeded (regardless of whether the source is fresh
+    or stale), exit ``1`` only if an error occurred (raised earlier via
+    ``handle_errors``). Callers branch on the JSON ``stale``/``fresh``
+    fields (or the rendered text) to decide what to do.
+
+    Passing ``exit_on_stale=True`` (CLI: ``--exit-on-stale``) opts into
+    the back-compat inverted-predicate semantics — exit ``0`` if stale,
+    ``1`` if fresh — so the shell idiom
+    ``if notebooklm source stale --exit-on-stale ID; then refresh; fi``
+    keeps working for scripts written against the prior default.
+
+    See ``docs/cli-exit-codes.md`` for the canonical exit-code table and
+    the ``source stale`` section for the inverted-predicate opt-in.
+    """
     if json_output:
         json_output_response(
             {
@@ -232,16 +250,20 @@ def _render_source_stale_result(result: SourceStaleResult, *, json_output: bool)
                 "fresh": result.is_fresh,
             }
         )
-        exit_with_code(0 if result.stale else 1)
+        if exit_on_stale:
+            exit_with_code(0 if result.stale else 1)
         return
 
     if result.is_fresh:
         console.print("[green]✓ Source is fresh[/green]")
-        exit_with_code(1)
+        if exit_on_stale:
+            exit_with_code(1)
+        return
 
     console.print("[yellow]⚠ Source is stale[/yellow]")
     console.print("[dim]Run 'source refresh' to update[/dim]")
-    exit_with_code(0)
+    if exit_on_stale:
+        exit_with_code(0)
 
 
 @click.group()
@@ -735,16 +757,33 @@ def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
 @source.command("stale")
 @click.argument("source_id")
 @notebook_option
+@click.option(
+    "--exit-on-stale",
+    is_flag=True,
+    default=False,
+    help=(
+        "Use inverted predicate exit codes (0=stale, 1=fresh) for "
+        "back-compat with ``if notebooklm source stale ID; then refresh; fi`` "
+        "shell idioms. By default the command follows the standard CLI "
+        "convention (0=success, 1=error); branch on the JSON ``stale`` "
+        "field for the freshness result."
+    ),
+)
 @json_option
 @with_client
-def source_stale(ctx, source_id, notebook_id, json_output, client_auth):
+def source_stale(ctx, source_id, notebook_id, exit_on_stale, json_output, client_auth):
     """Check if a URL/Drive source needs refresh.
 
-    Exit 0 if stale (needs refresh), 1 if fresh — enables shell scripting
-    ``if notebooklm source stale ID; then refresh; fi``. Inverted exit-code
-    semantics are intentional and apply to ``--json`` too (see
-    docs/cli-exit-codes.md). Branch on the JSON ``stale`` field when the
-    predicate-style exit code is awkward.
+    Default exit codes follow the standard CLI convention: ``0`` when the
+    freshness check completes (regardless of the result), ``1`` on error
+    (validation, auth, network, not-found, etc.). Branch on the JSON
+    ``stale`` field (or stdout text) to decide whether to refresh.
+
+    Pass ``--exit-on-stale`` to opt into the back-compat inverted-predicate
+    semantics — exit ``0`` if stale, ``1`` if fresh — so the shell idiom
+    ``if notebooklm source stale --exit-on-stale ID; then refresh; fi``
+    keeps working for scripts written against the prior default. See
+    ``docs/cli-exit-codes.md`` for the full rationale.
     """
     nb_id = require_notebook(notebook_id)
 
@@ -761,7 +800,9 @@ def source_stale(ctx, source_id, notebook_id, json_output, client_auth):
                     source_id=resolved_id,
                 ),
             )
-            _render_source_stale_result(result, json_output=json_output)
+            _render_source_stale_result(
+                result, json_output=json_output, exit_on_stale=exit_on_stale
+            )
 
     return _run()
 

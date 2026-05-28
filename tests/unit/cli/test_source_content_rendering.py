@@ -172,6 +172,47 @@ def test_source_guide_populated_renderer_strips_keywords(
 
 
 @pytest.mark.parametrize(
+    ("is_fresh", "json_output", "expected_stale"),
+    [
+        (False, False, True),
+        (True, False, False),
+        (False, True, True),
+        (True, True, False),
+    ],
+)
+def test_source_stale_renderer_default_exits_zero_on_success(
+    runner: CliRunner,
+    mock_auth,
+    is_fresh: bool,
+    json_output: bool,
+    expected_stale: bool,
+) -> None:
+    """Default policy: exit 0 on a successful freshness check regardless of verdict.
+
+    The verdict is communicated through stdout text (or the JSON
+    ``stale``/``fresh`` fields) — callers branch on that, not the exit
+    code. See ``docs/cli-exit-codes.md`` and the ``--exit-on-stale``
+    flag for the back-compat inverted predicate.
+    """
+    client = _client_resolving_source()
+    client.sources.check_freshness = AsyncMock(return_value=is_fresh)
+    args = ["source", "stale", "src_1", "-n", "nb_123"]
+    if json_output:
+        args.append("--json")
+
+    with _patched_source_client(client):
+        result = runner.invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    if json_output:
+        payload = json.loads(result.output)
+        assert payload["stale"] is expected_stale
+        assert payload["fresh"] is is_fresh
+    else:
+        assert ("stale" if expected_stale else "fresh") in result.output.lower()
+
+
+@pytest.mark.parametrize(
     ("is_fresh", "json_output", "expected_exit", "expected_stale"),
     [
         (False, False, 0, True),
@@ -180,7 +221,7 @@ def test_source_guide_populated_renderer_strips_keywords(
         (True, True, 1, False),
     ],
 )
-def test_source_stale_renderer_preserves_inverted_exit_codes(
+def test_source_stale_renderer_exit_on_stale_flag_inverts_exit_codes(
     runner: CliRunner,
     mock_auth,
     is_fresh: bool,
@@ -188,9 +229,10 @@ def test_source_stale_renderer_preserves_inverted_exit_codes(
     expected_exit: int,
     expected_stale: bool,
 ) -> None:
+    """``--exit-on-stale`` opts into back-compat inverted predicate semantics."""
     client = _client_resolving_source()
     client.sources.check_freshness = AsyncMock(return_value=is_fresh)
-    args = ["source", "stale", "src_1", "-n", "nb_123"]
+    args = ["source", "stale", "src_1", "-n", "nb_123", "--exit-on-stale"]
     if json_output:
         args.append("--json")
 

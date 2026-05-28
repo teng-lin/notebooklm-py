@@ -9142,6 +9142,24 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "Use inverted predicate exit codes (0=stale, 1=fresh) for back-compat with ``if notebooklm source stale ID; then refresh; fi`` shell idioms. By default the command follows the standard CLI convention (0=success, 1=error); branch on the JSON ``stale`` field for the freshness result.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "exit_on_stale",
+          "opts": [
+            "--exit-on-stale"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output as JSON",
           "is_flag": true,
           "kind": "option",

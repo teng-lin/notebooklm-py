@@ -119,45 +119,63 @@ when the parser fires.
 
 ## Intentional exceptions to the standard convention
 
-Two commands deliberately invert or extend the standard codes because their
-primary use case is shell control flow. **These are by design and will not
-change.** Code referencing them should comment the inverted semantics.
+Two commands deliberately extend the standard codes (or expose an opt-in
+inversion) because their primary use case is shell control flow. Code
+referencing them should comment the inverted/extended semantics. Both
+exceptions are stable contracts: `source wait`'s three-way exit (`0`/`1`/`2`)
+is by design and will not change; `source stale` follows the standard
+convention by default and only inverts when callers explicitly pass
+`--exit-on-stale`.
 
-### `notebooklm source stale <SOURCE_ID>` — inverted
+### `notebooklm source stale <SOURCE_ID>` — opt-in inverted predicate
 
-Implemented by `source_stale` in
-[`src/notebooklm/cli/source.py`](../src/notebooklm/cli/source.py) (around
-line 1146 at the time of writing).
+Implemented by `source_stale` + `_render_source_stale_result` in
+[`src/notebooklm/cli/source_cmd.py`](../src/notebooklm/cli/source_cmd.py).
+Default behavior was previously the inverted predicate (`0=stale, 1=fresh`)
+but has been standardised; the inversion is now an explicit opt-in via
+`--exit-on-stale`.
+
+Default (no flag) — standard CLI convention:
+
+| Exit | Meaning |
+|------|---------|
+| `0`  | Freshness check succeeded (source may be **stale** or **fresh** — branch on stdout text or, with `--json`, on the `stale`/`fresh` fields) |
+| `1`  | Error (auth, network, validation, unresolvable source ID, etc. — raised by `handle_errors`) |
+
+Opt-in with `--exit-on-stale` — back-compat inverted predicate:
 
 | Exit | Meaning |
 |------|---------|
 | `0`  | Source is **stale** (needs `source refresh`) |
-| `1`  | Source is **fresh** (no action required) |
+| `1`  | Source is **fresh** **or** an error occurred (ambiguous — see below) |
 
-The inversion lets you write the natural shell idiom:
+The inversion preserves the natural shell idiom for callers that depend on it:
 
 ```bash
-if notebooklm source stale "$SRC_ID"; then
+if notebooklm source stale --exit-on-stale "$SRC_ID"; then
     notebooklm source refresh "$SRC_ID"
 fi
 ```
 
-A `0` exit reads as "yes, the predicate (stale) holds, run the body" — the
-same convention as `test`, `grep -q`, etc.
+A `0` exit (with `--exit-on-stale`) reads as "yes, the predicate (stale)
+holds, run the body" — the same convention as `test`, `grep -q`, etc.
 
-> **Important — exit-1 ambiguity.** `source stale` is wrapped by the
-> standard `handle_errors` context, so `AuthError`, `NetworkError`,
-> `ValidationError`, an unresolvable source ID, etc. *also* exit `1` and are
-> indistinguishable from "source is fresh" by exit code alone. The naive
-> `if`-chain above will silently skip the refresh body on an auth/network
-> outage. For unattended scripts, validate the session first
-> (`notebooklm status` or `notebooklm auth check`), wrap with `|| die "..."`
-> on the predicate, or check `source get` succeeds before relying on the
-> staleness verdict.
+> **Important — exit-1 ambiguity (only with `--exit-on-stale`).** The
+> command is wrapped by the standard `handle_errors` context, so
+> `AuthError`, `NetworkError`, `ValidationError`, an unresolvable source
+> ID, etc. *also* exit `1` under `--exit-on-stale` and are indistinguishable
+> from "source is fresh" by exit code alone. The naive `if`-chain above
+> will silently skip the refresh body on an auth/network outage. For
+> unattended scripts, validate the session first (`notebooklm status` or
+> `notebooklm auth check`), wrap with `|| die "..."` on the predicate, or
+> branch on the JSON `stale`/`fresh` fields with the default (non-opt-in)
+> semantics where success and freshness verdict are decoupled.
 
-Note: under `set -e` the `1` exit when the source is fresh will abort the
-script. Use the predicate inside an `if`/`elif`/`||` (as above), which
-shell's errexit explicitly excludes, or `set +e` around the call.
+Note: under `set -e` the `1` exit (when fresh, with `--exit-on-stale`)
+will abort the script. Use the predicate inside an `if`/`elif`/`||` (as
+above), which shell's errexit explicitly excludes, or `set +e` around the
+call. The default semantics (no flag) do not have this hazard — the
+command exits `0` on success regardless of freshness.
 
 ### `notebooklm source wait <SOURCE_ID>` — three-way
 
@@ -341,3 +359,31 @@ The `download` command group routes all `download` exception paths through `hand
 - [Troubleshooting](troubleshooting.md) — interpreting common errors
 - [`src/notebooklm/cli/error_handler.py`](../src/notebooklm/cli/error_handler.py)
   — canonical implementation
+
+## Exit code semantics
+
+This is the normative one-line summary of the convention every
+`notebooklm` CLI command obeys unless it appears in the
+[Intentional exceptions](#intentional-exceptions-to-the-standard-convention)
+section above.
+
+| Code | Semantic meaning |
+|------|------------------|
+| `0`  | The command succeeded as documented — the requested effect was carried out and any reported result is authoritative. |
+| `1`  | The command failed, **or** the queried target was not found. Both share exit `1` because automation typically wants the same control-flow branch (`if !` / `case 1)`); JSON mode (`--json`) distinguishes them via the typed `code` field (`NOT_FOUND` vs. `AUTH_ERROR` vs. `VALIDATION_ERROR`, etc.). |
+| `2`  | Click parser-time error — argv could not be parsed into a valid command invocation (unknown flag, type-validation failure, missing required argument). See the [parser-time row in the Exception → exit-code mapping](#exception--exit-code-mapping) for the full Click behavior; this entry exists to call out that `2` is **not** a post-parse code in the default case. Post-parse `ClickException` is contracted by [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) to route through the typed JSON envelope and exit `1`, not `2`. The same code is also raised when `handle_errors` catches an unhandled non-`NotebookLMError` exception (likely a bug — see the [Standard exit codes](#standard-exit-codes) table). |
+
+Two commands deliberately deviate from this baseline because their primary
+use case is shell control flow:
+
+- `source wait` extends the table with `2` = timeout (a recoverable condition,
+  not a bug — the only command where `2` is not a parser-time error). See
+  [`notebooklm source wait`](#notebooklm-source-wait-source_id--three-way).
+- `source stale` offers an opt-in inverted predicate via `--exit-on-stale`
+  (`0=stale, 1=fresh`) for back-compat with the `if … ; then refresh; fi`
+  idiom. The default now follows the standard convention. See
+  [`notebooklm source stale`](#notebooklm-source-stale-source_id--opt-in-inverted-predicate).
+
+`130` (Ctrl-C / SIGINT) is signal-driven and orthogonal to the
+success/failure axis; it is documented in the
+[Standard exit codes](#standard-exit-codes) table above.
