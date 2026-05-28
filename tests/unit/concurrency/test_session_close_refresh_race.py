@@ -9,21 +9,35 @@ lingering coroutine that pytest's
 "coroutine was never awaited" detector flagged at GC time.
 
 The fix is a small block in :meth:`ClientLifecycle.close` between
-keepalive teardown and ``save_cookies``:
+keepalive teardown and ``save_cookies``. The original inlined block
+(pre-Wave-1 of plan ``host-protocol-removal``) was::
 
     if host._auth_coord._refresh_task and not host._auth_coord._refresh_task.done():
         host._auth_coord._refresh_task.cancel()
         await asyncio.gather(host._auth_coord._refresh_task, return_exceptions=True)
 
-That block:
+Wave 1 of plan ``host-protocol-removal`` encapsulated that block behind
+:meth:`AuthRefreshCoordinator.cancel_inflight_refresh` so the lifecycle
+never reaches into the private ``_refresh_task`` slot. The close path
+now reads as::
+
+    await host._auth_coord.cancel_inflight_refresh()
+
+The encapsulating method preserves every aspect of the original block:
+
 1. Cancels the in-flight refresh task so the shared single-flight refresh
    wave unwinds cleanly.
 2. Awaits the cancellation via ``gather(..., return_exceptions=True)`` so
    ``CancelledError`` does not propagate out of ``close()``.
 3. Sits BEFORE the cookie save / shielded aclose so the refresh callback
    never observes a half-closed transport.
+4. PRESERVES ``self._refresh_task`` after the cancel — sibling waiters
+   joined to the same single-flight refresh still observe the shared task.
 
-These tests exercise both the cancel and the no-cancel-needed paths.
+These tests exercise both the cancel and the no-cancel-needed paths from
+the lifecycle entry point; the focused unit tests of
+:meth:`AuthRefreshCoordinator.cancel_inflight_refresh` itself live in
+``tests/unit/test_session_auth.py``.
 """
 
 from __future__ import annotations

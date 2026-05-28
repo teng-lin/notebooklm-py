@@ -339,5 +339,52 @@ class AuthRefreshCoordinator:
 
         await asyncio.shield(refresh_task)
 
+    async def cancel_inflight_refresh(self) -> None:
+        """Cancel any in-flight refresh task during ``ClientLifecycle.close``.
+
+        Mirrors the legacy close block previously inlined in
+        :meth:`ClientLifecycle.close` (Wave 1 of plan ``host-protocol-removal``)
+        so the lifecycle never touches the private ``_refresh_task`` slot
+        on this coordinator:
+
+        - **No-op** when ``_refresh_task is None`` — a freshly-opened client
+          that never triggered an auth refresh has no task to cancel.
+        - **No-op** when ``_refresh_task.done()`` — a refresh wave that
+          already finished must not be re-cancelled (it would be harmless
+          but ``gather(return_exceptions=True)`` would still log noise).
+        - **Cancel** an unfinished task and ``await`` it via
+          ``asyncio.gather(..., return_exceptions=True)`` so the resulting
+          :class:`asyncio.CancelledError` is absorbed and ``close()`` itself
+          stays non-raising in the normal racing case.
+
+        Slot-preservation invariant (CRITICAL — load-bearing): the
+        ``self._refresh_task`` slot is INTENTIONALLY left intact after a
+        cancel. Sibling waiters joined to the same single-flight refresh
+        (see :meth:`await_refresh` and the ``asyncio.shield`` it wraps
+        around the join) read the slot to identify the shared task; clearing
+        it here would break the concurrency invariant pinned by
+        ``tests/unit/test_session_auth.py::test_await_refresh_cancellation_preserves_task_slot``.
+        The slot is replaced only on the NEXT refresh wave once the current
+        task transitions to ``done()`` — never here, never in close.
+
+        Behavior is identical to the pre-Wave-1 inlined block:
+
+            refresh_task = host._auth_coord._refresh_task
+            if refresh_task is not None and not refresh_task.done():
+                refresh_task.cancel()
+                await asyncio.gather(refresh_task, return_exceptions=True)
+
+        Regression coverage:
+        ``tests/unit/concurrency/test_session_close_refresh_race.py`` and
+        the three focused unit tests added with this method in
+        ``tests/unit/test_session_auth.py`` (the two companion
+        ``reset_after_open`` tests for :class:`TransportDrainTracker` live
+        in ``tests/unit/test_session_lifecycle.py``).
+        """
+        refresh_task = self._refresh_task
+        if refresh_task is not None and not refresh_task.done():
+            refresh_task.cancel()
+            await asyncio.gather(refresh_task, return_exceptions=True)
+
 
 __all__ = ["AuthRefreshCoordinator"]

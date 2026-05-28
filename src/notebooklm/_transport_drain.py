@@ -126,6 +126,30 @@ class TransportDrainTracker:
         """
         self._bound_loop = loop
 
+    def reset_after_open(self) -> None:
+        """Clear the drain flag so a reopened client admits new transport work.
+
+        Called from :meth:`ClientLifecycle.open` (immediately after the
+        per-collaborator ``set_bound_loop`` propagation and before the
+        ``Kernel.open`` await) so a previously-drained-then-reopened client
+        admits new top-level operations again. Encapsulates the legacy
+        direct write ``host._drain_tracker._draining = False`` (Wave 1 of
+        plan ``host-protocol-removal``) so the lifecycle never touches the
+        private ``_draining`` field on this collaborator.
+
+        Deliberately narrow: this resets ONLY the ``_draining`` flag. The
+        ``_in_flight_posts`` counter, ``_operation_depths`` map, and lazily
+        bound ``_drain_condition`` are left untouched — clearing those would
+        break the load-bearing in-flight bookkeeping invariants asserted by
+        ``tests/unit/test_observability.py::test_drain_allows_nested_work_inside_accepted_operation``
+        and ``tests/unit/concurrency/test_close_cancellation_leak.py``.
+        Field-level locking is intentionally not used here: the legacy
+        direct write was an unlocked assignment, asyncio is single-threaded,
+        and the assignment is atomic in CPython — adding a condition acquire
+        would only serialise a no-op against in-flight transport begins.
+        """
+        self._draining = False
+
     def get_drain_condition(self) -> asyncio.Condition:
         """Return the per-instance drain ``asyncio.Condition``, creating it lazily.
 

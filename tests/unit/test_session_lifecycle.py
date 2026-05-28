@@ -53,6 +53,7 @@ from notebooklm._session_lifecycle import (
     _default_cookie_rotator,
     _default_cookie_saver,
 )
+from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 
@@ -66,10 +67,11 @@ class _StubHost:
     * ``auth`` — a real :class:`AuthTokens` so :meth:`ClientLifecycle.open`
       can read ``cookies`` / ``cookie_jar`` / ``storage_path``.
     * ``_metrics_obj`` / ``_drain_tracker`` / ``_auth_coord`` / ``_reqid`` —
-      ``MagicMock``s; the lifecycle touches
-      ``_drain_tracker._draining = False`` and calls ``set_bound_loop`` on
-      each of the three helpers (drain / reqid / auth_coord) from the
-      open() path so cross-loop misuse can be caught.
+      ``MagicMock``s; the lifecycle calls
+      ``_drain_tracker.reset_after_open()`` (Wave 1 of host-protocol-removal
+      replaced the legacy direct ``_drain_tracker._draining = False`` write)
+      and ``set_bound_loop`` on each of the three helpers (drain / reqid /
+      auth_coord) from the open() path so cross-loop misuse can be caught.
     * ``cookie_persistence`` — a ``MagicMock`` with an async ``save``
       coroutine; assertions check it was called with the right args.
     * ``_drain_tracker.run_drain_hooks`` — called by close(); set to an
@@ -93,16 +95,31 @@ class _StubHost:
         )
         self._metrics_obj = MagicMock()
         self._drain_tracker = MagicMock()
-        self._drain_tracker._draining = True  # so we can assert open() resets it
+        # ``open()`` calls ``host._drain_tracker.reset_after_open()`` (Wave 1
+        # of host-protocol-removal — the encapsulated form of the legacy
+        # ``_drain_tracker._draining = False`` write). The ``MagicMock``
+        # default lets the call land without configuring a side effect; the
+        # invocation is asserted by ``test_open_captures_bound_loop_and_resets_drain``.
+        # Seed ``_draining = True`` so a future regression that re-introduces
+        # a direct field read in the lifecycle would still see "drained".
+        self._drain_tracker._draining = True
         # Wave 2 of session-decoupling: drain hooks live on the tracker.
         # ``close()`` calls ``host._drain_tracker.run_drain_hooks()`` so the
         # mock needs an async implementation.
         self._drain_tracker.run_drain_hooks = AsyncMock()
         self._auth_coord = MagicMock()
-        # ``_auth_coord._refresh_task`` is checked by ``close()`` (P0-1).
-        # Default to ``None`` so the cancel branch is skipped; tests that
-        # exercise the in-flight-refresh path overwrite it.
+        # Wave 1 of host-protocol-removal: ``close()`` no longer reads the
+        # private ``_refresh_task`` slot directly — it calls the awaitable
+        # ``cancel_inflight_refresh`` method on the coordinator. Default
+        # ``MagicMock()`` would return a non-awaitable, so the stub needs an
+        # ``AsyncMock`` for that method. The real coordinator handles the
+        # no-op / already-done / in-flight branches internally (covered by
+        # the focused unit tests in ``tests/unit/test_session_auth.py``).
+        # ``_refresh_task`` is kept as ``None`` on the stub for
+        # forward-compatibility with any future test that probes the slot
+        # directly (the lifecycle itself no longer reads it).
         self._auth_coord._refresh_task = None
+        self._auth_coord.cancel_inflight_refresh = AsyncMock()
         # ``_reqid`` is targeted by ``set_bound_loop`` from open() (P0-2).
         self._reqid = MagicMock()
         self.cookie_persistence = MagicMock()
@@ -164,17 +181,34 @@ async def test_open_idempotent_preserves_existing_client() -> None:
 
 @pytest.mark.asyncio
 async def test_open_captures_bound_loop_and_resets_drain() -> None:
-    """``open()`` binds the running loop and clears the host drain flag."""
+    """``open()`` binds the running loop and calls ``reset_after_open`` on the tracker.
+
+    Wave 1 of plan ``host-protocol-removal`` encapsulated the legacy
+    direct write ``host._drain_tracker._draining = False`` behind
+    :meth:`TransportDrainTracker.reset_after_open`. The lifecycle's
+    obligation is now to CALL that method on every ``open()``; the
+    method's own behavior (clearing ``_draining`` while leaving
+    in-flight counters intact) is pinned by the focused unit tests
+    further down in this file.
+
+    Stubs ``host._drain_tracker`` as a ``MagicMock`` so this test
+    captures the call without depending on a real
+    :class:`TransportDrainTracker`. The companion full-stack
+    open-then-close test that exercises a real tracker lives in
+    ``tests/integration/`` (and the AST-guarded lint forbids any
+    lifecycle code from writing to ``_draining`` directly outside the
+    tracker itself, see the acceptance-criteria ``rg`` check in the
+    plan).
+    """
     lifecycle = _make_lifecycle()
     host = _StubHost()
-    assert host._drain_tracker._draining is True
     assert lifecycle._bound_loop is None
 
     await lifecycle.open(host)
 
     assert lifecycle._bound_loop is asyncio.get_running_loop()
     assert lifecycle.get_bound_loop() is asyncio.get_running_loop()
-    assert host._drain_tracker._draining is False
+    host._drain_tracker.reset_after_open.assert_called_once_with()
 
     await lifecycle.close(host)
 
@@ -694,3 +728,92 @@ def test_init_wires_default_seams_when_none_supplied() -> None:
     )
     assert custom_lifecycle._cookie_saver is custom_saver
     assert custom_lifecycle._cookie_rotator is custom_rotator
+
+
+# ---------------------------------------------------------------------------
+# TransportDrainTracker.reset_after_open — Wave 1 of host-protocol-removal
+# encapsulated ``host._drain_tracker._draining = False`` (previously written
+# directly by ``ClientLifecycle.open``) behind a method on the tracker. The
+# method is intentionally narrow: it clears ONLY the ``_draining`` flag and
+# leaves in-flight counters / depth maps untouched. These two tests pin
+# both halves of that contract on the collaborator directly so a regression
+# in the tracker is caught without driving the full lifecycle open() path.
+# ---------------------------------------------------------------------------
+
+
+def test_drain_tracker_reset_after_open_clears_draining_flag() -> None:
+    """``reset_after_open`` flips ``_draining`` from ``True`` back to ``False``.
+
+    Pins the encapsulation of the legacy
+    ``host._drain_tracker._draining = False`` write performed inside
+    ``ClientLifecycle.open``. The behavior is the same — a tracker that was
+    previously drained, then re-opened, admits new top-level work again —
+    just routed through a named method instead of a direct field write.
+    """
+    tracker = TransportDrainTracker()
+    tracker._draining = True
+
+    tracker.reset_after_open()
+
+    assert tracker._draining is False
+
+
+@pytest.mark.asyncio
+async def test_drain_tracker_reset_after_open_does_not_touch_inflight_counts() -> None:
+    """``reset_after_open`` ONLY clears ``_draining`` — every other piece
+    of bookkeeping state is left intact.
+
+    Pins the "intentionally narrow" half of the encapsulation. If a
+    well-meaning maintainer "helpfully" expanded this method to also zero
+    ``_in_flight_posts`` or reset / clear ``_operation_depths``, the
+    load-bearing in-flight invariants asserted by
+    ``tests/unit/test_observability.py::test_drain_allows_nested_work_inside_accepted_operation``
+    and ``tests/unit/concurrency/test_close_cancellation_leak.py`` would
+    break. This regression test catches that expansion at the tracker
+    level so the failure points at the right code rather than surfacing
+    as a confusing in-flight count mismatch elsewhere.
+
+    Seeds an actual operation-depth entry (not just an identity-stable
+    empty map) so a regression that calls
+    ``self._operation_depths.clear()`` — which would preserve map identity
+    but wipe the contents — also fails this test. Async-marked so the
+    seeded task ``asyncio.current_task()`` returns a real task to key the
+    WeakKeyDictionary on.
+    """
+    tracker = TransportDrainTracker()
+    tracker._draining = True
+    # Seed non-default values so the assertions below would fail loudly
+    # if ``reset_after_open`` overwrote them.
+    tracker._in_flight_posts = 3
+    seed_task = asyncio.current_task()
+    assert seed_task is not None, "test runs under @pytest.mark.asyncio"
+    tracker._operation_depths[seed_task] = 2
+    pre_depths_id = id(tracker._operation_depths)
+
+    async def _drain_hook() -> None:
+        return None
+
+    tracker.register_drain_hook("seed_hook", _drain_hook)
+
+    tracker.reset_after_open()
+
+    assert tracker._draining is False, "the one flag this method *does* clear"
+    assert tracker._in_flight_posts == 3, (
+        "reset_after_open must not touch _in_flight_posts — clearing it "
+        "would lose track of in-flight operations and let drain() return "
+        "prematurely on the next close()."
+    )
+    assert id(tracker._operation_depths) == pre_depths_id, (
+        "reset_after_open must preserve the _operation_depths "
+        "WeakKeyDictionary identity — replacing it would orphan per-task "
+        "depth bookkeeping for already-admitted operations."
+    )
+    assert tracker._operation_depths.get(seed_task) == 2, (
+        "reset_after_open must not clear() _operation_depths contents — "
+        "a regression that wiped per-task depths would reject already-"
+        "admitted nested operations after the next open()."
+    )
+    assert "seed_hook" in tracker._drain_hooks, (
+        "reset_after_open must not touch registered drain hooks; feature "
+        "code registers them at construction-time on the tracker."
+    )

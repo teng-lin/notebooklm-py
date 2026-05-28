@@ -343,9 +343,13 @@ class ClientLifecycle:
         host._reqid.set_bound_loop(self._bound_loop)
         host._auth_coord.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
-        # admits new transport work again. Direct attribute write mirrors the
-        # legacy ``self._draining = False`` line.
-        host._drain_tracker._draining = False
+        # admits new transport work again. Wave 1 of plan
+        # ``host-protocol-removal`` encapsulated the legacy direct write
+        # ``host._drain_tracker._draining = False`` behind a method on the
+        # tracker so the lifecycle never reaches into private collaborator
+        # fields; the method is intentionally narrow (clears ``_draining``
+        # only, leaves in-flight counters intact — see its docstring).
+        host._drain_tracker.reset_after_open()
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns
@@ -431,15 +435,16 @@ class ClientLifecycle:
             # racing against close would survive the close path and continue
             # holding the now-torn-down ``httpx.AsyncClient``, surfacing as a
             # confusing httpx error or a "coroutine was never awaited" GC
-            # warning. ``gather(..., return_exceptions=True)`` absorbs the
-            # ``CancelledError`` so close itself stays non-raising. We check
-            # both ``is None`` (no refresh has ever fired) and ``done()`` (a
-            # successful refresh wave already finished) so the cancel is a
-            # true no-op outside the racing case.
-            refresh_task = host._auth_coord._refresh_task
-            if refresh_task is not None and not refresh_task.done():
-                refresh_task.cancel()
-                await asyncio.gather(refresh_task, return_exceptions=True)
+            # warning. Wave 1 of plan ``host-protocol-removal`` encapsulated
+            # the cancel+gather block behind a method on the coordinator so
+            # the lifecycle never reaches into the private ``_refresh_task``
+            # slot; the method preserves both ``is None`` and ``done()``
+            # short-circuits (true no-op outside the racing case) AND the
+            # critical slot-preservation invariant (the ``_refresh_task``
+            # slot is NOT cleared on cancel — sibling waiters joined to the
+            # same single-flight refresh still observe the shared task).
+            # See :meth:`AuthRefreshCoordinator.cancel_inflight_refresh`.
+            await host._auth_coord.cancel_inflight_refresh()
 
             await host._drain_tracker.run_drain_hooks()
 
