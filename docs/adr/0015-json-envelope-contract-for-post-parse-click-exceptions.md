@@ -53,7 +53,7 @@ The CLI audit (`.sisyphus/plans/cli-audit-2026-05-27.md`, the **P1#2
 "command-body `UsageError`/`BadParameter` bypass"** finding at lines 54-90)
 enumerated post-parse raise sites that ride this bypass:
 
-- `src/notebooklm/cli/services/download.py:257` — `--include` / `--exclude`
+- `src/notebooklm/cli/services/download.py:257` — `--force` / `--no-clobber`
   conflict
 - `src/notebooklm/cli/services/generate.py:394` — `--style custom` requires
   `--style-prompt`
