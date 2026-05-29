@@ -39,6 +39,22 @@ def test_cache_conversation_turn_lru_evicts_least_recently_used() -> None:
     ]
 
 
+def test_cache_conversation_turn_max_size_one_keeps_only_latest() -> None:
+    cache = ConversationCache()
+
+    cache.cache_conversation_turn("conv-1", "q1", "a1", 1, max_size=1)
+    assert list(cache.conversations) == ["conv-1"]
+
+    # Each new conversation evicts the sole prior entry; the cache always
+    # holds exactly one conversation.
+    cache.cache_conversation_turn("conv-2", "q2", "a2", 1, max_size=1)
+    assert list(cache.conversations) == ["conv-2"]
+    assert cache.get_cached_conversation("conv-1") == []
+    assert cache.get_cached_conversation("conv-2") == [
+        {"query": "q2", "answer": "a2", "turn_number": 1}
+    ]
+
+
 def test_get_cached_conversation_promotes_to_most_recently_used() -> None:
     cache = ConversationCache()
 
