@@ -399,9 +399,12 @@ def _raise_chat_error_frame(item: list) -> None:
     frames when the RPC itself failed. The previous parser only inspected
     ``"wrb.fr"`` frames and silently skipped these, so a real server-side
     chat error collapsed into the generic ``ChatResponseParseError`` (or an
-    empty answer). Threading the ``code`` slot through ``safe_index`` keeps
-    the read drift-aware; the embedded code/message is included verbatim so
-    callers see the actual failure instead of a generic parse error.
+    empty answer). The optional ``code`` slot is read with an explicit length
+    guard rather than ``safe_index`` (see the inline comment below): an absent
+    code is normal for a short ``"er"`` frame and must not be treated as schema
+    drift, since the frame is itself the error signal. The embedded code is
+    echoed verbatim so callers see the actual failure instead of a generic
+    parse error.
     """
     # The error code is optional enrichment — its absence must not be treated
     # as schema drift (an ``"er"`` frame is itself the error signal), so read
