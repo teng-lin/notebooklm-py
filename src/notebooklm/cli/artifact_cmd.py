@@ -278,6 +278,24 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
                 resolved_id = await resolve_artifact_id(
                     client, nb_id_resolved, artifact_id, json_output=json_output
                 )
+
+                # In JSON mode, refuse to prompt: ``click.confirm`` writes to
+                # stdout, which would corrupt the parseable JSON contract callers
+                # rely on. Require --yes and emit a structured error otherwise.
+                if json_output and not yes:
+                    _output_error(
+                        "Pass --yes to confirm deletion in --json mode",
+                        code="VALIDATION_ERROR",
+                        json_output=json_output,
+                        exit_code=1,
+                        extra={
+                            "id": resolved_id,
+                            "notebook_id": nb_id_resolved,
+                            "deleted": False,
+                        },
+                    )
+                    raise AssertionError("unreachable")  # pragma: no cover
+
                 return {
                     "notebook_id": nb_id_resolved,
                     "artifact_id": resolved_id,

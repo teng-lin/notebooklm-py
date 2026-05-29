@@ -589,8 +589,10 @@ class TestArtifactDelete:
             data = json.loads(result.output)
             assert data == {"id": "art_123", "deleted": True}
 
-    def test_artifact_delete_json_without_yes_does_not_prompt(self, runner, mock_auth):
-        """Current JSON contract treats --json as non-interactive execution."""
+    def test_artifact_delete_json_without_yes_emits_structured_error_no_prompt(
+        self, runner, mock_auth
+    ):
+        """`artifact delete --json` without `--yes` refuses instead of deleting."""
         with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
@@ -613,10 +615,16 @@ class TestArtifactDelete:
                     cli, ["artifact", "delete", "art_123", "-n", "nb_123", "--json"]
                 )
 
-            assert result.exit_code == 0
-            assert json.loads(result.output) == {"id": "art_123", "deleted": True}
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "VALIDATION_ERROR"
+            assert "--yes" in data["message"]
+            assert data["id"] == "art_123"
+            assert data["notebook_id"] == "nb_123"
+            assert data["deleted"] is False
             mock_confirm.assert_not_called()
-            mock_client.artifacts.delete.assert_called_once_with("nb_123", "art_123")
+            mock_client.artifacts.delete.assert_not_called()
 
     def test_artifact_delete_mind_map_json_output(self, runner, mock_auth):
         """`artifact delete --json` flags mind-map carve-out in the payload."""

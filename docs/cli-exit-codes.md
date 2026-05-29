@@ -293,13 +293,12 @@ race where partial-resolve succeeds but the subsequent `get` returns
 The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id`
 as a `ClickException`) was already exit `1` and is unchanged.
 
-### `note delete --json` without `--yes`, `note rename` race exit `1` (was `0`) ✅ **Landed**
+### `note`/`artifact delete --json` without `--yes`, `note rename` race exit `1` (was `0`) ✅ **Landed**
 
-Two parallel surgical fixes to `cli/note.py` matching the broader `--json`
-exit-code convention pinned by the prior `get`-on-not-found change. Both
-cases previously emitted a `{"<verb>ed": false, "error": ...}` payload on
-exit `0`, which passed silently in `set -e` / `check_call`-style scripts
-branching on the exit code.
+These surgical fixes match the broader `--json` exit-code convention pinned
+by the prior `get`-on-not-found change. The affected cases previously emitted
+a `{"<verb>ed": false, "error": ...}` payload on exit `0`, which passed
+silently in `set -e` / `check_call`-style scripts branching on the exit code.
 
 `notebooklm note delete <id> --json` without `--yes` cannot prompt (it would
 corrupt the parseable-JSON contract callers depend on), but it must also not
@@ -317,6 +316,12 @@ appear to succeed. The command now emits the standard typed envelope:
 
 on stdout and exits `1`. The text-mode interactive prompt path (no `--json`)
 is unchanged — declining the prompt is still a no-op exit `0`.
+
+`notebooklm artifact delete <id> --json` follows the same destructive-operation
+guard: without `--yes`, it now emits `VALIDATION_ERROR`, includes the resolved
+artifact and notebook IDs plus `"deleted": false`, exits `1`, and does not
+delete the artifact. Passing `--yes` preserves the existing successful JSON
+payload (`{"id": "...", "deleted": true}`).
 
 `notebooklm note rename <id> "new title"` resolves the partial ID and then
 fetches the current note to preserve its content before issuing the update.
