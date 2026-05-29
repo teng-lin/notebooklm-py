@@ -297,14 +297,6 @@ class ArtifactPollingService:
         status_transitions: list[GenerationStatus] = []
 
         while True:
-            if deadline.expired():
-                raise _artifact_timeout_error(
-                    notebook_id,
-                    task_id,
-                    timeout,
-                    last_status,
-                    status_transitions,
-                )
             try:
                 status = await poll_status(notebook_id, task_id)
             except (NetworkError, RPCTimeoutError, ServerError) as e:
@@ -315,7 +307,13 @@ class ArtifactPollingService:
                 if poll_retry_count >= POLL_MAX_RETRIES:
                     raise
                 if deadline.expired():
-                    raise
+                    raise _artifact_timeout_error(
+                        notebook_id,
+                        task_id,
+                        timeout,
+                        last_status,
+                        status_transitions,
+                    ) from e
                 poll_retry_count += 1
                 # No jitter here: tests assert exact 2.0/4.0/8.0 sleeps and
                 # the remaining-timeout clamp owns thundering-herd avoidance.
@@ -335,7 +333,13 @@ class ArtifactPollingService:
                 )
                 await self._resolve_sleep()(backoff)
                 if deadline.expired():
-                    raise
+                    raise _artifact_timeout_error(
+                        notebook_id,
+                        task_id,
+                        timeout,
+                        last_status,
+                        status_transitions,
+                    ) from e
                 continue
 
             poll_retry_count = 0  # reset on success
@@ -405,8 +409,16 @@ class ArtifactPollingService:
                 )
 
             sleep_duration = deadline.clamp_sleep(current_interval)
-            if sleep_duration > 0:
+            if sleep_duration > 0.0:
                 await self._resolve_sleep()(sleep_duration)
+            elif current_interval > 0.0:
+                raise _artifact_timeout_error(
+                    notebook_id,
+                    task_id,
+                    timeout,
+                    last_status,
+                    status_transitions,
+                )
 
             current_interval = min(current_interval * 2, max_interval)
 

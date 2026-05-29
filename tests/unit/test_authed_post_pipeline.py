@@ -1105,6 +1105,9 @@ async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
     core = _make_core(server_error_max_retries=8)
     await core.__aenter__()
     try:
+        # This test isolates the exponential schedule itself. Keep the aggregate
+        # retry deadline high enough that it does not stop before the cap repeats.
+        core._collaborators.lifecycle._timeout = 200.0
         sleeps: list[float] = []
 
         async def fake_sleep(seconds: float) -> None:

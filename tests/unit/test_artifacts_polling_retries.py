@@ -168,9 +168,11 @@ async def test_polling_service_clamps_transient_retry_sleep_to_remaining_timeout
     )
     poll_status = AsyncMock(side_effect=NetworkError("transient net"))
 
-    with pytest.raises(NetworkError, match="transient net"):
+    with pytest.raises(ArtifactPendingTimeoutError) as exc_info:
         await service.wait_for_completion("nb1", "task1", timeout=1.0, poll_status=poll_status)
 
+    assert isinstance(exc_info.value.__cause__, NetworkError)
+    assert "transient net" in str(exc_info.value.__cause__)
     assert poll_status.await_count == 1
     assert sleeps == [1.0]
     assert clock == 1.0
@@ -208,7 +210,7 @@ async def test_polling_service_clamps_poll_interval_to_remaining_timeout() -> No
             poll_status=poll_status,
         )
 
-    assert poll_status.await_count == 1
+    assert poll_status.await_count == 2
     assert sleeps == [1.0]
     assert clock == 1.0
 
