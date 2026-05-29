@@ -9,6 +9,10 @@ and ADR-009 §"Chain ordering":
 - **Pass-through when no refresh callback configured.** The
   ``refresh_callback_enabled`` gate matches the legacy
   ``host._refresh_callback is not None`` check.
+- **Pass-through when ``disable_internal_retries`` is set.** A
+  non-idempotent / probe-then-create method (effective disable bool set
+  on the context) is NOT replayed after an auth error — the write may
+  have already committed before the 401/403 surfaced (issue #1157).
 - **Refresh-and-retry on auth error.** First ``next_call`` raises
   ``httpx.HTTPStatusError`` recognized by ``is_auth_error`` → refresh
   callable runs (coalesced single-flight) → optional post-refresh sleep
@@ -214,6 +218,73 @@ async def test_passes_through_on_non_auth_http_error() -> None:
 
     assert excinfo.value is boom
     assert refresh_calls == []
+
+
+@pytest.mark.asyncio
+async def test_passes_through_when_disable_internal_retries_set() -> None:
+    """``disable_internal_retries`` on the context suppresses the auth replay.
+
+    Regression for issue #1157: a non-idempotent / probe-then-create method
+    arrives with the post-resolution effective disable bool set on its
+    context. A 401/403 can land *after* the server committed the write, so
+    re-POSTing would duplicate the resource / invite / generation. The
+    middleware must propagate the original auth error instead of refreshing
+    and retrying.
+    """
+    boom = _auth_error(status=401)
+    terminal, calls = _scripted_terminal([boom])
+    refresh_calls: list[None] = []
+
+    async def refresh() -> None:
+        refresh_calls.append(None)
+
+    middleware = _make_middleware(refresh_callable=refresh)
+    chain = build_chain([middleware], terminal)
+
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        await chain(
+            make_request(
+                context={
+                    "log_label": "RPC CREATE_NOTEBOOK",
+                    "disable_internal_retries": True,
+                }
+            )
+        )
+
+    assert excinfo.value is boom
+    assert len(calls) == 1  # initial attempt only — no replay
+    assert refresh_calls == []  # refresh NOT triggered
+
+
+@pytest.mark.asyncio
+async def test_refreshes_when_disable_internal_retries_falsy() -> None:
+    """An explicit falsy ``disable_internal_retries`` still allows the replay.
+
+    Guards the gate against over-triggering: a retry-safe method whose
+    effective disable flag is False must keep the refresh-and-retry path.
+    """
+    boom = _auth_error(status=401)
+    terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"retry-ok")])
+    refresh_calls: list[None] = []
+
+    async def refresh() -> None:
+        refresh_calls.append(None)
+
+    middleware = _make_middleware(refresh_callable=refresh)
+    chain = build_chain([middleware], terminal)
+
+    response = await chain(
+        make_request(
+            context={
+                "log_label": "RPC LIST_NOTEBOOKS",
+                "disable_internal_retries": False,
+            }
+        )
+    )
+
+    assert refresh_calls == [None]
+    assert len(calls) == 2
+    assert response.response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

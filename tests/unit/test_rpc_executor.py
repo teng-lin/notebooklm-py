@@ -328,6 +328,11 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
     async def sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
+    # ``LIST_NOTEBOOKS`` is IDEMPOTENT_SET_OP and the caller passes
+    # ``disable_internal_retries=False``, so the effective disable flag is
+    # False and the decode-time auth retry is permitted to fire. The
+    # non-idempotent skip path is covered separately by
+    # ``test_decode_time_auth_retry_skipped_for_non_idempotent_method``.
     result = await _executor(
         owner,
         decode_response=decode,
@@ -339,7 +344,7 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
         "/notebook/abc",
         True,
         False,
-        disable_internal_retries=True,
+        disable_internal_retries=False,
     )
 
     assert result == {"retried": True}
@@ -348,7 +353,7 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
     assert len(is_auth_error_calls) == 1
     assert decode_allow_nulls == [True, True]
     assert len(owner.perform_calls) == 2
-    assert [call["disable_internal_retries"] for call in owner.perform_calls] == [True, True]
+    assert [call["disable_internal_retries"] for call in owner.perform_calls] == [False, False]
 
 
 @pytest.mark.asyncio
@@ -381,6 +386,85 @@ async def test_decode_time_auth_retry_preserves_none_result() -> None:
     assert result is None
     assert owner.refresh_calls == 1
     assert decode_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_decode_time_auth_retry_skipped_for_non_idempotent_method() -> None:
+    """A non-idempotent create is NOT replayed on a decode-time auth error.
+
+    Regression for issue #1157: ``CREATE_NOTEBOOK`` is PROBE_THEN_CREATE, so
+    ``resolve_effective_disable_internal_retries`` forces the effective
+    disable flag True even though the caller passed False. The server may
+    have already committed the notebook before the auth-shaped ``RPCError``
+    surfaced; re-POSTing would duplicate it. The original error must
+    propagate so the caller's probe-then-create wrapper can disambiguate.
+    """
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    auth_rpc_error = RPCError("authentication expired")
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise auth_rpc_error
+
+    with pytest.raises(RPCError) as raised:
+        await _executor(
+            owner,
+            decode_response=decode,
+            is_auth_error=lambda exc: True,
+        )._execute_once(
+            RPCMethod.CREATE_NOTEBOOK,
+            ["param"],
+            "/",
+            False,
+            False,
+            disable_internal_retries=False,
+        )
+
+    assert raised.value is auth_rpc_error
+    assert owner.refresh_calls == 0
+    # Exactly one POST — the create is never replayed.
+    assert len(owner.perform_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_decode_time_auth_retry_skipped_when_caller_disables_retries() -> None:
+    """A caller-set ``disable_internal_retries`` also suppresses the replay.
+
+    Even for an otherwise retry-safe method (``LIST_NOTEBOOKS`` is
+    IDEMPOTENT_SET_OP), an explicit ``disable_internal_retries=True`` means
+    the caller has opted out of any internal re-issue. The decode-time auth
+    leg must honor that effective flag rather than blindly re-POST.
+    """
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    auth_rpc_error = RPCError("authentication expired")
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise auth_rpc_error
+
+    with pytest.raises(RPCError) as raised:
+        await _executor(
+            owner,
+            decode_response=decode,
+            is_auth_error=lambda exc: True,
+        )._execute_once(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+            disable_internal_retries=True,
+        )
+
+    assert raised.value is auth_rpc_error
+    assert owner.refresh_calls == 0
+    assert len(owner.perform_calls) == 1
 
 
 @pytest.mark.asyncio

@@ -182,7 +182,11 @@ Per-position rationale:
   (each layer has its own guard). Putting them in the other order would
   let an auth-refresh-then-success-then-5xx sequence cause a retry that
   re-triggers the refresh, which the legacy transport loop also guarded
-  against with a per-attempt flag.
+  against with a per-attempt flag. Both layers honor the same
+  `disable_internal_retries` post-resolution bool: a non-idempotent /
+  probe-then-create write is neither retried on 5xx/429 nor replayed
+  after an auth refresh, because a mid-flight 401/403 can land *after*
+  the server committed the write (issue #1157).
 - **AuthRefresh outside ErrorInjection.** Test-injected 401s exercise the
   refresh path realistically — a test that injects a 401 expects the
   refresh middleware to run, not for the injection to short-circuit
@@ -205,7 +209,7 @@ Per-position rationale:
 | Key | Type | Set by | Read by |
 |---|---|---|---|
 | `rpc_method` | `str \| None` | `Session._perform_authed_post` (receives the resolved method-name string from `RpcExecutor._execute_once`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
-| `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware` |
+| `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware`, `AuthRefreshMiddleware` (when set, skips the auth-refresh-and-retry replay so a non-idempotent / probe-then-create write is not re-issued after a mid-flight 401/403 — issue #1157) |
 | `build_request` | `BuildRequest` | `Session._perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `Session._authed_post_chain_terminal` (via `_refresh_request_for_current_auth`) |
 | `log_label` | `str` | `Session._perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `Session._authed_post_chain_terminal` |
 | `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |

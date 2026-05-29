@@ -76,6 +76,7 @@ from ._middleware_context import (
     RPC_CONTEXT_AUTH_REFRESHED,
     RPC_CONTEXT_AUTH_SNAPSHOT,
     RPC_CONTEXT_BUILD_REQUEST,
+    RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
 )
 from ._request_types import AuthSnapshot, BuildRequest
@@ -191,11 +192,21 @@ class AuthRefreshMiddleware:
         - No refresh callback configured → propagate any exception unchanged.
         - Exception is not an auth error → propagate.
         - Refresh already done for this logical call → propagate.
+        - ``disable_internal_retries`` is set on the context → propagate.
+          The flag is the post-resolution effective bool produced by
+          :func:`_idempotency.resolve_effective_disable_internal_retries`
+          before chain entry, so a non-idempotent / probe-then-create
+          method is NOT replayed after an auth error (issue #1157). A
+          mid-flight 401/403 can land *after* the server committed the
+          write, so re-POSTing would duplicate the resource / invite /
+          generation. Surfacing the original auth error lets the caller's
+          probe-then-create wrapper disambiguate instead.
         - First ``next_call`` raises something non-``HTTPStatusError`` → propagate.
 
         Refresh-and-retry path:
         1. ``next_call`` raises ``httpx.HTTPStatusError`` AND
-           ``is_auth_error(exc)`` returns True AND no prior refresh.
+           ``is_auth_error(exc)`` returns True AND no prior refresh AND
+           ``disable_internal_retries`` is not set.
         2. Call ``refresh_callable()`` (coalesced single-flight via
            :class:`AuthRefreshCoordinator`).
         3. Mark ``RPC_CONTEXT_AUTH_REFRESHED`` on success.
@@ -217,7 +228,15 @@ class AuthRefreshMiddleware:
                 not self._refresh_callback_enabled()
                 or not self._is_auth_error(exc)
                 or request.context.get(RPC_CONTEXT_AUTH_REFRESHED)
+                or bool(request.context.get(RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, False))
             ):
+                # ``disable_internal_retries`` is the post-resolution
+                # effective bool (see :func:`_idempotency.
+                # resolve_effective_disable_internal_retries`). When set, the
+                # write is non-idempotent / probe-then-create and may have
+                # already committed before the auth error surfaced — replaying
+                # it would duplicate the side effect (issue #1157), so we
+                # propagate the original auth error untouched.
                 raise
 
             self._logger.info(

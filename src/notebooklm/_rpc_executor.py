@@ -277,8 +277,18 @@ class RpcExecutor:
             return result
         except RPCError as exc:
             elapsed = time.perf_counter() - start
+            # A decoded auth-shaped ``RPCError`` triggers a refresh-and-retry
+            # ONLY when the effective idempotency classification permits a
+            # replay. ``effective_disable_internal_retries`` folds the
+            # registry policy with the caller's intent: for non-idempotent /
+            # probe-then-create methods it is forced True, in which case the
+            # server may have already committed the write before the
+            # auth-shaped error surfaced. Re-POSTing would duplicate the side
+            # effect (issue #1157), so we surface the original error and let
+            # the caller's probe-then-create wrapper disambiguate instead.
             if (
                 not _is_retry
+                and not effective_disable_internal_retries
                 and self._refresh_callback_enabled_provider()
                 and self._is_auth_error(exc)
             ):
