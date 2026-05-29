@@ -1,4 +1,4 @@
-"""Module-level constants for the NotebookLM session client.
+"""Module-level constants for the NotebookLM client runtime.
 
 Holds the ``DEFAULT_*`` knobs that historically lived in the
 ``notebooklm._core`` preamble (the compatibility shim was removed in
@@ -22,7 +22,7 @@ __all__ = [
     "normalize_max_concurrent_uploads",
 ]
 
-# Single source of truth for the logger name every session /
+# Single source of truth for the logger name every client-runtime /
 # middleware seam pins. Tests that filter logs via
 # ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` (or, more commonly,
 # the literal string) match this name. PR 12.9 audit fix: was previously
@@ -34,7 +34,8 @@ __all__ = [
 # logging key even though the ``_core`` compatibility shim was deleted in
 # v0.5.0 — the logger is keyed by string, not module, and renaming would
 # silently break every ``caplog.at_level("notebooklm._core", ...)`` site
-# downstream. Treat this string as a public-ish logging contract.
+# downstream. Treat this string as a compatibility logging contract; it is
+# not evidence that a concrete ``_core`` module or ``Session`` owner exists.
 CORE_LOGGER_NAME = "notebooklm._core"
 
 # Default HTTP timeouts in seconds

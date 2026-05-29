@@ -1,4 +1,9 @@
-"""Public runtime configuration surface (re-exports from internal _env)."""
+"""Public runtime configuration surface.
+
+This module is the stable import surface for configuration helpers. The
+resolution logic lives in :mod:`notebooklm._env`; only the names re-exported
+here are public API.
+"""
 
 from ._env import (
     DEFAULT_BASE_URL,

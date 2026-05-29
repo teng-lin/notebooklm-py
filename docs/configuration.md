@@ -1,7 +1,7 @@
 # Configuration
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-29
 
 This guide covers storage locations, environment settings, and configuration options for `notebooklm-py`.
 
@@ -142,6 +142,19 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress stderr deprecation notices for deprecated CLI flags | - |
 | `NOTEBOOKLM_VCR_RECORD_ERRORS` | Synthetic-error injection mode for VCR test cassettes (`429`, `5xx`, `expired_csrf`) | - |
+
+### Public config API vs internal resolvers
+
+`src/notebooklm/_env.py` owns internal environment/default resolution for
+runtime behavior. It reads process environment variables and contains internal
+defaults such as `DEFAULT_BL` for the chat streaming build label.
+
+`notebooklm.config` is the stable public import surface. It intentionally
+re-exports only the supported endpoint/language helpers:
+`DEFAULT_BASE_URL`, `PERSONAL_BASE_HOST`, `ENTERPRISE_BASE_HOST`,
+`get_base_url`, `get_base_host`, and `get_default_language`. Existing imports
+from `notebooklm.config` remain supported; internal-only `_env` names should
+not be imported by downstream code.
 
 ### Env vars and precedence
 
@@ -573,6 +586,11 @@ notebooklm list 2>&1 | cat
 ```bash
 NOTEBOOKLM_DEBUG_RPC=1 notebooklm list
 ```
+
+Runtime transport and middleware logs still use the historical
+`notebooklm._core` logger key via `CORE_LOGGER_NAME`. That name is a
+compatibility logging contract for existing filters and tests; it does not
+mean the deleted `_core.py` module or a concrete `Session` owner still exists.
 
 ### Check Authentication
 

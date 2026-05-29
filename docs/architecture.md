@@ -446,8 +446,11 @@ work:
   observe auth must alias it rather than holding detached copies.
 - `CORE_LOGGER_NAME` intentionally remains the literal
   `"notebooklm._core"` even though the `_core.py` compatibility module was
-  deleted. Treat it as a logging compatibility contract, not evidence that
-  `notebooklm._core` is an active module.
+  deleted. Runtime code keeps using this logger key through
+  `CORE_LOGGER_NAME` for downstream log filters and `caplog` selectors.
+  Treat it as a logging compatibility contract, not evidence that
+  `notebooklm._core` is an active module or that a concrete `Session` owner
+  remains in the runtime graph.
 
 ## Domain-service collaborators
 

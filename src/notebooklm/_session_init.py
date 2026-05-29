@@ -1,13 +1,14 @@
 """Construction-time helpers for the NotebookLM client composition root.
 
-Mechanical decomposition of the former concrete session constructor
+Mechanical decomposition of the former monolithic client-runtime constructor
 (``docs/improvement.md`` §3.1) into three concerns:
 :func:`validate_constructor_args` (kwarg validation + normalization),
 :func:`build_collaborators` (the seven collaborators in dependency order),
 and :func:`wire_middleware_chain` (the seven-middleware ADR-009 chain).
 Behavior is bit-for-bit identical to the pre-extraction constructor;
-dependency-ordering and seam-resolution comments are preserved verbatim
-inside the helpers so future readers see *why* the order matters.
+dependency-ordering and seam-resolution comments are preserved where still
+applicable inside the helpers so future readers see *why* the order matters
+without looking for a concrete ``Session`` owner.
 
 Builds on the constructor-DI work in #1027 (``36dcc634`` —
 "refactor(session): constructor DI for late-bound test seams; drop
@@ -61,8 +62,8 @@ from .auth import AuthTokens
 if TYPE_CHECKING:
     # Runtime import of ``ConnectionLimits`` is deferred to
     # :func:`validate_constructor_args` to keep the long-standing
-    # defensive guard against the ``types.py`` → session cycle (see the
-    # inline comment in the function body).
+    # defensive guard against the historical ``types.py`` -> runtime
+    # construction cycle (see the inline comment in the function body).
     from .types import ConnectionLimits, RpcTelemetryEvent
 
 # Preserve the historical logger namespace while avoiding a raw deleted-module
@@ -80,7 +81,7 @@ class ValidatedSessionConfig:
     to the minimum-interval floor), or a seam callable resolved through
     the canonical module-attribute lookup that ``None`` defaults trigger
     (where applicable — see the module docstring for which seams are
-    resolved here vs. in ``Session.__init__``).
+    resolved here vs. in the public client constructor).
     """
 
     timeout: float
@@ -104,9 +105,9 @@ class SessionCollaborators:
     :func:`build_collaborators`.
 
     The construction order inside ``build_collaborators`` mirrors the
-    pre-extraction ``Session.__init__`` exactly (see the inline comments
-    there for the rationale); this container exists only to give
-    ``__init__`` a single hand-off shape after the construction phase.
+    pre-extraction runtime constructor exactly (see the inline comments
+    there for the rationale); this container exists only to give the
+    client constructor a single hand-off shape after the construction phase.
     """
 
     metrics: ClientMetrics
@@ -205,9 +206,9 @@ def validate_constructor_args(
     if limits is not None:
         _resolved_limits = limits
     else:
-        # Lazy import — defensive guard against the ``types.py`` →
-        # session cycle (preserved from the pre-extraction
-        # ``Session.__init__`` comment "Lazy import to break the
+        # Lazy import — defensive guard against the historical
+        # ``types.py`` -> runtime-construction cycle (preserved from
+        # the pre-extraction comment "Lazy import to break the
         # types.py -> _core.py cycle").
         from .types import ConnectionLimits
 
@@ -221,7 +222,8 @@ def validate_constructor_args(
     # Fail-fast validation for ``max_concurrent_uploads``. The value is
     # NOT propagated into :class:`ValidatedSessionConfig` because the
     # actual upload semaphore state is owned by
-    # ``SourceUploadPipeline`` (not ``Session``); this call exists
+    # ``SourceUploadPipeline`` (not the client-runtime composition
+    # helpers); this call exists
     # solely for the ``ValueError``-raising side effect on the
     # constructor's behalf — same shape as the inline check it
     # replaced.
@@ -234,7 +236,7 @@ def validate_constructor_args(
     # so helper GET/POSTs outside the RPC pipeline still have pool
     # headroom. Cross-validation with ``limits.max_connections`` is
     # enforced one layer up at ``NotebookLMClient.__init__`` because
-    # ``Session`` synthesizes its own ``ConnectionLimits()`` when
+    # this helper synthesizes its own ``ConnectionLimits()`` when
     # ``limits=None``, masking the relationship at this layer.
     resolved_max_concurrent_rpcs: int | None
     if max_concurrent_rpcs is None:
@@ -279,7 +281,7 @@ def build_collaborators(
 ) -> SessionCollaborators:
     """Construct the seven extracted collaborators in dependency order.
 
-    The order mirrors the pre-extraction ``Session.__init__`` exactly so
+    The order mirrors the pre-extraction runtime constructor exactly so
     the load-bearing inter-collaborator wiring stays obvious to future
     readers: metrics is built first because it absorbs the optional
     ``on_rpc_event`` callback AND because the lock-wait metric callback
@@ -457,12 +459,12 @@ def wire_middleware_chain(
     * ``auth`` — the live :class:`AuthTokens` collaborator passed
       explicitly to :meth:`AuthRefreshCoordinator.snapshot` on every
       call. The provider lambda captures this object by reference; the
-      capture is safe because production never reassigns
-      ``Session.auth`` after construction (the only mutation path is
-      in-place scalar updates via
+      capture is safe because production never reassigns the
+      client-owned ``AuthTokens`` object after construction (the only
+      mutation path is in-place scalar updates via
       :meth:`AuthRefreshCoordinator.update_auth_tokens`, which mutate
       the captured instance directly). This replaced the previous
-      ``auth_snapshot_host: _AuthRefreshHost`` (= Session) parameter
+      ``auth_snapshot_host: _AuthRefreshHost`` host-shaped parameter
       when the ``_AuthRefreshHost`` Protocol was deleted in favor of
       per-method explicit collaborators; the coordinator routes its
       lock-wait metric through its own ``self._metrics`` (supplied at
