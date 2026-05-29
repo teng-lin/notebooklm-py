@@ -327,6 +327,52 @@ async def test_update_auth_tokens_releases_lock_when_metric_raises(
     assert auth.session_id == "W"
 
 
+@pytest.mark.asyncio
+async def test_await_refresh_releases_lock_when_metric_raises() -> None:
+    """A metric-side exception must NOT leave the refresh lock held.
+
+    Companion to ``test_update_auth_tokens_releases_lock_when_metric_raises``
+    but for the single-flight refresh lock. Pins that ``record_lock_wait``
+    lives inside the ``try`` block guarded by ``finally: lock.release()``;
+    without that guard a buggy metrics implementation (or a test spy that
+    raises) would silently hang every subsequent ``await_refresh`` caller on
+    the leaked lock.
+    """
+    call_count = 0
+
+    async def cb() -> AuthTokens:
+        nonlocal call_count
+        call_count += 1
+        return AuthTokens(
+            csrf_token=f"R{call_count}",
+            session_id="S",
+            cookies={"SID": f"sid{call_count}"},
+        )
+
+    metrics = _ExplodingMetrics()
+    coord = AuthRefreshCoordinator(
+        refresh_callback=cb,
+        metrics=cast(ClientMetrics, metrics),
+    )
+
+    with pytest.raises(RuntimeError, match="metrics blew up"):
+        await coord.await_refresh()
+
+    # The refresh task is never created when the metric raises before
+    # task-creation runs, so a leaked lock would not be masked by a joined
+    # task — the second ``await_refresh`` must acquire the lock itself.
+    assert coord._refresh_task is None
+
+    # The lock must be released even though the metric write raised. Wrap in
+    # ``wait_for`` so a leaked lock surfaces as a fast failure rather than
+    # hanging the suite.
+    metrics2 = _RecordingMetrics()
+    coord._metrics = cast(ClientMetrics, metrics2)
+    await asyncio.wait_for(coord.await_refresh(), timeout=EVENT_TIMEOUT_S)
+    assert call_count == 1
+    assert len(metrics2.lock_waits) == 1
+
+
 # ---------------------------------------------------------------------------
 # update_auth_headers — syncs auth.cookie_jar from get_http_client().cookies
 # ---------------------------------------------------------------------------

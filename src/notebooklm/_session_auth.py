@@ -324,9 +324,15 @@ class AuthRefreshCoordinator:
         lock = self.get_refresh_lock()
         wait_start = time.perf_counter()
         await lock.acquire()
-        if self._metrics is not None:
-            self._metrics.record_lock_wait(time.perf_counter() - wait_start)
         try:
+            # ``record_lock_wait`` lives INSIDE the ``try`` so a metric-side
+            # exception (e.g. a misconfigured spy in tests, or a runtime bug
+            # in :class:`ClientMetrics`) cannot leave the refresh lock held —
+            # the ``finally`` releases unconditionally. Mirrors the same
+            # hardening on :meth:`update_auth_tokens`; the call is synchronous
+            # so no await runs between acquiring and releasing the lock.
+            if self._metrics is not None:
+                self._metrics.record_lock_wait(time.perf_counter() - wait_start)
             if self._refresh_task is not None and not self._refresh_task.done():
                 refresh_task = self._refresh_task
                 logger.debug("Joining existing refresh task")
