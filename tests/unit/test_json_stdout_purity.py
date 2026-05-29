@@ -713,7 +713,6 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("download", "flashcards"): _DOWNLOAD_RATIONALE_ERROR,
     ("download", "quiz"): _DOWNLOAD_RATIONALE_ERROR,
     # generate group — RPC-driven; error envelope covered by integration tests.
-    ("generate", "audio"): _GENERATE_RATIONALE,
     ("generate", "cinematic-video"): _GENERATE_RATIONALE,
     ("generate", "data-table"): _GENERATE_RATIONALE,
     ("generate", "flashcards"): _GENERATE_RATIONALE,
@@ -723,7 +722,6 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("generate", "report"): _GENERATE_RATIONALE,
     ("generate", "revise-slide"): _GENERATE_RATIONALE,
     ("generate", "slide-deck"): _GENERATE_RATIONALE,
-    ("generate", "video"): _GENERATE_RATIONALE,
     # history / metadata / research-status / status: success-only sweep is the
     # primary contract; error envelope can grow with the suite.
     ("history",): _INTROSPECTION_RATIONALE,
@@ -865,6 +863,8 @@ def test_all_json_commands_have_sweep_entry() -> None:
     # Silent-waiver lint: every waiver entry must carry a non-empty rationale.
     empty_success_rationale = sorted(p for p, r in JSON_SUCCESS_WAIVED.items() if not r.strip())
     empty_error_rationale = sorted(p for p, r in JSON_ERROR_WAIVED.items() if not r.strip())
+    redundant_success_waivers = sorted(p for p in JSON_SUCCESS_WAIVED if p in success_paths)
+    redundant_error_waivers = sorted(p for p in JSON_ERROR_WAIVED if p in error_paths)
 
     report = _build_coverage_report(discovered, success_paths, error_paths)
     # Emit to the captured stdout so ``pytest -s`` surfaces the line; pytest
@@ -900,6 +900,16 @@ def test_all_json_commands_have_sweep_entry() -> None:
     if empty_error_rationale:
         failures.append(
             f"Silent waiver(s) in JSON_ERROR_WAIVED (empty rationale): {empty_error_rationale}"
+        )
+    if redundant_success_waivers:
+        failures.append(
+            "Redundant entries in JSON_SUCCESS_WAIVED (sweep entry now exists): "
+            f"{redundant_success_waivers}"
+        )
+    if redundant_error_waivers:
+        failures.append(
+            "Redundant entries in JSON_ERROR_WAIVED (sweep entry now exists): "
+            f"{redundant_error_waivers}"
         )
     assert not failures, "\n".join(failures) + "\n" + report
 

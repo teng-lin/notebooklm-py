@@ -30,6 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+from notebooklm import paths as paths_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Source
 
@@ -62,10 +63,7 @@ def mock_auth(tmp_path: Path, monkeypatch):
     "Missing required cookies: SID, __Secure-1PSIDTS".
     """
     fake_storage = tmp_path / "no_such_storage.json"
-    monkeypatch.setattr(
-        "notebooklm.paths.get_storage_path",
-        lambda profile=None, **_kw: fake_storage,
-    )
+    monkeypatch.setattr(paths_module, "get_storage_path", lambda profile=None, **_kw: fake_storage)
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
         patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
