@@ -19,6 +19,7 @@ from notebooklm.cli.services.source_content import (
 )
 from notebooklm.cli.services.source_mutations import (
     SourceDeletePlan,
+    SourceMutationError,
     SourceRenamePlan,
     execute_source_delete,
     execute_source_rename,
@@ -38,30 +39,7 @@ from notebooklm.types import Source, SourceFulltext, SourceTimeoutError
 
 @pytest.mark.asyncio
 async def test_source_delete_json_without_yes_uses_structured_confirmation_error(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[dict[str, object]] = []
-
-    def fake_output_error(
-        message: str,
-        code: str,
-        json_output: bool,
-        exit_code: int,
-        *,
-        extra: dict[str, object] | None = None,
-    ) -> None:
-        calls.append(
-            {
-                "message": message,
-                "code": code,
-                "json_output": json_output,
-                "exit_code": exit_code,
-                "extra": extra,
-            }
-        )
-        raise SystemExit(exit_code)
-
-    monkeypatch.setattr(source_mutations, "output_error", fake_output_error)
     client = SimpleNamespace(
         sources=SimpleNamespace(
             list=AsyncMock(return_value=[Source(id="src_abcdef", title="Paper")]),
@@ -75,30 +53,26 @@ async def test_source_delete_json_without_yes_uses_structured_confirmation_error
         json_output=True,
     )
 
-    with pytest.raises(SystemExit) as exc_info:
-        await execute_source_delete(client, plan)
+    with pytest.raises(SourceMutationError) as exc_info:
+        await execute_source_delete(
+            client,
+            plan,
+            confirmer=lambda message: pytest.fail(f"unexpected confirmation: {message}"),
+        )
 
-    assert exc_info.value.code == 1
-    assert calls == [
-        {
-            "message": "Pass --yes to confirm destructive operation in --json mode",
-            "code": "CONFIRM_REQUIRED",
-            "json_output": True,
-            "exit_code": 1,
-            "extra": {
-                "action": "delete",
-                "source_id": "src_abcdef",
-                "notebook_id": "nb_1",
-            },
-        }
-    ]
+    assert exc_info.value.message == "Pass --yes to confirm destructive operation in --json mode"
+    assert exc_info.value.code == "CONFIRM_REQUIRED"
+    assert exc_info.value.extra == {
+        "action": "delete",
+        "source_id": "src_abcdef",
+        "notebook_id": "nb_1",
+    }
+    assert exc_info.value.status_message == "[dim]Matched: src_abcdef... (Paper)[/dim]"
     client.sources.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_source_rename_json_emits_service_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    payloads: list[dict[str, object]] = []
-    monkeypatch.setattr(source_mutations, "json_output_response", payloads.append)
+async def test_source_rename_returns_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         source_mutations,
         "resolve_source_id",
@@ -108,7 +82,7 @@ async def test_source_rename_json_emits_service_payload(monkeypatch: pytest.Monk
         sources=SimpleNamespace(rename=AsyncMock(return_value=Source(id="src_full", title="New")))
     )
 
-    await execute_source_rename(
+    result = await execute_source_rename(
         client,
         SourceRenamePlan(
             notebook_id="nb_1",
@@ -119,15 +93,13 @@ async def test_source_rename_json_emits_service_payload(monkeypatch: pytest.Monk
     )
 
     client.sources.rename.assert_awaited_once_with("nb_1", "src_full", "New")
-    assert payloads == [
-        {
-            "action": "rename",
-            "source_id": "src_full",
-            "notebook_id": "nb_1",
-            "title": "New",
-            "status": "renamed",
-        }
-    ]
+    assert result.payload == {
+        "action": "rename",
+        "source_id": "src_full",
+        "notebook_id": "nb_1",
+        "title": "New",
+        "status": "renamed",
+    }
 
 
 @pytest.mark.asyncio

@@ -81,6 +81,7 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # Click ``BadParameter`` translation and optional-domain warning rendering.
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
+    "cli/services/confirming_mutation.py": SERVICES_ROOT / "confirming_mutation.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/login/browser_accounts.py": SERVICES_ROOT / "login" / "browser_accounts.py",
     "cli/services/login/cookie_domains.py": SERVICES_ROOT / "login" / "cookie_domains.py",
@@ -94,7 +95,10 @@ GUARDED_PATHS = {
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
     "cli/services/skill_install.py": SERVICES_ROOT / "skill_install.py",
     "cli/services/source_clean.py": SERVICES_ROOT / "source_clean.py",
+    "cli/services/source_add.py": SERVICES_ROOT / "source_add.py",
     "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
+    "cli/services/source_listing.py": SERVICES_ROOT / "source_listing.py",
+    "cli/services/source_mutations.py": SERVICES_ROOT / "source_mutations.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
     "cli/services/source_serializers.py": SERVICES_ROOT / "source_serializers.py",
     "cli/services/source_wait.py": SERVICES_ROOT / "source_wait.py",
@@ -154,18 +158,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "Adapter that reads the auth-source override from the live Click "
             "context; the function-level ``import click`` is the only Click "
             "reach-in."
-        ),
-    },
-    "cli/services/confirming_mutation.py": {
-        "path": SERVICES_ROOT / "confirming_mutation.py",
-        "forbidden_imports": [
-            "confirming_mutation.py:10: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "rationale": (
-            "Confirm-prompt helper still pulls ``console`` for echoed "
-            "prompts; rendering reach-in to be inverted via callback "
-            "injection."
         ),
     },
     "cli/services/download.py": {
@@ -310,45 +302,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "Polling helpers still import ``..error_handler`` + "
             "``..rendering`` for status spinners and exit mapping; lift "
             "those callbacks into the command layer."
-        ),
-    },
-    "cli/services/source_add.py": {
-        "path": SERVICES_ROOT / "source_add.py",
-        "forbidden_imports": [
-            "source_add.py:360: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "rationale": (
-            "``source add`` workflow still pulls ``console`` for spinner "
-            "messages; presentation reach-in to be inverted."
-        ),
-    },
-    "cli/services/source_listing.py": {
-        "path": SERVICES_ROOT / "source_listing.py",
-        "forbidden_imports": [
-            "source_listing.py:16: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "rationale": (
-            "Source listing still imports ``..rendering`` for table "
-            "formatting; presentation reach-in to be inverted."
-        ),
-    },
-    "cli/services/source_mutations.py": {
-        "path": SERVICES_ROOT / "source_mutations.py",
-        "forbidden_imports": [
-            "source_mutations.py:18: forbidden top-level import: 'click'",
-            "source_mutations.py:21: forbidden relative import: '..error_handler'",
-            "source_mutations.py:22: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "uses click.confirm as the default confirmer for source "
-            "deletion plans; lift to an injected confirmer callback."
-        ),
-        "rationale": (
-            "Source mutation pipeline still owns presentation + Click "
-            "confirmer defaults + exit policy."
         ),
     },
 }

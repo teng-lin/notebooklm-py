@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, Generic, Literal, TypeVar
 
 from ...client import NotebookLMClient
-from ..rendering import json_output_response
 
 ResolvedT = TypeVar("ResolvedT")
 MutationStatus = Literal["cancelled", "completed"]
@@ -59,8 +58,6 @@ async def run_confirmed_mutation(
 
     await plan.execute(client, resolved)
     payload = plan.serialize_success(resolved)
-    if json_output:
-        json_output_response(payload)
     return MutationResult(
         entity_label=plan.entity_label,
         resolved=resolved,

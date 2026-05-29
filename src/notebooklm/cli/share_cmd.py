@@ -377,6 +377,7 @@ def share_remove(ctx, email, notebook_id, yes, json_output, client_auth):
                 return
 
             if json_output:
+                json_output_response(result.payload)
                 return
 
             console.print(f"[green]Removed access for {email}[/green]")

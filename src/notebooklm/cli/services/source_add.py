@@ -6,23 +6,17 @@ continues to pass caller-supplied URLs through to NotebookLM unchanged.
 
 from __future__ import annotations
 
-import contextlib
 import ipaddress
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 from ...types import Source
 from ...urls import is_youtube_url
 from .source_serializers import source_summary_payload
-
-if TYPE_CHECKING:
-    import click
-
-    from ...client import NotebookLMClient
 
 SourceAddType = Literal["url", "text", "file", "youtube"]
 
@@ -326,7 +320,7 @@ async def add_source(
 
 @dataclass(frozen=True)
 class SourceAddExecutionPlan:
-    """Click-shaped inputs for ``execute_source_add``.
+    """Prepared inputs for ``execute_source_add``.
 
     Distinct from :class:`SourceAddPlan` (which captures the detected source
     type + warnings produced by :func:`build_source_add_plan`). This wraps
@@ -336,43 +330,32 @@ class SourceAddExecutionPlan:
 
     notebook_id: str
     plan: SourceAddPlan
-    json_output: bool
+
+
+@dataclass(frozen=True)
+class SourceAddResult:
+    """Result of adding a source."""
+
+    source: Source
+
+    def payload(self) -> dict[str, object]:
+        """Return the JSON payload for ``source add``."""
+        return {"source": source_summary_payload(self.source)}
 
 
 async def execute_source_add(
-    client: NotebookLMClient,
+    client,
     plan: SourceAddExecutionPlan,
-    *,
-    ctx: click.Context | None = None,
-) -> None:
-    """Run the ``source add`` workflow with spinner + JSON / text rendering.
+) -> SourceAddResult:
+    """Run the ``source add`` workflow and return the added source.
 
-    P1.T2 bug 5: ``rich.console.Console.status`` is a SYNCHRONOUS context
-    manager. The pre-fix shape ``with console.status(...): return _run()``
-    exited the spinner as soon as ``_run()`` returned the coroutine — BEFORE
-    ``with_client`` awaited it — so the spinner was effectively invisible
-    during the actual upload. The ``with`` block here lives inside the
-    awaited coroutine so the spinner spans the real I/O. JSON mode still
-    suppresses the spinner so stdout stays pure JSON.
+    Presentation concerns such as spinners, JSON envelopes, and success
+    messages belong to the command layer. The command wraps this awaitable
+    with the desired status context so the spinner still spans the real I/O.
     """
-    # Local imports keep this service module free of CLI-only top-level deps
-    # so importing it does not pull in click for non-CLI consumers.
-    from ..rendering import cli_print, console, json_output_response
-
-    spinner = (
-        contextlib.nullcontext()
-        if plan.json_output
-        else console.status(f"Adding {plan.plan.detected_type} source...")
+    src = await add_source(
+        client.sources,
+        notebook_id=plan.notebook_id,
+        plan=plan.plan,
     )
-    with spinner:
-        src = await add_source(
-            client.sources,
-            notebook_id=plan.notebook_id,
-            plan=plan.plan,
-        )
-
-    if plan.json_output:
-        json_output_response({"source": source_summary_payload(src)})
-        return
-
-    cli_print(f"[green]Added source:[/green] {src.id}", ctx=ctx)
+    return SourceAddResult(source=src)

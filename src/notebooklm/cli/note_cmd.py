@@ -461,6 +461,7 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
                 return
 
             if json_output:
+                json_output_response(result.payload)
                 return
 
             resolved_id = result.resolved["note_id"]

@@ -1,20 +1,20 @@
-"""Service for ``source list`` — fetch + render the source table.
+"""Service for ``source list`` — fetch + prepare the source list payload.
 
 Composes :class:`~notebooklm.cli.services.listing.ListSpec` so the Click
 handler in ``cli/source_cmd.py`` collapses to a one-call wrapper. The
-extracted executor stays a thin facade over the shared listing pipeline —
-all envelope-extras and column logic live here so the handler does not
-need to know how Rich tables or JSON envelopes are assembled.
+extracted executor stays a thin facade over the shared listing pipeline.
+Envelope-extras and column-row data live here, while actual JSON / Rich
+rendering stays in the command layer.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ...types import Source, source_status_to_str
-from ..rendering import get_source_type_display, render_list
-from .listing import ListResult, ListSpec, prepare_list
+from ...types import Source, SourceType, source_status_to_str
+from .listing import ListRender, ListSpec, prepare_list
 from .source_serializers import source_summary_payload
 
 if TYPE_CHECKING:
@@ -29,9 +29,10 @@ class SourceListPlan:
     json_output: bool
     limit: int | None
     no_truncate: bool
+    source_type_display: Callable[[SourceType], str]
 
 
-def _build_spec() -> ListSpec[Source]:
+def _build_spec(source_type_display: Callable[[SourceType], str]) -> ListSpec[Source]:
     """Build the ``ListSpec`` for ``source list``.
 
     Factored out of ``execute_source_list`` so unit tests can introspect
@@ -57,7 +58,7 @@ def _build_spec() -> ListSpec[Source]:
         row=lambda src: [
             src.id,
             src.title or "-",
-            get_source_type_display(src.kind),
+            source_type_display(src.kind),
             src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-",
             source_status_to_str(src.status),
         ],
@@ -65,10 +66,10 @@ def _build_spec() -> ListSpec[Source]:
     )
 
 
-async def execute_source_list(client: NotebookLMClient, plan: SourceListPlan) -> ListResult[Source]:
-    """Fetch + render the source list per the prepared plan."""
-    spec = _build_spec()
-    render = await prepare_list(
+async def execute_source_list(client: NotebookLMClient, plan: SourceListPlan) -> ListRender[Source]:
+    """Fetch and prepare the source list render payload."""
+    spec = _build_spec(plan.source_type_display)
+    return await prepare_list(
         spec,
         client,
         notebook_id=plan.notebook_id,
@@ -76,8 +77,6 @@ async def execute_source_list(client: NotebookLMClient, plan: SourceListPlan) ->
         json_output=plan.json_output,
         no_truncate=plan.no_truncate,
     )
-    render_list(render)
-    return render.to_list_result()
 
 
 __all__ = ["SourceListPlan", "execute_source_list"]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -78,7 +77,7 @@ async def test_yes_skips_confirmation_and_executes_mutation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_json_output_emits_success_payload(capsys: pytest.CaptureFixture[str]) -> None:
+async def test_returns_success_payload() -> None:
     calls: list[tuple[str, Any]] = []
 
     result = await run_confirmed_mutation(
@@ -90,7 +89,7 @@ async def test_json_output_emits_success_payload(capsys: pytest.CaptureFixture[s
     )
 
     assert result.status == "completed"
-    assert json.loads(capsys.readouterr().out) == {"id": "thing_123", "deleted": True}
+    assert result.payload == {"id": "thing_123", "deleted": True}
 
 
 @pytest.mark.asyncio
@@ -107,3 +106,4 @@ async def test_json_output_without_yes_does_not_prompt() -> None:
 
     assert result.status == "completed"
     assert result.resolved.executed is True
+    assert result.payload == {"id": "thing_123", "deleted": True}

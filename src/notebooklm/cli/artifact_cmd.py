@@ -331,6 +331,7 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
                 return
 
             if json_output:
+                json_output_response(result.payload)
                 return
 
             resolved_id = result.resolved["artifact_id"]

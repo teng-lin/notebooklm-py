@@ -3,29 +3,21 @@
 Each command has its own plan + executor pair. The shared resolver
 helpers (``resolve_source_for_delete``, ``resolve_source_by_exact_title``,
 ``require_yes_in_json``) also live here because they are mutation-specific
-and were previously private helpers on ``cli/source_cmd.py``. The
+and were previously private helpers on ``cli/source_cmd.py``. Typed result
+dataclasses carry presentation payloads back to the command layer. The
 :class:`MutationPlan` pipeline from
 ``cli/services/confirming_mutation.py`` handles the resolve → confirm →
-execute → serialize flow for the destructive paths.
+execute → serialize flow for the destructive paths without printing.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-import click
-
-from ...types import DriveMimeType
-from ..error_handler import output_error
-from ..rendering import (
-    cli_print,
-    cli_status,
-    console,
-    emit_status,
-    json_output_response,
-)
+from ...types import DriveMimeType, Source
 from ..resolve import resolve_source_id, validate_id
 from .confirming_mutation import MutationPlan, run_confirmed_mutation
 from .source_serializers import source_summary_payload
@@ -34,6 +26,151 @@ if TYPE_CHECKING:
     from ...client import NotebookLMClient
 
 DriveMimeChoice = Literal["google-doc", "google-slides", "google-sheets", "pdf"]
+
+
+@dataclass(frozen=True)
+class SourceMutationError(Exception):
+    """Typed source-mutation error for command-layer rendering and exit policy."""
+
+    message: str
+    code: str
+    extra: dict[str, Any] | None = None
+    status_message: str | None = None
+
+    def __str__(self) -> str:
+        return self.message
+
+
+@dataclass(frozen=True)
+class SourceIdResolution:
+    """Resolved source-id data plus optional status prose for the command layer."""
+
+    source_id: str
+    status_message: str | None = None
+
+
+@dataclass(frozen=True)
+class SourceDeleteResult:
+    """Outcome of ``source delete``."""
+
+    source_id: str
+    notebook_id: str
+    success: bool
+    status: Literal["completed", "cancelled"]
+    status_message: str | None = None
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return {
+            "action": "delete",
+            "source_id": self.source_id,
+            "notebook_id": self.notebook_id,
+            "success": self.success,
+            "status": (
+                "cancelled"
+                if self.status == "cancelled"
+                else ("deleted" if self.success else "unknown")
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class SourceDeleteByTitleResult:
+    """Outcome of ``source delete-by-title``."""
+
+    source_id: str
+    title: str
+    notebook_id: str
+    success: bool
+    status: Literal["completed", "cancelled"]
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return {
+            "action": "delete-by-title",
+            "source_id": self.source_id,
+            "title": self.title,
+            "notebook_id": self.notebook_id,
+            "success": self.success,
+            "status": (
+                "cancelled"
+                if self.status == "cancelled"
+                else ("deleted" if self.success else "unknown")
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class SourceRenameResult:
+    """Outcome of ``source rename``."""
+
+    source: Source
+    notebook_id: str
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return {
+            "action": "rename",
+            "source_id": self.source.id,
+            "notebook_id": self.notebook_id,
+            "title": self.source.title,
+            "status": "renamed",
+        }
+
+
+@dataclass(frozen=True)
+class SourceRefreshResult:
+    """Outcome of ``source refresh``."""
+
+    source_id: str
+    notebook_id: str
+    result: Source | bool | None
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        if self.result and self.result is not True:
+            return {
+                "action": "refresh",
+                "source_id": self.result.id,
+                "notebook_id": self.notebook_id,
+                "title": self.result.title,
+                "status": "refreshed",
+            }
+        if self.result is True:
+            return {
+                "action": "refresh",
+                "source_id": self.source_id,
+                "notebook_id": self.notebook_id,
+                "status": "refreshed",
+            }
+        return {
+            "action": "refresh",
+            "source_id": self.source_id,
+            "notebook_id": self.notebook_id,
+            "status": "no_result",
+        }
+
+
+@dataclass(frozen=True)
+class SourceAddDriveResult:
+    """Outcome of ``source add-drive``."""
+
+    source: Source
+    notebook_id: str
+    file_id: str
+    mime_type: DriveMimeChoice
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return {
+            "action": "add-drive",
+            "source": {
+                **source_summary_payload(self.source),
+                "drive_file_id": self.file_id,
+                "mime_type": self.mime_type,
+            },
+            "notebook_id": self.notebook_id,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -65,38 +202,32 @@ def looks_like_full_source_id(source_id: str) -> bool:
 
 async def resolve_source_for_delete(
     client, notebook_id: str, source_id: str, *, json_output: bool = False
-) -> str:
+) -> SourceIdResolution:
     """Resolve a source ID for delete, returning the full source ID string.
 
     Canonical UUIDs take a fast path and skip the live source list
-    lookup. Partial IDs are resolved against the live list. When
-    ``json_output`` is True, the "Matched..." diagnostic for a successful
-    partial match is routed to stderr so stdout stays parseable JSON.
+    lookup. Partial IDs are resolved against the live list. Successful
+    partial matches return status prose for the command layer to emit.
     """
     source_id = validate_id(source_id, "source")
     if looks_like_full_source_id(source_id):
-        return source_id
+        return SourceIdResolution(source_id=source_id)
 
     sources = await client.sources.list(notebook_id)
     matches = [item for item in sources if item.id.lower().startswith(source_id.lower())]
 
     if len(matches) == 1:
+        status_message = None
         if matches[0].id != source_id:
             title = matches[0].title or "(untitled)"
-            emit_status(
-                f"[dim]Matched: {matches[0].id[:12]}... ({title})[/dim]",
-                json_output=json_output,
-            )
-        return matches[0].id
+            status_message = f"[dim]Matched: {matches[0].id[:12]}... ({title})[/dim]"
+        return SourceIdResolution(source_id=matches[0].id, status_message=status_message)
 
     if len(matches) > 1:
-        output_error(
+        raise SourceMutationError(
             build_id_ambiguity_error(source_id, matches),
             "AMBIGUOUS_ID",
-            json_output,
-            1,
         )
-        raise AssertionError("unreachable")  # pragma: no cover
 
     title_matches = [item for item in sources if item.title == source_id]
     if title_matches:
@@ -108,17 +239,13 @@ async def resolve_source_for_delete(
             lines.append(f"  {item.id[:12]}... {item.title}")
         if len(title_matches) > 5:
             lines.append(f"  ... and {len(title_matches) - 5} more")
-        output_error("\n".join(lines), "VALIDATION_ERROR", json_output, 1)
-        raise AssertionError("unreachable")  # pragma: no cover
+        raise SourceMutationError("\n".join(lines), "VALIDATION_ERROR")
 
-    output_error(
+    raise SourceMutationError(
         f"No source found starting with '{source_id}'. "
         "Run 'notebooklm source list' to see available sources.",
         "NOT_FOUND",
-        json_output,
-        1,
     )
-    raise AssertionError("unreachable")  # pragma: no cover
 
 
 async def resolve_source_by_exact_title(
@@ -138,37 +265,37 @@ async def resolve_source_by_exact_title(
             lines.append(f"  {item.id[:12]}... {item.title}")
         if len(matches) > 5:
             lines.append(f"  ... and {len(matches) - 5} more")
-        output_error("\n".join(lines), "AMBIGUOUS_TITLE", json_output, 1)
+        raise SourceMutationError("\n".join(lines), "AMBIGUOUS_TITLE")
 
-    output_error(
+    raise SourceMutationError(
         f"No source found with title '{title}'. "
         "Run 'notebooklm source list' to see available sources.",
         "NOT_FOUND",
-        json_output,
-        1,
     )
-    raise AssertionError("unreachable")  # pragma: no cover
 
 
-def require_yes_in_json(*, action: str, extra: dict[str, Any] | None = None) -> None:
-    """Emit a structured ``CONFIRM_REQUIRED`` error and exit non-zero.
+def require_yes_in_json(
+    *,
+    action: str,
+    extra: dict[str, Any] | None = None,
+    status_message: str | None = None,
+) -> None:
+    """Raise a typed ``CONFIRM_REQUIRED`` error for command-layer handling.
 
     Centralises the JSON-mode confirmation gate used by destructive
     commands (``source delete``, ``source delete-by-title``, ``source
-    clean``). Calling this helper always raises ``SystemExit(1)`` via
-    :func:`output_error` — it never returns normally.
+    clean``). Calling this helper always raises a typed error for the
+    command layer; it never returns normally.
     """
     payload: dict[str, Any] = {"action": action}
     if extra:
         payload.update(extra)
-    output_error(
+    raise SourceMutationError(
         "Pass --yes to confirm destructive operation in --json mode",
-        code="CONFIRM_REQUIRED",
-        json_output=True,
-        exit_code=1,
-        extra=payload,
+        "CONFIRM_REQUIRED",
+        payload,
+        status_message,
     )
-    raise AssertionError("unreachable")  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -187,12 +314,15 @@ class SourceDeletePlan:
 
 
 async def execute_source_delete(
-    client: NotebookLMClient, plan: SourceDeletePlan, *, ctx: click.Context | None = None
-) -> None:
+    client: NotebookLMClient,
+    plan: SourceDeletePlan,
+    *,
+    confirmer: Callable[[str], bool],
+) -> SourceDeleteResult:
     """Resolve + confirm + delete a single source by id or partial id."""
 
     async def resolve_delete(client):
-        resolved_id = await resolve_source_for_delete(
+        resolution = await resolve_source_for_delete(
             client, plan.notebook_id, plan.source_id, json_output=plan.json_output
         )
         # P1.T2 bug 1: In --json mode, never prompt — automation cannot
@@ -202,14 +332,16 @@ async def execute_source_delete(
             require_yes_in_json(
                 action="delete",
                 extra={
-                    "source_id": resolved_id,
+                    "source_id": resolution.source_id,
                     "notebook_id": plan.notebook_id,
                 },
+                status_message=resolution.status_message,
             )
         return {
             "notebook_id": plan.notebook_id,
-            "source_id": resolved_id,
+            "source_id": resolution.source_id,
             "success": False,
+            "status_message": resolution.status_message,
         }
 
     async def execute_delete(client, resolved):
@@ -245,17 +377,15 @@ async def execute_source_delete(
         client,
         yes=plan.yes,
         json_output=plan.json_output,
-        confirmer=click.confirm,
+        confirmer=confirmer,
     )
-    if result.status == "cancelled" or plan.json_output:
-        return
-
-    resolved_id = result.resolved["source_id"]
-    success = bool(result.resolved["success"])
-    if success:
-        cli_print(f"[green]Deleted source:[/green] {resolved_id}", ctx=ctx)
-    else:
-        cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)
+    return SourceDeleteResult(
+        source_id=result.resolved["source_id"],
+        notebook_id=result.resolved["notebook_id"],
+        success=bool(result.resolved["success"]),
+        status=result.status,
+        status_message=result.resolved.get("status_message"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +407,8 @@ async def execute_source_delete_by_title(
     client: NotebookLMClient,
     plan: SourceDeleteByTitlePlan,
     *,
-    ctx: click.Context | None = None,
-) -> None:
+    confirmer: Callable[[str], bool],
+) -> SourceDeleteByTitleResult:
     """Resolve + confirm + delete a source by exact title."""
 
     async def resolve_delete_by_title(client):
@@ -337,17 +467,15 @@ async def execute_source_delete_by_title(
         client,
         yes=plan.yes,
         json_output=plan.json_output,
-        confirmer=click.confirm,
+        confirmer=confirmer,
     )
-    if result.status == "cancelled" or plan.json_output:
-        return
-
-    source_id = result.resolved["source_id"]
-    success = bool(result.resolved["success"])
-    if success:
-        cli_print(f"[green]Deleted source:[/green] {source_id}", ctx=ctx)
-    else:
-        cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)
+    return SourceDeleteByTitleResult(
+        source_id=result.resolved["source_id"],
+        title=result.resolved["title"],
+        notebook_id=result.resolved["notebook_id"],
+        success=bool(result.resolved["success"]),
+        status=result.status,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -368,29 +496,13 @@ class SourceRenamePlan:
 async def execute_source_rename(
     client: NotebookLMClient,
     plan: SourceRenamePlan,
-    *,
-    ctx: click.Context | None = None,
-) -> None:
+) -> SourceRenameResult:
     """Resolve + rename a single source."""
     resolved_id = await resolve_source_id(
         client, plan.notebook_id, plan.source_id, json_output=plan.json_output
     )
     src = await client.sources.rename(plan.notebook_id, resolved_id, plan.new_title)
-
-    if plan.json_output:
-        json_output_response(
-            {
-                "action": "rename",
-                "source_id": src.id,
-                "notebook_id": plan.notebook_id,
-                "title": src.title,
-                "status": "renamed",
-            }
-        )
-        return
-
-    cli_print(f"[green]Renamed source:[/green] {src.id}", ctx=ctx)
-    cli_print(f"[bold]New title:[/bold] {src.title}", ctx=ctx)
+    return SourceRenameResult(source=src, notebook_id=plan.notebook_id)
 
 
 # ---------------------------------------------------------------------------
@@ -410,56 +522,14 @@ class SourceRefreshPlan:
 async def execute_source_refresh(
     client: NotebookLMClient,
     plan: SourceRefreshPlan,
-    *,
-    ctx: click.Context | None = None,
-) -> None:
+) -> SourceRefreshResult:
     """Resolve + refresh a URL/Drive source."""
     resolved_id = await resolve_source_id(
         client, plan.notebook_id, plan.source_id, json_output=plan.json_output
     )
 
-    if plan.json_output:
-        src = await client.sources.refresh(plan.notebook_id, resolved_id)
-    else:
-        with cli_status("Refreshing source...", ctx=ctx):
-            src = await client.sources.refresh(plan.notebook_id, resolved_id)
-
-    if plan.json_output:
-        # ``refresh`` may return a Source dataclass, ``True``, or
-        # falsy/None. Surface the same three states in JSON so
-        # automation can branch on ``status`` without scraping text.
-        if src and src is not True:
-            data = {
-                "action": "refresh",
-                "source_id": src.id,
-                "notebook_id": plan.notebook_id,
-                "title": src.title,
-                "status": "refreshed",
-            }
-        elif src is True:
-            data = {
-                "action": "refresh",
-                "source_id": resolved_id,
-                "notebook_id": plan.notebook_id,
-                "status": "refreshed",
-            }
-        else:
-            data = {
-                "action": "refresh",
-                "source_id": resolved_id,
-                "notebook_id": plan.notebook_id,
-                "status": "no_result",
-            }
-        json_output_response(data)
-        return
-
-    if src and src is not True:
-        cli_print(f"[green]Source refreshed:[/green] {src.id}", ctx=ctx)
-        cli_print(f"[bold]Title:[/bold] {src.title}", ctx=ctx)
-    elif src is True:
-        cli_print(f"[green]Source refreshed:[/green] {resolved_id}", ctx=ctx)
-    else:
-        cli_print("[yellow]Refresh returned no result[/yellow]", ctx=ctx)
+    src = await client.sources.refresh(plan.notebook_id, resolved_id)
+    return SourceRefreshResult(source_id=resolved_id, notebook_id=plan.notebook_id, result=src)
 
 
 # ---------------------------------------------------------------------------
@@ -489,42 +559,32 @@ class SourceAddDrivePlan:
 async def execute_source_add_drive(
     client: NotebookLMClient,
     plan: SourceAddDrivePlan,
-    *,
-    ctx: click.Context | None = None,
-) -> None:
+) -> SourceAddDriveResult:
     """Add a Google Drive document as a source."""
     mime = _DRIVE_MIME_MAP[plan.mime_type]
 
-    if plan.json_output:
-        src = await client.sources.add_drive(plan.notebook_id, plan.file_id, plan.title, mime)
-    else:
-        with console.status("Adding Drive source..."):
-            src = await client.sources.add_drive(plan.notebook_id, plan.file_id, plan.title, mime)
-
-    if plan.json_output:
-        json_output_response(
-            {
-                "action": "add-drive",
-                "source": {
-                    **source_summary_payload(src),
-                    "drive_file_id": plan.file_id,
-                    "mime_type": plan.mime_type,
-                },
-                "notebook_id": plan.notebook_id,
-            }
-        )
-        return
-
-    cli_print(f"[green]Added Drive source:[/green] {src.id}", ctx=ctx)
-    cli_print(f"[bold]Title:[/bold] {src.title}", ctx=ctx)
+    src = await client.sources.add_drive(plan.notebook_id, plan.file_id, plan.title, mime)
+    return SourceAddDriveResult(
+        source=src,
+        notebook_id=plan.notebook_id,
+        file_id=plan.file_id,
+        mime_type=plan.mime_type,
+    )
 
 
 __all__ = [
     "SourceAddDrivePlan",
+    "SourceAddDriveResult",
     "SourceDeleteByTitlePlan",
+    "SourceDeleteByTitleResult",
     "SourceDeletePlan",
+    "SourceDeleteResult",
+    "SourceIdResolution",
+    "SourceMutationError",
     "SourceRefreshPlan",
+    "SourceRefreshResult",
     "SourceRenamePlan",
+    "SourceRenameResult",
     "build_id_ambiguity_error",
     "execute_source_add_drive",
     "execute_source_delete",
