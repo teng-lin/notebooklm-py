@@ -226,7 +226,7 @@ class TestGenerateAudio:
 
         The spinner gives interactive users feedback during the long wait, with
         a transient line naming the artifact kind (and a typical-duration hint).
-        Asserts the wrap by patching `notebooklm.cli.generate_cmd.console.status`
+        Asserts the wrap by patching `notebooklm.cli.polling_ui.console.status`
         and confirming it is invoked exactly once with a message that mentions
         the artifact kind. Does not assert the elapsed-timer ticker — that's a
         rendering detail that relies on a TTY which `CliRunner` doesn't have.
@@ -248,7 +248,7 @@ class TestGenerateAudio:
                 patch(
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
-                patch.object(generate_module.console, "status") as mock_status,
+                patch.object(polling_ui_module.console, "status") as mock_status,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 # ``console.status`` returns a context manager; emulate one so
