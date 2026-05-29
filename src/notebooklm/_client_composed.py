@@ -116,7 +116,17 @@ class ClientComposed:
         method on :class:`TransportDrainTracker`, :class:`ReqidCounter`, and
         :class:`AuthRefreshCoordinator`. Passing ``None`` clears the binding
         for the next ``open()`` (which will rebind to a fresh loop).
+
+        When the loop actually changes, the cached semaphore is discarded here
+        too so this method is self-consistent even if called independently of
+        :meth:`reset_after_open` (e.g. directly in a test or a future caller):
+        a stale semaphore bound to the old loop must never be reused after a
+        rebind. The production ``open()`` path also calls
+        :meth:`reset_after_open` immediately after, so the discard is
+        idempotent there.
         """
+        if loop is not self._bound_loop:
+            self._rpc_semaphore = None
         self._bound_loop = loop
 
     def reset_after_open(self) -> None:

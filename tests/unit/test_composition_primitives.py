@@ -526,20 +526,76 @@ def test_reset_after_open_discards_lazy_semaphore() -> None:
     asyncio.run(_exercise())
 
 
-def test_set_bound_loop_none_clears_binding() -> None:
-    """``set_bound_loop(None)`` re-arms the silent-no-op path for the next open."""
+def test_set_bound_loop_none_clears_binding_and_discards_semaphore() -> None:
+    """``set_bound_loop(None)`` re-arms the no-op path and drops the stale semaphore."""
 
     async def _exercise() -> None:
         holder = ClientComposed(max_concurrent_rpcs=2)
         holder.set_bound_loop(asyncio.get_running_loop())
-        assert holder._bound_loop is asyncio.get_running_loop()
+        async with holder.get_rpc_semaphore():
+            pass
+        assert holder._rpc_semaphore is not None
+        # Clearing the binding is a loop change (loop -> None), so the cached
+        # semaphore bound to the old loop is discarded for self-consistency.
         holder.set_bound_loop(None)
         assert holder._bound_loop is None
+        assert holder._rpc_semaphore is None
         # With the binding cleared the guard is a no-op again.
         async with holder.get_rpc_semaphore():
             pass
 
     asyncio.run(_exercise())
+
+
+def test_set_bound_loop_same_loop_keeps_cached_semaphore() -> None:
+    """Re-binding to the *same* loop must NOT discard the live semaphore.
+
+    Idempotent ``set_bound_loop`` calls with the unchanged loop are a no-op on
+    the cache — only a genuine loop change invalidates it.
+    """
+
+    async def _exercise() -> None:
+        holder = ClientComposed(max_concurrent_rpcs=2)
+        loop = asyncio.get_running_loop()
+        holder.set_bound_loop(loop)
+        async with holder.get_rpc_semaphore():
+            pass
+        first = holder._rpc_semaphore
+        assert first is not None
+        # Same loop again — the cached semaphore survives.
+        holder.set_bound_loop(loop)
+        assert holder._rpc_semaphore is first
+
+    asyncio.run(_exercise())
+
+
+def test_set_bound_loop_different_loop_discards_stale_semaphore() -> None:
+    """A loop change via ``set_bound_loop`` alone discards the stale semaphore.
+
+    This pins the gemini-flagged self-consistency contract: even without a
+    matching ``reset_after_open`` call, rebinding to a different loop must
+    invalidate the semaphore bound to the previous loop so it is never reused.
+    """
+    holder = ClientComposed(max_concurrent_rpcs=2)
+
+    async def _bind_and_build_under_loop_a() -> None:
+        holder.set_bound_loop(asyncio.get_running_loop())
+        async with holder.get_rpc_semaphore():
+            pass
+
+    asyncio.run(_bind_and_build_under_loop_a())
+    assert holder._rpc_semaphore is not None
+
+    async def _rebind_under_loop_b() -> None:
+        # set_bound_loop to a genuinely different loop must drop the stale
+        # semaphore so the next get_rpc_semaphore() rebuilds on loop B.
+        holder.set_bound_loop(asyncio.get_running_loop())
+        assert holder._rpc_semaphore is None
+        async with holder.get_rpc_semaphore():
+            pass
+        assert holder._rpc_semaphore is not None
+
+    asyncio.run(_rebind_under_loop_b())
 
 
 def test_client_shell_reads_composition_from_client_composed() -> None:
