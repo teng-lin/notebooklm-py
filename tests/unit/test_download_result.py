@@ -233,6 +233,8 @@ async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_p
         "https://attacker.evil\\.google.com/file.mp4",
         "https://attacker.evil%5c.google.com/file.mp4",
         "https://attacker.evil%5C.google.com/file.mp4",
+        "https://attacker.evil%2f.google.com/file.mp4",
+        "https://attacker.evil%2F.google.com/file.mp4",
     ],
 )
 async def test_download_batch_rejects_backslash_hostname_confusion(
