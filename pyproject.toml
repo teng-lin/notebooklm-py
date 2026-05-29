@@ -156,6 +156,31 @@ ignore_missing_imports = true
 files = ["src/notebooklm"]
 exclude = ["tests/"]
 
+# Public library modules and moved implementation modules that back exported
+# public types are checked more strictly before the package advertises PEP 561
+# typing support via ``notebooklm/py.typed``.
+[[tool.mypy.overrides]]
+module = [
+    "notebooklm",
+    "notebooklm._types.*",
+    "notebooklm.artifacts",
+    "notebooklm.auth",
+    "notebooklm.client",
+    "notebooklm.exceptions",
+    "notebooklm.io",
+    "notebooklm.log",
+    "notebooklm.migration",
+    "notebooklm.paths",
+    "notebooklm.research",
+    "notebooklm.types",
+    "notebooklm.urls",
+    "notebooklm.utils",
+]
+disallow_untyped_defs = true
+disallow_any_generics = true
+warn_return_any = true
+strict_optional = true
+
 # Key check: catch attribute access on wrong types (would have caught our bugs)
 [[tool.mypy.overrides]]
 module = "notebooklm.cli.*"

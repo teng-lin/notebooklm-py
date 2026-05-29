@@ -12,7 +12,6 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
 
 from .types import GenerationStatus
 
@@ -21,7 +20,7 @@ RATE_LIMIT_RETRY_MAX_DELAY = 300.0
 RATE_LIMIT_RETRY_BACKOFF_MULTIPLIER = 2.0
 
 _GenerationCallable = Callable[[], Awaitable[GenerationStatus | None]]
-_RetrySleep = Callable[[float], Awaitable[Any]]
+_RetrySleep = Callable[[float], Awaitable[object]]
 
 
 @dataclass(frozen=True)
