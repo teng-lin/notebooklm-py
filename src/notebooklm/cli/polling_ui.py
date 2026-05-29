@@ -18,7 +18,12 @@ async def status_with_elapsed(
     json_output: bool = False,
     resume_hint: str | None = None,
 ) -> AsyncIterator[None]:
-    """Show a transient Rich status spinner with an elapsed-seconds counter."""
+    """Show a transient Rich status spinner with an elapsed-seconds counter.
+
+    The context manager is a no-op in JSON mode so stdout remains parseable. If
+    ``resume_hint`` is provided, ``KeyboardInterrupt`` is converted to the CLI's
+    structured cancellation response; otherwise the interrupt propagates.
+    """
 
     @contextlib.contextmanager
     def _sigint_guard() -> Iterator[None]:

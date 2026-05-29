@@ -870,7 +870,6 @@ async def execute_generation(
         result,
         plan.display_name,
         plan.wait,
-        plan.json_output,
         timeout=plan.timeout,
         interval=plan.interval,
         wait_context=wait_context,

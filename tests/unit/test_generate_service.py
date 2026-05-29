@@ -21,7 +21,7 @@ Coverage:
 * ``execute_generation`` mind-map path: dispatches to
   ``generate_mind_map`` and renders via the generate_cmd-level
   ``_output_mind_map_result`` (which the test asserts on).
-* Warning emission to stderr happens BEFORE the API call.
+* Warning emission stays with the command layer; service execution remains I/O-free.
 """
 
 from __future__ import annotations
@@ -615,6 +615,7 @@ async def test_execute_generation_mind_map_dispatches_and_returns_typed_result(
 @pytest.mark.asyncio
 async def test_execute_generation_leaves_plan_warnings_for_command_layer(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Queued plan warnings stay on the plan while execution remains I/O-free."""
 
@@ -644,6 +645,7 @@ async def test_execute_generation_leaves_plan_warnings_for_command_layer(
     await execute_generation(plan, client)
 
     client.artifacts.generate_report.assert_awaited_once()
+    assert capsys.readouterr().err == ""
 
 
 @pytest.mark.asyncio

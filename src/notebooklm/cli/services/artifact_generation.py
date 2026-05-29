@@ -104,7 +104,6 @@ async def handle_generation_result(
     result: Any,
     artifact_type: str,
     wait: bool = False,
-    json_output: bool = False,
     timeout: float = 300.0,
     interval: float | None = None,
     wait_context: Callable[[str, str], AbstractAsyncContextManager[None]] | None = None,
@@ -123,8 +122,6 @@ async def handle_generation_result(
         result: The generation result from artifacts API.
         artifact_type: Display name for the artifact type (e.g., "audio", "video").
         wait: Whether to wait for completion.
-        json_output: Deprecated compatibility argument; callers should use
-            ``wait_context`` for presentation policy.
         timeout: Timeout forwarded to ``wait_for_completion``. Callers supply
             per-command defaults; media generators use longer budgets while
             generic artifact waits remain at 300s.

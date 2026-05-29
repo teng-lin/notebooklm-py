@@ -253,7 +253,7 @@ def _run_generate(*, kind: str, **handler_locals: Any) -> Any:
                 ),
                 mind_map_context=lambda: status_with_elapsed(
                     "Generating mind map...",
-                    json_output=False,
+                    json_output=plan.json_output,
                 ),
             )
             _render_generation_result(result, plan.json_output)
