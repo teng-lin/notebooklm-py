@@ -1,6 +1,7 @@
 """Tests for agent CLI commands."""
 
 import importlib
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,8 @@ agent_templates_module = importlib.import_module("notebooklm.cli.agent_templates
 
 @pytest.fixture
 def runner():
+    if "mix_stderr" in inspect.signature(CliRunner).parameters:
+        return CliRunner(mix_stderr=False)
     return CliRunner()
 
 
