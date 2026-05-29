@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from ._row_adapters import ArtifactRow
+from ._row_adapters_artifacts import ArtifactRow
 from ._session_contracts import RpcCaller
 from .rpc import ArtifactTypeCode, RPCError, RPCMethod
 from .types import Artifact, ArtifactNotReadyError, ArtifactType
@@ -142,7 +142,7 @@ class ArtifactListingService:
 
         Position knowledge (``a[2]`` type, ``a[4]`` status, ``a[15][0]``
         timestamp) is delegated to
-        :class:`notebooklm._row_adapters.ArtifactRow` — when Google
+        :class:`notebooklm._row_adapters_artifacts.ArtifactRow` — when Google
         reshapes the wire, the position constants change there and this
         method adapts automatically.
 

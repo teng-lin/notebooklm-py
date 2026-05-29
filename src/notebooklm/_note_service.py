@@ -27,7 +27,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from ._row_adapters import NoteRow
+from ._row_adapters_notes import NoteRow
 from .rpc.types import RPCMethod
 from .types import Note
 
@@ -180,7 +180,7 @@ class NoteService:
 
         Position knowledge (the deletion sentinel and the
         legacy-vs-current content dispatch) lives in
-        :class:`notebooklm._row_adapters.NoteRow`. This classifier reads
+        :class:`notebooklm._row_adapters_notes.NoteRow`. This classifier reads
         named properties on the adapter and does not touch raw indices.
         """
         if not isinstance(row, list) or len(row) == 0:

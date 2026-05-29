@@ -77,7 +77,7 @@ RPC Layer (rpc/)
    - `NotebookLMClient`: Main async client with namespaced APIs
    - `_notebooks.py`, `_sources.py`, `_artifacts.py`, etc.: Domain APIs
    - `_source_*.py`, `_artifact_*.py`: Feature-specific service logic
-   - `_types/`, `_row_adapters.py`: Dataclass implementations and typed views over positional RPC rows
+   - `_types/`, `_row_adapters*.py`: Dataclass implementations and typed views over positional RPC rows
    - `_research_task_parser.py`, `research.py`: Research task parsing plus public citation/report utilities
 
 4. **CLI Layer** (`src/notebooklm/cli/`):
@@ -124,7 +124,10 @@ RPC Layer (rpc/)
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
 | `paths.py`, `migration.py` | Profile-aware path resolution and locked migration from the legacy flat layout |
 | `_types/`, `types.py` | Dataclass implementation package and public type/re-export facade |
-| `_row_adapters.py` | Typed adapters over raw positional RPC rows for artifacts, notes, and sources |
+| `_row_adapters.py` | Compatibility re-export shim for row adapters |
+| `_row_adapters_artifacts.py` | `ArtifactRow` typed view over raw positional artifact RPC rows |
+| `_row_adapters_notes.py` | `NoteRow` typed view over raw positional note and mind-map RPC rows |
+| `_row_adapters_sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
@@ -195,7 +198,10 @@ src/notebooklm/
 ├── _logging.py                  # Redaction + correlation logging internals
 ├── _loop_affinity.py            # Event-loop affinity guard helper
 ├── _mutating_operations.py      # Legacy recovery metadata view over _idempotency
-├── _row_adapters.py             # Typed views over positional RPC rows
+├── _row_adapters.py             # Compatibility re-export shim for row adapters
+├── _row_adapters_artifacts.py   # Artifact row adapter
+├── _row_adapters_notes.py       # Note and mind-map row adapter
+├── _row_adapters_sources.py     # Source row adapter
 ├── _session_config.py           # DEFAULT_* knobs + module-level constants
 ├── _session_helpers.py          # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
 ├── _session_init.py             # Runtime collaborator construction + validation

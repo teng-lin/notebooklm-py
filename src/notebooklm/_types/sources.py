@@ -167,19 +167,16 @@ class Source:
 
         Multi-shape dispatch (the three wire shapes — deeply nested,
         medium nested, flat) is centralised in
-        :meth:`notebooklm._row_adapters.SourceRow.from_unknown_shape`;
+        :meth:`notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`;
         position knowledge for the entry layout lives on
         :class:`SourceRow` itself. This method only translates the
         adapter's typed properties into the :class:`Source` dataclass.
         See ``docs/improvement.md`` §6.2 for context.
         """
-        # Local import: ``_row_adapters`` re-imports ``_datetime_from_timestamp``
-        # from ``_types/common`` (a sibling). The dependency graph is
-        # acyclic (``_types/__init__.py`` doesn't pull in ``sources.py``),
-        # but the import is kept local to make the row-adapter dependency
-        # explicit on every call path and to keep the module's top-level
-        # import surface unchanged.
-        from .._row_adapters import SourceRow, SourceRowShape
+        # Keep the row-adapter dependency local so importing the source
+        # dataclass package does not pull source-row parsing helpers into
+        # the top-level public type facade.
+        from .._row_adapters_sources import SourceRow, SourceRowShape
 
         row = SourceRow.from_unknown_shape(data)
 

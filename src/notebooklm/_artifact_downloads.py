@@ -33,7 +33,7 @@ from .types import (
 if TYPE_CHECKING:
     from ._artifact_listing import ArtifactListingService
     from ._mind_map import NoteBackedMindMapService
-    from ._row_adapters import ArtifactRow
+    from ._row_adapters_artifacts import ArtifactRow
     from ._session_contracts import RpcCaller
 
 logger = logging.getLogger(__name__)

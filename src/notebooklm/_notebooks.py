@@ -10,7 +10,7 @@ from ._notebook_metadata import (
     NotebookSourceLister,
     create_default_source_lister,
 )
-from ._row_adapters import SourceRow
+from ._row_adapters_sources import SourceRow
 from ._session_contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
@@ -210,7 +210,7 @@ class NotebooksAPI:
             below and converted to an empty list. Per-row id-envelope
             decoding (including the drive-backed ``[None, True, [id]]``
             shape) is delegated to
-            :class:`notebooklm._row_adapters.SourceRow`; this method only
+            :class:`notebooklm._row_adapters_sources.SourceRow`; this method only
             performs the envelope walk down to ``notebook[0][1]``.
         """
         notebook_data = await self.get_raw(notebook_id)

@@ -13,7 +13,7 @@ from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
 from ._deadline import Monotonic, RuntimeDeadline, Sleep
 from ._polling_registry import PollRegistry
-from ._row_adapters import ArtifactRow
+from ._row_adapters_artifacts import ArtifactRow
 from ._session_contracts import LoopGuard, OperationScopeProvider
 from .exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from .rpc import (

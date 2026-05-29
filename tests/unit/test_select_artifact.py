@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._row_adapters import ArtifactRow
+from notebooklm._row_adapters_artifacts import ArtifactRow
 from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
 from notebooklm.types import ArtifactNotReadyError
 
