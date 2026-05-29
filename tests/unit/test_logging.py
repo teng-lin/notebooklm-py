@@ -711,6 +711,9 @@ def test_httpx_request_url_redacted_for_library_consumer(
     saved_root_logger.addHandler(root_handler)
     saved_root_logger.setLevel(logging.DEBUG)
 
+    # httpx emits its "HTTP Request: ..." line from logging.getLogger("httpx")
+    # directly (not a child logger), so the logger-level filter on "httpx"
+    # scrubs the record before it propagates to the root handler.
     logging.getLogger("httpx").info(
         "HTTP Request: GET https://notebooklm.google.com/_/batchexecute?f.sid=SESSION_LEAK "
         '"HTTP/1.1 200 OK"'

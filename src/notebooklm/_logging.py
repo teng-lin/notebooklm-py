@@ -393,6 +393,15 @@ def _install_thirdparty_redaction(*logger_names: str) -> None:
     these loggers sees no behavior change, and one who enables httpx DEBUG via
     ``logging.basicConfig`` no longer leaks ``?f.sid=`` request URLs.
 
+    Scope note: a logger-level filter only runs for records that *originate*
+    on the named logger. Records emitted on a child logger (e.g.
+    ``httpx._client``) propagate straight to ancestor *handlers* via
+    ``callHandlers`` and never re-enter the ancestor's ``Logger.handle``, so
+    the filter here does NOT see them. That is fine for issue #1166 because
+    httpx emits its request-URL line from ``logging.getLogger("httpx")``
+    directly; cover a child logger explicitly only if a future leak path
+    emits there.
+
     Idempotent: re-running does not stack duplicate filters.
     """
     for name in logger_names:
