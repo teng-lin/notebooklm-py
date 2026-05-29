@@ -285,22 +285,15 @@ def _extract_source_id_field_candidates(result: Any, filename: str) -> list[str]
             candidates.append(candidate)
             seen.add(candidate)
 
-    def context_matches(node: dict[Any, Any]) -> bool:
-        names = _source_context_names(node)
-        if not names:
-            return False
-        return any(_coerce_filename_candidate(name) == filename for name in names)
-
-    def context_conflicts(node: dict[Any, Any]) -> bool:
-        names = _source_context_names(node)
-        return bool(names) and not context_matches(node)
-
     def walk(node: Any, depth: int) -> None:
         if depth > _SOURCE_ID_ENVELOPE_MAX_DEPTH:
             return
         if isinstance(node, dict):
-            mismatched_context = context_conflicts(node)
-            matched_context = context_matches(node)
+            names = _source_context_names(node)
+            matched_context = bool(names) and any(
+                _coerce_filename_candidate(name) == filename for name in names
+            )
+            mismatched_context = bool(names) and not matched_context
             for key, value in node.items():
                 if not isinstance(key, str):
                     continue
