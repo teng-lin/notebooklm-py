@@ -16,7 +16,8 @@ import click
 from ..client import NotebookLMClient
 from .auth_runtime import with_client
 from .context import clear_context, get_current_notebook, set_current_notebook
-from .options import list_options, notebook_option
+from .error_handler import _output_error
+from .options import json_option, list_options, notebook_option
 from .rendering import cli_print, console, json_output_response, render_list
 from .resolve import require_notebook, resolve_notebook_id
 from .services.confirming_mutation import MutationPlan, run_confirmed_mutation
@@ -130,8 +131,9 @@ def register_notebook_commands(cli):
     @cli.command("delete")
     @notebook_option
     @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+    @json_option
     @with_client
-    def delete_cmd(ctx, notebook_id, yes, client_auth):
+    def delete_cmd(ctx, notebook_id, yes, json_output, client_auth):
         """Delete a notebook.
 
         Supports partial IDs - 'notebooklm delete -n abc' matches 'abc123...'
@@ -142,7 +144,23 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
 
                 async def resolve_delete(client):
-                    resolved_id = await resolve_notebook_id(client, notebook_id)
+                    resolved_id = await resolve_notebook_id(
+                        client, notebook_id, json_output=json_output
+                    )
+
+                    # In JSON mode, refuse to prompt: ``click.confirm`` writes to
+                    # stdout, which would corrupt the parseable JSON contract callers
+                    # rely on. Require --yes and emit a structured error otherwise.
+                    if json_output and not yes:
+                        _output_error(
+                            "Pass --yes to confirm deletion in --json mode",
+                            code="VALIDATION_ERROR",
+                            json_output=json_output,
+                            exit_code=1,
+                            extra={"notebook_id": resolved_id, "success": False},
+                        )
+                        raise AssertionError("unreachable")  # pragma: no cover
+
                     return {"notebook_id": resolved_id, "success": False}
 
                 async def execute_delete(client, resolved):
@@ -169,7 +187,7 @@ def register_notebook_commands(cli):
                     plan,
                     client,
                     yes=yes,
-                    json_output=False,
+                    json_output=json_output,
                     confirmer=click.confirm,
                 )
                 if result.status == "cancelled":
@@ -177,11 +195,26 @@ def register_notebook_commands(cli):
 
                 resolved_id = result.resolved["notebook_id"]
                 success = bool(result.resolved["success"])
+
+                # Clear context if we deleted the current notebook. Do this
+                # regardless of output mode so JSON callers don't leave a stale
+                # active-notebook pointer behind.
+                if success and get_current_notebook() == resolved_id:
+                    clear_context()
+                    context_cleared = True
+                else:
+                    context_cleared = False
+
+                if json_output:
+                    payload = dict(result.payload)
+                    if context_cleared:
+                        payload["context_cleared"] = True
+                    json_output_response(payload)
+                    return
+
                 if success:
                     cli_print(f"[green]Deleted notebook:[/green] {resolved_id}", ctx=ctx)
-                    # Clear context if we deleted the current notebook
-                    if get_current_notebook() == resolved_id:
-                        clear_context()
+                    if context_cleared:
                         cli_print("[dim]Cleared current notebook context[/dim]", ctx=ctx)
                 else:
                     cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)

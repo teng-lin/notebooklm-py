@@ -599,6 +599,109 @@ class TestNotebookDelete:
             assert result.exit_code == 0
             assert "Delete may have failed" in result.output
 
+    def test_notebook_delete_json(self, runner, mock_auth):
+        """--json with --yes emits a parseable success envelope (issue #1167)."""
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id="nb_to_delete",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_client.notebooks.delete = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "--json", "-y"])
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output)
+            assert payload == {"notebook_id": "nb_to_delete", "success": True}
+            mock_client.notebooks.delete.assert_called_once_with("nb_to_delete")
+
+    def test_notebook_delete_json_requires_yes(self, runner, mock_auth):
+        """--json without --yes refuses to prompt and emits a typed error (issue #1167)."""
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id="nb_to_delete",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_client.notebooks.delete = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "--json"])
+
+            assert result.exit_code == 1
+            payload = json.loads(result.output)
+            assert payload["error"] is True
+            assert payload["code"] == "VALIDATION_ERROR"
+            assert payload["notebook_id"] == "nb_to_delete"
+            assert payload["success"] is False
+            mock_client.notebooks.delete.assert_not_called()
+
+    def test_notebook_delete_json_clears_context_if_current(self, runner, mock_auth, tmp_path):
+        """--json delete of the current notebook clears context and reports it (issue #1167)."""
+        context_file = tmp_path / "context.json"
+        context_file.write_text('{"notebook_id": "nb_to_delete"}')
+
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id="nb_to_delete",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_client.notebooks.delete = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with (
+                patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+                patch(
+                    "notebooklm.cli.notebook_cmd.get_current_notebook", return_value="nb_to_delete"
+                ),
+                patch("notebooklm.cli.notebook_cmd.clear_context") as mock_clear,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
+            ):
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "--json", "-y"])
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output)
+            assert payload == {
+                "notebook_id": "nb_to_delete",
+                "success": True,
+                "context_cleared": True,
+            }
+            mock_clear.assert_called_once()
+
 
 # =============================================================================
 # NOTEBOOK RENAME TESTS

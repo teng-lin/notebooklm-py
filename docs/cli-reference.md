@@ -107,6 +107,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `create <title> --json` | JSON envelope; with `--use` includes `active_notebook_id` | `notebooklm create "X" --use --json` |
 | `delete -n <id>` | Delete notebook (uses current notebook if `-n` omitted) | `notebooklm delete -n abc123` |
 | `delete -n <id> -y` | Skip confirmation | `notebooklm delete -n abc123 -y` |
+| `delete -n <id> --json` | Emit `{notebook_id, success}` envelope; requires `-y` (refuses to prompt in JSON mode) | `notebooklm delete -n abc123 -y --json` |
 | `rename <title>` | Rename current notebook | `notebooklm rename "New Title"` |
 | `summary` | Get AI summary | `notebooklm summary` |
 | `summary --topics` | Include suggested topics | `notebooklm summary --topics` |
