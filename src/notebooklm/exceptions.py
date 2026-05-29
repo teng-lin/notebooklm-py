@@ -28,6 +28,15 @@ if TYPE_CHECKING:
 ArtifactStalledPhase = Literal["pending", "in_progress"]
 
 
+_PREVIEW_LIMIT = 80
+# Pre-slice cap for the truncated path: scrub at most this many chars before
+# cutting to ``_PREVIEW_LIMIT``. The 10x window gives a boundary-straddling
+# secret ample room to be neutralized before the 80-char cut (mirrors the
+# two-stage slice in ``AuthExtractionError`` below), while bounding the regex
+# sweep at O(800 chars) instead of O(len(raw)) for multi-MB error bodies.
+_PREVIEW_SCRUB_CAP = _PREVIEW_LIMIT * 10
+
+
 def _truncate_response_preview(raw: str | None) -> str | None:
     """Truncate a raw RPC response preview for safe display in error contexts.
 
@@ -39,14 +48,20 @@ def _truncate_response_preview(raw: str | None) -> str | None:
     scrubbed *before* truncation in both modes. ``raw_response`` is a public
     attribute spliced into ``str()``/``repr()`` of RPC errors, so it escapes the
     logging pipeline's ``RedactingFilter`` and must be sanitized at the source.
+
+    In the default (truncated) path the input is pre-sliced to
+    ``_PREVIEW_SCRUB_CAP`` before scrubbing so a multi-MB error body does not
+    pay for a full regex sweep just to discard all but the first 80 chars. The
+    ``NOTEBOOKLM_DEBUG=1`` path keeps the whole body, so it scrubs the full
+    string.
     """
     if raw is None:
         return None
-    scrubbed = scrub_secrets(raw)
     if os.environ.get("NOTEBOOKLM_DEBUG") == "1":
-        return scrubbed
-    if len(scrubbed) > 80:
-        return scrubbed[:80] + "..."
+        return scrub_secrets(raw)
+    scrubbed = scrub_secrets(raw[:_PREVIEW_SCRUB_CAP])
+    if len(scrubbed) > _PREVIEW_LIMIT:
+        return scrubbed[:_PREVIEW_LIMIT] + "..."
     return scrubbed
 
 
