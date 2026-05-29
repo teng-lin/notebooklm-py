@@ -27,6 +27,7 @@ from unittest.mock import patch
 import pytest
 from filelock import FileLock
 
+import notebooklm.migration as migration_module
 from notebooklm.migration import (
     _MIGRATION_LOCK,
     _MIGRATION_MARKER,
@@ -193,7 +194,7 @@ def test_held_lock_surfaces_timeout_error(tmp_path: Path, monkeypatch: pytest.Mo
     holder.acquire()
 
     # Non-blocking acquire exercises the same wrapper branch without a real wait.
-    monkeypatch.setattr("notebooklm.migration._MIGRATION_LOCK_TIMEOUT", 0.0, raising=True)
+    monkeypatch.setattr(migration_module, "_MIGRATION_LOCK_TIMEOUT", 0.0, raising=True)
 
     try:
         with (

@@ -187,15 +187,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # `save_cookies_to_storage`, `_load_storage_state`, `get_storage_path`)
         # — outside the core-injection surface `make_fake_core` covers.
         "tests/unit/test_auth_psidts_recovery.py",
-        # reason: backoff test patches `notebooklm._session_helpers` stdlib
-        # time/sleep seams (asyncio.sleep) — stdlib seam, not core attribute.
-        "tests/unit/test_backoff.py",
-        # reason: Phase-2 PR-5 migrated this file's `asyncio.to_thread` patch
-        # to `notebooklm._session_lifecycle.asyncio.to_thread` (where
-        # `ClientLifecycle.save_cookies` sources it). Still a stdlib-seam
-        # string-target patch into `notebooklm.*` until ADR-007's pattern is
-        # extended to cover stdlib seams.
-        "tests/unit/test_cookie_persistence.py",
         # reason: RPC executor unit test stub-patches `notebooklm._rpc_executor`
         # module-level stdlib seams (asyncio.sleep, time providers) on the
         # executor module itself — below the core-injection seam.
@@ -209,18 +200,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # `notebooklm.cli.services.login.firefox_accounts.*` filesystem and
         # database-discovery helpers — CLI-side seam outside `make_fake_core`.
         "tests/unit/test_firefox_containers.py",
-        # reason: P3.T1 generate-extraction service tests patch CLI resolver
-        # functions (`notebooklm.cli.resolve.resolve_notebook_id`,
-        # `resolve_source_ids`) — module-level CLI seams above the
-        # `NotebookLMClient` core.
-        "tests/unit/test_generate_service.py",
         # reason: client __init__ ordering test patches construction helpers to
         # assert wiring order — verifies construction sequencing, not a core method seam.
         "tests/unit/test_init_order.py",
-        # reason: storage migration-lock test patches `notebooklm._auth.storage.*`
-        # filesystem lock helpers — module-level filesystem seam outside
-        # `make_fake_core`.
-        "tests/unit/test_migration_lock.py",
         # reason: public-API shim test asserts forwarding of `notebooklm.<x>`
         # facades; the string-target patches *are* the test subject (shim
         # routing) rather than an incidental implementation detail.
@@ -229,10 +211,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # module-level mapping used during request encoding — module-level data
         # seam, not a core attribute.
         "tests/unit/test_rpc_overrides.py",
-        # reason: source symlink test patches `notebooklm.cli.services.source_add.*`
-        # module-level filesystem helpers — CLI-side seam outside the
-        # `make_fake_core` core-injection surface.
-        "tests/unit/test_source_symlink.py",
     }
 )
 

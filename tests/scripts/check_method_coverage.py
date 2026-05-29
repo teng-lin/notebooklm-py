@@ -35,9 +35,8 @@ The allowlist is intended as a **one-way ratchet**:
 
 * It **must not grow** when a new ``RPCMethod`` member is added — new methods
   must ship with at least one test reference and at least one cassette.
-* It **may shrink** when a maintainer backfills coverage for a grandfathered
-  method; they should delete the entry from :data:`PREEXISTING_GAPS` in the
-  same PR.
+* It **must shrink** when a maintainer backfills coverage for a grandfathered
+  method; stale entries in :data:`PREEXISTING_GAPS` fail the gate.
 
 The script is intentionally a static check (pure text grep on the cassette
 files and on the contents of ``tests/``); it never runs pytest or imports
@@ -101,8 +100,6 @@ PREEXISTING_GAPS: frozenset[str] = frozenset(
         # ``frozenset`` (not ``set``) so the module-level constant cannot be
         # mutated at runtime, matching ``_TEST_REFERENCE_EXCLUDES`` above and
         # reinforcing the "only shrinks" contract structurally.
-        "GET_INTERACTIVE_HTML",  # no test imports the enum or its id 'v9rmvd'
-        "GET_SUGGESTED_REPORTS",  # no cassette body contains id 'ciyUvf'
         "IMPORT_RESEARCH",  # no cassette body contains id 'LBwxtb'
         "REFRESH_SOURCE",  # no cassette body contains id 'FLmJqe'
     }
@@ -233,12 +230,9 @@ def main() -> int:
         print(line)
 
     if unused_allowlist:
-        # Not a hard failure — but call it out loudly so the next PR can
-        # shrink the ratchet. Printed to stderr to keep stdout clean for
-        # parseable failure lines.
         print(
-            "NOTICE: PREEXISTING_GAPS entries now have full coverage and "
-            "should be removed: " + ", ".join(sorted(unused_allowlist)),
+            "STALE: PREEXISTING_GAPS entries now have full coverage and "
+            "must be removed: " + ", ".join(sorted(unused_allowlist)),
             file=sys.stderr,
         )
 
@@ -252,7 +246,7 @@ def main() -> int:
         f"{len(misses)} missing coverage."
     )
 
-    return 1 if misses else 0
+    return 1 if misses or unused_allowlist else 0
 
 
 if __name__ == "__main__":

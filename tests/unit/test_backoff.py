@@ -11,6 +11,7 @@ import random
 
 import pytest
 
+import notebooklm._backoff as backoff_module
 from notebooklm._backoff import compute_backoff_delay
 
 # ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ def test_jitter_uses_module_random_when_rng_is_none(monkeypatch):
         calls.append((low, high))
         return 0.0
 
-    monkeypatch.setattr("notebooklm._backoff._random.uniform", _fake_uniform)
+    monkeypatch.setattr(backoff_module._random, "uniform", _fake_uniform)
     delay = compute_backoff_delay(2, base=1.0, cap=30.0, jitter_ratio=0.2)
     # raw = 4.0; jitter = 0.0; delay = 4.0
     assert delay == 4.0
@@ -192,7 +193,7 @@ def test_call_site_artifact_polling_matches_legacy_min_powers_of_two():
 
 def test_call_site_transport_matches_legacy_with_zero_jitter(monkeypatch):
     """Pin the transport retry curve with jitter monkeypatched to 0."""
-    monkeypatch.setattr("notebooklm._backoff._random.uniform", lambda a, b: 0.0)
+    monkeypatch.setattr(backoff_module._random, "uniform", lambda a, b: 0.0)
     out = [compute_backoff_delay(n, base=1.0, cap=30.0, jitter_ratio=0.2) for n in range(7)]
     # 1, 2, 4, 8, 16, 30, 30
     assert out == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]

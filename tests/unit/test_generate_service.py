@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import notebooklm.cli.resolve as resolve_module
 from notebooklm.cli.services.generate import (
     GenerationExecutionResult,
     GenerationPlan,
@@ -551,8 +552,8 @@ async def test_execute_generation_dispatches_with_expected_kwargs(
     async def fake_resolve_source_ids(_client, _nb, sources, *, json_output=False):
         return tuple(sources)
 
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_notebook_id", fake_resolve_notebook_id)
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_source_ids", fake_resolve_source_ids)
+    monkeypatch.setattr(resolve_module, "resolve_notebook_id", fake_resolve_notebook_id)
+    monkeypatch.setattr(resolve_module, "resolve_source_ids", fake_resolve_source_ids)
 
     plan = build_generation_plan(
         kind,
@@ -588,8 +589,8 @@ async def test_execute_generation_mind_map_dispatches_and_returns_typed_result(
     async def fake_resolve_source_ids(_client, _nb, sources, *, json_output=False):
         return tuple(sources)
 
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_notebook_id", fake_resolve_notebook_id)
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_source_ids", fake_resolve_source_ids)
+    monkeypatch.setattr(resolve_module, "resolve_notebook_id", fake_resolve_notebook_id)
+    monkeypatch.setattr(resolve_module, "resolve_source_ids", fake_resolve_source_ids)
     plan = build_generation_plan(
         "mind-map",
         _base_args(instructions="summarize", language="en", json_output=True),
@@ -625,8 +626,8 @@ async def test_execute_generation_leaves_plan_warnings_for_command_layer(
     async def fake_resolve_source_ids(_client, _nb, sources, *, json_output=False):
         return tuple(sources)
 
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_notebook_id", fake_resolve_notebook_id)
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_source_ids", fake_resolve_source_ids)
+    monkeypatch.setattr(resolve_module, "resolve_notebook_id", fake_resolve_notebook_id)
+    monkeypatch.setattr(resolve_module, "resolve_source_ids", fake_resolve_source_ids)
 
     plan = build_generation_plan(
         "report",
@@ -663,8 +664,8 @@ async def test_execute_generation_revise_slide_skips_source_resolution(
         resolve_calls["sources"] += 1
         return tuple(sources)
 
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_notebook_id", fake_resolve_notebook_id)
-    monkeypatch.setattr("notebooklm.cli.resolve.resolve_source_ids", fake_resolve_source_ids)
+    monkeypatch.setattr(resolve_module, "resolve_notebook_id", fake_resolve_notebook_id)
+    monkeypatch.setattr(resolve_module, "resolve_source_ids", fake_resolve_source_ids)
 
     plan = build_generation_plan(
         "revise-slide",
