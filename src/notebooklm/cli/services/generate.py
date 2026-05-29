@@ -882,6 +882,7 @@ async def execute_generation(
         generation=outcome,
     )
 
+
 __all__ = [
     "GenerationKind",
     "GenerationExecutionResult",
