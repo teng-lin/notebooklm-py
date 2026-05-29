@@ -232,8 +232,10 @@ class RPCError(NotebookLMError):
     Attributes:
         method_id: The RPC method ID (e.g., "abc123") for debugging.
         raw_response: First 80 chars of raw response for debugging
-            (with ``"..."`` suffix if truncated). Set ``NOTEBOOKLM_DEBUG=1`` to
-            preserve the full body.
+            (with ``"..."`` suffix if truncated). Credential-shaped substrings
+            are scrubbed before truncation, so this attribute is safe to splice
+            into ``str()``/``repr()``. Set ``NOTEBOOKLM_DEBUG=1`` to preserve
+            the full body (still scrubbed).
         rpc_code: Google's internal error code if available.
         found_ids: List of RPC IDs found in the response (for debugging).
     """
@@ -298,7 +300,9 @@ class UnknownRPCMethodError(DecodingError):
         found_ids: When raised by the response-level decoder, the list of RPC
             IDs actually present in the response.
         raw_response: First 80 chars of the raw response, when available
-            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body). The string branch
+            is secret-scrubbed before truncation; non-string payloads are stored
+            as-is on this subclass.
         data_at_failure: Truncated repr (~200 chars) of the data the helper
             was attempting to index into when descent failed.
     """
