@@ -454,6 +454,7 @@ class NotebookLMClient:
             auth_coord=self._collaborators.auth_coord,
             reqid=self._collaborators.reqid,
             cookie_persistence=self._collaborators.cookie_persistence,
+            composed=self._composed,
         )
         return self
 

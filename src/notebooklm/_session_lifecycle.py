@@ -84,6 +84,7 @@ from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
+    from ._client_composed import ClientComposed
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
     from ._session_auth import AuthRefreshCoordinator
@@ -278,6 +279,7 @@ class ClientLifecycle:
         auth_coord: AuthRefreshCoordinator,
         reqid: ReqidCounter,
         cookie_persistence: CookiePersistence,
+        composed: ClientComposed,
     ) -> None:
         """Open the HTTP client connection.
 
@@ -321,6 +323,14 @@ class ClientLifecycle:
         drain_tracker.set_bound_loop(self._bound_loop)
         reqid.set_bound_loop(self._bound_loop)
         auth_coord.set_bound_loop(self._bound_loop)
+        # The RPC concurrency semaphore is the fourth loop-bound primitive
+        # propagated here (issue #1169): it was previously the only loop-bound
+        # primitive without an affinity guard or a close→reopen reset, so
+        # reopening on a different loop could reuse a stale
+        # ``asyncio.Semaphore`` and break on Python 3.10/3.11. Propagating the
+        # captured loop lets ``ClientComposed.get_rpc_semaphore`` short-circuit
+        # cross-loop misuse with the shared diagnostic.
+        composed.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
         # admits new transport work again. Wave 1 of plan
         # ``host-protocol-removal`` encapsulated the legacy direct write
@@ -329,6 +339,12 @@ class ClientLifecycle:
         # fields; the method is intentionally narrow (clears ``_draining``
         # only, leaves in-flight counters intact — see its docstring).
         drain_tracker.reset_after_open()
+        # Discard the lazy RPC semaphore so a client reopened on a different
+        # loop rebuilds it on the new loop instead of reusing the stale one
+        # bound to the prior (now-dead) loop (issue #1169). Narrow by design —
+        # the semaphore is reconstructed lazily on the next ``get_rpc_semaphore``
+        # call from inside the new loop; ``max_concurrent_rpcs`` is untouched.
+        composed.reset_after_open()
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns

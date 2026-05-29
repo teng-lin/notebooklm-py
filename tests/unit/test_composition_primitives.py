@@ -409,6 +409,139 @@ def test_client_composed_properties_raise_before_binding(attr_name: str, message
         getattr(holder, attr_name)
 
 
+# ---------------------------------------------------------------------------
+# ClientComposed RPC-semaphore loop-affinity guard / reset (issue #1169)
+# ---------------------------------------------------------------------------
+
+
+def test_get_rpc_semaphore_returns_nullcontext_when_cap_is_none() -> None:
+    """``max_concurrent_rpcs=None`` short-circuits to a no-op context.
+
+    The affinity guard MUST NOT run on the unbounded opt-out path — there is
+    no loop-bound primitive to protect, so even an unset binding is fine.
+    """
+    from contextlib import nullcontext
+
+    holder = ClientComposed(max_concurrent_rpcs=None)
+    # No ``set_bound_loop`` call — the None-cap path never touches the guard.
+    ctx = holder.get_rpc_semaphore()
+    assert isinstance(ctx, type(nullcontext()))
+
+
+def test_get_rpc_semaphore_no_binding_is_silent_noop() -> None:
+    """An unbound holder builds the semaphore without raising.
+
+    Mirrors the sibling primitives: ``assert_bound_loop(None)`` is a silent
+    no-op so standalone holders (composition / unit fixtures) that never ran
+    ``open()`` keep working.
+    """
+
+    async def _exercise() -> None:
+        holder = ClientComposed(max_concurrent_rpcs=2)
+        # ``_bound_loop`` is None — the guard is a no-op and the semaphore is
+        # built lazily on this running loop.
+        async with holder.get_rpc_semaphore():
+            pass
+        assert holder._rpc_semaphore is not None
+
+    asyncio.run(_exercise())
+
+
+def test_get_rpc_semaphore_same_loop_use_unaffected() -> None:
+    """A holder bound to the running loop acquires its semaphore normally."""
+
+    async def _exercise() -> None:
+        holder = ClientComposed(max_concurrent_rpcs=2)
+        holder.set_bound_loop(asyncio.get_running_loop())
+        async with holder.get_rpc_semaphore():
+            pass
+        # Same instance is reused across calls on the same loop.
+        first = holder._rpc_semaphore
+        async with holder.get_rpc_semaphore():
+            pass
+        assert holder._rpc_semaphore is first
+
+    asyncio.run(_exercise())
+
+
+def test_get_rpc_semaphore_cross_loop_raises_actionable_runtime_error() -> None:
+    """A holder bound to loop A raises if its semaphore is acquired on loop B.
+
+    Two independent ``asyncio.run`` calls give two genuinely distinct loops.
+    The guard must fire with the shared loop-affinity diagnostic before the
+    stale ``asyncio.Semaphore`` (bound to the dead loop A) is reused.
+    """
+    holder = ClientComposed(max_concurrent_rpcs=2)
+
+    async def _bind_under_loop_a() -> None:
+        holder.set_bound_loop(asyncio.get_running_loop())
+        # Construct the semaphore on loop A so loop B would reuse a stale one.
+        async with holder.get_rpc_semaphore():
+            pass
+
+    asyncio.run(_bind_under_loop_a())
+    assert holder._rpc_semaphore is not None
+
+    async def _acquire_under_loop_b() -> None:
+        with pytest.raises(RuntimeError, match="bound to a different event loop"):
+            async with holder.get_rpc_semaphore():
+                pass
+        # The actionable second sentence tells users how to fix it.
+        try:
+            async with holder.get_rpc_semaphore():
+                pass
+        except RuntimeError as exc:
+            assert "create a new client in the target loop" in str(exc)
+        else:  # pragma: no cover - defensive
+            raise AssertionError("expected RuntimeError on cross-loop reuse")
+
+    asyncio.run(_acquire_under_loop_b())
+
+
+def test_reset_after_open_discards_lazy_semaphore() -> None:
+    """``reset_after_open`` drops the cached semaphore so the next call rebuilds.
+
+    This is what lets a client closed on loop A and reopened on loop B build a
+    fresh semaphore bound to loop B rather than reusing the stale one. The cap
+    itself is left untouched.
+    """
+
+    async def _exercise() -> None:
+        holder = ClientComposed(max_concurrent_rpcs=3)
+        holder.set_bound_loop(asyncio.get_running_loop())
+        async with holder.get_rpc_semaphore():
+            pass
+        first = holder._rpc_semaphore
+        assert first is not None
+
+        holder.reset_after_open()
+        assert holder._rpc_semaphore is None
+        assert holder.max_concurrent_rpcs == 3
+
+        async with holder.get_rpc_semaphore():
+            pass
+        assert holder._rpc_semaphore is not None
+        assert holder._rpc_semaphore is not first
+
+    asyncio.run(_exercise())
+
+
+def test_set_bound_loop_none_clears_binding() -> None:
+    """``set_bound_loop(None)`` re-arms the silent-no-op path for the next open."""
+
+    async def _exercise() -> None:
+        holder = ClientComposed(max_concurrent_rpcs=2)
+        holder.set_bound_loop(asyncio.get_running_loop())
+        assert holder._bound_loop is asyncio.get_running_loop()
+        holder.set_bound_loop(None)
+        assert holder._bound_loop is None
+        # With the binding cleared the guard is a no-op again.
+        async with holder.get_rpc_semaphore():
+            pass
+
+    asyncio.run(_exercise())
+
+
 def test_client_shell_reads_composition_from_client_composed() -> None:
     client = build_client_shell_for_tests(_make_auth())
 

@@ -135,6 +135,14 @@ class _StubHost:
         self._auth_coord.cancel_inflight_refresh = AsyncMock()
         # ``_reqid`` is targeted by ``set_bound_loop`` from open() (P0-2).
         self._reqid = MagicMock()
+        # ``open()`` also propagates the bound loop into the composition
+        # holder and resets the lazy RPC semaphore (issue #1169): it calls
+        # ``composed.set_bound_loop(loop)`` and ``composed.reset_after_open()``
+        # so a client reopened on a different loop rebuilds the semaphore on
+        # the new loop. The ``MagicMock`` default lets both calls land
+        # without configuring side effects; the invocations are asserted by
+        # ``test_open_captures_bound_loop_and_resets_drain``.
+        self._composed = MagicMock()
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
@@ -182,6 +190,7 @@ async def _open(lifecycle: ClientLifecycle, host: _StubHost) -> None:
         auth_coord=host._auth_coord,
         reqid=host._reqid,
         cookie_persistence=host.cookie_persistence,
+        composed=host._composed,
     )
 
 
@@ -251,6 +260,11 @@ async def test_open_captures_bound_loop_and_resets_drain() -> None:
     assert lifecycle._bound_loop is asyncio.get_running_loop()
     assert lifecycle.get_bound_loop() is asyncio.get_running_loop()
     host._drain_tracker.reset_after_open.assert_called_once_with()
+    # Issue #1169: the composition holder is the fourth loop-bound primitive
+    # and must receive the same set_bound_loop / reset_after_open treatment as
+    # the drain tracker so the lazy RPC semaphore rebinds on close→reopen.
+    host._composed.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
+    host._composed.reset_after_open.assert_called_once_with()
 
     await _close(lifecycle, host)
 
