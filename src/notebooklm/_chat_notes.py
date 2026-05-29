@@ -41,6 +41,8 @@ class SaveChatNoteRpc(Protocol):
         params: list[Any],
         source_path: str = "/",
         allow_null: bool = False,
+        *,
+        operation_variant: str | None = None,
     ) -> Any: ...
 
 
@@ -317,6 +319,7 @@ async def save_chat_answer_as_note(
         RPCMethod.CREATE_NOTE,
         params,
         source_path=f"/notebook/{notebook_id}",
+        operation_variant="saved_from_chat",
     )
 
     # The captured server response wraps the 6-element note in an outer

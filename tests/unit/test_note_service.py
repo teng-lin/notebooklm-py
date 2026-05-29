@@ -182,6 +182,7 @@ class TestCrud:
                 RPCMethod.CREATE_NOTE,
                 ["nb_123", "", [1], None, "Mind Map"],
                 source_path="/notebook/nb_123",
+                operation_variant="plain",
             ),
             call(
                 RPCMethod.UPDATE_NOTE,

@@ -65,6 +65,7 @@ class TestSaveChatAnswerAsNote:
         assert params[4] == "Title"
         assert params[6] == [2]
         assert rpc.rpc_call.call_args.kwargs["source_path"] == "/notebook/nb-1"
+        assert rpc.rpc_call.call_args.kwargs["operation_variant"] == "saved_from_chat"
 
     @pytest.mark.asyncio
     async def test_parses_wrapped_response_shape(self, rpc: FakeSession) -> None:

@@ -248,6 +248,7 @@ class NoteService:
             RPCMethod.CREATE_NOTE,
             params,
             source_path=f"/notebook/{notebook_id}",
+            operation_variant="plain",
         )
 
         note_id: str | None = None
