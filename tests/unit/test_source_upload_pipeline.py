@@ -18,7 +18,7 @@ from notebooklm._source_upload import (
     _transient_error_types_for_upload,
     _validate_resumable_upload_url,
 )
-from notebooklm.exceptions import ValidationError
+from notebooklm.exceptions import NetworkError, ValidationError
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source, SourceAddError
 
@@ -150,10 +150,59 @@ def make_pipeline(
     )
 
 
+def test_extract_register_file_source_id_accepts_known_response_shapes() -> None:
+    assert _extract_register_file_source_id([["src_123"]], "report.pdf") == "src_123"
+    assert _extract_register_file_source_id([[[["src_123"]]]], "report.pdf") == "src_123"
+    assert _extract_register_file_source_id({"SOURCE_ID": "src_123"}, "report.pdf") == "src_123"
+    assert (
+        _extract_register_file_source_id(
+            {"source": {"SOURCE_ID": "src_123", "SOURCE_NAME": "report.pdf"}},
+            "report.pdf",
+        )
+        == "src_123"
+    )
+    assert (
+        _extract_register_file_source_id([[[["src_123"], "report.pdf", [None]]]], "report.pdf")
+        == "src_123"
+    )
+    assert (
+        _extract_register_file_source_id({"id": "src_123", "title": "report.pdf"}, "report.pdf")
+        == "src_123"
+    )
+
+
 def test_extract_register_file_source_id_skips_large_string_candidates() -> None:
     long_payload = " " + ("x" * 2000) + " "
 
-    assert _extract_register_file_source_id([long_payload, "src_123"], "report.pdf") == "src_123"
+    assert (
+        _extract_register_file_source_id(
+            {
+                "debug": {"SOURCE_ID": long_payload},
+                "source": {"SOURCE_ID": "src_123", "SOURCE_NAME": "report.pdf"},
+            },
+            "report.pdf",
+        )
+        == "src_123"
+    )
+
+
+def test_extract_register_file_source_id_rejects_ambiguous_nested_ids() -> None:
+    unrelated_uuid = "11111111-2222-3333-4444-555555555555"
+
+    assert (
+        _extract_register_file_source_id(
+            {"debug": [["trace", unrelated_uuid]], "status": "ok"},
+            "report.pdf",
+        )
+        is None
+    )
+    assert (
+        _extract_register_file_source_id(
+            {"debug": {"SOURCE_ID": unrelated_uuid}},
+            "report.pdf",
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -521,10 +570,90 @@ async def test_register_file_source_uses_configured_source_limit_lookup(
 
 
 @pytest.mark.asyncio
-async def test_register_file_source_truncates_large_string_response_preview(
+async def test_register_file_source_ambiguous_response_falls_back_to_probe(
     service: SourceUploadPipeline,
 ) -> None:
-    rpc = RecordingRpc("x" * 5000)
+    unrelated_uuid = "11111111-2222-3333-4444-555555555555"
+    rpc = RecordingRpc({"debug": [["trace", unrelated_uuid]], "status": "ok"})
+    list_sources = AsyncMock(
+        side_effect=[
+            [],
+            [Source(id="src_probe", title="report.pdf")],
+        ]
+    )
+
+    source_id = await service.register_file_source(
+        "nb_123",
+        "report.pdf",
+        rpc_call=rpc,
+        list_sources=list_sources,
+        logger=MagicMock(),
+    )
+
+    assert source_id == "src_probe"
+    assert [call.args for call in list_sources.await_args_list] == [
+        ("nb_123",),
+        ("nb_123",),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_register_file_source_pre_existing_response_id_falls_back_to_probe(
+    service: SourceUploadPipeline,
+) -> None:
+    rpc = RecordingRpc([["src_existing"]])
+    list_sources = AsyncMock(
+        side_effect=[
+            [Source(id="src_existing", title="old.pdf")],
+            [
+                Source(id="src_existing", title="old.pdf"),
+                Source(id="src_new", title="report.pdf"),
+            ],
+        ]
+    )
+
+    source_id = await service.register_file_source(
+        "nb_123",
+        "report.pdf",
+        rpc_call=rpc,
+        list_sources=list_sources,
+        logger=MagicMock(),
+    )
+
+    assert source_id == "src_new"
+
+
+@pytest.mark.asyncio
+async def test_register_file_source_probe_failure_is_typed_and_sanitized(
+    service: SourceUploadPipeline,
+) -> None:
+    unrelated_uuid = "11111111-2222-3333-4444-555555555555"
+    secret = "SECRET_UPLOAD_ID"
+    rpc = RecordingRpc({"debug": [["trace", unrelated_uuid]], "upload": secret})
+    list_sources = AsyncMock(side_effect=[[], NetworkError(f"network leaked {secret}")])
+
+    with pytest.raises(SourceAddError) as exc_info:
+        await service.register_file_source(
+            "nb_123",
+            "report.pdf",
+            rpc_call=rpc,
+            list_sources=list_sources,
+            logger=MagicMock(),
+        )
+
+    message = str(exc_info.value)
+    assert exc_info.value.cause is not None
+    assert "source-list probe failed (NetworkError)" in message
+    assert unrelated_uuid not in message
+    assert secret not in message
+
+
+@pytest.mark.asyncio
+async def test_register_file_source_sanitizes_untrusted_response_error(
+    service: SourceUploadPipeline,
+) -> None:
+    secret = "SECRET_UPLOAD_ID"
+    rpc = RecordingRpc(f"{secret}{'x' * 5000}")
 
     with pytest.raises(SourceAddError) as exc_info:
         await service.register_file_source(
@@ -536,7 +665,8 @@ async def test_register_file_source_truncates_large_string_response_preview(
         )
 
     message = str(exc_info.value)
-    assert "..." in message
+    assert "string registration response" in message
+    assert secret not in message
     assert "x" * 300 not in message
     assert len(message) < 320
 

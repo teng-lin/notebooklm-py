@@ -50,6 +50,12 @@ if TYPE_CHECKING:
 _SOURCE_ID_UUID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+_SOURCE_ID_FIELD_NAMES = frozenset({"SOURCE_ID", "source_id", "sourceId"})
+_CONTEXTUAL_SOURCE_ID_FIELD_NAMES = frozenset({"id"})
+_SOURCE_NAME_FIELD_NAMES = frozenset(
+    {"SOURCE_NAME", "source_name", "sourceName", "filename", "fileName", "name", "title"}
+)
+_SOURCE_ID_ENVELOPE_MAX_DEPTH = 8
 
 
 class RpcCallback(Protocol):
@@ -249,41 +255,159 @@ def _retain_background_cancel_task(task: asyncio.Task[None]) -> None:
 def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
     """Locate the SOURCE_ID string in an ADD_SOURCE_FILE response.
 
-    The historical shape was a strictly position-0 walk: ``[[[[id]]]]``. Issue
-    #474 surfaced cases where that walk lands on ``None`` or on the echoed
-    filename and silently fails. Walk the whole structure instead, prefer a
-    UUID-shaped leaf, and fall back to any other id-shaped string that is
-    plausibly not a status label.
+    Only trusted ADD_SOURCE_FILE shapes are accepted: explicit source-id fields
+    and the legacy singleton list envelope (``[[id]]`` / ``[[[[id]]]]``).
+    Arbitrary nested ids are intentionally ignored so ambiguous responses fall
+    through to the post-register source-list probe.
     """
-    uuid_match: str | None = None
-    fallback: str | None = None
-    # Depth guard for malformed/adversarial payloads. Google's real responses
-    # are shallow, so 50 is generous without risking RecursionError.
-    max_depth = 50
+    field_candidates = _extract_source_id_field_candidates(result, filename)
+    if len(field_candidates) == 1:
+        return field_candidates[0]
+    if len(field_candidates) > 1:
+        return None
+
+    row_candidates = _extract_contextual_source_id_row_candidates(result, filename)
+    if len(row_candidates) == 1:
+        return row_candidates[0]
+    if len(row_candidates) > 1:
+        return None
+
+    return _extract_singleton_source_id_envelope(result, filename)
+
+
+def _extract_source_id_field_candidates(result: Any, filename: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add_candidate(value: Any) -> None:
+        candidate = _coerce_source_id_candidate(value, filename)
+        if candidate is not None and candidate not in seen:
+            candidates.append(candidate)
+            seen.add(candidate)
+
+    def context_matches(node: dict[Any, Any]) -> bool:
+        names = _source_context_names(node)
+        if not names:
+            return False
+        return any(_coerce_filename_candidate(name) == filename for name in names)
+
+    def context_conflicts(node: dict[Any, Any]) -> bool:
+        names = _source_context_names(node)
+        return bool(names) and not context_matches(node)
 
     def walk(node: Any, depth: int) -> None:
-        nonlocal uuid_match, fallback
-        if uuid_match is not None or depth > max_depth:
+        if depth > _SOURCE_ID_ENVELOPE_MAX_DEPTH:
             return
-        if isinstance(node, str):
-            if len(node) > 1000:
-                return
-            candidate = node.strip()
-            if not candidate or candidate == filename:
-                return
-            if _SOURCE_ID_UUID_PATTERN.match(candidate):
-                uuid_match = candidate
-                return
-            if fallback is None and _looks_like_id_string(candidate):
-                fallback = candidate
+        if isinstance(node, dict):
+            mismatched_context = context_conflicts(node)
+            matched_context = context_matches(node)
+            for key, value in node.items():
+                if not isinstance(key, str):
+                    continue
+                if (
+                    (
+                        key in _SOURCE_ID_FIELD_NAMES
+                        and not mismatched_context
+                        and (depth == 0 or matched_context)
+                    )
+                    or (key in _CONTEXTUAL_SOURCE_ID_FIELD_NAMES and matched_context)
+                ):
+                    add_candidate(value)
+            for value in node.values():
+                walk(value, depth + 1)
         elif isinstance(node, list):
             for child in node:
-                if uuid_match is not None:
-                    return
                 walk(child, depth + 1)
 
     walk(result, 0)
-    return uuid_match or fallback
+    return candidates
+
+
+def _extract_singleton_source_id_envelope(result: Any, filename: str) -> str | None:
+    node, depth = _unwrap_singleton_envelope(result)
+    if depth == 0:
+        return None
+
+    return _coerce_source_id_candidate(node, filename)
+
+
+def _extract_contextual_source_id_row_candidates(result: Any, filename: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add_candidate(value: Any) -> None:
+        candidate = _coerce_source_id_candidate(value, filename)
+        if candidate is not None and candidate not in seen:
+            candidates.append(candidate)
+            seen.add(candidate)
+
+    def walk(node: Any, depth: int) -> None:
+        if depth > _SOURCE_ID_ENVELOPE_MAX_DEPTH:
+            return
+        if isinstance(node, list):
+            if len(node) >= 2 and _coerce_filename_candidate(node[1]) == filename:
+                add_candidate(node[0])
+            for child in node:
+                walk(child, depth + 1)
+        elif isinstance(node, dict):
+            for value in node.values():
+                walk(value, depth + 1)
+
+    walk(result, 0)
+    return candidates
+
+
+def _coerce_filename_candidate(value: Any) -> str | None:
+    value, _depth = _unwrap_singleton_envelope(value)
+    if not isinstance(value, str):
+        return None
+    return value.strip()
+
+
+def _coerce_source_id_candidate(value: Any, filename: str) -> str | None:
+    value, _depth = _unwrap_singleton_envelope(value)
+    if not isinstance(value, str):
+        return None
+    if len(value) > 1000:
+        return None
+    candidate = value.strip()
+    if not candidate or candidate == filename:
+        return None
+    if _SOURCE_ID_UUID_PATTERN.match(candidate) or _looks_like_id_string(candidate):
+        return candidate
+    return None
+
+
+def _source_context_names(node: dict[Any, Any]) -> list[Any]:
+    return [
+        value
+        for key, value in node.items()
+        if isinstance(key, str) and key in _SOURCE_NAME_FIELD_NAMES
+    ]
+
+
+def _unwrap_singleton_envelope(value: Any) -> tuple[Any, int]:
+    depth = 0
+    while (
+        isinstance(value, list)
+        and len(value) == 1
+        and depth < _SOURCE_ID_ENVELOPE_MAX_DEPTH
+    ):
+        value = value[0]
+        depth += 1
+    return value, depth
+
+
+def _register_response_shape_label(result: Any) -> str:
+    if isinstance(result, dict):
+        return "object"
+    if isinstance(result, list):
+        return "array"
+    if isinstance(result, str):
+        return "string"
+    if result is None:
+        return "null"
+    return type(result).__name__
 
 
 def _looks_like_id_string(candidate: str) -> bool:
@@ -685,15 +809,35 @@ class SourceUploadPipeline:
 
             source_id = _extract_register_file_source_id(result, filename)
             if source_id:
-                return source_id
+                if baseline_ids is None or source_id not in baseline_ids:
+                    return source_id
+                logger.info(
+                    "register_file_source[%s]: response SOURCE_ID matched a "
+                    "pre-existing source; probing for the newly registered source",
+                    filename,
+                )
 
             # The RPC returned successfully but the response shape did not
-            # contain a parseable SOURCE_ID. Before raising, run the probe
-            # to see if the source landed server-side anyway — the
-            # extraction can fail for schema-drift reasons (#474) while the
-            # create has actually committed. This converts a recoverable
-            # success into the same probe-recovery path that 5xx uses.
-            probed_source_id = await _probe()
+            # contain a trustworthy SOURCE_ID. Before raising, run the
+            # source-list probe to see if the source landed server-side
+            # anyway. This converts recoverable schema drift into the same
+            # probe-recovery path that transport failures use without binding
+            # unrelated ids from the response.
+            try:
+                probed_source_id = await _probe()
+            except SourceAddError:
+                raise
+            except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
+                raise SourceAddError(
+                    filename,
+                    cause=exc,
+                    message=(
+                        f"Cannot confirm registered file source for {filename!r}: "
+                        "the register response did not provide a trustworthy "
+                        f"SOURCE_ID and the source-list probe failed ({type(exc).__name__}). "
+                        "Check the notebook source list before retrying."
+                    ),
+                ) from exc
             if probed_source_id is not None:
                 logger.info(
                     "register_file_source[%s]: response missing SOURCE_ID but "
@@ -702,18 +846,12 @@ class SourceUploadPipeline:
                 )
                 return probed_source_id
 
-            if isinstance(result, str):
-                preview = repr(result[:200])
-                if len(result) > 200:
-                    preview += "..."
-            else:
-                preview = repr(result)
-                if len(preview) > 200:
-                    preview = preview[:200] + "..."
             raise SourceAddError(
                 filename,
                 message=(
-                    f"Failed to get SOURCE_ID from registration response. Response shape: {preview}"
+                    f"Failed to get a trustworthy SOURCE_ID from {_register_response_shape_label(result)} "
+                    "registration response, and the source-list probe found no "
+                    "unambiguous new source. Check the notebook source list before retrying."
                 ),
             )
 
