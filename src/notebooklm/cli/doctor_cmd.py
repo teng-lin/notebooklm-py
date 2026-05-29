@@ -17,7 +17,7 @@ from ..paths import (
     get_profile_dir,
     get_storage_path,
 )
-from .error_handler import handle_errors
+from .error_handler import exit_with_code, handle_errors
 from .rendering import console, json_output_response
 
 logger = logging.getLogger(__name__)
@@ -156,6 +156,12 @@ def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
     if fix_issues:
         fixes_applied = _apply_fixes(checks, home, profile_dir)
 
+    # Determine overall health from the *final* check states (after any fixes
+    # have been applied above). A lingering "fail" means the install is broken,
+    # so exit non-zero — consistent with ``auth check`` and the CLI exit-code
+    # convention — instead of reading as green in CI / ``set -e`` scripts.
+    has_failures = any(c["status"] == "fail" for c in checks.values())
+
     # Output
     if json_output:
         result = {
@@ -166,9 +172,13 @@ def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
         if fixes_applied:
             result["fixes_applied"] = fixes_applied
         json_output_response(result)
+        if has_failures:
+            exit_with_code(1)
         return
 
     _display_results(profile_name, profile_source, checks, fixes_applied)
+    if has_failures:
+        exit_with_code(1)
 
 
 def _apply_fixes(checks: dict, home, profile_dir) -> list[str]:

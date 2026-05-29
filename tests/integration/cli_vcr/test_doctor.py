@@ -107,16 +107,16 @@ class TestDoctorCommand:
         """Doctor with no ``storage_state.json`` reports auth failure cleanly.
 
         The auth-failure path is the second axis the task acceptance asks
-        for. Even on the failure path the command still exits 0 (it's a
-        diagnostic — ``doctor`` reports failures rather than exiting
-        non-zero) and emits no HTTP requests.
+        for. On the failure path the command exits 1 (issue #1160 — a false
+        ``green`` health check is worse than no check) while still emitting no
+        HTTP requests.
         """
         _make_profile(isolated_home)
         # Deliberately no storage_state.json written.
 
         result = runner.invoke(cli, ["doctor", "--json"])
 
-        assert result.exit_code == 0, result.output
+        assert result.exit_code == 1, result.output
         data = json.loads(result.output)
         assert data["checks"]["auth"]["status"] == "fail"
         assert data["checks"]["auth"]["detail"] == "not authenticated"

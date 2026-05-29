@@ -338,11 +338,10 @@ def _setup_fs_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Lay out a clean profile so ``doctor --json`` reports all-pass.
 
     Mirrors the ``test_doctor_reports_clean_profile_layout`` fixture in
-    tests/unit/cli/test_doctor.py — without those files the doctor command
-    would still exit 0 but emit ``status: "fail"`` entries inside the
-    ``checks`` payload (the JSON document is still well-formed either way,
-    but a clean layout exercises every code branch the success-path sweep
-    cares about).
+    tests/unit/cli/test_doctor.py. A clean layout makes every check pass so the
+    command exits 0 (since #1160 a lingering ``status: "fail"`` exits 1) while
+    still emitting a single well-formed JSON document — which is what this
+    success-path stdout-purity sweep asserts.
     """
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
