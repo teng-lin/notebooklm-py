@@ -355,7 +355,10 @@ class ArtifactPollingService:
 
             # Track consecutive and total "not found" responses. The API may
             # remove quota-rejected artifacts from the list entirely instead
-            # of setting them to FAILED.
+            # of setting them to FAILED.  Sustained removal is reported with a
+            # distinct ``"removed"`` status (see below) rather than ``"failed"``
+            # so callers can tell a delisted artifact apart from one the server
+            # actually marked terminal-FAILED.
             if status.status == "not_found":
                 consecutive_not_found += 1
                 total_not_found += 1
@@ -378,24 +381,31 @@ class ArtifactPollingService:
                     )
                     logger.warning(
                         "Artifact %s disappeared from list (%s not-found polls, "
-                        "%s) — treating as failed",
+                        "%s) — treating as removed",
                         task_id,
                         trigger,
                         f"elapsed={not_found_elapsed:.1f}s",
                     )
-                    failed_status = GenerationStatus(
+                    # Report removal with a distinct ``"removed"`` status, not
+                    # ``"failed"``. The artifact vanished from the listing
+                    # (commonly a daily-quota rejection, possibly a transient
+                    # omission) — that is not the same as the server marking it
+                    # terminal-FAILED, and conflating the two would mask a real
+                    # failure or fabricate one. The error text is retained so
+                    # exception-free callers still get an actionable message.
+                    removed_status = GenerationStatus(
                         task_id=task_id,
-                        status="failed",
+                        status="removed",
                         error=(
-                            "Generation failed: artifact was removed by the server. "
-                            "This may indicate a daily quota/rate limit was exceeded, "
-                            "an invalid notebook ID, or a transient API issue. "
-                            "Try again later."
+                            "Generation incomplete: artifact was removed from the "
+                            "list by the server. This may indicate a daily "
+                            "quota/rate limit was exceeded, an invalid notebook "
+                            "ID, or a transient API issue. Try again later."
                         ),
                     )
-                    if on_status_change is not None and last_emitted_status != "failed":
-                        await maybe_await_callback(on_status_change, failed_status)
-                    return failed_status
+                    if on_status_change is not None and last_emitted_status != "removed":
+                        await maybe_await_callback(on_status_change, removed_status)
+                    return removed_status
             else:
                 consecutive_not_found = 0
 

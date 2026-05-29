@@ -1755,7 +1755,7 @@ Returned by `poll_status`, `wait_for_completion`, and most artifact generation m
 @dataclass
 class GenerationStatus:
     task_id: str                          # Same value as Artifact.id once complete
-    status: str                           # "pending" | "in_progress" | "completed" | "failed" | "not_found"
+    status: str                           # "pending" | "in_progress" | "completed" | "failed" | "not_found" | "removed"
     url: str | None = None                # Populated for media artifacts when status == "completed"
     error: str | None = None
     error_code: str | None = None         # e.g. "USER_DISPLAYABLE_ERROR" for rate limits
@@ -1786,12 +1786,26 @@ class GenerationStatus:
         has either not yet appeared (brief lag after creation) or was
         silently removed server-side (e.g. after a daily-quota rejection).
         ``wait_for_completion`` treats a sustained run of ``not_found``
-        responses as a failure — see its ``max_not_found`` parameter.
+        responses as a *removal* — see its ``max_not_found`` parameter and
+        ``is_removed``.
+        """
+
+    @property
+    def is_removed(self) -> bool:
+        """Check if the artifact was delisted by the server.
+
+        Set by ``wait_for_completion`` when an artifact disappears from the
+        listing for a sustained run of polls (``max_not_found``). Kept
+        *distinct* from ``is_failed``: a *failed* artifact still exists in the
+        listing with a terminal FAILED status, whereas a *removed* artifact
+        vanished entirely — usually a daily-quota rejection, possibly a
+        transient list omission. Branch on this when a delisting and a real
+        terminal failure warrant different handling.
         """
 
     @property
     def is_rate_limited(self) -> bool:
-        """Check if generation failed due to rate limiting."""
+        """Check if generation failed (or was removed) due to rate limiting."""
 ```
 
 **`url` semantics:** `poll_status` populates `url` for media artifact types (audio, video, infographic, slide-deck PDF) as soon as the server reports the asset as ready. Slide decks expose the PDF URL here; for the editable PowerPoint, use `client.artifacts.download_slide_deck(..., output_format="pptx")` instead.

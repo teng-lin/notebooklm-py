@@ -319,7 +319,7 @@ class GenerationStatus:
     """
 
     task_id: str  # Same as artifact_id - used for polling and becomes Artifact.id
-    status: str  # "pending", "in_progress", "completed", "failed", "not_found"
+    status: str  # "pending", "in_progress", "completed", "failed", "not_found", "removed"
     url: str | None = None
     error: str | None = None
     error_code: str | None = None  # e.g., "USER_DISPLAYABLE_ERROR" for rate limits
@@ -357,18 +357,38 @@ class GenerationStatus:
         daily-quota rejection).
 
         ``wait_for_completion`` treats a sustained run of ``not_found``
-        responses as a failure — see its ``max_not_found`` parameter.
+        responses as a *removal* — see its ``max_not_found`` parameter and
+        :attr:`is_removed`.
         """
         return self.status == "not_found"
+
+    @property
+    def is_removed(self) -> bool:
+        """Check if the artifact was delisted by the server.
+
+        This status is set by ``wait_for_completion()`` when an artifact
+        disappears from the listing for a sustained run of polls (see its
+        ``max_not_found`` parameter). It is deliberately *distinct* from
+        :attr:`is_failed`: a ``failed`` artifact still exists in the listing
+        with a terminal FAILED status, whereas a ``removed`` artifact vanished
+        from the listing entirely — typically after a daily-quota rejection,
+        but possibly a transient list omission. Conflating the two would mask
+        a genuine terminal failure as a transient hiccup, or vice versa, so
+        callers that need to react differently can branch on this property.
+        """
+        return self.status == "removed"
 
     @property
     def is_rate_limited(self) -> bool:
         """Check if generation failed due to rate limiting or quota exceeded.
 
         Returns True when the API rejected the request, typically due to
-        too many requests or quota exhaustion.
+        too many requests or quota exhaustion. A ``removed`` status (the
+        artifact was delisted, often after a quota rejection) is treated the
+        same as a ``failed`` status here so that rate-limit retry policies
+        keep working when the server silently drops the artifact.
         """
-        if not self.is_failed:
+        if not (self.is_failed or self.is_removed):
             return False
 
         # Prefer structured error code when available

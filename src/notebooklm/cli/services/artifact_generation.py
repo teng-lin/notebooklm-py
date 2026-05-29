@@ -216,8 +216,12 @@ def generation_outcome_from_status(status: Any, artifact_type: str) -> Generatio
     """Map a generation status payload to a command-renderable outcome."""
     is_complete = hasattr(status, "is_complete") and status.is_complete
     is_failed = hasattr(status, "is_failed") and status.is_failed
+    # A ``removed`` status (artifact delisted by the server) is distinct from
+    # ``failed`` at the API layer, but the CLI surfaces both as a non-zero-exit
+    # error since neither produced a usable artifact.
+    is_removed = hasattr(status, "is_removed") and status.is_removed
 
-    if is_failed:
+    if is_failed or is_removed:
         return GenerationOutcome(
             status="failed",
             artifact_type=artifact_type,

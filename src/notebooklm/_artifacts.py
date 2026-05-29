@@ -673,11 +673,14 @@ class ArtifactsAPI:
             poll_interval: Deprecated. Use initial_interval instead. Scheduled
                 for removal in v0.6.0.
             max_not_found: Consecutive "not found" polls before treating
-                the task as failed.  When the API removes an artifact
+                the task as *removed*.  When the API removes an artifact
                 from the list (e.g. after a daily-quota rejection), the
-                poller would otherwise spin until *timeout*.  Defaults
-                to 5 to tolerate brief replication lag and slow networks.
-                (Leader only.)
+                poller would otherwise spin until *timeout*.  The returned
+                status is ``"removed"`` (see :attr:`GenerationStatus.is_removed`),
+                kept distinct from ``"failed"`` so a delisted artifact is not
+                conflated with one the server actually marked terminal-FAILED.
+                Defaults to 5 to tolerate brief replication lag and slow
+                networks. (Leader only.)
             min_not_found_window: Minimum seconds that must have elapsed
                 since the *first* not-found response before a consecutive
                 run triggers failure.  This avoids false positives on

@@ -117,6 +117,7 @@ class TestGenerateAudio:
             completed_status = MagicMock()
             completed_status.is_complete = True
             completed_status.is_failed = False
+            completed_status.is_removed = False
             completed_status.url = "https://example.com/audio.mp3"
             completed_status.artifact_id = "audio_123"
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
@@ -151,6 +152,7 @@ class TestGenerateAudio:
             completed_status = MagicMock()
             completed_status.is_complete = True
             completed_status.is_failed = False
+            completed_status.is_removed = False
             completed_status.url = "https://example.com/audio.mp3"
             completed_status.task_id = "audio_xyz"
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
@@ -239,6 +241,7 @@ class TestGenerateAudio:
             completed_status = MagicMock()
             completed_status.is_complete = True
             completed_status.is_failed = False
+            completed_status.is_removed = False
             completed_status.url = "https://example.com/audio.mp3"
             completed_status.task_id = "audio_xyz"
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
