@@ -41,7 +41,9 @@ from notebooklm._artifact_payloads import (
     build_mind_map_params,
     build_quiz_artifact_params,
     build_report_artifact_params,
+    build_revise_slide_params,
     build_slide_deck_artifact_params,
+    build_suggest_reports_params,
     build_video_artifact_params,
 )
 from notebooklm._source_upload_payloads import (
@@ -198,6 +200,33 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
     ("case_name", "params", "expected"),
     [
         (
+            "audio_defaults",
+            build_audio_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="en",
+                instructions=None,
+                audio_format=None,
+                audio_length=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    1,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    [
+                        None,
+                        [None, 2, None, [["src_alpha"]], "en", None, 1],
+                    ],
+                ],
+            ],
+        ),
+        (
             "audio_explicit_options",
             build_audio_artifact_params(
                 "nb_payload",
@@ -228,6 +257,37 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                             None,
                             2,
                         ],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "video_defaults",
+            build_video_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="en",
+                instructions=None,
+                video_format=None,
+                video_style=None,
+                style_prompt=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    3,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        None,
+                        [[["src_alpha"]], "en", None, None, 1, 1],
                     ],
                 ],
             ],
@@ -296,6 +356,47 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
             ],
         ),
         (
+            "briefing_report",
+            build_report_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                report_format=ReportFormat.BRIEFING_DOC,
+                language="en",
+                custom_prompt=None,
+                extra_instructions=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    2,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [
+                            "Briefing Doc",
+                            "Key insights and important quotes",
+                            None,
+                            [["src_alpha"]],
+                            "en",
+                            (
+                                "Create a comprehensive briefing document that includes an "
+                                "Executive Summary, detailed analysis of key themes, important "
+                                "quotes with context, and actionable insights."
+                            ),
+                            None,
+                            True,
+                        ],
+                    ],
+                ],
+            ],
+        ),
+        (
             "custom_report",
             build_report_artifact_params(
                 "nb_payload",
@@ -328,6 +429,35 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                             None,
                             True,
                         ],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "quiz_defaults",
+            build_quiz_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions=None,
+                quantity=None,
+                difficulty=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [2, None, None, None, None, None, None, [2, 2]],
                     ],
                 ],
             ],
@@ -391,6 +521,39 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
             ],
         ),
         (
+            "infographic_defaults",
+            build_infographic_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="en",
+                instructions=None,
+                orientation=None,
+                detail_level=None,
+                style=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    7,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [[None, "en", None, 1, 2, 1]],
+                ],
+            ],
+        ),
+        (
             "infographic_visual_options",
             build_infographic_artifact_params(
                 "nb_payload",
@@ -420,6 +583,40 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                     None,
                     None,
                     [["Prioritize the timeline", "it", None, 2, 3, 5]],
+                ],
+            ],
+        ),
+        (
+            "slide_deck_defaults",
+            build_slide_deck_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="en",
+                instructions=None,
+                slide_format=None,
+                slide_length=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    8,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [[None, "en", 1, 1]],
                 ],
             ],
         ),
@@ -520,6 +717,26 @@ def test_artifact_payload_builders_match_golden_rpc_envelopes(
 
     assert params == expected
     assert encode_rpc_request(method, params) == _expected_rpc_envelope(method, expected)
+
+
+def test_revise_slide_payload_builder_matches_golden_envelope() -> None:
+    params = build_revise_slide_params("artifact_payload", 2, "Tighten the summary")
+
+    assert params == [[2], "artifact_payload", [[[2, "Tighten the summary"]]]]
+    assert encode_rpc_request(RPCMethod.REVISE_SLIDE, params) == _expected_rpc_envelope(
+        RPCMethod.REVISE_SLIDE,
+        params,
+    )
+
+
+def test_suggest_reports_payload_builder_matches_golden_envelope() -> None:
+    params = build_suggest_reports_params("nb_payload")
+
+    assert params == [[2], "nb_payload"]
+    assert encode_rpc_request(RPCMethod.GET_SUGGESTED_REPORTS, params) == _expected_rpc_envelope(
+        RPCMethod.GET_SUGGESTED_REPORTS,
+        params,
+    )
 
 
 def test_source_upload_rpc_payload_builders_match_golden_envelopes() -> None:
