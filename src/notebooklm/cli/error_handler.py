@@ -49,8 +49,8 @@ ALLOWED_CLICK_EXCEPTION_SITES: list[tuple[str, int, str]] = [
     ("src/notebooklm/cli/profile_cmd.py", 279, "profile rename source validation"),
     ("src/notebooklm/cli/profile_cmd.py", 281, "profile rename destination validation"),
     ("src/notebooklm/cli/resolve.py", 58, "entity ID argument validation"),
-    ("src/notebooklm/cli/session_cmd.py", 160, "login profile-name validation translation"),
     ("src/notebooklm/cli/session_cmd.py", 161, "login profile-name validation translation"),
+    ("src/notebooklm/cli/session_cmd.py", 162, "login profile-name validation translation"),
 ]
 
 # Raw ``raise SystemExit`` should live in this module. If a future path truly
