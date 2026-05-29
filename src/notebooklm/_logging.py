@@ -83,38 +83,62 @@ def correlation_id(req_id: str | None = None) -> Iterator[str]:
         reset_request_id(token)
 
 
+# WIZ_global_data CSRF (SNlM0e) and session-id (FdrFJe) markers. These appear
+# in HTML/JSON responses (``"SNlM0e":"AF1_QpN-..."``), in query / form bodies
+# (``SNlM0e=...``), and in diagnostic prose (``SNlM0e value is AF1_QpN-...``).
+# The marker name (and any quoting) is preserved; only the value is redacted.
+# Split into three shape-specific patterns so each value class is anchored
+# precisely and the capture groups are directly testable:
+#   - QUOTED: ``"marker":"value"`` / ``'marker':'value'`` (JSON / inline JS).
+#     Group 2 captures the verbatim run from the key's closing quote through
+#     the value's opening quote (``"\s*:\s*"``) so it is reproduced exactly in
+#     the replacement; group 3 is the value's quote char, back-referenced as
+#     the closing quote. The value uses the escape-aware idiom
+#     ``(?:[^"'\\]|\\.)*`` (mirroring the VCR cassette sanitizer in
+#     ``tests/cassette_patterns.py``) so a JSON ``\"`` inside the value does
+#     not terminate the match early and leak the tail. ``\s*`` around the
+#     colon tolerates pretty-printed JSON.
+#   - HTML_ESCAPED: ``&quot;marker&quot;:&quot;value&quot;`` (script block
+#     rendered inside an HTML attribute). Terminates on the literal
+#     ``&quot;``, so embedded entities (``&amp;``) survive into the redaction.
+#   - UNQUOTED: ``marker=value`` / ``marker: value`` / ``marker value is value``
+#     (query, form, or diagnostic prose). The value class excludes trailing
+#     punctuation / brackets (``.?!)]}>``) so benign sentence punctuation and
+#     enclosing parens are NOT swallowed into the redacted run.
+# Each marker is its own alternation so capture group 1 is always the full
+# marker name; ``\b`` left-anchors so it is not matched mid-identifier.
+_CSRF_MARKER_QUOTED = re.compile(r"(\b(?:SNlM0e|FdrFJe))([\"']?\s*:\s*)([\"'])(?:[^\"'\\]|\\.)*\3")
+_CSRF_MARKER_HTML_ESCAPED = re.compile(
+    r"(\b(?:SNlM0e|FdrFJe))((?:&quot;)?\s*:\s*)(&quot;)(?:(?!&quot;).)*&quot;"
+)
+_CSRF_MARKER_UNQUOTED = re.compile(
+    r"(\b(?:SNlM0e|FdrFJe))(\s*(?:value\s+is|[:=])\s*)[^\s\"'<>&;,.?!)\]}]+"
+)
+
+# Bare Google CSRF tokens. The CSRF value (``SNlM0e`` / the ``at=`` body param)
+# is always emitted with the ``AF1_QpN-`` family prefix, so a standalone token
+# is redacted even with no surrounding marker. The prefix is preserved as a
+# shape hint; the secret suffix is dropped.
+_CSRF_BARE_TOKEN = re.compile(r"(AF1_QpN-)[A-Za-z0-9_-]+")
+
+
 # Patterns are immutable. Adding a new pattern requires a unit test.
 # Order matters: longer / more-specific cookie names first within the cookie
 # group so `SID` doesn't shadow `SAPISID`. Patterns are applied in sequence.
 _REDACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # CSRF / form-body auth tokens (Google batchexecute)
     (re.compile(r"(\bat=)[^&\s\"'<>]+"), r"\1***"),
-    # WIZ_global_data CSRF (SNlM0e) and session-id (FdrFJe) markers. These
-    # appear in HTML/JSON responses (``"SNlM0e":"AF1_QpN-..."``), in query /
-    # form bodies (``SNlM0e=...``), and in diagnostic prose
-    # (``SNlM0e value is AF1_QpN-...``). The marker name itself is kept; the
-    # following token-shaped value is redacted. The separator class spans
-    # the JSON colon, ``=``, and a prose run (``"value is"`` / whitespace),
-    # then the value runs until the next quote/whitespace/JSON delimiter.
-    # The marker is matched as its own alternation so the captured ``\1``
-    # group always reflects the full marker name. ``\b`` left-anchors the
-    # marker so it is not matched mid-identifier.
-    (
-        re.compile(
-            r"(\b(?:SNlM0e|FdrFJe))"
-            r"((?:&quot;)?[\"']?\s*(?:value\s+is|[:=])\s*(?:&quot;)?[\"']?)"
-            r"[^\s\"'<>&;,}]+"
-        ),
-        r"\1\2***",
-    ),
+    # WIZ_global_data CSRF / session-id markers (see the pattern docs above).
+    # The quoted / HTML-escaped variants run before the unquoted one so the
+    # quote-aware value classes win on JSON-shaped input.
+    (_CSRF_MARKER_QUOTED, r"\1\2\3***\3"),
+    (_CSRF_MARKER_HTML_ESCAPED, r"\1\2\3***&quot;"),
+    (_CSRF_MARKER_UNQUOTED, r"\1\2***"),
     # ``csrf=<value>`` form parameter (the CSRF token shows up canonically as
     # ``at=<csrf>``, but a ``csrf=`` alias must not leak the value either).
     (re.compile(r"(\bcsrf=)[^&\s\"'<>]+", re.IGNORECASE), r"\1***"),
-    # Bare Google CSRF tokens. The CSRF value (``SNlM0e`` / the ``at=`` body
-    # param) is always emitted with the ``AF1_QpN-`` family prefix, so a
-    # standalone token is redacted even with no surrounding marker. The
-    # prefix is preserved as a shape hint; the secret suffix is dropped.
-    (re.compile(r"(AF1_QpN-)[A-Za-z0-9_-]+"), r"\1***"),
+    # Bare Google CSRF tokens (see the pattern docs above).
+    (_CSRF_BARE_TOKEN, r"\1***"),
     # session-id query param
     (re.compile(r"(\bf\.sid=)[^&\s\"'<>]+"), r"\1***"),
     # resumable-upload session query param

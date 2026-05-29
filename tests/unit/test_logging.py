@@ -238,6 +238,58 @@ def test_formatter_scrubs_bare_csrf_and_session_markers():
         assert marker in out, f"marker {marker!r} stripped from {text!r}: got {out!r}"
         assert "***" in out, f"no redaction placeholder in {out!r}"
 
+    # Surrounding punctuation / quotes / brackets must be preserved exactly —
+    # only the value is replaced. (gemini-code-assist: guard against the
+    # unquoted value class swallowing trailing sentence punctuation or the
+    # enclosing parens / JSON quotes.)
+    exact = [
+        ("SNlM0e value is AF1_QpN-PROSE_SECRET.", "SNlM0e value is ***."),
+        ("(FdrFJe=1234567890123456)", "(FdrFJe=***)"),
+        ('{"SNlM0e":"AF1_QpN-JSON_SECRET"}', '{"SNlM0e":"***"}'),
+        ("{'SNlM0e':'AF1_QpN-SQ_SECRET'}", "{'SNlM0e':'***'}"),
+        (
+            "{&quot;FdrFJe&quot;:&quot;9988776655&quot;}",
+            "{&quot;FdrFJe&quot;:&quot;***&quot;}",
+        ),
+    ]
+    for text, expected in exact:
+        rec = _record(text)
+        assert fmt.format(rec) == expected, f"unexpected redaction of {text!r}"
+
+
+def test_csrf_marker_regex_capture_groups():
+    """Directly pin the compiled marker patterns' capture groups so a future
+    edit can't silently shift what gets captured (and therefore reproduced
+    verbatim) vs. redacted. A string-shape assertion alone can't distinguish
+    "captured the right span" from "coincidental prefix preservation."
+    (gemini-code-assist suggestion.)
+    """
+    from notebooklm._logging import (
+        _CSRF_MARKER_HTML_ESCAPED,
+        _CSRF_MARKER_QUOTED,
+        _CSRF_MARKER_UNQUOTED,
+    )
+
+    m = _CSRF_MARKER_QUOTED.search('{"SNlM0e":"AF1_QpN-JSON_SECRET"}')
+    assert m is not None
+    assert m.group(1) == "SNlM0e"
+    assert m.group(2) == '":'  # key-closing quote through the colon
+    assert m.group(3) == '"'  # value quote, back-referenced as the closer
+    assert "AF1_QpN-JSON_SECRET" in m.group(0)
+
+    m = _CSRF_MARKER_UNQUOTED.search("FdrFJe value is AF1_QpN-PROSE_SECRET.")
+    assert m is not None
+    assert m.group(1) == "FdrFJe"
+    assert m.group(2) == " value is "
+    # The trailing period is NOT part of the match (value class excludes it).
+    assert m.group(0).endswith("AF1_QpN-PROSE_SECRET")
+
+    m = _CSRF_MARKER_HTML_ESCAPED.search("{&quot;SNlM0e&quot;:&quot;sekret&quot;}")
+    assert m is not None
+    assert m.group(1) == "SNlM0e"
+    assert m.group(2) == "&quot;:"
+    assert m.group(3) == "&quot;"
+
 
 def test_formatter_scrubs_bare_af1_qpn_csrf_token():
     """A standalone Google CSRF token (``AF1_QpN-...`` family) is redacted even
@@ -253,14 +305,28 @@ def test_formatter_scrubs_bare_af1_qpn_csrf_token():
 
 
 def test_formatter_marker_redaction_preserves_benign_at_suffix_fields():
-    """The CSRF/session markers must not over-redact benign fields. Fields
-    whose names merely *contain* ``sid`` / ``at`` as substrings (``rate=``,
-    ``coordinate=``, ``valid=``) keep their values — only the anchored markers
-    redact. Guards against an overbroad #1165 fix."""
+    """The CSRF/session markers must not over-redact benign fields.
+
+    ``csrf_protected``/``nb_sid`` contain fast-path token substrings (``csrf``,
+    ``sid``) so the gate opens and the regex sweep genuinely runs — proving the
+    anchored markers don't redact fields that merely *contain* a token
+    substring (and that the cookie / ``csrf=`` patterns don't fire on a
+    ``csrf_protected=`` prefix). Guards against an overbroad #1165 fix.
+    (coderabbitai: the original input had no fast-path token and so was
+    short-circuited before any pattern ran.)"""
     fmt = RedactingFormatter(logging.Formatter("%(message)s"))
-    rec = _record("metrics rate=10 coordinate=5 valid=true latency_ms=420")
+    rec = _record(
+        "metrics rate=10 coordinate=5 valid=true latency_ms=420 csrf_protected=yes nb_sid=keepme"
+    )
     out = fmt.format(rec)
-    for keep in ("rate=10", "coordinate=5", "valid=true", "latency_ms=420"):
+    for keep in (
+        "rate=10",
+        "coordinate=5",
+        "valid=true",
+        "latency_ms=420",
+        "csrf_protected=yes",
+        "nb_sid=keepme",
+    ):
         assert keep in out, f"benign field {keep!r} over-redacted: {out!r}"
 
 
