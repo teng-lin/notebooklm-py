@@ -85,13 +85,14 @@ from .services.login import (
     _login_all_accounts_from_browser,
     _login_browser_cookies_single,
     _login_with_browser_cookies,  # noqa: F401 — patch surface only
-    _parse_include_domains,
     _refresh_from_browser_cookies,
     _resolve_optional_cookie_domains,  # noqa: F401 — patch surface only
     _select_account,  # noqa: F401 — patch surface only
     _sync_server_language_to_config,
-    _warn_missing_optional_domains,
     _write_extracted_cookies,  # noqa: F401 — patch surface only
+)
+from .services.login import (
+    cookie_domains as _cookie_domains,
 )
 from .services.login.exceptions import LoginConfigurationError
 from .services.login.outcomes import BrowserCookieOutcome, NetworkFailure
@@ -191,6 +192,19 @@ def _run_playwright_login(
         include_domains=include_domains,
     )
     run_playwright_login(plan)
+
+
+def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
+    """Command-layer Click wrapper for the service ``--include-domains`` parser."""
+    try:
+        return _cookie_domains._parse_include_domains(values)
+    except _cookie_domains.IncludeDomainsParseError as exc:
+        raise click.BadParameter(str(exc)) from None
+
+
+def _warn_missing_optional_domains(include_domains: set[str]) -> None:
+    """Render the cookie-domain migration warning from the command layer."""
+    _cookie_domains._warn_missing_optional_domains(include_domains, warn=console.print)
 
 
 def _use_notebook_table() -> Table:

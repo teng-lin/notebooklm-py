@@ -5,37 +5,31 @@ imports). Owns:
 
 - :data:`_INCLUDE_DOMAINS_ALL` — sentinel label for "include every optional
   sibling-product domain".
-- :func:`_parse_include_domains` — Click value parser.
-- :func:`_warn_missing_optional_domains` — migration warning.
+- :func:`_parse_include_domains` — pure label parser.
+- :func:`_warn_missing_optional_domains` — migration-warning message builder.
 - :func:`_resolve_optional_cookie_domains` — label → domain-set resolver.
 - :func:`_build_google_cookie_domains` — final domain list builder.
-
-ADR-015 Pattern B waiver: ``_parse_include_domains`` raises
-``click.BadParameter`` from a Click ``callback=`` hook (parser-time, not
-service-layer policy). ADR-015 explicitly preserves parser-time
-``click.BadParameter`` behaviour, so this module's ``import click`` is a
-permanent transitional entry in
-``tests/unit/cli/test_services_boundary.py`` unless the callback
-architecture is restructured separately.
 """
 
 from __future__ import annotations
 
 import logging
-
-import click
+from collections.abc import Callable
 
 from ....auth import (
     GOOGLE_REGIONAL_CCTLDS,
     OPTIONAL_COOKIE_DOMAINS_BY_LABEL,
     REQUIRED_COOKIE_DOMAINS,
 )
-from ...rendering import console
 
 logger = logging.getLogger(__name__)
 
 
 _INCLUDE_DOMAINS_ALL = "all"
+
+
+class IncludeDomainsParseError(ValueError):
+    """Raised when ``--include-domains`` contains an unknown label."""
 
 
 def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
@@ -46,7 +40,7 @@ def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
     commas is tolerated. Empty fragments are dropped.
 
     Raises:
-        click.BadParameter: if any label is not one of
+        IncludeDomainsParseError: if any label is not one of
             :data:`notebooklm.auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL` keys
             (or the literal ``"all"``).
     """
@@ -63,33 +57,42 @@ def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
     bad = labels - valid
     if bad:
         supported = ", ".join(sorted(valid))
-        raise click.BadParameter(
+        raise IncludeDomainsParseError(
             f"unknown --include-domains label(s): {', '.join(sorted(bad))}. Supported: {supported}."
         )
     return labels
 
 
-def _warn_missing_optional_domains(include_domains: set[str]) -> None:
-    """Emit a migration warning when the default minimum-cookies set is used.
+def _warn_missing_optional_domains(
+    include_domains: set[str],
+    *,
+    warn: Callable[[str], None] | None = None,
+) -> str | None:
+    """Build or emit the migration warning for the minimum-cookies default.
 
     The cookie-domain split narrows the default extraction set to
     :data:`REQUIRED_COOKIE_DOMAINS`. Users upgrading from the prior
     behavior need a heads-up that YouTube / Docs / myaccount / Mail
-    cookies are no longer scraped at login. Telling them how to opt back
-    in is the entire point of the warning.
+    cookies are no longer scraped at login.
+
+    ``warn`` is injected by the command layer for interactive CLI runs so
+    this service module does not import presentation helpers.
     """
     if include_domains:
-        return
+        return None
     supported = ", ".join(sorted(OPTIONAL_COOKIE_DOMAINS_BY_LABEL))
-    console.print(
+    message = (
         "[dim]Note: sibling-product cookies not included by default. "
         f"Pass --include-domains=<{supported}> (or =all) to extract them.[/dim]"
     )
+    if warn is not None:
+        warn(message)
     logger.info(
         "Login extracting REQUIRED_COOKIE_DOMAINS only (cookie-domain split default). "
         "Pass --include-domains=%s (or =all) to include sibling cookies.",
         supported,
     )
+    return message
 
 
 def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
@@ -98,8 +101,8 @@ def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
     Contract: ``labels`` must be the output of
     :func:`_parse_include_domains`, which validates that every label is in
     :data:`OPTIONAL_COOKIE_DOMAINS_BY_LABEL` (or the literal ``"all"``).
-    Callers are expected to surface the ``click.BadParameter`` from the
-    parser before we ever reach this function; the dict lookup below is
+    Callers are expected to surface parser errors before we ever reach
+    this function; the dict lookup below is
     therefore unguarded by design.
     """
     if not labels:

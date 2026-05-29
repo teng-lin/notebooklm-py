@@ -77,10 +77,13 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # ``run_async``). The current boundary scanner intentionally does not flag
 # those imports; their important invariant is zero Pattern A pairs until the
 # remaining seams are inverted into caller-provided callbacks.
+# Login ``cookie_domains.py`` is pure service code: the command layer hosts
+# Click ``BadParameter`` translation and optional-domain warning rendering.
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/login/browser_accounts.py": SERVICES_ROOT / "login" / "browser_accounts.py",
+    "cli/services/login/cookie_domains.py": SERVICES_ROOT / "login" / "cookie_domains.py",
     "cli/services/login/cookie_jar.py": SERVICES_ROOT / "login" / "cookie_jar.py",
     "cli/services/login/cookie_writes.py": SERVICES_ROOT / "login" / "cookie_writes.py",
     "cli/services/login/exceptions.py": SERVICES_ROOT / "login" / "exceptions.py",
@@ -229,29 +232,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "of catching ``SystemExit``."
         ),
     },
-    "cli/services/login/cookie_domains.py": {
-        "path": SERVICES_ROOT / "login" / "cookie_domains.py",
-        "forbidden_imports": [
-            "cookie_domains.py:26: forbidden top-level import: 'click'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "raises click.BadParameter from a Click callback= hook "
-            "(parser-time, explicitly allowed by ADR-015). Permanent "
-            "transitional entry: the Click parameter-callback contract "
-            "requires this exception type, so the module's ``import click`` "
-            "stays put unless the callback architecture is restructured "
-            "to host the parser elsewhere."
-        ),
-        "rationale": (
-            "Permanent waiver — Click's ``callback=`` API on the "
-            "``--include-domains`` flag requires ``raise click.BadParameter``. "
-            "ADR-015 explicitly preserves parser-time ``ClickException`` "
-            "behaviour, so this stays a transitional entry indefinitely "
-            "(no `forbidden_imports`/`pattern_b_violations` removal "
-            "planned without a separate callback-architecture refactor)."
-        ),
-    },
     "cli/services/login/firefox_accounts.py": {
         "path": SERVICES_ROOT / "login" / "firefox_accounts.py",
         "forbidden_imports": [],
@@ -373,12 +353,8 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     },
 }
 
-# Modules with a documented, indefinite exception. Empty by default — the
-# Pattern B parser-time exception for cookie_domains.py lives in
-# ``TRANSITIONAL_GUARDED_PATHS`` because the lift is still planned (Click
-# parameter-callback contract is the documented exception, but the module
-# could host its callback elsewhere in a future refactor). Adding to this
-# dict requires a documented architecture exception.
+# Modules with a documented, indefinite exception. Empty by default; adding
+# to this dict requires a documented architecture exception.
 #
 # Entry schema (when populated):
 #   ``path``      — ``pathlib.Path`` to the module.
