@@ -206,6 +206,34 @@ def test_main_fails_for_intentional_omission_without_reason(tmp_path):
     assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 1
 
 
+def test_main_does_not_double_report_unreasoned_omission(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "src/notebooklm").mkdir(parents=True)
+    (repo / "src/notebooklm/__init__.py").touch()
+    (repo / "src/notebooklm/_small_helper.py").touch()
+
+    claude_md = repo / "CLAUDE.md"
+    claude_md.write_text(
+        """
+        ### Repository Structure
+
+        src/notebooklm/
+        ├── __init__.py
+
+        ### Repository Structure Intentional Omissions
+
+        - `src/notebooklm/_small_helper.py`
+        """,
+        encoding="utf-8",
+    )
+
+    assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 1
+    captured = capsys.readouterr()
+    assert "Intentional omissions without parseable reasons:" in captured.err
+    assert "Undocumented top-level src/notebooklm modules/packages:" not in captured.err
+
+
 def test_main_fails_for_stale_intentional_omission(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

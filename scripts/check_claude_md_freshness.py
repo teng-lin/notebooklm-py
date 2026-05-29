@@ -117,6 +117,13 @@ def _extract_unreasoned_omissions(text: str) -> list[str]:
     return unreasoned
 
 
+def _extract_omission_bullet_path(line: str) -> str | None:
+    match = _OMISSION_PATH_RE.match(line)
+    if match is None:
+        return None
+    return match.group("path").rstrip("/")
+
+
 def _intentional_omissions_section(text: str) -> str:
     section = _section_after_heading(text, _OMISSIONS_HEADING)
     next_heading = re.search(r"^\s*###\s+", section, flags=re.MULTILINE)
@@ -166,9 +173,16 @@ def main(argv: list[str] | None = None) -> int:
     paths = _extract_paths(text)
     omissions = _extract_intentional_omissions(text)
     unreasoned_omissions = _extract_unreasoned_omissions(text)
+    unreasoned_paths = {
+        path for line in unreasoned_omissions if (path := _extract_omission_bullet_path(line))
+    }
     missing = [p for p in paths if not (repo_root / p).exists()]
     top_level_modules = _top_level_notebooklm_modules(repo_root)
-    undocumented = [p for p in top_level_modules if p not in paths and p not in omissions]
+    undocumented = [
+        p
+        for p in top_level_modules
+        if p not in paths and p not in omissions and p not in unreasoned_paths
+    ]
     stale_omissions = [p for p in omissions if not (repo_root / p).exists()]
 
     if missing or undocumented or stale_omissions or unreasoned_omissions:
