@@ -1801,9 +1801,10 @@ class GenerationStatus:
         never fabricated into a terminal *removed* and instead polls through to
         completion (or timeout). Kept *distinct* from ``is_failed``: a *failed*
         artifact still exists in the listing with a terminal FAILED status,
-        whereas a *removed* artifact vanished entirely — usually a daily-quota
-        rejection, possibly a sustained list omission. Branch on this when a
-        delisting and a real terminal failure warrant different handling.
+        whereas a *removed* artifact vanished from the listing and stayed gone —
+        typically a daily-quota rejection, occasionally a longer-lived server-
+        side omission. Branch on this when a delisting and a real terminal
+        failure warrant different handling.
         """
 
     @property
