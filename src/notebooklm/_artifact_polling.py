@@ -353,12 +353,18 @@ class ArtifactPollingService:
             if status.is_complete or status.is_failed:
                 return status
 
-            # Track consecutive and total "not found" responses. The API may
-            # remove quota-rejected artifacts from the list entirely instead
-            # of setting them to FAILED.  Sustained removal is reported with a
-            # distinct ``"removed"`` status (see below) rather than ``"failed"``
-            # so callers can tell a delisted artifact apart from one the server
-            # actually marked terminal-FAILED.
+            # Track the *current* run of consecutive "not found" responses plus
+            # a running total. The API may remove quota-rejected artifacts from
+            # the list entirely instead of setting them to FAILED. A *sustained*
+            # absence is reported with a distinct ``"removed"`` status (see
+            # below) rather than ``"failed"`` so callers can tell a delisted
+            # artifact apart from one the server actually marked terminal-FAILED.
+            #
+            # Both accumulators reset the moment the artifact reappears (see the
+            # ``else`` branch). This is what makes ``"removed"`` mean *stayed
+            # absent*: a transient/flapping omission — where the artifact keeps
+            # coming back and may still complete — never accumulates toward a
+            # spurious terminal ``"removed"`` (issue #1198).
             if status.status == "not_found":
                 consecutive_not_found += 1
                 total_not_found += 1
@@ -407,7 +413,15 @@ class ArtifactPollingService:
                         await maybe_await_callback(on_status_change, removed_status)
                     return removed_status
             else:
+                # The artifact is back in the listing. Reset *all* not-found
+                # tracking — not just the consecutive counter — so removal
+                # requires a single sustained absence run rather than cumulative
+                # absences spread across an otherwise-healthy poll (issue #1198).
+                # An artifact that keeps reappearing is not "removed"; it keeps
+                # polling until it completes or the timeout fires.
                 consecutive_not_found = 0
+                total_not_found = 0
+                first_not_found_time = None
 
             if deadline.exceeded():
                 raise _artifact_timeout_error(

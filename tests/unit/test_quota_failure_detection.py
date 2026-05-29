@@ -373,31 +373,29 @@ class TestWaitForCompletionQuotaDetection:
         assert result.is_removed is True
 
     @pytest.mark.asyncio
-    async def test_flickering_artifact_triggers_total_failure(self):
-        """Oscillating found/not-found (flickering) triggers failure via
-        total_not_found even though consecutive never reaches max_not_found."""
-        api = _make_api()
-        # With max_not_found=3, total threshold is 6.  Alternate to keep
-        # consecutive at most 1, but accumulate 6 total not-founds.
-        responses = []
-        for _ in range(6):
-            responses.append(GenerationStatus(task_id="task_abc", status="not_found"))
-            responses.append(GenerationStatus(task_id="task_abc", status="pending"))
-        # The 6th not_found should trigger total_not_found >= 3*2 = 6
-        # Actually it fires at the not_found before the pending resets consecutive,
-        # so let's just add enough not_founds interleaved.
-        # Sequence: nf, pending, nf, pending, nf, pending, nf, pending, nf, pending, nf
-        # total_not_found hits 6 at the 6th nf (index 10)
-        responses_flickering = []
-        for i in range(12):
-            if i % 2 == 0:
-                responses_flickering.append(
-                    GenerationStatus(task_id="task_abc", status="not_found")
-                )
-            else:
-                responses_flickering.append(GenerationStatus(task_id="task_abc", status="pending"))
+    async def test_transient_omissions_reset_accumulators_and_complete(self):
+        """A flickering artifact that keeps reappearing is NOT declared removed.
 
-        api.poll_status = AsyncMock(side_effect=responses_flickering)
+        Regression for issue #1198: previously ``total_not_found`` accumulated
+        across the whole poll and never reset on reappearance, so an artifact
+        with sporadic brief omissions during an otherwise-healthy generation
+        could trip the total threshold and be fabricated into a terminal
+        ``"removed"`` before it ever completed. Now every reappearance resets
+        the not-found accumulators, so ``"removed"`` requires a *sustained*
+        absence — a flapping artifact polls through to completion instead.
+        """
+        api = _make_api()
+        # 7 not-found omissions interleaved with in_progress sightings, then a
+        # genuine completion. With max_not_found=3 the OLD total threshold was 6,
+        # so the pre-fix loop would have returned "removed" at the 6th not-found
+        # (before completing). With the reset, each in_progress wipes the
+        # accumulators, so neither the consecutive nor the total trigger fires.
+        responses = []
+        for _ in range(7):
+            responses.append(GenerationStatus(task_id="task_abc", status="not_found"))
+            responses.append(GenerationStatus(task_id="task_abc", status="in_progress"))
+        responses.append(GenerationStatus(task_id="task_abc", status="completed"))
+        api.poll_status = AsyncMock(side_effect=responses)
 
         result = await api.wait_for_completion(
             "nb1",
@@ -408,10 +406,41 @@ class TestWaitForCompletionQuotaDetection:
             min_not_found_window=0.0,
         )
 
+        assert result.is_complete is True
+        assert result.is_removed is False
+        # All 15 responses were consumed: the loop never short-circuited to
+        # "removed" despite 7 total not-found polls (> the old total threshold).
+        assert api.poll_status.call_count == 15
+
+    @pytest.mark.asyncio
+    async def test_sustained_not_found_with_blocking_window_still_removed(self):
+        """Sustained absence still triggers removal via the total fallback even
+        when ``min_not_found_window`` blocks the consecutive trigger.
+
+        Guards the issue #1198 change: resetting accumulators on reappearance
+        must not weaken detection of a *genuinely* delisted artifact that never
+        comes back. With a large window the consecutive trigger is suppressed,
+        but ``total_not_found`` (which now equals the consecutive run) still
+        reaches ``max_not_found * 2`` and reports ``"removed"``.
+        """
+        api = _make_api()
+        api.poll_status = AsyncMock(
+            return_value=GenerationStatus(task_id="task_abc", status="not_found")
+        )
+
+        result = await api.wait_for_completion(
+            "nb1",
+            "task_abc",
+            initial_interval=0.01,
+            max_interval=0.01,
+            max_not_found=3,
+            min_not_found_window=9999.0,  # blocks the consecutive trigger
+        )
+
         assert result.is_removed is True
         assert result.is_failed is False
-        assert result.error is not None
-        assert "removed from the list by the server" in result.error
+        # Fires on the total path at max_not_found * 2 = 6 consecutive not-founds.
+        assert api.poll_status.call_count == 6
 
     @pytest.mark.asyncio
     async def test_last_status_set_before_timeout(self):

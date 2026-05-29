@@ -1795,12 +1795,15 @@ class GenerationStatus:
         """Check if the artifact was delisted by the server.
 
         Set by ``wait_for_completion`` when an artifact disappears from the
-        listing for a sustained run of polls (``max_not_found``). Kept
-        *distinct* from ``is_failed``: a *failed* artifact still exists in the
-        listing with a terminal FAILED status, whereas a *removed* artifact
-        vanished entirely — usually a daily-quota rejection, possibly a
-        transient list omission. Branch on this when a delisting and a real
-        terminal failure warrant different handling.
+        listing for a *sustained* run of polls (``max_not_found``). The absence
+        must be sustained: a transient/flapping omission where the artifact
+        reappears resets the not-found window, so a still-progressing artifact is
+        never fabricated into a terminal *removed* and instead polls through to
+        completion (or timeout). Kept *distinct* from ``is_failed``: a *failed*
+        artifact still exists in the listing with a terminal FAILED status,
+        whereas a *removed* artifact vanished entirely — usually a daily-quota
+        rejection, possibly a sustained list omission. Branch on this when a
+        delisting and a real terminal failure warrant different handling.
         """
 
     @property
