@@ -24,11 +24,6 @@ INTERNAL_ARCHITECTURE_DOCS = {
     PROJECT_ROOT / "docs" / "development.md",
     PROJECT_ROOT / "docs" / "rpc-development.md",
     PROJECT_ROOT / "docs" / "refactor-history.md",
-    # Migration plans that document moving symbols across the private
-    # boundary legitimately reference notebooklm._* imports in code samples
-    # (showing what tests/services will write post-migration). They are
-    # contributor-internal documents, not user-facing.
-    PROJECT_ROOT / "docs" / "session-decoupling-plan-2026-05-26.md",
 }
 
 # Add names here only for explicit facade wrappers that must keep a public

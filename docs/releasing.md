@@ -124,7 +124,7 @@ Proceed with release preparation?
   - `docs/stability.md` and `docs/deprecations.md` when the change is a
     deprecation removal or newly deprecated surface
   - `CHANGELOG.md` with the migration path
-  - `docs/api-compat-allowlist.json` with the exact `code`, `object`, and a
+  - `scripts/api-compat-allowlist.json` with the exact `code`, `object`, and a
     reviewer-readable reason; use its `extra_public_names` section only for
     documented names that are intentionally public but not listed in
     `__all__`

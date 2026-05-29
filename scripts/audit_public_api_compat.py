@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 PUBLIC_PACKAGE = "notebooklm"
-DEFAULT_ALLOWLIST = "docs/api-compat-allowlist.json"
+DEFAULT_ALLOWLIST = "scripts/api-compat-allowlist.json"
 EXCLUDED_TOP_LEVEL_MODULES = {"__main__", "notebooklm_cli"}
 EXTRA_PUBLIC_PACKAGES = ("rpc",)
 CLIENT_NAMESPACE_ATTRIBUTES = (

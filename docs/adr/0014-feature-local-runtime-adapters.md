@@ -84,8 +84,9 @@ Protocol satisfiers were synthesised on `Session` because `Session` was the
 universal satisfier. Now that the runtime contract is "the collaborator
 satisfies its own Protocol", the methods must live where the Protocol points.
 The push-downs are mechanical (the underlying primitives already exist on the
-collaborators) but they are non-trivial enough to be sequenced as
-[Wave 0.5 in the implementation plan](../session-decoupling-plan-2026-05-26.md#wave-05-push-protocol-satisfying-methods-down-to-collaborators).
+collaborators) but they are non-trivial enough to be sequenced as a dedicated
+migration wave (Wave 0.5 — push Protocol-satisfying methods down to
+collaborators) ahead of the adapter introductions.
 
 ### Rule 2 — Composite Protocols are satisfied by a feature-local adapter when the adapter earns its keep
 
@@ -381,9 +382,10 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
 
 ## Migration
 
-See [`docs/session-decoupling-plan-2026-05-26.md`](../session-decoupling-plan-2026-05-26.md)
-for the staged migration plan and per-wave PR breakdown. The
-post-refactoring plan 2026-05-27 (Stage B1 + Stage B2) closed the two
+The migration ran as a staged series of per-wave PRs, recorded in the
+[Revision history](#revision-history) below; the standalone implementation
+plan that scoped those waves has been retired now that the work is complete.
+The post-refactoring plan 2026-05-27 (Stage B1 + Stage B2) closed the two
 deferred follow-ups — see [Revision history](#revision-history).
 
 ## Revision history

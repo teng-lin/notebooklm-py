@@ -1,6 +1,6 @@
 [project]
 name = "notebooklm-py"
-version = "0.5.0"
+version = "0.6.0"
 description = "Unofficial Python library for automating Google NotebookLM"
 dynamic = ["readme"]
 requires-python = ">=3.10"
