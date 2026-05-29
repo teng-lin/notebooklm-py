@@ -19,7 +19,7 @@ exit policy, now owned by the caller):
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -95,7 +95,7 @@ async def execute_source_wait(
     only owns the polling loop and exception-to-outcome mapping.
     """
     try:
-        context = wait_context or contextlib.asynccontextmanager(_null_async_context)
+        context = wait_context or contextlib.nullcontext
         async with context():
             source = await client.sources.wait_until_ready(
                 plan.notebook_id,
@@ -110,10 +110,6 @@ async def execute_source_wait(
     except SourceTimeoutError as exc:
         return SourceWaitTimeout(error=exc)
     return SourceWaitReady(source=source)
-
-
-async def _null_async_context() -> AsyncIterator[None]:
-    yield
 
 
 __all__ = [

@@ -35,7 +35,7 @@ and is reused as-is; see phase-3.md → P3.T1 must_not_do).
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -849,7 +849,7 @@ async def execute_generation(
         if plan.json_output:
             result = await _generate()
         else:
-            context = mind_map_context or contextlib.asynccontextmanager(_null_async_context)
+            context = mind_map_context or contextlib.nullcontext
             async with context():
                 result = await _generate()
         return GenerationExecutionResult(
@@ -881,11 +881,6 @@ async def execute_generation(
         display_name=plan.display_name,
         generation=outcome,
     )
-
-
-async def _null_async_context() -> AsyncIterator[None]:
-    yield
-
 
 __all__ = [
     "GenerationKind",
