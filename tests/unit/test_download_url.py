@@ -138,6 +138,52 @@ class TestDownloadUrlErrorWrapping:
                 assert f.read() == content
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://attacker.evil\\.google.com/file.mp4",
+            "https://storage.googleapis.com@attacker.evil/file.mp4",
+        ],
+    )
+    async def test_untrusted_hostname_shapes_rejected_before_streaming(
+        self, mock_artifacts_api, tmp_path, url
+    ):
+        """Host allowlist uses parsed hostname, not the display netloc."""
+        api = mock_artifacts_api
+        output_path = tmp_path / "file.mp4"
+
+        with pytest.raises(ArtifactDownloadError) as exc_info:
+            await api._download_url(url, str(output_path))
+
+        assert "Untrusted download domain" in str(exc_info.value)
+        assert "storage.googleapis.com@" not in str(exc_info.value)
+        assert not output_path.exists()
+        assert list(tmp_path.glob("file.mp4.*.tmp")) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://storage.googleapis.com:443/file.mp4",
+            "https://user:pass@storage.googleapis.com:443/file.mp4",
+        ],
+    )
+    async def test_trusted_hostname_with_userinfo_or_port_allowed(
+        self, mock_artifacts_api, tmp_path, url
+    ):
+        """Port and userinfo components must not participate in host matching."""
+        api = mock_artifacts_api
+        output_path = tmp_path / "file.mp4"
+        response = _build_mock_response(content=b"binary media payload")
+        client_patch, cookies_patch = _patch_httpx_client(response)
+
+        with client_patch, cookies_patch:
+            result = await api._download_url(url, str(output_path))
+
+        assert result == str(output_path)
+        assert output_path.read_bytes() == b"binary media payload"
+
+    @pytest.mark.asyncio
     async def test_401_raises_artifact_download_error_with_auth_hint(self, mock_artifacts_api):
         """401 -> ArtifactDownloadError mentioning re-auth, status_code=401."""
         api = mock_artifacts_api
@@ -187,6 +233,42 @@ class TestDownloadUrlErrorWrapping:
             assert "notebooklm login" in str(exc_info.value)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (_make_http_status_error(403), "Authentication required"),
+            (_make_http_status_error(500), "HTTP error downloading"),
+            (httpx.ReadTimeout("read timed out"), "Network error"),
+        ],
+    )
+    async def test_error_details_redact_userinfo(self, mock_artifacts_api, error, expected):
+        """Trusted URLs may contain userinfo, but diagnostics must not echo it."""
+        api = mock_artifacts_api
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "file.mp4")
+            if isinstance(error, httpx.HTTPStatusError):
+                response = _build_mock_response(raise_for_status_exc=error)
+                client_patch, cookies_patch = _patch_httpx_client(response)
+            else:
+                client_patch, cookies_patch = _patch_httpx_client(stream_exc=error)
+
+            with (
+                client_patch,
+                cookies_patch,
+                pytest.raises(ArtifactDownloadError) as exc_info,
+            ):
+                await api._download_url(
+                    "https://user:pass@storage.googleapis.com:443/file.mp4",
+                    output_path,
+                )
+
+            message = str(exc_info.value)
+            assert expected in message
+            assert "user:pass" not in message
+            assert "storage.googleapis.com/file.mp4" in message
+
+    @pytest.mark.asyncio
     async def test_500_raises_artifact_download_error_generic_http(self, mock_artifacts_api):
         """500 -> ArtifactDownloadError without auth hint, status_code=500."""
         api = mock_artifacts_api
@@ -206,7 +288,7 @@ class TestDownloadUrlErrorWrapping:
 
             # ``status_code`` rides on the exception attribute, so the
             # message text no longer repeats it. The message uses
-            # ``parsed.netloc + parsed.path`` so capability tokens in query
+            # a sanitized host plus ``parsed.path`` so capability tokens in query
             # params can't leak into log lines.
             assert exc_info.value.status_code == 500
             assert "HTTP error downloading" in str(exc_info.value)

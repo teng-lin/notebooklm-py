@@ -227,6 +227,68 @@ async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_p
 
 
 @pytest.mark.asyncio
+async def test_download_batch_rejects_backslash_hostname_confusion(mock_artifacts_api, tmp_path):
+    """Batch downloads use parsed hostname for the same allowlist guard."""
+    api, _ = mock_artifacts_api
+    url = "https://attacker.evil\\.google.com/file.mp4"
+
+    with _patched_httpx_client([]) as mock_client:
+        result = await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])
+
+    assert result.succeeded == []
+    assert len(result.failed) == 1
+    failed_url, failed_exc = result.failed[0]
+    assert failed_url == url
+    assert isinstance(failed_exc, ArtifactDownloadError)
+    assert "Untrusted download domain" in str(failed_exc)
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://storage.googleapis.com:443/file.mp4",
+        "https://user:pass@storage.googleapis.com:443/file.mp4",
+    ],
+)
+async def test_download_batch_allows_trusted_hostname_with_userinfo_or_port(
+    mock_artifacts_api, tmp_path, url
+):
+    """Port and userinfo components must not participate in batch host matching."""
+    api, _ = mock_artifacts_api
+    output_path = tmp_path / "file.mp4"
+
+    with _patched_httpx_client([_mock_response(b"payload bytes")]) as mock_client:
+        result = await api._download_urls_batch([(url, str(output_path))])
+
+    assert result.succeeded == [str(output_path)]
+    assert output_path.read_bytes() == b"payload bytes"
+    assert result.failed == []
+    mock_client.get.assert_awaited_once_with(url)
+
+
+@pytest.mark.asyncio
+async def test_download_batch_error_details_redact_userinfo(mock_artifacts_api, tmp_path):
+    """Batch auth errors should report a host without echoing userinfo."""
+    api, _ = mock_artifacts_api
+    url = "https://user:pass@storage.googleapis.com:443/file.mp4"
+    response = _mock_response(b"")
+    response.status_code = 403
+
+    with _patched_httpx_client([response]):
+        result = await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])
+
+    assert result.succeeded == []
+    assert len(result.failed) == 1
+    _, failed_exc = result.failed[0]
+    message = str(failed_exc)
+    assert "Authentication failed (HTTP 403)" in message
+    assert "user:pass" not in message
+    assert "storage.googleapis.com/file.mp4" in message
+
+
+@pytest.mark.asyncio
 async def test_download_warning_log_does_not_leak_url_via_exception_str(
     mock_artifacts_api, tmp_path, caplog
 ):
@@ -261,6 +323,25 @@ async def test_download_warning_log_does_not_leak_url_via_exception_str(
     joined = " ".join(warning_messages)
     assert "LEAKY" not in joined, f"capability token leaked: {joined!r}"
     assert "HTTP 503" in joined
+
+
+@pytest.mark.asyncio
+async def test_download_warning_log_redacts_userinfo(mock_artifacts_api, tmp_path, caplog):
+    """Batch failure logs should use the sanitized host, not the URL netloc."""
+    api, _ = mock_artifacts_api
+    url = "https://user:pass@storage.googleapis.com:443/file.mp4"
+
+    with (
+        _patched_httpx_client([httpx.ConnectError("net down")]),
+        caplog.at_level(logging.WARNING, logger="notebooklm"),
+    ):
+        result = await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])
+
+    assert len(result.failed) == 1
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    joined = " ".join(warning_messages)
+    assert "user:pass" not in joined
+    assert "storage.googleapis.com/file.mp4" in joined
 
 
 @pytest.mark.asyncio

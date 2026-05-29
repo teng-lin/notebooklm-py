@@ -13,7 +13,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 import httpx
 
@@ -131,11 +131,22 @@ def _load_httpx_cookies(storage_path: Any) -> Any:
     return load_httpx_cookies(path=storage_path)
 
 
-def _is_trusted_download_host(netloc: str) -> bool:
+def _is_trusted_download_host(hostname: str | None) -> bool:
+    if hostname is None:
+        return False
+    hostname = hostname.lower()
+    if "\\" in hostname:
+        return False
     return any(
-        netloc == domain.lstrip(".") or netloc.endswith(domain)
+        hostname == domain.lstrip(".") or hostname.endswith(domain)
         for domain in _TRUSTED_DOWNLOAD_DOMAINS
     )
+
+
+def _download_display_host(parsed: ParseResult) -> str:
+    if parsed.hostname is not None:
+        return parsed.hostname
+    return parsed.netloc.rsplit("@", 1)[-1]
 
 
 class ArtifactDownloadService:
@@ -579,19 +590,20 @@ class ArtifactDownloadService:
             timeout=60.0,
         ) as client:
             for url, output_path in urls_and_paths:
-                parsed_netloc = ""
+                display_host = ""
                 parsed_path = ""
                 try:
                     parsed = urlparse(url)
-                    parsed_netloc = parsed.netloc
+                    display_host = _download_display_host(parsed)
                     parsed_path = parsed.path
                     if parsed.scheme != "https":
                         raise ArtifactDownloadError(
                             "media", details=f"Download URL must use HTTPS: {url[:80]}"
                         )
-                    if not _is_trusted_download_host(parsed.netloc):
+                    if not _is_trusted_download_host(parsed.hostname):
                         raise ArtifactDownloadError(
-                            "media", details=f"Untrusted download domain: {parsed.netloc}"
+                            "media",
+                            details=f"Untrusted download domain: {display_host}",
                         )
 
                     response = await client.get(url)
@@ -600,7 +612,7 @@ class ArtifactDownloadService:
                             "media",
                             details=(
                                 f"Authentication failed (HTTP {response.status_code}) "
-                                f"on {parsed.netloc}{parsed.path}"
+                                f"on {display_host}{parsed.path}"
                             ),
                         )
                     response.raise_for_status()
@@ -617,7 +629,7 @@ class ArtifactDownloadService:
                     result.succeeded.append(output_path)
                     logger.debug(
                         "Downloaded %s%s (%d bytes)",
-                        parsed.netloc,
+                        display_host,
                         parsed.path,
                         len(response.content),
                     )
@@ -637,7 +649,7 @@ class ArtifactDownloadService:
                         reason = e.__class__.__name__
                     logger.warning(
                         "Download failed for %s%s: %s",
-                        parsed_netloc,
+                        display_host,
                         parsed_path,
                         reason,
                     )
@@ -648,11 +660,13 @@ class ArtifactDownloadService:
     async def download_url(self, url: str, output_path: str) -> str:
         """Download a file from URL using streaming with proper cookie handling."""
         parsed = urlparse(url)
+        display_host = _download_display_host(parsed)
         if parsed.scheme != "https":
             raise ArtifactDownloadError("media", details=f"Download URL must use HTTPS: {url[:80]}")
-        if not _is_trusted_download_host(parsed.netloc):
+        if not _is_trusted_download_host(parsed.hostname):
             raise ArtifactDownloadError(
-                "media", details=f"Untrusted download domain: {parsed.netloc}"
+                "media",
+                details=f"Untrusted download domain: {display_host}",
             )
 
         output_file = Path(output_path)
@@ -865,7 +879,7 @@ class ArtifactDownloadService:
                         os.replace(temp_file, output_file)
                         logger.debug(
                             "Downloaded %s%s (%d bytes)",
-                            parsed.netloc,
+                            display_host,
                             parsed.path,
                             total_bytes,
                         )
@@ -875,7 +889,7 @@ class ArtifactDownloadService:
                     raise ArtifactDownloadError(
                         "media",
                         details=(
-                            f"Authentication required for {parsed.netloc}{parsed.path}"
+                            f"Authentication required for {display_host}{parsed.path}"
                             " -- try `notebooklm login`"
                         ),
                         cause=e,
@@ -883,14 +897,14 @@ class ArtifactDownloadService:
                     ) from e
                 raise ArtifactDownloadError(
                     "media",
-                    details=f"HTTP error downloading {parsed.netloc}{parsed.path}",
+                    details=f"HTTP error downloading {display_host}{parsed.path}",
                     cause=e,
                     status_code=e.response.status_code,
                 ) from e
             except httpx.RequestError as e:
                 raise ArtifactDownloadError(
                     "media",
-                    details=f"Network error downloading {parsed.netloc}{parsed.path}",
+                    details=f"Network error downloading {display_host}{parsed.path}",
                     cause=e,
                 ) from e
         except BaseException:
