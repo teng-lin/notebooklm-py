@@ -7,6 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ._env import is_strict_decode_enabled
 from ._row_adapters_sources import SourceRow
 from ._session_contracts import RpcCaller
 from .rpc import RPCError, RPCMethod
@@ -27,7 +28,16 @@ class SourceLister:
         self._rpc = rpc
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> builtins.list[Source]:
-        """List all sources in a notebook."""
+        """List all sources in a notebook.
+
+        A malformed or error-shaped ``GET_NOTEBOOK`` response raises
+        :class:`RPCError` when either ``strict=True`` is passed or
+        ``NOTEBOOKLM_STRICT_DECODE`` is enabled (the default since PR
+        13.9a). This prevents a drifted response from being silently
+        reported as "0 sources" — see issue #1159. Set
+        ``NOTEBOOKLM_STRICT_DECODE=0`` to opt back into the legacy
+        warn-and-return-``[]`` behavior for one release window.
+        """
         params = [notebook_id, None, [2], None, 0]
         notebook = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
@@ -83,6 +93,13 @@ class SourceLister:
             )
 
         sources_list = nb_info[1]
+        if sources_list is None:
+            # A genuinely empty notebook elides the sources slot (``None``
+            # instead of an empty list). This is a valid empty state, NOT a
+            # malformed response, so return ``[]`` without raising even under
+            # strict-decode — issue #1159 reserves the empty list for the
+            # genuinely-empty case (see tests/cassettes/notebook_zero_sources.yaml).
+            return []
         if not isinstance(sources_list, builtins.list):
             return self._handle_malformed_list_response(
                 notebook_id,
@@ -103,11 +120,17 @@ class SourceLister:
         strict: bool,
         error_detail: str = "API response structure changed",
     ) -> None:
+        # Honor the global strict-decode policy (default ON since PR 13.9a)
+        # in addition to the explicit ``strict`` flag, so a drifted or
+        # error-enveloped GET_NOTEBOOK response is surfaced as an error
+        # rather than silently reported as "0 sources" (issue #1159).
+        # ``NOTEBOOKLM_STRICT_DECODE=0`` opts back into the legacy
+        # warn-and-return-``[]`` fallback for one release window.
+        if strict or is_strict_decode_enabled():
+            raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
         # Preserve the historical message prefix so log searches on
         # "SourcesAPI.list:" continue to match after the service extraction.
         logger.warning("SourcesAPI.list: " + message, notebook_id, *log_args)
-        if strict:
-            raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
 
     @staticmethod
     def _parse_source(src: Any) -> Source | None:

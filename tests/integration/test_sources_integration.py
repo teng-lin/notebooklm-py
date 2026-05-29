@@ -1185,8 +1185,14 @@ class TestListSourcesMalformedResponse:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        """Test list() returns [] when notebook response is empty (lines 71-76)."""
+        """Test list() returns [] when notebook response is empty (lines 71-76).
+
+        Strict-decode (default ON) would raise here; pin soft mode to assert
+        the legacy warn-and-return-[] fallback (issue #1159).
+        """
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [])
         httpx_mock.add_response(content=response.encode())
 
@@ -1201,9 +1207,11 @@ class TestListSourcesMalformedResponse:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Test list() returns [] when nb_info is not a list (lines 80-85)."""
         # notebook[0] is a string, not a list - fails isinstance(nb_info, list)
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, ["just_a_string"])
         httpx_mock.add_response(content=response.encode())
 
@@ -1218,9 +1226,11 @@ class TestListSourcesMalformedResponse:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Test list() returns [] when nb_info list has no index 1 (lines 80-85)."""
         # notebook[0] is a list with only 1 element - len(nb_info) <= 1
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [["just_a_title"]])
         httpx_mock.add_response(content=response.encode())
 
@@ -1235,9 +1245,11 @@ class TestListSourcesMalformedResponse:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Test list() returns [] when sources_list is not a list (lines 89-95)."""
         # nb_info[1] is a string - fails isinstance(sources_list, list)
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [["Notebook Title", "not_a_list"]])
         httpx_mock.add_response(content=response.encode())
 
@@ -1253,7 +1265,7 @@ class TestListSourcesMalformedResponse:
             ([], "API response structure changed"),
             (["just_a_string"], "API response structure changed"),
             ([["just_a_title"]], "API response structure changed"),
-            ([["Notebook Title", None]], "sources data is NoneType, not list"),
+            ([["Notebook Title", "not_a_list"]], "sources data is str, not list"),
         ],
     )
     async def test_list_sources_strict_raises_for_malformed_response(
@@ -1273,6 +1285,57 @@ class TestListSourcesMalformedResponse:
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(RPCError, match=message):
                 await client.sources.list("nb_123", strict=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("rpc_result", "message"),
+        [
+            ([], "API response structure changed"),
+            (["just_a_string"], "API response structure changed"),
+            ([["just_a_title"]], "API response structure changed"),
+            ([["Notebook Title", "not_a_list"]], "sources data is str, not list"),
+        ],
+    )
+    async def test_list_sources_raises_by_default_under_strict_decode(
+        self,
+        rpc_result,
+        message,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Regression for #1159: a malformed source-list response must raise
+        by default (strict-decode ON), not silently report "0 sources".
+        """
+        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, rpc_result)
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(RPCError, match=message):
+                await client.sources.list("nb_123")
+
+    @pytest.mark.asyncio
+    async def test_list_sources_null_slot_is_empty_notebook_under_strict_decode(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """A genuinely empty notebook elides the sources slot as ``None``;
+        this is a valid empty state (#1159) and must return ``[]`` even under
+        default strict-decode — never raise.
+        """
+        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [["Notebook Title", None, "nb_123"]])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            sources = await client.sources.list("nb_123")
+
+        assert sources == []
 
 
 class TestListSourcesParsingEdgeCases:

@@ -188,7 +188,9 @@ async def test_default_source_lister_uses_phase8_listing_service() -> None:
 
 @pytest.mark.asyncio
 async def test_default_source_lister_delegates_strict_malformed_handling() -> None:
-    source_lister = create_default_source_lister(RecordingRpc([["Notebook", None]]))
+    # A non-list, non-None sources slot is a genuinely malformed shape (a
+    # ``None`` slot is now the empty-notebook signal — see issue #1159).
+    source_lister = create_default_source_lister(RecordingRpc([["Notebook", "not-a-list"]]))
 
-    with pytest.raises(RPCError, match="sources data is NoneType, not list"):
+    with pytest.raises(RPCError, match="sources data is str, not list"):
         await source_lister.list("nb_123", strict=True)
