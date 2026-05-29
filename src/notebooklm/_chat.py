@@ -7,7 +7,6 @@ retrieving conversation history.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import weakref
 from typing import TYPE_CHECKING, Any
@@ -194,6 +193,14 @@ class ChatAPI:
         self._conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+        # Per-``notebook_id`` lock for asks that enter without a
+        # ``conversation_id``. The server treats ``params[4] = null`` as
+        # "append to the current conversation for this notebook, creating it
+        # if needed"; until ``hPTbtc`` returns the real id, the only stable
+        # key we can serialize on locally is the notebook id.
+        self._new_conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
 
     def _get_conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         """Return the (lazily created) lock for ``conversation_id``.
@@ -214,6 +221,20 @@ class ChatAPI:
         if lock is None:
             lock = asyncio.Lock()
             self._conversation_locks[conversation_id] = lock
+        return lock
+
+    def _get_new_conversation_lock(self, notebook_id: str) -> asyncio.Lock:
+        """Return the lock for null-conversation asks in ``notebook_id``.
+
+        Uses the same weak-cache pattern as per-conversation locks: the
+        caller's local variable keeps the lock alive while it is held, and
+        the registry entry is reclaimed when there are no active holders or
+        waiters.
+        """
+        lock = self._new_conversation_locks.get(notebook_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._new_conversation_locks[notebook_id] = lock
         return lock
 
     async def ask(
@@ -284,35 +305,15 @@ class ChatAPI:
 
         is_new_conversation = conversation_id is None
 
-        # Acquire the per-conversation lock only for follow-ups.
-        # Two concurrent gather'd follow-ups on the same conversation
-        # would otherwise read identical pre-update history, both POST it, and
-        # the server would see two follow-ups both claiming to be turn N+1.
-        # New conversations skip the lock entirely: there is no caller-supplied
-        # id to lock on yet, and parallel null-asks all attach to the same
-        # server-current conversation anyway (verified live), so post-ask
-        # hPTbtc fetches will agree on the conversation_id.
-        lock_cm: contextlib.AbstractAsyncContextManager[Any]
-        if is_new_conversation:
-            lock_cm = contextlib.nullcontext()
-        else:
-            assert conversation_id is not None  # narrowed by is_new_conversation
-            lock_cm = self._get_conversation_lock(conversation_id)
-
-        async with lock_cm:
-            if is_new_conversation:
-                conversation_history = None
-            else:
-                # Re-assert: mypy loses the narrowing across the lock-setup
-                # block above, even though ``is_new_conversation`` is False
-                # here so ``conversation_id`` must be non-None.
-                assert conversation_id is not None
-                conversation_history = self._build_conversation_history(conversation_id)
+        async def perform_request(
+            *,
+            conversation_history: list[Any] | None,
+            active_conversation_id: str | None,
+        ) -> tuple[str, list[ChatReference], str, str]:
             # Capture into closure-local variables so the nested ``build_request``
             # closure carries explicit types — mypy doesn't propagate flow
             # narrowing through nested-function captures, and the wire
             # builder accepts ``conversation_id: str | None``.
-            active_conversation_id: str | None = conversation_id
             active_source_ids: list[str] = source_ids
 
             # Mint the request-id under the asyncio-safe counter helper so two
@@ -365,6 +366,7 @@ class ChatAPI:
                 response.text
             )
 
+            resolved_conversation_id = active_conversation_id
             if is_new_conversation:
                 # The real conversation_id is not present anywhere in the
                 # streamed chat response. The only way to recover it is to
@@ -405,37 +407,72 @@ class ChatAPI:
                         "empty, or the API shape may have changed. Please file "
                         "an issue at https://github.com/teng-lin/notebooklm-py/issues."
                     )
-                conversation_id = real_conversation_id
+                resolved_conversation_id = real_conversation_id
             # Follow-up: keep the caller-supplied id. (We used to rebind to
             # ``server_conv_id`` here, but that field is a stream id not a
             # conv_id — see comment above.)
-            #
-            # Known limitation (deferred): concurrent ``asyncio.gather``'d
-            # new-conversation asks on the same notebook can race on the
-            # local cache because both resolve to the same hPTbtc id and
-            # both read empty turns before writing turn_number=1. The
-            # server side is fine (it attaches both turns to the same
-            # conversation). Fixing this requires a notebook-scoped lock
-            # for new-conversation asks; tracked separately.
 
-            assert conversation_id is not None  # narrowed by the branches above
+            assert resolved_conversation_id is not None
 
-            turns = self._cache.get_cached_conversation(conversation_id)
+            return answer_text, references, resolved_conversation_id, response.text
+
+        def cache_turn(resolved_conversation_id: str, answer_text: str) -> int:
+            turns = self._cache.get_cached_conversation(resolved_conversation_id)
             if answer_text:
                 turn_number = len(turns) + 1
                 self._cache.cache_conversation_turn(
-                    conversation_id, question, answer_text, turn_number
+                    resolved_conversation_id, question, answer_text, turn_number
                 )
             else:
                 turn_number = len(turns)
+            return turn_number
+
+        # Follow-ups use the per-conversation lock from history build through
+        # cache update. Null-conversation asks have no id to lock on yet, but
+        # the server still appends them to the notebook's current conversation.
+        # Serialize those by notebook until hPTbtc returns the real id; then
+        # release the notebook path and use the existing conversation-id lock
+        # for the local cache update.
+        #
+        # A null ask cannot serialize its streamed POST against an explicit
+        # follow-up that already knows the same eventual conversation id; the
+        # null path does not know that key until hPTbtc returns. The handoff
+        # below still serializes the local cache update with that follow-up.
+        if is_new_conversation:
+            async with self._get_new_conversation_lock(notebook_id):
+                (
+                    answer_text,
+                    references,
+                    resolved_conversation_id,
+                    raw_response,
+                ) = await perform_request(
+                    conversation_history=None,
+                    active_conversation_id=None,
+                )
+            async with self._get_conversation_lock(resolved_conversation_id):
+                turn_number = cache_turn(resolved_conversation_id, answer_text)
+        else:
+            assert conversation_id is not None  # narrowed by is_new_conversation
+            async with self._get_conversation_lock(conversation_id):
+                conversation_history = self._build_conversation_history(conversation_id)
+                (
+                    answer_text,
+                    references,
+                    resolved_conversation_id,
+                    raw_response,
+                ) = await perform_request(
+                    conversation_history=conversation_history,
+                    active_conversation_id=conversation_id,
+                )
+                turn_number = cache_turn(resolved_conversation_id, answer_text)
 
         return AskResult(
             answer=answer_text,
-            conversation_id=conversation_id,
+            conversation_id=resolved_conversation_id,
             turn_number=turn_number,
             is_follow_up=not is_new_conversation,
             references=references,
-            raw_response=response.text[:1000],
+            raw_response=raw_response[:1000],
         )
 
     async def get_conversation_turns(

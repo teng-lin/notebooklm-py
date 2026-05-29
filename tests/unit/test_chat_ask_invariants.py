@@ -430,6 +430,36 @@ class TestChatBlOverride:
 # ---------------------------------------------------------------------------
 
 
+class TestChatNewConversationLocks:
+    """Notebook-scoped locks use the same per-key cache style as conversation locks."""
+
+    def _factory(self) -> ChatAPI:
+        from unittest.mock import MagicMock
+
+        return ChatAPI(
+            rpc=MagicMock(),
+            transport=MagicMock(),
+            reqid=MagicMock(),
+            loop_guard=MagicMock(),
+        )
+
+    def test_same_notebook_reuses_new_conversation_lock(self):
+        chat = self._factory()
+
+        lock_a = chat._get_new_conversation_lock("nb-1")
+        lock_b = chat._get_new_conversation_lock("nb-1")
+
+        assert lock_a is lock_b
+
+    def test_different_notebooks_get_distinct_new_conversation_locks(self):
+        chat = self._factory()
+
+        lock_a = chat._get_new_conversation_lock("nb-1")
+        lock_b = chat._get_new_conversation_lock("nb-2")
+
+        assert lock_a is not lock_b
+
+
 class TestBuildChatRequestFactory:
     """Direct unit tests for the new ``ChatAPI._build_chat_request`` factory.
 

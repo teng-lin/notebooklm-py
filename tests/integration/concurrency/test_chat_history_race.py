@@ -28,13 +28,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient
+from notebooklm.rpc import RPCMethod
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
 # integration-tree enforcement hook in ``tests/integration/conftest.py``.
@@ -62,6 +63,13 @@ def _build_chat_response_body(answer_text: str, conversation_id: str) -> str:
     ]
     inner_json = json.dumps(inner)
     chunk = json.dumps([["wrb.fr", None, inner_json]])
+    return f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+
+def _build_get_conversation_id_response_body(conversation_id: str) -> str:
+    """Build a minimal ``hPTbtc`` response for post-ask id recovery."""
+    inner = json.dumps([[[conversation_id]]])
+    chunk = json.dumps(["wrb.fr", RPCMethod.GET_LAST_CONVERSATION_ID.value, inner, None, None])
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
 
@@ -97,6 +105,13 @@ def _extract_question(request: httpx.Request) -> str:
     return _parse_chat_params(request)[1]
 
 
+def _extract_source_path_notebook_id(request: httpx.Request) -> str:
+    """Return the notebook id from a batchexecute ``source-path`` query param."""
+    query = parse_qs(urlparse(str(request.url)).query, keep_blank_values=True)
+    source_path = query.get("source-path", [""])[0]
+    return source_path.rsplit("/", 1)[-1] if source_path.startswith("/notebook/") else ""
+
+
 class _SerializingChatTransport(httpx.AsyncBaseTransport):
     """Mock transport that delays each chat response and records request bodies.
 
@@ -110,10 +125,21 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
     in length.
     """
 
-    def __init__(self, *, response_delay: float = 0.1) -> None:
+    def __init__(
+        self,
+        *,
+        response_delay: float = 0.1,
+        response_delays_by_question: dict[str, float] | None = None,
+        conversation_ids_by_notebook: dict[str, str] | None = None,
+    ) -> None:
         self._delay = response_delay
+        self._response_delays_by_question = response_delays_by_question or {}
         self._captured: list[httpx.Request] = []
         self._answer_for_question: dict[str, str] = {}
+        self._conversation_ids_by_notebook = conversation_ids_by_notebook or {}
+        self._chat_inflight = 0
+        self._peak_chat_inflight = 0
+        self._events: list[tuple[str, str, str | None]] = []
 
     def set_answer(self, question: str, answer: str) -> None:
         self._answer_for_question[question] = answer
@@ -121,27 +147,56 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
     def captured(self) -> list[httpx.Request]:
         return list(self._captured)
 
+    def peak_chat_inflight(self) -> int:
+        return self._peak_chat_inflight
+
+    def events(self) -> list[tuple[str, str, str | None]]:
+        return list(self._events)
+
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if "batchexecute" in str(request.url):
+            notebook_id = _extract_source_path_notebook_id(request)
+            self._events.append(("hptbtc", notebook_id, None))
+            conversation_id = self._conversation_ids_by_notebook.get(
+                notebook_id,
+                f"conv-for-{notebook_id}",
+            )
+            return httpx.Response(
+                200,
+                text=_build_get_conversation_id_response_body(conversation_id),
+                request=request,
+            )
+
         # Record the request BEFORE the await so both fan-out requests
         # appear in ``captured()`` with the history they had at entry.
         self._captured.append(request)
         params = _parse_chat_params(request)
         question = params[1]
+        notebook_id = params[7]
+        self._events.append(("chat-start", notebook_id, question))
         # ``params[4]`` is the conversation_id slot — echo it back as the
         # server-assigned id so the cache stays pinned to the caller's
         # seeded cid instead of being remapped to a fresh server uuid.
-        conversation_id = params[4]
+        conversation_id = params[4] or f"stream-for-{notebook_id}-{question}"
         answer = self._answer_for_question.get(question, f"answer-for:{question}")
         # The delay is the overlap window. Without the per-conversation
         # lock, both gather'd asks reach this await holding the same
         # pre-update history. With the lock, the second ask has not even
         # built its request yet — its request is appended to ``_captured``
         # only after the first's response is parsed and cached.
-        await asyncio.sleep(self._delay)
-        return httpx.Response(
-            200,
-            text=_build_chat_response_body(answer, conversation_id),
-        )
+        delay = self._response_delays_by_question.get(question, self._delay)
+        self._chat_inflight += 1
+        self._peak_chat_inflight = max(self._peak_chat_inflight, self._chat_inflight)
+        try:
+            await asyncio.sleep(delay)
+            return httpx.Response(
+                200,
+                text=_build_chat_response_body(answer, conversation_id),
+                request=request,
+            )
+        finally:
+            self._chat_inflight -= 1
+            self._events.append(("chat-end", notebook_id, question))
 
 
 def _make_client(transport: httpx.AsyncBaseTransport, auth_tokens) -> NotebookLMClient:
@@ -270,25 +325,9 @@ async def test_different_conversation_ids_run_in_parallel(auth_tokens) -> None:
     cid_b = "conv_t7f1_b"
     notebook_id = "nb_t7f1"
 
-    # Track peak in-flight requests at the transport boundary.
-    inflight = 0
-    peak_inflight = 0
     transport = _SerializingChatTransport(response_delay=0.1)
     transport.set_answer("qA", "answer-A")
     transport.set_answer("qB", "answer-B")
-
-    original_handler = transport.handle_async_request
-
-    async def tracking_handler(request: httpx.Request) -> httpx.Response:
-        nonlocal inflight, peak_inflight
-        inflight += 1
-        peak_inflight = max(peak_inflight, inflight)
-        try:
-            return await original_handler(request)
-        finally:
-            inflight -= 1
-
-    transport.handle_async_request = tracking_handler  # type: ignore[method-assign]
 
     client = _make_client(transport, auth_tokens)
     try:
@@ -306,7 +345,151 @@ async def test_different_conversation_ids_run_in_parallel(auth_tokens) -> None:
     finally:
         await client._collaborators.kernel.get_http_client().aclose()
 
-    assert peak_inflight == 2, (
+    assert transport.peak_chat_inflight() == 2, (
         f"different-conversation follow-ups must run in parallel, "
-        f"got peak_inflight={peak_inflight}. A coarse global lock would cap this at 1."
+        f"got peak_inflight={transport.peak_chat_inflight()}. "
+        "A coarse global lock would cap this at 1."
     )
+
+
+@pytest.mark.asyncio
+async def test_same_notebook_new_conversation_asks_serialize_until_id_exists(
+    auth_tokens,
+) -> None:
+    """Two null-conversation asks on one notebook must not overlap pre-id work.
+
+    ``conversation_id=None`` means the only stable local key before the post-ask
+    ``hPTbtc`` lookup is ``notebook_id``. The second chat POST must not start
+    until the first ask has recovered the real conversation id, otherwise both
+    calls are in the same notebook's anonymous/current-conversation path at
+    once.
+    """
+    notebook_id = "nb_new_shared"
+    conversation_id = "conv_new_shared"
+
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        conversation_ids_by_notebook={notebook_id: conversation_id},
+    )
+    transport.set_answer("q-new-1", "answer-new-1")
+    transport.set_answer("q-new-2", "answer-new-2")
+
+    client = _make_client(transport, auth_tokens)
+    try:
+        results = await asyncio.gather(
+            client.chat.ask(notebook_id, "q-new-1", source_ids=["src_001"]),
+            client.chat.ask(notebook_id, "q-new-2", source_ids=["src_001"]),
+        )
+    finally:
+        await client._collaborators.kernel.get_http_client().aclose()
+
+    assert {result.conversation_id for result in results} == {conversation_id}
+    assert transport.peak_chat_inflight() == 1, (
+        "same-notebook null-conversation asks must serialize until hPTbtc "
+        f"returns the real id; got peak_chat_inflight={transport.peak_chat_inflight()}"
+    )
+
+    events = transport.events()
+    first_hptbtc_index = next(
+        index for index, event in enumerate(events) if event == ("hptbtc", notebook_id, None)
+    )
+    chat_start_indices = [
+        index
+        for index, event in enumerate(events)
+        if event[0] == "chat-start" and event[1] == notebook_id
+    ]
+    assert len(chat_start_indices) == 2
+    assert first_hptbtc_index < chat_start_indices[1], (
+        "second null-conversation chat POST started before the first ask "
+        f"resolved hPTbtc; events={events!r}"
+    )
+
+    cached_turns = client.chat.get_cached_turns(conversation_id)
+    assert [turn.turn_number for turn in cached_turns] == [1, 2]
+    assert {turn.query for turn in cached_turns} == {"q-new-1", "q-new-2"}
+
+
+@pytest.mark.asyncio
+async def test_different_notebook_new_conversation_asks_run_in_parallel(auth_tokens) -> None:
+    """Notebook-scoped null-conversation locks must not become a global lock."""
+    notebook_a = "nb_new_a"
+    notebook_b = "nb_new_b"
+    conversation_a = "conv_new_a"
+    conversation_b = "conv_new_b"
+
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        conversation_ids_by_notebook={
+            notebook_a: conversation_a,
+            notebook_b: conversation_b,
+        },
+    )
+    transport.set_answer("q-new-a", "answer-new-a")
+    transport.set_answer("q-new-b", "answer-new-b")
+
+    client = _make_client(transport, auth_tokens)
+    try:
+        results = await asyncio.gather(
+            client.chat.ask(notebook_a, "q-new-a", source_ids=["src_001"]),
+            client.chat.ask(notebook_b, "q-new-b", source_ids=["src_001"]),
+        )
+    finally:
+        await client._collaborators.kernel.get_http_client().aclose()
+
+    assert {result.conversation_id for result in results} == {conversation_a, conversation_b}
+    assert transport.peak_chat_inflight() == 2, (
+        "different notebooks must not share the null-conversation lock; "
+        f"got peak_chat_inflight={transport.peak_chat_inflight()}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_new_conversation_cache_update_waits_for_resolved_conversation_lock(
+    auth_tokens,
+) -> None:
+    """After hPTbtc returns, a null ask must use the conversation-id lock.
+
+    The explicit follow-up below holds ``_conversation_locks[conversation_id]``
+    while its delayed response is in flight. The null ask resolves to that
+    same id sooner; if it wrote the cache without taking the conversation lock,
+    it would land before the already-running follow-up. The expected cache
+    order proves the null ask waits for the follow-up's existing lock.
+    """
+    notebook_id = "nb_new_followup"
+    conversation_id = "conv_new_followup"
+
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        response_delays_by_question={
+            "q-new": 0.05,
+            "q-follow": 0.2,
+        },
+        conversation_ids_by_notebook={notebook_id: conversation_id},
+    )
+    transport.set_answer("q-new", "answer-new")
+    transport.set_answer("q-follow", "answer-follow")
+
+    client = _make_client(transport, auth_tokens)
+    try:
+        client.chat._cache.cache_conversation_turn(
+            conversation_id,
+            "q0",
+            "answer-0",
+            turn_number=1,
+        )
+
+        await asyncio.gather(
+            client.chat.ask(notebook_id, "q-new", source_ids=["src_001"]),
+            client.chat.ask(
+                notebook_id,
+                "q-follow",
+                source_ids=["src_001"],
+                conversation_id=conversation_id,
+            ),
+        )
+    finally:
+        await client._collaborators.kernel.get_http_client().aclose()
+
+    cached_turns = client.chat.get_cached_turns(conversation_id)
+    assert [turn.query for turn in cached_turns] == ["q0", "q-follow", "q-new"]
+    assert [turn.turn_number for turn in cached_turns] == [1, 2, 3]
