@@ -38,7 +38,23 @@ ID changes without renaming the file.
   },
 
   "mapper": "notebooklm._research_task_parser:parse_research_task_models",
-  "mapper_expected": [/* the public-dict shape (or list thereof) produced by the mapper */]
+  "mapper_expected": [/* the public-dict shape (or list thereof) produced by the mapper */],
+
+  "drift_cases": [
+    {
+      "name": "error_frame",
+      "description": "One sentence describing the drift scenario.",
+      "chunks": [/* synthetic chunks for this scenario */],
+      "allow_null": false,
+      "expected_exception": "RPCError",
+      "expected_message_substring": "..."
+    },
+    {
+      "name": "multi_frame_placeholder_then_final",
+      "chunks": [/* null placeholder frame, then populated frame */],
+      "expected_decoded": /* the python payload decode_response must return */
+    }
+  ]
 }
 ```
 
@@ -48,6 +64,24 @@ whose payload is consumed by inline feature-level extraction
 mapper is imported via `module.path:attribute` form and applied to
 `expected_decoded`; the returned value (or its `to_public_dict()` form for
 dataclasses) is compared against `mapper_expected`.
+
+`drift_cases` is **optional** — present only on the drift-prone methods
+(`CREATE_ARTIFACT`, `ADD_SOURCE`, `START_FAST_RESEARCH`, `LIST_NOTEBOOKS`)
+that pin the decoder's *error-path* behaviour in addition to the happy path.
+Each case rebuilds the chunked wire response from its own `chunks` and feeds
+it to `decode_response`. A case must declare **exactly one** of:
+
+- `expected_exception` — the exact decoder exception class name
+  (`RPCError`, `ClientError`, `RateLimitError`, or `UnknownRPCMethodError`),
+  optionally narrowed by a case-insensitive `expected_message_substring`.
+  Covers `er` frames, embedded `UserDisplayableError` rate limits, bare
+  gRPC NOT_FOUND/PERMISSION_DENIED status codes, and method-id drift.
+- `expected_decoded` — the payload `decode_response` must return when the
+  response carries multiple frames for one id (e.g. a `rt=c` null
+  placeholder followed by the populated final frame). Pins the
+  "prefer the last non-null `wrb.fr` frame" contract.
+
+`allow_null` defaults to `false` per case.
 
 ## Scrubbing rules
 

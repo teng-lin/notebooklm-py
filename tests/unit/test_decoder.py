@@ -13,11 +13,13 @@ from notebooklm.rpc.decoder import (
     RPCError,
     RPCErrorCode,
     UnknownRPCMethodError,
+    byte_count_mismatch_total,
     collect_rpc_ids,
     decode_response,
     extract_rpc_result,
     get_error_message_for_code,
     parse_chunked_response,
+    reset_byte_count_mismatch_total,
     strip_anti_xssi,
 )
 from notebooklm.rpc.types import RPCMethod
@@ -139,6 +141,80 @@ class TestParseChunkedResponse:
         assert mismatch_records[0].levelno == logging.DEBUG
         assert "payload is" in mismatch_records[0].message
 
+    def test_byte_count_mismatch_bumps_counter_and_warns_first_time(self, caplog):
+        """A byte-count mismatch is a drift signal: counter + one WARNING.
+
+        The tolerant parse is unchanged (valid JSON payloads are still
+        returned), but each mismatch increments the process-wide counter and
+        the first mismatch of the process emits a rate-limited WARNING so a
+        real framing-unit change rises above the per-chunk DEBUG noise.
+        """
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["wrong-size"])
+            response = f"{len(payload) + 1}\n{payload}\n"
+
+            assert byte_count_mismatch_total() == 0
+            with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+                chunks = parse_chunked_response(response)
+
+            # Tolerant parse preserved: valid JSON still returned.
+            assert chunks == [["wrong-size"]]
+            assert byte_count_mismatch_total() == 1
+
+            warnings = [
+                r
+                for r in caplog.records
+                if r.name == "notebooklm.rpc.decoder"
+                and r.levelno == logging.WARNING
+                and "Byte-count mismatch" in r.message
+            ]
+            assert len(warnings) == 1
+            assert "framing unit changed" in warnings[0].message
+        finally:
+            reset_byte_count_mismatch_total()
+
+    def test_byte_count_mismatch_warning_is_rate_limited(self, caplog):
+        """Repeated mismatches keep counting but do not flood WARNING logs."""
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["wrong-size"])
+            record = f"{len(payload) + 1}\n{payload}"
+            # 50 mismatching records well under the WARN interval (500).
+            response = "\n".join(record for _ in range(50)) + "\n"
+
+            with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+                chunks = parse_chunked_response(response)
+
+            assert chunks == [["wrong-size"]] * 50
+            assert byte_count_mismatch_total() == 50
+            warnings = [
+                r
+                for r in caplog.records
+                if r.name == "notebooklm.rpc.decoder"
+                and r.levelno == logging.WARNING
+                and "Byte-count mismatch" in r.message
+            ]
+            # Only the first mismatch of the process warns; the rest are
+            # counted silently (still DEBUG-logged).
+            assert len(warnings) == 1
+        finally:
+            reset_byte_count_mismatch_total()
+
+    def test_matching_byte_count_does_not_bump_counter(self):
+        """A correct byte count is not a mismatch and must not bump the counter."""
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["right-size"])
+            response = f"{len(payload.encode('utf-8'))}\n{payload}\n"
+
+            chunks = parse_chunked_response(response)
+
+            assert chunks == [["right-size"]]
+            assert byte_count_mismatch_total() == 0
+        finally:
+            reset_byte_count_mismatch_total()
+
     def test_skips_byte_count_without_payload_below_threshold(self, caplog):
         """A trailing byte-count line without a payload is malformed and skipped."""
         valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
@@ -244,6 +320,51 @@ class TestExtractRPCResult:
         result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result == "plain string result"
 
+    def test_prefers_last_non_null_frame_for_same_id(self):
+        """rt=c emits a null placeholder then the populated frame; the last wins.
+
+        Multiple ``wrb.fr`` frames for one RPC ID are legal in streamed
+        ``rt=c`` mode. The decoder must skip past an earlier null placeholder
+        and return the final populated payload instead of the first match.
+        """
+        placeholder = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
+        final = [
+            "wrb.fr",
+            RPCMethod.LIST_NOTEBOOKS.value,
+            json.dumps([["final-notebook"]]),
+            None,
+            None,
+            None,
+        ]
+        # Frames may arrive in separate chunks or grouped — cover both.
+        chunks = [[placeholder], [final]]
+
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+        assert result == [["final-notebook"]]
+
+    def test_does_not_downgrade_populated_frame_to_later_null(self):
+        """A trailing null frame must not clobber an earlier populated result."""
+        final = [
+            "wrb.fr",
+            RPCMethod.LIST_NOTEBOOKS.value,
+            json.dumps([["real-data"]]),
+            None,
+            None,
+            None,
+        ]
+        trailing_null = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
+        chunks = [[final], [trailing_null]]
+
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+        assert result == [["real-data"]]
+
+    def test_single_null_frame_still_returns_none(self):
+        """A lone null frame returns None exactly as before (first==last)."""
+        chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]]
+
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+        assert result is None
+
     def test_raises_on_error_chunk(self):
         """Test raises RPCError for error chunks."""
         chunks = [
@@ -251,6 +372,15 @@ class TestExtractRPCResult:
         ]
 
         with pytest.raises(RPCError, match="Some error message"):
+            extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+
+    def test_error_frame_after_null_placeholder_still_raises(self):
+        """An 'er' frame following a null placeholder is terminal and raises."""
+        placeholder = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
+        error = ["er", RPCMethod.LIST_NOTEBOOKS.value, "Terminal failure", None, None]
+        chunks = [[placeholder], [error]]
+
+        with pytest.raises(RPCError, match="Terminal failure"):
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_handles_numeric_error_code(self):

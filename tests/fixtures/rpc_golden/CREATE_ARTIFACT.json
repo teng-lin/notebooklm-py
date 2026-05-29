@@ -39,5 +39,102 @@
     "expected_decoded": [
       "SCRUBBED_ARTIFACT_001"
     ]
-  }
+  },
+  "drift_cases": [
+    {
+      "name": "error_frame",
+      "description": "An 'er' frame for this method id raises RPCError.",
+      "chunks": [
+        [
+          [
+            "er",
+            "R7cb6c",
+            "Artifact generation rejected",
+            null,
+            null
+          ]
+        ]
+      ],
+      "expected_exception": "RPCError",
+      "expected_message_substring": "Artifact generation rejected"
+    },
+    {
+      "name": "user_displayable_rate_limit",
+      "description": "Embedded UserDisplayableError at index 5 raises RateLimitError.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "R7cb6c",
+            null,
+            null,
+            null,
+            [
+              8,
+              null,
+              [
+                [
+                  "UserDisplayableError",
+                  []
+                ]
+              ]
+            ],
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "RateLimitError",
+      "expected_message_substring": "rate limit"
+    },
+    {
+      "name": "method_id_drift",
+      "description": "Response names a different id, signalling a wire-id change.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "ZZdrift",
+            "[\"SCRUBBED_ARTIFACT_001\"]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "UnknownRPCMethodError",
+      "expected_message_substring": "may have changed"
+    },
+    {
+      "name": "multi_frame_placeholder_then_final",
+      "description": "rt=c streamed null placeholder followed by the populated frame; the final frame wins.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "R7cb6c",
+            null,
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ],
+        [
+          [
+            "wrb.fr",
+            "R7cb6c",
+            "[\"SCRUBBED_ARTIFACT_001\"]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_decoded": [
+        "SCRUBBED_ARTIFACT_001"
+      ]
+    }
+  ]
 }

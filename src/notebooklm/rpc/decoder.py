@@ -38,9 +38,42 @@ __all__ = [
     "extract_rpc_result",
     "decode_response",
     "safe_index",
+    "byte_count_mismatch_total",
+    "reset_byte_count_mismatch_total",
 ]
 
 logger = logging.getLogger(__name__)
+
+# Number of times ``parse_chunked_response`` has observed a declared byte-count
+# that did not match the UTF-8 byte length of the following payload. The
+# tolerant parse is *not* affected (mismatches are expected on live multi-chunk
+# streams; see ``parse_chunked_response``'s Note: block), but a monotonically
+# rising counter is the cheapest drift signal: a sudden jump means Google
+# changed the framing unit or the proxy stopped preserving counts. Read-only
+# for callers; reset only via ``reset_byte_count_mismatch_total`` (tests).
+_BYTE_COUNT_MISMATCH_TOTAL = 0
+
+# Emit at most one byte-count-mismatch WARNING per this many observed
+# mismatches so a live multi-chunk response cannot flood CI logs while a real
+# drift event still surfaces above DEBUG. The first mismatch of a process
+# always warns (1 % interval == 0).
+_BYTE_COUNT_MISMATCH_WARN_INTERVAL = 500
+
+
+def byte_count_mismatch_total() -> int:
+    """Return the process-wide byte-count-mismatch counter.
+
+    Exposed for drift dashboards / telemetry probes that want to alert on a
+    sudden rise without re-parsing logs. The value only ever increases within
+    a process; ``reset_byte_count_mismatch_total`` exists for test isolation.
+    """
+    return _BYTE_COUNT_MISMATCH_TOTAL
+
+
+def reset_byte_count_mismatch_total() -> None:
+    """Reset the byte-count-mismatch counter (test isolation only)."""
+    global _BYTE_COUNT_MISMATCH_TOTAL
+    _BYTE_COUNT_MISMATCH_TOTAL = 0
 
 
 class RPCErrorCode(IntEnum):
@@ -195,12 +228,19 @@ def parse_chunked_response(response: str) -> list[Any]:
         valid JSON, because recorded and proxy-transformed streams may not
         preserve Google's original byte count and live Google responses use a
         different unit (likely UTF-16 code units) than ``len(s.encode("utf-8"))``.
+        Each mismatch also increments the process-wide
+        ``byte_count_mismatch_total`` counter and emits a rate-limited WARNING
+        (one per ``_BYTE_COUNT_MISMATCH_WARN_INTERVAL`` mismatches) so a real
+        framing-unit change is a visible drift signal without the tolerant
+        parse changing or per-chunk DEBUG noise flooding CI logs.
         A JSONDecodeError on the payload still emits a WARNING on the
         subsequent parse-failure path. If the malformed-payload rate exceeds
         10%, raises RPCError as this likely indicates API changes. Framing and
         mixed payload/framing corruption keep their own strict guards without
         letting byte-count records dilute the payload-specific threshold.
     """
+    global _BYTE_COUNT_MISMATCH_TOTAL
+
     if not response or not response.strip():
         return []
 
@@ -248,6 +288,22 @@ def parse_chunked_response(response: str) -> list[Any]:
                     actual_byte_count,
                     _truncate_response_preview(json_str),
                 )
+                # Surface the mismatch as a drift signal WITHOUT changing the
+                # tolerant parse: bump a process-wide counter (telemetry probes
+                # alert on a sudden rise) and emit a rate-limited WARNING so a
+                # real framing-unit change rises above the per-chunk DEBUG noise
+                # without flooding CI logs on every live multi-chunk response.
+                _BYTE_COUNT_MISMATCH_TOTAL += 1
+                if _BYTE_COUNT_MISMATCH_TOTAL % _BYTE_COUNT_MISMATCH_WARN_INTERVAL == 1:
+                    logger.warning(
+                        "Byte-count mismatch in chunked response (declared %d, "
+                        "actual %d bytes); tolerated. Total mismatches this "
+                        "process: %d — a sudden rise may indicate the "
+                        "batchexecute framing unit changed.",
+                        byte_count,
+                        actual_byte_count,
+                        _BYTE_COUNT_MISMATCH_TOTAL,
+                    )
 
             try:
                 chunk = json.loads(json_str)
@@ -476,9 +532,28 @@ def _user_displayable_error_message(error_info: Any) -> str:
     return f"{message} Upstream status code {code} ({label})."
 
 
+_SENTINEL_NO_RESULT = object()
+
+
 def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
-    """Extract result data for a specific RPC ID from chunks."""
+    """Extract result data for a specific RPC ID from chunks.
+
+    In ``rt=c`` streamed mode the backend can emit more than one ``wrb.fr``
+    frame for a single ``rpc_id`` (e.g. a null placeholder frame followed by
+    the final populated frame). We iterate every frame and return the result
+    of the **last non-null** ``wrb.fr`` frame for ``rpc_id`` so the placeholder
+    does not shadow the real payload. ``er`` frames and embedded
+    ``UserDisplayableError`` markers still raise immediately — those are
+    terminal signals, not placeholders to be superseded.
+
+    For single-frame responses (every existing golden fixture) the first and
+    last usable frame are identical, so behaviour is unchanged.
+    """
     source = "decoder.extract_rpc_result"
+    # Track the last usable result so a later populated frame wins over an
+    # earlier null placeholder. ``_SENTINEL_NO_RESULT`` distinguishes "no
+    # wrb.fr frame seen yet" from "the last frame genuinely carried null".
+    last_result: Any = _SENTINEL_NO_RESULT
     for chunk in chunks:
         if not isinstance(chunk, list):
             continue
@@ -535,12 +610,22 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
 
                 if isinstance(result_data, str):
                     try:
-                        return json.loads(result_data)
+                        parsed: Any = json.loads(result_data)
                     except json.JSONDecodeError:
-                        return result_data
-                return result_data
+                        parsed = result_data
+                else:
+                    parsed = result_data
 
-    return None
+                # Prefer a later populated frame over an earlier null
+                # placeholder; only let a null frame overwrite a previous
+                # usable result when nothing better followed (it won't, since
+                # we never downgrade a non-null result back to null).
+                if parsed is not None or last_result is _SENTINEL_NO_RESULT:
+                    last_result = parsed
+
+    if last_result is _SENTINEL_NO_RESULT:
+        return None
+    return last_result
 
 
 def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) -> Any:

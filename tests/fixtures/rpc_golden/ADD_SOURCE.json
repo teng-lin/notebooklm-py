@@ -48,5 +48,97 @@
         "SCRUBBED_SRC_NEW_001"
       ]
     ]
-  }
+  },
+  "drift_cases": [
+    {
+      "name": "error_frame",
+      "description": "An 'er' frame for this method id raises RPCError.",
+      "chunks": [
+        [
+          [
+            "er",
+            "izAoDd",
+            "Source rejected",
+            null,
+            null
+          ]
+        ]
+      ],
+      "expected_exception": "RPCError",
+      "expected_message_substring": "Source rejected"
+    },
+    {
+      "name": "not_found_status_code",
+      "description": "Null result with bare NOT_FOUND (5) status at index 5 raises ClientError, not auth.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "izAoDd",
+            null,
+            null,
+            null,
+            [
+              5
+            ],
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "ClientError",
+      "expected_message_substring": "Not found"
+    },
+    {
+      "name": "method_id_drift",
+      "description": "Response names a different id, signalling a wire-id change.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "ZZdrift",
+            "[[\"SCRUBBED_SRC_NEW_001\"]]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "UnknownRPCMethodError",
+      "expected_message_substring": "may have changed"
+    },
+    {
+      "name": "multi_frame_placeholder_then_final",
+      "description": "rt=c streamed null placeholder followed by the populated frame; the final frame wins.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "izAoDd",
+            null,
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ],
+        [
+          [
+            "wrb.fr",
+            "izAoDd",
+            "[[\"SCRUBBED_SRC_NEW_001\"]]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_decoded": [
+        [
+          "SCRUBBED_SRC_NEW_001"
+        ]
+      ]
+    }
+  ]
 }

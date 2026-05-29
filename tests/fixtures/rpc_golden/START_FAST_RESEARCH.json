@@ -37,5 +37,102 @@
     "expected_decoded": [
       "SCRUBBED_RESEARCH_001"
     ]
-  }
+  },
+  "drift_cases": [
+    {
+      "name": "error_frame_numeric_code",
+      "description": "An 'er' frame with a numeric code raises RPCError.",
+      "chunks": [
+        [
+          [
+            "er",
+            "Ljjv0c",
+            429,
+            null,
+            null
+          ]
+        ]
+      ],
+      "expected_exception": "RPCError",
+      "expected_message_substring": "rate limit"
+    },
+    {
+      "name": "user_displayable_rate_limit",
+      "description": "Embedded UserDisplayableError at index 5 raises RateLimitError.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "Ljjv0c",
+            null,
+            null,
+            null,
+            [
+              8,
+              null,
+              [
+                [
+                  "UserDisplayableError",
+                  []
+                ]
+              ]
+            ],
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "RateLimitError",
+      "expected_message_substring": "rate limit"
+    },
+    {
+      "name": "method_id_drift",
+      "description": "Response names a different id, signalling a wire-id change.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "ZZdrift",
+            "[\"SCRUBBED_RESEARCH_001\"]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "UnknownRPCMethodError",
+      "expected_message_substring": "may have changed"
+    },
+    {
+      "name": "multi_frame_placeholder_then_final",
+      "description": "rt=c streamed null placeholder followed by the populated frame; the final frame wins.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "Ljjv0c",
+            null,
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ],
+        [
+          [
+            "wrb.fr",
+            "Ljjv0c",
+            "[\"SCRUBBED_RESEARCH_001\"]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_decoded": [
+        "SCRUBBED_RESEARCH_001"
+      ]
+    }
+  ]
 }

@@ -51,6 +51,12 @@ from notebooklm._source_upload_payloads import (
     build_rename_source_params,
     build_resumable_upload_start_request,
 )
+from notebooklm.exceptions import (
+    ClientError,
+    RateLimitError,
+    RPCError,
+    UnknownRPCMethodError,
+)
 from notebooklm.rpc.decoder import (
     collect_rpc_ids,
     decode_response,
@@ -1059,4 +1065,124 @@ def test_mapper_output_shape_when_documented(method: RPCMethod) -> None:
         f"Mapper {mapper_ref!r} for {method.name} returned a shape that "
         f"does not match the fixture's mapper_expected.\n"
         f"Got: {mapped_repr!r}\nExpected: {expected!r}"
+    )
+
+
+# Drift-case exception names a fixture may declare, mapped to the concrete
+# decoder exception class. Restricting the allowed names keeps a fixture from
+# silently asserting against a typo'd / non-existent exception.
+_DRIFT_EXCEPTION_TYPES: dict[str, type[RPCError]] = {
+    "RPCError": RPCError,
+    "ClientError": ClientError,
+    "RateLimitError": RateLimitError,
+    "UnknownRPCMethodError": UnknownRPCMethodError,
+}
+
+# Methods whose fixtures are expected to carry a ``drift_cases`` block. These
+# are the drift-prone methods called out in the gap review: artifact creation,
+# source attach, a research start, and the notebook list. The guard below fails
+# loudly if any of them loses its drift coverage.
+_DRIFT_COVERED_METHODS: tuple[RPCMethod, ...] = (
+    RPCMethod.CREATE_ARTIFACT,
+    RPCMethod.ADD_SOURCE,
+    RPCMethod.START_FAST_RESEARCH,
+    RPCMethod.LIST_NOTEBOOKS,
+)
+
+
+def _collect_drift_cases() -> list[tuple[str, RPCMethod, dict[str, Any]]]:
+    """Flatten every fixture's ``drift_cases`` into parametrize tuples.
+
+    Returns ``(case_id, method, case)`` triples so each drift scenario is an
+    individually addressable test row.
+    """
+    collected: list[tuple[str, RPCMethod, dict[str, Any]]] = []
+    for method in ALL_METHODS:
+        fixture = _load_fixture(method)
+        for case in fixture.get("drift_cases", []):
+            name = case.get("name", "unnamed")
+            collected.append((f"{method.name}-{name}", method, case))
+    return collected
+
+
+_DRIFT_CASES = _collect_drift_cases()
+
+
+def test_drift_prone_methods_have_drift_cases() -> None:
+    """The drift-prone methods must each ship a non-empty ``drift_cases`` block.
+
+    This is the load-bearing guard for the error-path coverage: if a future
+    edit drops the ``drift_cases`` from one of these fixtures, the suite fails
+    loudly rather than silently losing the decoder's error-path goldens.
+    """
+    missing = []
+    for method in _DRIFT_COVERED_METHODS:
+        fixture = _load_fixture(method)
+        cases = fixture.get("drift_cases")
+        if not isinstance(cases, list) or not cases:
+            missing.append(method.name)
+    assert not missing, (
+        f"Drift-prone methods missing a non-empty 'drift_cases' block: "
+        f"{missing}. Restore the decoder error-path goldens for each."
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "case"),
+    [(method, case) for _, method, case in _DRIFT_CASES],
+    ids=[case_id for case_id, _, _ in _DRIFT_CASES],
+)
+def test_decoder_drift_case_behaviour(method: RPCMethod, case: dict[str, Any]) -> None:
+    """Each drift case asserts the decoder's exact error / multi-frame result.
+
+    A case declares **exactly one** of ``expected_exception`` (the decoder
+    must raise that class) or ``expected_decoded`` (the decoder must return
+    that payload — used for multi-frame placeholder-then-final responses).
+    """
+    chunks = case["chunks"]
+    allow_null = case.get("allow_null", False)
+    raw_response = _build_wire_response(chunks)
+
+    has_exception = "expected_exception" in case
+    has_decoded = "expected_decoded" in case
+    if has_exception == has_decoded:
+        raise _FixtureSchemaError(
+            f"Drift case {case.get('name')!r} for RPCMethod.{method.name} must "
+            f"declare exactly one of 'expected_exception' / 'expected_decoded' "
+            f"(file: {_fixture_path(method)})."
+        )
+
+    if has_exception:
+        exc_name = case["expected_exception"]
+        if exc_name not in _DRIFT_EXCEPTION_TYPES:
+            raise _FixtureSchemaError(
+                f"Drift case {case.get('name')!r} for RPCMethod.{method.name} "
+                f"declares unknown expected_exception {exc_name!r}; allowed: "
+                f"{sorted(_DRIFT_EXCEPTION_TYPES)} (file: {_fixture_path(method)})."
+            )
+        exc_type = _DRIFT_EXCEPTION_TYPES[exc_name]
+        with pytest.raises(exc_type) as exc_info:
+            decode_response(raw_response, method.value, allow_null=allow_null)
+        # Assert the EXACT class, not just an IS-A match: ClientError /
+        # RateLimitError / UnknownRPCMethodError all subclass RPCError, so a
+        # bare ``pytest.raises(RPCError)`` would not catch a regression that
+        # raised the wrong (broader/narrower) subtype.
+        assert type(exc_info.value) is exc_type, (
+            f"Drift case {case['name']!r} for {method.name} expected exactly "
+            f"{exc_name}, got {type(exc_info.value).__name__}."
+        )
+        substring = case.get("expected_message_substring")
+        if substring is not None:
+            assert substring.lower() in str(exc_info.value).lower(), (
+                f"Drift case {case['name']!r} for {method.name}: message "
+                f"{str(exc_info.value)!r} does not contain {substring!r}."
+            )
+        return
+
+    expected = case["expected_decoded"]
+    decoded = decode_response(raw_response, method.value, allow_null=allow_null)
+    assert decoded == expected, (
+        f"Drift case {case['name']!r} for {method.name} returned a payload "
+        f"that does not match expected_decoded.\n"
+        f"Got: {decoded!r}\nExpected: {expected!r}"
     )

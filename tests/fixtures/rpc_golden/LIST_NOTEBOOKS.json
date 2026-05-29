@@ -59,5 +59,105 @@
         ]
       ]
     ]
-  }
+  },
+  "drift_cases": [
+    {
+      "name": "error_frame",
+      "description": "An 'er' frame for this method id raises RPCError.",
+      "chunks": [
+        [
+          [
+            "er",
+            "wXbhsf",
+            "Authentication failed",
+            null,
+            null
+          ]
+        ]
+      ],
+      "expected_exception": "RPCError",
+      "expected_message_substring": "Authentication failed"
+    },
+    {
+      "name": "permission_denied_status_code",
+      "description": "Null result with bare PERMISSION_DENIED (7) status raises ClientError, not auth.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "wXbhsf",
+            null,
+            null,
+            null,
+            [
+              7
+            ],
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "ClientError",
+      "expected_message_substring": "Permission denied"
+    },
+    {
+      "name": "method_id_drift",
+      "description": "Response names a different id, signalling a wire-id change.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "ZZdrift",
+            "[[[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",null,null,null,null,0]]]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "UnknownRPCMethodError",
+      "expected_message_substring": "may have changed"
+    },
+    {
+      "name": "multi_frame_placeholder_then_final",
+      "description": "rt=c streamed null placeholder followed by the populated frame; the final frame wins.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "wXbhsf",
+            null,
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ],
+        [
+          [
+            "wrb.fr",
+            "wXbhsf",
+            "[[[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",null,null,null,null,0]]]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_decoded": [
+        [
+          [
+            "SCRUBBED_NB_001",
+            "Scrubbed Notebook One",
+            null,
+            null,
+            null,
+            null,
+            0
+          ]
+        ]
+      ]
+    }
+  ]
 }
