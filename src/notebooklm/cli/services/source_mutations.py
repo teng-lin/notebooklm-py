@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from ...types import DriveMimeType, Source
 from ..resolve import resolve_source_id, validate_id
@@ -209,11 +209,11 @@ def looks_like_full_source_id(source_id: str) -> bool:
 async def resolve_source_for_delete(
     client: NotebookLMClient, notebook_id: str, source_id: str, *, json_output: bool = False
 ) -> SourceIdResolution:
-    """Resolve a source ID for delete, returning the full source ID string.
+    """Resolve source-id input for delete into a :class:`SourceIdResolution`.
 
     Canonical UUIDs take a fast path and skip the live source list
     lookup. Partial IDs are resolved against the live list. Successful
-    partial matches return status prose for the command layer to emit.
+    partial matches include status prose for the command layer to emit.
     """
     source_id = validate_id(source_id, "source")
     if looks_like_full_source_id(source_id):
@@ -285,7 +285,7 @@ def require_yes_in_json(
     action: str,
     extra: dict[str, Any] | None = None,
     status_message: str | None = None,
-) -> None:
+) -> NoReturn:
     """Raise a typed ``CONFIRM_REQUIRED`` error for command-layer handling.
 
     Centralises the JSON-mode confirmation gate used by destructive
