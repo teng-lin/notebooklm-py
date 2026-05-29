@@ -88,6 +88,7 @@ if TYPE_CHECKING:
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
     from ._session_auth import AuthRefreshCoordinator
+    from ._source_upload import SourceUploadPipeline
     from ._transport_drain import TransportDrainTracker
     from .auth import CookieSaveResult
     from .types import ConnectionLimits
@@ -280,6 +281,7 @@ class ClientLifecycle:
         reqid: ReqidCounter,
         cookie_persistence: CookiePersistence,
         composed: ClientComposed,
+        uploader: SourceUploadPipeline,
     ) -> None:
         """Open the HTTP client connection.
 
@@ -331,6 +333,13 @@ class ClientLifecycle:
         # captured loop lets ``ClientComposed.get_rpc_semaphore`` short-circuit
         # cross-loop misuse with the shared diagnostic.
         composed.set_bound_loop(self._bound_loop)
+        # The Sources upload semaphore is the second lazily-built loop-bound
+        # ``asyncio.Semaphore`` with the same close→reopen hazard as the RPC
+        # semaphore above (the bug #1196 fixed for RPC): a client closed on
+        # loop A and reopened on loop B would otherwise reuse a semaphore
+        # bound to the now-dead loop A. Propagating the captured loop lets the
+        # uploader discard the stale semaphore on a loop change.
+        uploader.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
         # admits new transport work again. Wave 1 of plan
         # ``host-protocol-removal`` encapsulated the legacy direct write
@@ -345,6 +354,12 @@ class ClientLifecycle:
         # the semaphore is reconstructed lazily on the next ``get_rpc_semaphore``
         # call from inside the new loop; ``max_concurrent_rpcs`` is untouched.
         composed.reset_after_open()
+        # Same close→reopen reset for the Sources upload semaphore so a
+        # reopened client rebuilds it on the new loop instead of reusing the
+        # stale one bound to the prior (now-dead) loop. Narrow by design — the
+        # semaphore is reconstructed lazily on the next ``get_upload_semaphore``
+        # call from inside the new loop; ``max_concurrent_uploads`` is untouched.
+        uploader.reset_after_open()
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns

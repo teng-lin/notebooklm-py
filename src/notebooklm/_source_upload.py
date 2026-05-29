@@ -490,6 +490,7 @@ class SourceUploadPipeline:
         self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._lister = SourceLister(self._rpc)
         self._poller = SourcePoller()
         self._get_source_limit = get_source_limit
@@ -521,6 +522,52 @@ class SourceUploadPipeline:
         if cookies is None:
             return httpx.Cookies()
         return cast(httpx.Cookies, cookies)
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Capture or clear the event-loop binding for the upload semaphore.
+
+        Called by :meth:`ClientLifecycle.open` after it captures the running
+        loop, mirroring the identically-named method on
+        :class:`notebooklm._client_composed.ClientComposed`,
+        :class:`TransportDrainTracker`, :class:`ReqidCounter`, and
+        :class:`AuthRefreshCoordinator`. Passing ``None`` clears the binding
+        for the next ``open()`` (which rebinds to a fresh loop).
+
+        When the loop actually changes, the cached semaphore is discarded here
+        too so this method is self-consistent even if called independently of
+        :meth:`reset_after_open` (e.g. directly in a test or a future caller):
+        a stale semaphore bound to the old loop must never be reused after a
+        rebind. The production ``open()`` path also calls
+        :meth:`reset_after_open` immediately after, so the discard is
+        idempotent there.
+
+        The cross-loop guard for ``add_file`` is the lifecycle's
+        ``assert_bound_loop`` (already called at the top of :meth:`add_file`);
+        this binding only governs when the lazy semaphore is rebuilt.
+        """
+        if loop is not self._bound_loop:
+            self._upload_semaphore = None
+        self._bound_loop = loop
+
+    def reset_after_open(self) -> None:
+        """Discard the lazy upload semaphore so a reopened client rebinds it.
+
+        Called from :meth:`ClientLifecycle.open` (alongside the
+        per-collaborator ``set_bound_loop`` propagation) so a client that was
+        closed and reopened on a *different* event loop builds a fresh
+        ``asyncio.Semaphore`` on the new loop instead of reusing the stale one
+        bound to the old (now-dead) loop. On Python 3.10/3.11 reusing the
+        stale semaphore can raise "bound to a different event loop" or mispark
+        waiters; on 3.12+ the breakage is largely masked, but resetting keeps
+        the behaviour consistent across versions.
+
+        Mirrors :meth:`notebooklm._client_composed.ClientComposed.reset_after_open`.
+        Deliberately narrow: dropping the reference is enough because the
+        semaphore is reconstructed lazily on the next
+        :meth:`get_upload_semaphore` call from inside the new loop.
+        ``max_concurrent_uploads`` is left untouched.
+        """
+        self._upload_semaphore = None
 
     def get_upload_semaphore(self) -> asyncio.Semaphore:
         """Return the Sources-owned upload semaphore, creating it on first use.

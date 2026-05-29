@@ -19,6 +19,7 @@ from notebooklm._session_config import (
 )
 from notebooklm._session_init import compose_client_internals
 from notebooklm._session_lifecycle import CookieRotator, CookieSaver
+from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.types import RpcTelemetryEvent
@@ -91,4 +92,18 @@ def build_client_shell_for_tests(
     client._composed = composed
     client._collaborators = internals.collaborators
     client._rpc_executor = internals.executor
+    # The shell skips feature-API construction, but ``ClientLifecycle.open``
+    # (driven via ``client.__aenter__``) now resets the upload semaphore's
+    # loop binding through ``client._source_uploader`` (issue #1196 upload
+    # variant), so the shell must wire a real uploader the same way
+    # ``NotebookLMClient.__init__`` does.
+    client._source_uploader = SourceUploadPipeline(
+        rpc=internals.executor,
+        drain=internals.collaborators.drain_tracker,
+        lifecycle=internals.collaborators.lifecycle,
+        kernel=internals.collaborators.kernel,
+        auth=auth,
+        max_concurrent_uploads=max_concurrent_uploads,
+        record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
+    )
     return client

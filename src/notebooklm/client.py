@@ -365,6 +365,15 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
         )
+        # Hold the uploader as a first-class client attribute so the
+        # open-time loop-affinity reset (issue #1196 upload variant) can
+        # reach it independently of the ``self.sources`` feature surface:
+        # the upload semaphore is a lazily-built loop-bound
+        # ``asyncio.Semaphore`` that must be discarded on close→reopen, the
+        # same as the RPC semaphore. ``__aenter__`` threads this into
+        # ``ClientLifecycle.open`` which calls
+        # ``set_bound_loop`` / ``reset_after_open`` on it.
+        self._source_uploader = source_uploader
         # ADR-014 Rule 3 Stage B (Stage B1 PR 2 of the post-refactoring
         # plan): simple features take their RpcCaller dependency directly
         # from the composition root's executor, not from a Stage A
@@ -455,6 +464,7 @@ class NotebookLMClient:
             reqid=self._collaborators.reqid,
             cookie_persistence=self._collaborators.cookie_persistence,
             composed=self._composed,
+            uploader=self._source_uploader,
         )
         return self
 

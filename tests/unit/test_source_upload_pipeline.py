@@ -292,6 +292,50 @@ async def test_upload_semaphore_is_owned_per_pipeline() -> None:
 
 
 @pytest.mark.asyncio
+async def test_set_bound_loop_discards_semaphore_on_loop_change() -> None:
+    """Issue #1196 upload variant: a loop change must drop the cached semaphore.
+
+    The upload semaphore is bound to whichever loop it was first built under;
+    on a close→reopen onto a different loop the stale semaphore must not be
+    reused (it would raise "bound to a different event loop" on 3.10/3.11).
+    ``set_bound_loop`` discards it whenever the bound loop actually changes,
+    while a repeat of the *same* loop leaves it intact.
+    """
+    pipeline = make_pipeline(max_concurrent_uploads=1)
+    loop_a = asyncio.get_running_loop()
+
+    pipeline.set_bound_loop(loop_a)
+    sem_a = pipeline.get_upload_semaphore()
+    # Re-binding to the same loop must NOT discard the cached semaphore.
+    pipeline.set_bound_loop(loop_a)
+    assert pipeline.get_upload_semaphore() is sem_a
+
+    # A loop change discards the stale semaphore so the next access rebuilds it.
+    other_loop = asyncio.new_event_loop()
+    try:
+        pipeline.set_bound_loop(other_loop)
+        assert pipeline._upload_semaphore is None
+        assert pipeline.get_upload_semaphore() is not sem_a
+    finally:
+        other_loop.close()
+
+
+@pytest.mark.asyncio
+async def test_reset_after_open_drops_semaphore() -> None:
+    """``reset_after_open`` clears the lazy semaphore so a reopen rebuilds it."""
+    pipeline = make_pipeline(max_concurrent_uploads=1)
+    sem = pipeline.get_upload_semaphore()
+    assert pipeline._upload_semaphore is sem
+
+    pipeline.reset_after_open()
+    assert pipeline._upload_semaphore is None
+    # ``max_concurrent_uploads`` is untouched, so the rebuilt semaphore keeps
+    # the same cap and is a fresh object.
+    rebuilt = pipeline.get_upload_semaphore()
+    assert rebuilt is not sem
+
+
+@pytest.mark.asyncio
 async def test_add_file_uses_pipeline_steps_and_finishes_transport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
