@@ -31,6 +31,7 @@ class TestAgentShow:
             result = runner.invoke(cli, ["agent", "show", "codex"])
 
         assert result.exit_code == 0
+        assert result.stderr == ""
         assert "Repository Guidelines" in result.output
 
     def test_agent_show_claude_displays_content(self, runner):
@@ -39,6 +40,7 @@ class TestAgentShow:
             result = runner.invoke(cli, ["agent", "show", "claude"])
 
         assert result.exit_code == 0
+        assert result.stderr == ""
         assert "Claude Skill" in result.output
 
     def test_agent_show_missing_content_returns_error(self, runner):

@@ -23,6 +23,7 @@ import json
 import re
 import warnings
 from typing import Any
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
@@ -34,6 +35,7 @@ from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
 from notebooklm._request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
+from notebooklm.exceptions import ChatError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -436,11 +438,13 @@ class TestChatNewConversationLocks:
     def _factory(self) -> ChatAPI:
         from unittest.mock import MagicMock
 
+        loop_guard = MagicMock()
+        loop_guard.assert_bound_loop = MagicMock()
         return ChatAPI(
             rpc=MagicMock(),
             transport=MagicMock(),
             reqid=MagicMock(),
-            loop_guard=MagicMock(),
+            loop_guard=loop_guard,
         )
 
     def test_same_notebook_reuses_new_conversation_lock(self):
@@ -458,6 +462,39 @@ class TestChatNewConversationLocks:
         lock_b = chat._get_new_conversation_lock("nb-2")
 
         assert lock_a is not lock_b
+
+    @pytest.mark.asyncio
+    async def test_failed_post_ask_hptbtc_lookup_releases_new_conversation_lock(self, monkeypatch):
+        chat = self._factory()
+        chat._reqid.next_reqid = AsyncMock(side_effect=[100000, 200000])
+        new_conversation_lock = chat._get_new_conversation_lock("nb-1")
+
+        async def fake_chat_aware_authed_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", "https://notebooklm.google.com/_/LabsTailwindUi"),
+                content=_make_answer_response_body(),
+            )
+
+        get_conversation_id = AsyncMock(
+            side_effect=[ChatError("hPTbtc lookup failed"), "conv-after-failure"]
+        )
+        monkeypatch.setattr("notebooklm._chat.chat_aware_authed_post", fake_chat_aware_authed_post)
+        monkeypatch.setattr(chat, "get_conversation_id", get_conversation_id)
+
+        with pytest.raises(ChatError, match="hPTbtc lookup failed"):
+            await chat.ask("nb-1", "first ask", source_ids=["s1"])
+
+        assert not new_conversation_lock.locked()
+
+        result = await asyncio.wait_for(
+            chat.ask("nb-1", "second ask", source_ids=["s1"]),
+            timeout=1.0,
+        )
+
+        assert result.conversation_id == "conv-after-failure"
+        assert result.answer == "Refactor answer is long enough."
+        assert get_conversation_id.await_count == 2
 
 
 class TestBuildChatRequestFactory:

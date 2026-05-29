@@ -28,7 +28,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -88,6 +88,24 @@ class _FixtureSchemaError(AssertionError):
     handles ``AssertionError`` (e.g. pytest hooks, ``--tb=short``) treats
     it as a structured test failure rather than a generic exception.
     """
+
+
+def test_report_payload_unknown_format_raises_contextual_value_error() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        build_report_artifact_params(
+            "nb_payload",
+            ["src_alpha"],
+            report_format=cast(ReportFormat, "future-report-format"),
+            language="en",
+            custom_prompt=None,
+            extra_instructions=None,
+        )
+
+    message = str(exc_info.value)
+    assert "Unsupported report format" in message
+    assert "future-report-format" in message
+    assert "briefing_doc" in message
+    assert "custom" in message
 
 
 def _fixture_path(method: RPCMethod) -> Path:

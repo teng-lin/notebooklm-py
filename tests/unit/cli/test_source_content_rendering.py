@@ -273,6 +273,63 @@ def test_source_fulltext_json_output_file_no_clobber_rejects_existing_file(
     }
 
 
+def test_source_fulltext_output_rejects_directory_before_fetching(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_dir = tmp_path / "fulltext"
+    output_dir.mkdir()
+    client = _client_with_fulltext("content that should not be fetched")
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            ["source", "fulltext", "src_1", "-n", "nb_123", "-o", str(output_dir)],
+        )
+
+    assert result.exit_code == 2, result.output
+    assert f"Output path is a directory: {output_dir}" in result.output
+    assert not result.output.strip().startswith("{")
+    client.sources.list.assert_not_awaited()
+    client.sources.get_fulltext.assert_not_awaited()
+
+
+def test_source_fulltext_json_output_rejects_directory_before_fetching(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_dir = tmp_path / "fulltext"
+    output_dir.mkdir()
+    client = _client_with_fulltext("content that should not be fetched")
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "--json",
+                "-o",
+                str(output_dir),
+            ],
+        )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload == {
+        "error": True,
+        "code": "VALIDATION_ERROR",
+        "message": f"Output path is a directory: {output_dir}",
+    }
+    client.sources.list.assert_not_awaited()
+    client.sources.get_fulltext.assert_not_awaited()
+
+
 def test_source_fulltext_output_file_force_overwrites_existing_file(
     runner: CliRunner,
     mock_auth,

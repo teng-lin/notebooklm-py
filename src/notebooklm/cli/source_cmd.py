@@ -214,6 +214,11 @@ def _resolve_source_fulltext_output_path(
 ) -> Path:
     """Resolve ``source fulltext -o`` conflicts without silently overwriting."""
     path = Path(output)
+    if path.exists() and path.is_dir():
+        _emit_source_fulltext_flag_conflict(
+            f"Output path is a directory: {path}",
+            json_output=json_output,
+        )
     if force and no_clobber:
         _emit_source_fulltext_flag_conflict(
             "Cannot specify both --force and --no-clobber",

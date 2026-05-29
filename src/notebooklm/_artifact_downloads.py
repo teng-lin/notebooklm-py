@@ -13,7 +13,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 import httpx
 
@@ -134,8 +134,8 @@ def _load_httpx_cookies(storage_path: Any) -> Any:
 def _is_trusted_download_host(hostname: str | None) -> bool:
     if hostname is None:
         return False
-    hostname = hostname.lower()
-    if "\\" in hostname:
+    hostname = unquote(hostname).lower()
+    if "\\" in hostname or "/" in hostname:
         return False
     return any(
         hostname == domain.lstrip(".") or hostname.endswith(domain)

@@ -142,7 +142,7 @@ RPC Layer (rpc/)
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
 | `_artifact_downloads.py` | Asynchronous download coordinator for finished artifacts |
 | `_artifact_formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
-| `_artifact_generation.py` | Extracted artifact generation payload-building service |
+| `_artifact_generation.py` | Artifact generation orchestration/service |
 | `_artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_artifact_listing.py` | Listing and filtering operations for notebook artifacts |
 | `_artifact_polling.py` | Poll coordination service for artifact generation tasks |
@@ -226,8 +226,8 @@ src/notebooklm/
 ├── _mind_map.py                 # NoteBackedMindMapService
 ├── _artifact_downloads.py       # Artifact download coordinator
 ├── _artifact_formatters.py      # Artifact formatting helpers
-├── _artifact_generation.py      # Artifact generation payload builder
-├── _artifact_payloads.py        # Artifact request payload builders
+├── _artifact_generation.py      # Artifact generation orchestration/service
+├── _artifact_payloads.py        # Stable artifact request payload builders
 ├── _artifact_listing.py         # Artifact listing helper
 ├── _artifact_polling.py         # Artifact polling coordinator
 ├── _source_add.py               # Source addition coordinator

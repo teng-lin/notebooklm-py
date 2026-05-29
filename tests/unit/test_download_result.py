@@ -227,10 +227,19 @@ async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_download_batch_rejects_backslash_hostname_confusion(mock_artifacts_api, tmp_path):
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://attacker.evil\\.google.com/file.mp4",
+        "https://attacker.evil%5c.google.com/file.mp4",
+        "https://attacker.evil%5C.google.com/file.mp4",
+    ],
+)
+async def test_download_batch_rejects_backslash_hostname_confusion(
+    mock_artifacts_api, tmp_path, url
+):
     """Batch downloads use parsed hostname for the same allowlist guard."""
     api, _ = mock_artifacts_api
-    url = "https://attacker.evil\\.google.com/file.mp4"
 
     with _patched_httpx_client([]) as mock_client:
         result = await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])

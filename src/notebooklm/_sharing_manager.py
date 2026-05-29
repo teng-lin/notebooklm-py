@@ -36,7 +36,7 @@ class ShareManager:
     async def share(
         self, notebook_id: str, public: bool = True, artifact_id: str | None = None
     ) -> dict[str, Any]:
-        """Toggle legacy notebook sharing through ``SHARE_ARTIFACT``."""
+        """Set/update legacy public share-link state through ``SHARE_ARTIFACT``."""
         share_options = [1] if public else [0]
         params: list[Any] = [share_options, notebook_id]
         if artifact_id:

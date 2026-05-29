@@ -478,4 +478,11 @@ def _report_config(
             "description": "Custom format",
             "prompt": custom_prompt or "Create a report based on the provided sources.",
         }
-    return _STATIC_REPORT_CONFIGS[report_format]
+    try:
+        return _STATIC_REPORT_CONFIGS[report_format]
+    except KeyError as exc:
+        known_formats = ", ".join(format_.value for format_ in _STATIC_REPORT_CONFIGS)
+        raise ValueError(
+            f"Unsupported report format {report_format!r}; expected one of: "
+            f"{known_formats}, {ReportFormat.CUSTOM.value}"
+        ) from exc

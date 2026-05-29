@@ -247,15 +247,15 @@ easy to lose during refactors. The taxonomy makes retry safety a
 **property of the call site** (re-derived every time someone touches
 the code).
 
-**The classification.** Mutating RPCs are classified into five
+**The classification.** Every active RPC is classified into one of five
 retry-safety profiles by the `IdempotencyRegistry` in
 [`_idempotency.py`](../src/notebooklm/_idempotency.py):
 
 | Policy | Meaning | Effect on the inner retry loop |
 |--------|---------|--------------------------------|
-| `UNCLASSIFIED` | Placeholder; never classified | Silent, retries enabled (preserves pre-taxonomy behavior) |
+| `UNCLASSIFIED` | Placeholder for hand-built test/future registries; not used by the production registry for active RPCs | Silent, retries enabled (preserves pre-taxonomy behavior) |
 | `PROBE_THEN_CREATE` | Caller owns a probe loop; transport must not blind-retry | Force-disable inner retries |
-| `IDEMPOTENT_SET_OP` | Server applies set semantics (delete / rename) | Retries are safe; left enabled |
+| `IDEMPOTENT_SET_OP` | Replay-safe read-only, delete, rename, or set-state RPC | Retries are safe; left enabled |
 | `AT_LEAST_ONCE_ACCEPTED` | Caller has explicitly accepted duplicate side-effect cost (emails / billing / notifications) | Retries enabled; rate-limited WARN emitted so operators can see the trade-off |
 | `NON_IDEMPOTENT_NO_RETRY` | No dedupe key and no probe; first failure must surface | Force-disable inner retries |
 
@@ -273,6 +273,12 @@ pairs each `PROBE_THEN_CREATE` entry with a `RecoveryKind` —
 `EXECUTABLE` (a probe/recovery wrapper exists) or `DISABLE_ONLY` (with a
 documented reason). A registry-audit test fails if a new
 `PROBE_THEN_CREATE` policy is added without one of those.
+
+The production registry has explicit coverage for every active
+`RPCMethod`, including read-only RPCs. Read-only entries are registered
+as replay-safe `IDEMPOTENT_SET_OP` rows rather than left as
+production-`UNCLASSIFIED`; `UNCLASSIFIED` is retained only as a
+placeholder for tests and future development.
 
 See [ADR-005](./adr/0005-idempotency-taxonomy.md). Side-effect probing
 (`idempotent_create(...)`) is a separate mechanism not owned by the
@@ -425,7 +431,7 @@ the executor on direct collaborator dependencies.
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
 | `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
 | `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Cookie-jar persistence + `__Secure-1PSIDTS` rotation. |
-| `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor._execute_once()` consults it to resolve `effective_disable_internal_retries`. It is part of the RPC dispatch path, not lifecycle state. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
+| `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. The production registry explicitly covers every active `RPCMethod`; `UNCLASSIFIED` is retained only as a placeholder for hand-built test/future registries. `RpcExecutor._execute_once()` consults it to resolve `effective_disable_internal_retries`. It is part of the RPC dispatch path, not lifecycle state. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
 | `_request_types` | [`_request_types.py`](../src/notebooklm/_request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
 | `_transport_errors` | [`_transport_errors.py`](../src/notebooklm/_transport_errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
 | `_streaming_post` | [`_streaming_post.py`](../src/notebooklm/_streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |

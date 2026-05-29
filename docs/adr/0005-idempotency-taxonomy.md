@@ -14,6 +14,12 @@ policy and executor token-injection hook. No current `RPCMethod` has a
 verified client-token slot, so keeping the policy made the registry
 advertise a dead retry-safety mechanism.
 
+Amended again on 2026-05-29 after the registry audit was completed:
+the production `IDEMPOTENCY_REGISTRY` now has an explicit entry for
+every active `RPCMethod`. `UNCLASSIFIED` remains only as a hand-built
+placeholder for tests and future development, not as the production
+classification for read-only RPCs.
+
 ## Context
 
 The NotebookLM RPC surface is `batchexecute` over HTTPS, and any mutating call (create, delete, refresh, share, generate, …) is susceptible to a *commit-lost* failure: the server commits the write, then the response is lost in transit. A naive retry produces a duplicate write — a duplicate notebook, a duplicate source, an extra LLM inference, a re-sent invite email — depending on the RPC.
@@ -24,7 +30,7 @@ Five retry-safety profiles cover every verified NotebookLM RPC shape:
 
 | Policy | Meaning | Effect on the inner retry loop |
 |---|---|---|
-| `UNCLASSIFIED` | Placeholder; never classified | Silent, retries enabled (preserves pre-taxonomy behavior) |
+| `UNCLASSIFIED` | Placeholder for hand-built test/future registries; not used by the production registry for active RPCs | Silent, retries enabled (preserves pre-taxonomy behavior) |
 | `PROBE_THEN_CREATE` | Caller owns a probe loop; transport must not blind-retry | Force-disable inner retries |
 | `IDEMPOTENT_SET_OP` | Server applies set semantics (delete / rename) | Retries are safe; left enabled |
 | `AT_LEAST_ONCE_ACCEPTED` | Caller has accepted duplicate-side-effect cost | Retries enabled; rate-limited WARN emitted |
@@ -36,17 +42,17 @@ The audit (`.sisyphus/plans/arch-biggest-problem-audit.md`, disease D3) flagged 
 
 ## Decision
 
-Every `RPCMethod` is registered in `IDEMPOTENCY_REGISTRY` (in `_idempotency.py`) with one of five `IdempotencyPolicy` values, optionally per *operation variant* when the call-site shape differs. The registry is the single source of truth consumed by `RpcExecutor`.
+Every active `RPCMethod` is registered in `IDEMPOTENCY_REGISTRY` (in `_idempotency.py`) with one of five `IdempotencyPolicy` values, optionally per *operation variant* when the call-site shape differs. The registry is the single source of truth consumed by `RpcExecutor`, and the registry-audit tests fail if a new enum member keeps the default placeholder.
 
 The classification rules are:
 
-- **Read-only RPCs** are not classified (the taxonomy applies to mutating RPCs only); the executor's existing retry behavior is correct for them.
+- **Read-only RPCs** classify as `IDEMPOTENT_SET_OP`; replay is explicitly safe because the RPC does not mutate server state.
 - **Mutating RPCs with a stable server-side dedupe key** classify as `IDEMPOTENT_SET_OP` (delete / rename / set-state) — retries are explicitly safe.
 - **Mutating RPCs without a dedupe key but with a probe RPC** classify as `PROBE_THEN_CREATE`; the inner retry loop is force-disabled, and the per-API call site owns a probe-then-create wrapper (see `idempotent_create()` in `_idempotency.py` and the per-API uses in `_notebooks.py`, `_sources.py`).
 - **Mutating RPCs that produce visible side effects (emails, billing, notifications) and that the caller has explicitly opted into** classify as `AT_LEAST_ONCE_ACCEPTED`; retries are enabled but a rate-limited WARN is emitted so operators can observe the trade-off.
 - **Mutating RPCs with no dedupe key and no reliable probe** classify as `NON_IDEMPOTENT_NO_RETRY`; the inner retry loop is force-disabled and the first failure surfaces to the caller for manual disambiguation.
 
-The Wave-2 classifications shipped to date are recorded inline in `_idempotency.py` (with the per-RPC rationale captured at the registration site). Future Wave-2 classifications continue to land in the same module without changes to the executor; the registry is intentionally extensible.
+The completed production classifications are recorded inline in `_idempotency.py` (with the per-RPC rationale captured at the registration site). Future classifications continue to land in the same module without changes to the executor; the registry is intentionally extensible.
 
 The five-policy axis is *closed*. Adding a sixth policy requires updating this ADR and the executor in lock-step.
 

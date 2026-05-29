@@ -765,7 +765,7 @@ _IDEMPOTENT_READ_OR_SET_OP_NOTES: dict[RPCMethod, str] = {
         "set artifact title to a caller-supplied value; replay leaves the same state"
     ),
     RPCMethod.SHARE_ARTIFACT: (
-        "legacy share toggle sets public/private state; replay leaves the same share state"
+        "legacy public share-link state update; replay leaves the same share state"
     ),
     RPCMethod.GET_INTERACTIVE_HTML: (
         "read-only artifact HTML fetch; replay does not mutate artifact state"
