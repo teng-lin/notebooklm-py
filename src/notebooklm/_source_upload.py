@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import mimetypes
 import os
@@ -31,6 +30,11 @@ from ._session_contracts import (
 )
 from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
+from ._source_upload_payloads import (
+    build_register_file_source_params,
+    build_rename_source_params,
+    build_resumable_upload_start_request,
+)
 from .auth import authuser_query, format_authuser_value
 from .exceptions import (
     AuthError,
@@ -693,12 +697,7 @@ class SourceUploadPipeline:
         concurrent uploader added one) raises ``SourceAddError`` rather
         than guessing.
         """
-        params = [
-            [[filename]],
-            notebook_id,
-            [2],
-            [1, None, None, None, None, None, None, None, None, None, [1]],
-        ]
+        params = build_register_file_source_params(filename, notebook_id)
         if rpc_call is None:
             rpc_call = self._rpc.rpc_call
         if list_sources is None:
@@ -930,7 +929,7 @@ class SourceUploadPipeline:
     async def rename(self, notebook_id: str, source_id: str, new_title: str) -> Source:
         """Rename an uploaded source."""
         module_logger.debug("Renaming source %s to: %s", source_id, new_title)
-        params = [None, [source_id], [[[new_title]]]]
+        params = build_rename_source_params(source_id, new_title)
         result = await self._rpc.rpc_call(
             RPCMethod.UPDATE_SOURCE,
             params,
@@ -948,35 +947,27 @@ class SourceUploadPipeline:
         content_type: str,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
-        auth_route = self._authuser_header()
-        base_url = get_base_url()
-        url = f"{get_upload_url()}?{self._authuser_query()}"
-
-        headers = {
-            "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            "Origin": base_url,
-            "Referer": f"{base_url}/",
-            "x-goog-authuser": auth_route,
-            "x-goog-upload-command": "start",
-            "x-goog-upload-header-content-length": str(file_size),
-            "x-goog-upload-header-content-type": content_type,
-            "x-goog-upload-protocol": "resumable",
-        }
-
-        body = json.dumps(
-            {
-                "PROJECT_ID": notebook_id,
-                "SOURCE_NAME": filename,
-                "SOURCE_ID": source_id,
-            }
+        request = build_resumable_upload_start_request(
+            notebook_id=notebook_id,
+            filename=filename,
+            file_size=file_size,
+            source_id=source_id,
+            content_type=content_type,
+            base_url=get_base_url(),
+            upload_url=get_upload_url(),
+            authuser_query=self._authuser_query(),
+            authuser_header=self._authuser_header(),
         )
 
         async with self._client_factory()(
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
             cookies=self._live_cookies(),
         ) as client:
-            response = await client.post(url, headers=headers, content=body)
+            response = await client.post(
+                request.url,
+                headers=request.headers,
+                content=request.body,
+            )
             response.raise_for_status()
 
             upload_url = response.headers.get("x-goog-upload-url")

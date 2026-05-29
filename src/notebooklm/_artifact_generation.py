@@ -6,10 +6,23 @@ import json as json_module
 import logging
 from typing import TYPE_CHECKING, Any
 
+from ._artifact_payloads import (
+    build_audio_artifact_params,
+    build_cinematic_video_artifact_params,
+    build_data_table_artifact_params,
+    build_flashcards_artifact_params,
+    build_infographic_artifact_params,
+    build_mind_map_params,
+    build_quiz_artifact_params,
+    build_report_artifact_params,
+    build_revise_slide_params,
+    build_slide_deck_artifact_params,
+    build_suggest_reports_params,
+    build_video_artifact_params,
+)
 from ._env import get_default_language
 from .exceptions import ArtifactFeatureUnavailableError, ValidationError
 from .rpc import (
-    ArtifactTypeCode,
     AudioFormat,
     AudioLength,
     InfographicDetail,
@@ -25,7 +38,6 @@ from .rpc import (
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
-    nest_source_ids,
     safe_index,
 )
 from .types import GenerationStatus, ReportSuggestion
@@ -67,38 +79,14 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        source_ids_double = nest_source_ids(source_ids, 1)
-
-        format_code = (
-            audio_format.value if audio_format is not None else AudioFormat.DEEP_DIVE.value
-        )
-        length_code = audio_length.value if audio_length is not None else AudioLength.DEFAULT.value
-
-        params = [
-            [2],
+        params = build_audio_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.AUDIO.value,
-                source_ids_triple,
-                None,
-                None,
-                [
-                    None,
-                    [
-                        instructions,
-                        length_code,
-                        None,
-                        source_ids_double,
-                        language,
-                        None,
-                        format_code,
-                    ],
-                ],
-            ],
-        ]
+            source_ids,
+            language=language,
+            instructions=instructions,
+            audio_format=audio_format,
+            audio_length=audio_length,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -129,44 +117,15 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        source_ids_double = nest_source_ids(source_ids, 1)
-
-        format_code = (
-            video_format.value if video_format is not None else VideoFormat.EXPLAINER.value
-        )
-        style_code = video_style.value if video_style is not None else VideoStyle.AUTO_SELECT.value
-
-        video_config = [
-            source_ids_double,
-            language,
-            instructions,
-            None,
-            format_code,
-            style_code,
-        ]
-        if normalized_style_prompt:
-            video_config.append(normalized_style_prompt)
-
-        params = [
-            [2],
+        params = build_video_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.VIDEO.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    None,
-                    video_config,
-                ],
-            ],
-        ]
+            source_ids,
+            language=language,
+            instructions=instructions,
+            video_format=video_format,
+            video_style=video_style,
+            style_prompt=normalized_style_prompt,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -186,34 +145,12 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        source_ids_double = nest_source_ids(source_ids, 1)
-
-        params = [
-            [2],
+        params = build_cinematic_video_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.VIDEO.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    None,
-                    [
-                        source_ids_double,
-                        language,
-                        instructions,
-                        None,
-                        VideoFormat.CINEMATIC.value,
-                    ],
-                ],
-            ],
-        ]
+            source_ids,
+            language=language,
+            instructions=instructions,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -235,74 +172,14 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        format_configs = {
-            ReportFormat.BRIEFING_DOC: {
-                "title": "Briefing Doc",
-                "description": "Key insights and important quotes",
-                "prompt": (
-                    "Create a comprehensive briefing document that includes an "
-                    "Executive Summary, detailed analysis of key themes, important "
-                    "quotes with context, and actionable insights."
-                ),
-            },
-            ReportFormat.STUDY_GUIDE: {
-                "title": "Study Guide",
-                "description": "Short-answer quiz, essay questions, glossary",
-                "prompt": (
-                    "Create a comprehensive study guide that includes key concepts, "
-                    "short-answer practice questions, essay prompts for deeper "
-                    "exploration, and a glossary of important terms."
-                ),
-            },
-            ReportFormat.BLOG_POST: {
-                "title": "Blog Post",
-                "description": "Insightful takeaways in readable article format",
-                "prompt": (
-                    "Write an engaging blog post that presents the key insights "
-                    "in an accessible, reader-friendly format. Include an attention-"
-                    "grabbing introduction, well-organized sections, and a compelling "
-                    "conclusion with takeaways."
-                ),
-            },
-            ReportFormat.CUSTOM: {
-                "title": "Custom Report",
-                "description": "Custom format",
-                "prompt": custom_prompt or "Create a report based on the provided sources.",
-            },
-        }
-
-        config = format_configs[report_format]
-        if extra_instructions and report_format != ReportFormat.CUSTOM:
-            config = {**config, "prompt": f"{config['prompt']}\n\n{extra_instructions}"}
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        source_ids_double = nest_source_ids(source_ids, 1)
-
-        params = [
-            [2],
+        params = build_report_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.REPORT.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    [
-                        config["title"],
-                        config["description"],
-                        None,
-                        source_ids_double,
-                        language,
-                        config["prompt"],
-                        None,
-                        True,
-                    ],
-                ],
-            ],
-        ]
+            source_ids,
+            report_format=report_format,
+            language=language,
+            custom_prompt=custom_prompt,
+            extra_instructions=extra_instructions,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -339,40 +216,13 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        quantity_code = quantity.value if quantity is not None else QuizQuantity.STANDARD.value
-        difficulty_code = (
-            difficulty.value if difficulty is not None else QuizDifficulty.MEDIUM.value
-        )
-
-        params = [
-            [2],
+        params = build_quiz_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.QUIZ_FLASHCARD.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    [
-                        2,
-                        None,
-                        instructions,
-                        None,
-                        None,
-                        None,
-                        None,
-                        [quantity_code, difficulty_code],
-                    ],
-                ],
-            ],
-        ]
+            source_ids,
+            instructions=instructions,
+            quantity=quantity,
+            difficulty=difficulty,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -391,39 +241,13 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        quantity_code = quantity.value if quantity is not None else QuizQuantity.STANDARD.value
-        difficulty_code = (
-            difficulty.value if difficulty is not None else QuizDifficulty.MEDIUM.value
-        )
-
-        params = [
-            [2],
+        params = build_flashcards_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.QUIZ_FLASHCARD.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    [
-                        1,
-                        None,
-                        instructions,
-                        None,
-                        None,
-                        None,
-                        [difficulty_code, quantity_code],
-                    ],
-                ],
-            ],
-        ]
+            source_ids,
+            instructions=instructions,
+            quantity=quantity,
+            difficulty=difficulty,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -446,36 +270,15 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        orientation_code = (
-            orientation.value if orientation is not None else InfographicOrientation.LANDSCAPE.value
-        )
-        detail_code = (
-            detail_level.value if detail_level is not None else InfographicDetail.STANDARD.value
-        )
-        style_code = style.value if style is not None else InfographicStyle.AUTO_SELECT.value
-
-        params = [
-            [2],
+        params = build_infographic_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.INFOGRAPHIC.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [[instructions, language, None, orientation_code, detail_code, style_code]],
-            ],
-        ]
+            source_ids,
+            language=language,
+            instructions=instructions,
+            orientation=orientation,
+            detail_level=detail_level,
+            style=style,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -497,37 +300,14 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-        format_code = (
-            slide_format.value if slide_format is not None else SlideDeckFormat.DETAILED_DECK.value
-        )
-        length_code = (
-            slide_length.value if slide_length is not None else SlideDeckLength.DEFAULT.value
-        )
-
-        params = [
-            [2],
+        params = build_slide_deck_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.SLIDE_DECK.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [[instructions, language, format_code, length_code]],
-            ],
-        ]
+            source_ids,
+            language=language,
+            instructions=instructions,
+            slide_format=slide_format,
+            slide_length=slide_length,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -545,11 +325,7 @@ class ArtifactGenerationService:
         if slide_index < 0:
             raise ValidationError(f"slide_index must be >= 0, got {slide_index}")
 
-        params = [
-            [2],
-            artifact_id,
-            [[[slide_index, prompt]]],
-        ]
+        params = build_revise_slide_params(artifact_id, slide_index, prompt)
         try:
             result = await self._rpc.rpc_call(
                 RPCMethod.REVISE_SLIDE,
@@ -587,33 +363,12 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_triple = nest_source_ids(source_ids, 2)
-
-        params = [
-            [2],
+        params = build_data_table_artifact_params(
             notebook_id,
-            [
-                None,
-                None,
-                ArtifactTypeCode.DATA_TABLE.value,
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [None, [instructions, language]],
-            ],
-        ]
+            source_ids,
+            language=language,
+            instructions=instructions,
+        )
         return await self.call_generate(
             notebook_id,
             params,
@@ -633,18 +388,11 @@ class ArtifactGenerationService:
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
-        source_ids_nested = nest_source_ids(source_ids, 2)
-
-        params = [
-            source_ids_nested,
-            None,
-            None,
-            None,
-            None,
-            ["interactive_mindmap", [["[CONTEXT]", instructions or ""]], language],
-            None,
-            [2, None, [1]],
-        ]
+        params = build_mind_map_params(
+            source_ids,
+            language=language,
+            instructions=instructions,
+        )
 
         # GENERATE_MIND_MAP is classified PROBE_THEN_CREATE in
         # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is passed
@@ -704,7 +452,7 @@ class ArtifactGenerationService:
         notebook_id: str,
     ) -> list[ReportSuggestion]:
         """Get AI-suggested report formats for a notebook."""
-        params = [[2], notebook_id]
+        params = build_suggest_reports_params(notebook_id)
 
         result = await self._rpc.rpc_call(
             RPCMethod.GET_SUGGESTED_REPORTS,

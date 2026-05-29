@@ -143,6 +143,7 @@ RPC Layer (rpc/)
 | `_artifact_downloads.py` | Asynchronous download coordinator for finished artifacts |
 | `_artifact_formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
 | `_artifact_generation.py` | Extracted artifact generation payload-building service |
+| `_artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_artifact_listing.py` | Listing and filtering operations for notebook artifacts |
 | `_artifact_polling.py` | Poll coordination service for artifact generation tasks |
 | `_source_add.py` | Core service layer for adding text, URL, or Google Drive sources |
@@ -150,6 +151,7 @@ RPC Layer (rpc/)
 | `_source_listing.py` | Core service layer for listing notebook sources |
 | `_source_polling.py` | Poll coordination service for active source conversions |
 | `_source_upload.py` | Concurrency-gated upload pipeline for source files |
+| `_source_upload_payloads.py` | Stable source upload registration, rename, and resumable-upload request builders |
 | `_notebook_metadata.py` | Metadata protocol schemas for sub-clients |
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
 | `_sharing_manager.py` | Direct sharing management logic |
@@ -225,6 +227,7 @@ src/notebooklm/
 ├── _artifact_downloads.py       # Artifact download coordinator
 ├── _artifact_formatters.py      # Artifact formatting helpers
 ├── _artifact_generation.py      # Artifact generation payload builder
+├── _artifact_payloads.py        # Artifact request payload builders
 ├── _artifact_listing.py         # Artifact listing helper
 ├── _artifact_polling.py         # Artifact polling coordinator
 ├── _source_add.py               # Source addition coordinator
@@ -232,6 +235,7 @@ src/notebooklm/
 ├── _source_listing.py           # Source listing helper
 ├── _source_polling.py           # Source polling coordinator
 ├── _source_upload.py            # Gated source upload service
+├── _source_upload_payloads.py   # Source upload request payload builders
 ├── _notebook_metadata.py        # Metadata protocols
 ├── _url_utils.py                # URL validation helpers
 ├── _sharing_manager.py          # Sharing management logic

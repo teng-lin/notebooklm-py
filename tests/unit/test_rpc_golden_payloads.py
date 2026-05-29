@@ -32,6 +32,23 @@ from typing import Any
 
 import pytest
 
+from notebooklm._artifact_payloads import (
+    build_audio_artifact_params,
+    build_cinematic_video_artifact_params,
+    build_data_table_artifact_params,
+    build_flashcards_artifact_params,
+    build_infographic_artifact_params,
+    build_mind_map_params,
+    build_quiz_artifact_params,
+    build_report_artifact_params,
+    build_slide_deck_artifact_params,
+    build_video_artifact_params,
+)
+from notebooklm._source_upload_payloads import (
+    build_register_file_source_params,
+    build_rename_source_params,
+    build_resumable_upload_start_request,
+)
 from notebooklm.rpc.decoder import (
     collect_rpc_ids,
     decode_response,
@@ -39,7 +56,21 @@ from notebooklm.rpc.decoder import (
     strip_anti_xssi,
 )
 from notebooklm.rpc.encoder import encode_rpc_request
-from notebooklm.rpc.types import RPCMethod
+from notebooklm.rpc.types import (
+    AudioFormat,
+    AudioLength,
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    RPCMethod,
+    SlideDeckFormat,
+    SlideDeckLength,
+    VideoFormat,
+    VideoStyle,
+)
 
 FIXTURE_ROOT: Path = Path(__file__).parents[1] / "fixtures" / "rpc_golden"
 
@@ -157,6 +188,389 @@ def _resolve_mapper(dotted: str, *, method: RPCMethod) -> Any:
 
 
 ALL_METHODS: list[RPCMethod] = list(RPCMethod)
+
+
+def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
+    return [[[method.value, json.dumps(params, separators=(",", ":")), None, "generic"]]]
+
+
+@pytest.mark.parametrize(
+    ("case_name", "params", "expected"),
+    [
+        (
+            "audio_explicit_options",
+            build_audio_artifact_params(
+                "nb_payload",
+                ["src_alpha", "src_beta"],
+                language="es",
+                instructions="Focus on terminology",
+                audio_format=AudioFormat.BRIEF,
+                audio_length=AudioLength.SHORT,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    1,
+                    [[["src_alpha"]], [["src_beta"]]],
+                    None,
+                    None,
+                    [
+                        None,
+                        [
+                            "Focus on terminology",
+                            1,
+                            None,
+                            [["src_alpha"], ["src_beta"]],
+                            "es",
+                            None,
+                            2,
+                        ],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "video_custom_style",
+            build_video_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="fr",
+                instructions="Summarize visually",
+                video_format=VideoFormat.EXPLAINER,
+                video_style=VideoStyle.CUSTOM,
+                style_prompt="blueprint line art",
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    3,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        None,
+                        [
+                            [["src_alpha"]],
+                            "fr",
+                            "Summarize visually",
+                            None,
+                            1,
+                            2,
+                            "blueprint line art",
+                        ],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "cinematic_video",
+            build_cinematic_video_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="de",
+                instructions=None,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    3,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    [None, None, [[["src_alpha"]], "de", None, None, 3]],
+                ],
+            ],
+        ),
+        (
+            "custom_report",
+            build_report_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                report_format=ReportFormat.CUSTOM,
+                language="en",
+                custom_prompt="Compare the claims.",
+                extra_instructions="Ignored for custom reports.",
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    2,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [
+                            "Custom Report",
+                            "Custom format",
+                            None,
+                            [["src_alpha"]],
+                            "en",
+                            "Compare the claims.",
+                            None,
+                            True,
+                        ],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "quiz_options",
+            build_quiz_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions="Make it practical",
+                quantity=QuizQuantity.FEWER,
+                difficulty=QuizDifficulty.HARD,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [2, None, "Make it practical", None, None, None, None, [1, 3]],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "flashcards_options",
+            build_flashcards_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions="Use short prompts",
+                quantity=QuizQuantity.STANDARD,
+                difficulty=QuizDifficulty.EASY,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [1, None, "Use short prompts", None, None, None, [1, 2]],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "infographic_visual_options",
+            build_infographic_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="it",
+                instructions="Prioritize the timeline",
+                orientation=InfographicOrientation.PORTRAIT,
+                detail_level=InfographicDetail.DETAILED,
+                style=InfographicStyle.EDITORIAL,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    7,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [["Prioritize the timeline", "it", None, 2, 3, 5]],
+                ],
+            ],
+        ),
+        (
+            "slide_deck_options",
+            build_slide_deck_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="pt",
+                instructions="Board-level summary",
+                slide_format=SlideDeckFormat.PRESENTER_SLIDES,
+                slide_length=SlideDeckLength.SHORT,
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    8,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [["Board-level summary", "pt", 2, 2]],
+                ],
+            ],
+        ),
+        (
+            "data_table",
+            build_data_table_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="ja",
+                instructions="Extract product comparisons",
+            ),
+            [
+                [2],
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    9,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [None, ["Extract product comparisons", "ja"]],
+                ],
+            ],
+        ),
+        (
+            "mind_map",
+            build_mind_map_params(
+                ["src_alpha"],
+                language="en",
+                instructions="Cluster by theme",
+            ),
+            [
+                [[["src_alpha"]]],
+                None,
+                None,
+                None,
+                None,
+                ["interactive_mindmap", [["[CONTEXT]", "Cluster by theme"]], "en"],
+                None,
+                [2, None, [1]],
+            ],
+        ),
+    ],
+)
+def test_artifact_payload_builders_match_golden_rpc_envelopes(
+    case_name: str,
+    params: list[Any],
+    expected: list[Any],
+) -> None:
+    method = RPCMethod.GENERATE_MIND_MAP if case_name == "mind_map" else RPCMethod.CREATE_ARTIFACT
+
+    assert params == expected
+    assert encode_rpc_request(method, params) == _expected_rpc_envelope(method, expected)
+
+
+def test_source_upload_rpc_payload_builders_match_golden_envelopes() -> None:
+    register_params = build_register_file_source_params("research.pdf", "nb_payload")
+    rename_params = build_rename_source_params("src_payload", "Renamed source")
+
+    assert register_params == [
+        [["research.pdf"]],
+        "nb_payload",
+        [2],
+        [1, None, None, None, None, None, None, None, None, None, [1]],
+    ]
+    assert encode_rpc_request(RPCMethod.ADD_SOURCE_FILE, register_params) == _expected_rpc_envelope(
+        RPCMethod.ADD_SOURCE_FILE,
+        register_params,
+    )
+    assert rename_params == [None, ["src_payload"], [[["Renamed source"]]]]
+    assert encode_rpc_request(RPCMethod.UPDATE_SOURCE, rename_params) == _expected_rpc_envelope(
+        RPCMethod.UPDATE_SOURCE,
+        rename_params,
+    )
+
+
+def test_resumable_upload_start_request_matches_golden_payload() -> None:
+    request = build_resumable_upload_start_request(
+        notebook_id="nb_payload",
+        filename="research.pdf",
+        file_size=4096,
+        source_id="src_payload",
+        content_type="application/pdf",
+        base_url="https://notebooklm.google.com",
+        upload_url="https://notebooklm.google.com/_/upload",
+        authuser_query="authuser=1",
+        authuser_header="1",
+    )
+
+    assert request.url == "https://notebooklm.google.com/_/upload?authuser=1"
+    assert request.headers == {
+        "Accept": "*/*",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "Origin": "https://notebooklm.google.com",
+        "Referer": "https://notebooklm.google.com/",
+        "x-goog-authuser": "1",
+        "x-goog-upload-command": "start",
+        "x-goog-upload-header-content-length": "4096",
+        "x-goog-upload-header-content-type": "application/pdf",
+        "x-goog-upload-protocol": "resumable",
+    }
+    assert request.body == (
+        '{"PROJECT_ID": "nb_payload", "SOURCE_NAME": "research.pdf", "SOURCE_ID": "src_payload"}'
+    )
 
 
 def test_every_rpc_method_has_a_fixture() -> None:
