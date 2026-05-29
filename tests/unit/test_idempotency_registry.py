@@ -1,11 +1,11 @@
 """Tests for the RPC idempotency registry.
 
-The registry is a 6-policy classification layer with operation variants
+The registry is a 5-policy classification layer with operation variants
 that the ``RpcExecutor`` consults to compute
-``effective_disable_internal_retries`` and optional client-token injection.
-The production registry must explicitly classify every ``RPCMethod``; the
-``UNCLASSIFIED`` policy is retained only as a placeholder for hand-built
-test registries and future-drift detection.
+``effective_disable_internal_retries``. The production registry must
+explicitly classify every ``RPCMethod``; the ``UNCLASSIFIED`` policy is
+retained only as a placeholder for hand-built test registries and
+future-drift detection.
 """
 
 from __future__ import annotations
@@ -131,17 +131,16 @@ def test_non_idempotent_no_retry_entries_document_dedupe_gap() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6-policy enum
+# 5-policy enum
 # ---------------------------------------------------------------------------
 
 
-def test_idempotency_policy_has_all_six_values() -> None:
-    """The classification axis is 6-way; nothing else."""
+def test_idempotency_policy_has_all_five_values() -> None:
+    """The classification axis is 5-way; nothing else."""
     expected = {
         "UNCLASSIFIED",
         "PROBE_THEN_CREATE",
         "IDEMPOTENT_SET_OP",
-        "CLIENT_TOKEN_DEDUPE",
         "AT_LEAST_ONCE_ACCEPTED",
         "NON_IDEMPOTENT_NO_RETRY",
     }
@@ -281,7 +280,6 @@ def test_non_idempotent_no_retry_disables_internal_retries() -> None:
     [
         IdempotencyPolicy.UNCLASSIFIED,
         IdempotencyPolicy.IDEMPOTENT_SET_OP,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
         IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED,
     ],
 )
@@ -372,198 +370,6 @@ def test_at_least_once_accepted_rate_limits_warn_log(
         "calls; expected ≤2 (rate-limited)"
     )
     assert len(warn_records) >= 1, "AT_LEAST_ONCE_ACCEPTED emitted 0 WARN lines; expected ≥1"
-
-
-# ---------------------------------------------------------------------------
-# CLIENT_TOKEN_DEDUPE: token injection
-# ---------------------------------------------------------------------------
-
-
-def test_client_token_dedupe_injects_uuid_when_field_missing() -> None:
-    """CLIENT_TOKEN_DEDUPE policy MUST inject a fresh ``uuid4().hex`` token
-    into the field named by ``IdempotencyEntry.client_token_field`` when the
-    caller did NOT pre-populate it."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    registry = IdempotencyRegistry()
-    registry.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field="client_token",
-    )
-
-    params: dict[str, Any] = {"foo": "bar"}
-    maybe_inject_client_token(
-        registry,
-        RPCMethod.LIST_NOTEBOOKS,
-        params,
-        operation_variant=None,
-    )
-
-    assert "client_token" in params
-    token = params["client_token"]
-    assert isinstance(token, str)
-    assert len(token) == 32  # uuid4().hex is 32 hex chars
-    assert int(token, 16) >= 0  # parseable as hex
-
-
-def test_client_token_dedupe_respects_caller_provided_token() -> None:
-    """If the caller already pre-populated the client-token field, the
-    registry MUST NOT overwrite it. Caller intent wins."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    registry = IdempotencyRegistry()
-    registry.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field="client_token",
-    )
-
-    params: dict[str, Any] = {"client_token": "caller-provided-token"}
-    maybe_inject_client_token(
-        registry,
-        RPCMethod.LIST_NOTEBOOKS,
-        params,
-        operation_variant=None,
-    )
-
-    assert params["client_token"] == "caller-provided-token"
-
-
-def test_client_token_dedupe_positional_injection_into_list_params() -> None:
-    """When ``client_token_field`` is an int, the registry MUST inject into
-    the list-shaped params at that index (batchexecute typical shape)."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    registry = IdempotencyRegistry()
-    registry.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field=2,  # positional slot
-    )
-
-    params: list[Any] = ["notebook_id", "title", None, "extra"]
-    maybe_inject_client_token(
-        registry,
-        RPCMethod.LIST_NOTEBOOKS,
-        params,
-        operation_variant=None,
-    )
-
-    token = params[2]
-    assert isinstance(token, str)
-    assert len(token) == 32
-    # Surrounding slots untouched
-    assert params[0] == "notebook_id"
-    assert params[1] == "title"
-    assert params[3] == "extra"
-
-
-def test_client_token_dedupe_positional_respects_caller_value() -> None:
-    """Caller-populated positional client-token MUST NOT be overwritten."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    registry = IdempotencyRegistry()
-    registry.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field=2,
-    )
-
-    params: list[Any] = ["nb", "t", "caller-token", "extra"]
-    maybe_inject_client_token(
-        registry,
-        RPCMethod.LIST_NOTEBOOKS,
-        params,
-        operation_variant=None,
-    )
-
-    assert params[2] == "caller-token"
-
-
-def test_client_token_dedupe_positional_out_of_range_warns_and_noops(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Out-of-range positional index MUST log a warning and no-op
-    (foundation safety guard — don't crash a live RPC over registry drift)."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    registry = IdempotencyRegistry()
-    registry.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field=99,  # out of range
-    )
-
-    params: list[Any] = ["only", "two"]
-    with caplog.at_level(logging.WARNING, logger="notebooklm._idempotency"):
-        maybe_inject_client_token(
-            registry,
-            RPCMethod.LIST_NOTEBOOKS,
-            params,
-            operation_variant=None,
-        )
-
-    # Params unchanged
-    assert params == ["only", "two"]
-    # Warning emitted
-    warn_records = [
-        r
-        for r in caplog.records
-        if r.name.startswith("notebooklm._idempotency") and r.levelno >= logging.WARNING
-    ]
-    assert len(warn_records) == 1
-    assert "out-of-range" in warn_records[0].message
-
-
-def test_client_token_dedupe_field_shape_mismatch_noops() -> None:
-    """A ``str`` ``client_token_field`` with list-shaped params (or an
-    ``int`` field with dict-shaped params) MUST no-op rather than crash."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    # str field, list params → no-op
-    registry = IdempotencyRegistry()
-    registry.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field="client_token",
-    )
-    list_params: list[Any] = ["a", "b"]
-    maybe_inject_client_token(
-        registry, RPCMethod.LIST_NOTEBOOKS, list_params, operation_variant=None
-    )
-    assert list_params == ["a", "b"]
-
-    # int field, dict params → no-op
-    registry2 = IdempotencyRegistry()
-    registry2.register(
-        RPCMethod.LIST_NOTEBOOKS,
-        IdempotencyPolicy.CLIENT_TOKEN_DEDUPE,
-        client_token_field=0,
-    )
-    dict_params: dict[str, Any] = {"foo": "bar"}
-    maybe_inject_client_token(
-        registry2, RPCMethod.LIST_NOTEBOOKS, dict_params, operation_variant=None
-    )
-    assert dict_params == {"foo": "bar"}
-
-
-def test_client_token_dedupe_is_noop_for_other_policies() -> None:
-    """Token injection MUST be skipped for non-CLIENT_TOKEN_DEDUPE policies."""
-    from notebooklm._idempotency import maybe_inject_client_token
-
-    registry = IdempotencyRegistry()
-    registry.register(RPCMethod.LIST_NOTEBOOKS, IdempotencyPolicy.UNCLASSIFIED)
-
-    params: dict[str, Any] = {"foo": "bar"}
-    maybe_inject_client_token(
-        registry,
-        RPCMethod.LIST_NOTEBOOKS,
-        params,
-        operation_variant=None,
-    )
-
-    assert "client_token" not in params
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,6 @@ import httpx
 from ._env import get_default_language
 from ._idempotency import (
     IDEMPOTENCY_REGISTRY,
-    maybe_inject_client_token,
     resolve_effective_disable_internal_retries,
 )
 from ._logging import get_request_id, reset_request_id, set_request_id
@@ -192,17 +191,6 @@ class RpcExecutor:
             IDEMPOTENCY_REGISTRY,
             method,
             caller_disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-        )
-
-        # For CLIENT_TOKEN_DEDUPE policies, inject a fresh ``uuid4().hex``
-        # into the registry-named param field UNLESS the caller already
-        # populated it. No-op for every other policy, so this is a
-        # zero-cost call for every non-token policy.
-        maybe_inject_client_token(
-            IDEMPOTENCY_REGISTRY,
-            method,
-            params,
             operation_variant=operation_variant,
         )
 

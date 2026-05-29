@@ -75,7 +75,7 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
                                  v
 +----------------------------------------------------------------+
 | RpcExecutor._execute_once(...)                                 |
-|   - idempotency policy / client-token injection                |
+|   - idempotency policy resolution                              |
 |   - method-id resolution, request encoding, URL/body builder   |
 +----------------------------------------------------------------+
                                  |
@@ -247,7 +247,7 @@ easy to lose during refactors. The taxonomy makes retry safety a
 **property of the call site** (re-derived every time someone touches
 the code).
 
-**The classification.** Mutating RPCs are classified into six
+**The classification.** Mutating RPCs are classified into five
 retry-safety profiles by the `IdempotencyRegistry` in
 [`_idempotency.py`](../src/notebooklm/_idempotency.py):
 
@@ -256,18 +256,16 @@ retry-safety profiles by the `IdempotencyRegistry` in
 | `UNCLASSIFIED` | Placeholder; never classified | Silent, retries enabled (preserves pre-taxonomy behavior) |
 | `PROBE_THEN_CREATE` | Caller owns a probe loop; transport must not blind-retry | Force-disable inner retries |
 | `IDEMPOTENT_SET_OP` | Server applies set semantics (delete / rename) | Retries are safe; left enabled |
-| `CLIENT_TOKEN_DEDUPE` | Server dedupes on an injected token slot | Retries are safe; client-token injected before encoding |
 | `AT_LEAST_ONCE_ACCEPTED` | Caller has explicitly accepted duplicate side-effect cost (emails / billing / notifications) | Retries enabled; rate-limited WARN emitted so operators can see the trade-off |
 | `NON_IDEMPOTENT_NO_RETRY` | No dedupe key and no probe; first failure must surface | Force-disable inner retries |
 
-The axis is *closed*. A seventh policy would need an ADR update and an
-executor change in lockstep — the six-policy cap is intentional so a
+The axis is *closed*. A sixth policy would need an ADR update and an
+executor change in lockstep — the five-policy cap is intentional so a
 reviewer can hold the whole taxonomy in mind during a code review.
 
 `RpcExecutor._execute_once` consults the registry once per call to
-resolve the effective `disable_internal_retries` and to inject client
-tokens. The caller's explicit `disable_internal_retries=True` always
-wins over the registry default.
+resolve the effective `disable_internal_retries`. The caller's explicit
+`disable_internal_retries=True` always wins over the registry default.
 
 The audit inventory in
 [`_mutating_operations.py`](../src/notebooklm/_mutating_operations.py)
@@ -427,7 +425,7 @@ the executor on direct collaborator dependencies.
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
 | `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
 | `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Cookie-jar persistence + `__Secure-1PSIDTS` rotation. |
-| `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor._execute_once()` consults it to resolve `effective_disable_internal_retries` and to inject client tokens for `CLIENT_TOKEN_DEDUPE` methods (most entries are currently `UNCLASSIFIED`, a behaviour-neutral default). It is part of the RPC dispatch path, not lifecycle state. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
+| `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor._execute_once()` consults it to resolve `effective_disable_internal_retries`. It is part of the RPC dispatch path, not lifecycle state. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
 | `_request_types` | [`_request_types.py`](../src/notebooklm/_request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
 | `_transport_errors` | [`_transport_errors.py`](../src/notebooklm/_transport_errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
 | `_streaming_post` | [`_streaming_post.py`](../src/notebooklm/_streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |

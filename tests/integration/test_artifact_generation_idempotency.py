@@ -162,14 +162,10 @@ class TestRegistryClassification:
     def test_create_artifact_classified_as_probe_then_create(self) -> None:
         entry = IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.CREATE_ARTIFACT)
         assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
-        # CREATE_ARTIFACT params carry no caller-supplied token slot, so
-        # client_token_field MUST remain unset.
-        assert entry.client_token_field is None
 
     def test_generate_mind_map_classified_as_probe_then_create(self) -> None:
         entry = IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.GENERATE_MIND_MAP)
         assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
-        assert entry.client_token_field is None
 
     def test_create_artifact_variant_none_explicit(self) -> None:
         """Passing ``operation_variant=None`` (the b1 plumbed call-site

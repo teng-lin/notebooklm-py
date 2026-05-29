@@ -10,12 +10,11 @@ This module hosts two cooperating pieces:
    wrapper inverts the direction: run with internal-retries disabled,
    then probe for a server-side commit before re-issuing.
 
-2. :class:`IdempotencyRegistry` — the 6-policy classification layer that
+2. :class:`IdempotencyRegistry` — the 5-policy classification layer that
    :class:`~notebooklm._rpc_executor.RpcExecutor` consults to compute the
-   *effective* ``disable_internal_retries`` value (and, for
-   ``CLIENT_TOKEN_DEDUPE`` policies, inject a fresh client-token into
-   request params before encoding). The registry is a single source of
-   truth for every ``RPCMethod`` without touching the executor.
+   *effective* ``disable_internal_retries`` value. The registry is a
+   single source of truth for every ``RPCMethod`` without touching the
+   executor.
 
    The production registry is complete: every active ``RPCMethod`` has
    an explicit default classification, with variant rows for wire shapes
@@ -30,16 +29,15 @@ baseline-diff; sources: url-match; ``add_text``: no probe possible — see
 
 This module is private (``_idempotency.py``); call sites live in the
 domain APIs (``_notebooks.py``, ``_sources.py``) and the RPC executor
-(``_rpc_executor.py``). The canonical home for the taxonomy itself, the
-six-policy axis, and the per-RPC classification rationale is
-ADR-005 (``docs/adr/0005-idempotency-taxonomy.md``).
+(``_rpc_executor.py``). The canonical home for the taxonomy itself and
+the per-RPC classification rationale is ADR-005
+(``docs/adr/0005-idempotency-taxonomy.md``).
 """
 
 from __future__ import annotations
 
 import logging
 import time
-import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
@@ -167,8 +165,7 @@ async def idempotent_create(
 #
 # The registry is the single source of truth for "how should this RPC behave
 # under retry?" It is consulted by ``RpcExecutor`` to compute the *effective*
-# ``disable_internal_retries`` value, and (for ``CLIENT_TOKEN_DEDUPE`` policies)
-# to inject a fresh client-token into request params before encoding.
+# ``disable_internal_retries`` value before request encoding.
 #
 # IMPORTANT — complete production registry:
 #   The module-level registry seeds missing methods with UNCLASSIFIED only as a
@@ -180,7 +177,7 @@ async def idempotent_create(
 class IdempotencyPolicy(str, Enum):
     """Classification axis for mutating-RPC retry safety.
 
-    Six policies — no more, no fewer. The axis was sized to cover all
+    Five policies — no more, no fewer. The axis was sized to cover all
     realistic NotebookLM RPC shapes without inventing per-method special
     cases. See ADR-005 (``docs/adr/0005-idempotency-taxonomy.md``) for
     the derivation and the per-policy rationale.
@@ -191,9 +188,8 @@ class IdempotencyPolicy(str, Enum):
       :attr:`UNCLASSIFIED` (placeholder — preserves today's retries),
       :attr:`IDEMPOTENT_SET_OP` (read-only, rename / delete / set-state
       operations where replay leaves the same server state),
-      :attr:`CLIENT_TOKEN_DEDUPE` (server deduplicates by injected
-      token), :attr:`AT_LEAST_ONCE_ACCEPTED` (caller has accepted
-      at-least-once semantics; WARN logged).
+      :attr:`AT_LEAST_ONCE_ACCEPTED` (caller has accepted at-least-once
+      semantics; WARN logged).
 
     * **NOT safe to retry inside the transport**:
       :attr:`PROBE_THEN_CREATE` (callers own the probe loop; transport
@@ -209,7 +205,6 @@ class IdempotencyPolicy(str, Enum):
     UNCLASSIFIED = "unclassified"
     PROBE_THEN_CREATE = "probe_then_create"
     IDEMPOTENT_SET_OP = "idempotent_set_op"
-    CLIENT_TOKEN_DEDUPE = "client_token_dedupe"
     AT_LEAST_ONCE_ACCEPTED = "at_least_once_accepted"
     NON_IDEMPOTENT_NO_RETRY = "non_idempotent_no_retry"
 
@@ -245,12 +240,6 @@ class IdempotencyEntry:
         probe_key_fn: Optional probe-key extractor for PROBE_THEN_CREATE
             entries. ``None`` for policies that don't probe. Future work may
             wire this into the per-API probe loops.
-        client_token_field: For CLIENT_TOKEN_DEDUPE entries, the slot
-            in the params payload that receives the auto-injected
-            ``uuid4().hex`` token. ``str`` keys are used when the RPC
-            params are a dict; ``int`` keys are used to inject into a
-            positional slot inside the list-shaped params that the
-            batchexecute encoder consumes. ``None`` for other policies.
         notes: Free-form human-readable note. UNCLASSIFIED entries
             registered without an explicit ``notes`` value receive the
             placeholder marker that flags them for explicit classification;
@@ -259,7 +248,6 @@ class IdempotencyEntry:
 
     policy: IdempotencyPolicy
     probe_key_fn: ProbeKeyFn | None = None
-    client_token_field: str | int | None = None
     notes: str = ""
 
 
@@ -305,7 +293,6 @@ class IdempotencyRegistry:
         *,
         variant: str | None = None,
         probe_key_fn: ProbeKeyFn | None = None,
-        client_token_field: str | int | None = None,
         notes: str | None = None,
     ) -> None:
         """Register (or overwrite) the entry for ``(method, variant)``.
@@ -326,7 +313,6 @@ class IdempotencyRegistry:
         entry = IdempotencyEntry(
             policy=policy,
             probe_key_fn=probe_key_fn,
-            client_token_field=client_token_field,
             notes=notes,
         )
         self._entries.setdefault(method, {})[variant] = entry
@@ -530,7 +516,7 @@ IDEMPOTENCY_REGISTRY._seed_defaults()
 # caller-supplied client-token slot. The server allocates the artifact_id
 # in the response (``ArtifactGenerationService.parse_generation_result``
 # reads ``result[0][0]`` — see ``_artifact_generation.py``), so a
-# CLIENT_TOKEN_DEDUPE classification is impossible.
+# token-dedupe strategy is impossible.
 #
 # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
 # which suppresses ``_perform_authed_post``'s inner retry loop. Without
@@ -558,7 +544,7 @@ IDEMPOTENCY_REGISTRY.register(
 # slot is structural (sources, content config, language, mode triple). The
 # response carries the mind-map JSON directly (line 614-622 reads
 # ``result[0][0]``) — there is no task_id to probe with after the fact, so
-# CLIENT_TOKEN_DEDUPE is impossible here too.
+# token-dedupe is impossible here too.
 #
 # Note: ``GENERATE_MIND_MAP`` itself does NOT persist the note server-side
 # (see ``tests/integration/test_mind_map_chain_vcr.py`` header). The actual
@@ -902,10 +888,10 @@ def resolve_effective_disable_internal_retries(
        emits a rate-limited WARN and returns ``caller_disable_internal_retries``
        unchanged. Caller has accepted at-least-once semantics; retries
        remain enabled.
-    4. All other policies (UNCLASSIFIED, IDEMPOTENT_SET_OP,
-       CLIENT_TOKEN_DEDUPE) → returns ``caller_disable_internal_retries``
-       unchanged. UNCLASSIFIED is silent (no log emission) and should appear
-       only in hand-built test registries, not in the production registry.
+    4. All other policies (UNCLASSIFIED, IDEMPOTENT_SET_OP) → returns
+       ``caller_disable_internal_retries`` unchanged. UNCLASSIFIED is
+       silent (no log emission) and should appear only in hand-built
+       test registries, not in the production registry.
 
     Raises :class:`~notebooklm.exceptions.IdempotencyVariantError` for
     unknown variants on methods with explicit variant tables.
@@ -923,83 +909,9 @@ def resolve_effective_disable_internal_retries(
         _maybe_log_at_least_once(method, operation_variant)
         return caller_disable_internal_retries
 
-    # UNCLASSIFIED / IDEMPOTENT_SET_OP / CLIENT_TOKEN_DEDUPE: silent,
-    # caller value passes through unchanged.
+    # UNCLASSIFIED / IDEMPOTENT_SET_OP: silent, caller value passes
+    # through unchanged.
     return caller_disable_internal_retries
-
-
-def maybe_inject_client_token(
-    registry: IdempotencyRegistry,
-    method: RPCMethod,
-    params: Any,
-    *,
-    operation_variant: str | None,
-) -> None:
-    """Inject a fresh ``uuid4().hex`` client-token for CLIENT_TOKEN_DEDUPE
-    methods, when (and only when) the caller did not already populate the
-    token slot.
-
-    ``params`` is mutated in place. Two shapes are supported, matching
-    the two shapes that ``RpcExecutor._execute_once`` is asked to encode:
-
-    * ``dict``-shaped params with a ``str`` ``client_token_field`` key:
-      ``params[field_name] = uuid4().hex`` if the key is absent or maps
-      to a falsy value.
-    * ``list``-shaped params (the batchexecute-typical shape) with an
-      ``int`` ``client_token_field`` index: ``params[index] = uuid4().hex``
-      when ``0 <= index < len(params)`` and the existing slot is falsy
-      (``None``, empty string). If the index is out of range the
-      function logs a warning and returns without raising — this is a
-      safety guard so a mis-registered entry doesn't crash a live RPC;
-      registry guard tests own the per-method registration audit.
-
-    No-op for policies other than ``CLIENT_TOKEN_DEDUPE``, for entries
-    without a ``client_token_field``, for entries where the slot already
-    holds a non-falsy value (caller-provided token wins), and for params
-    whose shape doesn't match the field type (``int`` field on a non-list
-    or ``str`` field on a non-dict). Raises
-    :class:`~notebooklm.exceptions.IdempotencyVariantError` for unknown
-    variants on methods with explicit variant tables.
-    """
-    entry = registry.get_entry(method, operation_variant=operation_variant)
-    if entry.policy is not IdempotencyPolicy.CLIENT_TOKEN_DEDUPE:
-        return
-    field_key = entry.client_token_field
-    if field_key is None:
-        return
-
-    if isinstance(field_key, str):
-        if not isinstance(params, dict):
-            # Shape mismatch — registry registered a dict-style field
-            # but caller passed a list. No-op rather than crash.
-            return
-        if params.get(field_key):
-            # Caller-provided token wins.
-            return
-        params[field_key] = uuid.uuid4().hex
-        return
-
-    # Positional injection into list params (batchexecute typical shape).
-    if not isinstance(params, list):
-        # Shape mismatch — registry registered a positional slot but
-        # caller passed a dict / scalar. No-op.
-        return
-    if not (0 <= field_key < len(params)):
-        # Out-of-range index — likely a registry mis-registration. Don't crash
-        # a live RPC; log once and let the caller surface it via logs rather
-        # than via exception.
-        logger.warning(
-            "CLIENT_TOKEN_DEDUPE for RPC %s has out-of-range "
-            "client_token_field=%d for params of length %d; skipping injection",
-            method.name,
-            field_key,
-            len(params),
-        )
-        return
-    if params[field_key]:
-        # Caller-provided token (or other truthy value) wins.
-        return
-    params[field_key] = uuid.uuid4().hex
 
 
 __all__ = [
@@ -1010,5 +922,4 @@ __all__ = [
     "IDEMPOTENCY_REGISTRY",
     "ProbeKeyFn",
     "resolve_effective_disable_internal_retries",
-    "maybe_inject_client_token",
 ]
