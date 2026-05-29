@@ -74,9 +74,7 @@ def test_extract_unreasoned_omissions_ignores_general_notes():
     - `src/notebooklm/_missing_reason.py`
     """
 
-    assert _extract_unreasoned_omissions(text) == [
-        "- `src/notebooklm/_missing_reason.py`"
-    ]
+    assert _extract_unreasoned_omissions(text) == ["- `src/notebooklm/_missing_reason.py`"]
 
 
 def test_repository_structure_heading_must_match_exactly():
@@ -201,6 +199,30 @@ def test_main_fails_for_intentional_omission_without_reason(tmp_path):
         ### Repository Structure Intentional Omissions
 
         - `src/notebooklm/_small_helper.py`
+        """,
+        encoding="utf-8",
+    )
+
+    assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 1
+
+
+def test_main_fails_for_stale_intentional_omission(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "src/notebooklm").mkdir(parents=True)
+    (repo / "src/notebooklm/__init__.py").touch()
+
+    claude_md = repo / "CLAUDE.md"
+    claude_md.write_text(
+        """
+        ### Repository Structure
+
+        src/notebooklm/
+        ├── __init__.py
+
+        ### Repository Structure Intentional Omissions
+
+        - `src/notebooklm/_deleted_helper.py` - Deleted helper retained by mistake.
         """,
         encoding="utf-8",
     )

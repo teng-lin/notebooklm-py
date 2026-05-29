@@ -253,7 +253,7 @@ src/notebooklm/
 │   ├── cookies.py               # Cookie maps + _update_cookie_input
 │   ├── cookie_policy.py         # Domain allowlist and cookie policy
 │   ├── account.py               # Account profile + multi-account switching
-│   ├── session.py               # Auth-session refresh implementation (`RefreshAuthCore` Protocol + `refresh_auth_session()`)
+│   ├── session.py               # Auth-session refresh implementation via `refresh_auth_session()` and explicit collaborators
 │   ├── storage.py               # Profile/state persistence on disk
 │   ├── keepalive.py             # Cookie keepalive + __Secure-1PSIDTS rotation
 │   ├── psidts_recovery.py       # Inline PSIDTS recovery for cold-start (issue #865)
