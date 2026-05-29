@@ -49,6 +49,7 @@ The ADR Index table utilizes four eras of Status notation to reflect the lifecyc
 | [0013](0013-composable-session-capabilities.md)               | Composable Session Capabilities and Feature-Local Runtimes    | Accepted                                                                                                            |
 | [0014](0014-feature-local-runtime-adapters.md)                | Feature-local runtime adapters as Protocol satisfiers         | Accepted (#1082)                                                                                                    |
 | [0015](0015-json-envelope-contract-for-post-parse-click-exceptions.md) | Typed JSON error envelope covers post-parse `ClickException` failures | Accepted                                                                                                            |
+| [0016](0016-auth-identity-and-core-logger-compatibility.md) | Auth identity and core logger compatibility | Accepted                                                                                                            |
 
 ADR-007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

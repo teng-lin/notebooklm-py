@@ -435,6 +435,20 @@ the executor on direct collaborator dependencies.
 | `_session_init` | [`_session_init.py`](../src/notebooklm/_session_init.py) | Construction-time helpers for `NotebookLMClient`: `validate_constructor_args` (kwarg validation/normalization), `build_collaborators` (the seven collaborators in dependency order: `metrics`, `drain_tracker`, `reqid`, `auth_coord`, `kernel`, `lifecycle`, `cookie_persistence`), `build_session_transport`, `wire_middleware_chain`, and `compose_client_internals`. It binds the runtime graph into `ClientComposed` and returns `ClientInternals(collaborators, executor)`. |
 | `_loop_affinity` | [`_loop_affinity.py`](../src/notebooklm/_loop_affinity.py) | Tiny free-function `assert_bound_loop(bound_loop)` shared by every helper that captures a loop reference at `open()` time (`TransportDrainTracker`, `ReqidCounter`, `AuthRefreshCoordinator`, `ArtifactPollingService`, `ChatAPI`). Enforces ADR-004 without coupling those helpers to the public client. |
 
+### Shipped runtime invariants
+
+[ADR-016](./adr/0016-auth-identity-and-core-logger-compatibility.md)
+pins two compatibility-sensitive details that survive the session-elimination
+work:
+
+- `NotebookLMClient._auth` is the authoritative mutable `AuthTokens`
+  instance. Refresh paths mutate that object in place, and collaborators that
+  observe auth must alias it rather than holding detached copies.
+- `CORE_LOGGER_NAME` intentionally remains the literal
+  `"notebooklm._core"` even though the `_core.py` compatibility module was
+  deleted. Treat it as a logging compatibility contract, not evidence that
+  `notebooklm._core` is an active module.
+
 ## Domain-service collaborators
 
 Beyond the client-owned runtime graph, several feature APIs are implemented via dedicated domain services and helper modules:

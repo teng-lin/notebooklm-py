@@ -1,22 +1,34 @@
-"""Assert CLAUDE.md repo-structure paths actually exist.
+"""Assert CLAUDE.md repo-structure paths are fresh in both directions.
 
-Prevents silent drift in the hand-maintained file map.
+Prevents silent drift in the hand-maintained file map:
+
+* documented paths must still exist; and
+* direct ``src/notebooklm`` modules/packages must be documented or explicitly
+  omitted with a reason.
 
 Usage:
     python scripts/check_claude_md_freshness.py
     python scripts/check_claude_md_freshness.py --claude-md path/to/CLAUDE.md
 
 Exit codes:
-    0  All listed paths exist.
-    1  One or more paths are missing.
+    0  CLAUDE.md is fresh.
+    1  One or more paths are stale or missing from the map.
     2  Argument error or CLAUDE.md not found.
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
+
+_DOCUMENTED_ROOTS = ("src/notebooklm", "tests")
+_OMISSIONS_HEADING = "### Repository Structure Intentional Omissions"
+_OMISSION_BULLET_RE = re.compile(r"^\s*[-*]\s+")
+_IGNORED_PATH_RE = re.compile(
+    r"^\s*[-*]\s+`(?P<path>src/notebooklm/[^`]+)`\s+(?:--|-|:)\s+(?P<reason>.+?)\s*$"
+)
 
 
 def _extract_paths(text: str) -> list[str]:
@@ -65,10 +77,79 @@ def _extract_paths(text: str) -> list[str]:
         stack.append((indent, clean_line))
 
         full_path = "/".join(segment for _, segment in stack)
-        if full_path.startswith(("src/notebooklm", "tests")):
+        if full_path.startswith(_DOCUMENTED_ROOTS):
             paths.append(full_path)
 
     return sorted(set(paths))
+
+
+def _repository_structure_section(text: str) -> str:
+    section = _section_after_heading(text, "### Repository Structure")
+    next_heading = re.search(r"^\s*##\s+", section, flags=re.MULTILINE)
+    if next_heading is not None:
+        section = section[: next_heading.start()]
+    return section
+
+
+def _extract_intentional_omissions(text: str) -> dict[str, str]:
+    """Return intentionally omitted ``src/notebooklm`` paths and their reasons."""
+    omissions: dict[str, str] = {}
+    for line in _intentional_omissions_section(text).splitlines():
+        if "`src/notebooklm/" not in line:
+            continue
+        match = _IGNORED_PATH_RE.match(line)
+        if match is None:
+            continue
+        path = match.group("path").rstrip("/")
+        reason = match.group("reason").strip()
+        if reason:
+            omissions[path] = reason
+    return omissions
+
+
+def _extract_unreasoned_omissions(text: str) -> list[str]:
+    """Return omission bullets that mention a path but do not provide a reason."""
+    unreasoned: list[str] = []
+    for line in _intentional_omissions_section(text).splitlines():
+        if (
+            _OMISSION_BULLET_RE.match(line)
+            and "`src/notebooklm/" in line
+            and _IGNORED_PATH_RE.match(line) is None
+        ):
+            unreasoned.append(line.strip())
+    return unreasoned
+
+
+def _intentional_omissions_section(text: str) -> str:
+    section = _section_after_heading(text, _OMISSIONS_HEADING)
+    next_heading = re.search(r"^\s*###\s+", section, flags=re.MULTILINE)
+    if next_heading is not None:
+        section = section[: next_heading.start()]
+    return section
+
+
+def _section_after_heading(text: str, heading: str) -> str:
+    match = re.search(rf"^\s*{re.escape(heading)}\s*$", text, flags=re.MULTILINE)
+    if match is None:
+        return ""
+    return text[match.end() :]
+
+
+def _top_level_notebooklm_modules(repo_root: Path) -> list[str]:
+    """Return direct ``src/notebooklm`` Python modules and packages."""
+    package_root = repo_root / "src" / "notebooklm"
+    if not package_root.is_dir():
+        return []
+
+    paths: list[str] = []
+    for child in package_root.iterdir():
+        if child.name == "__pycache__":
+            continue
+        if (child.is_file() and child.suffix == ".py") or (
+            child.is_dir() and (child / "__init__.py").is_file()
+        ):
+            paths.append(child.relative_to(repo_root).as_posix())
+    return sorted(paths)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -83,22 +164,39 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     repo_root = Path(args.repo_root).resolve()
-    text = claude.read_text(encoding="utf-8")
-
-    # Only look at the Repository Structure section
-    if "### Repository Structure" in text:
-        text = text.split("### Repository Structure", 1)[1]
-        if "## " in text:
-            text = text.split("## ", 1)[0]
+    text = _repository_structure_section(claude.read_text(encoding="utf-8"))
 
     paths = _extract_paths(text)
+    omissions = _extract_intentional_omissions(text)
+    unreasoned_omissions = _extract_unreasoned_omissions(text)
     missing = [p for p in paths if not (repo_root / p).exists()]
-    if missing:
-        print("Stale CLAUDE.md path references:", file=sys.stderr)
-        for p in missing:
-            print(f"  {p}", file=sys.stderr)
+    top_level_modules = _top_level_notebooklm_modules(repo_root)
+    undocumented = [p for p in top_level_modules if p not in paths and p not in omissions]
+    stale_omissions = [p for p in omissions if not (repo_root / p).exists()]
+
+    if missing or undocumented or stale_omissions or unreasoned_omissions:
+        if missing:
+            print("Stale CLAUDE.md path references:", file=sys.stderr)
+            for p in missing:
+                print(f"  {p}", file=sys.stderr)
+        if undocumented:
+            print("Undocumented top-level src/notebooklm modules/packages:", file=sys.stderr)
+            for p in undocumented:
+                print(f"  {p}", file=sys.stderr)
+        if stale_omissions:
+            print("Stale CLAUDE.md intentional omissions:", file=sys.stderr)
+            for p in stale_omissions:
+                print(f"  {p}", file=sys.stderr)
+        if unreasoned_omissions:
+            print("Intentional omissions without parseable reasons:", file=sys.stderr)
+            for line in unreasoned_omissions:
+                print(f"  {line}", file=sys.stderr)
         return 1
-    print(f"OK: all {len(paths)} CLAUDE.md path references resolve")
+    print(
+        f"OK: {len(paths)} documented paths resolve; "
+        f"{len(top_level_modules)} top-level modules/packages "
+        f"are documented or intentionally omitted"
+    )
     return 0
 
 

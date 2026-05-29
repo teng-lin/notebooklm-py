@@ -232,19 +232,16 @@ class NotebookLMClient:
         # captures the same (possibly rebound) instance that
         # :func:`compose_client_internals` then propagates into
         # :class:`CookiePersistence`, the snapshot-provider lambdas,
-        # and :class:`SourceUploadPipeline`. The Auth Instance
-        # Invariant (see
-        # ``.sisyphus/phases/host-protocol-removal/phase-1.md``) requires that
-        # every reference across the live object graph alias this exact same
-        # mutable object so :meth:`AuthRefreshCoordinator.update_auth_tokens`
-        # in-place mutations are observed everywhere.
+        # and :class:`SourceUploadPipeline`. ADR-016's Auth Instance
+        # Invariant requires every reference across the live object graph
+        # to alias this exact same mutable object so
+        # :meth:`AuthRefreshCoordinator.update_auth_tokens` in-place
+        # mutations are observed everywhere.
         #
-        # Wave 0 of the host-protocol-removal plan introduced this field;
-        # Wave 2 wired ``refresh_auth()`` to read it; Wave 3 (this PR)
-        # rewired the public ``auth`` property and the
-        # ``SourceUploadPipeline(auth=...)`` constructor argument to back
-        # off this field instead of dereferencing
-        # the former Session-owned auth reference. The client shell helper
+        # ``refresh_auth()``, the public ``auth`` property, and the
+        # ``SourceUploadPipeline(auth=...)`` constructor argument all back
+        # off this field instead of any former Session-owned auth
+        # reference. The client shell helper
         # (``tests/_helpers/client_factory.build_client_shell_for_tests``)
         # mirrors the production attribute shape so tests exercise the
         # same code path as production.
@@ -359,13 +356,10 @@ class NotebookLMClient:
             drain=internals.collaborators.drain_tracker,
             lifecycle=internals.collaborators.lifecycle,
             kernel=internals.collaborators.kernel,
-            # Wave 3 of plan ``host-protocol-removal``: the upload
-            # pipeline now reads the client-owned ``self._auth``
-            # reference set above instead of dereferencing
-            # the former Session-owned auth reference. The Auth Instance
-            # Invariant keeps this aliased across all auth consumers, so
-            # production refresh-time mutation is observed by the
-            # uploader unchanged.
+            # ADR-016's Auth Instance Invariant: the upload pipeline
+            # reads the client-owned ``self._auth`` reference set above
+            # instead of a detached auth copy. Production refresh-time
+            # mutation is therefore observed by the uploader unchanged.
             auth=self._auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
@@ -442,12 +436,9 @@ class NotebookLMClient:
     def auth(self) -> AuthTokens:
         """Get the authentication tokens.
 
-        Wave 3 of plan ``host-protocol-removal`` rewired this property
-        to read the client-owned ``self._auth`` reference set in
-        :meth:`__init__`. The Auth Instance Invariant (see
-        ``.sisyphus/phases/host-protocol-removal/phase-1.md``) requires
-        that every reference across the live object graph alias this
-        exact same mutable :class:`AuthTokens` object, so the public
+        ADR-016's Auth Instance Invariant requires every reference across
+        the live object graph to alias the same mutable
+        :class:`AuthTokens` object set in :meth:`__init__`, so the public
         ``client.auth`` identity and behavior are unchanged.
         """
         return self._auth

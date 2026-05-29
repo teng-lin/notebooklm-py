@@ -6,7 +6,12 @@ import pytest
 # Add project root to sys.path so we can import scripts
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from scripts.check_claude_md_freshness import _extract_paths, main
+from scripts.check_claude_md_freshness import (
+    _extract_intentional_omissions,
+    _extract_paths,
+    _repository_structure_section,
+    main,
+)
 
 pytestmark = pytest.mark.repo_lint
 
@@ -30,9 +35,7 @@ def test_extract_paths():
     assert "src/notebooklm/rpc/types.py" in paths
     assert "src/notebooklm/cli" in paths
     assert "src/notebooklm/cli/helpers.py" in paths
-    # tests/unit/test_cli.py is not in the tree format in this snippet but should work if it matches line.startswith
-    # Wait, my refined extractor only handles tree markers or lines starting with src/notebooklm
-    # I should add tests/ to that as well.
+    assert "tests/unit/test_cli.py" in paths
 
 
 def test_extract_paths_with_tests():
@@ -45,8 +48,38 @@ def test_extract_paths_with_tests():
     paths = _extract_paths(text)
     assert "src/notebooklm" in paths
     assert "src/notebooklm/__init__.py" in paths
-    # assert "tests" in paths # Actually it depends on if it starts with tests/
-    # Let's check my logic.
+    assert "tests" in paths
+    assert "tests/conftest.py" in paths
+
+
+def test_extract_intentional_omissions_requires_reason():
+    text = """
+    ### Repository Structure Intentional Omissions
+
+    - `src/notebooklm/_compat.py` - Transitional compatibility shim.
+    - `src/notebooklm/_missing_reason.py`
+    """
+
+    assert _extract_intentional_omissions(text) == {
+        "src/notebooklm/_compat.py": "Transitional compatibility shim."
+    }
+
+
+def test_repository_structure_heading_must_match_exactly():
+    text = """
+    ### Repository Structure Intentional Omissions
+
+    - `src/notebooklm/not_a_documented_path.py` - This section appears first.
+
+    ### Repository Structure
+
+    src/notebooklm/
+    ├── __init__.py
+    """
+
+    paths = _extract_paths(_repository_structure_section(text))
+    assert "src/notebooklm/__init__.py" in paths
+    assert "src/notebooklm/not_a_documented_path.py" not in paths
 
 
 def test_main_success(tmp_path):
@@ -54,12 +87,24 @@ def test_main_success(tmp_path):
     repo.mkdir()
     (repo / "src/notebooklm").mkdir(parents=True)
     (repo / "src/notebooklm/__init__.py").touch()
+    (repo / "src/notebooklm/client.py").touch()
+    (repo / "src/notebooklm/_small_helper.py").touch()
 
     claude_md = repo / "CLAUDE.md"
     # Explicit utf-8 — the tree-decoration chars `├──` / `│` are outside
     # cp1252 and Windows CI would otherwise crash with UnicodeEncodeError.
     claude_md.write_text(
-        "### Repository Structure\n\nsrc/notebooklm/\n├── __init__.py",
+        """
+        ### Repository Structure
+
+        src/notebooklm/
+        ├── __init__.py
+        ├── client.py
+
+        ### Repository Structure Intentional Omissions
+
+        - `src/notebooklm/_small_helper.py` - Small helper covered by client.py.
+        """,
         encoding="utf-8",
     )
 
@@ -74,6 +119,75 @@ def test_main_failure(tmp_path):
     claude_md = repo / "CLAUDE.md"
     claude_md.write_text(
         "### Repository Structure\n\nsrc/notebooklm/\n├── nonexistent.py",
+        encoding="utf-8",
+    )
+
+    assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 1
+
+
+def test_main_fails_for_undocumented_top_level_module(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "src/notebooklm").mkdir(parents=True)
+    (repo / "src/notebooklm/__init__.py").touch()
+    (repo / "src/notebooklm/_new_important_module.py").touch()
+
+    claude_md = repo / "CLAUDE.md"
+    claude_md.write_text(
+        "### Repository Structure\n\nsrc/notebooklm/\n├── __init__.py",
+        encoding="utf-8",
+    )
+
+    assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 1
+
+
+def test_main_allows_intentional_omission_with_reason(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "src/notebooklm").mkdir(parents=True)
+    (repo / "src/notebooklm/__init__.py").touch()
+    (repo / "src/notebooklm/_small_helper.py").touch()
+
+    claude_md = repo / "CLAUDE.md"
+    claude_md.write_text(
+        """
+        ### Repository Structure
+
+        src/notebooklm/
+        ├── __init__.py
+
+        ### Repository Structure Intentional Omissions
+
+        These helpers from `src/notebooklm/` are intentionally omitted
+        when a subsystem row already covers them:
+
+        - `src/notebooklm/_small_helper.py` - Small helper covered by the subsystem row.
+        """,
+        encoding="utf-8",
+    )
+
+    assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 0
+
+
+def test_main_fails_for_intentional_omission_without_reason(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "src/notebooklm").mkdir(parents=True)
+    (repo / "src/notebooklm/__init__.py").touch()
+    (repo / "src/notebooklm/_small_helper.py").touch()
+
+    claude_md = repo / "CLAUDE.md"
+    claude_md.write_text(
+        """
+        ### Repository Structure
+
+        src/notebooklm/
+        ├── __init__.py
+
+        ### Repository Structure Intentional Omissions
+
+        - `src/notebooklm/_small_helper.py`
+        """,
         encoding="utf-8",
     )
 
