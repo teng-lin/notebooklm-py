@@ -35,13 +35,33 @@ from .rpc import (
     ServerError,
 )
 
-# Auth error detection patterns (case-insensitive)
+# Legacy export kept for callers that import the constant directly. Auth
+# classification below no longer uses these as arbitrary RPCError substrings.
 AUTH_ERROR_PATTERNS = (
     "authentication",
     "expired",
     "unauthorized",
     "login",
     "re-authenticate",
+)
+
+_AUTH_HTTP_STATUS_CODES = frozenset({400, 401, 403})
+_AUTH_RPC_NUMERIC_CODES = frozenset({401, 403, 16})
+_AUTH_RPC_LABEL_CODES = frozenset(
+    {
+        "AUTHENTICATION_REQUIRED",
+        "AUTH_EXPIRED",
+        "TOKEN_EXPIRED",
+        "UNAUTHENTICATED",
+        "UNAUTHORIZED",
+    }
+)
+_LEGACY_AUTH_RPC_MESSAGES = frozenset(
+    {
+        "authentication expired",
+        "authentication expired or invalid",
+        "authentication required. run 'notebooklm login' to re-authenticate.",
+    }
 )
 
 
@@ -83,6 +103,57 @@ def resolve_sleep(
     return injected if injected is not None else asyncio.sleep
 
 
+def _coerce_int_code(value: object) -> int | None:
+    """Return an integer status/code value without accepting bools."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _normalize_code_label(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value.strip().replace("-", "_").replace(" ", "_").upper()
+
+
+def _normalized_message(error: Exception) -> str:
+    return " ".join(str(error).split()).casefold()
+
+
+def _rpc_error_has_auth_signal(error: RPCError) -> bool:
+    # Some wrappers attach HTTP-like status metadata to a generic RPCError.
+    # Treat an explicit status_code as authoritative when present.
+    status_code = _coerce_int_code(getattr(error, "status_code", None))
+    if status_code is not None:
+        return status_code in _AUTH_HTTP_STATUS_CODES
+
+    has_explicit_rpc_signal = False
+    for attr_name in ("rpc_code", "code", "status"):
+        value = getattr(error, attr_name, None)
+        numeric_code = _coerce_int_code(value)
+        label_code = _normalize_code_label(value)
+        if numeric_code is not None or label_code is not None:
+            has_explicit_rpc_signal = True
+        if numeric_code in _AUTH_RPC_NUMERIC_CODES:
+            return True
+        if label_code in _AUTH_RPC_LABEL_CODES:
+            return True
+
+    if has_explicit_rpc_signal:
+        return False
+
+    # Backward-compatible fallback for historical auth-service RPCError text.
+    # This is deliberately exact-match only; auth words in arbitrary RPCError
+    # diagnostics are not enough to trigger refresh/re-auth guidance.
+    return _normalized_message(error) in _LEGACY_AUTH_RPC_MESSAGES
+
+
 def is_auth_error(error: Exception) -> bool:
     """Check if an exception indicates an authentication failure.
 
@@ -111,11 +182,9 @@ def is_auth_error(error: Exception) -> bool:
     # (``_is_retry`` in ``rpc_call``) bounds wasted refreshes on legitimate
     # 400s (bad payload) to one extra GET per call.
     if isinstance(error, httpx.HTTPStatusError):
-        return error.response.status_code in (400, 401, 403)
+        return error.response.status_code in _AUTH_HTTP_STATUS_CODES
 
-    # RPCError with auth-related message
     if isinstance(error, RPCError):
-        message = str(error).lower()
-        return any(pattern in message for pattern in AUTH_ERROR_PATTERNS)
+        return _rpc_error_has_auth_signal(error)
 
     return False

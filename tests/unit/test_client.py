@@ -532,28 +532,48 @@ class TestIsAuthError:
         error = httpx.HTTPStatusError("Server Error", request=request, response=response)
         assert is_auth_error(error) is False
 
-    def test_rpc_error_with_auth_message_is_auth_error(self):
-        """RPCError with 'Authentication' in message should be auth error."""
+    @pytest.mark.parametrize("rpc_code", [401, 403, 16, "UNAUTHENTICATED"])
+    def test_rpc_error_with_explicit_auth_code_is_auth_error(self, rpc_code):
+        """RPCError with an explicit auth status/code should be auth error."""
+
+        error = RPCError("RPC auth service rejected credentials", rpc_code=rpc_code)
+        assert is_auth_error(error) is True
+
+    def test_rpc_error_with_legacy_exact_expired_message_is_auth_error(self):
+        """Known legacy auth-service text still triggers refresh diagnostics."""
 
         error = RPCError("Authentication expired")
         assert is_auth_error(error) is True
 
-    def test_rpc_error_with_expired_message_is_auth_error(self):
-        """RPCError with 'expired' in message should be auth error."""
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Unauthorized access to this notebook",
+            "Session expired while rendering an unrelated artifact",
+            "Please login before retrying this quota-limited action",
+            "Authentication summary could not be generated",
+        ],
+    )
+    def test_rpc_error_with_auth_words_without_signal_is_not_auth_error(self, message):
+        """Auth-related words alone should not trigger auth recovery."""
 
-        error = RPCError("Session expired, please re-login")
-        assert is_auth_error(error) is True
-
-    def test_rpc_error_with_unauthorized_message_is_auth_error(self):
-        """RPCError with 'Unauthorized' in message should be auth error."""
-
-        error = RPCError("Unauthorized access")
-        assert is_auth_error(error) is True
+        error = RPCError(message)
+        assert is_auth_error(error) is False
 
     def test_rpc_error_generic_is_not_auth_error(self):
         """Generic RPCError should NOT be auth error."""
 
         error = RPCError("Rate limit exceeded")
+        assert is_auth_error(error) is False
+
+    @pytest.mark.parametrize("rpc_code", [7, 429, 500, "USER_DISPLAYABLE_ERROR"])
+    def test_rpc_error_with_non_auth_code_is_not_auth_error(self, rpc_code):
+        """Non-auth RPC status/code fields should not trigger auth recovery."""
+
+        error = RPCError(
+            "Authentication required. Run 'notebooklm login' to re-authenticate.",
+            rpc_code=rpc_code,
+        )
         assert is_auth_error(error) is False
 
     def test_auth_error_is_auth_error(self):
@@ -709,7 +729,11 @@ class TestRpcCallAutoRetry:
             decode_call_count[0] += 1
             if decode_call_count[0] == 1:
                 # First decode fails with auth error
-                raise RPCError("Authentication expired", method_id="wXbhsf")
+                raise RPCError(
+                    "Authentication required. Run 'notebooklm login' to re-authenticate.",
+                    method_id="wXbhsf",
+                    rpc_code=401,
+                )
             return ["result"]
 
         core = build_client_shell_for_tests(
@@ -736,6 +760,54 @@ class TestRpcCallAutoRetry:
         assert len(refresh_called) == 1, "refresh_callback should be called once"
         assert decode_call_count[0] == 2, "decode should be called twice (original + retry)"
         assert result == ["result"]
+
+    @pytest.mark.asyncio
+    async def test_no_auth_refresh_on_rpc_error_with_auth_words_without_signal(self):
+        """rpc_call should not refresh on generic RPC text that mentions auth words."""
+        auth = AuthTokens(
+            cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        refresh_called = []
+
+        async def mock_refresh():
+            refresh_called.append(True)
+            return auth
+
+        decode_call_count = [0]
+
+        def mock_decode(*args, **kwargs):
+            decode_call_count[0] += 1
+            raise RPCError(
+                "Unauthorized access to source while generating authentication summary",
+                method_id="wXbhsf",
+            )
+
+        core = build_client_shell_for_tests(
+            auth,
+            refresh_callback=mock_refresh,
+            refresh_retry_delay=0,
+            decode_response=mock_decode,
+        )
+
+        async def mock_post(*args, **kwargs):
+            response = MagicMock()
+            response.text = "mock response"
+            response.raise_for_status = MagicMock()
+            return response
+
+        install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        core._collaborators.kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
+        core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
+
+        with pytest.raises(RPCError, match="Unauthorized access"):
+            await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert refresh_called == []
+        assert decode_call_count[0] == 1
 
     @pytest.mark.asyncio
     async def test_no_retry_without_callback(self):

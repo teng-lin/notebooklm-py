@@ -136,8 +136,20 @@ class TestIsAuthError:
         error = httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response)
         assert is_auth_error(error) is False
 
-    def test_returns_true_for_rpc_error_with_auth_message(self):
-        assert is_auth_error(RPCError("authentication expired")) is True
+    @pytest.mark.parametrize("rpc_code", [401, 403, 16, "UNAUTHENTICATED"])
+    def test_returns_true_for_rpc_error_with_auth_code(self, rpc_code):
+        assert is_auth_error(RPCError("authentication expired", rpc_code=rpc_code)) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Unauthorized access to this notebook",
+            "Session expired while rendering an unrelated artifact",
+            "Authentication summary could not be generated",
+        ],
+    )
+    def test_returns_false_for_rpc_error_with_auth_words_but_no_auth_signal(self, message):
+        assert is_auth_error(RPCError(message)) is False
 
     def test_returns_false_for_rpc_error_with_generic_message(self):
         assert is_auth_error(RPCError("some generic error")) is False
@@ -298,7 +310,7 @@ class TestRPCCallAuthRetry:
             # Override the runtime decode-response seam before the RPC fires.
             decode_responses = iter(
                 [
-                    RPCError("authentication expired"),
+                    RPCError("authentication expired", rpc_code=401),
                     ["result_data"],
                 ]
             )

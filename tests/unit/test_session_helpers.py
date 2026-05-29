@@ -36,6 +36,7 @@ from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._middleware_retry import RetryMiddleware
 from notebooklm._session_helpers import is_auth_error, resolve_sleep
 from notebooklm._transport_errors import TransportServerError
+from notebooklm.rpc import AuthError, RPCError, ServerError
 
 # ---------------------------------------------------------------------------
 # Direct unit tests for resolve_sleep
@@ -73,6 +74,63 @@ def test_resolve_sleep_late_binds_asyncio_sleep(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr("asyncio.sleep", fake)
     assert resolve_sleep(None) is fake
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests for is_auth_error
+# ---------------------------------------------------------------------------
+
+
+def test_is_auth_error_accepts_typed_auth_error() -> None:
+    assert is_auth_error(AuthError("Authentication expired")) is True
+
+
+@pytest.mark.parametrize("status", [400, 401, 403])
+def test_is_auth_error_accepts_auth_http_statuses(status: int) -> None:
+    assert is_auth_error(_auth_error_http(status)) is True
+
+
+@pytest.mark.parametrize("rpc_code", [401, 403, 16, "UNAUTHENTICATED"])
+def test_is_auth_error_accepts_explicit_rpc_auth_codes(rpc_code: int | str) -> None:
+    assert is_auth_error(RPCError("auth service failure", rpc_code=rpc_code)) is True
+
+
+def test_is_auth_error_accepts_explicit_rpc_status_code() -> None:
+    error = RPCError("wrapped auth status")
+    error.status_code = 401
+    assert is_auth_error(error) is True
+
+
+def test_is_auth_error_accepts_explicit_rpc_status_label() -> None:
+    error = RPCError("wrapped auth status")
+    error.status = "UNAUTHENTICATED"
+    assert is_auth_error(error) is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Authentication summary failed for a malformed response",
+        "Session expired while processing a non-auth artifact status",
+        "Unauthorized access to this notebook",
+        "Please login before retrying a quota-limited action",
+    ],
+)
+def test_is_auth_error_ignores_auth_words_without_status_or_code(message: str) -> None:
+    assert is_auth_error(RPCError(message)) is False
+
+
+def test_is_auth_error_does_not_promote_server_error_with_auth_code() -> None:
+    error = ServerError("server auth subsystem failed", status_code=500, rpc_code=401)
+    assert is_auth_error(error) is False
+
+
+def test_is_auth_error_prefers_non_auth_rpc_code_over_legacy_message() -> None:
+    error = RPCError(
+        "Authentication required. Run 'notebooklm login' to re-authenticate.",
+        rpc_code=500,
+    )
+    assert is_auth_error(error) is False
 
 
 # ---------------------------------------------------------------------------
