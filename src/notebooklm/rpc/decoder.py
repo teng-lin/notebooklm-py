@@ -55,8 +55,9 @@ _BYTE_COUNT_MISMATCH_TOTAL = 0
 
 # Emit at most one byte-count-mismatch WARNING per this many observed
 # mismatches so a live multi-chunk response cannot flood CI logs while a real
-# drift event still surfaces above DEBUG. The first mismatch of a process
-# always warns (1 % interval == 0).
+# drift event still surfaces above DEBUG. The counter is post-incremented
+# before the modulo test, so the first mismatch of a process always warns
+# (1 % interval == 1) and subsequent warnings land at interval + 1.
 _BYTE_COUNT_MISMATCH_WARN_INTERVAL = 500
 
 
