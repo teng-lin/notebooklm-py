@@ -89,6 +89,32 @@ def correlation_id(req_id: str | None = None) -> Iterator[str]:
 _REDACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # CSRF / form-body auth tokens (Google batchexecute)
     (re.compile(r"(\bat=)[^&\s\"'<>]+"), r"\1***"),
+    # WIZ_global_data CSRF (SNlM0e) and session-id (FdrFJe) markers. These
+    # appear in HTML/JSON responses (``"SNlM0e":"AF1_QpN-..."``), in query /
+    # form bodies (``SNlM0e=...``), and in diagnostic prose
+    # (``SNlM0e value is AF1_QpN-...``). The marker name itself is kept; the
+    # following token-shaped value is redacted. The separator class spans
+    # the JSON colon, ``=``, and a prose run (``"value is"`` / whitespace),
+    # then the value runs until the next quote/whitespace/JSON delimiter.
+    # The marker is matched as its own alternation so the captured ``\1``
+    # group always reflects the full marker name. ``\b`` left-anchors the
+    # marker so it is not matched mid-identifier.
+    (
+        re.compile(
+            r"(\b(?:SNlM0e|FdrFJe))"
+            r"((?:&quot;)?[\"']?\s*(?:value\s+is|[:=])\s*(?:&quot;)?[\"']?)"
+            r"[^\s\"'<>&;,}]+"
+        ),
+        r"\1\2***",
+    ),
+    # ``csrf=<value>`` form parameter (the CSRF token shows up canonically as
+    # ``at=<csrf>``, but a ``csrf=`` alias must not leak the value either).
+    (re.compile(r"(\bcsrf=)[^&\s\"'<>]+", re.IGNORECASE), r"\1***"),
+    # Bare Google CSRF tokens. The CSRF value (``SNlM0e`` / the ``at=`` body
+    # param) is always emitted with the ``AF1_QpN-`` family prefix, so a
+    # standalone token is redacted even with no surrounding marker. The
+    # prefix is preserved as a shape hint; the secret suffix is dropped.
+    (re.compile(r"(AF1_QpN-)[A-Za-z0-9_-]+"), r"\1***"),
     # session-id query param
     (re.compile(r"(\bf\.sid=)[^&\s\"'<>]+"), r"\1***"),
     # resumable-upload session query param
@@ -156,6 +182,9 @@ _DEFAULT_DATEFMT = "%H:%M:%S"
 #
 # Coverage map (pattern -> covering token in this set, all lowercase):
 #   \bat=<csrf>                                          -> "at="
+#   \b(SNlM0e|FdrFJe)<sep><value>                         -> "snlm0e" / "fdrfje"
+#   \bcsrf=<csrf> (IGNORECASE)                           -> "csrf"
+#   AF1_QpN-<bare csrf token>                            -> "af1_qpn-"
 #   \bf\.sid=<sid>                                       -> "f.sid"
 #   \bupload_id=<resumable upload token>                  -> "upload_id="
 #   (refresh_token|access_token|id_token)= (IGNORECASE)  -> "_token="
@@ -178,15 +207,24 @@ _DEFAULT_DATEFMT = "%H:%M:%S"
 #   - "continue=" and "authuser=" are NOT in ``_REDACT_PATTERNS``. Including
 #     them is harmless: they only INCREASE the regex-sweep rate, never the
 #     redaction surface, and they hedge against future audit additions.
-#   - "csrf" is not in any pattern verbatim (the CSRF token shows up as
-#     ``at=<csrf>``), but is kept as a defensive token in case future log
-#     call sites emit ``CSRF=`` style markers.
+#   - "csrf" covers the ``csrf=<value>`` form alias. The canonical CSRF
+#     token shows up as ``at=<csrf>`` (covered by "at="); the standalone
+#     ``AF1_QpN-`` token shape is covered by "af1_qpn-".
+#   - "snlm0e" / "fdrfje" cover the WIZ_global_data CSRF / session-id markers
+#     in their JSON, query, and prose shapes. They are lowercased to match
+#     the lowercased input even though the marker regex is case-sensitive
+#     (the markers are canonical mixed-case identifiers); the lowercase
+#     substring still triggers the sweep, which is harmless if the regex
+#     then misses.
 #   - "sapisid" is redundant given "sid", but kept as documentation that we
 #     deliberately cover that cookie family.
 SECRET_FAST_PATH_TOKENS: tuple[str, ...] = (
     "sid",
     "sapisid",
     "csrf",
+    "snlm0e",
+    "fdrfje",
+    "af1_qpn-",
     "f.sid",
     "continue=",
     "authuser=",
