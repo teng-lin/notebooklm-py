@@ -234,7 +234,9 @@ class TestAutoRefreshIntegration:
         disable flag True. The server may have committed the notebook before
         the 401 surfaced, so ``AuthRefreshMiddleware`` must NOT refresh and
         re-POST — that would duplicate the notebook. The original auth error
-        propagates so the caller's probe-then-create wrapper can disambiguate.
+        propagates so ``NotebooksAPI.create``'s probe-then-create wrapper can
+        disambiguate. Driven through the public ``client.notebooks.create``
+        surface so the regression is pinned end-to-end.
         """
         auth = AuthTokens(
             cookies={"SID": "test"},
@@ -253,22 +255,35 @@ class TestAutoRefreshIntegration:
 
         client._collaborators.auth_coord._refresh_callback = tracking_refresh
 
-        call_count = [0]
+        create_post_count = [0]
 
         async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            request = httpx.Request("POST", args[0])
+            url = args[0]
+            # ``NotebooksAPI.create`` first lists notebooks to capture a
+            # baseline; that LIST_NOTEBOOKS POST must succeed so only the
+            # CREATE_NOTEBOOK leg exercises the auth-error path.
+            if RPCMethod.LIST_NOTEBOOKS.value in str(url):
+                response = MagicMock()
+                response.text = "list-ok"
+                response.raise_for_status = MagicMock()
+                return response
+            create_post_count[0] += 1
+            request = httpx.Request("POST", url)
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+
+        # Baseline ``list()`` decodes to an empty notebook list; the create's
+        # decode never runs because the POST raises a 401 first.
+        client._seams.decode_response = lambda *a, **kw: []
 
         async with client:
             install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
 
             with pytest.raises(RPCError):
-                await client.rpc_call(RPCMethod.CREATE_NOTEBOOK, ["My Notebook"])
+                await client.notebooks.create("My Notebook")
 
         assert refresh_calls == [], "non-idempotent write must not trigger an auth refresh"
-        assert call_count[0] == 1, "non-idempotent write must POST exactly once (no replay)"
+        assert create_post_count[0] == 1, "CREATE_NOTEBOOK must POST exactly once (no replay)"
 
     @pytest.mark.asyncio
     async def test_rpc_auth_error_does_not_replay_non_idempotent_write(self):
@@ -278,6 +293,7 @@ class TestAutoRefreshIntegration:
         ``RpcExecutor`` must honor the effective disable classification just
         like the HTTP-status leg. ``CREATE_NOTEBOOK`` resolves to disabled
         retries, so the decoded auth error surfaces without a second POST.
+        Driven through the public ``client.notebooks.create`` surface.
         """
         auth = AuthTokens(
             cookies={"SID": "test"},
@@ -296,20 +312,26 @@ class TestAutoRefreshIntegration:
 
         client._collaborators.auth_coord._refresh_callback = tracking_refresh
 
-        post_count = [0]
+        create_post_count = [0]
 
         async def mock_post(*args, **kwargs):
-            post_count[0] += 1
+            if RPCMethod.CREATE_NOTEBOOK.value in str(args[0]):
+                create_post_count[0] += 1
             response = MagicMock()
             response.text = "mock response"
             response.raise_for_status = MagicMock()
             return response
 
-        decode_count = [0]
+        create_decode_count = [0]
 
-        def mock_decode(*args, **kwargs):
-            decode_count[0] += 1
-            raise RPCError("Authentication expired")
+        def mock_decode(raw, rpc_id, *args, **kwargs):
+            # The baseline ``list()`` decodes to an empty list; the create's
+            # decode raises an auth-shaped RPCError to exercise the
+            # decode-time refresh-and-retry leg.
+            if rpc_id == RPCMethod.CREATE_NOTEBOOK.value:
+                create_decode_count[0] += 1
+                raise RPCError("Authentication expired")
+            return []
 
         client._seams.decode_response = mock_decode
 
@@ -317,8 +339,10 @@ class TestAutoRefreshIntegration:
             install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
 
             with pytest.raises(RPCError):
-                await client.rpc_call(RPCMethod.CREATE_NOTEBOOK, ["My Notebook"])
+                await client.notebooks.create("My Notebook")
 
         assert refresh_calls == [], "non-idempotent write must not trigger an auth refresh"
-        assert post_count[0] == 1, "non-idempotent write must POST exactly once (no replay)"
-        assert decode_count[0] == 1, "decode must run once — no retried decode"
+        assert create_post_count[0] == 1, "CREATE_NOTEBOOK must POST exactly once (no replay)"
+        assert create_decode_count[0] == 1, (
+            "CREATE_NOTEBOOK decode must run once — no retried decode"
+        )
