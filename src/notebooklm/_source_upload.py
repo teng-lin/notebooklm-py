@@ -305,13 +305,10 @@ def _extract_source_id_field_candidates(result: Any, filename: str) -> list[str]
                 if not isinstance(key, str):
                     continue
                 if (
-                    (
-                        key in _SOURCE_ID_FIELD_NAMES
-                        and not mismatched_context
-                        and (depth == 0 or matched_context)
-                    )
-                    or (key in _CONTEXTUAL_SOURCE_ID_FIELD_NAMES and matched_context)
-                ):
+                    key in _SOURCE_ID_FIELD_NAMES
+                    and not mismatched_context
+                    and (depth == 0 or matched_context)
+                ) or (key in _CONTEXTUAL_SOURCE_ID_FIELD_NAMES and matched_context):
                     add_candidate(value)
             for value in node.values():
                 walk(value, depth + 1)
@@ -388,11 +385,7 @@ def _source_context_names(node: dict[Any, Any]) -> list[Any]:
 
 def _unwrap_singleton_envelope(value: Any) -> tuple[Any, int]:
     depth = 0
-    while (
-        isinstance(value, list)
-        and len(value) == 1
-        and depth < _SOURCE_ID_ENVELOPE_MAX_DEPTH
-    ):
+    while isinstance(value, list) and len(value) == 1 and depth < _SOURCE_ID_ENVELOPE_MAX_DEPTH:
         value = value[0]
         depth += 1
     return value, depth
