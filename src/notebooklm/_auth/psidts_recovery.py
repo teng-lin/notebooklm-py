@@ -60,6 +60,7 @@ from . import storage as _auth_storage
 # ----------------------------------------------------------------------------
 _has_valid_secondary_binding = _cookie_policy._has_valid_secondary_binding
 _is_allowed_auth_domain = _cookie_policy._is_allowed_auth_domain
+_auth_domain_priority = _cookie_policy._auth_domain_priority
 _rotation_lock_path = _keepalive._rotation_lock_path
 _file_lock_try_exclusive = _keepalive._file_lock_try_exclusive
 _try_claim_rotation = _keepalive._try_claim_rotation
@@ -120,6 +121,46 @@ def _psidts_needs_recovery(
         return False
     reference = time.time() if now is None else now
     return expires < reference
+
+
+def _index_recovery_cookies(
+    entries: list[dict[str, Any]],
+) -> tuple[set[str], dict[str, Any]]:
+    """Build domain-filtered ``(cookie_names, cookie_expiry)`` views for the gate.
+
+    Only entries on an allowed auth domain (:func:`_is_allowed_auth_domain`)
+    are indexed — this matches the jar-building filter in
+    :func:`_attempt_rotation` / :func:`recover_psidts_in_memory`, so a stray
+    ``__Secure-1PSIDTS`` / ``SID`` on an unrelated domain can't falsely satisfy
+    the precondition and skip the heal.
+
+    When the same name appears on multiple allowed domains, the highest
+    :func:`_auth_domain_priority` tier wins (``.google.com`` > regional > …),
+    mirroring :func:`notebooklm._auth.cookies.flatten_cookie_map`. Tiers are
+    strictly distinct, so the resolved expiry is deterministic regardless of
+    storage_state ordering; within a single tier the first occurrence wins.
+
+    An entry must carry a non-empty ``name`` *and* ``value`` to be indexed: a
+    nameless/valueless cookie can't be meaningfully present on either the
+    file-based or in-memory recovery path.
+    """
+    cookie_names: set[str] = set()
+    cookie_expiry: dict[str, Any] = {}
+    name_priority: dict[str, int] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name or not entry.get("value"):
+            continue
+        if not _is_allowed_auth_domain(entry.get("domain", "") or ""):
+            continue
+        priority = _auth_domain_priority(entry.get("domain", "") or "")
+        if name not in cookie_names or priority > name_priority[name]:
+            cookie_names.add(name)
+            cookie_expiry[name] = entry.get("expires")
+            name_priority[name] = priority
+    return cookie_names, cookie_expiry
 
 
 def _resolve_recovery_path(path: Path | str | None) -> Path | None:
@@ -265,12 +306,15 @@ def _read_storage_for_recovery(
 
     Returns ``(cookie_entries, cookie_names, cookie_expiry)`` on success, or
     ``None`` on any load/parse failure (caller treats this as "decline
-    recovery"). ``cookie_expiry`` is a ``name -> expires`` view over the same
-    entries so the precondition gate can treat a present-but-expired PSIDTS as
-    absent (see :func:`_psidts_needs_recovery`). The narrow exception scope
-    catches the documented raise sites of ``_load_storage_state`` (``OSError``
-    for missing file, ``json.JSONDecodeError`` for malformed JSON) and lets
-    unexpected ``ValueError`` propagate as an implementation bug.
+    recovery"). ``cookie_names`` / ``cookie_expiry`` are domain-filtered,
+    priority-resolved views over the same entries (see
+    :func:`_index_recovery_cookies`) so the precondition gate can treat a
+    present-but-expired PSIDTS as absent (see :func:`_psidts_needs_recovery`).
+    ``cookie_entries`` is the unfiltered list — the jar builder in
+    :func:`_attempt_rotation` applies its own domain filter. The narrow
+    exception scope catches the documented raise sites of ``_load_storage_state``
+    (``OSError`` for missing file, ``json.JSONDecodeError`` for malformed JSON)
+    and lets unexpected ``ValueError`` propagate as an implementation bug.
     """
     try:
         storage_state = _load_storage_state(storage_path)
@@ -281,14 +325,7 @@ def _read_storage_for_recovery(
     if not isinstance(raw_entries, list):
         return None
     cookie_entries: list[dict] = [entry for entry in raw_entries if isinstance(entry, dict)]
-    cookie_names: set[str] = {
-        name for entry in cookie_entries if isinstance(name := entry.get("name"), str) and name
-    }
-    cookie_expiry: dict[str, Any] = {
-        name: entry.get("expires")
-        for entry in cookie_entries
-        if isinstance(name := entry.get("name"), str) and name
-    }
+    cookie_names, cookie_expiry = _index_recovery_cookies(cookie_entries)
     return cookie_entries, cookie_names, cookie_expiry
 
 
@@ -462,22 +499,7 @@ def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
     Returns ``True`` if the rotation succeeded and the in-memory list now
     contains ``__Secure-1PSIDTS``; ``False`` otherwise.
     """
-    cookie_names: set[str] = {
-        name
-        for entry in rookiepy_cookies
-        if isinstance(entry, dict)
-        and isinstance(name := entry.get("name"), str)
-        and name
-        and entry.get("value")
-    }
-    cookie_expiry: dict[str, Any] = {
-        name: entry.get("expires")
-        for entry in rookiepy_cookies
-        if isinstance(entry, dict)
-        and isinstance(name := entry.get("name"), str)
-        and name
-        and entry.get("value")
-    }
+    cookie_names, cookie_expiry = _index_recovery_cookies(rookiepy_cookies)
 
     if "SID" not in cookie_names:
         logger.debug("In-memory PSIDTS recovery skipped: SID missing")

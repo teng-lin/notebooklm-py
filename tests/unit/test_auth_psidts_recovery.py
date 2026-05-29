@@ -206,6 +206,61 @@ class TestPsidtsExpiryGate:
         """Absent PSIDTS → recovery proceeds (current behavior, preserved)."""
         assert psidts_recovery._psidts_needs_recovery(set(), {}, now=200.0) is True
 
+    def test_helper_expires_exactly_now_is_skipped(self):
+        """Boundary: ``expires == now`` is fresh (``expires < now`` is strict)."""
+        assert (
+            psidts_recovery._psidts_needs_recovery(
+                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 200.0}, now=200.0
+            )
+            is False
+        )
+
+    # --- domain-filtered / priority-resolved index gate --------------------
+
+    def test_psidts_on_unallowed_domain_does_not_skip_recovery(self):
+        """A PSIDTS on a non-Google domain must NOT satisfy the precondition.
+
+        Otherwise a stray ``__Secure-1PSIDTS`` cookie left by an unrelated site
+        would falsely mark the Google session healthy and skip the heal.
+        """
+        entries = _RECOVERABLE_COOKIES + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "evil",
+                "domain": ".evil.example",
+                "path": "/",
+                "expires": self._FUTURE,
+            }
+        ]
+        names, expiry = psidts_recovery._index_recovery_cookies(entries)
+        assert "__Secure-1PSIDTS" not in names
+        assert psidts_recovery._psidts_needs_recovery(names, expiry) is True
+
+    def test_index_prefers_base_google_domain_for_duplicates(self):
+        """Duplicate names resolve by ``_auth_domain_priority`` (``.google.com`` wins).
+
+        Regardless of list order, the ``.google.com`` PSIDTS expiry must win
+        over a regional-domain duplicate so the gate is order-independent.
+        """
+        fresh_base = {
+            "name": "__Secure-1PSIDTS",
+            "value": "base",
+            "domain": ".google.com",
+            "path": "/",
+            "expires": self._FUTURE,
+        }
+        expired_regional = {
+            "name": "__Secure-1PSIDTS",
+            "value": "regional",
+            "domain": ".google.com.sg",
+            "path": "/",
+            "expires": self._PAST,
+        }
+        for ordering in ([fresh_base, expired_regional], [expired_regional, fresh_base]):
+            names, expiry = psidts_recovery._index_recovery_cookies(_RECOVERABLE_COOKIES + ordering)
+            assert expiry["__Secure-1PSIDTS"] == self._FUTURE, ordering
+            assert psidts_recovery._psidts_needs_recovery(names, expiry) is False, ordering
+
     # --- file-based recovery end-to-end ------------------------------------
 
     @pytest.mark.no_default_keepalive_mock
@@ -286,6 +341,44 @@ class TestPsidtsExpiryGate:
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_in_memory_session_cookie_skips_recovery(self, httpx_mock: HTTPXMock):
+        """A session-cookie (-1) PSIDTS on the in-memory path is not expired → no POST."""
+        cookies = [
+            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
+            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
+            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "session",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": -1,
+            },
+        ]
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    # --- flock-held re-read (``_is_psidts_persisted``) ---------------------
+
+    def test_is_psidts_persisted_false_for_expired_on_disk_row(self, tmp_path):
+        """The held-flock re-read must NOT mistake a stale PSIDTS for a heal.
+
+        ``_is_psidts_persisted`` backs the flock-held skip path: a
+        present-but-expired on-disk row counts as *not* persisted, so the
+        caller keeps trying to heal instead of returning a false success.
+        """
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, self._with_psidts(expires=self._PAST))
+        assert psidts_recovery._is_psidts_persisted(storage_path) is False
+
+    def test_is_psidts_persisted_true_for_fresh_on_disk_row(self, tmp_path):
+        """A future-dated on-disk PSIDTS counts as persisted (heal observed)."""
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, self._with_psidts(expires=self._FUTURE))
+        assert psidts_recovery._is_psidts_persisted(storage_path) is True
 
 
 class TestRecoveryHappyPath:
