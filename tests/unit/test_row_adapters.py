@@ -1,4 +1,4 @@
-"""Tests for row-adapter behavior and ``notebooklm._row_adapters`` compatibility.
+"""Tests for row-adapter behavior across the ``_row_adapters_*`` modules.
 
 The adapters centralise position knowledge for the ``LIST_ARTIFACTS``,
 ``GET_NOTES_AND_MIND_MAPS``, and source row shapes so consumers
@@ -9,8 +9,9 @@ The adapters centralise position knowledge for the ``LIST_ARTIFACTS``,
 open-coding ``data[2]`` / ``data[4]`` / ``data[15]`` / ``row[1][1]`` /
 ``row[1][4]`` / ``data[0][0]`` / ``metadata[4]``. See
 ``docs/improvement.md`` §6.2 for the motivation and
-``src/notebooklm/_row_adapters_*.py`` for the position contracts and
-``src/notebooklm/_row_adapters.py`` for the compatibility shim.
+``src/notebooklm/_row_adapters_artifacts.py``,
+``src/notebooklm/_row_adapters_notes.py``, and
+``src/notebooklm/_row_adapters_sources.py`` for the position contracts.
 
 These tests cover three layers per adapter:
 
@@ -31,7 +32,9 @@ import json
 
 import pytest
 
-from notebooklm._row_adapters import ArtifactRow, NoteRow, SourceRow, SourceRowShape
+from notebooklm._row_adapters_artifacts import ArtifactRow
+from notebooklm._row_adapters_notes import NoteRow
+from notebooklm._row_adapters_sources import SourceRow, SourceRowShape
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode, SourceStatus
 

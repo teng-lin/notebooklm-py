@@ -267,12 +267,11 @@ reviewer can hold the whole taxonomy in mind during a code review.
 resolve the effective `disable_internal_retries`. The caller's explicit
 `disable_internal_retries=True` always wins over the registry default.
 
-The audit inventory in
-[`_mutating_operations.py`](../src/notebooklm/_mutating_operations.py)
-pairs each `PROBE_THEN_CREATE` entry with a `RecoveryKind` —
-`EXECUTABLE` (a probe/recovery wrapper exists) or `DISABLE_ONLY` (with a
-documented reason). A registry-audit test fails if a new
-`PROBE_THEN_CREATE` policy is added without one of those.
+Every `PROBE_THEN_CREATE` entry must carry a documented `notes`
+rationale describing how that mutation recovers (a probe/recovery wrapper
+exists) or why inner retries stay disabled. The registry-audit test
+`test_retry_disabled_entries_are_intentional_and_documented` fails if a
+new `PROBE_THEN_CREATE` policy is added without one.
 
 The production registry has explicit coverage for every active
 `RPCMethod`, including read-only RPCs. Read-only entries are registered
@@ -467,9 +466,8 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | `ArtifactDownloadService` | [`_artifact_downloads.py`](../src/notebooklm/_artifact_downloads.py) | Asynchronous download coordinator for finished artifacts. |
 | `_artifact_formatters` | [`_artifact_formatters.py`](../src/notebooklm/_artifact_formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
 | `_artifact_listing` | [`_artifact_listing.py`](../src/notebooklm/_artifact_listing.py) | Listing and filtering operations for notebook artifacts. |
-| `_row_adapters*` | [`_row_adapters.py`](../src/notebooklm/_row_adapters.py), [`_row_adapters_artifacts.py`](../src/notebooklm/_row_adapters_artifacts.py), [`_row_adapters_notes.py`](../src/notebooklm/_row_adapters_notes.py), [`_row_adapters_sources.py`](../src/notebooklm/_row_adapters_sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `NoteRow`, `SourceRow`) behind named accessors so downloads, polling, and listing don't open-code positional indices. `_row_adapters.py` remains the compatibility re-export shim. Soft-degrade and strict-mode behavior is pinned in `tests/unit/test_row_adapters.py`. |
+| `_row_adapters*` | [`_row_adapters_artifacts.py`](../src/notebooklm/_row_adapters_artifacts.py), [`_row_adapters_notes.py`](../src/notebooklm/_row_adapters_notes.py), [`_row_adapters_sources.py`](../src/notebooklm/_row_adapters_sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `NoteRow`, `SourceRow`) behind named accessors so downloads, polling, and listing don't open-code positional indices. Soft-degrade and strict-mode behavior is pinned in `tests/unit/test_row_adapters.py`. |
 | `_research_task_parser` | [`_research_task_parser.py`](../src/notebooklm/_research_task_parser.py) | Parses deep-research task results from raw rows. Returns dict-shaped output today; a typed-model migration is not yet complete. |
-| `_mutating_operations` | [`_mutating_operations.py`](../src/notebooklm/_mutating_operations.py) | Audit inventory binding each `PROBE_THEN_CREATE` registry entry to a `RecoveryKind` (`EXECUTABLE` or `DISABLE_ONLY`) with a reason. Cross-checked by the registry-audit unit test so a new `PROBE_THEN_CREATE` policy cannot land without either a recovery wrapper or a documented disable-only justification. |
 | `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the dataclass and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `chat.py`, `notebooks.py`, `notes.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
 
 ## Authentication subpackage

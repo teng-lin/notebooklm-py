@@ -70,7 +70,7 @@ RPC Layer (rpc/)
    - `_session_lifecycle.py`: Open/close lifecycle (loop-affinity guard + keepalive task)
    - `_session_contracts.py`: Shared session Protocols consumed by feature APIs
    - `_middleware.py`, `_middleware_context.py`, `_middleware_chain.py`, `_middleware_chain_host.py`, `_middleware_*.py`: HTTP-shaped middleware envelope, context vocabulary, canonical chain builder/host, and chain links
-   - `_idempotency.py`, `_mutating_operations.py`: Mutating-RPC retry taxonomy and legacy probe-then-create recovery metadata
+   - `_idempotency.py`: Mutating-RPC retry taxonomy
    - `_atomic_io.py`: Crash-safe JSON writes and locked read-modify-write helpers shared by auth and CLI
 
 3. **Client Layer** (`src/notebooklm/client.py`, `_*.py`):
@@ -119,12 +119,10 @@ RPC Layer (rpc/)
 | `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_session_contracts.py` | Shared session Protocols consumed by sub-clients |
 | `_idempotency.py` | Mutating-RPC idempotency policy registry and probe-then-retry wrapper; ADR-005 is the taxonomy source |
-| `_mutating_operations.py` | Compatibility view over probe-then-create recovery metadata derived from `_idempotency.py` |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
 | `paths.py`, `migration.py` | Profile-aware path resolution and locked migration from the legacy flat layout |
 | `_types/`, `types.py` | Dataclass implementation package and public type/re-export facade |
-| `_row_adapters.py` | Compatibility re-export shim for row adapters |
 | `_row_adapters_artifacts.py` | `ArtifactRow` typed view over raw positional artifact RPC rows |
 | `_row_adapters_notes.py` | `NoteRow` typed view over raw positional note and mind-map RPC rows |
 | `_row_adapters_sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
@@ -199,8 +197,6 @@ src/notebooklm/
 ├── _kernel.py                   # Concrete Kernel transport core
 ├── _logging.py                  # Redaction + correlation logging internals
 ├── _loop_affinity.py            # Event-loop affinity guard helper
-├── _mutating_operations.py      # Legacy recovery metadata view over _idempotency
-├── _row_adapters.py             # Compatibility re-export shim for row adapters
 ├── _row_adapters_artifacts.py   # Artifact row adapter
 ├── _row_adapters_notes.py       # Note and mind-map row adapter
 ├── _row_adapters_sources.py     # Source row adapter
