@@ -39,12 +39,13 @@ class TestAgentShow:
         assert "Claude Skill" in result.output
 
     def test_agent_show_missing_content_returns_error(self, runner):
-        """Test error when bundled agent instructions are missing."""
+        """Test missing bundled instructions report on stderr only."""
         with patch.object(agent_module, "get_agent_source_content", return_value=None):
             result = runner.invoke(cli, ["agent", "show", "codex"])
 
         assert result.exit_code == 1
-        assert "not found" in result.output.lower()
+        assert result.stdout == ""
+        assert "not found" in result.stderr.lower()
 
 
 class TestAgentTemplates:
