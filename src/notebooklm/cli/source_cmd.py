@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import click
+from rich.markup import render as render_markup
 from rich.table import Table
 
 from ..client import NotebookLMClient
@@ -384,14 +385,22 @@ def _render_source_stale_result(
 
 def _handle_source_mutation_error(exc: SourceMutationError, *, json_output: bool) -> NoReturn:
     """Render a typed source-mutation error through the CLI error contract."""
+    extra = dict(exc.extra) if exc.extra else None
+    hint = None
     if exc.status_message:
-        emit_status(exc.status_message, json_output=json_output)
+        plain_status = render_markup(exc.status_message).plain
+        if json_output:
+            extra = extra or {}
+            extra["status_message"] = plain_status
+        else:
+            hint = plain_status
     _output_error(
         exc.message,
         code=exc.code,
         json_output=json_output,
         exit_code=1,
-        extra=exc.extra,
+        extra=extra,
+        hint=hint,
     )
     raise AssertionError("unreachable")  # pragma: no cover
 
