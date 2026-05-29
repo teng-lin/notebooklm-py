@@ -43,6 +43,19 @@ _REFRESH_ATTEMPTED_ENV = "_NOTEBOOKLM_REFRESH_ATTEMPTED"
 NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV = "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE"
 
 
+def _storage_state_lock_path(storage_path: Path) -> Path:
+    """Canonical sibling flock file shared by every ``storage_state.json`` writer.
+
+    ``save_cookies_to_storage`` (cookie writes) and ``write_account_metadata`` /
+    ``_clear_in_band_account`` (account-metadata writes) all mutate the same
+    ``storage_state.json``, so they MUST serialize on the *same* lock file or a
+    read-modify-write from one loses the other's update. Deriving the dotted
+    ``.storage_state.json.lock`` path here keeps that contract enforced by
+    construction instead of by hand-synced string literals in each caller.
+    """
+    return storage_path.with_name(f".{storage_path.name}.lock")
+
+
 def _rotation_lock_path(storage_path: Path | None) -> Path | None:
     """Sibling sentinel used by ``_poke_session`` for cross-process coordination.
 

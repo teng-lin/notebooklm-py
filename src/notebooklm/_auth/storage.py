@@ -19,6 +19,7 @@ import httpx
 from .._atomic_io import atomic_write_json
 from . import cookie_policy as _cookie_policy
 from . import cookies as _auth_cookies
+from .paths import _storage_state_lock_path
 
 logger = logging.getLogger("notebooklm.auth")
 
@@ -377,7 +378,7 @@ def save_cookies_to_storage(
             stacklevel=2,
         )
 
-    lock_path = path.with_name(f".{path.name}.lock")
+    lock_path = _storage_state_lock_path(path)
     with _file_lock_exclusive(lock_path):
         if not path.exists():
             logger.debug("Skipping cookie sync: Storage file not found at %s", path)
