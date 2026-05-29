@@ -224,6 +224,8 @@ class NoteService:
         notebook_id: str,
         title: str = "New Note",
         content: str = "",
+        *,
+        operation_variant: str = "plain",
     ) -> Note:
         """Create a note row and finalize its content + title.
 
@@ -248,7 +250,7 @@ class NoteService:
             RPCMethod.CREATE_NOTE,
             params,
             source_path=f"/notebook/{notebook_id}",
-            operation_variant="plain",
+            operation_variant=operation_variant,
         )
 
         note_id: str | None = None

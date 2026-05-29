@@ -206,6 +206,22 @@ class TestCrud:
         assert mock_session.rpc_executor.rpc_call.await_count == 1
 
     @pytest.mark.asyncio
+    async def test_create_note_accepts_operation_variant_kwarg(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
+        mock_session.rpc_executor.rpc_call.side_effect = [[["note_123"]], None]
+
+        await service.create_note(
+            "nb_123",
+            title="T",
+            content="body",
+            operation_variant="plain",
+        )
+
+        create_call = mock_session.rpc_executor.rpc_call.await_args_list[0]
+        assert create_call.kwargs["operation_variant"] == "plain"
+
+    @pytest.mark.asyncio
     async def test_update_note_sends_existing_payload(
         self, service: NoteService, mock_session: FakeSession
     ) -> None:
