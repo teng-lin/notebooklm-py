@@ -21,6 +21,7 @@ PUBLIC_TYPING_MODULES = {
     "notebooklm.artifacts",
     "notebooklm.auth",
     "notebooklm.client",
+    "notebooklm.config",
     "notebooklm.exceptions",
     "notebooklm.io",
     "notebooklm.log",
