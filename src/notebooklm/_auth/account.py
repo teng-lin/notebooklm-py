@@ -395,8 +395,12 @@ def write_account_metadata(storage_path: Path, *, authuser: int, email: str | No
 
     # Acquire a sibling-lock so concurrent callers serialize correctly during
     # the migration window. ``filelock`` reuses the lock file across
-    # invocations; the file is zero-byte and cheap to leave on disk.
-    lock_path = storage_path.with_suffix(storage_path.suffix + ".lock")
+    # invocations; the file is zero-byte and cheap to leave on disk. The dotted
+    # ``.storage_state.json.lock`` name must match ``save_cookies_to_storage``
+    # in ``_auth/storage.py`` so every ``storage_state.json`` mutator serializes
+    # on the *same* lock file (otherwise cookie-save and account-metadata writes
+    # race on different flock files and lose updates).
+    lock_path = storage_path.with_name(f".{storage_path.name}.lock")
     storage_path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(lock_path), timeout=10.0):
         # Read-modify-write under the lock to avoid losing concurrent updates.
@@ -460,7 +464,10 @@ def _clear_in_band_account(storage_path: Path) -> None:
     """
     if not storage_path.exists():
         return
-    lock_path = storage_path.with_suffix(storage_path.suffix + ".lock")
+    # Match the dotted ``.storage_state.json.lock`` name used by
+    # ``write_account_metadata`` and ``save_cookies_to_storage`` so every
+    # ``storage_state.json`` mutator serializes on the same lock file.
+    lock_path = storage_path.with_name(f".{storage_path.name}.lock")
     storage_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with FileLock(str(lock_path), timeout=10.0):

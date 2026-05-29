@@ -334,3 +334,88 @@ def test_write_preserves_cookies_and_origins(tmp_path: Path) -> None:
     payload = _read_storage_state(storage_path)
     assert payload["cookies"] == cookies
     assert payload["origins"] == origins
+
+
+def _capture_account_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    """Record the lock path account.py passes to ``filelock.FileLock``.
+
+    The captured contextmanager is a no-op so the surrounding read-modify-write
+    still completes against the real file.
+    """
+    import contextlib
+
+    from notebooklm._auth import account as account_mod
+
+    seen: dict[str, Path] = {}
+
+    @contextlib.contextmanager
+    def _fake_filelock(path: str, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+        seen["path"] = Path(path)
+        yield
+
+    monkeypatch.setattr(account_mod, "FileLock", _fake_filelock)
+    return seen
+
+
+def _capture_storage_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    """Record the lock path storage.py passes to ``_file_lock_exclusive``."""
+    import contextlib
+
+    from notebooklm._auth import storage as storage_mod
+
+    seen: dict[str, Path] = {}
+
+    @contextlib.contextmanager
+    def _fake_exclusive(lock_path: Path):  # type: ignore[no-untyped-def]
+        seen["path"] = Path(lock_path)
+        yield
+
+    monkeypatch.setattr(storage_mod, "_file_lock_exclusive", _fake_exclusive)
+    return seen
+
+
+def test_storage_state_mutators_share_one_lock_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All ``storage_state.json`` mutators must serialize on the SAME flock file.
+
+    Tier-0 data-loss regression: ``save_cookies_to_storage`` (storage.py) used
+    the dotted ``.storage_state.json.lock`` sibling while ``account.py``'s
+    metadata writers used the non-dotted ``storage_state.json.lock`` — a
+    DIFFERENT file. Cookie-save and account-metadata writes therefore locked on
+    distinct files and could lose updates under concurrency. Assert both paths
+    derive an identical lock filename for the same ``storage_state.json``.
+    """
+    import httpx
+
+    from notebooklm._auth.storage import save_cookies_to_storage
+
+    storage_path = tmp_path / "storage_state.json"
+    _write_storage_state(storage_path, {"cookies": [], "origins": []})
+
+    # account.py: write_account_metadata
+    account_seen = _capture_account_lock_path(monkeypatch)
+    write_account_metadata(storage_path, authuser=1, email="alice@example.com")
+    account_write_lock = account_seen["path"]
+
+    # account.py: _clear_in_band_account (via clear_account_metadata)
+    account_seen.clear()
+    clear_account_metadata(storage_path)
+    account_clear_lock = account_seen["path"]
+
+    # storage.py: save_cookies_to_storage (the canonical cookie-save writer)
+    storage_seen = _capture_storage_lock_path(monkeypatch)
+    save_cookies_to_storage(
+        httpx.Cookies(),
+        path=storage_path,
+        original_snapshot={},
+    )
+    storage_cookie_lock = storage_seen["path"]
+
+    # Canonical name is the dotted, hidden sibling (storage.py contract).
+    expected = storage_path.with_name(f".{storage_path.name}.lock")
+    assert storage_cookie_lock == expected
+    assert account_write_lock == expected
+    assert account_clear_lock == expected
+    # And, transitively, all three agree on the exact same file on disk.
+    assert account_write_lock == account_clear_lock == storage_cookie_lock
