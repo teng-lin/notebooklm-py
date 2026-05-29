@@ -863,8 +863,12 @@ def test_all_json_commands_have_sweep_entry() -> None:
     # Silent-waiver lint: every waiver entry must carry a non-empty rationale.
     empty_success_rationale = sorted(p for p, r in JSON_SUCCESS_WAIVED.items() if not r.strip())
     empty_error_rationale = sorted(p for p, r in JSON_ERROR_WAIVED.items() if not r.strip())
-    redundant_success_waivers = sorted(p for p in JSON_SUCCESS_WAIVED if p in success_paths)
-    redundant_error_waivers = sorted(p for p in JSON_ERROR_WAIVED if p in error_paths)
+    redundant_success_waivers = sorted(
+        cmd_path for cmd_path in JSON_SUCCESS_WAIVED if cmd_path in success_paths
+    )
+    redundant_error_waivers = sorted(
+        cmd_path for cmd_path in JSON_ERROR_WAIVED if cmd_path in error_paths
+    )
 
     report = _build_coverage_report(discovered, success_paths, error_paths)
     # Emit to the captured stdout so ``pytest -s`` surfaces the line; pytest
