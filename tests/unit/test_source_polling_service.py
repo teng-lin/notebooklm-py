@@ -85,6 +85,42 @@ async def test_wait_until_ready_checks_timeout_after_get(
 
 
 @pytest.mark.asyncio
+async def test_wait_until_ready_clamps_sleep_to_remaining_timeout(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    processing = Source(id="src_1", status=SourceStatus.PROCESSING)
+    get_source = AsyncMock(return_value=processing)
+    sleeps: list[float] = []
+    clock = 0.0
+
+    def monotonic() -> float:
+        return clock
+
+    async def sleep(seconds: float) -> None:
+        nonlocal clock
+        sleeps.append(seconds)
+        clock += seconds
+
+    with pytest.raises(SourceTimeoutError) as exc_info:
+        await poller.wait_until_ready(
+            "nb_1",
+            "src_1",
+            timeout=1.0,
+            initial_interval=10.0,
+            get_source=get_source,
+            sleep=sleep,
+            monotonic=monotonic,
+            logger=logger,
+        )
+
+    assert exc_info.value.last_status == SourceStatus.PROCESSING
+    assert get_source.await_count == 1
+    assert sleeps == [1.0]
+    assert clock == 1.0
+
+
+@pytest.mark.asyncio
 async def test_wait_until_ready_raises_source_not_found_when_get_returns_none(
     poller: SourcePoller,
     logger: logging.Logger,
@@ -245,6 +281,41 @@ async def test_wait_until_registered_raises_timeout(
 
     assert exc_info.value.last_status is None
     sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wait_until_registered_clamps_sleep_to_remaining_timeout(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    get_source = AsyncMock(return_value=None)
+    sleeps: list[float] = []
+    clock = 0.0
+
+    def monotonic() -> float:
+        return clock
+
+    async def sleep(seconds: float) -> None:
+        nonlocal clock
+        sleeps.append(seconds)
+        clock += seconds
+
+    with pytest.raises(SourceTimeoutError) as exc_info:
+        await poller.wait_until_registered(
+            "nb_1",
+            "src_1",
+            timeout=1.0,
+            initial_interval=10.0,
+            get_source=get_source,
+            sleep=sleep,
+            monotonic=monotonic,
+            logger=logger,
+        )
+
+    assert exc_info.value.last_status is None
+    assert get_source.await_count == 1
+    assert sleeps == [1.0]
+    assert clock == 1.0
 
 
 @pytest.mark.asyncio

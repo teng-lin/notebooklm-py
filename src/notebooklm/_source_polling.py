@@ -8,6 +8,7 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
+from ._deadline import RuntimeDeadline
 from .types import Source, SourceNotFoundError, SourceProcessingError, SourceTimeoutError
 
 # Source type codes where status=3 (ERROR) is transient rather than terminal.
@@ -47,7 +48,7 @@ class SourcePoller:
         logger: logging.Logger,
     ) -> Source:
         """Wait for a source to become ready."""
-        start = monotonic()
+        deadline = RuntimeDeadline.start(timeout, monotonic=monotonic)
         interval = initial_interval
         last_status: int | None = None
         transient_errors = (
@@ -56,8 +57,7 @@ class SourcePoller:
 
         while True:
             # Check timeout before each poll.
-            elapsed = monotonic() - start
-            if elapsed >= timeout:
+            if deadline.expired():
                 raise SourceTimeoutError(source_id, timeout, last_status)
 
             source = await get_source(notebook_id, source_id)
@@ -80,11 +80,10 @@ class SourcePoller:
                 )
 
             # Don't sleep longer than remaining time.
-            remaining = timeout - (monotonic() - start)
-            if remaining <= 0:
+            if deadline.expired():
                 raise SourceTimeoutError(source_id, timeout, last_status)
 
-            sleep_time = min(interval, remaining)
+            sleep_time = deadline.clamp_sleep(interval)
             await sleep(sleep_time)
             interval = min(interval * backoff_factor, max_interval)
 
@@ -104,7 +103,7 @@ class SourcePoller:
         logger: logging.Logger,
     ) -> Source:
         """Wait for a source to be registered server-side."""
-        start = monotonic()
+        deadline = RuntimeDeadline.start(timeout, monotonic=monotonic)
         interval = initial_interval
         last_status: int | None = None
         transient_errors = (
@@ -112,8 +111,7 @@ class SourcePoller:
         )
 
         while True:
-            elapsed = monotonic() - start
-            if elapsed >= timeout:
+            if deadline.expired():
                 raise SourceTimeoutError(source_id, timeout, last_status)
 
             source = await get_source(notebook_id, source_id)
@@ -135,11 +133,10 @@ class SourcePoller:
                     # means the source is registered server-side.
                     return source
 
-            remaining = timeout - (monotonic() - start)
-            if remaining <= 0:
+            if deadline.expired():
                 raise SourceTimeoutError(source_id, timeout, last_status)
 
-            sleep_time = min(interval, remaining)
+            sleep_time = deadline.clamp_sleep(interval)
             await sleep(sleep_time)
             interval = min(interval * backoff_factor, max_interval)
 

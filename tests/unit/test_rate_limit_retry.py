@@ -72,6 +72,39 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
 
 
 @pytest.mark.asyncio
+async def test_rate_limit_retry_after_larger_than_client_timeout_does_not_sleep(auth_tokens):
+    """The middleware uses the client timeout as the aggregate retry budget."""
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_client.post.return_value = _build_429("300")
+
+    core = build_client_shell_for_tests(auth_tokens, timeout=0.25, rate_limit_max_retries=2)
+    install_http_client_for_test(core._collaborators.kernel, mock_client)
+    install_post_as_stream(None, mock_client, mock_client.post)
+
+    sleeps: list[float] = []
+    clock = 0.0
+
+    def monotonic() -> float:
+        return clock
+
+    async def _record_sleep(seconds: float) -> None:
+        nonlocal clock
+        sleeps.append(seconds)
+        clock += seconds
+
+    with (
+        patch("notebooklm._deadline.time.monotonic", side_effect=monotonic),
+        patch("asyncio.sleep", side_effect=_record_sleep),
+        pytest.raises(RateLimitError),
+    ):
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+
+    assert mock_client.post.call_count == 1
+    assert sleeps == []
+    assert clock == 0.0
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_retry_exhausted_with_budget(auth_tokens):
     """Budget=2 means: initial + 2 retries = 3 total posts before RateLimitError."""
     mock_client = AsyncMock(spec=httpx.AsyncClient)

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from notebooklm._deadline import RuntimeDeadline
 from notebooklm._transport_errors import MAX_RETRY_AFTER_SECONDS, parse_retry_after
 
 
@@ -35,3 +36,24 @@ def test_parse_retry_after_invalid():
     assert parse_retry_after("   ") is None
     # Partially valid but not what we want
     assert parse_retry_after("2026-05-13") is None
+
+
+def test_runtime_deadline_pins_expired_and_exceeded_boundaries():
+    clock = 10.0
+
+    def monotonic() -> float:
+        return clock
+
+    deadline = RuntimeDeadline.start(1.0, monotonic=monotonic)
+    assert deadline.started_at == 10.0
+    assert deadline.remaining() == 1.0
+    assert deadline.clamp_sleep(5.0) == 1.0
+
+    clock = 11.0
+    assert deadline.remaining() == 0.0
+    assert deadline.expired() is True
+    assert deadline.exceeded() is False
+    assert deadline.timeout_message("retry") == "retry timed out after 1.0s"
+
+    clock = 11.01
+    assert deadline.exceeded() is True

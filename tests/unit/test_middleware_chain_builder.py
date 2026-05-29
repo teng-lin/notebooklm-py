@@ -26,6 +26,7 @@ def _builder_kwargs():
         "rpc_semaphore_factory": lambda: nullcontext(),
         "rate_limit_max_retries_provider": lambda: 3,
         "server_error_max_retries_provider": lambda: 3,
+        "retry_timeout_provider": lambda: 30.0,
         "refresh_retry_delay_provider": lambda: 0.0,
         "refresh_callable": lambda: None,
         "auth_snapshot_provider": _snapshot,

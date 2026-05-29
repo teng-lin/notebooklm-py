@@ -25,10 +25,12 @@ Behavior preservation (vs. pre-PR-12.7):
 - **Same backoff timing** — :func:`_backoff.compute_backoff_delay` is
   invoked with the same ``base=1.0`` / ``cap=30.0`` / ``jitter_ratio=0.2``
   parameters; ``Retry-After`` is honored before falling back to
-  exponential backoff.
-- **Same log lines** — "rate-limited (HTTP 429); sleeping (…); retrying
-  (n/N)" and "server/network error (…); backing off …; retrying (n/N)"
-  match the pre-PR-12.7 message shape so log-grep alerts keep matching.
+  exponential backoff. Sleeps are clamped by the existing client timeout so
+  a retry cannot wait past the logical call's aggregate budget.
+- **Same base log shape** — "rate-limited (HTTP 429); sleeping (…);
+  retrying (n/N)" and "server/network error (…); backing off …; retrying
+  (n/N)" still prefix-match the pre-PR-12.7 shape. Deadline exhaustion emits
+  an additional timeout warning when no retry budget remains.
 - **Same metrics** — ``rpc_rate_limit_retries`` and
   ``rpc_server_error_retries`` are incremented per retry attempt, same as
   the legacy code.
@@ -51,10 +53,12 @@ PR sequence.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from ._backoff import compute_backoff_delay
+from ._deadline import Monotonic, RuntimeDeadline
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._middleware_context import RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, RPC_CONTEXT_LOG_LABEL
 from ._session_config import CORE_LOGGER_NAME
@@ -86,6 +90,9 @@ class RetryMiddleware:
     - ``rate_limit_max_retries`` / ``server_error_max_retries``: the same
       budgets exposed by ``Session`` via ``_rate_limit_max_retries`` /
       ``_server_error_max_retries``.
+    - ``retry_timeout``: aggregate retry deadline in seconds. Production wires
+      this to the existing client HTTP timeout so retry sleeps cannot exceed
+      the logical call's timeout budget.
     - ``sleep``: the awaitable sleep function. Defaults to
       :func:`asyncio.sleep`; tests inject a stub to make backoff
       deterministic and to assert on sleep durations.
@@ -104,7 +111,9 @@ class RetryMiddleware:
         *,
         rate_limit_max_retries: int | Callable[[], int],
         server_error_max_retries: int | Callable[[], int],
+        retry_timeout: float | Callable[[], float | None] | None = None,
         sleep: Callable[[float], Awaitable[object]] | None = None,
+        monotonic: Monotonic | None = None,
         logger: logging.Logger | None = None,
         metrics: ClientMetrics | None = None,
     ) -> None:
@@ -123,7 +132,9 @@ class RetryMiddleware:
         # Late-binding rationale lives on ``_session_helpers.resolve_sleep``;
         # see that helper for why we resolve at call time instead of capturing
         # the callable at construction.
+        self._retry_timeout = retry_timeout
         self._sleep = sleep
+        self._monotonic = monotonic
         self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
         self._metrics = metrics
 
@@ -134,6 +145,15 @@ class RetryMiddleware:
     def _resolve_server_error_max(self) -> int:
         v = self._server_error_max
         return v() if callable(v) else v
+
+    def _start_retry_deadline(self) -> RuntimeDeadline | None:
+        v = self._retry_timeout
+        if v is None:
+            return None
+        timeout = v() if callable(v) else v
+        if timeout is None or not math.isfinite(float(timeout)):
+            return None
+        return RuntimeDeadline.start(float(timeout), monotonic=self._monotonic)
 
     async def __call__(
         self,
@@ -158,6 +178,7 @@ class RetryMiddleware:
 
         rate_limit_retries = 0
         server_error_retries = 0
+        retry_deadline = self._start_retry_deadline()
 
         while True:
             try:
@@ -171,6 +192,7 @@ class RetryMiddleware:
                     attempt=rate_limit_retries,
                     log_label=log_label,
                     rate_limit_max=rate_limit_max,
+                    retry_deadline=retry_deadline,
                 )
                 rate_limit_retries += 1
                 if self._metrics is not None:
@@ -185,6 +207,7 @@ class RetryMiddleware:
                     attempt=server_error_retries,
                     log_label=log_label,
                     server_error_max=server_error_max,
+                    retry_deadline=retry_deadline,
                 )
                 server_error_retries += 1
                 if self._metrics is not None:
@@ -198,6 +221,7 @@ class RetryMiddleware:
         attempt: int,
         log_label: str,
         rate_limit_max: int,
+        retry_deadline: RuntimeDeadline | None,
     ) -> None:
         """Honor ``Retry-After`` if present; otherwise exponential backoff.
 
@@ -224,6 +248,13 @@ class RetryMiddleware:
             sleep_seconds = max(_BACKOFF_MIN_SECONDS, backoff)
             sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
 
+        actual_sleep = self._resolve_retry_sleep(
+            retry_deadline=retry_deadline,
+            requested_sleep=sleep_seconds,
+            log_label=log_label,
+            exc=exc,
+        )
+
         self._logger.warning(
             "%s rate-limited (HTTP 429); sleeping (%s) then retrying (%d/%d)",
             log_label,
@@ -231,7 +262,12 @@ class RetryMiddleware:
             attempt + 1,
             rate_limit_max,
         )
-        await resolve_sleep(self._sleep)(sleep_seconds)
+        await resolve_sleep(self._sleep)(actual_sleep)
+        self._raise_if_retry_deadline_expired(
+            retry_deadline=retry_deadline,
+            log_label=log_label,
+            exc=exc,
+        )
 
     async def _wait_for_server_error(
         self,
@@ -240,6 +276,7 @@ class RetryMiddleware:
         attempt: int,
         log_label: str,
         server_error_max: int,
+        retry_deadline: RuntimeDeadline | None,
     ) -> None:
         """Exponential backoff with the same parameters as the legacy loop."""
         backoff = max(
@@ -250,6 +287,12 @@ class RetryMiddleware:
                 cap=_BACKOFF_CAP_SECONDS,
                 jitter_ratio=_BACKOFF_JITTER_RATIO,
             ),
+        )
+        actual_backoff = self._resolve_retry_sleep(
+            retry_deadline=retry_deadline,
+            requested_sleep=backoff,
+            log_label=log_label,
+            exc=exc,
         )
         # ``status_code`` is set on 5xx; the network-error branch sets
         # ``response`` / ``status_code`` to ``None``, so fall back to the
@@ -263,11 +306,43 @@ class RetryMiddleware:
             "%s server/network error (%s); backing off %.1fs then retrying (%d/%d)",
             log_label,
             status_label,
-            backoff,
+            actual_backoff,
             attempt + 1,
             server_error_max,
         )
-        await resolve_sleep(self._sleep)(backoff)
+        await resolve_sleep(self._sleep)(actual_backoff)
+        self._raise_if_retry_deadline_expired(
+            retry_deadline=retry_deadline,
+            log_label=log_label,
+            exc=exc,
+        )
+
+    def _resolve_retry_sleep(
+        self,
+        *,
+        retry_deadline: RuntimeDeadline | None,
+        requested_sleep: float,
+        log_label: str,
+        exc: TransportRateLimited | TransportServerError,
+    ) -> float:
+        if retry_deadline is None:
+            return requested_sleep
+        remaining = retry_deadline.remaining()
+        if remaining <= 0.0 or requested_sleep >= remaining:
+            self._logger.warning("%s", retry_deadline.timeout_message(f"{log_label} retry"))
+            raise exc
+        return retry_deadline.clamp_sleep(requested_sleep)
+
+    def _raise_if_retry_deadline_expired(
+        self,
+        *,
+        retry_deadline: RuntimeDeadline | None,
+        log_label: str,
+        exc: TransportRateLimited | TransportServerError,
+    ) -> None:
+        if retry_deadline is not None and retry_deadline.expired():
+            self._logger.warning("%s", retry_deadline.timeout_message(f"{log_label} retry"))
+            raise exc
 
 
 __all__ = ["RetryMiddleware"]

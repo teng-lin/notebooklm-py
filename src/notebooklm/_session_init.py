@@ -486,6 +486,7 @@ def wire_middleware_chain(
         rpc_semaphore_factory=rpc_semaphore_factory,
         rate_limit_max_retries_provider=lambda: chain_host._rate_limit_max_retries,
         server_error_max_retries_provider=lambda: chain_host._server_error_max_retries,
+        retry_timeout_provider=lambda: collaborators.lifecycle._timeout,
         refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
         refresh_callable=chain_host.await_refresh,
         auth_snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth=auth),

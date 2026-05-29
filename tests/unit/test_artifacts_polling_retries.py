@@ -7,6 +7,7 @@ import pytest
 from notebooklm._artifact_polling import ArtifactPollingService
 from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
 from notebooklm._polling_registry import PollRegistry
+from notebooklm.exceptions import ArtifactPendingTimeoutError
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
 
@@ -142,6 +143,74 @@ async def test_wait_for_completion_retry_success(api):
         # Backoff: 2^1=2, 2^2=4
         mock_sleep.assert_any_call(2.0)
         mock_sleep.assert_any_call(4.0)
+
+
+@pytest.mark.asyncio
+async def test_polling_service_clamps_transient_retry_sleep_to_remaining_timeout() -> None:
+    provider = _FakeTransportProvider()
+    clock = 0.0
+    sleeps: list[float] = []
+
+    def monotonic() -> float:
+        return clock
+
+    async def sleep(seconds: float) -> None:
+        nonlocal clock
+        sleeps.append(seconds)
+        clock += seconds
+
+    service = ArtifactPollingService(
+        loop_guard=provider,
+        op_scope=provider,
+        poll_registry=provider.poll_registry,
+        sleep=sleep,
+        monotonic=monotonic,
+    )
+    poll_status = AsyncMock(side_effect=NetworkError("transient net"))
+
+    with pytest.raises(NetworkError, match="transient net"):
+        await service.wait_for_completion("nb1", "task1", timeout=1.0, poll_status=poll_status)
+
+    assert poll_status.await_count == 1
+    assert sleeps == [1.0]
+    assert clock == 1.0
+
+
+@pytest.mark.asyncio
+async def test_polling_service_clamps_poll_interval_to_remaining_timeout() -> None:
+    provider = _FakeTransportProvider()
+    clock = 0.0
+    sleeps: list[float] = []
+
+    def monotonic() -> float:
+        return clock
+
+    async def sleep(seconds: float) -> None:
+        nonlocal clock
+        sleeps.append(seconds)
+        clock += seconds
+
+    service = ArtifactPollingService(
+        loop_guard=provider,
+        op_scope=provider,
+        poll_registry=provider.poll_registry,
+        sleep=sleep,
+        monotonic=monotonic,
+    )
+    poll_status = AsyncMock(return_value=GenerationStatus(task_id="task1", status="pending"))
+
+    with pytest.raises(ArtifactPendingTimeoutError):
+        await service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=10.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
+
+    assert poll_status.await_count == 1
+    assert sleeps == [1.0]
+    assert clock == 1.0
 
 
 @pytest.mark.asyncio

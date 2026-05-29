@@ -72,6 +72,7 @@ class MiddlewareChainBuilder:
         rpc_semaphore_factory: Callable[[], AbstractAsyncContextManager[Any]],
         rate_limit_max_retries_provider: Callable[[], int],
         server_error_max_retries_provider: Callable[[], int],
+        retry_timeout_provider: Callable[[], float | None],
         refresh_retry_delay_provider: Callable[[], float],
         refresh_callable: Callable[..., Awaitable[Any]],
         auth_snapshot_provider: Callable[[], Awaitable[Any]],
@@ -88,6 +89,7 @@ class MiddlewareChainBuilder:
         self._rpc_semaphore_factory = rpc_semaphore_factory
         self._rate_limit_max_retries_provider = rate_limit_max_retries_provider
         self._server_error_max_retries_provider = server_error_max_retries_provider
+        self._retry_timeout_provider = retry_timeout_provider
         self._refresh_retry_delay_provider = refresh_retry_delay_provider
         self._refresh_callable = refresh_callable
         self._auth_snapshot_provider = auth_snapshot_provider
@@ -118,6 +120,7 @@ class MiddlewareChainBuilder:
             RetryMiddleware(
                 rate_limit_max_retries=self._rate_limit_max_retries_provider,
                 server_error_max_retries=self._server_error_max_retries_provider,
+                retry_timeout=self._retry_timeout_provider,
                 metrics=self._metrics,
             ),
             # AuthRefresh callbacks: ``refresh_callable`` invokes
