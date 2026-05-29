@@ -43,10 +43,10 @@ def test_public_typing_modules_have_strict_mypy_override() -> None:
     for override in _mypy_overrides():
         modules = override.get("module")
         if isinstance(modules, list) and PUBLIC_TYPING_MODULES.issubset(set(modules)):
-            assert override["disallow_untyped_defs"] is True
-            assert override["disallow_any_generics"] is True
-            assert override["warn_return_any"] is True
-            assert override["strict_optional"] is True
+            assert override.get("disallow_untyped_defs") is True
+            assert override.get("disallow_any_generics") is True
+            assert override.get("warn_return_any") is True
+            assert override.get("strict_optional") is True
             return
 
     raise AssertionError("Public typing modules are missing their strict mypy override.")
