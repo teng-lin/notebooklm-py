@@ -33,6 +33,20 @@ def _client_resolving_source(source_id: str = "src_1", title: str = "Source One"
     return client
 
 
+def _client_with_fulltext(content: str, *, type_code: int | None = None):
+    client = _client_resolving_source()
+    payload = {
+        "source_id": "src_1",
+        "title": "Source One",
+        "content": content,
+        "char_count": len(content),
+    }
+    if type_code is not None:
+        payload["_type_code"] = type_code
+    client.sources.get_fulltext = AsyncMock(return_value=SourceFulltext(**payload))
+    return client
+
+
 @pytest.mark.parametrize("json_output", [False, True])
 def test_source_get_not_found_renderer_exits_one(
     runner: CliRunner,
@@ -130,6 +144,227 @@ def test_source_fulltext_json_output_file_writes_content_and_emits_metadata(
         "title": "Source One",
         "kind": "web_page",
     }
+
+
+def test_source_fulltext_output_file_auto_renames_existing_file(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source [draft].txt"
+    renamed_file = tmp_path / "source [draft] (2).txt"
+    output_file.write_text("existing content", encoding="utf-8")
+    content = "replacement content"
+    client = _client_with_fulltext(content)
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            ["source", "fulltext", "src_1", "-n", "nb_123", "-o", str(output_file)],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert output_file.read_text(encoding="utf-8") == "existing content"
+    assert renamed_file.read_text(encoding="utf-8") == content
+    assert f"Saved {len(content)} chars to" in result.output
+    assert str(renamed_file) in result.output
+
+
+def test_source_fulltext_json_output_file_auto_renames_and_emits_actual_path(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source.txt"
+    renamed_file = tmp_path / "source (2).txt"
+    output_file.write_text("existing content", encoding="utf-8")
+    content = "replacement content"
+    client = _client_with_fulltext(content, type_code=5)
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "--json",
+                "-o",
+                str(output_file),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert output_file.read_text(encoding="utf-8") == "existing content"
+    assert renamed_file.read_text(encoding="utf-8") == content
+    payload = json.loads(result.output)
+    assert payload["path"] == str(renamed_file)
+    assert payload["bytes"] == len(content.encode("utf-8"))
+
+
+def test_source_fulltext_output_file_no_clobber_rejects_existing_file(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source.txt"
+    output_file.write_text("existing content", encoding="utf-8")
+    client = _client_with_fulltext("replacement content")
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "-o",
+                str(output_file),
+                "--no-clobber",
+            ],
+        )
+
+    assert result.exit_code == 1, result.output
+    assert output_file.read_text(encoding="utf-8") == "existing content"
+    client.sources.get_fulltext.assert_not_awaited()
+    assert f"File exists: {output_file}" in result.output
+    assert "Use --force to overwrite" in result.output
+
+
+def test_source_fulltext_json_output_file_no_clobber_rejects_existing_file(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source.txt"
+    output_file.write_text("existing content", encoding="utf-8")
+    client = _client_with_fulltext("replacement content")
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "--json",
+                "-o",
+                str(output_file),
+                "--no-clobber",
+            ],
+        )
+
+    assert result.exit_code == 1, result.output
+    assert output_file.read_text(encoding="utf-8") == "existing content"
+    client.sources.get_fulltext.assert_not_awaited()
+    payload = json.loads(result.output)
+    assert payload == {
+        "error": True,
+        "code": "FILE_EXISTS",
+        "message": f"File exists: {output_file}",
+        "path": str(output_file),
+        "suggestion": "Use --force to overwrite or choose a different path",
+    }
+
+
+def test_source_fulltext_output_file_force_overwrites_existing_file(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source.txt"
+    output_file.write_text("existing content", encoding="utf-8")
+    content = "replacement content"
+    client = _client_with_fulltext(content)
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "-o",
+                str(output_file),
+                "--force",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert output_file.read_text(encoding="utf-8") == content
+    assert not (tmp_path / "source (2).txt").exists()
+
+
+def test_source_fulltext_output_rejects_force_and_no_clobber_json(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source.txt"
+    client = _client_with_fulltext("replacement content")
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "--json",
+                "-o",
+                str(output_file),
+                "--force",
+                "--no-clobber",
+            ],
+        )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload == {
+        "error": True,
+        "code": "VALIDATION_ERROR",
+        "message": "Cannot specify both --force and --no-clobber",
+    }
+
+
+def test_source_fulltext_output_rejects_force_and_no_clobber_text(
+    runner: CliRunner,
+    mock_auth,
+    tmp_path,
+) -> None:
+    output_file = tmp_path / "source.txt"
+    client = _client_with_fulltext("replacement content")
+
+    with _patched_source_client(client):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "fulltext",
+                "src_1",
+                "-n",
+                "nb_123",
+                "-o",
+                str(output_file),
+                "--force",
+                "--no-clobber",
+            ],
+        )
+
+    assert result.exit_code == 2, result.output
+    assert "Cannot specify both --force and --no-clobber" in result.output
+    assert not result.output.strip().startswith("{")
+    client.sources.get_fulltext.assert_not_awaited()
 
 
 def test_source_guide_empty_text_renderer_uses_empty_state(

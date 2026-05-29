@@ -8872,6 +8872,42 @@
           }
         },
         {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Fail if the output file exists",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_clobber",
+          "opts": [
+            "--no-clobber"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Overwrite an existing output file",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "force",
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
           "default": "text",
           "envvar": null,
           "has_custom_shell_complete": false,

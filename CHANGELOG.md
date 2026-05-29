@@ -83,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **HTML file uploads now fail client-side with a clear validation error** ([#1127](https://github.com/teng-lin/notebooklm-py/issues/1127)). `notebooklm source add ./article.html` and `client.sources.add_file(..., "article.html")` previously reached NotebookLM's upload endpoint as `text/html` and surfaced a cryptic upstream `400 Bad Request`. The upload pipeline now rejects `.html` / `.htm` / `.xhtml` / `.xht` / HTML MIME uploads before registering a source, with guidance to convert the page to `.txt`, `.md`, or `.pdf`.
+- **`notebooklm source fulltext -o FILE` no longer silently overwrites existing files** ([#1173](https://github.com/teng-lin/notebooklm-py/issues/1173)). Existing output paths now auto-rename by default (`FILE` -> `FILE (2)`, etc.); pass `--force` to overwrite intentionally or `--no-clobber` to fail when the path already exists.
 
 ### Removed
 

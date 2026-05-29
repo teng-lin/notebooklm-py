@@ -185,18 +185,68 @@ def _render_source_get_result(result: SourceGetResult, *, json_output: bool) -> 
         console.print(f"[bold]Created:[/bold] {src.created_at.strftime('%Y-%m-%d %H:%M')}")
 
 
+def _available_output_path(path: Path) -> Path:
+    """Return an available sibling path using the download command's suffix style."""
+    counter = 2
+    base_name = path.stem
+    parent = path.parent
+    ext = path.suffix
+    while path.exists():
+        path = parent / f"{base_name} ({counter}){ext}"
+        counter += 1
+    return path
+
+
+def _emit_source_fulltext_flag_conflict(message: str, *, json_output: bool) -> NoReturn:
+    """Surface a ``source fulltext`` flag conflict via the active CLI error contract."""
+    if json_output:
+        _output_error(message, "VALIDATION_ERROR", json_output, 1)
+        raise AssertionError("unreachable")  # pragma: no cover
+    raise click.UsageError(message)
+
+
+def _resolve_source_fulltext_output_path(
+    output: str,
+    *,
+    force: bool,
+    no_clobber: bool,
+    json_output: bool,
+) -> Path:
+    """Resolve ``source fulltext -o`` conflicts without silently overwriting."""
+    path = Path(output)
+    if force and no_clobber:
+        _emit_source_fulltext_flag_conflict(
+            "Cannot specify both --force and --no-clobber",
+            json_output=json_output,
+        )
+    if not path.exists() or force:
+        return path
+    if no_clobber:
+        suggestion = "Use --force to overwrite or choose a different path"
+        _output_error(
+            f"File exists: {path}",
+            "FILE_EXISTS",
+            json_output,
+            1,
+            extra={"path": str(path), "suggestion": suggestion},
+            hint=suggestion,
+        )
+        raise AssertionError("unreachable")  # pragma: no cover
+    return _available_output_path(path)
+
+
 def _render_source_fulltext_result(
     result: SourceFulltextResult,
     *,
     json_output: bool,
-    output: str | None,
+    output: Path | None,
 ) -> None:
     """Render ``source fulltext`` output, including optional file output."""
     fulltext = result.fulltext
     if json_output:
         if output:
             content_bytes = fulltext.content.encode("utf-8")
-            Path(output).write_bytes(content_bytes)
+            output.write_bytes(content_bytes)
             json_output_response(
                 {
                     "path": str(output),
@@ -212,8 +262,13 @@ def _render_source_fulltext_result(
         return
 
     if output:
-        Path(output).write_text(fulltext.content, encoding="utf-8")
-        console.print(f"[green]Saved {fulltext.char_count} chars to {output}[/green]")
+        output.write_text(fulltext.content, encoding="utf-8")
+        console.print(
+            f"Saved {fulltext.char_count} chars to {output}",
+            style="green",
+            markup=False,
+            soft_wrap=True,
+        )
         return
 
     console.print(f"[bold cyan]Source:[/bold cyan] {fulltext.source_id}")
@@ -1058,6 +1113,8 @@ def source_add_research(
 @notebook_option
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", type=click.Path(), help="Write content to file")
+@click.option("--no-clobber", is_flag=True, help="Fail if the output file exists")
+@click.option("--force", is_flag=True, help="Overwrite an existing output file")
 @click.option(
     "--format",
     "-f",
@@ -1067,16 +1124,43 @@ def source_add_research(
     help="Content format: text (default) or markdown",
 )
 @with_client
-def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_format, client_auth):
+def source_fulltext(
+    ctx,
+    source_id,
+    notebook_id,
+    json_output,
+    output,
+    no_clobber,
+    force,
+    output_format,
+    client_auth,
+):
     """Get full content of a source.
 
     Use ``--format markdown`` for a rich version with headings/tables/links.
     Text mode truncates at 2000 chars; ``-o FILE`` writes the full content.
+    Existing output files are auto-renamed unless ``--force`` or
+    ``--no-clobber`` is supplied.
     JSON mode emits the full ``SourceFulltext`` payload, or with ``-o`` a
     ``{path, bytes, source_id, title, kind}`` envelope (content goes to the file
     only, not duplicated to stdout).
     """
     nb_id = require_notebook(notebook_id)
+    if force and no_clobber:
+        _emit_source_fulltext_flag_conflict(
+            "Cannot specify both --force and --no-clobber",
+            json_output=json_output,
+        )
+    output_path = (
+        _resolve_source_fulltext_output_path(
+            output,
+            force=force,
+            no_clobber=no_clobber,
+            json_output=json_output,
+        )
+        if output
+        else None
+    )
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
@@ -1094,7 +1178,11 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_for
             else:
                 with console.status("Fetching fulltext content..."):
                     result = await execute_source_fulltext(client, plan)
-            _render_source_fulltext_result(result, json_output=json_output, output=output)
+            _render_source_fulltext_result(
+                result,
+                json_output=json_output,
+                output=output_path,
+            )
 
     return _run()
 
