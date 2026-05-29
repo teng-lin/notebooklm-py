@@ -341,6 +341,7 @@ class SourceAddResult:
 
     source: Source
 
+    @property
     def payload(self) -> dict[str, object]:
         """Return the JSON payload for ``source add``."""
         return {"source": source_summary_payload(self.source)}

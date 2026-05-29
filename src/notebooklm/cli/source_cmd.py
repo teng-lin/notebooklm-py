@@ -74,11 +74,16 @@ from .services.source_content import (
 from .services.source_listing import SourceListPlan, execute_source_list
 from .services.source_mutations import (
     SourceAddDrivePlan,
+    SourceAddDriveResult,
     SourceDeleteByTitlePlan,
+    SourceDeleteByTitleResult,
     SourceDeletePlan,
+    SourceDeleteResult,
     SourceMutationError,
     SourceRefreshPlan,
+    SourceRefreshResult,
     SourceRenamePlan,
+    SourceRenameResult,
     execute_source_add_drive,
     execute_source_delete,
     execute_source_delete_by_title,
@@ -391,10 +396,14 @@ def _handle_source_mutation_error(exc: SourceMutationError, *, json_output: bool
     raise AssertionError("unreachable")  # pragma: no cover
 
 
-def _render_source_delete_result(result, *, json_output: bool, ctx: click.Context) -> None:
-    status_message = getattr(result, "status_message", None)
-    if status_message:
-        emit_status(status_message, json_output=json_output)
+def _render_source_delete_result(
+    result: SourceDeleteResult | SourceDeleteByTitleResult,
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
+    if result.status_message:
+        emit_status(result.status_message, json_output=json_output)
 
     if json_output:
         json_output_response(result.payload)
@@ -408,7 +417,12 @@ def _render_source_delete_result(result, *, json_output: bool, ctx: click.Contex
         cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)
 
 
-def _render_source_rename_result(result, *, json_output: bool, ctx: click.Context) -> None:
+def _render_source_rename_result(
+    result: SourceRenameResult,
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
     if json_output:
         json_output_response(result.payload)
         return
@@ -417,7 +431,12 @@ def _render_source_rename_result(result, *, json_output: bool, ctx: click.Contex
     cli_print(f"[bold]New title:[/bold] {result.source.title}", ctx=ctx)
 
 
-def _render_source_refresh_result(result, *, json_output: bool, ctx: click.Context) -> None:
+def _render_source_refresh_result(
+    result: SourceRefreshResult,
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
     if json_output:
         json_output_response(result.payload)
         return
@@ -432,7 +451,12 @@ def _render_source_refresh_result(result, *, json_output: bool, ctx: click.Conte
         cli_print("[yellow]Refresh returned no result[/yellow]", ctx=ctx)
 
 
-def _render_source_add_drive_result(result, *, json_output: bool, ctx: click.Context) -> None:
+def _render_source_add_drive_result(
+    result: SourceAddDriveResult,
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
     if json_output:
         json_output_response(result.payload)
         return
@@ -601,7 +625,7 @@ def source_add(
             execution_plan = SourceAddExecutionPlan(notebook_id=nb_id_resolved, plan=plan)
             if json_output:
                 result = await execute_source_add(client, execution_plan)
-                json_output_response(result.payload())
+                json_output_response(result.payload)
                 return
 
             with cli_status(f"Adding {plan.detected_type} source...", ctx=ctx):
@@ -778,7 +802,6 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
                 file_id=file_id,
                 title=title,
                 mime_type=mime_type,
-                json_output=json_output,
             )
             if json_output:
                 result = await execute_source_add_drive(client, plan)

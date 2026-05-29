@@ -88,6 +88,7 @@ class SourceDeleteByTitleResult:
     notebook_id: str
     success: bool
     status: Literal["completed", "cancelled"]
+    status_message: str | None = None
 
     @property
     def payload(self) -> dict[str, Any]:
@@ -558,7 +559,6 @@ class SourceAddDrivePlan:
     file_id: str
     title: str
     mime_type: DriveMimeChoice
-    json_output: bool
 
 
 async def execute_source_add_drive(
