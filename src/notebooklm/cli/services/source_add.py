@@ -11,12 +11,15 @@ import socket
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import urlsplit
 
 from ...types import Source
 from ...urls import is_youtube_url
 from .source_serializers import source_summary_payload
+
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
 
 SourceAddType = Literal["url", "text", "file", "youtube"]
 
@@ -344,7 +347,7 @@ class SourceAddResult:
 
 
 async def execute_source_add(
-    client,
+    client: NotebookLMClient,
     plan: SourceAddExecutionPlan,
 ) -> SourceAddResult:
     """Run the ``source add`` workflow and return the added source.

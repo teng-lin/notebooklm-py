@@ -28,17 +28,22 @@ if TYPE_CHECKING:
 DriveMimeChoice = Literal["google-doc", "google-slides", "google-sheets", "pdf"]
 
 
-@dataclass(frozen=True)
 class SourceMutationError(Exception):
     """Typed source-mutation error for command-layer rendering and exit policy."""
 
-    message: str
-    code: str
-    extra: dict[str, Any] | None = None
-    status_message: str | None = None
-
-    def __str__(self) -> str:
-        return self.message
+    def __init__(
+        self,
+        message: str,
+        code: str,
+        extra: dict[str, Any] | None = None,
+        status_message: str | None = None,
+    ) -> None:
+        self.message = message
+        self.code = code
+        self.extra = extra
+        self.status_message = status_message
+        metadata = f" (code={code}, extra={extra})" if extra else f" (code={code})"
+        super().__init__(f"{message}{metadata}")
 
 
 @dataclass(frozen=True)
@@ -201,7 +206,7 @@ def looks_like_full_source_id(source_id: str) -> bool:
 
 
 async def resolve_source_for_delete(
-    client, notebook_id: str, source_id: str, *, json_output: bool = False
+    client: NotebookLMClient, notebook_id: str, source_id: str, *, json_output: bool = False
 ) -> SourceIdResolution:
     """Resolve a source ID for delete, returning the full source ID string.
 
@@ -249,8 +254,8 @@ async def resolve_source_for_delete(
 
 
 async def resolve_source_by_exact_title(
-    client, notebook_id: str, title: str, *, json_output: bool = False
-):
+    client: NotebookLMClient, notebook_id: str, title: str, *, json_output: bool = False
+) -> Source:
     """Resolve a source by exact title for the explicit delete-by-title flow."""
     title = validate_id(title, "source title")
     sources = await client.sources.list(notebook_id)
