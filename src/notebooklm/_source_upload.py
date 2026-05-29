@@ -814,6 +814,9 @@ class SourceUploadPipeline:
             except SourceAddError:
                 raise
             except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
+                # The create RPC already returned successfully, so do not
+                # let idempotent_create treat probe failure here as a
+                # retryable create failure and re-POST the file source.
                 raise SourceAddError(
                     filename,
                     cause=exc,
