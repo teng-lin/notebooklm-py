@@ -289,7 +289,6 @@ class ArtifactPollingService:
         deadline = RuntimeDeadline.start(timeout, monotonic=self._resolve_monotonic())
         current_interval = initial_interval
         consecutive_not_found = 0
-        total_not_found = 0
         poll_retry_count = 0
         first_not_found_time: float | None = None
         last_status: str | None = None
@@ -353,37 +352,42 @@ class ArtifactPollingService:
             if status.is_complete or status.is_failed:
                 return status
 
-            # Track the *current* run of consecutive "not found" responses plus
-            # a running total. The API may remove quota-rejected artifacts from
-            # the list entirely instead of setting them to FAILED. A *sustained*
-            # absence is reported with a distinct ``"removed"`` status (see
-            # below) rather than ``"failed"`` so callers can tell a delisted
-            # artifact apart from one the server actually marked terminal-FAILED.
+            # Track the *current* run of consecutive "not found" responses. The
+            # API may remove quota-rejected artifacts from the list entirely
+            # instead of setting them to FAILED. A *sustained* absence is
+            # reported with a distinct ``"removed"`` status (see below) rather
+            # than ``"failed"`` so callers can tell a delisted artifact apart
+            # from one the server actually marked terminal-FAILED.
             #
-            # Both accumulators reset the moment the artifact reappears (see the
+            # The counter resets the moment the artifact reappears (see the
             # ``else`` branch). This is what makes ``"removed"`` mean *stayed
             # absent*: a transient/flapping omission — where the artifact keeps
             # coming back and may still complete — never accumulates toward a
             # spurious terminal ``"removed"`` (issue #1198).
             if status.status == "not_found":
                 consecutive_not_found += 1
-                total_not_found += 1
                 now = deadline.now()
                 if first_not_found_time is None:
                     first_not_found_time = now
                 not_found_elapsed = now - first_not_found_time
 
+                # Two ways to declare a sustained absence terminal:
+                #  - time-gated: enough consecutive misses AND enough wall-clock
+                #    elapsed (avoids a fast burst of polls firing prematurely);
+                #  - window-independent: a long consecutive run (2x the
+                #    threshold) trips removal even when ``min_not_found_window``
+                #    has not yet elapsed.
                 consecutive_trigger = (
                     consecutive_not_found >= max_not_found
                     and not_found_elapsed >= min_not_found_window
                 )
-                total_trigger = total_not_found >= max_not_found * 2
+                window_independent_trigger = consecutive_not_found >= max_not_found * 2
 
-                if consecutive_trigger or total_trigger:
+                if consecutive_trigger or window_independent_trigger:
                     trigger = (
                         f"consecutive={consecutive_not_found}"
                         if consecutive_trigger
-                        else f"total={total_not_found}"
+                        else f"consecutive={consecutive_not_found} (window-independent)"
                     )
                     logger.warning(
                         "Artifact %s disappeared from list (%s not-found polls, "
@@ -413,14 +417,13 @@ class ArtifactPollingService:
                         await maybe_await_callback(on_status_change, removed_status)
                     return removed_status
             else:
-                # The artifact is back in the listing. Reset *all* not-found
-                # tracking — not just the consecutive counter — so removal
-                # requires a single sustained absence run rather than cumulative
-                # absences spread across an otherwise-healthy poll (issue #1198).
-                # An artifact that keeps reappearing is not "removed"; it keeps
-                # polling until it completes or the timeout fires.
+                # The artifact is back in the listing. Reset the not-found
+                # tracking so removal requires a single sustained absence run
+                # rather than cumulative absences spread across an otherwise-
+                # healthy poll (issue #1198). An artifact that keeps reappearing
+                # is not "removed"; it keeps polling until it completes or the
+                # timeout fires.
                 consecutive_not_found = 0
-                total_not_found = 0
                 first_not_found_time = None
 
             if deadline.exceeded():

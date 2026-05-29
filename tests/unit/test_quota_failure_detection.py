@@ -386,10 +386,10 @@ class TestWaitForCompletionQuotaDetection:
         """
         api = _make_api()
         # 7 not-found omissions interleaved with in_progress sightings, then a
-        # genuine completion. With max_not_found=3 the OLD total threshold was 6,
-        # so the pre-fix loop would have returned "removed" at the 6th not-found
-        # (before completing). With the reset, each in_progress wipes the
-        # accumulators, so neither the consecutive nor the total trigger fires.
+        # genuine completion. With max_not_found=3 the OLD cumulative total
+        # threshold was 6, so the pre-fix loop would have returned "removed" at
+        # the 6th not-found (before completing). With the reset, each in_progress
+        # wipes the counter, so no removal trigger ever fires.
         responses = []
         for _ in range(7):
             responses.append(GenerationStatus(task_id="task_abc", status="not_found"))
@@ -417,10 +417,10 @@ class TestWaitForCompletionQuotaDetection:
         """Sustained absence still triggers removal via the total fallback even
         when ``min_not_found_window`` blocks the consecutive trigger.
 
-        Guards the issue #1198 change: resetting accumulators on reappearance
+        Guards the issue #1198 change: resetting the counter on reappearance
         must not weaken detection of a *genuinely* delisted artifact that never
-        comes back. With a large window the consecutive trigger is suppressed,
-        but ``total_not_found`` (which now equals the consecutive run) still
+        comes back. With a large window the time-gated trigger is suppressed,
+        but the window-independent trigger still fires once the consecutive run
         reaches ``max_not_found * 2`` and reports ``"removed"``.
         """
         api = _make_api()
