@@ -34,14 +34,20 @@ def _truncate_response_preview(raw: str | None) -> str | None:
     Default behavior keeps the preview compact (80 chars + ``"..."`` suffix) so
     error logs and CLI output stay readable. Set ``NOTEBOOKLM_DEBUG=1`` to opt
     into the full untruncated body for deep debugging.
+
+    Credential-shaped substrings (CSRF tokens, session cookies, etc.) are
+    scrubbed *before* truncation in both modes. ``raw_response`` is a public
+    attribute spliced into ``str()``/``repr()`` of RPC errors, so it escapes the
+    logging pipeline's ``RedactingFilter`` and must be sanitized at the source.
     """
     if raw is None:
         return None
+    scrubbed = scrub_secrets(raw)
     if os.environ.get("NOTEBOOKLM_DEBUG") == "1":
-        return raw
-    if len(raw) > 80:
-        return raw[:80] + "..."
-    return raw
+        return scrubbed
+    if len(scrubbed) > 80:
+        return scrubbed[:80] + "..."
+    return scrubbed
 
 
 __all__ = [
