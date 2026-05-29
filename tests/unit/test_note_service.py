@@ -22,6 +22,7 @@ import pytest
 
 from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._note_service import NoteRowKind, NoteService
+from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
 
@@ -192,15 +193,17 @@ class TestCrud:
         ]
 
     @pytest.mark.asyncio
-    async def test_create_note_returns_empty_id_when_server_omits_id(
+    async def test_create_note_raises_when_server_omits_id(
         self, service: NoteService, mock_session: FakeSession
     ) -> None:
         mock_session.rpc_executor.rpc_call.return_value = None
 
-        note = await service.create_note("nb_123", title="T", content="body")
+        # An unparseable CREATE_NOTE payload must surface as an error
+        # rather than a success-shaped ``Note(id="")`` (issue #1162).
+        with pytest.raises(RPCError, match="no usable note id"):
+            await service.create_note("nb_123", title="T", content="body")
 
-        assert note.id == ""
-        # Only CREATE_NOTE should fire; the UPDATE_NOTE skip avoids
+        # Only CREATE_NOTE should fire; bailing before UPDATE_NOTE avoids
         # poisoning a non-existent row.
         assert mock_session.rpc_executor.rpc_call.await_count == 1
 

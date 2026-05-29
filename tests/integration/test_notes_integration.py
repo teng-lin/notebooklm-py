@@ -10,6 +10,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -165,6 +166,29 @@ class TestNotesAPI:
         requests = httpx_mock.get_requests()
         assert RPCMethod.CREATE_NOTE in str(requests[0].url)
         assert RPCMethod.UPDATE_NOTE in str(requests[1].url)
+
+    @pytest.mark.asyncio
+    async def test_create_note_raises_when_id_unparseable(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A CREATE_NOTE payload with no extractable id must raise, not
+        return a success-shaped ``Note(id="")`` (issue #1162)."""
+        # ``[[]]`` parses but yields no note id (empty inner row).
+        create_response = build_rpc_response(RPCMethod.CREATE_NOTE, [[]])
+        httpx_mock.add_response(content=create_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(RPCError, match="no usable note id"):
+                await client.notes.create("nb_123", "My Title", "My Content")
+
+        # The finalize UPDATE_NOTE must never have been attempted: bailing
+        # before UPDATE_NOTE is what prevents the degenerate empty-id note.
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        assert RPCMethod.CREATE_NOTE in str(requests[0].url)
 
     @pytest.mark.asyncio
     async def test_update_note(

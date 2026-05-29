@@ -28,6 +28,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from ._row_adapters_notes import NoteRow
+from .exceptions import RPCError
 from .rpc.types import RPCMethod
 from .types import Note
 
@@ -257,57 +258,67 @@ class NoteService:
             elif isinstance(result[0], str):
                 note_id = result[0]
 
-        if note_id:
-            # Shield the UPDATE_NOTE finalize from outer cancellation:
-            # CREATE_NOTE has already persisted a row server-side; without
-            # the shield, a cancel arriving between CREATE_NOTE and
-            # UPDATE_NOTE completion leaves an orphan row with no
-            # title/content.
-            #
-            # ``update_task`` is a freestanding ``asyncio.Task`` (not a
-            # bare coroutine) so the cancel-time cleanup branch can await
-            # it before issuing the best-effort DELETE_NOTE. If we instead
-            # fired DELETE_NOTE in parallel with the still-running
-            # shielded UPDATE_NOTE (the pattern coderabbit flagged on PR
-            # #875), delete could complete first and update could then
-            # write to an already-soft-deleted row — observable as an
-            # inconsistent row state on the server side and a swallowed
-            # exception in the cleanup task.
-            update_task = asyncio.create_task(
-                self.update_note(notebook_id, note_id, content, title)
+        if not note_id:
+            # CREATE_NOTE returned a payload we cannot extract a note id
+            # from. Returning ``Note(id="")`` would be a success-shaped
+            # lie: the title/content were never finalized via UPDATE_NOTE,
+            # and any later operation keyed on the empty id misbehaves.
+            # Raise instead, matching the sibling create paths
+            # (``_source_add`` / ``notebooks.create``) which surface an
+            # error rather than fabricate a degenerate resource.
+            raise RPCError(
+                "CREATE_NOTE returned no usable note id; the note was not created",
+                method_id=RPCMethod.CREATE_NOTE.value,
             )
-            try:
-                await asyncio.shield(update_task)
-            except asyncio.CancelledError:
-                # Ordered fire-and-forget cleanup: first wait for the
-                # shielded UPDATE_NOTE to finish (success OR error),
-                # THEN issue the best-effort DELETE_NOTE. The re-raise
-                # MUST NOT await the wrapper task. Strong-ref via
-                # ``_cleanup_tasks`` so the loop's weak-ref Task storage
-                # cannot GC the wrapper mid-flight (RUF006); the
-                # done-callback discards on completion so the set stays
-                # bounded.
-                async def _finalize_then_cleanup() -> None:
-                    try:
-                        try:
-                            await update_task
-                        except Exception:  # noqa: BLE001 — log and proceed to delete
-                            logger.debug(
-                                "Shielded UPDATE_NOTE failed before cleanup for note %s in notebook %s",
-                                note_id,
-                                notebook_id,
-                                exc_info=True,
-                            )
-                    finally:
-                        await self._delete_note_best_effort(notebook_id, note_id)
 
-                cleanup_task = asyncio.create_task(_finalize_then_cleanup())
-                _cleanup_tasks.add(cleanup_task)
-                cleanup_task.add_done_callback(_cleanup_tasks.discard)
-                raise
+        # Shield the UPDATE_NOTE finalize from outer cancellation:
+        # CREATE_NOTE has already persisted a row server-side; without
+        # the shield, a cancel arriving between CREATE_NOTE and
+        # UPDATE_NOTE completion leaves an orphan row with no
+        # title/content.
+        #
+        # ``update_task`` is a freestanding ``asyncio.Task`` (not a
+        # bare coroutine) so the cancel-time cleanup branch can await
+        # it before issuing the best-effort DELETE_NOTE. If we instead
+        # fired DELETE_NOTE in parallel with the still-running
+        # shielded UPDATE_NOTE (the pattern coderabbit flagged on PR
+        # #875), delete could complete first and update could then
+        # write to an already-soft-deleted row — observable as an
+        # inconsistent row state on the server side and a swallowed
+        # exception in the cleanup task.
+        update_task = asyncio.create_task(self.update_note(notebook_id, note_id, content, title))
+        try:
+            await asyncio.shield(update_task)
+        except asyncio.CancelledError:
+            # Ordered fire-and-forget cleanup: first wait for the
+            # shielded UPDATE_NOTE to finish (success OR error),
+            # THEN issue the best-effort DELETE_NOTE. The re-raise
+            # MUST NOT await the wrapper task. Strong-ref via
+            # ``_cleanup_tasks`` so the loop's weak-ref Task storage
+            # cannot GC the wrapper mid-flight (RUF006); the
+            # done-callback discards on completion so the set stays
+            # bounded.
+            async def _finalize_then_cleanup() -> None:
+                try:
+                    try:
+                        await update_task
+                    except Exception:  # noqa: BLE001 — log and proceed to delete
+                        logger.debug(
+                            "Shielded UPDATE_NOTE failed before cleanup for note %s in notebook %s",
+                            note_id,
+                            notebook_id,
+                            exc_info=True,
+                        )
+                finally:
+                    await self._delete_note_best_effort(notebook_id, note_id)
+
+            cleanup_task = asyncio.create_task(_finalize_then_cleanup())
+            _cleanup_tasks.add(cleanup_task)
+            cleanup_task.add_done_callback(_cleanup_tasks.discard)
+            raise
 
         return Note(
-            id=note_id or "",
+            id=note_id,
             notebook_id=notebook_id,
             title=title,
             content=content,

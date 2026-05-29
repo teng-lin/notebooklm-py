@@ -678,18 +678,20 @@ class ArtifactGenerationService:
                 if isinstance(mind_map_data, dict) and "name" in mind_map_data:
                     title = mind_map_data["name"]
 
+                # ``NoteService.create_note`` raises ``RPCError`` when the
+                # server omits a usable row id (issue #1162); on success it
+                # always returns a ``Note`` with a non-empty id. The
+                # ``note.id or None`` below is therefore defensive only —
+                # it preserves the public dict contract ("note_id is None
+                # means persistence failed") for any future degenerate
+                # shape, but the empty-id case now surfaces as an error
+                # rather than a silent ``{"note_id": None}``. The original
+                # ``if note`` dead-code guard was removed in PR #873.
                 note = await self._note_service.create_note(
                     notebook_id,
                     title=title,
                     content=mind_map_json,
                 )
-                # ``NoteService.create_note`` always returns a ``Note``
-                # instance — even when the server omits the row id it
-                # returns ``Note(id="", ...)``. The dataclass is always
-                # truthy, so guarding on ``if note`` was dead code. Map
-                # the empty-string ID to ``None`` so the public dict
-                # contract ("note_id is None means persistence failed")
-                # is honored. Surfaced by claude[bot] review on PR #873.
                 note_id = note.id or None
 
                 return {

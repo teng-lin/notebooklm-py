@@ -7,6 +7,7 @@ import pytest
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
+from notebooklm.exceptions import RPCError
 from notebooklm.types import Note
 
 
@@ -501,24 +502,25 @@ class TestCreateNote:
         assert result.id == "new_note_456"
 
     @pytest.mark.asyncio
-    async def test_create_with_null_result(self, notes_api, mock_core):
-        """Test create() when RPC returns None."""
+    async def test_create_raises_when_null_result(self, notes_api, mock_core):
+        """create() must raise when RPC returns None (issue #1162).
+
+        A ``None`` payload carries no note id, so finalizing the note is
+        impossible. Returning ``Note(id="")`` would be a success-shaped
+        lie; the create-contract requires surfacing the failure instead.
+        """
         mock_core.rpc_executor.rpc_call.return_value = None
 
-        result = await notes_api.create("nb_123", "Title", "Content")
-
-        assert result.id == ""
-        assert result.title == "Title"
-        assert result.content == "Content"
+        with pytest.raises(RPCError, match="no usable note id"):
+            await notes_api.create("nb_123", "Title", "Content")
 
     @pytest.mark.asyncio
-    async def test_create_with_empty_result(self, notes_api, mock_core):
-        """Test create() when RPC returns empty list."""
+    async def test_create_raises_when_empty_result(self, notes_api, mock_core):
+        """create() must raise when RPC returns an empty list (issue #1162)."""
         mock_core.rpc_executor.rpc_call.return_value = []
 
-        result = await notes_api.create("nb_123", "Title", "Content")
-
-        assert result.id == ""
+        with pytest.raises(RPCError, match="no usable note id"):
+            await notes_api.create("nb_123", "Title", "Content")
 
     @pytest.mark.asyncio
     async def test_create_calls_update_after_create(self, notes_api, mock_core):
@@ -534,13 +536,20 @@ class TestCreateNote:
         assert mock_core.rpc_executor.rpc_call.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_create_skips_update_when_no_id(self, notes_api, mock_core):
-        """Test that create() skips update when no note_id returned."""
+    async def test_create_does_not_update_when_no_id(self, notes_api, mock_core):
+        """create() must bail before UPDATE_NOTE when no id is returned.
+
+        It now raises (issue #1162) rather than silently returning an
+        empty-id note, but the invariant that the finalize UPDATE_NOTE is
+        never attempted without a note id still holds — only the single
+        CREATE_NOTE RPC is issued before the error surfaces.
+        """
         mock_core.rpc_executor.rpc_call.return_value = None
 
-        await notes_api.create("nb_123", "Title", "Content")
+        with pytest.raises(RPCError, match="no usable note id"):
+            await notes_api.create("nb_123", "Title", "Content")
 
-        # Should only have 1 RPC call (CREATE_NOTE)
+        # Should only have 1 RPC call (CREATE_NOTE); no UPDATE_NOTE finalize.
         assert mock_core.rpc_executor.rpc_call.call_count == 1
 
 
