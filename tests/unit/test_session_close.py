@@ -227,6 +227,39 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
     assert core._collaborators.kernel.http_client is None
 
 
+@pytest.mark.asyncio
+async def test_close_fires_drain_hooks_before_drain_wait() -> None:
+    """Issue #1161: ``close(drain=True)`` fires the registered cancel hooks
+    BEFORE awaiting ``drain()`` — the ordering that lets the poll-cancel hook
+    short-circuit a poll counted in the in-flight counter.
+
+    This pins the ordering directly (independent of the operation_scope
+    integration test) so a future refactor that moves the hook fire back
+    after the drain wait fails here.
+    """
+    client = NotebookLMClient(_auth())
+    order: list[str] = []
+
+    async def fake_run_drain_hooks() -> None:
+        order.append("hooks")
+
+    async def fake_drain(timeout: float | None = None) -> None:
+        order.append("drain")
+
+    async def fake_close(**_kwargs: object) -> None:
+        order.append("close")
+
+    client._collaborators.drain_tracker.run_drain_hooks = fake_run_drain_hooks  # type: ignore[method-assign]
+    client._collaborators.drain_tracker.drain = fake_drain  # type: ignore[method-assign]
+    client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
+
+    await client.close()
+
+    assert order == ["hooks", "drain", "close"], (
+        "cancel hooks must fire before the drain wait (issue #1161)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # NotebookLMClient default drain=True (BREAKING)
 # ---------------------------------------------------------------------------
