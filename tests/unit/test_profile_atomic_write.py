@@ -337,10 +337,15 @@ def test_write_preserves_cookies_and_origins(tmp_path: Path) -> None:
 
 
 def _capture_account_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
-    """Record the lock path account.py passes to ``filelock.FileLock``.
+    """Record the ``storage_state.json`` lock path account.py passes to ``FileLock``.
 
     The captured contextmanager is a no-op so the surrounding read-modify-write
-    still completes against the real file.
+    still completes against the real file. ``write_account_metadata`` also calls
+    ``_drop_legacy_account_key``, which locks the sibling ``context.json.lock``;
+    that path is filtered out so it can't clobber the value we assert on. Paths
+    are canonicalized (``.expanduser().resolve()``) because they back
+    cross-process locking, where distinct spellings of the same file must
+    compare equal.
     """
     import contextlib
 
@@ -350,7 +355,9 @@ def _capture_account_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Pat
 
     @contextlib.contextmanager
     def _fake_filelock(path: str, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
-        seen["path"] = Path(path)
+        resolved = Path(path).expanduser().resolve()
+        if "storage_state.json" in resolved.name:
+            seen["path"] = resolved
         yield
 
     monkeypatch.setattr(account_mod, "FileLock", _fake_filelock)
@@ -358,7 +365,11 @@ def _capture_account_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Pat
 
 
 def _capture_storage_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
-    """Record the lock path storage.py passes to ``_file_lock_exclusive``."""
+    """Record the lock path storage.py passes to ``_file_lock_exclusive``.
+
+    Paths are canonicalized to match ``_capture_account_lock_path`` so the two
+    captures compare equal even if their spellings differ.
+    """
     import contextlib
 
     from notebooklm._auth import storage as storage_mod
@@ -367,7 +378,7 @@ def _capture_storage_lock_path(monkeypatch: pytest.MonkeyPatch) -> dict[str, Pat
 
     @contextlib.contextmanager
     def _fake_exclusive(lock_path: Path):  # type: ignore[no-untyped-def]
-        seen["path"] = Path(lock_path)
+        seen["path"] = Path(lock_path).expanduser().resolve()
         yield
 
     monkeypatch.setattr(storage_mod, "_file_lock_exclusive", _fake_exclusive)
@@ -413,7 +424,8 @@ def test_storage_state_mutators_share_one_lock_file(
     storage_cookie_lock = storage_seen["path"]
 
     # Canonical name is the dotted, hidden sibling (storage.py contract).
-    expected = storage_path.with_name(f".{storage_path.name}.lock")
+    # Resolve to match the canonicalized captures above.
+    expected = storage_path.with_name(f".{storage_path.name}.lock").expanduser().resolve()
     assert storage_cookie_lock == expected
     assert account_write_lock == expected
     assert account_clear_lock == expected
