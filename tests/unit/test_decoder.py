@@ -720,6 +720,20 @@ class TestNullResultStatusCodeEnrichment:
             result = decode_response(self._build_raw([code]), self.RPC_ID, allow_null=True)
             assert result is None, f"allow_null=True leaked for code {code}"
 
+    def test_enriched_messages_surface_found_ids(self):
+        """found_ids must appear in the message text, not just the attribute.
+
+        The base RPCError.__str__ does not append found_ids, so embedding it in
+        the message keeps the strongest drift/debug signal visible in plain logs
+        and tracebacks across all three null-result enrichment branches.
+        """
+        for error_info in ([5], [13], [99]):
+            with pytest.raises(RPCError) as exc_info:
+                decode_response(self._build_raw(error_info), self.RPC_ID)
+            message = str(exc_info.value)
+            assert "Found IDs:" in message
+            assert self.RPC_ID in message
+
     def test_boolean_error_info_is_not_treated_as_status_code(self):
         """[true] must not be accepted as code 1 — bool is a subclass of int.
 
