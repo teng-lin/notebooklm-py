@@ -412,7 +412,10 @@ class TestRegisterFileSource:
         """The extractor must skip the echoed filename and return the UUID,
         regardless of where the filename sits in the structure (#474).
         """
-        mock_core.rpc_executor.rpc_call.return_value = response
+        mock_core.rpc_executor.rpc_call.side_effect = [
+            [["", []]],
+            response,
+        ]
 
         result = await sources_api._register_file_source("nb_123", filename)
         assert result == expected
@@ -432,16 +435,18 @@ class TestRegisterFileSource:
     async def test_register_file_source_error_message_includes_shape_preview(
         self, sources_api, mock_core
     ):
-        """Future shape drift should surface a structural preview in the error
-        so users can file actionable bug reports (#474).
-        """
+        """Future shape drift should report a sanitized response shape."""
         from notebooklm.exceptions import SourceAddError
 
         # Pure-numeric response — no string leaves → no candidates → raises.
         mock_core.rpc_executor.rpc_call.return_value = [[[1, 2, 3]]]
 
-        with pytest.raises(SourceAddError, match=r"Response shape:.*\[\[\[1, 2, 3\]\]\]"):
+        with pytest.raises(
+            SourceAddError,
+            match="Failed to get SOURCE_ID: no trustworthy SOURCE_ID found in array",
+        ) as exc_info:
             await sources_api._register_file_source("nb_123", "test.pdf")
+        assert "[[[1, 2, 3]]]" not in str(exc_info.value)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status_token", ["OK", "DONE", "true", "null"])

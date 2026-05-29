@@ -272,6 +272,10 @@ def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
     if len(row_candidates) > 1:
         return None
 
+    prefixed_candidate = _extract_prefixed_singleton_source_id_envelope(result, filename)
+    if prefixed_candidate is not None:
+        return prefixed_candidate
+
     return _extract_singleton_source_id_envelope(result, filename)
 
 
@@ -319,6 +323,13 @@ def _extract_singleton_source_id_envelope(result: Any, filename: str) -> str | N
         return None
 
     return _coerce_source_id_candidate(node, filename)
+
+
+def _extract_prefixed_singleton_source_id_envelope(result: Any, filename: str) -> str | None:
+    if not isinstance(result, list) or len(result) != 2 or result[0] is not None:
+        return None
+
+    return _extract_singleton_source_id_envelope(result[1], filename)
 
 
 def _extract_contextual_source_id_row_candidates(result: Any, filename: str) -> list[str]:
@@ -841,8 +852,9 @@ class SourceUploadPipeline:
             raise SourceAddError(
                 filename,
                 message=(
-                    f"Failed to get a trustworthy SOURCE_ID from {_register_response_shape_label(result)} "
-                    "registration response, and the source-list probe found no "
+                    "Failed to get SOURCE_ID: no trustworthy SOURCE_ID found in "
+                    f"{_register_response_shape_label(result)} registration response, "
+                    "and the source-list probe found no "
                     "unambiguous new source. Check the notebook source list before retrying."
                 ),
             )
