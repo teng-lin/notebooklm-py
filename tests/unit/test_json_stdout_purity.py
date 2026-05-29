@@ -636,6 +636,9 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
     ("auth", "check"): _AUTH_RATIONALE,
     ("auth", "inspect"): _AUTH_RATIONALE,
     ("configure",): _AUTH_RATIONALE,
+    # top-level notebook `delete` mutation — success path is covered by
+    # tests/unit/cli/test_notebook.py::TestNotebookDelete.
+    ("delete",): _MUTATION_RATIONALE_SUCCESS,
     # download group — success path needs a real artifact + HTTP fetch.
     ("download", "audio"): _DOWNLOAD_RATIONALE_SUCCESS,
     ("download", "cinematic-video"): _DOWNLOAD_RATIONALE_SUCCESS,
@@ -706,6 +709,9 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("auth", "check"): _AUTH_RATIONALE,
     ("auth", "inspect"): _AUTH_RATIONALE,
     ("configure",): _AUTH_RATIONALE,
+    # top-level notebook `delete` mutation — error path is covered by
+    # tests/unit/cli/test_notebook.py::TestNotebookDelete.
+    ("delete",): _MUTATION_RATIONALE_ERROR,
     # download group — these error paths are covered for audio/video/...; the
     # remaining download_* cases below haven't been added yet.
     ("download", "cinematic-video"): _DOWNLOAD_RATIONALE_ERROR,
