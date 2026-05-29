@@ -26,6 +26,7 @@ from pathlib import Path
 _DOCUMENTED_ROOTS = ("src/notebooklm", "tests")
 _OMISSIONS_HEADING = "### Repository Structure Intentional Omissions"
 _OMISSION_BULLET_RE = re.compile(r"^\s*[-*]\s+")
+_OMISSION_PATH_RE = re.compile(r"^\s*[-*]\s+`(?P<path>src/notebooklm/[^`]+)`")
 _IGNORED_PATH_RE = re.compile(
     r"^\s*[-*]\s+`(?P<path>src/notebooklm/[^`]+)`\s+(?:--|-|:)\s+(?P<reason>.+?)\s*$"
 )
@@ -111,11 +112,7 @@ def _extract_unreasoned_omissions(text: str) -> list[str]:
     """Return omission bullets that mention a path but do not provide a reason."""
     unreasoned: list[str] = []
     for line in _intentional_omissions_section(text).splitlines():
-        if (
-            _OMISSION_BULLET_RE.match(line)
-            and "`src/notebooklm/" in line
-            and _IGNORED_PATH_RE.match(line) is None
-        ):
+        if _OMISSION_PATH_RE.match(line) and _IGNORED_PATH_RE.match(line) is None:
             unreasoned.append(line.strip())
     return unreasoned
 

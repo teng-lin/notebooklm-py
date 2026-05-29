@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from scripts.check_claude_md_freshness import (
     _extract_intentional_omissions,
     _extract_paths,
+    _extract_unreasoned_omissions,
     _repository_structure_section,
     main,
 )
@@ -63,6 +64,19 @@ def test_extract_intentional_omissions_requires_reason():
     assert _extract_intentional_omissions(text) == {
         "src/notebooklm/_compat.py": "Transitional compatibility shim."
     }
+
+
+def test_extract_unreasoned_omissions_ignores_general_notes():
+    text = """
+    ### Repository Structure Intentional Omissions
+
+    - Note: omit `src/notebooklm/_small_helper.py` because it is small.
+    - `src/notebooklm/_missing_reason.py`
+    """
+
+    assert _extract_unreasoned_omissions(text) == [
+        "- `src/notebooklm/_missing_reason.py`"
+    ]
 
 
 def test_repository_structure_heading_must_match_exactly():
