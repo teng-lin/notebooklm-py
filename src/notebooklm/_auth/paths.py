@@ -22,8 +22,9 @@ Three categories of names live here:
    :func:`notebooklm.auth._poke_session` / ``_rotate_cookies``. Physically
    adjacent to the keepalive block in ``auth.py`` but conceptually an
    environment-variable name, not a keepalive parameter, so it lives here.
-3. **Path helpers** (:func:`_rotation_lock_path`) that compute sentinel
-   sibling files alongside the user's storage-state path.
+3. **Path helpers** (:func:`_storage_state_lock_path`,
+   :func:`_rotation_lock_path`) that compute sentinel sibling files alongside
+   the user's storage-state path.
 
 The two refresh env vars and the keepalive env var are part of the documented
 public surface of ``notebooklm.auth`` (see :data:`notebooklm.auth.__all__`);
