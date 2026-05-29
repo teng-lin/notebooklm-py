@@ -94,6 +94,39 @@ async def test_open_preserves_explicit_empty_cookie_jar(monkeypatch: pytest.Monk
 
 
 @pytest.mark.asyncio
+async def test_open_closes_client_when_cookie_snapshot_raises() -> None:
+    closed: list[httpx.AsyncClient] = []
+
+    class _TrackingClient(httpx.AsyncClient):
+        async def aclose(self) -> None:
+            closed.append(self)
+            await super().aclose()
+
+    def async_client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return _TrackingClient(**kwargs)  # type: ignore[arg-type]
+
+    kernel = Kernel(async_client_factory=async_client_factory)
+
+    def boom(_: httpx.Cookies) -> None:
+        raise RuntimeError("snapshot failed")
+
+    with pytest.raises(RuntimeError, match="snapshot failed"):
+        await kernel.open(
+            auth=_auth_tokens(),
+            timeout=30.0,
+            connect_timeout=10.0,
+            limits=ConnectionLimits(),
+            capture_cookie_snapshot=boom,
+        )
+
+    # The partially opened client must have been closed and the kernel reset so
+    # it does not leak a live connection pool (issue #1163).
+    assert kernel.http_client is None
+    assert len(closed) == 1
+    assert closed[0].is_closed
+
+
+@pytest.mark.asyncio
 async def test_post_uses_live_http_client_streaming_post() -> None:
     seen_requests: list[httpx.Request] = []
 

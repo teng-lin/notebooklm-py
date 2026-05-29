@@ -98,7 +98,15 @@ class Kernel:
             follow_redirects=True,
             limits=limits.to_httpx_limits(),
         )
-        capture_cookie_snapshot(self._http_client.cookies)
+        # If the snapshot raises, __aenter__ has effectively failed, so Python
+        # never calls __aexit__ and the freshly built client would leak its
+        # connection pool. Close it and reset state before re-raising so a
+        # partial open cannot orphan a live client.
+        try:
+            capture_cookie_snapshot(self._http_client.cookies)
+        except BaseException:
+            await self.aclose()
+            raise
 
     async def post(
         self,
