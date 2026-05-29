@@ -166,6 +166,10 @@ def test_extract_register_file_source_id_accepts_known_response_shapes() -> None
         == "src_123"
     )
     assert (
+        _extract_register_file_source_id([[[["report.pdf", ["src_456"], [None]]]]], "report.pdf")
+        == "src_456"
+    )
+    assert (
         _extract_register_file_source_id({"id": "src_123", "title": "report.pdf"}, "report.pdf")
         == "src_123"
     )

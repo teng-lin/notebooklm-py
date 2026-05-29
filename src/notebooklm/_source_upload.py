@@ -335,8 +335,11 @@ def _extract_contextual_source_id_row_candidates(result: Any, filename: str) -> 
         if depth > _SOURCE_ID_ENVELOPE_MAX_DEPTH:
             return
         if isinstance(node, list):
-            if len(node) >= 2 and _coerce_filename_candidate(node[1]) == filename:
-                add_candidate(node[0])
+            if len(node) >= 2:
+                if _coerce_filename_candidate(node[1]) == filename:
+                    add_candidate(node[0])
+                if _coerce_filename_candidate(node[0]) == filename:
+                    add_candidate(node[1])
             for child in node:
                 walk(child, depth + 1)
         elif isinstance(node, dict):
