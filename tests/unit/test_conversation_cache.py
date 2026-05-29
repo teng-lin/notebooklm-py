@@ -64,6 +64,21 @@ def test_per_conversation_turn_cap_evicts_oldest_turns() -> None:
     assert [turn["query"] for turn in turns] == ["q3", "q4", "q5"]
 
 
+def test_cache_conversation_turn_handles_non_positive_bounds() -> None:
+    cache = ConversationCache()
+
+    # A non-positive max_size must not loop forever / KeyError on popitem;
+    # it retains nothing instead.
+    cache.cache_conversation_turn("conv-1", "q1", "a1", 1, max_size=0)
+    assert cache.get_cached_conversation("conv-1") == []
+    assert list(cache.conversations) == []
+
+    # A non-positive max_turns likewise caches nothing for that turn.
+    cache.cache_conversation_turn("conv-2", "q1", "a1", 1, max_turns=0)
+    assert cache.get_cached_conversation("conv-2") == []
+    assert list(cache.conversations) == []
+
+
 def test_get_cached_conversation_returns_empty_list_for_missing_conversation() -> None:
     cache = ConversationCache()
 

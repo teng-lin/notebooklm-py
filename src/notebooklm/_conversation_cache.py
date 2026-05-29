@@ -66,7 +66,15 @@ class ConversationCache:
         A *new* conversation evicts the least-recently-used entries until the
         cache is back under ``max_size``. Each conversation's turn list is
         trimmed to its newest ``max_turns`` entries.
+
+        A non-positive ``max_size`` or ``max_turns`` means "retain nothing":
+        the turn is dropped without mutating the cache. Guarding here also
+        avoids the eviction loop draining the cache and raising ``KeyError``
+        on a ``popitem`` against an empty mapping.
         """
+        if max_size <= 0 or max_turns <= 0:
+            return
+
         is_new_conversation = conversation_id not in self.conversations
 
         if is_new_conversation:
@@ -86,7 +94,7 @@ class ConversationCache:
             }
         )
         # Trim oldest turns once the per-conversation cap is exceeded.
-        if max_turns > 0 and len(turns) > max_turns:
+        if len(turns) > max_turns:
             del turns[: len(turns) - max_turns]
 
     def get_cached_conversation(self, conversation_id: str) -> list[dict[str, Any]]:
