@@ -590,7 +590,13 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
             e.raw_response = _truncate_response_preview(response_preview)
         raise
 
-    if result is None and not allow_null:
+    if result is None:
+        # An *absent* RPC ID is categorically different from a *present-but-null*
+        # result. The drift detector — the strongest signal that Google changed a
+        # method ID or served an anti-bot/redirect wall instead of real RPC data —
+        # must fire even when ``allow_null=True``; ``allow_null`` only sanctions a
+        # ``wrb.fr`` frame that genuinely carried a null payload, not a response
+        # that never contained the requested ID at all.
         if found_ids and rpc_id not in found_ids:
             # Method ID likely changed - provide actionable error
             raise UnknownRPCMethodError(
@@ -602,48 +608,55 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
                 raw_response=response_preview,
             )
 
-        if rpc_id in found_ids:
-            # RPC ID was found but extract_rpc_result returned None
-            # This means wrb.fr had null result_data without UserDisplayableError.
-            # Enrich the message if the server attached a bare status code at
-            # index 5 (issues #114 / #294 showed GET_NOTEBOOK returning [5]).
-            status = _find_wrb_status(chunks, rpc_id)
-            if status is not None:
-                code, label = status
-                message = f"RPC {rpc_id} returned null result with status code {code} ({label})."
-                # Route NOT_FOUND (5) / PERMISSION_DENIED (7) through ClientError
-                # so _core.is_auth_error does not misclassify them as auth
-                # failures and trigger a spurious token-refresh retry. The
-                # account-routing hint is only relevant for these two codes —
-                # other codes (e.g. INTERNAL 13) get a plain message.
-                if code in (5, 7):
-                    raise ClientError(
-                        message + _ACCOUNT_MISMATCH_HINT,
-                        method_id=rpc_id,
-                        rpc_code=code,
-                        found_ids=found_ids,
-                        raw_response=response_preview,
-                    )
-                raise RPCError(
-                    message,
+        if not found_ids:
+            # No RPC data found at all — the response carried no recognizable RPC
+            # frames (e.g. an anti-bot/redirect HTML page). This is never a benign
+            # null, so raise regardless of ``allow_null``.
+            raise RPCError(
+                f"No result found for RPC ID: {rpc_id} "
+                f"(response contained no RPC data — {len(chunks)} chunks parsed)",
+                method_id=rpc_id,
+                raw_response=response_preview,
+            )
+
+        # ``rpc_id`` is present in ``found_ids`` but ``extract_rpc_result`` returned
+        # None — the requested frame carried a genuinely null payload. Honor
+        # ``allow_null`` here and return None for callers that opt in.
+        if allow_null:
+            return None
+
+        # RPC ID was found but extract_rpc_result returned None.
+        # This means wrb.fr had null result_data without UserDisplayableError.
+        # Enrich the message if the server attached a bare status code at
+        # index 5 (issues #114 / #294 showed GET_NOTEBOOK returning [5]).
+        status = _find_wrb_status(chunks, rpc_id)
+        if status is not None:
+            code, label = status
+            message = f"RPC {rpc_id} returned null result with status code {code} ({label})."
+            # Route NOT_FOUND (5) / PERMISSION_DENIED (7) through ClientError
+            # so _core.is_auth_error does not misclassify them as auth
+            # failures and trigger a spurious token-refresh retry. The
+            # account-routing hint is only relevant for these two codes —
+            # other codes (e.g. INTERNAL 13) get a plain message.
+            if code in (5, 7):
+                raise ClientError(
+                    message + _ACCOUNT_MISMATCH_HINT,
                     method_id=rpc_id,
                     rpc_code=code,
                     found_ids=found_ids,
                     raw_response=response_preview,
                 )
             raise RPCError(
-                f"RPC {rpc_id} returned null result data "
-                f"(possible server error or parameter mismatch)",
+                message,
                 method_id=rpc_id,
+                rpc_code=code,
                 found_ids=found_ids,
                 raw_response=response_preview,
             )
-
-        # No RPC data found at all (found_ids is empty; non-empty cases handled above)
         raise RPCError(
-            f"No result found for RPC ID: {rpc_id} "
-            f"(response contained no RPC data — {len(chunks)} chunks parsed)",
+            f"RPC {rpc_id} returned null result data (possible server error or parameter mismatch)",
             method_id=rpc_id,
+            found_ids=found_ids,
             raw_response=response_preview,
         )
 
