@@ -134,6 +134,13 @@ _HANDLER_MARKER = "_notebooklm_redacting"
 _DEFAULT_FMT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _DEFAULT_DATEFMT = "%H:%M:%S"
 
+# Third-party loggers that emit notebooklm-py credentials at DEBUG/INFO (full
+# request URLs carrying ?f.sid=, Cookie headers, etc.). A logger-level
+# RedactingFilter is attached to each at import time so library consumers who
+# enable these loggers (e.g. logging.basicConfig(level=DEBUG)) get scrubbed
+# output WITHOUT us adding any handler — see _install_thirdparty_redaction.
+_THIRD_PARTY_LOGGERS: tuple[str, ...] = ("httpx", "urllib3")
+
 # Fast-path gate for ``scrub_secrets``. If none of these substrings appear in
 # the input (compared case-insensitively), no pattern in ``_REDACT_PATTERNS``
 # can possibly match, so we skip the full regex sweep. This is a STRICT
@@ -373,6 +380,27 @@ def apply_redaction(handler: logging.Handler) -> logging.Handler:
     return handler
 
 
+def _install_thirdparty_redaction(*logger_names: str) -> None:
+    """Attach a logger-level RedactingFilter to third-party loggers.
+
+    Unlike ``install_redaction`` (which adds a default StreamHandler so the
+    third-party logger emits somewhere), this only adds a ``RedactingFilter``
+    to the *logger* itself and never adds a handler. Logger-level filters run
+    in ``Logger.handle`` before records are dispatched to handlers AND before
+    propagation to ancestor loggers, so the record is scrubbed in place before
+    any downstream handler (root's ``basicConfig`` handler included) renders
+    it. This is pure defense-in-depth: a library consumer who never enables
+    these loggers sees no behavior change, and one who enables httpx DEBUG via
+    ``logging.basicConfig`` no longer leaks ``?f.sid=`` request URLs.
+
+    Idempotent: re-running does not stack duplicate filters.
+    """
+    for name in logger_names:
+        ext_logger = logging.getLogger(name)
+        if not _has_redacting_filter(ext_logger.filters):
+            ext_logger.addFilter(RedactingFilter())
+
+
 def configure_logging() -> None:
     """Configure the `notebooklm` package logger with credential redaction.
 
@@ -386,6 +414,10 @@ def configure_logging() -> None:
     The in-place filter mutation ensures downstream handlers see scrubbed
     data. Applications that want isolated notebooklm logs should set
     logging.getLogger("notebooklm").propagate = False themselves.
+
+    Also installs a logger-level RedactingFilter on httpx/urllib3 so library
+    consumers who enable those loggers (without going through the CLI's ``-vv``
+    path) still get credential-scrubbed request URLs and headers.
     """
     logger = logging.getLogger("notebooklm")
 
@@ -400,6 +432,8 @@ def configure_logging() -> None:
         logger.addHandler(_make_default_handler())
 
     logger.propagate = True
+
+    _install_thirdparty_redaction(*_THIRD_PARTY_LOGGERS)
 
 
 def install_redaction(*logger_names: str) -> None:

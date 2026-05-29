@@ -652,6 +652,76 @@ def test_install_redaction_no_root_mutation(saved_external_logger, saved_root_lo
 
 
 # ---------------------------------------------------------------------------
+# Third-party logger-level redaction installed at import / configure_logging
+# (issue #1166: library consumers who enable httpx DEBUG must not leak f.sid)
+# ---------------------------------------------------------------------------
+
+
+def test_configure_logging_installs_thirdparty_filters(saved_logger_state, saved_external_logger):
+    """configure_logging attaches a logger-level RedactingFilter to httpx/urllib3.
+
+    It must NOT add a handler — a consumer who never enables these loggers
+    should see no behavior change beyond the in-place scrubbing filter.
+    """
+    httpx_logger = saved_external_logger("httpx")
+    urllib3_logger = saved_external_logger("urllib3")
+
+    configure_logging()
+
+    for lg in (httpx_logger, urllib3_logger):
+        assert any(isinstance(f, RedactingFilter) for f in lg.filters)
+        # No handler is added to third-party loggers (no surprise stdout output).
+        assert not any(getattr(h, "_notebooklm_redacting", False) for h in lg.handlers)
+
+
+def test_configure_logging_thirdparty_filter_is_idempotent(
+    saved_logger_state, saved_external_logger
+):
+    """Re-running configure_logging does not stack duplicate filters on httpx."""
+    httpx_logger = saved_external_logger("httpx")
+
+    configure_logging()
+    configure_logging()
+
+    redacting = [f for f in httpx_logger.filters if isinstance(f, RedactingFilter)]
+    assert len(redacting) == 1
+
+
+def test_httpx_request_url_redacted_for_library_consumer(
+    saved_logger_state, saved_external_logger, saved_root_logger
+):
+    """A library consumer enabling httpx DEBUG via basicConfig gets scrubbed URLs.
+
+    Reproduces issue #1166: without the logger-level filter, the httpx
+    'HTTP Request: GET ...?f.sid=<session>' line propagates to the root
+    handler unredacted. configure_logging() must prevent that leak even
+    though notebooklm-py adds no handler to the httpx logger.
+    """
+    httpx_logger = saved_external_logger("httpx")
+    # httpx ships its logger at NOTSET, so it inherits the effective level from
+    # root. Mirror that here (the fixture parks it at WARNING for isolation).
+    httpx_logger.setLevel(logging.NOTSET)
+    configure_logging()
+
+    # Simulate logging.basicConfig(level=DEBUG): a handler on root, no handler
+    # on the httpx logger itself. The record propagates from httpx -> root.
+    buf = io.StringIO()
+    root_handler = logging.StreamHandler(buf)
+    root_handler.setFormatter(logging.Formatter("%(name)s %(message)s"))
+    saved_root_logger.addHandler(root_handler)
+    saved_root_logger.setLevel(logging.DEBUG)
+
+    logging.getLogger("httpx").info(
+        "HTTP Request: GET https://notebooklm.google.com/_/batchexecute?f.sid=SESSION_LEAK "
+        '"HTTP/1.1 200 OK"'
+    )
+
+    out = buf.getvalue()
+    assert "SESSION_LEAK" not in out
+    assert "f.sid=***" in out
+
+
+# ---------------------------------------------------------------------------
 # Fast-path gate (SECRET_FAST_PATH_TOKENS) — correctness + perf
 # ---------------------------------------------------------------------------
 
