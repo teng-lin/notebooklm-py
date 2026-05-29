@@ -305,8 +305,9 @@ class TestLoginMultiAccount:
             )
 
         assert result.exit_code != 0
-        assert "already has auth for alice@example.com" in result.output
-        assert "not overwriting with bob@gmail.com" in result.output
+        output_normalized = " ".join(result.output.split())
+        assert "already has auth for alice@example.com" in output_normalized
+        assert "not overwriting with bob@gmail.com" in output_normalized
         assert _read_account(storage_file) == {
             "authuser": 0,
             "email": "alice@example.com",
