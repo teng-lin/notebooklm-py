@@ -21,6 +21,37 @@ from .rpc import (
     nest_source_ids,
 )
 
+_STATIC_REPORT_CONFIGS: dict[ReportFormat, dict[str, str]] = {
+    ReportFormat.BRIEFING_DOC: {
+        "title": "Briefing Doc",
+        "description": "Key insights and important quotes",
+        "prompt": (
+            "Create a comprehensive briefing document that includes an "
+            "Executive Summary, detailed analysis of key themes, important "
+            "quotes with context, and actionable insights."
+        ),
+    },
+    ReportFormat.STUDY_GUIDE: {
+        "title": "Study Guide",
+        "description": "Short-answer quiz, essay questions, glossary",
+        "prompt": (
+            "Create a comprehensive study guide that includes key concepts, "
+            "short-answer practice questions, essay prompts for deeper "
+            "exploration, and a glossary of important terms."
+        ),
+    },
+    ReportFormat.BLOG_POST: {
+        "title": "Blog Post",
+        "description": "Insightful takeaways in readable article format",
+        "prompt": (
+            "Write an engaging blog post that presents the key insights "
+            "in an accessible, reader-friendly format. Include an attention-"
+            "grabbing introduction, well-organized sections, and a compelling "
+            "conclusion with takeaways."
+        ),
+    },
+}
+
 
 def build_audio_artifact_params(
     notebook_id: str,
@@ -441,39 +472,10 @@ def _report_config(
     report_format: ReportFormat,
     custom_prompt: str | None,
 ) -> dict[str, str]:
-    format_configs = {
-        ReportFormat.BRIEFING_DOC: {
-            "title": "Briefing Doc",
-            "description": "Key insights and important quotes",
-            "prompt": (
-                "Create a comprehensive briefing document that includes an "
-                "Executive Summary, detailed analysis of key themes, important "
-                "quotes with context, and actionable insights."
-            ),
-        },
-        ReportFormat.STUDY_GUIDE: {
-            "title": "Study Guide",
-            "description": "Short-answer quiz, essay questions, glossary",
-            "prompt": (
-                "Create a comprehensive study guide that includes key concepts, "
-                "short-answer practice questions, essay prompts for deeper "
-                "exploration, and a glossary of important terms."
-            ),
-        },
-        ReportFormat.BLOG_POST: {
-            "title": "Blog Post",
-            "description": "Insightful takeaways in readable article format",
-            "prompt": (
-                "Write an engaging blog post that presents the key insights "
-                "in an accessible, reader-friendly format. Include an attention-"
-                "grabbing introduction, well-organized sections, and a compelling "
-                "conclusion with takeaways."
-            ),
-        },
-        ReportFormat.CUSTOM: {
+    if report_format == ReportFormat.CUSTOM:
+        return {
             "title": "Custom Report",
             "description": "Custom format",
             "prompt": custom_prompt or "Create a report based on the provided sources.",
-        },
-    }
-    return format_configs[report_format]
+        }
+    return _STATIC_REPORT_CONFIGS[report_format]
