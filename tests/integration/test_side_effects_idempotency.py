@@ -395,8 +395,8 @@ async def test_notebooks_create_probe_propagates_network_error(
         return httpx.Response(404, text="unexpected")
 
     # Skip backoff sleeps so the test doesn't pay the inner-retry wall time
-    # on the probe's LIST_NOTEBOOKS retries (LIST_NOTEBOOKS is UNCLASSIFIED
-    # so the transport still retries 5xx/network errors there).
+    # on the probe's LIST_NOTEBOOKS retries (LIST_NOTEBOOKS is explicitly
+    # retry-safe, so the transport still retries 5xx/network errors there).
     async def _no_sleep(_seconds: float) -> None:
         return None
 
@@ -411,7 +411,7 @@ async def test_notebooks_create_probe_propagates_network_error(
         await client._collaborators.kernel.get_http_client().aclose()
 
     # Sanity check: the probe was actually attempted and the create fired
-    # once before the probe failed. LIST_NOTEBOOKS is UNCLASSIFIED so the
+    # once before the probe failed. LIST_NOTEBOOKS is retry-safe so the
     # inner transport retry loop fires for the probe — we don't pin a
     # precise count, only that the probe path was entered (>1 list call).
     assert list_call_count >= 2, (

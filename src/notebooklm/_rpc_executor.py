@@ -114,9 +114,8 @@ class RpcExecutor:
 
         The ``operation_variant`` kwarg (default ``None``) routes through
         the :class:`IdempotencyRegistry` lookup in :meth:`_execute_once` so the
-        executor can pick a method-variant-specific policy. Currently
-        every method default-resolves to ``UNCLASSIFIED`` (silent + no
-        behavior change); Wave 2 will populate variant entries.
+        executor can pick a method-variant-specific policy for wire shapes
+        such as ``ADD_SOURCE`` and ``CREATE_NOTE``.
         """
         # Pre-open guard — preserves the historical ``RuntimeError`` surface by
         # routing through ``Kernel.get_http_client()`` (which raises the same
@@ -182,10 +181,9 @@ class RpcExecutor:
         # Consult the idempotency registry. The registry is the single
         # source of truth for "how should this RPC behave under retry?";
         # the caller's explicit ``disable_internal_retries=True`` always
-        # wins (caller intent > policy). For UNCLASSIFIED entries (the
-        # B1-foundation default for every method), the effective value
-        # equals the caller's value and no log is emitted — today's
-        # retries fire identically.
+        # wins (caller intent > policy). Read-only and idempotent set-state
+        # entries keep the caller's value unchanged, so existing retry
+        # defaults remain intact for retry-safe RPCs.
         #
         # The registry call also raises ``IdempotencyVariantError`` if
         # the caller passed an unknown ``operation_variant`` to a method
@@ -200,7 +198,7 @@ class RpcExecutor:
         # For CLIENT_TOKEN_DEDUPE policies, inject a fresh ``uuid4().hex``
         # into the registry-named param field UNLESS the caller already
         # populated it. No-op for every other policy, so this is a
-        # zero-cost call for the UNCLASSIFIED-everywhere B1 default.
+        # zero-cost call for every non-token policy.
         maybe_inject_client_token(
             IDEMPOTENCY_REGISTRY,
             method,

@@ -1,4 +1,4 @@
-"""Audit tests for mutating operation recovery inventory."""
+"""Audit tests for the mutating operation compatibility shim."""
 
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ def _probe_then_create_registry_keys() -> set[tuple[RPCMethod, str | None]]:
     }
 
 
-def test_every_probe_then_create_entry_has_mutating_operation_policy() -> None:
+def test_mutating_operation_shim_does_not_add_policy_data() -> None:
+    """The shim must derive retry-policy membership from the active registry."""
     assert set(MUTATING_OPERATION_POLICIES) == _probe_then_create_registry_keys()
 
 

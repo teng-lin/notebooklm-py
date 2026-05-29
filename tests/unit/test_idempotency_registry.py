@@ -1,14 +1,11 @@
-"""Tests for the mutating-RPC idempotency registry foundation.
+"""Tests for the RPC idempotency registry.
 
-This is the B1 foundation (P0-3 + P1-2): a 6-policy classification layer
-with operation variants that the ``RpcExecutor`` consults to compute
+The registry is a 6-policy classification layer with operation variants
+that the ``RpcExecutor`` consults to compute
 ``effective_disable_internal_retries`` and optional client-token injection.
-
-Behavioral classifications for individual RPCs are intentionally deferred
-to Wave 2 — every method default-populates to
-:attr:`~notebooklm._idempotency.IdempotencyPolicy.UNCLASSIFIED` and the
-executor MUST stay silent + reproduce today's retry behavior for those
-entries (regression-protect the "no behavioral drift" acceptance).
+The production registry must explicitly classify every ``RPCMethod``; the
+``UNCLASSIFIED`` policy is retained only as a placeholder for hand-built
+test registries and future-drift detection.
 """
 
 from __future__ import annotations
@@ -31,31 +28,106 @@ from notebooklm.exceptions import IdempotencyVariantError
 from notebooklm.rpc import RPCMethod
 
 # ---------------------------------------------------------------------------
-# Coverage: every RPCMethod has a (method, None) entry
+# Coverage: every RPCMethod has an explicit production classification
 # ---------------------------------------------------------------------------
 
 
-def test_registry_covers_every_rpc_method_at_variant_none() -> None:
-    """Every RPCMethod MUST have a (method, None) entry — the default fallback.
-
-    Wave 2 will classify each method individually. Until then, every method
-    resolves to UNCLASSIFIED with the placeholder note so the registry is
-    a total function over ``RPCMethod``.
-    """
+def test_registry_classifies_every_rpc_method_at_variant_none() -> None:
+    """Every RPCMethod MUST have an explicit ``(method, None)`` entry."""
     for method in RPCMethod:
         entry = IDEMPOTENCY_REGISTRY.get_entry(method)
         assert entry is not None, f"{method.name} has no (method, None) registry entry"
         assert isinstance(entry, IdempotencyEntry)
         assert isinstance(entry.policy, IdempotencyPolicy)
+        assert entry.policy is not IdempotencyPolicy.UNCLASSIFIED, (
+            f"{method.name} kept the UNCLASSIFIED placeholder; add an explicit "
+            "idempotency classification"
+        )
+        assert entry.notes.strip(), f"{method.name} classification must document its rationale"
 
 
-def test_registry_defaults_to_unclassified_placeholder() -> None:
-    """Default placeholder MUST be UNCLASSIFIED with the Wave 2 marker note."""
-    # Pick a stable method that Wave 2 hasn't classified yet.
-    entry = IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.LIST_NOTEBOOKS)
-    assert entry.policy is IdempotencyPolicy.UNCLASSIFIED
-    assert "placeholder" in entry.notes.lower()
-    assert "wave 2" in entry.notes.lower()
+def test_registry_has_no_unclassified_production_entries() -> None:
+    """Guard against future ``RPCMethod`` additions without classification."""
+    unclassified = [
+        f"{method.name}:{variant or '<default>'}"
+        for method, variant, entry in IDEMPOTENCY_REGISTRY.iter_entries()
+        if entry.policy is IdempotencyPolicy.UNCLASSIFIED
+    ]
+
+    assert unclassified == []
+
+
+def test_retry_disabled_entries_are_intentional_and_documented() -> None:
+    """Non-retryable methods are pinned so cleanup cannot make them retryable."""
+    expected = {
+        (RPCMethod.CREATE_NOTEBOOK, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.ADD_SOURCE, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.ADD_SOURCE, "url"): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.ADD_SOURCE, "drive"): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.ADD_SOURCE, "text"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.ADD_SOURCE_FILE, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.CREATE_ARTIFACT, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.EXPORT_ARTIFACT, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.REVISE_SLIDE, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.START_FAST_RESEARCH, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.START_DEEP_RESEARCH, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.IMPORT_RESEARCH, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.GENERATE_MIND_MAP, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.CREATE_NOTE, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.CREATE_NOTE, "plain"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.CREATE_NOTE, "saved_from_chat"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.SHARE_NOTEBOOK, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+    }
+    actual = {
+        (method, variant): entry.policy
+        for method, variant, entry in IDEMPOTENCY_REGISTRY.iter_entries()
+        if entry.policy
+        in {
+            IdempotencyPolicy.PROBE_THEN_CREATE,
+            IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        }
+    }
+
+    assert actual == expected
+    for method, variant in expected:
+        entry = IDEMPOTENCY_REGISTRY.get_entry(method, operation_variant=variant)
+        assert entry.notes.strip()
+        assert (
+            resolve_effective_disable_internal_retries(
+                IDEMPOTENCY_REGISTRY,
+                method,
+                caller_disable_internal_retries=False,
+                operation_variant=variant,
+            )
+            is True
+        )
+
+
+def test_non_idempotent_no_retry_entries_document_dedupe_gap() -> None:
+    """Hard no-retry methods must explain why blind retry cannot be safe."""
+    expected_terms = {
+        (RPCMethod.ADD_SOURCE, None): ("operation_variant", "blind retry"),
+        (RPCMethod.ADD_SOURCE, "text"): ("no reliable dedupe key",),
+        (RPCMethod.EXPORT_ARTIFACT, None): ("external docs/sheets", "no client-token"),
+        (RPCMethod.REVISE_SLIDE, None): ("no client-token", "blind retry"),
+        (RPCMethod.START_FAST_RESEARCH, None): ("ambiguous", "same query"),
+        (RPCMethod.START_DEEP_RESEARCH, None): ("ambiguous", "same query"),
+        (RPCMethod.IMPORT_RESEARCH, None): ("cannot bind", "same urls"),
+        (RPCMethod.CREATE_NOTE, None): ("no client-token", "no client-visible note_id"),
+        (RPCMethod.CREATE_NOTE, "plain"): ("no client-token", "no client-visible note_id"),
+        (RPCMethod.CREATE_NOTE, "saved_from_chat"): (
+            "no client-token",
+            "no client-visible note_id",
+        ),
+    }
+
+    for (method, variant), terms in expected_terms.items():
+        entry = IDEMPOTENCY_REGISTRY.get_entry(method, operation_variant=variant)
+
+        assert entry.policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
+        lower_notes = entry.notes.lower()
+        for term in terms:
+            assert term in lower_notes
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +205,8 @@ def test_unknown_variant_with_explicit_variant_entries_raises() -> None:
 
 def test_unknown_variant_with_no_variant_entries_falls_back_quietly() -> None:
     """A method with ONLY the ``(method, None)`` entry MUST tolerate any
-    variant name (silent fallback). This keeps the foundation behavior-neutral
-    until Wave 2 adds variant tables."""
+    variant name (silent fallback). This keeps methods without variant tables
+    backward-compatible."""
     registry = IdempotencyRegistry()
     registry.register(RPCMethod.LIST_NOTEBOOKS, IdempotencyPolicy.UNCLASSIFIED)
 
@@ -238,9 +310,10 @@ def test_safe_policies_leave_caller_false_untouched(
 def test_unclassified_emits_no_log_lines_across_1000_calls(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """UNCLASSIFIED MUST be 100% silent — the foundation cannot spam logs
-    while Wave 2 hasn't classified the bulk of the registry. 1000 calls
-    is enough to catch any per-call WARN/INFO leak."""
+    """UNCLASSIFIED MUST be 100% silent in hand-built placeholder registries.
+
+    1000 calls is enough to catch any per-call WARN/INFO leak.
+    """
     registry = IdempotencyRegistry()
     registry.register(RPCMethod.LIST_NOTEBOOKS, IdempotencyPolicy.UNCLASSIFIED)
 
@@ -494,7 +567,7 @@ def test_client_token_dedupe_is_noop_for_other_policies() -> None:
 
 
 # ---------------------------------------------------------------------------
-# RpcExecutor consultation: behavioral equivalence with default registry
+# RpcExecutor consultation: behavioral equivalence with active registry
 # ---------------------------------------------------------------------------
 
 
@@ -571,10 +644,12 @@ def _build_rpc_executor() -> Any:
 async def test_default_registry_preserves_today_behavior(
     _build_rpc_executor: Any,
 ) -> None:
-    """Behavioral equivalence: with the production registry's default
-    UNCLASSIFIED policy for every method, an unspecified
-    ``disable_internal_retries`` MUST resolve to False — exactly today's
-    behavior. No drift."""
+    """Behavioral equivalence: retry-safe classifications keep retries enabled.
+
+    ``LIST_NOTEBOOKS`` is explicitly classified as a retry-safe read. An
+    unspecified ``disable_internal_retries`` MUST still resolve to False —
+    exactly the public default.
+    """
     executor, _unused, captured = _build_rpc_executor
 
     await executor._execute_once(
@@ -619,8 +694,8 @@ async def test_operation_variant_kwarg_threads_through_executor(
     _build_rpc_executor: Any,
 ) -> None:
     """``operation_variant`` MUST be accepted as a kwarg on
-    ``RpcExecutor._execute_once()`` without breaking the call. Wave 2 will wire
-    behavioral effects; this PR only adds the seam."""
+    ``RpcExecutor._execute_once()`` without breaking fallback for methods
+    without explicit variant tables."""
     executor, _unused, captured = _build_rpc_executor
 
     # Should not raise — kwarg is accepted everywhere.

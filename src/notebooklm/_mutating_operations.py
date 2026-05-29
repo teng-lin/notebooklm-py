@@ -1,4 +1,11 @@
-"""Audit inventory for mutating operations that suppress blind retries."""
+"""Compatibility shim for probe-then-create recovery metadata.
+
+The active retry taxonomy lives in :mod:`notebooklm._idempotency`. This
+module intentionally derives its keys from ``IDEMPOTENCY_REGISTRY`` so it
+cannot become a second source of truth for which RPCs suppress blind
+transport retries. The only data retained here is the legacy recovery
+label used by existing tests and private importers.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 
+from ._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyEntry, IdempotencyPolicy
 from .rpc.types import RPCMethod
 
 
@@ -26,54 +34,40 @@ class MutatingOperationPolicy:
     disable_only_reason: str = ""
 
 
+_EXECUTABLE_RECOVERY_KEYS: frozenset[tuple[RPCMethod, str | None]] = frozenset(
+    {
+        (RPCMethod.CREATE_NOTEBOOK, None),
+        (RPCMethod.ADD_SOURCE, "url"),
+        (RPCMethod.ADD_SOURCE, "drive"),
+        (RPCMethod.ADD_SOURCE_FILE, None),
+    }
+)
+
+
+def _build_policy(
+    method: RPCMethod,
+    variant: str | None,
+    entry: IdempotencyEntry,
+) -> MutatingOperationPolicy:
+    key = (method, variant)
+    if key in _EXECUTABLE_RECOVERY_KEYS:
+        return MutatingOperationPolicy(
+            method=method,
+            variant=variant,
+            recovery=RecoveryKind.EXECUTABLE,
+        )
+    return MutatingOperationPolicy(
+        method=method,
+        variant=variant,
+        recovery=RecoveryKind.DISABLE_ONLY,
+        disable_only_reason=entry.notes,
+    )
+
+
 MUTATING_OPERATION_POLICIES: dict[tuple[RPCMethod, str | None], MutatingOperationPolicy] = {
-    (RPCMethod.CREATE_NOTEBOOK, None): MutatingOperationPolicy(
-        method=RPCMethod.CREATE_NOTEBOOK,
-        variant=None,
-        recovery=RecoveryKind.EXECUTABLE,
-    ),
-    (RPCMethod.ADD_SOURCE, "url"): MutatingOperationPolicy(
-        method=RPCMethod.ADD_SOURCE,
-        variant="url",
-        recovery=RecoveryKind.EXECUTABLE,
-    ),
-    (RPCMethod.ADD_SOURCE, "drive"): MutatingOperationPolicy(
-        method=RPCMethod.ADD_SOURCE,
-        variant="drive",
-        recovery=RecoveryKind.EXECUTABLE,
-    ),
-    (RPCMethod.ADD_SOURCE_FILE, None): MutatingOperationPolicy(
-        method=RPCMethod.ADD_SOURCE_FILE,
-        variant=None,
-        recovery=RecoveryKind.EXECUTABLE,
-    ),
-    (RPCMethod.CREATE_ARTIFACT, None): MutatingOperationPolicy(
-        method=RPCMethod.CREATE_ARTIFACT,
-        variant=None,
-        recovery=RecoveryKind.DISABLE_ONLY,
-        disable_only_reason=(
-            "artifact generation disables blind retries today; list-based "
-            "probe recovery is not implemented yet"
-        ),
-    ),
-    (RPCMethod.GENERATE_MIND_MAP, None): MutatingOperationPolicy(
-        method=RPCMethod.GENERATE_MIND_MAP,
-        variant=None,
-        recovery=RecoveryKind.DISABLE_ONLY,
-        disable_only_reason=(
-            "mind-map generation disables blind retries today; no executable "
-            "probe wrapper binds a lost generation response to a later result"
-        ),
-    ),
-    (RPCMethod.SHARE_NOTEBOOK, None): MutatingOperationPolicy(
-        method=RPCMethod.SHARE_NOTEBOOK,
-        variant=None,
-        recovery=RecoveryKind.DISABLE_ONLY,
-        disable_only_reason=(
-            "sharing disables blind retries today; GET_SHARE_STATUS-based "
-            "probe recovery is not implemented yet"
-        ),
-    ),
+    (method, variant): _build_policy(method, variant, entry)
+    for method, variant, entry in IDEMPOTENCY_REGISTRY.iter_entries()
+    if entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
 }
 
 
