@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -142,6 +143,148 @@ class TestRecoveryPreconditions:
         monkeypatch.setattr(psidts_recovery, "_try_claim_rotation", lambda _path: False)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+
+class TestPsidtsExpiryGate:
+    """The precondition gate must treat a present-but-EXPIRED PSIDTS as absent.
+
+    Tier-0 cold-start fix: ``_recover_psidts_inline`` originally keyed purely on
+    name presence, so an idle Chrome session whose ``__Secure-1PSIDTS`` row is
+    still on disk but past its ``expires`` epoch silently skipped the one
+    ``RotateCookies`` POST that would heal it (cold-start then failed at the
+    first authed GET). A ``-1``/``None`` (session-cookie) expiry stays
+    not-expired, matching ``_storage_entry_to_cookie``.
+    """
+
+    _PAST = 1_000_000_000  # 2001-09-09, comfortably in the past
+    _FUTURE = 99_999_999_999  # year 5138, comfortably in the future
+
+    @staticmethod
+    def _with_psidts(*, expires) -> list[dict]:
+        return _RECOVERABLE_COOKIES + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "stale_or_fresh",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": expires,
+            }
+        ]
+
+    # --- direct unit tests of the helper with an injectable ``now`` ---------
+
+    def test_helper_expired_needs_recovery(self):
+        """Present + expires strictly before ``now`` → recovery proceeds."""
+        assert (
+            psidts_recovery._psidts_needs_recovery(
+                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 100.0}, now=200.0
+            )
+            is True
+        )
+
+    def test_helper_fresh_is_skipped(self):
+        """Present + expires at/after ``now`` → recovery is a no-op."""
+        assert (
+            psidts_recovery._psidts_needs_recovery(
+                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 300.0}, now=200.0
+            )
+            is False
+        )
+
+    def test_helper_session_cookie_is_skipped(self):
+        """``expires`` of -1 / None is a session cookie → never expired."""
+        for sentinel in (-1, None):
+            assert (
+                psidts_recovery._psidts_needs_recovery(
+                    {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": sentinel}, now=200.0
+                )
+                is False
+            ), sentinel
+
+    def test_helper_missing_needs_recovery(self):
+        """Absent PSIDTS → recovery proceeds (current behavior, preserved)."""
+        assert psidts_recovery._psidts_needs_recovery(set(), {}, now=200.0) is True
+
+    # --- file-based recovery end-to-end ------------------------------------
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_present_but_expired_fires_recovery(self, tmp_path, httpx_mock: HTTPXMock):
+        """The idle-Chrome case: PSIDTS on disk but expired → POST fires + heals."""
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, self._with_psidts(expires=self._PAST))
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+
+        rotate_requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
+        assert len(rotate_requests) == 1
+        saved = json.loads(storage_path.read_text())
+        fresh = next(c for c in saved["cookies"] if c["name"] == "__Secure-1PSIDTS")
+        assert fresh["value"] == "fresh_psidts_value"
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_present_and_fresh_skips_recovery(self, tmp_path, httpx_mock: HTTPXMock):
+        """A future-dated PSIDTS is healthy → no POST."""
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, self._with_psidts(expires=self._FUTURE))
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_present_session_cookie_skips_recovery(self, tmp_path, httpx_mock: HTTPXMock):
+        """A session-cookie (-1) PSIDTS is not expired → no POST (current behavior)."""
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, self._with_psidts(expires=-1))
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    # --- in-memory twin ----------------------------------------------------
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_in_memory_present_but_expired_fires_recovery(self, httpx_mock: HTTPXMock):
+        now = time.time()
+        cookies = [
+            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
+            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
+            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "stale",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": now - 3600,
+            },
+        ]
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is True
+        fresh = [
+            c
+            for c in cookies
+            if c["name"] == "__Secure-1PSIDTS" and c["value"] == "fresh_psidts_value"
+        ]
+        assert len(fresh) == 1
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_in_memory_present_and_fresh_skips_recovery(self, httpx_mock: HTTPXMock):
+        now = time.time()
+        cookies = [
+            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
+            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
+            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "fresh_on_disk",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": now + 3600,
+            },
+        ]
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
 
 
