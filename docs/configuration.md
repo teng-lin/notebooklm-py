@@ -151,8 +151,8 @@ defaults such as `DEFAULT_BL` for the chat streaming build label.
 
 `notebooklm.config` is the stable public import surface. It intentionally
 re-exports only the supported endpoint/language helpers:
-`DEFAULT_BASE_URL`, `PERSONAL_BASE_HOST`, `ENTERPRISE_BASE_HOST`,
-`get_base_url`, `get_base_host`, and `get_default_language`. Existing imports
+`DEFAULT_BASE_URL`, `ENTERPRISE_BASE_HOST`, `get_base_host`, `get_base_url`,
+`get_default_language`, and `PERSONAL_BASE_HOST`. Existing imports
 from `notebooklm.config` remain supported; internal-only `_env` names should
 not be imported by downstream code.
 
@@ -586,6 +586,8 @@ notebooklm list 2>&1 | cat
 ```bash
 NOTEBOOKLM_DEBUG_RPC=1 notebooklm list
 ```
+
+### Logger namespace compatibility
 
 Runtime transport and middleware logs still use the historical
 `notebooklm._core` logger key via `CORE_LOGGER_NAME`. That name is a
