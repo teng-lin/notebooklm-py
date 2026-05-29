@@ -171,8 +171,16 @@ def _file_lock_exclusive(lock_path: Path) -> Iterator[None]:
     (e.g. a long-running ``NotebookLMClient(keepalive=...)`` worker plus a
     cron-driven ``notebooklm auth refresh``) would otherwise race on the read-
     merge-write cycle and lose updates. The lock is held on a sentinel file
-    sibling to the storage file (``.storage_state.json.lock``), since locking
-    the storage file itself would interfere with the atomic temp-rename below.
+    sibling to the storage file (``.storage_state.json.lock``, derived by
+    :func:`notebooklm._auth.paths._storage_state_lock_path`), since locking the
+    storage file itself would interfere with the atomic temp-rename below.
+
+    ``_auth/account.py`` holds this *same* sentinel via ``filelock.FileLock``
+    when it writes account metadata into ``storage_state.json``. The two
+    mechanisms interoperate because ``filelock.FileLock`` also uses
+    ``fcntl.flock`` on POSIX, so an exclusive hold from either side blocks the
+    other — that cross-mechanism compatibility is what lets cookie saves and
+    account-metadata writes serialize on one file.
 
     The lock is per-process: threads within one process aren't serialized —
     that's the intra-process ``threading.Lock`` in ``Session``. If the
