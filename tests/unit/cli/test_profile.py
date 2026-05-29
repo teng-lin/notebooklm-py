@@ -128,6 +128,24 @@ class TestProfileListAccountMetadata:
             }
         ]
 
+    def test_json_wraps_unexpected_filesystem_error(self, runner, tmp_path):
+        with patch.object(profile_module, "list_profiles", side_effect=OSError("denied")):
+            result = runner.invoke(
+                cli,
+                ["profile", "list", "--json"],
+                env=notebooklm_env(tmp_path),
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 2
+        payload = json.loads(result.output)
+        assert payload == {
+            "error": True,
+            "code": "UNEXPECTED_ERROR",
+            "message": "Unexpected error: denied",
+        }
+        assert result.stderr == ""
+
 
 class TestProfileCreateCommand:
     @pytest.mark.parametrize("name", [".", "-work", "_work", "work/team", "../work"])

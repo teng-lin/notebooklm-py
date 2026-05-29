@@ -27,6 +27,7 @@ from ..paths import (
     read_default_profile,
     resolve_profile,
 )
+from .error_handler import handle_errors
 from .rendering import console, json_output_response
 from .services import login as login_service
 from .services.login.exceptions import LoginConfigurationError
@@ -96,6 +97,15 @@ def profile():
 @profile.command("list")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 def list_cmd(json_output):
+    """List all profiles and their status."""
+    if json_output:
+        with handle_errors(json_output=True):
+            _run_list_cmd(json_output=True)
+        return
+    _run_list_cmd(json_output=False)
+
+
+def _run_list_cmd(*, json_output: bool) -> None:
     """List all profiles and their status."""
     profiles = list_profiles()
     active = resolve_profile()

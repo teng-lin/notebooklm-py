@@ -3,6 +3,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -236,3 +237,17 @@ def test_doctor_json_output_shape(runner, isolated_notebooklm_home):
         assert set(check) == {"status", "detail"}
         assert check["status"] in {"pass", "warn", "fail"}
         assert isinstance(check["detail"], str)
+
+
+def test_doctor_json_wraps_unexpected_filesystem_error(runner, isolated_notebooklm_home):
+    with patch("notebooklm.cli.doctor_cmd.get_storage_path", side_effect=OSError("denied")):
+        result = runner.invoke(cli, ["doctor", "--json"], catch_exceptions=True)
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload == {
+        "error": True,
+        "code": "UNEXPECTED_ERROR",
+        "message": "Unexpected error: denied",
+    }
+    assert result.stderr == ""

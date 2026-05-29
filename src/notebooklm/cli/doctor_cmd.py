@@ -17,6 +17,7 @@ from ..paths import (
     get_profile_dir,
     get_storage_path,
 )
+from .error_handler import handle_errors
 from .rendering import console, json_output_response
 
 logger = logging.getLogger(__name__)
@@ -40,126 +41,134 @@ def register_doctor_command(cli):
           notebooklm doctor --fix     # Fix detected issues
           notebooklm doctor --json    # Machine-readable output
         """
-        checks: dict[str, dict] = {}
-        path_info = get_path_info()
-        profile_name = path_info["profile"]
-        profile_source = path_info["profile_source"]
-        home = get_home_dir()
+        if json_output:
+            with handle_errors(json_output=True):
+                _run_doctor(fix_issues, json_output=True)
+            return
+        _run_doctor(fix_issues, json_output=False)
 
-        # Check 1: Migration status
-        profiles_dir = home / "profiles"
-        has_legacy = any(
-            (home / name).exists()
-            for name in ("storage_state.json", "context.json", "browser_profile")
-        )
-        has_profiles = profiles_dir.exists()
 
-        if has_profiles and not has_legacy:
-            checks["migration"] = {"status": "pass", "detail": "complete"}
-        elif has_legacy and not has_profiles:
-            checks["migration"] = {"status": "fail", "detail": "legacy layout detected"}
-        elif has_legacy and has_profiles:
-            checks["migration"] = {
-                "status": "warn",
-                "detail": "legacy files remain alongside profiles",
-            }
-        else:
-            checks["migration"] = {"status": "pass", "detail": "clean (no legacy files)"}
+def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
+    """Run doctor checks and emit either JSON or rich text output."""
+    checks: dict[str, dict] = {}
+    path_info = get_path_info()
+    profile_name = path_info["profile"]
+    profile_source = path_info["profile_source"]
+    home = get_home_dir()
 
-        # Check 2: Profile directory
-        profile_dir = get_profile_dir()
-        if profile_dir.exists():
-            perms = profile_dir.stat().st_mode & 0o777
-            if perms == 0o700:
-                checks["profile_dir"] = {"status": "pass", "detail": str(profile_dir)}
-            else:
-                checks["profile_dir"] = {
-                    "status": "warn",
-                    "detail": f"{profile_dir} (permissions: {oct(perms)}, expected: 0o700)",
-                }
+    # Check 1: Migration status
+    profiles_dir = home / "profiles"
+    has_legacy = any(
+        (home / name).exists() for name in ("storage_state.json", "context.json", "browser_profile")
+    )
+    has_profiles = profiles_dir.exists()
+
+    if has_profiles and not has_legacy:
+        checks["migration"] = {"status": "pass", "detail": "complete"}
+    elif has_legacy and not has_profiles:
+        checks["migration"] = {"status": "fail", "detail": "legacy layout detected"}
+    elif has_legacy and has_profiles:
+        checks["migration"] = {
+            "status": "warn",
+            "detail": "legacy files remain alongside profiles",
+        }
+    else:
+        checks["migration"] = {"status": "pass", "detail": "clean (no legacy files)"}
+
+    # Check 2: Profile directory
+    profile_dir = get_profile_dir()
+    if profile_dir.exists():
+        perms = profile_dir.stat().st_mode & 0o777
+        if perms == 0o700:
+            checks["profile_dir"] = {"status": "pass", "detail": str(profile_dir)}
         else:
             checks["profile_dir"] = {
-                "status": "fail",
-                "detail": f"{profile_dir} not found",
+                "status": "warn",
+                "detail": f"{profile_dir} (permissions: {oct(perms)}, expected: 0o700)",
             }
+    else:
+        checks["profile_dir"] = {
+            "status": "fail",
+            "detail": f"{profile_dir} not found",
+        }
 
-        # Check 3: Auth
-        storage_path = get_storage_path()
-        if storage_path.exists():
-            try:
-                data = json.loads(storage_path.read_text(encoding="utf-8"))
-                if not isinstance(data, dict):
-                    raise ValueError("storage root is not an object")
-                cookies = data.get("cookies", [])
-                if not isinstance(cookies, list):
-                    raise ValueError("cookies is not a list")
-                cookie_names = {c.get("name") for c in cookies if isinstance(c, dict)}
-                if "SID" in cookie_names:
-                    checks["auth"] = {
-                        "status": "pass",
-                        "detail": f"local SID cookie present ({len(cookie_names)} cookies)",
-                    }
-                else:
-                    checks["auth"] = {
-                        "status": "fail",
-                        "detail": "SID cookie missing",
-                    }
-            except (json.JSONDecodeError, OSError, ValueError) as e:
-                checks["auth"] = {"status": "fail", "detail": f"invalid storage file: {e}"}
-        else:
-            checks["auth"] = {"status": "fail", "detail": "not authenticated"}
+    # Check 3: Auth
+    storage_path = get_storage_path()
+    if storage_path.exists():
+        try:
+            data = json.loads(storage_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("storage root is not an object")
+            cookies = data.get("cookies", [])
+            if not isinstance(cookies, list):
+                raise ValueError("cookies is not a list")
+            cookie_names = {c.get("name") for c in cookies if isinstance(c, dict)}
+            if "SID" in cookie_names:
+                checks["auth"] = {
+                    "status": "pass",
+                    "detail": f"local SID cookie present ({len(cookie_names)} cookies)",
+                }
+            else:
+                checks["auth"] = {
+                    "status": "fail",
+                    "detail": "SID cookie missing",
+                }
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            checks["auth"] = {"status": "fail", "detail": f"invalid storage file: {e}"}
+    else:
+        checks["auth"] = {"status": "fail", "detail": "not authenticated"}
 
-        # Check 4: Config
-        config_path = get_config_path()
-        if config_path.exists():
-            try:
-                config_data = json.loads(config_path.read_text(encoding="utf-8"))
-                if not isinstance(config_data, dict):
-                    raise ValueError("config root is not an object")
-                default_profile = config_data.get("default_profile")
-                if default_profile and isinstance(default_profile, str):
-                    try:
-                        profile_exists = get_profile_dir(default_profile).exists()
-                    except ValueError:
-                        profile_exists = False
-                    if profile_exists:
-                        checks["config"] = {
-                            "status": "pass",
-                            "detail": f"valid (default_profile: {default_profile})",
-                        }
-                    else:
-                        checks["config"] = {
-                            "status": "warn",
-                            "detail": f"default_profile '{default_profile}' does not exist",
-                        }
-                else:
+    # Check 4: Config
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            config_data = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(config_data, dict):
+                raise ValueError("config root is not an object")
+            default_profile = config_data.get("default_profile")
+            if default_profile and isinstance(default_profile, str):
+                try:
+                    profile_exists = get_profile_dir(default_profile).exists()
+                except ValueError:
+                    profile_exists = False
+                if profile_exists:
                     checks["config"] = {
                         "status": "pass",
-                        "detail": "valid (no default_profile set)",
+                        "detail": f"valid (default_profile: {default_profile})",
                     }
-            except (json.JSONDecodeError, OSError, ValueError) as e:
-                checks["config"] = {"status": "fail", "detail": f"invalid: {e}"}
-        else:
-            checks["config"] = {"status": "pass", "detail": "not present (using defaults)"}
+                else:
+                    checks["config"] = {
+                        "status": "warn",
+                        "detail": f"default_profile '{default_profile}' does not exist",
+                    }
+            else:
+                checks["config"] = {
+                    "status": "pass",
+                    "detail": "valid (no default_profile set)",
+                }
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            checks["config"] = {"status": "fail", "detail": f"invalid: {e}"}
+    else:
+        checks["config"] = {"status": "pass", "detail": "not present (using defaults)"}
 
-        # Apply fixes if requested
-        fixes_applied = []
-        if fix_issues:
-            fixes_applied = _apply_fixes(checks, home, profile_dir)
+    # Apply fixes if requested
+    fixes_applied = []
+    if fix_issues:
+        fixes_applied = _apply_fixes(checks, home, profile_dir)
 
-        # Output
-        if json_output:
-            result = {
-                "profile": profile_name,
-                "profile_source": profile_source,
-                "checks": checks,
-            }
-            if fixes_applied:
-                result["fixes_applied"] = fixes_applied
-            json_output_response(result)
-            return
+    # Output
+    if json_output:
+        result = {
+            "profile": profile_name,
+            "profile_source": profile_source,
+            "checks": checks,
+        }
+        if fixes_applied:
+            result["fixes_applied"] = fixes_applied
+        json_output_response(result)
+        return
 
-        _display_results(profile_name, profile_source, checks, fixes_applied)
+    _display_results(profile_name, profile_source, checks, fixes_applied)
 
 
 def _apply_fixes(checks: dict, home, profile_dir) -> list[str]:

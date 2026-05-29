@@ -30,28 +30,6 @@ from notebooklm.types import (
 )
 
 # ---------------------------------------------------------------------------
-# Coverage-gap markers — see ``test_json_stdout_purity.py``'s dynamic
-# inventory test. These commands currently lack the canonical JSON envelope
-# on unhandled exceptions: ``doctor`` and ``profile list`` are not wrapped in
-# ``handle_errors`` and raise the underlying ``OSError`` straight through
-# Click. The xfail entries document the gap and pressure a future PR to wrap
-# them in the standard envelope path (e.g. via ``handle_errors`` or a
-# command-local ``try`` that calls ``json_error_response``). When that lands,
-# the xfail flips to XPASS — at which point the marker should be removed and
-# the assertions become hard.
-# ---------------------------------------------------------------------------
-_DOCTOR_GAP_REASON = (
-    "doctor --json currently propagates OSError uncaught (no handle_errors "
-    "wrap, no command-local json_error_response). Tracked as meta-audit G9; "
-    "remove xfail when doctor adopts the canonical JSON error envelope."
-)
-_PROFILE_LIST_GAP_REASON = (
-    "profile list --json currently propagates OSError uncaught (no "
-    "handle_errors wrap). Remove xfail when profile list adopts the canonical "
-    "JSON error envelope."
-)
-
-# ---------------------------------------------------------------------------
 # Fixtures + helpers
 # ---------------------------------------------------------------------------
 
@@ -535,23 +513,10 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ["create", "My Notebook", "--json"],
         _fail_notebook_create,
     ),
-    # doctor + profile-list: documented coverage gaps (see _DOCTOR_GAP_REASON /
-    # _PROFILE_LIST_GAP_REASON above). The argv lives here so the dynamic
-    # inventory test sees error-path coverage for these commands; the xfail
-    # absorbs the assertion failure until the src is wrapped in the canonical
-    # JSON error envelope.
-    pytest.param(
-        "doctor_failure",
-        ["doctor", "--json"],
-        None,  # customizer is irrelevant — mocking happens via the test body
-        marks=pytest.mark.xfail(strict=True, reason=_DOCTOR_GAP_REASON),
-    ),
-    pytest.param(
-        "profile_list_unauthorized",
-        ["profile", "list", "--json"],
-        None,  # ditto
-        marks=pytest.mark.xfail(strict=True, reason=_PROFILE_LIST_GAP_REASON),
-    ),
+    # doctor + profile-list: filesystem-driven failures wrapped in the
+    # canonical ADR-015 JSON error envelope.
+    ("doctor_failure", ["doctor", "--json"], None),
+    ("profile_list_unauthorized", ["profile", "list", "--json"], None),
     # Per ADR-015, post-parse ``ClickException`` validation failures in command
     # bodies and the service layer they call now flow through ``output_error``
     # and must emit a typed JSON envelope on stdout under ``--json``. The two
@@ -622,8 +587,7 @@ def _case_ids(cases) -> list[str]:
 
 # Filesystem-driven failure cases bypass the mock-client harness — they
 # trigger errors by mocking module-level filesystem helpers instead of
-# raising on a mock client method. See the xfail rationale at the top of
-# the file for why these don't currently emit the canonical envelope.
+# raising on a mock client method.
 _FS_FAILURE_PATCH_TARGETS = {
     "doctor_failure": "notebooklm.cli.doctor_cmd.get_storage_path",
     "profile_list_unauthorized": "notebooklm.cli.profile_cmd.list_profiles",
