@@ -130,6 +130,7 @@ async def test_strict_mode_raises_rpc_error_for_malformed_payloads(
 async def test_malformed_payloads_raise_by_default_under_strict_decode(
     payload: Any,
     message: str,
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Regression for issue #1159: with strict-decode at its default (ON), a
@@ -137,9 +138,14 @@ async def test_malformed_payloads_raise_by_default_under_strict_decode(
     # an empty list, even without an explicit ``strict=True``.
     monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
     lister = SourceLister(RecordingRpc(payload))
+    caplog.set_level("WARNING", logger="notebooklm._sources")
 
     with pytest.raises(RPCError, match=message):
         await lister.list("nb_123")
+
+    # The drift WARNING on the historical "SourcesAPI.list:" prefix must still
+    # fire in strict mode so log-based monitoring keeps its breadcrumb.
+    assert "SourcesAPI.list:" in caplog.text
 
 
 @pytest.mark.asyncio

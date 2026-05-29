@@ -120,6 +120,11 @@ class SourceLister:
         strict: bool,
         error_detail: str = "API response structure changed",
     ) -> None:
+        # Always emit the drift WARNING first so log searches and monitoring
+        # on the historical "SourcesAPI.list:" prefix keep firing regardless
+        # of whether we go on to raise — preserving the diagnostic breadcrumb
+        # in strict mode too.
+        logger.warning("SourcesAPI.list: " + message, notebook_id, *log_args)
         # Honor the global strict-decode policy (default ON since PR 13.9a)
         # in addition to the explicit ``strict`` flag, so a drifted or
         # error-enveloped GET_NOTEBOOK response is surfaced as an error
@@ -128,9 +133,6 @@ class SourceLister:
         # warn-and-return-``[]`` fallback for one release window.
         if strict or is_strict_decode_enabled():
             raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
-        # Preserve the historical message prefix so log searches on
-        # "SourcesAPI.list:" continue to match after the service extraction.
-        logger.warning("SourcesAPI.list: " + message, notebook_id, *log_args)
 
     @staticmethod
     def _parse_source(src: Any) -> Source | None:
