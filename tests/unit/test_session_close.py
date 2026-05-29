@@ -165,6 +165,68 @@ async def test_session_close_with_no_polls_is_noop_on_drain_step() -> None:
     assert core._collaborators.kernel.http_client is None
 
 
+@pytest.mark.asyncio
+async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
+    """Issue #1161: ``close(drain=True)`` cancels an in-flight poll counted in
+    ``operation_scope`` instead of blocking on its in-flight counter.
+
+    Reproduces the production wiring: the artifact poll loop runs inside
+    ``TransportDrainTracker.operation_scope`` (incrementing ``_in_flight_posts``)
+    and registers a drain hook that cancels the leader task. Before the fix,
+    ``close()`` awaited ``drain()`` BEFORE the lifecycle ran the cancel hook,
+    so ``drain()`` parked on the in-flight counter until the poll's own timeout
+    (the cancel hook ran too late). The fix fires the cancel hooks before the
+    drain wait so ``drain()`` observes a cancelled-then-settled count.
+
+    A real-time deadline turns a regression into a fast failure rather than a
+    suite hang.
+    """
+    core = build_client_shell_for_tests(_auth())
+    await core.__aenter__()
+
+    tracker = core._collaborators.drain_tracker
+    registry = PollRegistry()
+    cancellation_seen = asyncio.Event()
+    scope_entered = asyncio.Event()
+
+    async def parked_poll() -> None:
+        # Mirror the poll loop: hold an ``operation_scope`` open (bumping the
+        # in-flight counter ``drain()`` waits on) while parked, and unwind via
+        # CancelledError when the drain hook cancels us.
+        async with tracker.operation_scope("artifact wait task_1"):
+            scope_entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancellation_seen.set()
+                raise
+
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[Any] = loop.create_future()
+    task = asyncio.create_task(parked_poll())
+    # Let the task enter ``operation_scope`` so ``_in_flight_posts`` is bumped
+    # before close() drains; otherwise the drain wait would trivially pass.
+    await asyncio.wait_for(scope_entered.wait(), timeout=1.0)
+    assert tracker._in_flight_posts == 1
+    registry.register(("nb_1", "task_1"), future, task)
+
+    async def cancel_polls() -> None:
+        for poll_task in registry.active_tasks():
+            poll_task.cancel()
+        await asyncio.gather(*registry.active_tasks(), return_exceptions=True)
+
+    tracker.register_drain_hook("artifacts.polls", cancel_polls)
+
+    # Default drain=True. Real-time deadline so the pre-fix block (which would
+    # only end at the poll's own timeout) surfaces as a 1s failure.
+    await asyncio.wait_for(core.close(), timeout=1.0)
+
+    assert task.done()
+    assert cancellation_seen.is_set()
+    assert tracker._in_flight_posts == 0
+    assert core._collaborators.kernel.http_client is None
+
+
 # ---------------------------------------------------------------------------
 # NotebookLMClient default drain=True (BREAKING)
 # ---------------------------------------------------------------------------

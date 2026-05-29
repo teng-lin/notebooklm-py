@@ -553,10 +553,36 @@ class NotebookLMClient:
           ``await asyncio.sleep(0)`` or poll to observe it).
 
         There is no path that leaves a live transport behind.
+
+        Drain-hook ordering (issue #1161): feature-owned cancel hooks
+        (e.g. ``artifacts.polls``) run BEFORE the drain wait, not just in
+        the shielded lifecycle close below. In-flight artifact polls wrap
+        themselves in ``TransportDrainTracker.operation_scope`` (see
+        :meth:`notebooklm._artifact_polling.ArtifactPollingService._run_poll_loop_in_scope`),
+        which increments the same in-flight counter ``drain()`` waits on.
+        Without firing the cancel hooks first, ``drain()`` would block on a
+        poll that the cancel hook is supposed to short-circuit — up to the
+        poll's own 300s timeout. Running the hooks first lets ``drain()``
+        observe a cancelled-then-settled count instead of parking on it.
+        The lifecycle close below still re-runs the hooks; that re-run is a
+        cheap no-op because already-settled poll tasks are filtered out of
+        :meth:`notebooklm._polling_registry.PollRegistry.active_tasks`.
         """
         if drain:
             drain_timeout_exc: TimeoutError | None = None
             try:
+                # Issue #1161: fire feature-owned cancel hooks BEFORE the
+                # drain wait so an in-flight poll counted in
+                # ``operation_scope`` is cancelled-and-settled rather than
+                # blocking ``drain()``. The hook runner swallows + logs
+                # per-hook exceptions, so it cannot raise on its own; it is
+                # awaited inside this ``try`` so that a CancelledError
+                # arriving DURING the hook fire still routes through the I12
+                # shielded-close path below (no leaked transport). The
+                # shielded lifecycle close re-runs the hooks idempotently —
+                # already-settled poll tasks are filtered out of
+                # ``PollRegistry.active_tasks`` so the re-run is a no-op.
+                await self._collaborators.drain_tracker.run_drain_hooks()
                 await self.drain(timeout=drain_timeout)
             except TimeoutError as exc:
                 # Drain deadline missed. Hold onto the exception and
