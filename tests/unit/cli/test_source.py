@@ -3117,6 +3117,73 @@ class TestSourceAddStdinDash:
             assert call.args[1] == "My Title"
             assert call.args[2] == "hello world"
 
+    def test_source_add_dash_with_explicit_text_type_reads_stdin(self, runner, mock_auth):
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.add_text = AsyncMock(
+                return_value=Source(id="src_text", title="Pasted Text")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["source", "add", "-", "--type", "text", "-n", "nb_123"],
+                    input="typed stdin\n",
+                )
+
+            assert result.exit_code == 0, result.output
+            mock_client.sources.add_text.assert_awaited_once()
+            call = mock_client.sources.add_text.call_args
+            assert call.args[2] == "typed stdin"
+
+    @pytest.mark.parametrize("source_type", ["url", "file", "youtube"])
+    def test_source_add_dash_rejects_non_text_type(self, runner, mock_auth, source_type):
+        with (
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+        ):
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add", "-", "--type", source_type, "-n", "nb_123"],
+                input="content from stdin\n",
+            )
+
+        assert result.exit_code == 2
+        assert f"Cannot use '-' (stdin) with --type {source_type}" in result.output
+        mock_client_cls.assert_not_called()
+
+    def test_source_add_dash_rejects_non_text_type_json(self, runner, mock_auth):
+        with (
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+        ):
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add", "-", "--type", "url", "-n", "nb_123", "--json"],
+                input="content from stdin\n",
+            )
+
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data == {
+            "error": True,
+            "code": "VALIDATION_ERROR",
+            "message": (
+                "Cannot use '-' (stdin) with --type url; stdin content can only be added as text."
+            ),
+        }
+        mock_client_cls.assert_not_called()
+
     def test_source_add_literal_dash_path_unchanged(self, runner, mock_auth):
         """Regression: a normal text argument is not treated as stdin."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:

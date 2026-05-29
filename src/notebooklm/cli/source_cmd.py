@@ -655,9 +655,18 @@ def source_add(
     ``--type text`` to suppress.
     """
     # Unix ``-`` convention: ``source add -`` reads inline text from stdin and
-    # forces the text-source path. Intercepted BEFORE auto-detection so a
-    # single dash never falls into the path-shaped warning.
+    # forces the text-source path. Explicit non-text types are rejected so
+    # intent is not silently overwritten.
     if content == "-":
+        if source_type not in {None, "text"}:
+            message = (
+                "Cannot use '-' (stdin) with --type "
+                f"{source_type}; stdin content can only be added as text."
+            )
+            if json_output:
+                _output_error(message, "VALIDATION_ERROR", json_output, 1)
+                raise AssertionError("unreachable") from None  # pragma: no cover
+            raise click.UsageError(message)
         content = read_stdin_text(source_label="source content")
         source_type = "text"
 
