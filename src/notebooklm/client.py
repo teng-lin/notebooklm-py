@@ -579,26 +579,12 @@ class NotebookLMClient:
         if drain:
             drain_timeout_exc: TimeoutError | None = None
             try:
-                # Issue #1161: fire feature-owned cancel hooks BEFORE the
-                # drain wait so an in-flight poll counted in
-                # ``operation_scope`` is cancelled-and-settled rather than
-                # blocking ``drain()``.
-                #
-                # Cancellation semantics: ``run_drain_hooks`` awaits its
-                # hooks via ``asyncio.gather(..., return_exceptions=True)``,
-                # so it suppresses (and logs) any *per-hook* exception —
-                # including a hook that raises ``CancelledError`` itself —
-                # and does not re-raise on its own. The ``except
-                # asyncio.CancelledError`` below handles only *caller*
-                # cancellation arriving DURING this await, routing it
-                # through the I12 shielded-close path (no leaked transport).
-                #
-                # Re-run on the lifecycle path: the shielded lifecycle close
-                # re-runs the hooks, but the only production hook
-                # (``artifacts.polls``) is a no-op on the second run because
-                # already-settled poll tasks are filtered out of
-                # ``PollRegistry.active_tasks``. Other future hooks are not
-                # automatically idempotent — register accordingly.
+                # Fire feature-owned cancel hooks BEFORE the drain wait (see
+                # the "Drain-hook ordering" section of the docstring above for
+                # why). Awaited inside this ``try`` so a *caller* CancelledError
+                # arriving during the hook fire still routes through the I12
+                # shielded-close path below; ``run_drain_hooks`` itself never
+                # re-raises (it gathers with ``return_exceptions=True``).
                 await self._collaborators.drain_tracker.run_drain_hooks()
                 await self.drain(timeout=drain_timeout)
             except TimeoutError as exc:

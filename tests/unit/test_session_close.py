@@ -201,8 +201,7 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
                 cancellation_seen.set()
                 raise
 
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[Any] = loop.create_future()
+    future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
     task = asyncio.create_task(parked_poll())
     # Let the task enter ``operation_scope`` so ``_in_flight_posts`` is bumped
     # before close() drains; otherwise the drain wait would trivially pass.
@@ -211,9 +210,13 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
     registry.register(("nb_1", "task_1"), future, task)
 
     async def cancel_polls() -> None:
-        for poll_task in registry.active_tasks():
+        # Snapshot once before cancelling, matching the production
+        # ``ArtifactPollingService.drain`` pattern (``_artifact_polling.py``).
+        poll_tasks = registry.active_tasks()
+        for poll_task in poll_tasks:
             poll_task.cancel()
-        await asyncio.gather(*registry.active_tasks(), return_exceptions=True)
+        if poll_tasks:
+            await asyncio.gather(*poll_tasks, return_exceptions=True)
 
     tracker.register_drain_hook("artifacts.polls", cancel_polls)
 
@@ -225,6 +228,10 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
     assert cancellation_seen.is_set()
     assert tracker._in_flight_posts == 0
     assert core._collaborators.kernel.http_client is None
+    # Resolve the registered future so it isn't GC'd un-awaited (the poll task
+    # was cancelled, so mirror that on the shared future).
+    if not future.done():
+        future.cancel()
 
 
 @pytest.mark.asyncio

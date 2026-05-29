@@ -275,8 +275,18 @@ class TransportDrainTracker:
     async def run_drain_hooks(self) -> None:
         """Fire every registered drain hook in registration order.
 
-        Called once from ``ClientLifecycle.close`` after the auth-refresh
-        task has been cancelled and before the HTTP client is shut down.
+        Called from two sites during a graceful ``close(drain=True)``: first
+        from ``NotebookLMClient.close`` *before* the drain wait (so a poll
+        counted in ``operation_scope`` is cancelled-and-settled rather than
+        blocking ``drain()`` — issue #1161), then again from
+        ``ClientLifecycle.close`` after the auth-refresh task has been
+        cancelled and before the HTTP client is shut down. Hooks must
+        therefore tolerate being re-run; the production poll hook
+        (``artifacts.polls``) is a no-op on the second run because
+        already-settled poll tasks are filtered out of
+        ``PollRegistry.active_tasks``. The ``drain=False`` and lifecycle-only
+        paths invoke it just once.
+
         Exceptions in individual hooks are caught and logged via
         ``logger.warning`` (with the registration ``name`` so operators can
         identify the misbehaving feature), then suppressed so a single
