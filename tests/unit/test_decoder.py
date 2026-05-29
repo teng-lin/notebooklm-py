@@ -103,8 +103,8 @@ class TestParseChunkedResponse:
 
     def test_ignores_malformed_chunks(self):
         """Test malformed chunks are ignored when below 10% threshold."""
-        # Add 10 valid chunk records and 1 malformed record, keeping the record-based
-        # error rate below the 10% threshold.
+        # Add 10 valid payload records and 1 malformed payload record, keeping
+        # the payload error rate below the 10% threshold.
         valid_chunks = [json.dumps([f"valid{i}"]) for i in range(10)]
         valid_parts = "\n".join([f"{len(c)}\n{c}" for c in valid_chunks])
         response = f"{valid_parts}\n99\nnot-json\n"
@@ -149,6 +149,11 @@ class TestParseChunkedResponse:
         assert chunks == [[f"valid{i}"] for i in range(10)]
         assert "without payload" in caplog.text
 
+    def test_trailing_byte_count_above_framing_threshold_raises(self):
+        """A framing-only response fails strict decoding."""
+        with pytest.raises(RPCError, match="1 of 1 framing records"):
+            parse_chunked_response("42\n")
+
     def test_skips_payload_split_across_lines_below_threshold(self):
         """A payload split across lines is treated as truncated malformed input."""
         valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(20))
@@ -169,21 +174,32 @@ class TestParseChunkedResponse:
 
         assert chunks == [[f"valid{i}"] for i in range(20)]
 
-    def test_error_rate_exactly_ten_percent_is_tolerated(self):
-        """The malformed-record threshold is exclusive: exactly 10% does not raise."""
-        valid_lines = "\n".join(json.dumps([f"valid{i}"]) for i in range(9))
-        response = f"{valid_lines}\nnot-json\n"
+    def test_payload_error_rate_exactly_ten_percent_is_tolerated(self):
+        """The payload threshold is exclusive: exactly 10% does not raise."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(9))
+        response = f"{valid_parts}\n99\nnot-json\n"
 
         chunks = parse_chunked_response(response)
 
         assert chunks == [[f"valid{i}"] for i in range(9)]
 
-    def test_error_rate_just_above_ten_percent_raises(self):
-        """The parser raises once malformed records exceed 10%."""
-        valid_lines = "\n".join(json.dumps([f"valid{i}"]) for i in range(8))
-        response = f"{valid_lines}\nnot-json\n"
+    def test_byte_count_frames_do_not_dilute_malformed_payload_rate(self):
+        """The parser raises when payload errors exceed 10%, excluding byte-count frames."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(8))
+        response = f"{valid_parts}\n99\nnot-json\n"
 
-        with pytest.raises(RPCError, match="Response parsing failed"):
+        with pytest.raises(RPCError) as exc_info:
+            parse_chunked_response(response)
+
+        assert "1 of 9 payload records malformed" in str(exc_info.value)
+        assert "18 response records" not in str(exc_info.value)
+
+    def test_mixed_payload_and_framing_errors_preserve_strict_threshold(self):
+        """Separate payload/framing rates must not loosen mixed malformed streams."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
+        response = f"{valid_parts}\n99\nnot-json\n42\n"
+
+        with pytest.raises(RPCError, match="2 of 12 response records"):
             parse_chunked_response(response)
 
 

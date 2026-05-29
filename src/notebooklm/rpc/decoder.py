@@ -185,7 +185,8 @@ def parse_chunked_response(response: str) -> list[Any]:
         List of parsed JSON chunks
 
     Raises:
-        RPCError: If more than 10% of response records are malformed, indicating API issues.
+        RPCError: If more than 10% of attempted payload records are malformed,
+            indicating API issues.
 
     Note:
         Malformed chunks are skipped with a warning logged. A byte-count line
@@ -195,15 +196,20 @@ def parse_chunked_response(response: str) -> list[Any]:
         preserve Google's original byte count and live Google responses use a
         different unit (likely UTF-16 code units) than ``len(s.encode("utf-8"))``.
         A JSONDecodeError on the payload still emits a WARNING on the
-        subsequent parse-failure path. If the malformed-record rate exceeds
-        10%, raises RPCError as this likely indicates API changes.
+        subsequent parse-failure path. If the malformed-payload rate exceeds
+        10%, raises RPCError as this likely indicates API changes. Framing and
+        mixed payload/framing corruption keep their own strict guards without
+        letting byte-count records dilute the payload-specific threshold.
     """
     if not response or not response.strip():
         return []
 
     chunks = []
-    skipped_count = 0
-    total_records = 0
+    malformed_payload_records = 0
+    payload_records = 0
+    malformed_framing_records = 0
+    framing_records = 0
+    response_records = 0
     lines = [line.removesuffix("\r") for line in response.strip().split("\n")]
 
     i = 0
@@ -218,16 +224,18 @@ def parse_chunked_response(response: str) -> list[Any]:
         # Try to parse as byte count
         try:
             byte_count = int(line)
-            total_records += 1
+            framing_records += 1
+            response_records += 1
             i += 1
 
             # Next line should be JSON payload
             if i >= len(lines):
-                skipped_count += 1
+                malformed_framing_records += 1
                 logger.warning("Skipping byte-count line %d without payload", i)
                 continue
 
             json_str = lines[i]
+            payload_records += 1
             actual_byte_count = len(json_str.encode("utf-8"))
             if actual_byte_count != byte_count:
                 # DEBUG (not WARNING): live multi-chunk responses trip this on
@@ -246,7 +254,7 @@ def parse_chunked_response(response: str) -> list[Any]:
                 chunks.append(chunk)
             except json.JSONDecodeError as e:
                 # Skip malformed chunks but warn
-                skipped_count += 1
+                malformed_payload_records += 1
                 logger.warning(
                     "Skipping malformed chunk at line %d: %s. Preview: %s",
                     i + 1,
@@ -256,13 +264,14 @@ def parse_chunked_response(response: str) -> list[Any]:
             i += 1
         except ValueError:
             # Not a byte count, try to parse as JSON directly
-            total_records += 1
+            payload_records += 1
+            response_records += 1
             try:
                 chunk = json.loads(line)
                 chunks.append(chunk)
             except json.JSONDecodeError as e:
                 # Skip non-JSON lines but warn
-                skipped_count += 1
+                malformed_payload_records += 1
                 logger.warning(
                     "Skipping non-JSON line at %d: %s. Preview: %s",
                     i + 1,
@@ -271,21 +280,53 @@ def parse_chunked_response(response: str) -> list[Any]:
                 )
             i += 1
 
+    payload_error_rate = malformed_payload_records / payload_records if payload_records else 0
+    framing_error_rate = malformed_framing_records / framing_records if framing_records else 0
+    malformed_records = malformed_payload_records + malformed_framing_records
+    response_error_rate = malformed_records / response_records if response_records else 0
+
     # Fail if error rate is too high (indicates API problems)
-    if skipped_count > 0:
-        error_rate = skipped_count / total_records if total_records else 0
-        if error_rate > 0.1:  # More than 10% malformed
-            raise RPCError(
-                f"Response parsing failed: {skipped_count} of {total_records} response records "
-                f"malformed. "
-                f"This may indicate API changes or data corruption.",
-                raw_response=response,
-            )
-        # Non-critical but warn user results may be incomplete
+    if payload_error_rate > 0.1:  # More than 10% malformed
+        raise RPCError(
+            f"Response parsing failed: {malformed_payload_records} of "
+            f"{payload_records} payload records "
+            f"malformed. "
+            f"This may indicate API changes or data corruption.",
+            raw_response=response,
+        )
+
+    if framing_error_rate > 0.1:  # More than 10% malformed
+        raise RPCError(
+            f"Response parsing failed: {malformed_framing_records} of "
+            f"{framing_records} framing records malformed. "
+            f"This may indicate API changes or data corruption.",
+            raw_response=response,
+        )
+
+    # Preserve the legacy aggregate strictness after payload/framing-specific
+    # checks so mixed corruption does not become more permissive.
+    if response_error_rate > 0.1:  # More than 10% malformed
+        raise RPCError(
+            f"Response parsing failed: {malformed_records} of "
+            f"{response_records} response records malformed. "
+            f"This may indicate API changes or data corruption.",
+            raw_response=response,
+        )
+
+    if malformed_payload_records > 0:
         logger.warning(
-            "Parsed response but skipped %d malformed chunks (%d%%). Results may be incomplete.",
-            skipped_count,
-            int(error_rate * 100),
+            "Parsed response but skipped %d malformed payload chunks (%d%%). "
+            "Results may be incomplete.",
+            malformed_payload_records,
+            int(payload_error_rate * 100),
+        )
+
+    if malformed_framing_records > 0:
+        logger.warning(
+            "Parsed response but skipped %d malformed framing records (%d%%). "
+            "Results may be incomplete.",
+            malformed_framing_records,
+            int(framing_error_rate * 100),
         )
 
     return chunks
