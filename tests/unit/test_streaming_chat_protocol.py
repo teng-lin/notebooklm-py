@@ -444,6 +444,78 @@ def test_user_displayable_error_payload_raises_same_chat_error_message() -> None
         raise_if_rate_limited(payload)
 
 
+def _wrb_envelope(inner: Any) -> str:
+    """Length-prefixed single-``wrb.fr``-frame body wrapping ``inner``."""
+    return _length_prefixed(json.dumps([["wrb.fr", None, json.dumps(inner)]]))
+
+
+@pytest.mark.parametrize(
+    "drifted_inner",
+    [
+        ["scalar-answer-row"],  # answer row is a str (indexable but wrong type)
+        [{"answer": "x"}],  # answer row became a dict
+        [42],  # answer row became an int
+        [None],  # answer row became null
+    ],
+)
+def test_drifted_answer_row_raises_under_strict_decode(drifted_inner: Any) -> None:
+    """A populated ``wrb.fr`` record whose answer row is not a list is drift.
+
+    Under the default strict-decode mode this must raise
+    :class:`UnknownRPCMethodError` instead of silently collapsing to an empty
+    answer — that silent collapse was the gap the
+    ``architecture-gap-review`` flagged for ``_chat_protocol`` (ADR-011:38).
+    """
+    from notebooklm.exceptions import UnknownRPCMethodError
+
+    with pytest.raises(UnknownRPCMethodError):
+        parse_streaming_chat_response(_wrb_envelope(drifted_inner))
+
+
+def test_drifted_answer_row_degrades_under_soft_decode(monkeypatch) -> None:
+    """Soft-mode (``NOTEBOOKLM_STRICT_DECODE=0``) preserves the legacy
+    skip-and-return-empty contract for a drifted answer row."""
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+
+    # The drifted frame is still a *parseable* envelope (inner JSON decoded),
+    # so the parser returns an empty answer rather than raising
+    # ChatResponseParseError.
+    result = parse_streaming_chat_response(_wrb_envelope(["scalar-answer-row"]))
+
+    assert result.answer == ""
+    assert result.references == []
+
+
+def test_empty_answer_row_is_tolerated_as_heartbeat() -> None:
+    """A populated outer wrapping an empty answer row (``[[]]``) is a
+    degenerate/heartbeat record, NOT drift — it returns an empty answer."""
+    result = parse_streaming_chat_response(_wrb_envelope([[]]))
+    assert result.answer == ""
+
+
+def test_error_frame_surfaces_chat_error_with_code() -> None:
+    """An ``"er"`` error frame must surface the embedded server error.
+
+    The previous parser only inspected ``"wrb.fr"`` frames and silently
+    skipped ``"er"`` frames, so a server-side chat error collapsed into the
+    generic empty/parse-failure path. The parser now raises a
+    :class:`ChatError` that echoes the embedded error code.
+    """
+    error_frame = json.dumps([["er", "GenerateFreeFormStreamed", 13, "internal boom"]])
+
+    with pytest.raises(ChatError, match=r"server returned an error frame.*code 13"):
+        parse_streaming_chat_response(_length_prefixed(error_frame))
+
+
+def test_error_frame_without_code_still_surfaces_chat_error() -> None:
+    """A short ``"er"`` frame (no code slot) still raises a ``ChatError``
+    rather than being silently skipped."""
+    error_frame = json.dumps([["er", "GenerateFreeFormStreamed"]])
+
+    with pytest.raises(ChatError, match="server returned an error frame"):
+        parse_streaming_chat_response(_length_prefixed(error_frame))
+
+
 def test_chat_protocol_static_import_guard() -> None:
     forbidden = {
         "notebooklm",

@@ -15,15 +15,23 @@ from dataclasses import dataclass, replace
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode
 
-from ._env import get_default_bl, get_default_language
+from ._env import get_default_bl, get_default_language, is_strict_decode_enabled
 from .auth import format_authuser_value
-from .exceptions import ChatError, ChatResponseParseError
+from .exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
+from .rpc._safe_index import safe_index
 from .rpc.encoder import nest_source_ids
 from .rpc.types import get_query_url
 from .types import ChatReference
 
 # Deliberate: preserve the pre-extraction chat parser logger namespace.
 logger = logging.getLogger("notebooklm._chat")
+
+# ``safe_index`` source labels for the streamed-chat descents. The streamed
+# chat endpoint (``GenerateFreeFormStreamed``) is not a batchexecute RPC, so
+# there is no obfuscated method ID to thread — descents pass ``method_id=None``
+# and rely on these labels to localize schema drift in raised
+# ``UnknownRPCMethodError`` diagnostics (ADR-011).
+_CHUNK_SOURCE = "_chat_protocol._extract_chunk_with_parseable"
 
 _UUID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -274,9 +282,22 @@ def _extract_chunk_with_parseable(
 
     parseable = False
     for item in data:
-        if not isinstance(item, list) or len(item) < 3:
+        if not isinstance(item, list) or len(item) < 2:
             continue
-        if item[0] != "wrb.fr":
+
+        # Surface server-side error frames instead of silently skipping them.
+        # The batchexecute stream emits ``["er", rpc_id, code, ...]`` frames
+        # when the RPC itself failed; the old parser only inspected
+        # ``"wrb.fr"`` frames, so a server error collapsed into the generic
+        # "no parseable chunks" / "empty response" failure. ``item[0]`` is a
+        # guaranteed index here (``len(item) >= 2``) so the ``safe_index``
+        # descent is byte-for-byte identical on the happy path and only raises
+        # if the frame tag slot itself drifted out from under us.
+        tag = safe_index(item, 0, method_id=None, source=_CHUNK_SOURCE)
+        if tag == "er":
+            _raise_chat_error_frame(item)
+
+        if tag != "wrb.fr" or len(item) < 3:
             continue
 
         inner_json = item[2]
@@ -307,9 +328,36 @@ def _extract_chunk_with_parseable(
         parseable = True
 
         if isinstance(inner_data, list) and len(inner_data) > 0:
-            first = inner_data[0]
-            if isinstance(first, list) and len(first) > 0:
-                text = first[0]
+            # ``inner_data`` is a *populated* answer record (heartbeats decode
+            # to ``[]`` and are excluded by ``len > 0`` above, so they never
+            # reach this strict descent). Read the answer row through
+            # ``safe_index`` (no-op on the happy path since ``len > 0``); the
+            # descent label localizes any top-level reshape in diagnostics.
+            first = safe_index(inner_data, 0, method_id=None, source=_CHUNK_SOURCE)
+            if not isinstance(first, list):
+                # The populated record's answer row is not a list — a leaf
+                # became a scalar/dict or an inner list became a wrapper. This
+                # is genuine Google-side drift that previously collapsed into a
+                # silent empty answer. Raise the same drift signal
+                # ``safe_index`` uses (``UnknownRPCMethodError`` under strict
+                # mode; soft-mode falls through) so the chat path fails loudly
+                # instead of dropping the answer (ADR-011). ``safe_index``
+                # cannot enforce the list *type* (a ``str`` answer row is still
+                # indexable), so the contract is checked explicitly here.
+                if is_strict_decode_enabled():
+                    raise UnknownRPCMethodError(
+                        f"Streamed chat answer row is not a list (got {type(first).__name__})",
+                        method_id=None,
+                        path=(0,),
+                        source=_CHUNK_SOURCE,
+                        data_at_failure=repr(first)[:200],
+                    )
+                continue
+            if len(first) > 0:
+                # Load-bearing answer-text leaf. On the happy path
+                # ``inner_data[0][0]`` is valid so this is byte-for-byte
+                # identical; under drift it raises rather than dropping text.
+                text = safe_index(inner_data, 0, 0, method_id=None, source=_CHUNK_SOURCE)
                 if not isinstance(text, str) or not text:
                     continue
 
@@ -342,6 +390,29 @@ def _extract_chunk_with_parseable(
         # "API drift" / ``ChatResponseParseError``.
 
     return None, False, refs, None, parseable
+
+
+def _raise_chat_error_frame(item: list) -> None:
+    """Surface a server-side ``"er"`` error frame as a ``ChatError``.
+
+    The streamed batchexecute backend emits ``["er", rpc_id, code, ...]``
+    frames when the RPC itself failed. The previous parser only inspected
+    ``"wrb.fr"`` frames and silently skipped these, so a real server-side
+    chat error collapsed into the generic ``ChatResponseParseError`` (or an
+    empty answer). Threading the ``code`` slot through ``safe_index`` keeps
+    the read drift-aware; the embedded code/message is included verbatim so
+    callers see the actual failure instead of a generic parse error.
+    """
+    # The error code is optional enrichment — its absence must not be treated
+    # as schema drift (an ``"er"`` frame is itself the error signal), so read
+    # the slot with an explicit length guard rather than ``safe_index``.
+    code = item[2] if len(item) > 2 else None
+    detail = f" (code {code!r})" if code is not None else ""
+    raise ChatError(
+        f"Chat request failed: the server returned an error frame{detail}. "
+        "This usually means the request was rejected or the conversation "
+        "could not be served; try again."
+    )
 
 
 def raise_if_rate_limited(error_payload: list) -> None:

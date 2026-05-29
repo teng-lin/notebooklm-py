@@ -1501,12 +1501,32 @@ class TestExtractAnswerAndRefsFromChunk:
         assert text is None
         assert conv_id is None
 
-    def test_inner_data_first_not_list_is_skipped(self, auth_tokens):
-        """Test that inner_data[0] that is not a list is skipped (line 546)."""
+    def test_inner_data_first_not_list_raises_under_strict_decode(self, auth_tokens):
+        """A populated record whose answer row is not a list is drift.
+
+        Previously this silently returned ``(None, ...)`` (the answer was
+        dropped). Since the strict-decode migration of ``_chat_protocol``
+        (ADR-011) a non-list answer row in a *populated* ``wrb.fr`` record is
+        treated as Google-side wire drift and raises ``UnknownRPCMethodError``
+        under the default strict-decode mode.
+        """
         import json
+
+        from notebooklm.exceptions import UnknownRPCMethodError
 
         client = NotebookLMClient(auth_tokens)
         # inner_data[0] is a string, not a list
+        inner_data = ["not a list"]
+        data = [["wrb.fr", "method_id", json.dumps(inner_data)]]
+        with pytest.raises(UnknownRPCMethodError):
+            client.chat._extract_answer_and_refs_from_chunk(json.dumps(data))
+
+    def test_inner_data_first_not_list_is_skipped_under_soft_decode(self, auth_tokens, monkeypatch):
+        """Soft-mode preserves the legacy skip-and-degrade contract."""
+        import json
+
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+        client = NotebookLMClient(auth_tokens)
         inner_data = ["not a list"]
         data = [["wrb.fr", "method_id", json.dumps(inner_data)]]
         text, is_answer, refs, conv_id = client.chat._extract_answer_and_refs_from_chunk(
