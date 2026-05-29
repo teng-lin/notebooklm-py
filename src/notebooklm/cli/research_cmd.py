@@ -24,11 +24,11 @@ from .rendering import (
     display_research_sources,
     json_output_response,
 )
+from .polling_ui import status_with_elapsed
 from .resolve import (
     require_notebook,
     resolve_notebook_id,
 )
-from .services.polling import status_with_elapsed
 from .services.research import (
     ResearchWaitPlan,
     ResearchWaitResult,

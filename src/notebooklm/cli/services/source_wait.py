@@ -2,9 +2,8 @@
 
 Owns the dataclass + executor pair so ``cli/source_cmd.py`` stays a thin
 Click handler. The executor wraps the underlying
-``client.sources.wait_until_ready`` call in a transient
-``status_with_elapsed`` spinner (suppressed under JSON) and translates the
-three ``SourceWaitError`` subclasses into a typed
+``client.sources.wait_until_ready`` call in the caller-provided wait context
+and translates the three ``SourceWaitError`` subclasses into a typed
 :class:`SourceWaitOutcome`. The caller renders the outcome and decides the
 exit code.
 
@@ -19,6 +18,9 @@ exit policy, now owned by the caller):
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -28,7 +30,6 @@ from ...types import (
     SourceProcessingError,
     SourceTimeoutError,
 )
-from .polling import status_with_elapsed
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -78,7 +79,12 @@ SourceWaitOutcome = (
 )
 
 
-async def execute_source_wait(client: NotebookLMClient, plan: SourceWaitPlan) -> SourceWaitOutcome:
+async def execute_source_wait(
+    client: NotebookLMClient,
+    plan: SourceWaitPlan,
+    *,
+    wait_context: Callable[[], AbstractAsyncContextManager[None]] | None = None,
+) -> SourceWaitOutcome:
     """Run the ``source wait`` workflow and return a typed outcome.
 
     The caller is responsible for resolving ``plan.source_id`` to a full
@@ -89,13 +95,8 @@ async def execute_source_wait(client: NotebookLMClient, plan: SourceWaitPlan) ->
     only owns the polling loop and exception-to-outcome mapping.
     """
     try:
-        async with status_with_elapsed(
-            f"Waiting for source {plan.source_id} to finish processing...",
-            json_output=plan.json_output,
-            # Parallel hint: ``source wait`` has no separate ``source
-            # poll`` command, so the resume IS re-running the same wait.
-            resume_hint=f"notebooklm source wait {plan.source_id}",
-        ):
+        context = wait_context or contextlib.asynccontextmanager(_null_async_context)
+        async with context():
             source = await client.sources.wait_until_ready(
                 plan.notebook_id,
                 plan.source_id,
@@ -109,6 +110,10 @@ async def execute_source_wait(client: NotebookLMClient, plan: SourceWaitPlan) ->
     except SourceTimeoutError as exc:
         return SourceWaitTimeout(error=exc)
     return SourceWaitReady(source=source)
+
+
+async def _null_async_context() -> AsyncIterator[None]:
+    yield
 
 
 __all__ = [

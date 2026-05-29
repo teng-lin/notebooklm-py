@@ -81,7 +81,10 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # Click ``BadParameter`` translation and optional-domain warning rendering.
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
+    "cli/services/artifact_generation.py": SERVICES_ROOT / "artifact_generation.py",
     "cli/services/confirming_mutation.py": SERVICES_ROOT / "confirming_mutation.py",
+    "cli/services/download.py": SERVICES_ROOT / "download.py",
+    "cli/services/generate.py": SERVICES_ROOT / "generate.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/login/browser_accounts.py": SERVICES_ROOT / "login" / "browser_accounts.py",
     "cli/services/login/cookie_domains.py": SERVICES_ROOT / "login" / "cookie_domains.py",
@@ -91,6 +94,7 @@ GUARDED_PATHS = {
     "cli/services/login/outcomes.py": SERVICES_ROOT / "login" / "outcomes.py",
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
     "cli/services/login/rookiepy_errors.py": SERVICES_ROOT / "login" / "rookiepy_errors.py",
+    "cli/services/polling.py": SERVICES_ROOT / "polling.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
     "cli/services/skill_install.py": SERVICES_ROOT / "skill_install.py",
@@ -129,19 +133,6 @@ GUARDED_PATHS = {
 #   ``rationale``             — short note on what migration is in flight or
 #                               why the module is here.
 TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
-    "cli/services/artifact_generation.py": {
-        "path": SERVICES_ROOT / "artifact_generation.py",
-        "forbidden_imports": [
-            "artifact_generation.py:9: forbidden relative import: '..error_handler'",
-            "artifact_generation.py:10: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "rationale": (
-            "Owns rendering imports + ``console.print`` for artifact "
-            "generation progress; exit policy already delegated to the "
-            "command layer."
-        ),
-    },
     "cli/services/auth_source.py": {
         "path": SERVICES_ROOT / "auth_source.py",
         "forbidden_imports": [
@@ -158,46 +149,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "Adapter that reads the auth-source override from the live Click "
             "context; the function-level ``import click`` is the only Click "
             "reach-in."
-        ),
-    },
-    "cli/services/download.py": {
-        "path": SERVICES_ROOT / "download.py",
-        "forbidden_imports": [
-            "download.py:34: forbidden top-level import: 'click'",
-            "download.py:43: forbidden relative import: '..error_handler'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "raises click.UsageError on flag conflicts (parser-time "
-            "contract), uses output_error for ADR-015 JSON envelopes, "
-            "and uses click.echo for warning sink default."
-        ),
-        "rationale": (
-            "Flag-validation surface raises ``click.UsageError`` and "
-            "emits ADR-015 JSON envelopes from the service layer; it also "
-            "defaults its ``warn_sink`` to ``click.echo``. Lift to "
-            "command-layer validators/output handling."
-        ),
-    },
-    "cli/services/generate.py": {
-        "path": SERVICES_ROOT / "generate.py",
-        "forbidden_imports": [
-            "generate.py:41: forbidden top-level import: 'click'",
-            "generate.py:42: forbidden top-level import: 'click.core'",
-            "generate.py:58: forbidden relative import: '..error_handler'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "raises click.UsageError on incompatible generation flags, "
-            "uses output_error for ADR-015 JSON envelopes, and "
-            "reads click.core.ParameterSource to distinguish flag-set vs. "
-            "default."
-        ),
-        "rationale": (
-            "Generation flag-validation depends on Click's ParameterSource "
-            "to detect explicit vs. default and currently emits ADR-015 "
-            "JSON envelopes from the service layer. Lift validation/output "
-            "handling to the command layer."
         ),
     },
     "cli/services/login/chromium_accounts.py": {
@@ -289,19 +240,6 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
             "shifted in commit e3871dc3 (subprocess-stderr redaction, "
             "PR #1111) but the inventory was not updated in that PR; "
             "refreshed here as a drive-by mechanical fix."
-        ),
-    },
-    "cli/services/polling.py": {
-        "path": SERVICES_ROOT / "polling.py",
-        "forbidden_imports": [
-            "polling.py:12: forbidden relative import: '..error_handler'",
-            "polling.py:13: forbidden relative import: '..rendering'",
-        ],
-        "pattern_a_violations": [],
-        "rationale": (
-            "Polling helpers still import ``..error_handler`` + "
-            "``..rendering`` for status spinners and exit mapping; lift "
-            "those callbacks into the command layer."
         ),
     },
 }

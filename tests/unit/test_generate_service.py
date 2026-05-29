@@ -30,10 +30,11 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from click.core import ParameterSource
 
 from notebooklm.cli.services.generate import (
+    GenerationExecutionResult,
     GenerationPlan,
+    GenerationPlanValidationError,
     build_generation_plan,
     execute_generation,
 )
@@ -57,9 +58,9 @@ from notebooklm.types import (
 # ---------------------------------------------------------------------------
 
 
-def _default_source(_name: str) -> ParameterSource:
-    """Stub that reports every parameter as DEFAULT (= not explicitly passed)."""
-    return ParameterSource.DEFAULT
+def _default_source(_name: str) -> bool:
+    """Stub that reports every parameter as not explicitly passed."""
+    return False
 
 
 def _identity_language(lang: str | None) -> str:
@@ -232,7 +233,7 @@ def test_build_plan_happy_path(
     plan = build_generation_plan(
         kind,
         args,
-        parameter_source=_default_source,
+        parameter_explicit=_default_source,
         language_resolver=_identity_language,
     )
     assert isinstance(plan, GenerationPlan)
@@ -255,34 +256,30 @@ def test_build_plan_unknown_kind_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cinematic_video_rejects_explicit_non_cinematic_format(capsys) -> None:
-    """``cinematic-video --format explainer`` exits 1 through ``output_error``
-    (per ADR-015) when the source reports COMMANDLINE for ``video_format``."""
+def test_cinematic_video_rejects_explicit_non_cinematic_format() -> None:
+    """``cinematic-video --format explainer`` returns a typed validation error."""
 
-    def source(name: str) -> ParameterSource:
-        if name == "video_format":
-            return ParameterSource.COMMANDLINE
-        return ParameterSource.DEFAULT
+    def source(name: str) -> bool:
+        return name == "video_format"
 
     args = _base_args(video_format="explainer", style="auto", style_prompt=None, language="en")
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(GenerationPlanValidationError) as exc_info:
         build_generation_plan(
-            "cinematic-video", args, parameter_source=source, language_resolver=_identity_language
+            "cinematic-video", args, parameter_explicit=source, language_resolver=_identity_language
         )
-    assert exc_info.value.code == 1
-    captured = capsys.readouterr()
-    assert "--format must be 'cinematic'" in captured.err
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert "--format must be 'cinematic'" in exc_info.value.message
 
 
 def test_cinematic_video_explicit_cinematic_format_is_accepted() -> None:
     """``cinematic-video --format cinematic`` (explicit) is fine."""
 
-    def source(name: str) -> ParameterSource:
-        return ParameterSource.COMMANDLINE if name == "video_format" else ParameterSource.DEFAULT
+    def source(name: str) -> bool:
+        return name == "video_format"
 
     args = _base_args(video_format="cinematic", style="auto", style_prompt=None, language="en")
     plan = build_generation_plan(
-        "cinematic-video", args, parameter_source=source, language_resolver=_identity_language
+        "cinematic-video", args, parameter_explicit=source, language_resolver=_identity_language
     )
     assert plan.kind == "cinematic-video"
     assert plan.timeout == 3600.0  # default cinematic timeout
@@ -292,15 +289,15 @@ def test_cinematic_video_explicit_timeout_wins_over_default() -> None:
     """When the user passes ``--timeout``, the cinematic 3600s default does
     NOT clobber it."""
 
-    def source(name: str) -> ParameterSource:
+    def source(name: str) -> bool:
         # User passed --timeout explicitly; --format not.
-        return ParameterSource.COMMANDLINE if name == "timeout" else ParameterSource.DEFAULT
+        return name == "timeout"
 
     args = _base_args(
         video_format="explainer", style="auto", style_prompt=None, language="en", timeout=60
     )
     plan = build_generation_plan(
-        "cinematic-video", args, parameter_source=source, language_resolver=_identity_language
+        "cinematic-video", args, parameter_explicit=source, language_resolver=_identity_language
     )
     assert plan.timeout == 60.0  # user override wins
 
@@ -308,14 +305,14 @@ def test_cinematic_video_explicit_timeout_wins_over_default() -> None:
 def test_video_explicit_timeout_wins_over_default() -> None:
     """When the user passes ``--timeout``, the video 1800s default does not clobber it."""
 
-    def source(name: str) -> ParameterSource:
-        return ParameterSource.COMMANDLINE if name == "timeout" else ParameterSource.DEFAULT
+    def source(name: str) -> bool:
+        return name == "timeout"
 
     args = _base_args(
         video_format="explainer", style="auto", style_prompt=None, language="en", timeout=90
     )
     plan = build_generation_plan(
-        "video", args, parameter_source=source, language_resolver=_identity_language
+        "video", args, parameter_explicit=source, language_resolver=_identity_language
     )
     assert plan.timeout == 90.0
 
@@ -327,7 +324,7 @@ def test_video_raw_timeout_is_preserved_when_not_commandline() -> None:
         video_format="explainer", style="auto", style_prompt=None, language="en", timeout=90
     )
     plan = build_generation_plan(
-        "video", args, parameter_source=_default_source, language_resolver=_identity_language
+        "video", args, parameter_explicit=_default_source, language_resolver=_identity_language
     )
     assert plan.timeout == 90.0
 
@@ -337,59 +334,56 @@ def test_video_raw_timeout_is_preserved_when_not_commandline() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_video_cinematic_rejects_style_prompt(capsys) -> None:
-    """Cinematic video + non-empty ``--style-prompt`` exits 1 through
-    ``output_error`` (per ADR-015)."""
+def test_video_cinematic_rejects_style_prompt() -> None:
+    """Cinematic video + non-empty ``--style-prompt`` raises a typed error."""
     args = _base_args(
         video_format="cinematic",
         style="auto",
         style_prompt="foo",
         language="en",
     )
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(GenerationPlanValidationError) as exc_info:
         build_generation_plan(
-            "video", args, parameter_source=_default_source, language_resolver=_identity_language
+            "video", args, parameter_explicit=_default_source, language_resolver=_identity_language
         )
-    assert exc_info.value.code == 1
-    assert "--style-prompt cannot be used" in capsys.readouterr().err
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert "--style-prompt cannot be used" in exc_info.value.message
 
 
-def test_video_style_custom_requires_style_prompt(capsys) -> None:
-    """``--style custom`` without ``--style-prompt`` exits 1 through
-    ``output_error`` (per ADR-015)."""
+def test_video_style_custom_requires_style_prompt() -> None:
+    """``--style custom`` without ``--style-prompt`` raises a typed error."""
     args = _base_args(video_format="explainer", style="custom", style_prompt=None, language="en")
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(GenerationPlanValidationError) as exc_info:
         build_generation_plan(
-            "video", args, parameter_source=_default_source, language_resolver=_identity_language
+            "video", args, parameter_explicit=_default_source, language_resolver=_identity_language
         )
-    assert exc_info.value.code == 1
-    assert "--style custom requires --style-prompt" in capsys.readouterr().err
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert "--style custom requires --style-prompt" in exc_info.value.message
 
 
-def test_video_style_prompt_requires_style_custom(capsys) -> None:
-    """Non-empty ``--style-prompt`` with ``--style != custom`` exits 1 through
-    ``output_error`` (per ADR-015)."""
+def test_video_style_prompt_requires_style_custom() -> None:
+    """Non-empty ``--style-prompt`` with ``--style != custom`` raises a typed error."""
     args = _base_args(
         video_format="explainer", style="anime", style_prompt="hand-drawn", language="en"
     )
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(GenerationPlanValidationError) as exc_info:
         build_generation_plan(
-            "video", args, parameter_source=_default_source, language_resolver=_identity_language
+            "video", args, parameter_explicit=_default_source, language_resolver=_identity_language
         )
-    assert exc_info.value.code == 1
-    assert "--style-prompt requires --style custom" in capsys.readouterr().err
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert "--style-prompt requires --style custom" in exc_info.value.message
 
 
-def test_video_style_prompt_strips_whitespace(capsys) -> None:
+def test_video_style_prompt_strips_whitespace() -> None:
     """Whitespace-only ``--style-prompt`` is treated as unset (still triggers
     the ``--style custom`` requirement when style is custom)."""
     args = _base_args(video_format="explainer", style="custom", style_prompt="   ", language="en")
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(GenerationPlanValidationError) as exc_info:
         build_generation_plan(
-            "video", args, parameter_source=_default_source, language_resolver=_identity_language
+            "video", args, parameter_explicit=_default_source, language_resolver=_identity_language
         )
-    assert exc_info.value.code == 1
-    assert "--style custom requires --style-prompt" in capsys.readouterr().err
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert "--style custom requires --style-prompt" in exc_info.value.message
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +399,7 @@ def test_report_smart_custom_coercion_on_default_format() -> None:
         append_instructions=None,
     )
     plan = build_generation_plan(
-        "report", args, parameter_source=_default_source, language_resolver=_identity_language
+        "report", args, parameter_explicit=_default_source, language_resolver=_identity_language
     )
     assert plan.params["report_format"] == ReportFormat.CUSTOM
     assert plan.params["custom_prompt"] == "My white paper"
@@ -422,7 +416,7 @@ def test_report_explicit_format_with_description_keeps_format_but_sets_custom_pr
         append_instructions=None,
     )
     plan = build_generation_plan(
-        "report", args, parameter_source=_default_source, language_resolver=_identity_language
+        "report", args, parameter_explicit=_default_source, language_resolver=_identity_language
     )
     assert plan.params["report_format"] == ReportFormat.STUDY_GUIDE
     assert plan.params["custom_prompt"] == "Brief audience: novices"
@@ -438,7 +432,7 @@ def test_report_append_with_custom_format_queues_warning_and_drops_append() -> N
         append_instructions="extra",
     )
     plan = build_generation_plan(
-        "report", args, parameter_source=_default_source, language_resolver=_identity_language
+        "report", args, parameter_explicit=_default_source, language_resolver=_identity_language
     )
     assert plan.params["extra_instructions"] is None
     assert plan.warnings == (
@@ -455,7 +449,7 @@ def test_report_append_with_non_custom_format_passes_through() -> None:
         append_instructions="Target: novices",
     )
     plan = build_generation_plan(
-        "report", args, parameter_source=_default_source, language_resolver=_identity_language
+        "report", args, parameter_explicit=_default_source, language_resolver=_identity_language
     )
     assert plan.params["report_format"] == ReportFormat.STUDY_GUIDE
     assert plan.params["custom_prompt"] is None
@@ -563,7 +557,7 @@ async def test_execute_generation_dispatches_with_expected_kwargs(
     plan = build_generation_plan(
         kind,
         _base_args(**extra),
-        parameter_source=_default_source,
+        parameter_explicit=_default_source,
         language_resolver=_identity_language,
     )
     client = _make_mock_client(method, {"task_id": "tid", "status": "processing"})
@@ -575,17 +569,18 @@ async def test_execute_generation_dispatches_with_expected_kwargs(
     call = api.await_args
     assert call.args == ("nb_123",)
     assert call.kwargs == expected_kwargs
-    # ``execute_generation`` returns ``None`` when the API result is a raw
-    # dict (handle_generation_result short-circuits — no GenerationStatus).
-    assert result is None
+    assert isinstance(result, GenerationExecutionResult)
+    assert result.kind == kind
+    assert result.generation is not None
+    assert result.generation.status == "pending"
+    assert result.generation.task_id == "tid"
 
 
 @pytest.mark.asyncio
-async def test_execute_generation_mind_map_dispatches_and_renders(
+async def test_execute_generation_mind_map_dispatches_and_returns_typed_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Mind-map kind dispatches to ``generate_mind_map`` and renders the
-    result via ``generate_cmd._output_mind_map_result``."""
+    """Mind-map kind dispatches to ``generate_mind_map`` and returns payload for rendering."""
 
     async def fake_resolve_notebook_id(_client, nb, *, json_output=False):
         return nb
@@ -595,20 +590,10 @@ async def test_execute_generation_mind_map_dispatches_and_renders(
 
     monkeypatch.setattr("notebooklm.cli.resolve.resolve_notebook_id", fake_resolve_notebook_id)
     monkeypatch.setattr("notebooklm.cli.resolve.resolve_source_ids", fake_resolve_source_ids)
-    captured: dict[str, Any] = {}
-
-    def fake_output(result: Any, json_output: bool) -> None:
-        captured["result"] = result
-        captured["json_output"] = json_output
-
-    import notebooklm.cli.generate_cmd as generate_cmd
-
-    monkeypatch.setattr(generate_cmd, "_output_mind_map_result", fake_output)
-
     plan = build_generation_plan(
         "mind-map",
         _base_args(instructions="summarize", language="en", json_output=True),
-        parameter_source=_default_source,
+        parameter_explicit=_default_source,
         language_resolver=_identity_language,
     )
     mind_map_payload = {"note_id": "n1", "mind_map": {"name": "Root", "children": []}}
@@ -622,16 +607,16 @@ async def test_execute_generation_mind_map_dispatches_and_renders(
         language="en",
         instructions="summarize",
     )
-    assert captured == {"result": mind_map_payload, "json_output": True}
-    assert result is None
+    assert isinstance(result, GenerationExecutionResult)
+    assert result.kind == "mind-map"
+    assert result.mind_map == mind_map_payload
 
 
 @pytest.mark.asyncio
-async def test_execute_generation_emits_warnings_before_api_call(
+async def test_execute_generation_leaves_plan_warnings_for_command_layer(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Queued plan warnings hit stderr before the API method is called."""
+    """Queued plan warnings stay on the plan while execution remains I/O-free."""
 
     async def fake_resolve_notebook_id(_client, nb, *, json_output=False):
         return nb
@@ -649,7 +634,7 @@ async def test_execute_generation_emits_warnings_before_api_call(
             report_format="custom",
             append_instructions="extra",
         ),
-        parameter_source=_default_source,
+        parameter_explicit=_default_source,
         language_resolver=_identity_language,
     )
     assert plan.warnings  # sanity: plan queued at least one warning
@@ -658,8 +643,6 @@ async def test_execute_generation_emits_warnings_before_api_call(
 
     await execute_generation(plan, client)
 
-    err = capsys.readouterr().err
-    assert "Warning: --append has no effect with --format custom" in err
     client.artifacts.generate_report.assert_awaited_once()
 
 
@@ -684,7 +667,7 @@ async def test_execute_generation_revise_slide_skips_source_resolution(
     plan = build_generation_plan(
         "revise-slide",
         _base_args(description="Move up", artifact_id="art_1", slide_index=3),
-        parameter_source=_default_source,
+        parameter_explicit=_default_source,
         language_resolver=_identity_language,
     )
     client = _make_mock_client("revise_slide", {"task_id": "tid", "status": "processing"})

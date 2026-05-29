@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from notebooklm.cli import source_cmd
-from notebooklm.cli.services import source_mutations, source_research, source_wait
+from notebooklm.cli.services import source_mutations, source_research
 from notebooklm.cli.services.source_content import (
     SourceFulltextPlan,
     SourceGuidePlan,
@@ -582,14 +582,11 @@ async def test_source_add_research_delegates_timeout_budget_to_research_api() ->
 
 
 @pytest.mark.asyncio
-async def test_source_wait_timeout_returns_typed_outcome(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_source_wait_timeout_returns_typed_outcome() -> None:
     @contextlib.asynccontextmanager
     async def fake_status_with_elapsed(*args: object, **kwargs: object) -> AsyncIterator[None]:
         yield
 
-    monkeypatch.setattr(source_wait, "status_with_elapsed", fake_status_with_elapsed)
     timeout_exc = SourceTimeoutError("src_1", 10.0, 2)
     client = SimpleNamespace(
         sources=SimpleNamespace(wait_until_ready=AsyncMock(side_effect=timeout_exc))
@@ -604,6 +601,7 @@ async def test_source_wait_timeout_returns_typed_outcome(
             interval=0.5,
             json_output=True,
         ),
+        wait_context=lambda: fake_status_with_elapsed(),
     )
 
     # Service now returns a typed outcome; presentation + exit code are the

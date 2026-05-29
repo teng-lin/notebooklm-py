@@ -19,6 +19,7 @@ from ..types import ExportType
 from .auth_runtime import with_client
 from .error_handler import _output_error, exit_with_code
 from .options import json_option, list_options, notebook_option, wait_polling_options
+from .polling_ui import status_with_elapsed
 from .rendering import (
     cli_name_to_artifact_type,
     cli_print,
@@ -34,7 +35,6 @@ from .resolve import (
 )
 from .services.confirming_mutation import MutationPlan, run_confirmed_mutation
 from .services.listing import ListSpec, prepare_list
-from .services.polling import status_with_elapsed
 
 
 @click.group()

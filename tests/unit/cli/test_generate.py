@@ -8,13 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+from notebooklm.cli.polling_ui import status_with_elapsed
 from notebooklm.cli.services.artifact_generation import (
     RETRY_MAX_DELAY,
+    GenerationOutcome,
     _format_status_message,
     calculate_backoff_delay,
     generate_with_retry,
 )
-from notebooklm.cli.services.polling import status_with_elapsed
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 
@@ -26,6 +27,7 @@ from .conftest import create_mock_client
 # the Click Group sitting at the same dotted path.
 generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
 artifact_generation_module = importlib.import_module("notebooklm.cli.services.artifact_generation")
+polling_ui_module = importlib.import_module("notebooklm.cli.polling_ui")
 
 
 @pytest.fixture
@@ -1197,7 +1199,7 @@ class TestGenerateWithRetry:
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             result = await generate_with_retry(
-                generate_fn, max_retries=3, artifact_type="audio", json_output=True
+                generate_fn, max_retries=3, artifact_type="audio"
             )
 
         assert result == success_result
@@ -1216,7 +1218,7 @@ class TestGenerateWithRetry:
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await generate_with_retry(
-                generate_fn, max_retries=2, artifact_type="audio", json_output=True
+                generate_fn, max_retries=2, artifact_type="audio"
             )
 
         assert result == rate_limited
@@ -1233,7 +1235,7 @@ class TestGenerateWithRetry:
         generate_fn = AsyncMock(return_value=rate_limited)
 
         result = await generate_with_retry(
-            generate_fn, max_retries=0, artifact_type="audio", json_output=True
+            generate_fn, max_retries=0, artifact_type="audio"
         )
 
         assert result == rate_limited
@@ -1251,7 +1253,7 @@ class TestGenerateWithRetry:
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await generate_with_retry(
-                generate_fn, max_retries=3, artifact_type="audio", json_output=True
+                generate_fn, max_retries=3, artifact_type="audio"
             )
 
         # Verify delays: 60s, 120s, 240s (3 retries = 3 sleeps)
@@ -1270,7 +1272,7 @@ class TestGenerateWithRetry:
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await generate_with_retry(
-                generate_fn, max_retries=10, artifact_type="audio", json_output=True
+                generate_fn, max_retries=10, artifact_type="audio"
             )
 
         # Verify no delay exceeds RETRY_MAX_DELAY (300s)
@@ -1513,156 +1515,105 @@ class TestResolveLanguageDirect:
 
 
 # =============================================================================
-# _OUTPUT_GENERATION_STATUS DIRECT TESTS
+# _OUTPUT_GENERATION_OUTCOME DIRECT TESTS
 # =============================================================================
 
 
-class TestOutputGenerationStatusDirect:
-    """Direct tests for _output_generation_status() covering uncovered branches."""
+class TestOutputGenerationOutcomeDirect:
+    """Direct tests for command-layer generation outcome rendering."""
 
     def setup_method(self):
-        self.generate_module = artifact_generation_module
-
-    def _make_status(
-        self, *, is_complete=False, is_failed=False, task_id=None, url=None, error=None
-    ):
-        status = MagicMock()
-        status.is_complete = is_complete
-        status.is_failed = is_failed
-        status.task_id = task_id
-        status.url = url
-        status.error = error
-        return status
+        self.generate_module = generate_module
 
     def test_json_completed_with_url(self):
-        """Lines 200-201, 243: JSON output for completed status with URL."""
-        status = self._make_status(
-            is_complete=True, task_id="task_123", url="https://example.com/audio.mp3"
+        outcome = GenerationOutcome(
+            status="completed",
+            artifact_type="audio",
+            task_id="task_123",
+            url="https://example.com/audio.mp3",
         )
         with patch.object(self.generate_module, "json_output_response") as mock_json:
-            self.generate_module._output_generation_status(status, "audio", json_output=True)
+            self.generate_module._output_generation_outcome(outcome, json_output=True)
         mock_json.assert_called_once_with(
             {"task_id": "task_123", "status": "completed", "url": "https://example.com/audio.mp3"}
         )
 
     def test_json_failed(self):
-        """JSON output for failed status routes through ``output_error``.
-
-        P1.T6: terminal ``is_failed`` no longer fans into separate text/JSON
-        branches — both modes go through ``output_error`` (the public alias
-        of ``error_handler._output_error``) so the exit code is unified at
-        1 across modes.
-        """
-        status = self._make_status(is_failed=True, error="Something went wrong")
+        outcome = GenerationOutcome(status="failed", artifact_type="audio", error="Something went wrong")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
         ):
-            # output_error raises SystemExit; in real use the patch
-            # suppresses it but the SystemExit path is part of the
-            # contract — patch a side_effect to mirror the real call.
             mock_err.side_effect = SystemExit(1)
-            self.generate_module._output_generation_status(status, "audio", json_output=True)
+            self.generate_module._output_generation_outcome(outcome, json_output=True)
         mock_err.assert_called_once_with("Something went wrong", "GENERATION_FAILED", True, 1)
 
     def test_json_failed_no_error_message(self):
-        """JSON failed output falls back to default message when error is None.
-
-        Same ``output_error`` routing as ``test_json_failed`` — only the
-        message differs (default fallback when ``status.error`` is None).
-        """
-        status = self._make_status(is_failed=True, error=None)
+        outcome = GenerationOutcome(status="failed", artifact_type="audio")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
         ):
             mock_err.side_effect = SystemExit(1)
-            self.generate_module._output_generation_status(status, "audio", json_output=True)
+            self.generate_module._output_generation_outcome(outcome, json_output=True)
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", True, 1)
 
     def test_json_pending_with_task_id(self):
-        """Lines 205-207, 257: JSON output for pending status extracts task_id from list."""
-        # Use a list result (lines 205-207: list path in handle_generation_result)
-        # and pending path in _output_generation_status (lines 255-257)
-        status = MagicMock()
-        status.is_complete = False
-        status.is_failed = False
-        status.task_id = "task_456"
+        outcome = GenerationOutcome(status="pending", artifact_type="audio", task_id="task_456")
         with patch.object(self.generate_module, "json_output_response") as mock_json:
-            self.generate_module._output_generation_status(status, "audio", json_output=True)
+            self.generate_module._output_generation_outcome(outcome, json_output=True)
         mock_json.assert_called_once_with({"task_id": "task_456", "status": "pending"})
 
     def test_text_completed_with_url(self):
-        """Line 262: Text output for completed status with URL."""
-        status = self._make_status(
-            is_complete=True, task_id="task_123", url="https://example.com/audio.mp3"
+        outcome = GenerationOutcome(
+            status="completed",
+            artifact_type="audio",
+            task_id="task_123",
+            url="https://example.com/audio.mp3",
         )
         with patch.object(self.generate_module, "console") as mock_console:
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
+            self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with(
             "[green]Audio ready:[/green] https://example.com/audio.mp3"
         )
 
     def test_text_completed_without_url(self):
-        """Line 264: Text output for completed status without URL."""
-        status = self._make_status(is_complete=True, task_id="task_123", url=None)
+        outcome = GenerationOutcome(status="completed", artifact_type="audio", task_id="task_123")
         with patch.object(self.generate_module, "console") as mock_console:
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
+            self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with("[green]Audio ready[/green]")
 
     def test_text_failed(self):
-        """Text output for failed status routes through ``output_error``.
-
-        P1.T6: text-mode failures no longer print via Rich + return (which
-        kept exit code 0). They route through ``output_error`` →
-        ``safe_echo(err=True)`` → ``SystemExit(1)`` so text mode now exits
-        non-zero, matching JSON mode.
-        """
-        status = self._make_status(is_failed=True, error="Transcription error")
+        outcome = GenerationOutcome(status="failed", artifact_type="audio", error="Transcription error")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
         ):
             mock_err.side_effect = SystemExit(1)
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
+            self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_err.assert_called_once_with("Transcription error", "GENERATION_FAILED", False, 1)
 
     def test_text_failed_no_error_message(self):
-        """Text failed output falls back to default message when error is None.
-
-        Note: pre-P1.T6 used ``"Unknown error"`` as the text-mode default and
-        ``"Audio generation failed"`` as the JSON-mode default. After
-        unification through ``output_error``, both modes use the same
-        ``"<Title> generation failed"`` fallback.
-        """
-        status = self._make_status(is_failed=True, error=None)
+        outcome = GenerationOutcome(status="failed", artifact_type="audio")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
         ):
             mock_err.side_effect = SystemExit(1)
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
+            self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", False, 1)
 
     def test_text_pending_with_task_id(self):
-        """Line 268: Text output for pending status shows task_id."""
-        status = self._make_status(task_id="task_789")
+        outcome = GenerationOutcome(status="pending", artifact_type="audio", task_id="task_789")
         with patch.object(self.generate_module, "console") as mock_console:
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
+            self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with("[yellow]Started:[/yellow] task_789")
 
-    def test_text_pending_without_task_id_shows_status(self):
-        """Line 268: Text output for pending status shows status object when no task_id."""
-        status = MagicMock()
-        status.is_complete = False
-        status.is_failed = False
-        # Make _extract_task_id return None by having no task_id attr and not a dict/list
-        del status.task_id
-        with (
-            patch.object(self.generate_module, "_extract_task_id", return_value=None),
-            patch.object(self.generate_module, "console") as mock_console,
-        ):
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
+    def test_text_pending_without_task_id_shows_raw_status(self):
+        raw_status = object()
+        outcome = GenerationOutcome(status="pending", artifact_type="audio", raw_status=raw_status)
+        with patch.object(self.generate_module, "console") as mock_console:
+            self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once()
         call_args = mock_console.print.call_args[0][0]
         assert "[yellow]Started:[/yellow]" in call_args
@@ -2141,19 +2092,17 @@ class TestGenerateWithRetryConsoleOutput:
         )
         generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
 
-        with (
-            patch.object(artifact_generation_module, "console") as mock_console,
-            patch("asyncio.sleep", new_callable=AsyncMock),
-        ):
+        retry_sink = MagicMock()
+        with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await artifact_generation_module.generate_with_retry(
-                generate_fn, max_retries=1, artifact_type="audio", json_output=False
+                generate_fn,
+                max_retries=1,
+                artifact_type="audio",
+                on_retry=retry_sink,
             )
 
         assert result == success_result
-        # Console should have been called with the retry message
-        mock_console.print.assert_called_once()
-        call_text = mock_console.print.call_args[0][0]
-        assert "rate limited" in call_text.lower() or "Retrying" in call_text
+        retry_sink.assert_called_once()
 
 
 class TestHandleGenerationResultListPathAndWait:
@@ -2307,7 +2256,7 @@ class TestStatusWithElapsed:
         """Under --json the helper must NOT call console.status (stdout stays JSON)."""
 
         async def _exercise() -> None:
-            with patch.object(artifact_generation_module.console, "status") as mock_status:
+            with patch.object(polling_ui_module.console, "status") as mock_status:
                 async with status_with_elapsed("audio", json_output=True):
                     pass
                 assert not mock_status.called, "console.status must not be invoked under --json"
@@ -2421,7 +2370,7 @@ class TestGenerateWaitSigintResumeHint:
         """
 
         async def _exercise() -> None:
-            with patch.object(artifact_generation_module.console, "status") as mock_status:
+            with patch.object(polling_ui_module.console, "status") as mock_status:
                 mock_status.return_value.__enter__ = MagicMock(return_value=MagicMock())
                 mock_status.return_value.__exit__ = MagicMock(return_value=False)
                 with pytest.raises(KeyboardInterrupt):
@@ -2446,8 +2395,8 @@ class TestArtifactGenerationExitCodes:
     failures via ``$?``.
 
     These tests pin the unified contract: every failure path inside
-    ``handle_generation_result`` (and ``_output_generation_status``'s terminal
-    failed branch reached via ``--wait``) routes through ``output_error``,
+    ``handle_generation_result`` (and the command-layer outcome renderer for
+    terminal failures reached via ``--wait``) routes through ``output_error``,
     which exits non-zero and writes the human-readable message to stderr in
     text mode or a structured envelope on stdout in JSON mode.
     """

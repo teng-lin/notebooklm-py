@@ -7,8 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
+from notebooklm.cli import polling_ui
+from notebooklm.cli.polling_ui import status_with_elapsed
 from notebooklm.cli.services import polling
-from notebooklm.cli.services.polling import poll_until, status_with_elapsed
+from notebooklm.cli.services.polling import poll_until
 
 
 @pytest.mark.asyncio
@@ -71,7 +73,7 @@ async def test_status_with_elapsed_json_output_is_no_op() -> None:
     """JSON mode must not start a Rich spinner that could pollute stdout."""
     entered = False
 
-    with patch.object(polling.console, "status") as status:
+    with patch.object(polling_ui.console, "status") as status:
         async with status_with_elapsed("Waiting for work...", json_output=True):
             entered = True
 

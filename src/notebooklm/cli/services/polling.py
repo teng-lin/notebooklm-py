@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
-
-from ..error_handler import emit_cancelled_and_exit
-from ..rendering import console
 
 T = TypeVar("T")
 
@@ -32,55 +28,6 @@ class PollResult(Generic[T]):
     attempts: int
     elapsed: float
     timed_out: bool
-
-
-@contextlib.asynccontextmanager
-async def status_with_elapsed(
-    message: str,
-    *,
-    json_output: bool = False,
-    resume_hint: str | None = None,
-) -> AsyncIterator[None]:
-    """Show a transient Rich status spinner with an elapsed-seconds counter.
-
-    The context manager is a no-op in JSON mode so stdout remains parseable.
-    In text mode it updates the spinner once per second and cancels that
-    ticker when the wrapped block exits. If ``resume_hint`` is provided,
-    ``KeyboardInterrupt`` is converted to the CLI's structured/friendly
-    cancellation response; otherwise the interrupt propagates unchanged.
-    """
-
-    @contextlib.contextmanager
-    def _sigint_guard() -> Iterator[None]:
-        try:
-            yield
-        except KeyboardInterrupt:
-            if resume_hint is None:
-                raise
-            emit_cancelled_and_exit(resume_hint, json_output=json_output)
-
-    if json_output:
-        with _sigint_guard():
-            yield
-        return
-
-    start = time.monotonic()
-    with console.status(message) as status:
-
-        async def _ticker() -> None:
-            while True:
-                await asyncio.sleep(1.0)
-                elapsed = int(time.monotonic() - start)
-                status.update(f"{message} [{elapsed}s elapsed]")
-
-        ticker_task = asyncio.create_task(_ticker())
-        try:
-            with _sigint_guard():
-                yield
-        finally:
-            ticker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await ticker_task
 
 
 async def poll_until(
@@ -119,4 +66,4 @@ async def poll_until(
         await asyncio.sleep(min(interval, timeout - elapsed))
 
 
-__all__ = ["PollResult", "poll_until", "status_with_elapsed"]
+__all__ = ["PollResult", "poll_until"]

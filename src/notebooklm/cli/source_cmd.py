@@ -48,6 +48,7 @@ from .rendering import (
     json_output_response,
     render_list,
 )
+from .polling_ui import status_with_elapsed
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
 from .services import source_add as source_add_service
@@ -1213,6 +1214,13 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
                     timeout=float(timeout),
                     interval=float(interval),
                     json_output=json_output,
+                ),
+                wait_context=lambda: status_with_elapsed(
+                    f"Waiting for source {resolved_id} to finish processing...",
+                    json_output=json_output,
+                    # Parallel hint: ``source wait`` has no separate ``source
+                    # poll`` command, so the resume IS re-running the same wait.
+                    resume_hint=f"notebooklm source wait {resolved_id}",
                 ),
             )
             _render_source_wait_outcome(outcome, json_output=json_output)

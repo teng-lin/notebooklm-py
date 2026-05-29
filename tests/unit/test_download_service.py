@@ -11,12 +11,15 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
-import click
 import pytest
 
 from notebooklm.cli._download_specs import DOWNLOAD_SPECS_BY_NAME
 from notebooklm.cli.services import download as download_service
-from notebooklm.cli.services.download import build_download_plan, execute_download
+from notebooklm.cli.services.download import (
+    DownloadPlanValidationError,
+    build_download_plan,
+    execute_download,
+)
 from notebooklm.types import Artifact
 
 
@@ -67,24 +70,24 @@ def resolved_notebook(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_download_plan_rejects_force_and_no_clobber() -> None:
     spec = DOWNLOAD_SPECS_BY_NAME["audio"]
 
-    with pytest.raises(click.UsageError, match="Cannot specify both --force and --no-clobber"):
+    with pytest.raises(
+        DownloadPlanValidationError, match="Cannot specify both --force and --no-clobber"
+    ):
         build_download_plan(spec, _args(force=True, no_clobber=True))
 
 
 def test_build_download_plan_applies_registry_format_extension_and_warning() -> None:
     spec = DOWNLOAD_SPECS_BY_NAME["slide-deck"]
-    warnings: list[str] = []
 
     plan = build_download_plan(
         spec,
         _args(output_path="deck.pdf", slide_format="pptx"),
         Path("/workspace"),
-        warn_sink=warnings.append,
     )
 
     assert plan.file_extension == ".pptx"
     assert plan.format_choice == "pptx"
-    assert warnings == [
+    assert list(plan.warnings) == [
         "Warning: output path 'deck.pdf' does not end with '.pptx' but --format pptx was requested."
     ]
 

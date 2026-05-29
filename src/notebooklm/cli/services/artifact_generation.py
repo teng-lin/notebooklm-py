@@ -1,14 +1,14 @@
 """CLI-internal services for artifact generation commands."""
 
-from collections.abc import Awaitable, Callable
+import contextlib
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from typing import Any
 
 from ... import artifacts as artifact_retry
 from ...client import NotebookLMClient
 from ...types import GenerationStatus
-from ..error_handler import output_error
-from ..rendering import console, json_output_response
-from .polling import status_with_elapsed
 
 # Retry constants
 RETRY_INITIAL_DELAY = artifact_retry.RATE_LIMIT_RETRY_INITIAL_DELAY
@@ -37,6 +37,24 @@ _TYPICAL_DURATIONS: dict[str, str] = {
 }
 
 
+@dataclass(frozen=True)
+class GenerationOutcome:
+    """Typed result of generation orchestration for command-layer rendering."""
+
+    status: str
+    artifact_type: str
+    task_id: str | None = None
+    url: str | None = None
+    error: str | None = None
+    error_code: str = "GENERATION_FAILED"
+    hint: str | None = None
+    raw_status: Any = None
+
+    @property
+    def exit_code(self) -> int:
+        return 1 if self.status in {"failed", "rate_limited"} else 0
+
+
 def _format_status_message(artifact_type: str, elapsed: float | None = None) -> str:
     """Build the spinner status line for a long-running generation.
 
@@ -56,7 +74,7 @@ async def generate_with_retry(
     generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
     max_retries: int,
     artifact_type: str,
-    json_output: bool = False,
+    on_retry: Callable[[artifact_retry.RateLimitRetryEvent], None] | None = None,
 ) -> GenerationStatus | None:
     """Generate artifact with retry on rate limit.
 
@@ -67,24 +85,16 @@ async def generate_with_retry(
         generate_fn: Async function that performs the generation.
         max_retries: Maximum number of retries (0 = no retry, just one attempt).
         artifact_type: Display name for progress messages.
-        json_output: Whether to suppress console output.
+        on_retry: Optional command-layer callback for retry notices.
 
     Returns:
         GenerationStatus or None if generation failed.
     """
 
-    def _show_retry(event: artifact_retry.RateLimitRetryEvent) -> None:
-        if not json_output:
-            console.print(
-                f"[yellow]{artifact_type.title()} rate limited. "
-                f"Retrying in {int(event.delay)}s "
-                f"(attempt {event.next_attempt_number}/{event.total_attempts})...[/yellow]"
-            )
-
     return await artifact_retry.with_rate_limit_retry(
         generate_fn,
         max_retries=max_retries,
-        on_retry=_show_retry,
+        on_retry=on_retry,
     )
 
 
@@ -97,13 +107,15 @@ async def handle_generation_result(
     json_output: bool = False,
     timeout: float = 300.0,
     interval: float | None = None,
-) -> GenerationStatus | None:
-    """Handle generation result with optional waiting and output formatting.
+    wait_context: Callable[[str, str], AbstractAsyncContextManager[None]] | None = None,
+    wait_start_sink: Callable[[str], None] | None = None,
+) -> GenerationOutcome:
+    """Handle generation result with optional waiting and typed outcome mapping.
 
     Consolidates common pattern across all generate commands:
     - Check for None/failed result
     - Optionally wait for completion
-    - Output status in JSON or console format
+    - Return a typed outcome for the command layer to render
 
     Args:
         client: The NotebookLM client.
@@ -111,7 +123,8 @@ async def handle_generation_result(
         result: The generation result from artifacts API.
         artifact_type: Display name for the artifact type (e.g., "audio", "video").
         wait: Whether to wait for completion.
-        json_output: Whether to output as JSON.
+        json_output: Deprecated compatibility argument; callers should use
+            ``wait_context`` for presentation policy.
         timeout: Timeout forwarded to ``wait_for_completion``. Callers supply
             per-command defaults; media generators use longer budgets while
             generic artifact waits remain at 300s.
@@ -122,32 +135,28 @@ async def handle_generation_result(
             cadence.
 
     Returns:
-        Final GenerationStatus, or None if generation failed.
+        GenerationOutcome describing the final status.
     """
-    # Both failure branches route through ``output_error`` so the exit code
-    # is non-zero in both text and JSON modes. ``output_error`` always raises
-    # ``SystemExit`` — these calls never return. Runtime failures use
-    # ``output_error`` rather than ``click.ClickException``; the latter is
-    # reserved for input-validation boundaries (CLI argument parsing).
     if not result:
-        output_error(
-            f"{artifact_type.title()} generation failed",
-            "GENERATION_FAILED",
-            json_output,
-            1,
+        return GenerationOutcome(
+            status="failed",
+            artifact_type=artifact_type,
+            error=f"{artifact_type.title()} generation failed",
         )
 
     # Check for rate limiting (result exists but failed due to rate limit)
     if isinstance(result, GenerationStatus) and result.is_rate_limited:
-        output_error(
-            f"{artifact_type.title()} generation rate limited by Google.",
-            "RATE_LIMITED",
-            json_output,
-            1,
+        return GenerationOutcome(
+            status="rate_limited",
+            artifact_type=artifact_type,
+            task_id=result.task_id,
+            error=f"{artifact_type.title()} generation rate limited by Google.",
+            error_code="RATE_LIMITED",
             hint=(
                 "Daily quota may be exceeded. Try again in 1-24 hours, "
                 "or use --retry N to retry automatically."
             ),
+            raw_status=result,
         )
 
     status: Any = result
@@ -155,32 +164,24 @@ async def handle_generation_result(
 
     # Wait for completion if requested
     if wait and task_id:
-        if not json_output:
-            console.print(f"[yellow]Generating {artifact_type}...[/yellow] Task: {task_id}")
+        if wait_start_sink is not None:
+            wait_start_sink(task_id)
         wait_kwargs: dict[str, Any] = {"timeout": timeout}
         if interval is not None:
             wait_kwargs["initial_interval"] = interval
-        # Wrap the blocking poll in a transient spinner so interactive users see
-        # progress feedback during long generations. The status
-        # line includes the artifact kind, a typical-duration hint, and a
-        # live elapsed-seconds counter. No-op under --json.
-        #
-        # The ``resume_hint`` plumbs the canonical M2 cancellation message
-        # (``Cancelled. Resume with: notebooklm artifact poll <task_id>``)
-        # so Ctrl-C during the wait surfaces the resume command instead of
-        # a Python KeyboardInterrupt traceback. See ``cli/error_handler.py``
-        # ``emit_cancelled_and_exit``.
-        async with status_with_elapsed(
+        context = wait_context or _null_wait_context
+        async with context(
             _format_status_message(artifact_type),
-            json_output=json_output,
-            resume_hint=f"notebooklm artifact poll {task_id}",
+            f"notebooklm artifact poll {task_id}",
         ):
             status = await client.artifacts.wait_for_completion(notebook_id, task_id, **wait_kwargs)
 
-    # Output status
-    _output_generation_status(status, artifact_type, json_output)
+    return generation_outcome_from_status(status, artifact_type)
 
-    return status if isinstance(status, GenerationStatus) else None
+
+@contextlib.asynccontextmanager
+async def _null_wait_context(_message: str, _resume_hint: str) -> AsyncIterator[None]:
+    yield
 
 
 def _extract_generation_task_id(result: Any) -> str | None:
@@ -214,43 +215,41 @@ def _extract_task_id(status: Any) -> str | None:
     return None
 
 
-def _output_generation_status(status: Any, artifact_type: str, json_output: bool) -> None:
-    """Output generation status in appropriate format.
-
-    The terminal ``is_failed`` branch routes through ``output_error`` so
-    failures observed after a ``--wait`` produce a non-zero exit in both
-    text and JSON modes.
-    """
+def generation_outcome_from_status(status: Any, artifact_type: str) -> GenerationOutcome:
+    """Map a generation status payload to a command-renderable outcome."""
     is_complete = hasattr(status, "is_complete") and status.is_complete
     is_failed = hasattr(status, "is_failed") and status.is_failed
 
     if is_failed:
-        output_error(
-            getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
-            "GENERATION_FAILED",
-            json_output,
-            1,
+        return GenerationOutcome(
+            status="failed",
+            artifact_type=artifact_type,
+            task_id=_extract_task_id(status),
+            error=getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
+            raw_status=status,
         )
 
-    if json_output:
-        if is_complete:
-            json_output_response(
-                {
-                    "task_id": getattr(status, "task_id", None),
-                    "status": "completed",
-                    "url": getattr(status, "url", None),
-                }
-            )
-        else:
-            task_id = _extract_task_id(status)
-            json_output_response({"task_id": task_id, "status": "pending"})
-    else:
-        if is_complete:
-            url = getattr(status, "url", None)
-            if url:
-                console.print(f"[green]{artifact_type.title()} ready:[/green] {url}")
-            else:
-                console.print(f"[green]{artifact_type.title()} ready[/green]")
-        else:
-            task_id = _extract_task_id(status)
-            console.print(f"[yellow]Started:[/yellow] {task_id or status}")
+    if is_complete:
+        return GenerationOutcome(
+            status="completed",
+            artifact_type=artifact_type,
+            task_id=getattr(status, "task_id", None),
+            url=getattr(status, "url", None),
+            raw_status=status,
+        )
+
+    return GenerationOutcome(
+        status="pending",
+        artifact_type=artifact_type,
+        task_id=_extract_task_id(status),
+        raw_status=status,
+    )
+
+
+__all__ = [
+    "GenerationOutcome",
+    "calculate_backoff_delay",
+    "generate_with_retry",
+    "generation_outcome_from_status",
+    "handle_generation_result",
+]

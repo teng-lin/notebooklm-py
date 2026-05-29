@@ -439,6 +439,43 @@ class TestDownloadJsonOutputUnicode:
         assert "\\u" not in result.output
 
 
+class TestDownloadWarnings:
+    def test_format_mismatch_warning_is_rendered_by_command_layer(self, runner, mock_auth):
+        """Format-extension warnings carried by the plan are echoed by the Click layer."""
+
+        async def fake_execute_download(*args, **kwargs):
+            return {
+                "operation": "download_single",
+                "artifact": {"title": "Slides", "selection_reason": "latest"},
+                "output_path": "deck.pdf",
+                "status": "downloaded",
+            }
+
+        with (
+            patch("notebooklm.cli.download_cmd.execute_download", fake_execute_download),
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+        ):
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "slide-deck",
+                    "deck.pdf",
+                    "--format",
+                    "pptx",
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code == 0
+        combined = result.output + (result.stderr if result.stderr_bytes else "")
+        assert "does not end with '.pptx'" in combined
+
+
 # =============================================================================
 # COMMAND EXISTENCE TESTS
 # =============================================================================

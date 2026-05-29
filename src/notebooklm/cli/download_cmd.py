@@ -32,10 +32,10 @@ import click
 from ..client import NotebookLMClient
 from ._download_specs import DOWNLOAD_SPECS, DownloadTypeSpec
 from .auth_runtime import run_client_workflow
-from .error_handler import exit_with_code
+from .error_handler import exit_with_code, output_error
 from .options import _complete_artifacts, alias_command, notebook_option
 from .rendering import console, json_output_response
-from .services.download import build_download_plan, execute_download
+from .services.download import DownloadPlanValidationError, build_download_plan, execute_download
 
 
 @click.group()
@@ -131,7 +131,15 @@ def _run_artifact_download(ctx: click.Context, spec: DownloadTypeSpec, **kwargs:
     key after the workflow completes.
     """
     json_output = bool(kwargs.get("json_output", False))
-    plan = build_download_plan(spec, kwargs, Path.cwd())
+    try:
+        plan = build_download_plan(spec, kwargs, Path.cwd())
+    except DownloadPlanValidationError as exc:
+        if json_output:
+            output_error(exc.message, exc.code, True, 1)
+        raise click.UsageError(exc.message) from exc
+
+    for warning in plan.warnings:
+        click.echo(warning, err=True)
 
     async def body(client: NotebookLMClient) -> dict[str, Any]:
         return await execute_download(
