@@ -19,21 +19,49 @@ def test_cache_conversation_turn_appends_turns() -> None:
     ]
 
 
-def test_cache_conversation_turn_fifo_evicts_only_for_new_conversations() -> None:
+def test_cache_conversation_turn_lru_evicts_least_recently_used() -> None:
     cache = ConversationCache()
 
     cache.cache_conversation_turn("conv-1", "q1", "a1", 1, max_size=2)
     cache.cache_conversation_turn("conv-2", "q2", "a2", 1, max_size=2)
+    # Re-touching conv-1 promotes it to most-recently-used, so the next new
+    # conversation evicts conv-2 (the least-recently-used) rather than conv-1.
     cache.cache_conversation_turn("conv-1", "q3", "a3", 2, max_size=2)
     cache.cache_conversation_turn("conv-3", "q4", "a4", 1, max_size=2)
 
-    assert list(cache.conversations) == ["conv-2", "conv-3"]
-    assert cache.get_cached_conversation("conv-2") == [
-        {"query": "q2", "answer": "a2", "turn_number": 1}
+    assert list(cache.conversations) == ["conv-1", "conv-3"]
+    assert cache.get_cached_conversation("conv-1") == [
+        {"query": "q1", "answer": "a1", "turn_number": 1},
+        {"query": "q3", "answer": "a3", "turn_number": 2},
     ]
     assert cache.get_cached_conversation("conv-3") == [
         {"query": "q4", "answer": "a4", "turn_number": 1}
     ]
+
+
+def test_get_cached_conversation_promotes_to_most_recently_used() -> None:
+    cache = ConversationCache()
+
+    cache.cache_conversation_turn("conv-1", "q1", "a1", 1, max_size=2)
+    cache.cache_conversation_turn("conv-2", "q2", "a2", 1, max_size=2)
+    # A pure read of conv-1 must mark it most-recently-used so the next new
+    # conversation evicts the untouched conv-2 instead.
+    assert cache.get_cached_conversation("conv-1")
+    cache.cache_conversation_turn("conv-3", "q3", "a3", 1, max_size=2)
+
+    assert list(cache.conversations) == ["conv-1", "conv-3"]
+
+
+def test_per_conversation_turn_cap_evicts_oldest_turns() -> None:
+    cache = ConversationCache()
+
+    for i in range(1, 6):
+        cache.cache_conversation_turn("conv-1", f"q{i}", f"a{i}", i, max_turns=3)
+
+    turns = cache.get_cached_conversation("conv-1")
+    # Only the newest three turns survive; the two oldest were trimmed.
+    assert [turn["turn_number"] for turn in turns] == [3, 4, 5]
+    assert [turn["query"] for turn in turns] == ["q3", "q4", "q5"]
 
 
 def test_get_cached_conversation_returns_empty_list_for_missing_conversation() -> None:

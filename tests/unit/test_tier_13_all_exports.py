@@ -47,6 +47,7 @@ EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor"]
 
 EXPECTED_CONVERSATION_CACHE_ALL: list[str] = [
     "MAX_CONVERSATION_CACHE_SIZE",
+    "MAX_TURNS_PER_CONVERSATION",
     "ConversationCache",
 ]
 

@@ -114,7 +114,7 @@ RPC Layer (rpc/)
 | `_middleware.py` | HTTP-shaped middleware request/response envelope, chain composition, and middleware Protocol |
 | `_middleware_context.py` | Canonical per-request context-key vocabulary for middleware |
 | `_middleware_chain_host.py` | Mutable owner for the live middleware chain slots and retry-budget tunables |
-| `_conversation_cache.py` | Per-instance LRU conversation cache for `ChatAPI` |
+| `_conversation_cache.py` | Per-instance true-LRU conversation cache for `ChatAPI` (caps conversation count via `MAX_CONVERSATION_CACHE_SIZE` and per-conversation turns via `MAX_TURNS_PER_CONVERSATION`) |
 | `_polling_registry.py` | Pending-poll registry for long-running artifact generations |
 | `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_session_contracts.py` | Shared session Protocols consumed by sub-clients |
@@ -217,7 +217,7 @@ src/notebooklm/
 ├── _client_metrics.py           # Telemetry / metrics seam
 ├── _transport_drain.py          # In-flight transport drain coordinator
 ├── _reqid_counter.py            # Request-counter / request-id helpers
-├── _conversation_cache.py       # Per-instance LRU conversation cache
+├── _conversation_cache.py       # Per-instance true-LRU conversation cache (bounded conversation count + per-conversation turns)
 ├── _polling_registry.py         # Artifact polling helpers
 ├── _cookie_persistence.py       # Cookie-jar persistence + __Secure-1PSIDTS rotation
 ├── _session_lifecycle.py        # Open/close lifecycle seam (loop affinity + keepalive task)
