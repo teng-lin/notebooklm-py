@@ -38,8 +38,7 @@ from notebooklm.types import Source, SourceFulltext, SourceTimeoutError
 
 
 @pytest.mark.asyncio
-async def test_source_delete_json_without_yes_uses_structured_confirmation_error(
-) -> None:
+async def test_source_delete_json_without_yes_uses_structured_confirmation_error() -> None:
     client = SimpleNamespace(
         sources=SimpleNamespace(
             list=AsyncMock(return_value=[Source(id="src_abcdef", title="Paper")]),
