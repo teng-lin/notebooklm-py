@@ -1198,9 +1198,7 @@ class TestGenerateWithRetry:
         generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await generate_with_retry(
-                generate_fn, max_retries=3, artifact_type="audio"
-            )
+            result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
 
         assert result == success_result
         assert generate_fn.call_count == 2
@@ -1217,9 +1215,7 @@ class TestGenerateWithRetry:
         generate_fn = AsyncMock(return_value=rate_limited)
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await generate_with_retry(
-                generate_fn, max_retries=2, artifact_type="audio"
-            )
+            result = await generate_with_retry(generate_fn, max_retries=2, artifact_type="audio")
 
         assert result == rate_limited
         assert generate_fn.call_count == 3  # initial + 2 retries
@@ -1234,9 +1230,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(return_value=rate_limited)
 
-        result = await generate_with_retry(
-            generate_fn, max_retries=0, artifact_type="audio"
-        )
+        result = await generate_with_retry(generate_fn, max_retries=0, artifact_type="audio")
 
         assert result == rate_limited
         assert generate_fn.call_count == 1
@@ -1252,9 +1246,7 @@ class TestGenerateWithRetry:
         generate_fn = AsyncMock(return_value=rate_limited)
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await generate_with_retry(
-                generate_fn, max_retries=3, artifact_type="audio"
-            )
+            await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
 
         # Verify delays: 60s, 120s, 240s (3 retries = 3 sleeps)
         delays = [call[0][0] for call in mock_sleep.call_args_list]
@@ -1271,9 +1263,7 @@ class TestGenerateWithRetry:
         generate_fn = AsyncMock(return_value=rate_limited)
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await generate_with_retry(
-                generate_fn, max_retries=10, artifact_type="audio"
-            )
+            await generate_with_retry(generate_fn, max_retries=10, artifact_type="audio")
 
         # Verify no delay exceeds RETRY_MAX_DELAY (300s)
         delays = [call[0][0] for call in mock_sleep.call_args_list]
@@ -1539,7 +1529,9 @@ class TestOutputGenerationOutcomeDirect:
         )
 
     def test_json_failed(self):
-        outcome = GenerationOutcome(status="failed", artifact_type="audio", error="Something went wrong")
+        outcome = GenerationOutcome(
+            status="failed", artifact_type="audio", error="Something went wrong"
+        )
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1584,7 +1576,9 @@ class TestOutputGenerationOutcomeDirect:
         mock_console.print.assert_called_once_with("[green]Audio ready[/green]")
 
     def test_text_failed(self):
-        outcome = GenerationOutcome(status="failed", artifact_type="audio", error="Transcription error")
+        outcome = GenerationOutcome(
+            status="failed", artifact_type="audio", error="Transcription error"
+        )
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),

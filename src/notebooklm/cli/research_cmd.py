@@ -18,13 +18,13 @@ from ..client import NotebookLMClient
 from .auth_runtime import with_client
 from .error_handler import _output_error, exit_with_code
 from .options import notebook_option
+from .polling_ui import status_with_elapsed
 from .rendering import (
     console,
     display_report,
     display_research_sources,
     json_output_response,
 )
-from .polling_ui import status_with_elapsed
 from .resolve import (
     require_notebook,
     resolve_notebook_id,

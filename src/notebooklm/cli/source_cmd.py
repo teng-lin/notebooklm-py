@@ -37,6 +37,7 @@ from .options import (
     prompt_file_option,
     wait_polling_options,
 )
+from .polling_ui import status_with_elapsed
 from .rendering import (
     cli_print,
     cli_status,
@@ -48,7 +49,6 @@ from .rendering import (
     json_output_response,
     render_list,
 )
-from .polling_ui import status_with_elapsed
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
 from .services import source_add as source_add_service
