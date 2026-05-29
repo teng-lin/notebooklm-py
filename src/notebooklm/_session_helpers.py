@@ -47,6 +47,7 @@ AUTH_ERROR_PATTERNS = (
 
 _AUTH_HTTP_STATUS_CODES = frozenset({400, 401, 403})
 _AUTH_RPC_NUMERIC_CODES = frozenset({401, 403, 16})
+_MAX_RPC_SIGNAL_LENGTH = 256
 _AUTH_RPC_LABEL_CODES = frozenset(
     {
         "AUTHENTICATION_REQUIRED",
@@ -110,6 +111,8 @@ def _coerce_int_code(value: object) -> int | None:
     if isinstance(value, int):
         return int(value)
     if isinstance(value, str):
+        if len(value) > _MAX_RPC_SIGNAL_LENGTH:
+            return None
         stripped = value.strip()
         if stripped.isdigit():
             return int(stripped)
@@ -119,7 +122,10 @@ def _coerce_int_code(value: object) -> int | None:
 def _normalize_code_label(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    return value.strip().replace("-", "_").replace(" ", "_").upper()
+    if len(value) > _MAX_RPC_SIGNAL_LENGTH:
+        return None
+    normalized = value.strip().replace("-", "_").replace(" ", "_").upper()
+    return normalized if normalized else None
 
 
 def _normalized_message(error: Exception) -> str:

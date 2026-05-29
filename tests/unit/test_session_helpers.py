@@ -133,6 +133,14 @@ def test_is_auth_error_prefers_non_auth_rpc_code_over_legacy_message() -> None:
     assert is_auth_error(error) is False
 
 
+@pytest.mark.parametrize("rpc_code", ["", "   ", "9" * 257])
+def test_is_auth_error_ignores_empty_or_large_rpc_code_before_legacy_message(
+    rpc_code: str,
+) -> None:
+    error = RPCError("Authentication expired", rpc_code=rpc_code)
+    assert is_auth_error(error) is True
+
+
 # ---------------------------------------------------------------------------
 # End-to-end late-binding through both middlewares
 # ---------------------------------------------------------------------------
