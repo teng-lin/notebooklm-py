@@ -78,7 +78,7 @@ class TestRunRefreshCmdSubprocessFailure:
 
     def _stub_storage(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
-        storage.write_text("{}")
+        storage.write_text("{}", encoding="utf-8")
         monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage)
         return storage
 
@@ -112,7 +112,7 @@ class TestRunRefreshCmdNonZeroExitBasename:
 
     def _stub_storage(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
-        storage.write_text("{}")
+        storage.write_text("{}", encoding="utf-8")
         monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage)
 
     def _stub_nonzero_run(self, monkeypatch):
@@ -298,7 +298,7 @@ class TestFetchTokensCancelSettleRace:
     @pytest.mark.asyncio
     async def test_done_future_with_exception_propagates_cancel(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
-        storage.write_text("{}")
+        storage.write_text("{}", encoding="utf-8")
         self._common_patches(monkeypatch, storage)
         refresh_key = str(storage.expanduser().resolve())
 
@@ -327,7 +327,7 @@ class TestFetchTokensCancelSettleRace:
     @pytest.mark.asyncio
     async def test_done_future_cancelled_propagates_cancel(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state2.json"
-        storage.write_text("{}")
+        storage.write_text("{}", encoding="utf-8")
         self._common_patches(monkeypatch, storage)
         refresh_key = str(storage.expanduser().resolve())
 
@@ -363,7 +363,7 @@ class TestPostRefreshRetryRouteKwargs:
     @pytest.mark.asyncio
     async def test_retry_forwards_account_email_and_force_authuser(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
-        storage.write_text("{}")
+        storage.write_text("{}", encoding="utf-8")
 
         # First fetch raises an auth-expiry ValueError to trigger refresh; the
         # retry fetch records the route kwargs it received.

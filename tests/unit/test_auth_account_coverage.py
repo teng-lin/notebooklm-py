@@ -158,14 +158,16 @@ class TestDropLegacyAccountKey:
         storage = tmp_path / "storage_state.json"
         (tmp_path / "context.json").write_text("not json", encoding="utf-8")
         _drop_legacy_account_key(storage)  # no raise
-        assert (tmp_path / "context.json").read_text() == "not json"
+        assert (tmp_path / "context.json").read_text(encoding="utf-8") == "not json"
 
     def test_non_dict_or_missing_account_key_returns(self, tmp_path):
         # data is a dict but no account key → return without write (line 360-361).
         storage = tmp_path / "storage_state.json"
         (tmp_path / "context.json").write_text(json.dumps({"notebook_id": "nb"}), encoding="utf-8")
         _drop_legacy_account_key(storage)
-        assert json.loads((tmp_path / "context.json").read_text()) == {"notebook_id": "nb"}
+        assert json.loads((tmp_path / "context.json").read_text(encoding="utf-8")) == {
+            "notebook_id": "nb"
+        }
 
     def test_account_key_removed_but_other_state_preserved(self, tmp_path):
         # account dropped, remaining state rewritten (line 363-364).
@@ -175,7 +177,9 @@ class TestDropLegacyAccountKey:
             encoding="utf-8",
         )
         _drop_legacy_account_key(storage)
-        assert json.loads((tmp_path / "context.json").read_text()) == {"notebook_id": "nb"}
+        assert json.loads((tmp_path / "context.json").read_text(encoding="utf-8")) == {
+            "notebook_id": "nb"
+        }
 
     def test_account_only_context_file_unlinked(self, tmp_path):
         # When account was the sole key, the file is removed (line 366).
@@ -205,7 +209,7 @@ class TestDropLegacyAccountKey:
         monkeypatch.setattr(_auth_account, "FileLock", _BoomLock)
         _drop_legacy_account_key(storage)  # swallows OSError, no raise
         # Untouched because the lock failed before any read/write.
-        assert json.loads(context.read_text()) == {"account": {"authuser": 1}}
+        assert json.loads(context.read_text(encoding="utf-8")) == {"account": {"authuser": 1}}
 
 
 class TestLoadStorageStateForWrite:
@@ -245,14 +249,14 @@ class TestClearInBandAccount:
         storage = tmp_path / "storage_state.json"
         storage.write_text("not json", encoding="utf-8")
         _clear_in_band_account(storage)  # debug-log + return, no raise
-        assert storage.read_text() == "not json"
+        assert storage.read_text(encoding="utf-8") == "not json"
 
     def test_non_dict_payload_returns(self, tmp_path):
         # data loads but is not a dict → return (line 481).
         storage = tmp_path / "storage_state.json"
         storage.write_text(json.dumps(["x"]), encoding="utf-8")
         _clear_in_band_account(storage)
-        assert json.loads(storage.read_text()) == ["x"]
+        assert json.loads(storage.read_text(encoding="utf-8")) == ["x"]
 
     def test_namespace_missing_account_key_returns(self, tmp_path):
         # namespace present but no account key → return (line 483-484).
@@ -262,15 +266,15 @@ class TestClearInBandAccount:
         )
         _clear_in_band_account(storage)
         # Untouched.
-        assert json.loads(storage.read_text())["notebooklm"] == {"version": 1}
+        assert json.loads(storage.read_text(encoding="utf-8"))["notebooklm"] == {"version": 1}
 
     def test_account_cleared_drops_version_only_namespace(self, tmp_path):
         # account removed; remaining namespace is {version} → namespace dropped.
         storage = tmp_path / "storage_state.json"
         write_account_metadata(storage, authuser=2, email="bob@example.com")
-        assert "notebooklm" in json.loads(storage.read_text())
+        assert "notebooklm" in json.loads(storage.read_text(encoding="utf-8"))
         _clear_in_band_account(storage)
-        data = json.loads(storage.read_text())
+        data = json.loads(storage.read_text(encoding="utf-8"))
         assert "notebooklm" not in data
 
     def test_account_cleared_keeps_namespace_with_extra_keys(self, tmp_path):
@@ -290,7 +294,7 @@ class TestClearInBandAccount:
             encoding="utf-8",
         )
         _clear_in_band_account(storage)
-        namespace = json.loads(storage.read_text())["notebooklm"]
+        namespace = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]
         assert "account" not in namespace
         assert namespace["extra"] == "keep-me"
 
@@ -311,8 +315,10 @@ class TestClearAccountMetadataFacade:
 
         clear_account_metadata(storage)
 
-        assert "notebooklm" not in json.loads(storage.read_text())
-        assert json.loads((tmp_path / "context.json").read_text()) == {"notebook_id": "nb"}
+        assert "notebooklm" not in json.loads(storage.read_text(encoding="utf-8"))
+        assert json.loads((tmp_path / "context.json").read_text(encoding="utf-8")) == {
+            "notebook_id": "nb"
+        }
 
 
 class TestAccountEmailAndAuthuserValue:
@@ -327,7 +333,7 @@ class TestAccountEmailAndAuthuserValue:
         storage = tmp_path / "storage_state.json"
         write_account_metadata(storage, authuser=1, email="alice@example.com")
         # Overwrite the in-band email with a blank string.
-        data = json.loads(storage.read_text())
+        data = json.loads(storage.read_text(encoding="utf-8"))
         data["notebooklm"]["account"]["email"] = "   "
         storage.write_text(json.dumps(data), encoding="utf-8")
         assert get_account_email_for_storage(storage) is None
@@ -353,7 +359,7 @@ class TestDropLegacyMalformedUnderLock:
         context = tmp_path / "context.json"
         context.write_text("{not valid json", encoding="utf-8")
         _drop_legacy_account_key(storage)  # no raise
-        assert context.read_text() == "{not valid json"
+        assert context.read_text(encoding="utf-8") == "{not valid json"
 
 
 class TestWriteAccountMetadataNamespaceReplace:
@@ -366,7 +372,7 @@ class TestWriteAccountMetadataNamespaceReplace:
             encoding="utf-8",
         )
         write_account_metadata(storage, authuser=3, email="carol@example.com")
-        namespace = json.loads(storage.read_text())["notebooklm"]
+        namespace = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]
         assert namespace["version"] == 1
         assert namespace["account"] == {"authuser": 3, "email": "carol@example.com"}
 
@@ -385,7 +391,7 @@ class TestWriteAccountMetadataNamespaceReplace:
             encoding="utf-8",
         )
         write_account_metadata(storage, authuser=5, email="dave@example.com")
-        namespace = json.loads(storage.read_text())["notebooklm"]
+        namespace = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]
         assert namespace["account"] == {"authuser": 5, "email": "dave@example.com"}
         assert namespace["extra"] == "keep"
 
@@ -414,7 +420,7 @@ class TestDropLegacyTocTouRecheck:
         monkeypatch.setattr(Path, "exists", flaky_exists)
         _drop_legacy_account_key(storage)  # returns without touching the file
         # File is left intact because the inner re-check short-circuited.
-        assert json.loads(context.read_text()) == {"account": {"authuser": 1}}
+        assert json.loads(context.read_text(encoding="utf-8")) == {"account": {"authuser": 1}}
 
 
 class TestClearInBandLockFailure:
@@ -438,4 +444,4 @@ class TestClearInBandLockFailure:
         # Should swallow the OSError and not raise.
         _clear_in_band_account(storage)
         # File untouched because the lock failed before any write.
-        assert "notebooklm" in json.loads(storage.read_text())
+        assert "notebooklm" in json.loads(storage.read_text(encoding="utf-8"))
