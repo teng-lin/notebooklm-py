@@ -79,7 +79,7 @@ class SourceAddService:
 
             if result is None:
                 raise SourceAddError(url, message=f"API returned no data for URL: {url}")
-            return Source.from_api_response(result)
+            return Source.from_api_response(result, method_id=RPCMethod.ADD_SOURCE.value)
 
         async def _probe() -> Source | None:
             try:
@@ -160,7 +160,7 @@ class SourceAddService:
         if result is None:
             raise SourceAddError(title, message=f"API returned no data for text source: {title}")
 
-        source = Source.from_api_response(result)
+        source = Source.from_api_response(result, method_id=RPCMethod.ADD_SOURCE.value)
 
         if wait:
             return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
@@ -235,7 +235,7 @@ class SourceAddService:
                 raise SourceAddError(
                     title, message=f"API returned no data for Drive source: {title}"
                 )
-            return Source.from_api_response(result)
+            return Source.from_api_response(result, method_id=RPCMethod.ADD_SOURCE.value)
 
         # Drive URLs canonically embed the file_id as a path segment, e.g.
         # ``https://docs.google.com/document/d/<file_id>/edit``. Match the

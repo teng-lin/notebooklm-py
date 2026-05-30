@@ -584,7 +584,11 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        return Source.from_api_response(result) if result else Source(id=source_id, title=new_title)
+        return (
+            Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
+            if result
+            else Source(id=source_id, title=new_title)
+        )
 
     async def refresh(self, notebook_id: str, source_id: str) -> bool:
         """Refresh a source to get updated content (for URL/Drive sources).

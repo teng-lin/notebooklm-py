@@ -203,7 +203,13 @@ class Source:
         )
 
     @classmethod
-    def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> Source:
+    def from_api_response(
+        cls,
+        data: list[Any],
+        notebook_id: str | None = None,
+        *,
+        method_id: str | None = None,
+    ) -> Source:
         """Parse source data from various API response formats.
 
         Multi-shape dispatch (the three wire shapes — deeply nested,
@@ -219,13 +225,35 @@ class Source:
         including the decoded :attr:`status`. ``status`` earlier silently
         fell back to the ``SourceStatus.READY`` default here while the
         listing path read it from the row.
+
+        Args:
+            data: Raw decoded source payload (one of the three wire
+                shapes handled by
+                :meth:`~notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`).
+            notebook_id: Accepted for call-site symmetry and forward
+                compatibility but currently unused — the parsed source
+                wire shape carries no notebook reference, so this value
+                does not influence the returned :class:`Source`. It is
+                retained (rather than dropped) because
+                ``Source.from_api_response`` is tracked public surface;
+                removing the parameter would be a backward-incompatible
+                signature change flagged by
+                ``scripts/audit_public_api_compat.py``.
+            method_id: Originating RPC method id (e.g.
+                ``RPCMethod.ADD_SOURCE.value`` /
+                ``RPCMethod.UPDATE_SOURCE.value``) used only to tag
+                ``safe_index`` drift diagnostics with the real method.
+                Defaults to ``None``, which lets
+                :meth:`~notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`
+                fall back to its ``GET_NOTEBOOK`` default — preserving
+                the historical behavior for callers that do not pass it.
         """
         # Keep the row-adapter dependency local so importing the source
         # dataclass package does not pull source-row parsing helpers into
         # the top-level public type facade.
         from .._row_adapters_sources import SourceRow
 
-        return cls.from_row(SourceRow.from_unknown_shape(data))
+        return cls.from_row(SourceRow.from_unknown_shape(data, method_id=method_id))
 
 
 @dataclass
