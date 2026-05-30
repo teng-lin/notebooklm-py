@@ -207,9 +207,12 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
 
     On success the rotated cookies are merged into the file at ``storage_path``
     via :func:`notebooklm._auth.storage.save_cookies_to_storage` (snapshot/delta
-    semantics, atomic write, cross-process file lock). ``save_cookies_to_storage``
-    is contract-bound to return ``False`` (not raise) on a persistence failure;
-    we check the return value and surface the persist failure as ``False`` so
+    semantics, atomic write, cross-process file lock). The save's coarse bool is
+    an unreliable heal signal in both directions, so :func:`_attempt_rotation`
+    re-reads disk (:func:`_psidts_save_succeeded`) as the sole arbiter of whether
+    a fresh PSIDTS actually landed — a concurrent sibling-cookie CAS rejection
+    must not invert a healthy heal, and a no-op save over a stale row must not
+    fake one (issue #1273). A genuine persist failure surfaces as ``False`` so
     the caller's preflight retry sees the unhealed state and re-raises honestly.
     On any failure the function returns ``False`` and the caller's original
     ``ValueError`` stands.
@@ -345,6 +348,31 @@ def _is_psidts_persisted(storage_path: Path) -> bool:
     return not _psidts_needs_recovery(names, expiry)
 
 
+def _psidts_save_succeeded(storage_path: Path) -> bool:
+    """Did a fresh ``__Secure-1PSIDTS`` actually land on disk after the save?
+
+    The coarse ``CookieSaveResult.ok`` bool from
+    :func:`~notebooklm._auth.storage.save_cookies_to_storage` is *not* a reliable
+    proxy for "PSIDTS healed", in either direction:
+
+    - ``ok`` is ``False`` whenever *any* key is CAS-rejected, even when a fresh
+      PSIDTS is on disk — both the benign "an unrelated sibling cookie lost the
+      race, our PSIDTS wrote through" case (issue #1273) and the "our PSIDTS
+      delta was rejected because a sibling already persisted a fresh PSIDTS
+      first" case leave disk healthy.
+    - ``ok`` is ``True`` even when the save was a no-op that left a *stale*
+      PSIDTS untouched: if ``RotateCookies`` 200s without minting a new cookie,
+      the expired on-disk row lingers in the request jar, the delta is empty,
+      and the save reports success while disk is still unhealed.
+
+    So disk — not the save bool — is the sole arbiter. Re-read it and accept the
+    heal iff a present, unexpired PSIDTS is stored. :func:`_is_psidts_persisted`
+    mirrors the precondition gate, so a stale or expired row (ours or a
+    sibling's) doesn't masquerade as a heal.
+    """
+    return _is_psidts_persisted(storage_path)
+
+
 def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
     """Fire one ``RotateCookies`` POST and persist the rotated cookies.
 
@@ -401,25 +429,31 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
         )
         return False
 
-    # ``save_cookies_to_storage`` returns False (not raises) on every
+    # ``save_cookies_to_storage`` returns a falsy result (not raises) on every
     # persist-failure path: missing file, invalid payload, CAS conflict,
     # atomic-write failure (see ``_auth/storage.py:380-429``). The bare
     # ``except`` below catches the *unexpected* raises only (future refactor
-    # could change the contract); the explicit return-value check is what
-    # surfaces the documented failure modes.
+    # could change the contract).
+    #
+    # We ask for the detailed ``CookieSaveResult`` (``return_result=True``) for
+    # the diagnostic log only — the coarse bool is an unreliable heal signal in
+    # both directions (a sibling-cookie CAS rejection falsely reads ``ok=False``
+    # while PSIDTS healed; a no-op save over a stale PSIDTS falsely reads
+    # ``ok=True``). Whether PSIDTS actually healed is decided by re-reading disk
+    # in :func:`_psidts_save_succeeded` (issue #1273).
     try:
-        persisted = _auth_storage.save_cookies_to_storage(
-            rotated_jar, storage_path, original_snapshot=snapshot
+        result = _auth_storage.save_cookies_to_storage(
+            rotated_jar, storage_path, original_snapshot=snapshot, return_result=True
         )
     except Exception as exc:  # noqa: BLE001 - persistence failure is non-fatal here
         logger.warning("Inline PSIDTS recovery: persist to %s raised %s", storage_path, exc)
         return False
 
-    if not persisted:
+    if not _psidts_save_succeeded(storage_path):
         logger.warning(
-            "Inline PSIDTS recovery: save_cookies_to_storage returned False; "
-            "on-disk state still lacks %s",
+            "Inline PSIDTS recovery: %s did not persist (save ok=%s); on-disk state still lacks it",
             _PSIDTS_COOKIE,
+            getattr(result, "ok", result),
         )
         return False
 

@@ -478,6 +478,193 @@ class TestRecoveryFailureModes:
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
 
+    @pytest.mark.no_default_keepalive_mock
+    def test_expired_psidts_with_200_minting_nothing_returns_false(
+        self, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """A no-op save over a *stale* PSIDTS must not be a false heal.
+
+        Disk starts with an EXPIRED PSIDTS (so the gate fires recovery). The
+        POST 200s but mints no fresh PSIDTS, so the expired row lingers in the
+        request jar and the save is a no-op that reports ``ok=True``. Recovery
+        keys on disk, not on the coarse bool, so it must DECLINE — the stale
+        cookie is still all that's on disk (codex review of #1273).
+        """
+        storage_path = tmp_path / "storage_state.json"
+        expired_psidts = {
+            "name": "__Secure-1PSIDTS",
+            "value": "stale_value",
+            "domain": ".google.com",
+            "path": "/",
+            "expires": 1_000_000_000,  # 2001 — comfortably in the past
+        }
+        _write_storage(storage_path, [*_RECOVERABLE_COOKIES, expired_psidts])
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response(include_psidts=False))
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is False
+
+
+class TestRecoveryConcurrentCasRejection:
+    """Recovery keys on PSIDTS-on-disk, not on the coarse save bool (#1273).
+
+    ``save_cookies_to_storage`` returns a coarse ``False`` whenever *any* key is
+    CAS-rejected, even when a fresh PSIDTS is on disk. The coarse bool conflates
+    (a) "an unrelated sibling cookie lost the CAS race but our PSIDTS wrote
+    through" and (b) "our PSIDTS delta was rejected because a sibling already
+    persisted a *fresh* PSIDTS first" — both leave disk healthy. So recovery
+    must re-read disk and accept the heal iff a present, unexpired PSIDTS is
+    stored, never trust ``cas_rejected_keys`` membership alone.
+    """
+
+    @staticmethod
+    def _patch_save_with_cas_rejection(
+        monkeypatch, *, rejected_key, do_real_write: bool, seed_disk_cookie=None
+    ):
+        """Replace ``save_cookies_to_storage`` with a CAS-rejecting stand-in.
+
+        The stand-in honours ``return_result`` exactly like the real function
+        (bool projection by default, ``CookieSaveResult`` when asked) so the
+        test is faithful regardless of which signature the recovery path uses.
+        When ``do_real_write`` is set, the rotated cookies are genuinely
+        persisted first, modelling "our PSIDTS wrote through but a sibling lost".
+        ``seed_disk_cookie`` lets a test inject a sibling-written row onto disk
+        before reporting the coarse failure, modelling "a sibling persisted a
+        fresh PSIDTS first, so our delta was CAS-rejected".
+        """
+        from notebooklm._auth import storage as _auth_storage
+
+        real_save = _auth_storage.save_cookies_to_storage
+
+        def _save(cookie_jar, path=None, **kwargs):
+            return_result = kwargs.get("return_result", False)
+            if do_real_write:
+                real_save(cookie_jar, path, **{**kwargs, "return_result": True})
+            if seed_disk_cookie is not None and path is not None:
+                data = json.loads(path.read_text())
+                data["cookies"].append(seed_disk_cookie)
+                path.write_text(json.dumps(data))
+            result = _auth_storage.CookieSaveResult(
+                ok=False, cas_rejected_keys=frozenset({rejected_key})
+            )
+            return result if return_result else result.ok
+
+        monkeypatch.setattr(psidts_recovery._auth_storage, "save_cookies_to_storage", _save)
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_succeeds_when_sibling_cookie_cas_rejected_but_psidts_written(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """Our PSIDTS wrote through; a *different* cookie was CAS-rejected.
+
+        Models heavily-parallel multi-process CLI usage: a sibling process
+        wins a CAS race on some unrelated cookie, so the save reports a coarse
+        ``False`` even though the rotated PSIDTS persisted. Recovery must
+        SUCCEED, not decline.
+        """
+        from notebooklm._auth import storage as _auth_storage
+
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        sibling_key = _auth_storage.CookieSnapshotKey("SID", ".google.com", "/")
+        self._patch_save_with_cas_rejection(
+            monkeypatch, rejected_key=sibling_key, do_real_write=True
+        )
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+        saved = json.loads(storage_path.read_text())
+        assert "__Secure-1PSIDTS" in {c["name"] for c in saved["cookies"]}
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_succeeds_when_psidts_cas_rejected_but_sibling_wrote_fresh_psidts(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """Our PSIDTS delta lost the CAS race because a sibling wrote a fresh one.
+
+        A PSIDTS CAS rejection means disk diverged from our snapshot — which
+        happens precisely when a sibling process persisted its *own* fresh
+        PSIDTS first. Disk is healthy, so recovery must SUCCEED even though our
+        write was the one rejected. Trusting ``cas_rejected_keys`` membership
+        alone would wrongly decline here (codex review of #1273).
+        """
+        from notebooklm._auth import storage as _auth_storage
+
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        psidts_key = _auth_storage.CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
+        sibling_psidts = {
+            "name": "__Secure-1PSIDTS",
+            "value": "sibling_fresh_value",
+            "domain": ".google.com",
+            "path": "/",
+            "expires": 99_999_999_999,  # comfortably in the future
+        }
+        self._patch_save_with_cas_rejection(
+            monkeypatch,
+            rejected_key=psidts_key,
+            do_real_write=False,
+            seed_disk_cookie=sibling_psidts,
+        )
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_declines_when_psidts_cas_rejected_and_disk_lacks_psidts(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """PSIDTS rejected and disk still lacks a fresh PSIDTS → must decline.
+
+        Defends the false-heal direction: when no fresh PSIDTS is on disk after
+        the save, recovery must keep failing rather than report success.
+        """
+        from notebooklm._auth import storage as _auth_storage
+
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        psidts_key = _auth_storage.CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
+        self._patch_save_with_cas_rejection(
+            monkeypatch, rejected_key=psidts_key, do_real_write=False
+        )
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is False
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_declines_when_disk_only_has_expired_psidts(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """A stale (expired) sibling PSIDTS row must NOT masquerade as a heal.
+
+        The disk re-read mirrors the precondition gate, so an expired on-disk
+        PSIDTS counts as absent and recovery must still decline.
+        """
+        from notebooklm._auth import storage as _auth_storage
+
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        psidts_key = _auth_storage.CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
+        expired_psidts = {
+            "name": "__Secure-1PSIDTS",
+            "value": "stale_value",
+            "domain": ".google.com",
+            "path": "/",
+            "expires": 1_000_000_000,  # 2001 — comfortably in the past
+        }
+        self._patch_save_with_cas_rejection(
+            monkeypatch,
+            rejected_key=psidts_key,
+            do_real_write=False,
+            seed_disk_cookie=expired_psidts,
+        )
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is False
+
 
 class TestLoadAuthFromStorageIntegration:
     """The recovery must be wired into :func:`load_auth_from_storage`."""
