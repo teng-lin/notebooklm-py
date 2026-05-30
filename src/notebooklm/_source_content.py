@@ -42,7 +42,7 @@ class SourceContentRenderer:
                     if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
                         keywords = inner[2][0] if isinstance(inner[2][0], list) else []
 
-        return SourceGuide(summary=summary, keywords=keywords)
+        return SourceGuide(summary=summary, keywords=tuple(keywords))
 
     async def get_fulltext(
         self,

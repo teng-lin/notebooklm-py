@@ -109,7 +109,7 @@ async def execute_source_guide(
         tuple(
             keyword.strip() for keyword in keywords if isinstance(keyword, str) and keyword.strip()
         )
-        if isinstance(keywords, list)
+        if isinstance(keywords, (list, tuple))
         else ()
     )
     return SourceGuideResult(

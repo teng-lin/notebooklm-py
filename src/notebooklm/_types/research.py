@@ -15,7 +15,7 @@ wire-row parsing logic.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, ClassVar
 
@@ -255,16 +255,30 @@ class SourceGuide(MappingCompatMixin):
     """Result of :meth:`SourcesAPI.get_guide` — the AI "Source Guide".
 
     ``summary`` is the AI-generated markdown summary (with ``**bold**``
-    keywords); ``keywords`` is the list of topic keyword strings.
+    keywords); ``keywords`` is the tuple of topic keyword strings (a tuple, not
+    a list, so the frozen dataclass stays genuinely immutable — matching
+    :attr:`ResearchTask.sources` / :attr:`ResearchTask.tasks`).
 
     Use attribute access (``guide.summary``). Legacy ``guide["summary"]``
     dict-subscript access still works (with a ``DeprecationWarning``) until
-    v0.8.0.
+    v0.8.0; ``guide["keywords"]`` keeps returning a ``list`` for back-compat.
     """
 
     summary: str = ""
-    keywords: list[str] = field(default_factory=list)
+    keywords: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # Accept a list/iterable for ergonomics (callers and the renderer build
+        # ``keywords`` as a list) while storing an immutable tuple. ``object``
+        # bypass is required because the dataclass is frozen.
+        if not isinstance(self.keywords, tuple):
+            object.__setattr__(self, "keywords", tuple(self.keywords))
 
     def to_public_dict(self) -> dict[str, Any]:
-        """Return the historical compatibility dictionary shape."""
-        return {"summary": self.summary, "keywords": self.keywords}
+        """Return the historical compatibility dictionary shape.
+
+        ``keywords`` is materialized as a fresh ``list`` so a caller mutating
+        the returned dict cannot corrupt the frozen dataclass's state, and so
+        the legacy ``guide["keywords"]`` shape stays a ``list``.
+        """
+        return {"summary": self.summary, "keywords": list(self.keywords)}

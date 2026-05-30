@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import os
 import warnings
-from collections.abc import Iterator
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from typing import Any, ClassVar, TypeVar
 
 # Suppression gate. Setting ``NOTEBOOKLM_QUIET_DEPRECATIONS`` to a truthy value
@@ -229,11 +229,14 @@ class MappingCompatMixin:
     MINOR cycle, the dataclass mixes this in: every legacy ``result["status"]``
     / ``result.get("status")`` / ``result.keys()`` / ``"status" in result`` keeps
     working against the *historical dict shape*, emitting a single
-    :class:`DeprecationWarning` on each *subscript* access (``__getitem__`` only
-    — ``get`` / ``keys`` / ``__contains__`` / ``__iter__`` stay silent so callers
-    can probe shape without a warning storm). The warning names the **v0.8.0**
-    removal and is suppressible via ``NOTEBOOKLM_QUIET_DEPRECATIONS``. In v0.8.0
-    the mixin is dropped and the dataclasses become attribute-only.
+    :class:`DeprecationWarning` on each *subscript* access (``__getitem__`` only).
+    The rest of the read-mapping surface — ``get`` / ``keys`` / ``items`` /
+    ``values`` / ``__len__`` / ``__contains__`` / ``__iter__`` — stays silent so
+    callers can probe shape without a warning storm. (``dict(result)`` still
+    works but warns, since the ``dict`` constructor reads each key via
+    ``__getitem__``.) The warning names the **v0.8.0** removal and is
+    suppressible via ``NOTEBOOKLM_QUIET_DEPRECATIONS``. In v0.8.0 the mixin is
+    dropped and the dataclasses become attribute-only.
 
     The legacy values come from the subclass's ``to_public_dict()`` (the exact
     historical dict that method used to return) so nested access like
@@ -283,9 +286,21 @@ class MappingCompatMixin:
         """
         return self.to_public_dict().get(key, default)
 
-    def keys(self) -> Iterator[str]:
-        """Yield the legacy dict keys (silent; powers ``dict(result)``)."""
-        return iter(self.to_public_dict())
+    def keys(self) -> KeysView[str]:
+        """Return the legacy dict keys view (silent)."""
+        return self.to_public_dict().keys()
+
+    def items(self) -> ItemsView[str, Any]:
+        """Return the legacy dict items view (silent)."""
+        return self.to_public_dict().items()
+
+    def values(self) -> ValuesView[Any]:
+        """Return the legacy dict values view (silent)."""
+        return self.to_public_dict().values()
+
+    def __len__(self) -> int:
+        """Return the number of legacy dict keys (silent)."""
+        return len(self.to_public_dict())
 
     def __contains__(self, key: object) -> bool:
         """Support ``"key" in result`` against the legacy key set (silent)."""

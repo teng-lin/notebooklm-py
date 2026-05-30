@@ -694,7 +694,8 @@ class SourcesAPI:
         Returns:
             A :class:`~notebooklm._types.research.SourceGuide` with:
                 - ``summary``: AI-generated summary with **bold** keywords (markdown)
-                - ``keywords``: list of topic keyword strings
+                - ``keywords``: tuple of topic keyword strings (``guide["keywords"]``
+                  still yields a ``list`` for back-compat)
 
             Use attribute access (``guide.summary``). Legacy
             ``guide["summary"]`` dict-subscript access still works (with a

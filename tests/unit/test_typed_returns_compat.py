@@ -49,9 +49,13 @@ class TestResearchStatusEnum:
 
 class TestTypedAttributeAccess:
     def test_source_guide_attributes(self):
+        # A list is accepted for ergonomics but stored as an immutable tuple.
         guide = SourceGuide(summary="hi", keywords=["a", "b"])
         assert guide.summary == "hi"
-        assert guide.keywords == ["a", "b"]
+        assert guide.keywords == ("a", "b")
+        assert isinstance(guide.keywords, tuple)
+        # The legacy dict shape keeps keywords as a list.
+        assert guide.to_public_dict()["keywords"] == ["a", "b"]
 
     def test_mind_map_result_attributes(self):
         result = MindMapResult(mind_map={"name": "Root"}, note_id="note_1")
@@ -106,7 +110,7 @@ class TestDictSubscriptCompat:
             warnings.simplefilter("ignore")
             _ = guide["does_not_exist"]
 
-    def test_get_keys_contains_iter_are_silent(self):
+    def test_read_mapping_surface_is_silent(self):
         guide = SourceGuide(summary="hi", keywords=["a", "b"])
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # any warning fails the test
@@ -114,7 +118,18 @@ class TestDictSubscriptCompat:
             assert guide.get("missing", "default") == "default"
             assert "summary" in guide
             assert set(guide.keys()) == {"summary", "keywords"}
+            assert list(guide.items()) == [("summary", "hi"), ("keywords", ["a", "b"])]
+            assert list(guide.values()) == ["hi", ["a", "b"]]
+            assert len(guide) == 2
             assert set(iter(guide)) == {"summary", "keywords"}
+
+    def test_dict_constructor_round_trips_via_subscript(self):
+        # ``dict(result)`` uses keys() + __getitem__, so it warns (per key) but
+        # still reconstructs the legacy dict shape.
+        guide = SourceGuide(summary="hi", keywords=["a", "b"])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert dict(guide) == {"summary": "hi", "keywords": ["a", "b"]}
 
     def test_research_task_nested_dict_shape_preserved(self):
         # Legacy callers do result["sources"][0]["url"] — the subscript must
@@ -215,4 +230,4 @@ class TestNoInternalSelfWarn:
             warnings.simplefilter("error", DeprecationWarning)
             guide = await renderer.get_guide("nb_1", "src_1")
         assert guide.summary == "A summary"
-        assert guide.keywords == ["kw1", "kw2"]
+        assert guide.keywords == ("kw1", "kw2")

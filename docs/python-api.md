@@ -1398,7 +1398,7 @@ if result.references:
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `ResearchStart \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `ResearchTask` | Check research status |
 | `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `ResearchTask` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.8.0). |
-| `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
+| `import_sources(notebook_id, task_id, sources)` | `str, str, Sequence[dict[str, Any] \| ResearchSource]` | `list[dict]` | Import findings. Accepts plain dicts **or** the typed `ResearchSource` objects from `poll().sources`. |
 
 > **Typed returns (since v0.7.0).** `start` / `poll` / `wait_for_completion`
 > return the typed dataclasses `ResearchStart` / `ResearchTask` (whose
@@ -1476,11 +1476,16 @@ async def wait_for_completion(
         are passed.
     """
 
-async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) -> list[dict]:
+async def import_sources(
+    notebook_id: str,
+    task_id: str,
+    sources: Sequence[dict[str, Any] | ResearchSource],
+) -> list[dict]:
     """
-    sources: list of dicts with 'url' and 'title' keys. Deep-research entries
-        from poll() may also include 'report_markdown', 'result_type', and
-        'research_task_id'.
+    sources: a sequence of dicts (with 'url' and 'title' keys) OR the typed
+        ResearchSource objects from poll().sources — both are accepted and
+        coerced. Deep-research entries may also carry 'report_markdown',
+        'result_type', and 'research_task_id'.
     Returns: list of imported sources with 'id' and 'title'.
 
     Raises:
