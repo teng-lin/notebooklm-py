@@ -95,6 +95,7 @@ def test_list_unknown_excludes_interactive_but_keeps_genuine_unknown():
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
 from notebooklm._artifact_downloads import ArtifactDownloadService  # noqa: E402
+from notebooklm._runtime_contracts import RpcCaller  # noqa: E402
 from notebooklm.types import ArtifactNotReadyError  # noqa: E402
 
 # Raw studio row whose [9][1][0] == 4 → Artifact.is_interactive_mind_map is True.
@@ -107,11 +108,17 @@ def _download_service(studio_rows, note_rows, *, interactive_tree=None):
     mind_maps = MagicMock()
     mind_maps.list_mind_maps = AsyncMock(return_value=note_rows)
     mind_maps.extract_content = MagicMock(side_effect=lambda row: row[1])
-    rpc = MagicMock()
     if interactive_tree is not None:
         # GET_INTERACTIVE_HTML response: the JSON tree lives at [0][9][3].
         response = [[None] * 9 + [[None, None, None, interactive_tree]]]
-        rpc.rpc_call = AsyncMock(return_value=response)
+    else:
+        # An empty GET_INTERACTIVE_HTML response: the service reads an absent
+        # tree as "not ready" via the real _get_interactive_mind_map_tree path
+        # (no method monkeypatch — ADR-007).
+        response = None
+    # Wire rpc_call via the MagicMock constructor (not post-hoc attribute
+    # assignment) so the ADR-007 meta-lint stays clean.
+    rpc = MagicMock(spec=RpcCaller, rpc_call=AsyncMock(return_value=response))
     return ArtifactDownloadService(rpc=rpc, listing=listing, mind_maps=mind_maps)
 
 
@@ -147,10 +154,10 @@ async def test_download_interactive_id_with_unrelated_note_backed_maps(tmp_path)
 @pytest.mark.asyncio
 async def test_download_interactive_id_tree_not_ready_raises(tmp_path):
     """Interactive artifact present but its tree is not yet readable -> not ready."""
-    # No interactive_tree wired -> rpc.rpc_call is an inert MagicMock; the
+    # No interactive_tree wired -> GET_INTERACTIVE_HTML returns an empty
+    # response, which the real _get_interactive_mind_map_tree maps to None; the
     # service treats an absent tree as "not ready" rather than "not found".
     svc = _download_service(studio_rows=[_INTERACTIVE_ROW], note_rows=[])
-    svc._get_interactive_mind_map_tree = AsyncMock(return_value=None)
     with pytest.raises(ArtifactNotReadyError):
         await svc.download_mind_map("nb", str(tmp_path / "x.json"), artifact_id="int_mm")
 
