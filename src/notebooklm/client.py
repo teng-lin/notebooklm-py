@@ -465,6 +465,7 @@ class NotebookLMClient:
             cookie_persistence=self._collaborators.cookie_persistence,
             composed=self._composed,
             uploader=self._source_uploader,
+            chat=self.chat,
         )
         return self
 

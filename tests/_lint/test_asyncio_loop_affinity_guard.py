@@ -47,13 +47,6 @@ LOOP_BOUND_PRIMITIVES = frozenset({"Lock", "Semaphore", "BoundedSemaphore", "Eve
 # A class is considered compliant when it defines BOTH.
 REQUIRED_GUARD_METHODS = ("set_bound_loop", "reset_after_open")
 
-# Tracking issue for bringing the ``ChatAPI`` conversation locks under the
-# canonical owner-level protocol. They are guarded indirectly today (the
-# injected ``loop_guard.assert_bound_loop()`` fires in ``ChatAPI.ask`` before
-# the lock is acquired), but ``ChatAPI`` itself does not own
-# ``set_bound_loop`` / ``reset_after_open``.
-CHAT_LOCKS_FOLLOWUP_ISSUE = 1225
-
 
 class _AllowlistEntry:
     """A documented exemption for one primitive construction site.
@@ -91,10 +84,13 @@ class _AllowlistEntry:
 # constructs a primitive is reported as stale so the list keeps tightening.
 # ---------------------------------------------------------------------------
 ALLOWLIST: tuple[_AllowlistEntry, ...] = (
-    # NOTE: ``ClientComposed``, ``TransportDrainTracker``, and
-    # ``SourceUploadPipeline`` are NOT allowlisted — they each define the full
-    # ``set_bound_loop`` + ``reset_after_open`` protocol and so are detected as
-    # compliant by the owner-method scan.
+    # NOTE: ``ClientComposed``, ``TransportDrainTracker``,
+    # ``SourceUploadPipeline``, and ``ChatAPI`` are NOT allowlisted — they each
+    # define the full ``set_bound_loop`` + ``reset_after_open`` protocol and so
+    # are detected as compliant by the owner-method scan. ``ChatAPI`` joined the
+    # protocol in #1225 (the per-conversation / per-notebook lock maps), which
+    # retired the follow-up allowlist entry that used to live at the bottom of
+    # this list.
     #
     # ``set_bound_loop`` only (no ``reset_after_open``): the lazy ``asyncio.Lock``
     # is rebuilt implicitly because these coordinators are reconstructed per
@@ -131,19 +127,6 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
         None,
         "Module-global per-running-loop lock registry (keyed by "
         "asyncio.get_running_loop()); structurally immune to cross-loop reuse.",
-    ),
-    # KNOWN FOLLOW-UP GAP (#1225): the ChatAPI per-conversation /
-    # per-notebook locks are NOT under the owner-level protocol yet. They are
-    # guarded indirectly (ChatAPI.ask calls loop_guard.assert_bound_loop()
-    # before acquiring the lock) and GC themselves via WeakValueDictionary,
-    # but ChatAPI does not own set_bound_loop / reset_after_open. Tracked by
-    # #1225; remove this entry when ChatAPI joins the protocol.
-    _AllowlistEntry(
-        "src/notebooklm/_chat.py",
-        "ChatAPI",
-        "Known follow-up: guarded indirectly by injected "
-        "loop_guard.assert_bound_loop() in ask(); owner-level protocol pending.",
-        issue=CHAT_LOCKS_FOLLOWUP_ISSUE,
     ),
 )
 
@@ -358,16 +341,20 @@ def test_loop_affinity_allowlist_has_no_stale_entries() -> None:
 
 
 def test_loop_affinity_followup_entries_reference_a_tracking_issue() -> None:
-    """Known-gap allowlist entries (not alt-guarded) must cite a tracking issue.
+    """Any known-gap allowlist entry (not alt-guarded) must cite a tracking issue.
 
     A *gap* entry is one that carries an ``issue`` (vs. an alternative-guard
     entry, which is documented by reason only). Every such entry must reference
     a positive issue number so the follow-up is trackable and the entry can be
-    retired. Iterating (rather than hard-keying on ``_chat.py``/``ChatAPI``)
-    keeps the guard robust if the gap class is renamed or relocated.
+    retired. Iterating (rather than hard-keying on a specific class) keeps the
+    guard robust if a future gap class is renamed or relocated.
+
+    There are intentionally **no** gap entries today — the last one
+    (``ChatAPI``'s conversation locks, #1225) was retired when ChatAPI joined
+    the owner-level protocol. This test therefore validates the *shape* of any
+    gap entry that lands in the future rather than requiring one to exist.
     """
     gap_entries = [entry for entry in ALLOWLIST if entry.issue is not None]
-    assert gap_entries, "expected at least one gap entry carrying a tracking issue"
     for entry in gap_entries:
         assert isinstance(entry.issue, int) and entry.issue > 0, (
             f"gap entry for {entry.path} (owner={entry.owner}) must cite a "

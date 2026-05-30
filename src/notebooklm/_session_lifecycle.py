@@ -84,6 +84,7 @@ from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
+    from ._chat import ChatAPI
     from ._client_composed import ClientComposed
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
@@ -282,6 +283,7 @@ class ClientLifecycle:
         cookie_persistence: CookiePersistence,
         composed: ClientComposed,
         uploader: SourceUploadPipeline,
+        chat: ChatAPI,
     ) -> None:
         """Open the HTTP client connection.
 
@@ -340,6 +342,15 @@ class ClientLifecycle:
         # bound to the now-dead loop A. Propagating the captured loop lets the
         # uploader discard the stale semaphore on a loop change.
         uploader.set_bound_loop(self._bound_loop)
+        # The ChatAPI per-conversation / per-notebook locks are the last lazy
+        # loop-bound primitives without the owner-level protocol (#1225): each
+        # ``asyncio.Lock`` in the two ``WeakValueDictionary`` maps binds to the
+        # loop it is first awaited on, so a client closed on loop A and
+        # reopened on loop B would otherwise reuse a lock bound to the now-dead
+        # loop A. Propagating the captured loop lets ChatAPI discard the stale
+        # locks on a loop change (the per-call ``loop_guard.assert_bound_loop``
+        # in ``ask`` already rejects cross-loop *use*; this governs rebuild).
+        chat.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
         # admits new transport work again. Wave 1 of plan
         # ``host-protocol-removal`` encapsulated the legacy direct write
@@ -360,6 +371,13 @@ class ClientLifecycle:
         # semaphore is reconstructed lazily on the next ``get_upload_semaphore``
         # call from inside the new loop; ``max_concurrent_uploads`` is untouched.
         uploader.reset_after_open()
+        # Same close→reopen reset for the ChatAPI conversation locks so a
+        # reopened client rebuilds each per-key lock on the new loop instead of
+        # reusing a stale one bound to the prior (now-dead) loop (#1225). Narrow
+        # by design — the locks are reconstructed lazily on the next
+        # ``_get_conversation_lock`` / ``_get_new_conversation_lock`` call from
+        # inside the new loop.
+        chat.reset_after_open()
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns

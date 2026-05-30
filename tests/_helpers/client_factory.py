@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from notebooklm._chat import ChatAPI
 from notebooklm._client_composed import ClientComposed
 from notebooklm._client_seams import resolve_client_seams
 from notebooklm._session_config import (
@@ -105,5 +106,17 @@ def build_client_shell_for_tests(
         auth=auth,
         max_concurrent_uploads=max_concurrent_uploads,
         record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
+    )
+    # ``ClientLifecycle.open`` (driven via ``client.__aenter__``) also resets
+    # the ChatAPI conversation-lock loop binding through ``client.chat``
+    # (issue #1225), so the shell must wire a real ChatAPI the same way
+    # ``NotebookLMClient.__init__`` does. Defaults are sufficient: the shell
+    # exercises lifecycle open/close + cross-loop reset, not the full chat
+    # graph, so a bare ChatAPI over the composed collaborators is enough.
+    client.chat = ChatAPI(
+        rpc=internals.executor,
+        transport=composed.transport,
+        reqid=internals.collaborators.reqid,
+        loop_guard=internals.collaborators.lifecycle,
     )
     return client

@@ -201,6 +201,66 @@ class ChatAPI:
         self._new_conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+        # Event-loop binding for the two lazy lock maps above. Captured at
+        # ``ClientLifecycle.open()`` time via :meth:`set_bound_loop` (mirroring
+        # :class:`notebooklm._client_composed.ClientComposed` and
+        # :class:`notebooklm._source_upload.SourceUploadPipeline`). Each lock
+        # in the maps binds to whichever loop is running the first time it is
+        # awaited; if the client is closed on loop A and reopened on loop B, a
+        # stale lock bound to the now-dead loop A must never be reused — see
+        # :meth:`set_bound_loop` / :meth:`reset_after_open`.
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Capture or clear the event-loop binding for the conversation locks.
+
+        Called by :meth:`ClientLifecycle.open` after it captures the running
+        loop, mirroring the identically-named method on
+        :class:`notebooklm._client_composed.ClientComposed`,
+        :class:`notebooklm._source_upload.SourceUploadPipeline`,
+        :class:`TransportDrainTracker`, :class:`ReqidCounter`, and
+        :class:`AuthRefreshCoordinator`. Passing ``None`` clears the binding
+        for the next ``open()`` (which rebinds to a fresh loop).
+
+        When the loop actually changes, the two lazy lock maps are cleared
+        here too so this method is self-consistent even if called
+        independently of :meth:`reset_after_open` (e.g. directly in a test or a
+        future caller): a stale ``asyncio.Lock`` bound to the old loop must
+        never be reused after a rebind. The production ``open()`` path also
+        calls :meth:`reset_after_open` immediately after, so the clear is
+        idempotent there.
+
+        The cross-loop guard for :meth:`ask` is the injected
+        ``loop_guard.assert_bound_loop`` (already called at the top of
+        :meth:`ask` before any lock is acquired); this binding only governs
+        when the lazy locks are rebuilt.
+        """
+        if loop is not self._bound_loop:
+            self._conversation_locks.clear()
+            self._new_conversation_locks.clear()
+        self._bound_loop = loop
+
+    def reset_after_open(self) -> None:
+        """Discard the lazy conversation locks so a reopened client rebinds them.
+
+        Called from :meth:`ClientLifecycle.open` (alongside the
+        per-collaborator ``set_bound_loop`` propagation) so a client that was
+        closed and reopened on a *different* event loop builds fresh
+        ``asyncio.Lock`` instances on the new loop instead of reusing stale
+        ones bound to the old (now-dead) loop. On Python 3.10/3.11 reusing a
+        stale lock can raise "bound to a different event loop" or mispark
+        waiters; on 3.12+ the breakage is largely masked, but resetting keeps
+        the behaviour consistent across versions.
+
+        Mirrors
+        :meth:`notebooklm._source_upload.SourceUploadPipeline.reset_after_open`.
+        Deliberately narrow: clearing the two ``WeakValueDictionary`` maps is
+        enough because each per-key lock is reconstructed lazily on the next
+        :meth:`_get_conversation_lock` / :meth:`_get_new_conversation_lock`
+        call from inside the new loop.
+        """
+        self._conversation_locks.clear()
+        self._new_conversation_locks.clear()
 
     def _get_conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         """Return the (lazily created) lock for ``conversation_id``.
