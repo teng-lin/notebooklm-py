@@ -131,20 +131,26 @@ def test_windows_event_loop_swaps_and_restores_policy(monkeypatch) -> None:
     """On win32 the context manager swaps in the default policy and restores."""
     import asyncio
 
-    monkeypatch.setattr(playwright_login.sys, "platform", "win32")
-
     sentinel_original = object()
     swapped_policies: list[Any] = []
-
-    monkeypatch.setattr(asyncio, "get_event_loop_policy", lambda: sentinel_original)
-    monkeypatch.setattr(
-        asyncio, "set_event_loop_policy", lambda policy: swapped_policies.append(policy)
-    )
 
     class _DefaultPolicy:
         pass
 
+    # Patch the asyncio seams *before* faking ``sys.platform`` to win32. On
+    # Python 3.14 ``asyncio.DefaultEventLoopPolicy`` is resolved lazily via the
+    # module ``__getattr__``, and under a faked win32 platform that lookup
+    # reaches ``windows_events`` — which is never imported on a Linux/macOS
+    # host, raising ``NameError`` during monkeypatch's old-value capture. Doing
+    # the captures while the real platform is still in effect avoids that; once
+    # the names are replaced, ``__getattr__`` is no longer consulted.
+    monkeypatch.setattr(asyncio, "get_event_loop_policy", lambda: sentinel_original)
+    monkeypatch.setattr(
+        asyncio, "set_event_loop_policy", lambda policy: swapped_policies.append(policy)
+    )
     monkeypatch.setattr(asyncio, "DefaultEventLoopPolicy", _DefaultPolicy)
+
+    monkeypatch.setattr(playwright_login.sys, "platform", "win32")
 
     with windows_playwright_event_loop():
         # First swap installs a fresh DefaultEventLoopPolicy.
