@@ -393,13 +393,24 @@ _DISPLAY_NAME_ALLOWLIST_ALT = "|".join(
 # raw credential prefixes that ride inside session cookies, OAuth flows, and
 # SIDTS rotation tokens — the ``LSID`` leak proved that a cookie-name allowlist
 # alone is insufficient, so we also scrub the token shapes directly wherever
-# they appear. Length floors keep the patterns from matching incidental short
-# literals. ``is_clean`` carries the matching detector (``_DETECT_AUTH_TOKEN``)
-# so the cassette guard flags any of these shapes that survive.
+# they appear. ``is_clean`` carries the matching detector
+# (``_DETECT_AUTH_TOKEN``) so the cassette guard flags any of these shapes that
+# survive.
 #
-# NOTE: ``g.a000-`` deliberately requires a trailing ``-``; live tokens always
-# carry the ``g.a000-<...>`` form, and anchoring on the hyphen avoids matching
-# the bare account-prefix ``g.a000`` should it ever appear standalone.
+# Anchoring strategy per shape:
+#
+#   * ``g\.a000-`` — anchored on the literal ``g.a000-`` prefix (note the
+#     REQUIRED trailing ``-``). That prefix is itself distinctive enough that
+#     no length floor is needed: ``g.a000-<anything>`` in a cassette is a SID
+#     token by construction and is never legitimate fixture content, so we
+#     scrub even a one-char tail. The hyphen requirement keeps the bare
+#     account-prefix ``g.a000`` (no token tail) from matching.
+#   * ``sidts-`` / ``ya29\.`` — less distinctive prefixes, so each carries a
+#     length floor (``{10,}`` / ``{20,}``) to avoid firing on an incidental
+#     short literal such as a bare ``ya29`` mention in a comment.
+#
+# Anything matched collapses to ``SCRUBBED`` (which contains none of the
+# prefixes), so repeated passes are idempotent.
 _AUTH_TOKEN_PATTERNS: list[str] = [
     r"g\.a000-[A-Za-z0-9_\-]+",
     r"sidts-[A-Za-z0-9_\-]{10,}",
@@ -418,6 +429,21 @@ def _cookie_header_replacer(name: str) -> tuple[str, str]:
         rf"(?<![A-Za-z0-9_-]){re.escape(name)}=[^;]+",
         f"{name}=SCRUBBED",
     )
+
+
+# Single cookie-name alternation reused by EVERY JSON-shape cookie scrubber
+# (storage_state name-first / value-first / bare-key forms). Derived from
+# :data:`SESSION_COOKIES` plus the ``__Secure-*`` / ``__Host-*`` umbrellas so a
+# name added to the registry (the ``LSID`` / ``LSOLH`` additions that motivated
+# this hardening) is picked up by the header form AND the JSON forms in one
+# place. Previously these alternations were hand-duplicated per pattern, so
+# ``LSID`` would have been scrubbed in the header but only partially scrubbed in
+# storage_state JSON — and ``is_clean`` (whose detector IS registry-derived via
+# ``_COOKIE_NAMES_GROUP``) would then flag the residual value as a leak. Keeping
+# scrubber and detector both registry-derived closes that drift.
+_COOKIE_JSON_NAMES_GROUP = (
+    "|".join(re.escape(name) for name in SESSION_COOKIES) + r'|__Secure-[^"]+|__Host-[^"]+'
+)
 
 
 # =============================================================================
@@ -444,11 +470,11 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     #   * ``sidts-...``   — the ``__Secure-*PSIDTS`` rotation-timestamp token.
     #   * ``ya29....``    — Google OAuth2 access tokens.
     #
-    # The character class ``[A-Za-z0-9_\-]`` matches the token body; the
-    # length floors keep the patterns from firing on incidental short literals
-    # (e.g. the bare string ``ya29`` in a comment). Anything matched collapses
-    # to ``SCRUBBED`` so no fragment of the original token survives, and the
-    # replacement does not itself re-match (idempotent).
+    # See :data:`_AUTH_TOKEN_PATTERNS` for the per-shape anchoring strategy
+    # (``g.a000-`` is distinctive enough to need no length floor; ``sidts-`` /
+    # ``ya29.`` carry floors to avoid incidental short-literal matches).
+    # Anything matched collapses to ``SCRUBBED`` so no fragment of the original
+    # token survives, and the replacement does not itself re-match (idempotent).
     *((p, "SCRUBBED") for p in _AUTH_TOKEN_PATTERNS),
     # -------------------------------------------------------------------------
     # 1. Cookie-header form: "Name=Value; ..."
@@ -533,14 +559,13 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # ``"`` even when JSON-escaped (``\"``), which would silently leak the
     # tail of a value containing a literal quote.
     (
-        r'("name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|SIDCC|OSID|NID|'
-        r'__Secure-[^"]+|__Host-[^"]+)"\s*,\s*"value":\s*")[^"\\]*(?:\\.[^"\\]*)*(")',
+        rf'("name":\s*"(?:{_COOKIE_JSON_NAMES_GROUP})"\s*,\s*"value":\s*")'
+        r'[^"\\]*(?:\\.[^"\\]*)*(")',
         r"\1SCRUBBED\2",
     ),
     (
         r'("value":\s*")[^"\\]*(?:\\.[^"\\]*)*'
-        r'("\s*,\s*"name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|'
-        r'SIDCC|OSID|NID|__Secure-[^"]+|__Host-[^"]+)")',
+        rf'("\s*,\s*"name":\s*"(?:{_COOKIE_JSON_NAMES_GROUP})")',
         r"\1SCRUBBED\2",
     ),
     # -------------------------------------------------------------------------
@@ -552,8 +577,7 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # never clean it). The value match uses the escape-aware idiom to match
     # the other JSON-shape patterns above.
     (
-        r'("(?:SID|HSID|SSID|APISID|SAPISID|SIDCC|OSID|NID|'
-        r'__Secure-[^"]+|__Host-[^"]+)"\s*:\s*")[^"\\]*(?:\\.[^"\\]*)*(")',
+        rf'("(?:{_COOKIE_JSON_NAMES_GROUP})"\s*:\s*")[^"\\]*(?:\\.[^"\\]*)*(")',
         r"\1SCRUBBED\2",
     ),
     # -------------------------------------------------------------------------

@@ -34,6 +34,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 # Load ``tests/cassette_patterns.py`` by file path — the ``tests`` directory is
 # not a package, so a plain ``from tests.cassette_patterns import ...`` is not
 # reliable under pytest's per-module import. This mirrors the loader idiom used
@@ -96,6 +98,31 @@ def test_lsid_is_on_the_session_cookie_allowlist() -> None:
     """
     assert "LSID" in SESSION_COOKIES
     assert "LSOLH" in SESSION_COOKIES
+
+
+def test_lsid_storage_state_json_value_is_fully_scrubbed() -> None:
+    """``LSID`` in the Playwright ``storage_state`` JSON shape is fully scrubbed.
+
+    Regression for the JSON-scrubber drift: the storage_state / JSON-key cookie
+    scrubbers used to hard-code the old cookie-name set, so a
+    ``{"name":"LSID","value":"<non-token-secret>"}`` object would only be
+    partially scrubbed and ``is_clean`` (whose detector IS registry-derived)
+    would then flag the residual value as a leak. Both the scrubber and the
+    detector are now derived from ``SESSION_COOKIES`` so the two stay in sync.
+
+    Uses a NON-``g.a000`` secret value on purpose so the catch-all token regex
+    can't mask a gap in the JSON-shape cookie scrubber.
+    """
+    secret = "this-storage-state-secret-must-not-survive"
+    # name-before-value (what Playwright emits) and the bare-JSON-key shape.
+    name_first = f'{{"name": "LSID", "value": "{secret}", "domain": ".google.com"}}'
+    json_key = f'{{"LSID": "{secret}", "LSOLH": "{secret}"}}'
+
+    for payload in (name_first, json_key):
+        scrubbed = scrub_string(payload)
+        assert secret not in scrubbed, f"LSID JSON value leaked:\n{scrubbed}"
+        ok, leaks = is_clean(scrubbed)
+        assert ok, f"scrubbed JSON cookie shape still flagged: {leaks}"
 
 
 def test_g_a000_token_in_body_is_scrubbed() -> None:
@@ -175,13 +202,20 @@ def test_committed_share_cassette_is_clean() -> None:
     assert ok, f"notebooks_share.yaml still contains leaks: {leaks[:5]}"
 
 
-def test_scrub_response_helper_scrubs_set_cookie_token() -> None:
+def test_scrub_response_helper_scrubs_set_cookie_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``scrub_response`` (the VCR hook) scrubs a token in a Set-Cookie header.
 
     Loads the VCR config module and drives its response-scrub hook with a
     Set-Cookie header carrying a raw ``g.a000`` token, confirming the wiring
     end-to-end (not just the underlying ``scrub_string``).
+
+    ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is cleared so an env var leaking from the
+    test runner cannot make ``scrub_response`` substitute a synthetic-error
+    body and silently change the shape this test asserts on.
     """
+    monkeypatch.delenv("NOTEBOOKLM_VCR_RECORD_ERRORS", raising=False)
     vcr_config_path = Path(__file__).resolve().parent.parent / "vcr_config.py"
     spec = importlib.util.spec_from_file_location("tests_vcr_config_scrub", vcr_config_path)
     assert spec is not None and spec.loader is not None
