@@ -57,12 +57,6 @@ inference), so both are now supported parameters. The earlier
 | Positional `wait` / `wait_timeout` on `SourcesAPI.add_url`, `SourcesAPI.add_text`, `SourcesAPI.add_file`, `SourcesAPI.add_drive` | Pass `wait=...` and `wait_timeout=...` as keywords | v0.5.0 | v0.7.0 | `wait` / `wait_timeout` are now keyword-only; positional calls raise `TypeError`. CLI already used keyword arguments |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.7.0 | The `poll_interval` keyword was removed; passing it raises `TypeError` |
 
-## Scheduled removal — v0.8.0
-
-| Deprecated | Replacement | Deprecated since | Removal | Notes |
-|------------|-------------|------------------|---------|-------|
-| `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` | v0.7.0 | v0.8.0 | The `interval` keyword warns starting in v0.7.0 and is removed in v0.8.0; after removal, passing it raises `TypeError`. Until then it stays working with a `DeprecationWarning`. |
-
 ## Removed in v0.6.0
 
 | Removed | Replacement | Deprecated since | Removed in | Notes |
