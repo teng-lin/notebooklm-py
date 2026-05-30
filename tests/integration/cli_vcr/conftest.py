@@ -4,6 +4,7 @@ These tests use VCR cassettes with real NotebookLMClient instances,
 exercising the full CLI → Client → RPC path without mocking the client.
 """
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -134,3 +135,20 @@ def parse_json_output(output: str) -> list | dict | None:
             continue
 
     return None
+
+
+@pytest.fixture
+def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Monkey-patch ``asyncio.sleep`` to an immediate no-op.
+
+    Async generate flows (e.g. interactive mind maps) poll
+    ``LIST_ARTIFACTS`` with ``await asyncio.sleep(interval)`` backoff between
+    attempts. During cassette replay the cassette already encodes the server
+    progression, so the waits add only wall-clock time. Narrow on purpose:
+    only ``asyncio.sleep`` is patched. Mirrors ``test_polling_vcr.fast_sleep``.
+    """
+
+    async def instant_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", instant_sleep)

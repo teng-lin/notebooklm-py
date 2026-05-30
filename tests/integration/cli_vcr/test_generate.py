@@ -93,3 +93,34 @@ class TestGenerateCommands:
                 ],
             )
             assert_command_success(result)
+
+    def test_mind_map_interactive(self, runner, mock_auth_for_vcr, mock_context, fast_sleep):
+        """`generate mind-map --kind interactive` drives CREATE_ARTIFACT + poll + tree.
+
+        Replays the recorded interactive flow (``generate_mind_map_interactive.yaml``):
+        ``CREATE_ARTIFACT`` (variant 4) → ``LIST_ARTIFACTS`` poll-to-completion →
+        ``GET_INTERACTIVE_HTML`` (``[0][9][3]``). ``fast_sleep`` collapses the poll
+        backoff so replay is instant; ``--json`` emits the converged
+        ``{mind_map, note_id, kind}`` payload with the tree inline (issue #1256).
+        """
+        import json
+
+        with notebooklm_vcr.use_cassette("generate_mind_map_interactive.yaml"):
+            result = runner.invoke(
+                cli,
+                [
+                    "generate",
+                    "mind-map",
+                    "--kind",
+                    "interactive",
+                    "--json",
+                    "-n",
+                    "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6",
+                ],
+            )
+            assert_command_success(result)
+        data = json.loads(result.output)
+        assert data["kind"] == "interactive"
+        assert isinstance(data["mind_map"], dict)
+        assert "name" in data["mind_map"]  # the node tree is fetched and inlined
+        assert data["note_id"]  # the interactive artifact id
