@@ -493,13 +493,9 @@ class SourceUploadPipeline:
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
         self._bound_loop: asyncio.AbstractEventLoop | None = None
-        # Single owner for the source-lifecycle verbs (list / get / poll):
-        # ``SourcesAPI`` injects its own ``SourceLister`` / ``SourcePoller``
-        # so the pipeline's ``list_sources`` / ``get_source`` /
-        # ``wait_until_ready`` / ``wait_until_registered`` delegate to the
-        # SAME shared collaborators instead of re-constructing parallel
-        # copies. Direct callers (and the pipeline's own unit tests) get
-        # freshly-constructed defaults when they pass nothing.
+        # Defaults; SourcesAPI replaces these via configure_source_lifecycle()
+        # so the pipeline shares its lister/poller (single owner for the
+        # source-lifecycle verbs). Direct callers keep these fresh instances.
         self._lister = lister if lister is not None else SourceLister(self._rpc)
         self._poller = poller if poller is not None else SourcePoller()
         self._get_source_limit = get_source_limit
@@ -516,7 +512,7 @@ class SourceUploadPipeline:
     ) -> None:
         """Adopt ``SourcesAPI``'s shared lister/poller as the single owner.
 
-        Called from :class:`notebooklm._sources.SourcesAPI.__init__`
+        Called from ``SourcesAPI.__init__``
         (alongside :meth:`configure_source_limit_lookup`) so the pipeline's
         source-lifecycle verbs (``list_sources`` / ``get_source`` /
         ``wait_until_ready`` / ``wait_until_registered``) delegate to the
