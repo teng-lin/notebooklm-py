@@ -835,7 +835,7 @@ class TestGenerateMindMap:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["generate", "mind-map", "--interactive", "-n", "nb_123"]
+                    cli, ["generate", "mind-map", "--kind", "interactive", "-n", "nb_123"]
                 )
 
             assert result.exit_code == 0
@@ -849,7 +849,7 @@ class TestGenerateMindMap:
             assert "art_42" in result.output
 
     def test_generate_mind_map_interactive_json(self, runner, mock_auth):
-        """--interactive --json emits the MindMap identity as JSON."""
+        """--kind interactive --json emits the converged {mind_map, note_id, kind} shape."""
         from notebooklm.types import MindMap, MindMapKind
 
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
@@ -860,6 +860,7 @@ class TestGenerateMindMap:
                     notebook_id="nb_123",
                     title="Interactive Mind Map",
                     kind=MindMapKind.INTERACTIVE,
+                    tree={"name": "Root", "children": []},
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -869,16 +870,18 @@ class TestGenerateMindMap:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["generate", "mind-map", "--interactive", "--json", "-n", "nb_123"]
+                    cli, ["generate", "mind-map", "--kind", "interactive", "--json", "-n", "nb_123"]
                 )
 
             assert result.exit_code == 0
             data = json.loads(result.output)
-            assert data["id"] == "art_42"
+            # Converged shape: id under note_id, tree under mind_map, plus kind.
+            assert data["note_id"] == "art_42"
             assert data["kind"] == "interactive"
+            assert data["mind_map"] == {"name": "Root", "children": []}
 
     def test_generate_mind_map_interactive_warns_on_instructions(self, runner, mock_auth):
-        """--interactive with --instructions warns and drops the instructions."""
+        """--kind interactive with --instructions warns and drops the instructions."""
         from notebooklm.types import MindMap, MindMapKind
 
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
@@ -902,7 +905,8 @@ class TestGenerateMindMap:
                     [
                         "generate",
                         "mind-map",
-                        "--interactive",
+                        "--kind",
+                        "interactive",
                         "--instructions",
                         "focus on chapter 3",
                         "-n",
@@ -917,6 +921,36 @@ class TestGenerateMindMap:
             mock_client.mind_maps.generate.assert_awaited_once()
             call_kwargs = mock_client.mind_maps.generate.await_args.kwargs
             assert not call_kwargs.get("instructions")
+
+    def test_generate_mind_map_default_kind_emits_transition_notice(self, runner, mock_auth):
+        """Omitting --kind warns that the default flips to interactive in v0.8.0."""
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_mind_map = AsyncMock(
+                return_value=mind_map_result(
+                    {"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "mind-map", "-n", "nb_123"])
+            assert result.exit_code == 0
+            assert "switches to interactive in v0.8.0" in result.output
+
+            # An explicit --kind suppresses the transition notice.
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result2 = runner.invoke(
+                    cli, ["generate", "mind-map", "--kind", "note-backed", "-n", "nb_123"]
+                )
+            assert result2.exit_code == 0
+            assert "switches to interactive in v0.8.0" not in result2.output
 
 
 # =============================================================================
@@ -1789,11 +1823,13 @@ class TestOutputMindMapResultDirect:
         mock_console.print.assert_called_with("[yellow]No result[/yellow]")
 
     def test_truthy_result_json_calls_output(self):
-        """Line 631: truthy result with json_output → json_output_response."""
+        """Line 631: truthy result with json_output → converged {mind_map, note_id, kind}."""
         result_data = {"note_id": "n1", "mind_map": {"name": "Root", "children": []}}
         with patch.object(self.generate_module, "json_output_response") as mock_json:
             self.generate_module._output_mind_map_result(result_data, json_output=True)
-        mock_json.assert_called_once_with(result_data)
+        mock_json.assert_called_once_with(
+            {"mind_map": {"name": "Root", "children": []}, "note_id": "n1", "kind": "note_backed"}
+        )
 
     def test_truthy_result_dict_text_output(self):
         """Lines 633-635: truthy result dict with text output prints note_id and children count."""

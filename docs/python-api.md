@@ -1548,7 +1548,7 @@ Each operation dispatches to the correct backend; you work with `MindMap` /
 | `delete(notebook_id, mind_map_id, *, kind=None)` | … | `bool` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind |
 | `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree |
 
-`MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree` (populated for note-backed list rows; fetch interactive trees with `get_tree`). When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
+`MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree`. `generate(..., wait=True)` returns `tree` populated for **both** kinds (interactive maps are polled to completion, then their tree is fetched). For interactive *list* rows `tree` is `None` — fetch it with `get_tree`. When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
 
 ```python
 maps = await client.mind_maps.list(nb_id)
@@ -1627,7 +1627,7 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 
 **Note:** Mind maps are detected by checking if the content contains `'"children":' or `'"nodes":'` keys, which indicate JSON mind map data structure.
 
-**Two mind-map kinds (issue #1256):** NotebookLM has two distinct mind-map objects — the **note-backed** kind above (`list_mind_maps()`), and the newer **interactive** kind the web GUI now creates (a studio artifact, internally `type 4 / variant 4`). As of this release the interactive kind is recognized: it appears in `client.artifacts.list(ArtifactType.MIND_MAP)` (no longer mis-typed as `unknown`), and `Artifact.is_interactive_mind_map` distinguishes the backing. Full read/generate/rename and `download_mind_map` support for the interactive kind arrives with the unified mind-map API; until then, `download_mind_map` raises a clear `ArtifactDownloadError` for an interactive id rather than a misleading "not found".
+**Two mind-map kinds (issue #1256):** NotebookLM has two distinct mind-map objects — the **note-backed** kind above (`list_mind_maps()`), and the newer **interactive** kind the web GUI now creates (a studio artifact, internally `type 4 / variant 4`). Both are first-class: the interactive kind appears in `client.artifacts.list(ArtifactType.MIND_MAP)` (and `Artifact.is_interactive_mind_map` distinguishes the backing), `download_mind_map` exports either kind's JSON tree, and the unified [`client.mind_maps`](#mindmapsapi-clientmind_maps) surface generates/reads/renames/deletes both behind a `MindMapKind` discriminator. The `notes.*_mind_map` helpers here remain fully supported for the note-backed kind.
 
 ---
 

@@ -176,7 +176,12 @@ def test_generate_happy_path_text_snapshot(
 
 
 def test_generate_mind_map_json_snapshot(authed_invoke: Callable[..., Result]) -> None:
-    """Mind-map JSON output is the full result dict pretty-printed."""
+    """Mind-map JSON output is the converged {mind_map, note_id, kind} payload.
+
+    The additive ``kind`` key keeps note-backed consumers reading ``mind_map`` /
+    ``note_id`` working while marking the backing (issue #1256). ``--json``
+    suppresses the v0.8.0 default-transition notice.
+    """
     payload = {
         "note_id": "n1",
         "mind_map": {"name": "Root", "children": [{"a": 1}, {"b": 2}]},
@@ -186,22 +191,26 @@ def test_generate_mind_map_json_snapshot(authed_invoke: Callable[..., Result]) -
         configure=_attach_async_return("generate_mind_map", payload),
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == payload
+    assert json.loads(result.output) == {**payload, "kind": "note_backed"}
 
 
 def test_generate_mind_map_text_snapshot(authed_invoke: Callable[..., Result]) -> None:
-    """Mind-map text output is the 3-line ``Note ID / Root / Children`` block."""
+    """Mind-map text output is the kind-agnostic ``ID / Kind / Root / Children`` block.
+
+    Passing ``--kind note-backed`` explicitly pins the note-backed shape and
+    suppresses the default-transition notice (covered separately).
+    """
     payload = {
         "note_id": "n1",
         "mind_map": {"name": "Root", "children": [{"a": 1}, {"b": 2}]},
     }
     result = authed_invoke(
-        ["generate", "mind-map", "-n", "nb_123"],
+        ["generate", "mind-map", "--kind", "note-backed", "-n", "nb_123"],
         configure=_attach_async_return("generate_mind_map", payload),
     )
     assert result.exit_code == 0, result.output
     assert result.output == (
-        "Mind map generated:\n  Note ID: n1\n  Root: Root\n  Children: 2 nodes\n"
+        "Mind map generated:\n  ID: n1\n  Kind: note_backed\n  Root: Root\n  Children: 2 nodes\n"
     )
 
 

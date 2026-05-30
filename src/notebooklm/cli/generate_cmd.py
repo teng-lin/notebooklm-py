@@ -122,53 +122,41 @@ def _output_mind_map_result(result: Any, json_output: bool) -> None:
             console.print("[yellow]No result[/yellow]")
         return
 
-    # The interactive kind returns a ``MindMap`` value (studio artifact) rather
-    # than a note-backed ``MindMapResult``. Render its identity; the tree is
-    # fetched separately via ``client.mind_maps.get_tree``.
+    # Converge both kinds onto one shape (issue #1256): note-backed returns a
+    # ``MindMapResult`` ({mind_map, note_id}); interactive returns a ``MindMap``
+    # ({id, kind, tree}). Normalize to (id, tree, kind) so the JSON stays a
+    # backward-compatible superset of the historical {mind_map, note_id} payload
+    # — only the additive ``kind`` key is new — and the text is kind-agnostic.
     if isinstance(result, MindMap):
-        if json_output:
-            json_output_response(
-                {
-                    "id": result.id,
-                    "title": result.title,
-                    "kind": result.kind.value,
-                    "notebook_id": result.notebook_id,
-                }
-            )
-            return
-        console.print("[green]Mind map generated:[/green]")
-        console.print(f"  Artifact ID: {result.id or '-'}")
-        console.print(f"  Type: {result.kind.value}")
-        console.print(f"  Title: {result.title}")
-        return
-
-    # ``result`` is a ``MindMapResult`` (typed dataclass). Read it via
-    # attributes; fall back to dict access so tests/callers that still patch
-    # in a plain dict keep working.
-    if isinstance(result, MindMapResult):
-        note_id = result.note_id
+        mind_map_id: Any = result.id
+        mind_map = result.tree
+        kind = result.kind.value
+    elif isinstance(result, MindMapResult):
+        mind_map_id = result.note_id
         mind_map = result.mind_map
-        json_payload: Any = {"mind_map": mind_map, "note_id": note_id}
+        kind = "note_backed"
     elif isinstance(result, dict):
-        note_id = result.get("note_id")
+        # Legacy/test path: a plain dict still patched in by older callers.
+        mind_map_id = result.get("note_id")
         mind_map = result.get("mind_map", {})
-        json_payload = result
+        kind = result.get("kind", "note_backed")
     else:
-        note_id = None
+        mind_map_id = None
         mind_map = result
-        json_payload = result
+        kind = "note_backed"
 
     if json_output:
-        json_output_response(json_payload)
+        json_output_response({"mind_map": mind_map, "note_id": mind_map_id, "kind": kind})
         return
 
     console.print("[green]Mind map generated:[/green]")
-    console.print(f"  Note ID: {note_id if note_id is not None else '-'}")
+    console.print(f"  ID: {mind_map_id if mind_map_id is not None else '-'}")
+    console.print(f"  Kind: {kind}")
     if isinstance(mind_map, dict):
         console.print(f"  Root: {mind_map.get('name', '-')}")
         console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
-    elif not isinstance(result, (MindMapResult, dict)):
-        console.print(result)
+    elif mind_map is not None and not isinstance(result, (MindMap, MindMapResult, dict)):
+        console.print(mind_map)
 
 
 def _output_generation_outcome(outcome: GenerationOutcome, json_output: bool) -> None:
@@ -767,27 +755,38 @@ def generate_data_table(
 @notebook_option
 @multi_source_option
 @language_option
-@click.option("--instructions", default=None, help="Custom instructions for the mind map")
 @click.option(
-    "--interactive",
-    is_flag=True,
-    default=False,
+    "--instructions", default=None, help="Custom instructions for the mind map (note-backed only)"
+)
+@click.option(
+    "--kind",
+    "map_kind",
+    type=click.Choice(["interactive", "note-backed"]),
+    default="note-backed",
+    show_default=True,
     help=(
-        "Generate the interactive (studio-artifact) mind map instead of the "
-        "default note-backed JSON kind. --instructions is ignored in this mode."
+        "Which mind map to generate: 'interactive' (studio artifact, polled to "
+        "completion) or 'note-backed' (JSON tree, synchronous). The default "
+        "becomes 'interactive' in v0.8.0."
     ),
 )
 @json_option
 @with_client
 def generate_mind_map(
-    ctx, notebook_id, source_ids, language, instructions, interactive, json_output, client_auth
+    ctx, notebook_id, source_ids, language, instructions, map_kind, json_output, client_auth
 ):
     """Generate mind map.
 
     \b
     Two kinds (issue #1256):
-      (default)     note-backed JSON tree (synchronous)
-      --interactive interactive studio artifact (polled to completion)
+      --kind note-backed   JSON tree, synchronous (default)
+      --kind interactive   interactive studio artifact, polled to completion
+    Both export the same JSON node tree via 'download mind-map'.
+
+    \b
+    Heads up: the default --kind will switch to 'interactive' in v0.8.0
+    (NotebookLM's web app already creates interactive maps). Pass --kind
+    explicitly to pin your choice. --instructions applies to note-backed only.
 
     \b
     Use --json for machine-readable output.

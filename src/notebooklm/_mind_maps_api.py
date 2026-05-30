@@ -116,8 +116,10 @@ class MindMapsAPI:
 
         ``NOTE_BACKED`` is synchronous (``GENERATE_MIND_MAP`` returns the tree).
         ``INTERACTIVE`` is async (``CREATE_ARTIFACT`` returns a pending artifact);
-        with ``wait=True`` this polls to completion, otherwise it returns a
-        pending :class:`MindMap` whose ``tree`` is ``None`` until completed.
+        with ``wait=True`` this polls to completion and then fetches the node
+        tree (so the returned :class:`MindMap` carries ``tree`` for both kinds,
+        a uniform surface). With ``wait=False`` it returns a pending
+        :class:`MindMap` whose ``tree`` is ``None`` until completed.
 
         ``language`` and ``instructions`` only apply to ``NOTE_BACKED`` maps; the
         interactive ``CREATE_ARTIFACT`` payload does not accept them, so they are
@@ -163,6 +165,16 @@ class MindMapsAPI:
         if wait:
             await self._artifacts.wait_for_completion(notebook_id, new_id)
         art = await self._find_interactive(notebook_id, new_id)
+        # After completion, fetch the tree so interactive maps return the same
+        # populated ``MindMap.tree`` as note-backed ones. Skip when not waiting
+        # (still pending) — ``get_tree`` would have nothing to read yet.
+        tree = (
+            await self.get_tree(
+                notebook_id, art.id if art is not None else new_id, kind=MindMapKind.INTERACTIVE
+            )
+            if wait
+            else None
+        )
         if art is not None:
             return MindMap(
                 id=art.id,
@@ -170,12 +182,14 @@ class MindMapsAPI:
                 title=art.title,
                 kind=MindMapKind.INTERACTIVE,
                 created_at=art.created_at,
+                tree=tree,
             )
         return MindMap(
             id=new_id,
             notebook_id=notebook_id,
             title="Mind Map",
             kind=MindMapKind.INTERACTIVE,
+            tree=tree,
         )
 
     async def rename(

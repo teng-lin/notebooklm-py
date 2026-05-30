@@ -105,19 +105,38 @@ async def test_generate_note_backed_delegates():
 
 
 @pytest.mark.asyncio
-async def test_generate_interactive_creates_and_polls():
+async def test_generate_interactive_creates_polls_and_fetches_tree():
     api, rpc, _, artifacts, notebooks = _make_api(
         interactive=[_interactive_artifact("new_int", "T")]
     )
+    tree_row = [None] * 10
+    tree_row[9] = [None, None, None, '{"name": "I", "children": []}']  # [0][9][3] = tree
     rpc.configure_mock(
-        rpc_call=AsyncMock(return_value=[["new_int", "T", 4]])  # CREATE_ARTIFACT echo
+        rpc_call=AsyncMock(
+            side_effect=[
+                [["new_int", "T", 4]],  # 1: CREATE_ARTIFACT echo
+                [tree_row],  # 2: GET_INTERACTIVE_HTML tree (post-completion)
+            ]
+        )
     )
     mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
-    assert rpc.rpc_call.call_args[0][0] == RPCMethod.CREATE_ARTIFACT
+    assert rpc.rpc_call.call_args_list[0][0][0] == RPCMethod.CREATE_ARTIFACT
     notebooks.get_source_ids.assert_awaited_once_with("nb")  # source ids resolved
     artifacts.wait_for_completion.assert_awaited_once_with("nb", "new_int")
     assert mm.kind == MindMapKind.INTERACTIVE
     assert mm.id == "new_int"
+    # Converged surface: interactive generate returns the tree, like note-backed.
+    assert mm.tree == {"name": "I", "children": []}
+
+
+@pytest.mark.asyncio
+async def test_generate_interactive_wait_false_skips_tree():
+    api, rpc, _, artifacts, _ = _make_api(interactive=[_interactive_artifact("new_int")])
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[["new_int", "T", 4]]))
+    mm = await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE, wait=False)
+    assert mm.tree is None  # pending; no tree fetched
+    artifacts.wait_for_completion.assert_not_awaited()
+    assert rpc.rpc_call.await_count == 1  # only CREATE_ARTIFACT, no get_tree
 
 
 @pytest.mark.asyncio

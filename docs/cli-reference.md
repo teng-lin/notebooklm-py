@@ -206,10 +206,12 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 | `flashcards [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate flashcards` |
 | `infographic [description]` | Instructions | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
 | `data-table <description>` | Instructions | (uniform options only) | `generate data-table "compare concepts"` |
-| `mind-map` | - | `--instructions TEXT`, `--interactive` *(no `--wait` / `--timeout` / `--interval` / `--retry` / `--prompt-file`)* | `generate mind-map --interactive` |
+| `mind-map` | - | `--kind [interactive\|note-backed]`, `--instructions TEXT` *(no `--wait` / `--timeout` / `--interval` / `--retry` / `--prompt-file`)* | `generate mind-map --kind interactive` |
 | `report [description]` | Instructions | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append TEXT` (no effect with `--format custom`) | `generate report --format study-guide` |
 
-> **Two kinds of mind map (issue #1256).** NotebookLM has two distinct mind-map objects. `generate mind-map` (default) builds the **note-backed** kind — a JSON node tree stored as a note, generated synchronously. `generate mind-map --interactive` builds the newer **interactive** kind — a studio artifact (the one the web app now creates) that is polled to completion. Both appear in `artifact list --type mind-map` and download via `download mind-map`. `--instructions` applies only to the note-backed kind; it is ignored (with a warning) for `--interactive`.
+> **Two kinds of mind map (issue #1256).** NotebookLM has two distinct mind-map objects. `generate mind-map --kind note-backed` (today's default) builds the **note-backed** kind — a JSON node tree stored as a note, generated synchronously. `generate mind-map --kind interactive` builds the newer **interactive** kind — a studio artifact (the one the web app now creates) that is polled to completion. Both produce the same `{mind_map, note_id, kind}` output, appear in `artifact list --type mind-map`, and download via `download mind-map`. `--instructions` applies only to the note-backed kind (ignored with a warning for interactive).
+>
+> **The default `--kind` switches to `interactive` in v0.8.0** (NotebookLM's web app already creates interactive maps). Until then, omitting `--kind` prints a one-time transition notice to stderr — pass `--kind` explicitly to pin your choice, or set `NOTEBOOKLM_QUIET_DEPRECATIONS=1` to silence it.
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 
