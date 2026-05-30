@@ -138,11 +138,16 @@ class MindMapsAPI:
 
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
+        # CREATE_ARTIFACT is classified in ``_idempotency.py``. ``operation_variant=None``
+        # is passed explicitly to match the other CREATE_ARTIFACT / GENERATE_MIND_MAP
+        # call sites (the registry resolves the same entry either way; the explicit
+        # kwarg documents the no-variant default).
         create_response = await self._rpc.rpc_call(
             RPCMethod.CREATE_ARTIFACT,
             build_interactive_mind_map_artifact_params(notebook_id, source_ids),
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            operation_variant=None,
         )
         new_id = _new_artifact_id(create_response)
         if wait and new_id:
@@ -173,7 +178,19 @@ class MindMapsAPI:
         kind: MindMapKind | None = None,
     ) -> None:
         """Rename a mind map (dispatches by kind: ``UPDATE_NOTE`` / ``RENAME_ARTIFACT``)."""
-        kind = kind or await self._detect_kind(notebook_id, mind_map_id)
+        if kind is None:
+            # Auto-detect inline so the note-backed list is fetched once rather
+            # than twice (a separate ``_detect_kind`` call would re-issue
+            # ``list_mind_maps``). Error precedence matches ``_detect_kind``:
+            # note-backed first, then interactive, then ``ValueError``.
+            for row in await self._mind_maps.list_mind_maps(notebook_id):
+                if NoteRow(row).id == mind_map_id:
+                    await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
+                    return
+            if await self._find_interactive(notebook_id, mind_map_id) is not None:
+                await self._artifacts.rename(notebook_id, mind_map_id, new_title)
+                return
+            raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
         if kind == MindMapKind.NOTE_BACKED:
             await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
         else:
@@ -204,8 +221,18 @@ class MindMapsAPI:
         Note-backed maps parse the tree from their note content; interactive maps
         fetch it via ``GET_INTERACTIVE_HTML`` (the tree is at ``[0][9][3]``).
         """
-        kind = kind or await self._detect_kind(notebook_id, mind_map_id)
-        if kind == MindMapKind.NOTE_BACKED:
+        if kind is None:
+            # Auto-detect inline so the note-backed list is fetched once rather
+            # than twice (a separate ``_detect_kind`` call would re-issue
+            # ``list_mind_maps``). Error precedence matches ``_detect_kind``:
+            # note-backed first (return its parsed tree), then interactive
+            # (fall through to the RPC), then ``ValueError``.
+            for row in await self._mind_maps.list_mind_maps(notebook_id):
+                if NoteRow(row).id == mind_map_id:
+                    return _parse_tree(self._mind_maps.extract_content(row))
+            if await self._find_interactive(notebook_id, mind_map_id) is None:
+                raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+        elif kind == MindMapKind.NOTE_BACKED:
             for row in await self._mind_maps.list_mind_maps(notebook_id):
                 if NoteRow(row).id == mind_map_id:
                     return _parse_tree(self._mind_maps.extract_content(row))
