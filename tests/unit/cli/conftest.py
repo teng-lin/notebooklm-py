@@ -171,7 +171,7 @@ def create_mock_client():
         # wins when supplied; ``interval`` is the deprecated alias kept working.
         effective_interval = initial_interval if initial_interval is not None else interval
         if effective_interval <= 0:
-            raise ValueError("initial_interval must be positive")
+            raise ValueError("poll interval must be positive")
         pinned_task_id = task_id
         attempts = max(1, math.ceil(timeout / effective_interval) + 1)
         status = {"status": "no_research"}

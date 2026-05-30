@@ -451,8 +451,25 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(ValueError, match="timeout must be non-negative"):
                 await client.research.wait_for_completion("nb_123", timeout=-1)
-            with pytest.raises(ValueError, match="initial_interval must be positive"):
+            # Neutral "poll interval" wording so callers on the deprecated
+            # interval= alias don't see a name they never used.
+            with pytest.raises(ValueError, match="poll interval must be positive"):
                 await client.research.wait_for_completion("nb_123", initial_interval=0)
+            with (
+                pytest.raises(ValueError, match="poll interval must be positive"),
+                pytest.warns(DeprecationWarning),
+            ):
+                await client.research.wait_for_completion("nb_123", interval=0)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_rejects_non_numeric_interval(self, auth_tokens):
+        """An explicit non-numeric interval fails fast instead of coercing."""
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(TypeError, match="poll interval must be a number"):
+                await client.research.wait_for_completion(
+                    "nb_123",
+                    initial_interval="1",  # type: ignore[arg-type]
+                )
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_interval_alias_deprecated(

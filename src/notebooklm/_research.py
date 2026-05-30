@@ -463,7 +463,10 @@ class ResearchAPI:
                 v0.8.0). Passing a non-default value emits a
                 :class:`DeprecationWarning`; passing both a non-default
                 ``interval`` and an explicit ``initial_interval`` raises
-                :class:`TypeError`. Default-shape calls stay silent.
+                :class:`TypeError`. Default-shape calls stay silent — note that
+                ``interval=5`` (the exact default) does *not* warn, since it is
+                indistinguishable from not passing the keyword at all; only
+                non-default ``interval`` values trigger the migration prompt.
 
         Returns:
             The final :meth:`poll` result for ``completed`` or ``failed``
@@ -479,7 +482,8 @@ class ResearchAPI:
             ValueError: If ``timeout`` is negative or the poll interval is not
                 positive.
             TypeError: If both a non-default ``interval`` and an explicit
-                ``initial_interval`` are passed.
+                ``initial_interval`` are passed, or if the resolved poll
+                interval is not a number.
         """
         # ``interval`` keeps its original default of ``5`` so the public-API
         # compatibility audit sees no signature change; we treat it as
@@ -497,16 +501,24 @@ class ResearchAPI:
             sentinel=_INITIAL_INTERVAL_UNSET,
             stacklevel=3,
         )
-        poll_interval: float = (
-            _DEFAULT_RESEARCH_POLL_INTERVAL
-            if not isinstance(resolved_interval, (int, float))
-            else float(resolved_interval)
-        )
+        # Only the sentinel means "neither keyword supplied" — fall back to the
+        # default cadence. An *explicit* non-numeric value (e.g. interval=None
+        # or initial_interval="1") is a caller bug; fail fast with TypeError
+        # rather than silently coercing it back to the default, matching the
+        # old ``interval`` path which would have raised on such a value.
+        if resolved_interval is _INITIAL_INTERVAL_UNSET:
+            poll_interval = _DEFAULT_RESEARCH_POLL_INTERVAL
+        elif isinstance(resolved_interval, bool) or not isinstance(resolved_interval, (int, float)):
+            raise TypeError("poll interval must be a number")
+        else:
+            poll_interval = float(resolved_interval)
 
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         if poll_interval <= 0:
-            raise ValueError("initial_interval must be positive")
+            # Neutral wording: the caller may have used the deprecated
+            # ``interval`` alias rather than ``initial_interval``.
+            raise ValueError("poll interval must be positive")
 
         loop = asyncio.get_running_loop()
         start = loop.time()
