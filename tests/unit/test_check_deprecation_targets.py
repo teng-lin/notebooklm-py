@@ -86,12 +86,19 @@ def test_live_repository_passes_the_gate(script) -> None:
     assert "OK" in out
 
 
-def test_lapsed_allowlist_entries_reference_tracking_issue(script) -> None:
-    """Every allowlist entry must cite issue #1213 (the shim-removal tracker)."""
+def test_lapsed_allowlist_entries_are_well_formed(script) -> None:
+    """Every allowlist entry must cite a tracking issue and name a version.
+
+    Kept generic (positive int issue, non-empty version + reason) rather than
+    pinning the current ``#1213`` / ``0.6.0`` values so a future lapsed entry
+    for a different issue/version does not spuriously fail this guard.
+    """
     assert script.LAPSED_ALLOWLIST, "allowlist unexpectedly empty"
     for entry in script.LAPSED_ALLOWLIST:
-        assert entry.issue == 1213, entry.path
-        assert entry.version == "0.6.0", entry.path
+        assert isinstance(entry.issue, int) and entry.issue > 0, entry.path
+        assert isinstance(entry.version, str) and entry.version, entry.path
+        assert isinstance(entry.reason, str) and entry.reason, entry.path
+        assert entry.path.startswith("src/notebooklm/"), entry.path
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +170,28 @@ def test_deprecation_naming_other_version_does_not_trip(script, synthetic, tmp_p
     rc, out, _err = _run(script, ["--pyproject", str(pyproject)])
     assert rc == 0, out
     assert "OK" in out
+
+
+def test_keyword_message_argument_is_scanned(script, synthetic, tmp_path) -> None:
+    """A ``warnings.warn(message=...)`` keyword form must not bypass the gate."""
+    (synthetic / "_feature.py").write_text(
+        dedent(
+            """
+            import warnings
+
+            def f():
+                warnings.warn(
+                    message="old_param will be removed in v0.7.0.",
+                    category=DeprecationWarning,
+                )
+            """
+        ),
+        encoding="utf-8",
+    )
+    pyproject = _write_pyproject(tmp_path, "0.7.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1, err
+    assert "_feature.py" in err
 
 
 def test_direct_deprecationwarning_construction_is_scanned(script, synthetic, tmp_path) -> None:

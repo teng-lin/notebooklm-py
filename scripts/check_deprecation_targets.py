@@ -189,9 +189,18 @@ def _scan(version: str) -> list[_Offender]:
                 continue
             if _call_name(node.func) not in _DEPRECATION_CALL_NAMES:
                 continue
-            if not node.args:
+            # The message is the first positional arg, or the ``message=``
+            # keyword (``warnings.warn(message=...)``). Checking both keeps a
+            # keyword-form deprecation from bypassing the gate.
+            message_node: ast.AST | None = node.args[0] if node.args else None
+            if message_node is None:
+                for kw in node.keywords:
+                    if kw.arg == "message":
+                        message_node = kw.value
+                        break
+            if message_node is None:
                 continue
-            message = _flatten_message(node.args[0])
+            message = _flatten_message(message_node)
             if pattern.search(message):
                 snippet = message.strip()
                 if len(snippet) > 100:

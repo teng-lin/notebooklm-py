@@ -444,6 +444,20 @@ _JSON_CONTRACT_DUMMY_ARGS = {
 }
 
 
+def _split_stderr_runner() -> CliRunner:
+    """A ``CliRunner`` that captures stderr separately when Click supports it.
+
+    Click 8.2 removed the ``mix_stderr`` constructor parameter (stderr is split
+    by default). Inspect the signature so the kwarg is passed only when present,
+    rather than relying on a ``TypeError`` to detect the unsupported case.
+    """
+    import inspect
+
+    if "mix_stderr" in inspect.signature(CliRunner.__init__).parameters:
+        return CliRunner(mix_stderr=False)
+    return CliRunner()
+
+
 def _has_json_flag(cmd: click.Command) -> bool:
     for param in cmd.params:
         if isinstance(param, click.Option) and (
@@ -526,11 +540,7 @@ def test_json_error_envelope_and_exit_code_are_uniform(command_path: str) -> Non
     ``test_json_stdout_routing_and_exit_codes_for_download_runtime``.
     """
     argv = _build_json_invocation(command_path)
-
-    try:
-        runner = CliRunner(mix_stderr=False)
-    except TypeError:  # pragma: no cover - older click without the kwarg
-        runner = CliRunner()
+    runner = _split_stderr_runner()
 
     with patch(
         "notebooklm.cli.helpers.get_auth_tokens",

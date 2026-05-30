@@ -164,15 +164,32 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _is_primitive_construction(node: ast.AST) -> str | None:
-    """Return the primitive name if *node* constructs an ``asyncio`` primitive."""
+def _is_primitive_construction(
+    node: ast.AST,
+    asyncio_alias: str,
+    imported_primitives: dict[str, str],
+) -> str | None:
+    """Return the primitive name if *node* constructs an ``asyncio`` primitive.
+
+    Handles all three import styles so a primitive can't bypass the lint by
+    importing differently:
+
+    * ``asyncio.Lock()`` — attribute access on the module (possibly aliased
+      via ``import asyncio as aio``; ``asyncio_alias`` carries the local name).
+    * ``Lock()`` / ``L()`` — a name brought in by
+      ``from asyncio import Lock`` / ``from asyncio import Lock as L``
+      (``imported_primitives`` maps the local name to the canonical primitive).
+    """
     if not isinstance(node, ast.Call):
         return None
     name = _call_name(node.func)
-    if not name.startswith("asyncio."):
-        return None
-    leaf = name.rsplit(".", 1)[-1]
-    return leaf if leaf in LOOP_BOUND_PRIMITIVES else None
+    prefix = f"{asyncio_alias}."
+    if name.startswith(prefix):
+        leaf = name.rsplit(".", 1)[-1]
+        return leaf if leaf in LOOP_BOUND_PRIMITIVES else None
+    if name in imported_primitives:
+        return imported_primitives[name]
+    return None
 
 
 class _ConstructionSite:
@@ -215,6 +232,28 @@ def _enclosing_class(class_ranges: list[tuple[int, int, str]], lineno: int) -> s
     return best[2] if best else None
 
 
+def _asyncio_import_bindings(module: ast.Module) -> tuple[str, dict[str, str]]:
+    """Resolve how ``asyncio`` and its primitives are bound in *module*.
+
+    Returns ``(asyncio_alias, imported_primitives)`` where ``asyncio_alias`` is
+    the local name for ``import asyncio[ as X]`` (default ``"asyncio"``) and
+    ``imported_primitives`` maps each local name introduced by
+    ``from asyncio import Primitive[ as Y]`` to the canonical primitive name.
+    """
+    asyncio_alias = "asyncio"
+    imported_primitives: dict[str, str] = {}
+    for node in ast.walk(module):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "asyncio":
+                    asyncio_alias = alias.asname or "asyncio"
+        elif isinstance(node, ast.ImportFrom) and node.module == "asyncio":
+            for alias in node.names:
+                if alias.name in LOOP_BOUND_PRIMITIVES:
+                    imported_primitives[alias.asname or alias.name] = alias.name
+    return asyncio_alias, imported_primitives
+
+
 def _scan() -> tuple[list[_ConstructionSite], dict[str, dict[str, set[str]]]]:
     sites: list[_ConstructionSite] = []
     methods_by_file: dict[str, dict[str, set[str]]] = {}
@@ -227,8 +266,9 @@ def _scan() -> tuple[list[_ConstructionSite], dict[str, dict[str, set[str]]]]:
             for node in ast.walk(module)
             if isinstance(node, ast.ClassDef)
         ]
+        asyncio_alias, imported_primitives = _asyncio_import_bindings(module)
         for node in ast.walk(module):
-            primitive = _is_primitive_construction(node)
+            primitive = _is_primitive_construction(node, asyncio_alias, imported_primitives)
             if primitive is None:
                 continue
             owner = _enclosing_class(class_ranges, node.lineno)
@@ -303,3 +343,27 @@ def test_loop_affinity_followup_entries_reference_a_tracking_issue() -> None:
         "ChatAPI loop-affinity gap must reference its tracking issue "
         f"(#{CHAT_LOCKS_FOLLOWUP_ISSUE})."
     )
+
+
+def _detect(source: str) -> set[str]:
+    """Run the import-aware primitive detector over a synthetic module body."""
+    module = ast.parse(source)
+    asyncio_alias, imported = _asyncio_import_bindings(module)
+    found: set[str] = set()
+    for node in ast.walk(module):
+        primitive = _is_primitive_construction(node, asyncio_alias, imported)
+        if primitive is not None:
+            found.add(primitive)
+    return found
+
+
+def test_detector_handles_all_import_styles() -> None:
+    """``asyncio.Lock()``, aliased module, and ``from asyncio import`` all match."""
+    assert _detect("import asyncio\nx = asyncio.Lock()\n") == {"Lock"}
+    assert _detect("import asyncio as aio\nx = aio.Semaphore(1)\n") == {"Semaphore"}
+    assert _detect("from asyncio import Lock\nx = Lock()\n") == {"Lock"}
+    assert _detect("from asyncio import Event as E\nx = E()\n") == {"Event"}
+    # A same-named symbol from an unrelated module must NOT match.
+    assert _detect("from threading import Lock\nx = Lock()\n") == set()
+    # Non-primitive asyncio constructs must NOT match.
+    assert _detect("import asyncio\nx = asyncio.Queue()\n") == set()
