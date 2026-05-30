@@ -229,13 +229,17 @@ def atomic_update_json(
     # and re-introduce the divergent-lock race. ``casefold`` is the robust
     # Unicode-aware lowercaser for this comparison.
     if path.name.casefold() == _STORAGE_STATE_FILENAME:
+        # Echo the caller's actual filename (which may be a casing variant on a
+        # case-insensitive filesystem) so the error matches what they passed,
+        # while still naming the canonical lock for context.
         raise ValueError(
-            f"atomic_update_json must not be called with a {_STORAGE_STATE_FILENAME!r} "
-            "path: its '<name>.lock' lock derivation diverges from the canonical "
-            "dotted '.storage_state.json.lock' sentinel (_storage_state_lock_path, "
-            "#1215), so it would acquire the wrong lock and risk a lost-update race. "
-            "Use the dedicated notebooklm._auth writers (save_cookies_to_storage / "
-            "write_account_metadata / _clear_in_band_account) instead."
+            f"atomic_update_json must not be called with a {path.name!r} "
+            f"({_STORAGE_STATE_FILENAME!r}) path: its '<name>.lock' lock derivation "
+            "diverges from the canonical dotted '.storage_state.json.lock' sentinel "
+            "(_storage_state_lock_path, #1215), so it would acquire the wrong lock "
+            "and risk a lost-update race. Use the dedicated notebooklm._auth writers "
+            "(save_cookies_to_storage / write_account_metadata / _clear_in_band_account) "
+            "instead."
         )
     lock_path = path.with_suffix(path.suffix + ".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
