@@ -1567,9 +1567,10 @@ In the CLI, mind maps are handled as a **type** within the existing groups (matc
 `audio`/`video`/`quiz`): `artifact list --type mind-map`, `artifact rename`,
 `artifact delete`, `generate mind-map`, and `download mind-map`.
 
-> The older `artifacts.generate_mind_map()` / `notes.list_mind_maps()` /
-> `notes.delete_mind_map()` still work (note-backed only) and are slated for
-> deprecation in favor of `client.mind_maps.*`.
+> The kind-specific `artifacts.generate_mind_map()` / `notes.list_mind_maps()` /
+> `notes.delete_mind_map()` remain fully supported for the note-backed kind —
+> they are **not** deprecated. `client.mind_maps.*` is the unified surface that
+> also reaches the interactive kind; use whichever fits.
 
 ### NotesAPI (`client.notes`)
 
