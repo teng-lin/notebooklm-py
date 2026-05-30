@@ -392,5 +392,178 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
         assert payload["code"] == expected_code
 
 
+# ---------------------------------------------------------------------------
+# Uniform ``--json`` error-envelope + exit-code contract (issue #1214 part b).
+#
+# Today the typed-envelope matrix is pinned for the ``download`` command only
+# (see ``test_json_stdout_routing_and_exit_codes_for_download_runtime``). The
+# class of regression this guards: a *new* ``--json``-bearing command that
+# forgets to route failures through ``handle_errors`` and instead leaks a raw
+# traceback, a bare string, or a non-JSON line to stdout. Such a command
+# silently breaks every automation parsing the typed envelope.
+#
+# The canonical envelope (``cli/error_handler.py::_output_error``) is::
+#
+#     {"error": true, "code": "<UPPER_SNAKE>", "message": "<str>", ...}
+#
+# with exit code 1 for user/application errors (auth, rate-limit, validation),
+# 2 for unexpected bugs, 130 for Ctrl-C, and 0 for success. This test drives a
+# uniform *missing-auth* failure (the same trigger the download test uses for
+# its ``AUTH_REQUIRED`` case) across EVERY ``--json`` command discovered by
+# command-tree introspection and asserts the typed envelope + exit code 1 +
+# clean stderr.
+# ---------------------------------------------------------------------------
+
+# Commands whose ``--json`` output is intentionally NOT the error envelope:
+# diagnostic / local-state commands that report status and succeed (exit 0)
+# even without usable auth, emitting their own structured payload. Each is an
+# explicit, documented exemption so the exemption is intentional rather than an
+# accidental gap. Mirrors the prompt's documented exemptions
+# (``agent show`` / ``skill install`` / ``profile``); the concrete commands
+# that actually carry ``--json`` today and bypass the error envelope are:
+JSON_CONTRACT_EXEMPTIONS: dict[str, str] = {
+    "auth check": "Diagnostic command: emits a status report payload and exits 0.",
+    "doctor": "Diagnostic/repair command: emits a checks report payload, not the error envelope.",
+    "language get": "Settings read: emits the resolved language, no auth required.",
+    "language list": "Settings read: emits the supported-language table, no auth required.",
+    "language set": "Settings write helper: emits the applied language payload.",
+    "profile list": "Local profile listing: reads on-disk profiles, no auth required.",
+    "status": "Context status: emits the active-notebook context payload, no auth required.",
+}
+
+# Dummy required-argument values so a command body is reached past Click's
+# argument parsing. Keyed by Click parameter name.
+_JSON_CONTRACT_DUMMY_ARGS = {
+    "artifact_id": "art_1",
+    "question": "hello",
+    "title": "Untitled",
+    "description": "desc",
+    "code": "en",
+    "email": "person@example.com",
+    "content": "body",
+}
+
+
+def _has_json_flag(cmd: click.Command) -> bool:
+    for param in cmd.params:
+        if isinstance(param, click.Option) and (
+            param.name in ("json_output", "json") or "--json" in param.opts
+        ):
+            return True
+    return False
+
+
+def _json_command_paths() -> list[str]:
+    """Every visible leaf command that exposes a ``--json`` flag."""
+    paths: list[str] = []
+
+    def walk(cmd: click.Command, path: list[str]) -> None:
+        if isinstance(cmd, click.Group):
+            ctx = click.Context(cmd)
+            for name in cmd.list_commands(ctx):
+                sub = cmd.get_command(ctx, name)
+                if sub is None or getattr(sub, "hidden", False):
+                    continue
+                walk(sub, [*path, name])
+        elif _has_json_flag(cmd):
+            paths.append(" ".join(path))
+
+    walk(cli, [])
+    return sorted(paths)
+
+
+def _choice_value(param: click.Parameter) -> str:
+    if isinstance(param.type, click.Choice):
+        return param.type.choices[0]
+    return "x"
+
+
+def _build_json_invocation(path: str) -> list[str]:
+    cmd = _command_for(path)
+    argv = [*path.split(), "--json"]
+    for param in cmd.params:
+        if isinstance(param, click.Argument) and param.required:
+            count = param.nargs if param.nargs and param.nargs > 0 else 1
+            for _ in range(count):
+                argv.append(_JSON_CONTRACT_DUMMY_ARGS.get(param.name, _choice_value(param)))
+        elif isinstance(param, click.Option) and param.required:
+            argv.append(param.opts[0])
+            argv.append(_choice_value(param) if isinstance(param.type, click.Choice) else "1")
+    if any(isinstance(param, click.Option) and param.name == "notebook_id" for param in cmd.params):
+        argv.extend(["-n", "nb_contract"])
+    return argv
+
+
+def _enforced_json_command_paths() -> list[str]:
+    return [path for path in _json_command_paths() if path not in JSON_CONTRACT_EXEMPTIONS]
+
+
+def test_json_contract_exemptions_are_real_commands() -> None:
+    """Every exemption must name a real ``--json`` command (no stale entries)."""
+    json_paths = set(_json_command_paths())
+    stale = sorted(name for name in JSON_CONTRACT_EXEMPTIONS if name not in json_paths)
+    assert not stale, (
+        "Stale --json contract exemptions (no such --json command — remove from "
+        f"JSON_CONTRACT_EXEMPTIONS): {stale}"
+    )
+
+
+def test_json_contract_covers_a_representative_command_set() -> None:
+    """Guard against the introspection silently matching nothing."""
+    enforced = _enforced_json_command_paths()
+    # If this ever drops sharply, the command-tree walk likely broke or a whole
+    # group started bypassing the envelope; both deserve a hard failure.
+    assert len(enforced) >= 30, enforced
+
+
+@pytest.mark.parametrize("command_path", _enforced_json_command_paths())
+def test_json_error_envelope_and_exit_code_are_uniform(command_path: str) -> None:
+    """Every non-exempt ``--json`` command emits the typed envelope on failure.
+
+    Drives a uniform missing-auth failure and asserts the canonical
+    ``{"error": true, "code": <str>, "message": <str>}`` envelope on stdout,
+    exit code 1, and empty stderr — the same shape pinned for ``download`` in
+    ``test_json_stdout_routing_and_exit_codes_for_download_runtime``.
+    """
+    argv = _build_json_invocation(command_path)
+
+    try:
+        runner = CliRunner(mix_stderr=False)
+    except TypeError:  # pragma: no cover - older click without the kwarg
+        runner = CliRunner()
+
+    with patch(
+        "notebooklm.cli.helpers.get_auth_tokens",
+        side_effect=FileNotFoundError("Storage file not found"),
+    ):
+        result = runner.invoke(cli, argv, catch_exceptions=False)
+
+    assert result.exit_code == 1, (
+        f"{command_path!r} should exit 1 on missing auth, got "
+        f"{result.exit_code}. stdout={result.stdout!r}"
+    )
+
+    try:
+        stderr = result.stderr
+    except ValueError:  # pragma: no cover - runner without split capture
+        stderr = ""
+    assert stderr == "", f"{command_path!r} wrote to stderr in --json mode: {stderr!r}"
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:  # pragma: no cover - failure path
+        raise AssertionError(
+            f"{command_path!r} did not emit JSON in --json mode: {result.stdout!r}"
+        ) from exc
+
+    assert payload.get("error") is True, f"{command_path!r} envelope missing error=true: {payload}"
+    assert isinstance(payload.get("code"), str) and payload["code"], (
+        f"{command_path!r} envelope missing string code: {payload}"
+    )
+    assert isinstance(payload.get("message"), str), (
+        f"{command_path!r} envelope missing string message: {payload}"
+    )
+
+
 if __name__ == "__main__":
     print(json.dumps(build_phase10_cli_contract(), indent=2, sort_keys=True))

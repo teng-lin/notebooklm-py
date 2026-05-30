@@ -62,6 +62,12 @@ jobs:
       # ``.github/dependabot.yml``.
       run: uv run python scripts/check_action_pinning.py
 
+    - name: Assert no deprecation targets the shipping version
+      # Release gate: a DeprecationWarning must never name the version in
+      # pyproject.toml as its removal target. Lapsed shims are allowlisted
+      # inside the script with a tracking issue.
+      run: uv run python scripts/check_deprecation_targets.py
+
     - name: Assert coverage thresholds match
       run: uv run python scripts/check_coverage_thresholds.py
 
