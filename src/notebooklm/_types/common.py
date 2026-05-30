@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+from .research import ResearchSourceInput
+
 if TYPE_CHECKING:
     import httpx
 
@@ -111,7 +113,7 @@ class AccountTier:
 class CitedSourceSelection:
     """Result of applying cited-only filtering to research sources."""
 
-    sources: list[dict[str, Any]]
+    sources: list[ResearchSourceInput]
     cited_url_count: int
     matched_url_source_count: int
     used_fallback: bool = False

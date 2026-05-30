@@ -10,7 +10,7 @@ shim that delegates to the library method.
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ..research import select_cited_sources
 from ..types import CitedSourceSelection
@@ -27,7 +27,7 @@ class ResearchImportResult:
     """Result of importing research sources from CLI commands."""
 
     imported: list[dict[str, str]]
-    sources: list[dict]
+    sources: list[dict[str, Any]]
     cited_selection: CitedSourceSelection | None = None
 
 
@@ -35,7 +35,7 @@ async def import_with_retry(
     client,
     notebook_id: str,
     task_id: str,
-    sources: list[dict],
+    sources: list[dict[str, Any]],
     *,
     max_elapsed: float = 1800,
     initial_delay: float = 5,
@@ -68,13 +68,15 @@ async def import_with_retry(
 
 
 def _select_research_sources_for_import(
-    sources: list[dict], report: str, cited_only: bool
-) -> tuple[list[dict], CitedSourceSelection | None]:
+    sources: list[dict[str, Any]], report: str, cited_only: bool
+) -> tuple[list[dict[str, Any]], CitedSourceSelection | None]:
     if not cited_only or not sources:
         return sources, None
 
     cited_selection = select_cited_sources(sources, report)
-    return cited_selection.sources, cited_selection
+    # CLI research import serializes typed task sources to dicts before
+    # selection, so this re-narrowing is safe at the CLI boundary.
+    return cast(list[dict[str, Any]], cited_selection.sources), cited_selection
 
 
 def _display_cited_import_selection(
@@ -101,7 +103,7 @@ async def import_research_sources(
     client,
     notebook_id: str,
     task_id: str,
-    sources: list[dict],
+    sources: list[dict[str, Any]],
     *,
     report: str = "",
     cited_only: bool = False,

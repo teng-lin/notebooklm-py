@@ -45,6 +45,7 @@ from ._types.notes import Note
 from ._types.research import (
     MindMapResult,
     ResearchSource,
+    ResearchSourceInput,
     ResearchStart,
     ResearchStatus,
     ResearchTask,
@@ -123,6 +124,11 @@ _warned_source_types = _source_types._warned_source_types
 # Imported for the historical ``notebooklm.types.ArtifactTypeCode`` attribute,
 # but intentionally absent from ``__all__``.
 ArtifactTypeCode = _ArtifactTypeCode
+
+# Kept in this facade's globals so ``typing.get_type_hints(CitedSourceSelection)``
+# can resolve annotations after ``CitedSourceSelection.__module__`` is rewritten
+# to ``notebooklm.types`` below. Intentionally absent from ``__all__``.
+_CITED_SOURCE_SELECTION_TYPE_HINT_GLOBALS = (ResearchSourceInput,)
 
 
 __all__ = [

@@ -124,6 +124,9 @@ class ResearchSource(MappingCompatMixin):
         return public
 
 
+ResearchSourceInput = ResearchSource | Mapping[str, Any]
+
+
 @dataclass(frozen=True)
 class ResearchTask(MappingCompatMixin):
     """A research task and, at the top level, the sibling tasks seen in a poll.

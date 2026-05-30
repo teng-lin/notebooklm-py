@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
@@ -22,6 +22,7 @@ from ._research_task_parser import parse_research_task_models
 from ._runtime_contracts import RpcCaller
 from ._types.research import (
     ResearchSource,
+    ResearchSourceInput,
     ResearchStart,
     ResearchStatus,
     ResearchTask,
@@ -50,8 +51,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-ResearchSourceInput = ResearchSource | Mapping[str, Any]
 
 # Sentinel marking "the canonical ``initial_interval`` keyword was not passed"
 # in ``wait_for_completion``. The deprecated ``interval`` keyword keeps its
@@ -261,7 +260,7 @@ class ResearchAPI:
     @classmethod
     def select_cited_sources(
         cls,
-        sources: list[dict[str, Any]],
+        sources: Sequence[ResearchSourceInput],
         report: str,
     ) -> CitedSourceSelection:
         """Return research sources cited by the completed report.

@@ -3,12 +3,20 @@
 import json
 import logging
 import warnings
+from collections.abc import Mapping, Sequence
+from typing import get_args, get_origin, get_type_hints
 from urllib.parse import parse_qs
 
 import pytest
 
 import notebooklm._research as research_module
-from notebooklm import NotebookLMClient
+from notebooklm import (
+    CitedSourceSelection,
+    NotebookLMClient,
+    ResearchSource,
+    ResearchStatus,
+    ResearchTask,
+)
 from notebooklm._research import ResearchAPI
 from notebooklm.research import extract_report_urls, normalize_citation_url, select_cited_sources
 from notebooklm.rpc import RPCMethod
@@ -119,6 +127,85 @@ class TestCitedSourceSelection:
             "Deep Research Report",
             "Cited",
         ]
+
+    @pytest.mark.parametrize(
+        "selector",
+        [select_cited_sources, ResearchAPI.select_cited_sources],
+        ids=["public_function", "research_api_wrapper"],
+    )
+    def test_select_cited_sources_accepts_typed_task_sources(self, selector):
+        report_source = ResearchSource(
+            url="",
+            title="Deep Research Report",
+            result_type=5,
+            report_markdown="# Report",
+        )
+        cited_source = ResearchSource(
+            url="https://example.com/cited/",
+            title="Cited",
+            result_type=1,
+        )
+        uncited_source = ResearchSource(
+            url="https://example.com/uncited",
+            title="Uncited",
+            result_type=1,
+        )
+        task = ResearchTask(
+            task_id="task_123",
+            status=ResearchStatus.COMPLETED,
+            sources=(report_source, cited_source, uncited_source),
+            report="Final report cites [the source](https://example.com/cited).",
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            selection = selector(task.sources, task.report)
+
+        assert selection.used_fallback is False
+        assert selection.cited_url_count == 1
+        assert selection.matched_url_source_count == 1
+        assert selection.sources == [report_source, cited_source]
+
+    def test_select_cited_sources_fallback_accepts_typed_task_sources(self):
+        source = ResearchSource(
+            url="https://example.com/source",
+            title="Source",
+            result_type=1,
+        )
+        task = ResearchTask(
+            task_id="task_123",
+            status=ResearchStatus.COMPLETED,
+            sources=(source,),
+            report="# Report without links",
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            selection = select_cited_sources(task.sources, task.report)
+
+        assert selection.used_fallback is True
+        assert selection.sources == [source]
+
+    def test_select_cited_sources_source_annotations_accept_research_source(self):
+        selector_sources_hints = [
+            get_type_hints(select_cited_sources)["sources"],
+            get_type_hints(ResearchAPI.select_cited_sources)["sources"],
+        ]
+
+        for sources_hint in selector_sources_hints:
+            assert get_origin(sources_hint) is Sequence
+            (item_hint,) = get_args(sources_hint)
+            item_args = get_args(item_hint) or (item_hint,)
+
+            assert ResearchSource in item_args
+            assert any(get_origin(item_arg) is Mapping for item_arg in item_args)
+
+        selection_sources_hint = get_type_hints(CitedSourceSelection)["sources"]
+        assert get_origin(selection_sources_hint) is list
+        (item_hint,) = get_args(selection_sources_hint)
+        item_args = get_args(item_hint) or (item_hint,)
+        assert ResearchSource in item_args
+        assert any(get_origin(item_arg) is Mapping for item_arg in item_args)
 
     def test_select_cited_sources_deduplicates_report_entries_with_urls(self):
         report_source = {

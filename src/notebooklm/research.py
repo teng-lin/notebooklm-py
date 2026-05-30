@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from collections.abc import Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from ._research_task_parser import RESEARCH_RESULT_TYPE_REPORT, parse_result_type
+from ._types.research import ResearchSourceInput
 from .types import CitedSourceSelection
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ def extract_report_urls(report: str) -> set[str]:
 
 
 def select_cited_sources(
-    sources: list[dict[str, Any]],
+    sources: Sequence[ResearchSourceInput],
     report: str,
 ) -> CitedSourceSelection:
     """Return research sources cited by the completed report.
@@ -73,6 +74,8 @@ def select_cited_sources(
     generated report itself. If no cited URL subset can be resolved, falls
     back to the original source list to avoid an empty import surprise.
     """
+    source_list: list[ResearchSourceInput] = sources if isinstance(sources, list) else list(sources)
+
     cited_urls = extract_report_urls(report)
     if not cited_urls:
         logger.warning(
@@ -80,7 +83,7 @@ def select_cited_sources(
             "falling back to all importable research sources"
         )
         return CitedSourceSelection(
-            sources=sources,
+            sources=source_list,
             cited_url_count=0,
             matched_url_source_count=0,
             used_fallback=True,
@@ -88,17 +91,17 @@ def select_cited_sources(
 
     report_sources = [
         source
-        for source in sources
+        for source in source_list
         if parse_result_type(source.get("result_type")) == RESEARCH_RESULT_TYPE_REPORT
         and source.get("report_markdown")
     ]
     report_source_ids = {id(source) for source in report_sources}
     matched_url_sources = [
         source
-        for source in sources
+        for source in source_list
         if id(source) not in report_source_ids
-        and isinstance(source.get("url"), str)
-        and normalize_citation_url(source["url"]) in cited_urls
+        and isinstance((url := source.get("url")), str)
+        and normalize_citation_url(url) in cited_urls
     ]
 
     if not matched_url_sources:
@@ -107,7 +110,7 @@ def select_cited_sources(
             "matched research sources; falling back to all importable research sources"
         )
         return CitedSourceSelection(
-            sources=sources,
+            sources=source_list,
             cited_url_count=len(cited_urls),
             matched_url_source_count=0,
             used_fallback=True,

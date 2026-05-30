@@ -2388,7 +2388,7 @@ def extract_report_urls(report: str) -> set[str]:
 
 ```python
 def select_cited_sources(
-    sources: list[dict[str, Any]],
+    sources: Sequence[dict[str, Any] | ResearchSource],
     report: str,
 ) -> CitedSourceSelection:
     """Return research sources cited by the completed report.
@@ -2403,9 +2403,9 @@ from notebooklm.research import select_cited_sources
 
 status = await client.research.poll(notebook_id, task_id=task_id)
 # Filter only the sources that were explicitly cited in the report markdown
-selection = select_cited_sources(status["sources"], status["report"])
+selection = select_cited_sources(status.sources, status.report)
 
-print(f"Total sources: {len(status['sources'])}")
+print(f"Total sources: {len(status.sources)}")
 print(f"Cited sources: {len(selection.sources)}")
 ```
 
