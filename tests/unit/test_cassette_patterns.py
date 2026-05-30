@@ -381,6 +381,30 @@ def test_scrub_removes_google_api_key_in_unknown_field() -> None:
     assert "SCRUBBED_API_KEY" in scrubbed
 
 
+def test_longer_than_canonical_api_key_is_fully_scrubbed_no_partial_leak() -> None:
+    """A key with MORE than 35 tail chars is scrubbed in full (no trailing leak).
+
+    Regression for the exact-``{35}``-quantifier partial-leak class: with an
+    exact quantifier, ``AIza`` + 36 chars in an unknown field would scrub only
+    the first 39 chars and leave a trailing fragment that ``SCRUBBED_API_KEY``
+    no longer re-matches — silently leaking the tail. The greedy ``{35,}`` tail
+    consumes the whole contiguous key-char run.
+    """
+    # Tail char ``Z`` is absent from the ``SCRUBBED_API_KEY`` sentinel, so its
+    # presence in the output can only mean an un-scrubbed key fragment survived.
+    long_key = "AIza" + "Z" * 40  # 4 + 40 = 44 chars, well over the canonical 39
+    text = f'{{"SomeUnknownField":"{long_key}"}}'
+    scrubbed = scrub_string(text)
+    # No fragment of the original key survives (not even a trailing remainder).
+    assert "Z" not in scrubbed, scrubbed
+    assert "AIza" not in scrubbed, scrubbed
+    assert "SCRUBBED_API_KEY" in scrubbed
+    # And the validator agrees the scrubbed output is clean.
+    assert is_clean(scrubbed)[0]
+    # The raw long key is itself flagged before scrubbing.
+    assert find_credential_leaks(text)
+
+
 # ---------------------------------------------------------------------------
 # find_credential_leaks — high-severity-only subset (for fixture scanning)
 # ---------------------------------------------------------------------------

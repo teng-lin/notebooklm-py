@@ -439,11 +439,18 @@ _AUTH_TOKEN_PATTERNS: list[str] = [
 # ``generate_mind_map_interactive`` / ``mind_maps_interactive`` cassettes) is
 # the API-key analog of the ``LSID`` cookie leak: a credential rode in a field
 # that was not on the allowlist, so a name-anchored guard alone missed it. The
-# prefix + exact 35-char tail is the canonical Google API-key shape and never
-# occurs as legitimate fixture content, so collapsing it to the
+# ``AIza`` prefix + a 35-char tail is the canonical Google API-key shape and
+# never occurs as legitimate fixture content, so collapsing it to the
 # ``SCRUBBED_API_KEY`` sentinel is safe. ``is_clean`` carries the matching
 # detector (``_DETECT_GOOGLE_API_KEY``) so any surviving raw key is flagged.
-_GOOGLE_API_KEY_PATTERN = r"AIza[0-9A-Za-z_\-]{35}"
+#
+# The tail uses ``{35,}`` (35-OR-MORE), not an exact ``{35}``: a greedy
+# open-ended quantifier consumes the WHOLE contiguous key-char run. With an
+# exact ``{35}`` a longer-than-canonical key (e.g. ``AIza`` + 36 chars) would be
+# scrubbed only up to its first 39 chars, leaving a trailing fragment that the
+# ``SCRUBBED_API_KEY`` replacement no longer re-matches — a silent partial leak
+# in an unknown field with no name-anchored backstop (gemini review on #1266).
+_GOOGLE_API_KEY_PATTERN = r"AIza[0-9A-Za-z_\-]{35,}"
 
 
 def _cookie_header_replacer(name: str) -> tuple[str, str]:
