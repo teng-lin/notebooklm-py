@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 from conftest import get_vcr_auth, skip_no_cassettes  # noqa: E402
 from notebooklm import NotebookLMClient  # noqa: E402
+from notebooklm.rpc.types import RPCMethod  # noqa: E402
 from notebooklm.types import MindMapKind  # noqa: E402
 from vcr_config import notebooklm_vcr  # noqa: E402
 
@@ -72,5 +73,7 @@ class TestMindMapsInteractive:
         )
         data = yaml.safe_load(CASSETTE_PATH.read_text())
         uris = " ".join(i["request"]["uri"] for i in data["interactions"])
-        assert "gArtLc" in uris  # LIST_ARTIFACTS
-        assert "v9rmvd" in uris  # GET_INTERACTIVE_HTML
+        # Reference the method-ID source of truth so re-recording with changed
+        # RPC IDs can't silently make these assertions tautological.
+        assert RPCMethod.LIST_ARTIFACTS.value in uris
+        assert RPCMethod.GET_INTERACTIVE_HTML.value in uris

@@ -186,7 +186,11 @@ class MindMapsAPI:
         *,
         kind: MindMapKind | None = None,
     ) -> None:
-        """Rename a mind map (dispatches by kind: ``UPDATE_NOTE`` / ``RENAME_ARTIFACT``)."""
+        """Rename a mind map (dispatches by kind: ``UPDATE_NOTE`` / ``RENAME_ARTIFACT``).
+
+        Omitting ``kind`` triggers an extra list RPC (and possibly a second
+        ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
+        """
         if kind is None:
             # Auto-detect inline so the note-backed list is fetched once rather
             # than twice (a separate ``_detect_kind`` call would re-issue
@@ -212,7 +216,11 @@ class MindMapsAPI:
         *,
         kind: MindMapKind | None = None,
     ) -> bool:
-        """Delete a mind map (dispatches by kind: ``DELETE_NOTE`` / ``DELETE_ARTIFACT``)."""
+        """Delete a mind map (dispatches by kind: ``DELETE_NOTE`` / ``DELETE_ARTIFACT``).
+
+        Omitting ``kind`` triggers an extra list RPC (and possibly a second
+        ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
+        """
         kind = kind or await self._detect_kind(notebook_id, mind_map_id)
         if kind == MindMapKind.NOTE_BACKED:
             return await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
@@ -229,6 +237,9 @@ class MindMapsAPI:
 
         Note-backed maps parse the tree from their note content; interactive maps
         fetch it via ``GET_INTERACTIVE_HTML`` (the tree is at ``[0][9][3]``).
+
+        Omitting ``kind`` triggers an extra list RPC (and possibly a second
+        ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
         """
         if kind is None:
             # Auto-detect inline so the note-backed list is fetched once rather
