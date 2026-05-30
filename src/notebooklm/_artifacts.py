@@ -558,7 +558,7 @@ class ArtifactsAPI:
         language: str | None = "en",
         instructions: str | None = None,
     ) -> dict[str, Any]:
-        """Generate an interactive mind map."""
+        """Generate an interactive mind map and persist it as a note."""
         if language is None:
             language = get_default_language()
         if source_ids is None:

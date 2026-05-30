@@ -1,12 +1,12 @@
 """Idempotency tests for CREATE_ARTIFACT and GENERATE_MIND_MAP (P0-3).
 
 These RPCs are mutating writes whose params carry no caller-supplied client
-token (see ``_artifact_generation.py``: CREATE_ARTIFACT shape at lines 75-99
-/ 143-161 / 266-291 / etc., and GENERATE_MIND_MAP shape at lines 595-604).
-Every positional slot is structural — type code, source ids, language,
-config block — and the response is what surfaces a server-allocated
-``artifact_id`` (``ArtifactGenerationService.parse_generation_result`` in
-``_artifact_generation.py`` reads ``result[0][0]``). Without a token slot,
+token (see the ``generate_*`` methods and the ``_artifact_payloads.build_*``
+helpers in ``_artifacts.py`` for the CREATE_ARTIFACT / GENERATE_MIND_MAP
+param shapes). Every positional slot is structural — type code, source ids,
+language, config block — and the response is what surfaces a server-allocated
+``artifact_id`` (``ArtifactsAPI._parse_generation_result`` in
+``_artifacts.py`` reads ``result[0][0]``). Without a token slot,
 the only safe retry policy is
 :attr:`~notebooklm._idempotency.IdempotencyPolicy.PROBE_THEN_CREATE`, which
 forces the transport's inner retry loop OFF so a 5xx after server-side
@@ -21,7 +21,7 @@ This file exercises that classification end-to-end:
 3. Happy-path calls still return the artifact / mind-map cleanly.
 
 Wave 2 follow-up: a caller-owned ``idempotent_create`` wrapper around
-``ArtifactGenerationService.call_generate`` can later layer
+``ArtifactsAPI._call_generate`` can later layer
 probe-and-return semantics on top of this foundation (using
 ``client.artifacts.list()`` as the baseline-diff probe). That work is
 out of scope here per the b-generation task spec.
@@ -80,8 +80,9 @@ def _create_artifact_response(artifact_id: str) -> str:
 def _generate_mind_map_response(mind_map_json: str) -> str:
     """Build a GENERATE_MIND_MAP success response.
 
-    Shape: ``[[mind_map_json_str]]`` — decoded by ``generate_mind_map``
-    via ``result[0][0]`` (line 614-622 of ``_artifact_generation.py``).
+    Shape: ``[[mind_map_json_str]]`` — decoded by
+    ``ArtifactsAPI.generate_mind_map`` in ``_artifacts.py`` via
+    ``result[0][0]``.
     """
     return _wrb_response(RPCMethod.GENERATE_MIND_MAP.value, [[mind_map_json]])
 
@@ -156,7 +157,7 @@ class TestRegistryClassification:
     This is the contract that lets ``RpcExecutor`` resolve
     ``effective_disable_internal_retries=True`` for the call sites that
     pass ``operation_variant=None`` (i.e. every CREATE_ARTIFACT and
-    GENERATE_MIND_MAP caller in ``_artifact_generation.py``).
+    GENERATE_MIND_MAP caller in ``_artifacts.py``).
     """
 
     def test_create_artifact_classified_as_probe_then_create(self) -> None:
@@ -273,9 +274,9 @@ async def test_generate_mind_map_503_does_not_re_post(auth_tokens) -> None:
     """A 503 on GENERATE_MIND_MAP surfaces as ServerError after a single POST.
 
     Symmetric to ``test_create_artifact_503_does_not_re_post``. The
-    GENERATE_MIND_MAP call site at ``_artifact_generation.py:606-611``
-    must inherit the PROBE_THEN_CREATE classification and disable the
-    transport's inner retry loop.
+    GENERATE_MIND_MAP call site in ``ArtifactsAPI.generate_mind_map``
+    (``_artifacts.py``) must inherit the PROBE_THEN_CREATE classification
+    and disable the transport's inner retry loop.
     """
     mind_map_count = 0
     get_notebook_count = 0
