@@ -584,7 +584,7 @@ def compose_client_internals(
         _server_error_max_retries=config.server_error_max_retries,
         _refresh_retry_delay=config.refresh_retry_delay,
     )
-    composed.bind_session_collaborators(collaborators)
+    composed.bind_runtime_collaborators(collaborators)
     composed.bind_chain_host(chain_host)
 
     transport = build_runtime_transport(

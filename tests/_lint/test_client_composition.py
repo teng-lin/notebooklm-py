@@ -85,6 +85,6 @@ def test_client_composed_does_not_expose_collaborators_alias() -> None:
                 if isinstance(target, ast.Attribute) and target.attr == "collaborators":
                     violations.append(f"assignment line {node.lineno}: .collaborators")
     assert not violations, (
-        "ClientComposed must expose session_collaborators, not collaborators:\n  "
+        "ClientComposed must expose runtime_collaborators, not collaborators:\n  "
         + "\n  ".join(violations)
     )

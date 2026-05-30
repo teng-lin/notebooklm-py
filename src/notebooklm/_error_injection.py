@@ -36,10 +36,10 @@ class and its direct-instantiation tests.
 Public surface kept:
 
 - :func:`_get_error_injection_mode` — env-var → mode normalization.
-- :func:`_refuse_synthetic_error_outside_test_context` —
-  ``Session.__init__`` calls this so a leaked deploy env raises
-  ``RuntimeError`` instead of silently activating the chain
-  middleware. The guard fires only when ``PYTEST_CURRENT_TEST`` is
+- :func:`_refuse_synthetic_error_outside_test_context` — client
+  construction (``NotebookLMClient.__init__``) calls this so a leaked
+  deploy env raises ``RuntimeError`` instead of silently activating the
+  chain middleware. The guard fires only when ``PYTEST_CURRENT_TEST`` is
   unset (pytest sets it for every test).
 - :data:`ERROR_INJECT_ENV_VAR` — env-var name (canonical string).
 """

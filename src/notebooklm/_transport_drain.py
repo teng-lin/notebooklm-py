@@ -1,10 +1,11 @@
-"""Transport drain bookkeeping helper for :class:`Session`.
+"""Transport drain bookkeeping helper for the NotebookLM client runtime.
 
 Owns the in-flight transport-operation counters, the lazy
 ``asyncio.Condition`` that ``drain()`` parks on, the per-``asyncio.Task``
-operation-depth map, and the ``_draining`` flag. Lifted out of ``_core.py``
-so the drain surface has one home (this file) instead of being woven into
-``Session.__init__`` alongside metrics, reqid, and auth state.
+operation-depth map, and the ``_draining`` flag. Lifted out of the former
+``_core.py``/``Session`` surface (both now deleted) so the drain surface has
+one home (this file) instead of being woven into the runtime composition root
+alongside metrics, reqid, and auth state.
 
 Design constraints (load-bearing — see
 ``tests/unit/concurrency/test_close_cancellation_leak.py``,

@@ -95,7 +95,9 @@ class AuthRefreshMiddleware:
     matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 
-    Constructor inputs (all wired by ``Session.__init__``):
+    Constructor inputs (all wired by
+    :func:`notebooklm._runtime_init.wire_middleware_chain`, driven from
+    ``NotebookLMClient.__init__``):
 
     - ``refresh_callable``: a zero-arg async callable that drives one
       coalesced auth refresh. Production wires

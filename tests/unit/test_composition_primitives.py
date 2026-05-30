@@ -127,7 +127,7 @@ def test_compose_client_internals_returns_client_internals() -> None:
 
     assert isinstance(internals, ClientInternals)
     assert holder.executor is internals.executor
-    assert holder.session_collaborators is internals.collaborators
+    assert holder.runtime_collaborators is internals.collaborators
     assert holder.transport is internals.executor._transport
     assert holder.chain_host._transport is holder.transport
     assert holder.chain_builder is not None
@@ -141,7 +141,7 @@ def test_shell_helpers_carry_client_holders() -> None:
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._composed, ClientComposed)
     assert client._composed.max_concurrent_rpcs == 3
-    assert client._composed.session_collaborators is client._collaborators
+    assert client._composed.runtime_collaborators is client._collaborators
     assert client._composed.executor is client._rpc_executor
 
 
@@ -151,7 +151,7 @@ def test_notebooklm_client_initializes_client_holders() -> None:
 
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._composed, ClientComposed)
-    assert client._composed.session_collaborators is client._collaborators
+    assert client._composed.runtime_collaborators is client._collaborators
     assert client._composed.max_concurrent_rpcs == 2
     assert client._composed.executor is client._rpc_executor
     assert client._composed.transport is client._rpc_executor._transport
@@ -375,12 +375,12 @@ def test_client_composed_chain_host_binder_raises_on_double_bind() -> None:
         holder.bind_chain_host(holder.chain_host)
 
 
-def test_client_composed_session_collaborators_binder_raises_on_double_bind() -> None:
+def test_client_composed_runtime_collaborators_binder_raises_on_double_bind() -> None:
     holder = ClientComposed()
     internals = compose_client_internals(auth=_make_auth(), composed=holder)
 
-    with pytest.raises(RuntimeError, match="_session_collaborators already bound"):
-        holder.bind_session_collaborators(internals.collaborators)
+    with pytest.raises(RuntimeError, match="_runtime_collaborators already bound"):
+        holder.bind_runtime_collaborators(internals.collaborators)
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +396,7 @@ def test_client_composed_session_collaborators_binder_raises_on_double_bind() ->
         ("chain_host", "_chain_host"),
         ("chain_builder", "_chain_builder"),
         ("middlewares", "_middlewares"),
-        ("session_collaborators", "_session_collaborators"),
+        ("runtime_collaborators", "_runtime_collaborators"),
     ],
 )
 def test_client_composed_properties_raise_before_binding(attr_name: str, message: str) -> None:

@@ -258,10 +258,12 @@ class RuntimeTransport:
 
         Raises:
             RuntimeError: if the chain provider returns ``None``. The
-                wired chain is installed by :class:`Session.__init__`
-                immediately after :class:`RuntimeTransport` is built; a
-                ``None`` value indicates a construction-time wiring bug,
-                not a runtime condition.
+                wired chain is installed by the composition root in
+                :func:`notebooklm._runtime_init.wire_middleware_chain`
+                (driven from ``NotebookLMClient.__init__``) immediately
+                after :class:`RuntimeTransport` is built; a ``None`` value
+                indicates a construction-time wiring bug, not a runtime
+                condition.
         """
         # Event-loop affinity guard. The check lives here so it fires once
         # per chain invocation rather than once per leaf attempt.

@@ -47,8 +47,9 @@ class ClientComposed:
         self._chain_builder: MiddlewareChainBuilder | None = None
         self._middlewares: list[Middleware] | None = None
         # Avoid a plain `.collaborators` attribute here: the ADR-014 lint
-        # reserves that name for the deleted Stage A Session accessor.
-        self._session_collaborators: RuntimeCollaborators | None = None
+        # reserves that bare name so feature APIs can't grab the whole
+        # bundle (it formerly backed the deleted Stage A Session accessor).
+        self._runtime_collaborators: RuntimeCollaborators | None = None
 
     @staticmethod
     def _require_bound(attr_name: str, value: _T | None) -> _T:
@@ -77,8 +78,8 @@ class ClientComposed:
         return self._require_bound("_middlewares", self._middlewares)
 
     @property
-    def session_collaborators(self) -> RuntimeCollaborators:
-        return self._require_bound("_session_collaborators", self._session_collaborators)
+    def runtime_collaborators(self) -> RuntimeCollaborators:
+        return self._require_bound("_runtime_collaborators", self._runtime_collaborators)
 
     def bind_transport(self, transport: RuntimeTransport) -> None:
         if self._transport is not None:
@@ -101,10 +102,10 @@ class ClientComposed:
         self._chain_builder = wired.chain_builder
         self._middlewares = wired.middlewares
 
-    def bind_session_collaborators(self, collaborators: RuntimeCollaborators) -> None:
-        if self._session_collaborators is not None:
-            raise RuntimeError("ClientComposed._session_collaborators already bound")
-        self._session_collaborators = collaborators
+    def bind_runtime_collaborators(self, collaborators: RuntimeCollaborators) -> None:
+        if self._runtime_collaborators is not None:
+            raise RuntimeError("ClientComposed._runtime_collaborators already bound")
+        self._runtime_collaborators = collaborators
 
     def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
         """Capture or clear the event-loop binding for the affinity guard.

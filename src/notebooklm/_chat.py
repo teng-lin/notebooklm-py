@@ -134,20 +134,21 @@ class ChatAPI:
         collaborators by keyword argument instead.
 
         Args:
-            rpc: RPC dispatch collaborator (typically
-                ``session.rpc_executor``) for the ``get_conversation_*``,
-                ``configure``, ``delete_conversation``, and
-                ``save_answer_as_note`` round-trips.
-            transport: :class:`RuntimeTransport` collaborator (typically
-                ``session.session_transport``) that owns the authed-POST
-                entry point used by :meth:`ask` via
+            rpc: RPC dispatch collaborator (the client's
+                ``internals.executor`` / ``RpcExecutor``) for the
+                ``get_conversation_*``, ``configure``,
+                ``delete_conversation``, and ``save_answer_as_note``
+                round-trips.
+            transport: :class:`RuntimeTransport` collaborator (the client's
+                ``_composed.transport``) that owns the authed-POST entry
+                point used by :meth:`ask` via
                 :func:`chat_aware_authed_post`.
-            reqid: :class:`ReqidCounter` collaborator (typically
-                ``session.collaborators.reqid``) that mints the
+            reqid: :class:`ReqidCounter` collaborator (the client's
+                ``internals.collaborators.reqid``) that mints the
                 per-attempt ``_reqid`` query parameter for the streamed
                 chat request.
-            loop_guard: :class:`LoopGuard` collaborator (typically
-                ``session.collaborators.lifecycle``) whose
+            loop_guard: :class:`LoopGuard` collaborator (the client's
+                ``internals.collaborators.lifecycle``) whose
                 :meth:`assert_bound_loop` fires before :meth:`ask`
                 acquires the per-conversation lock so a cross-loop
                 follow-up doesn't hang on a lock bound to a dead loop.

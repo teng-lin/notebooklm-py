@@ -1,10 +1,11 @@
-"""Request-id counter helper for :class:`Session`.
+"""Request-id counter helper for the NotebookLM client runtime.
 
 Owns the monotonic ``_reqid`` value that Google's chat backend requires per
 request, plus the lazily-allocated ``asyncio.Lock`` that serialises the
 read-modify-write under concurrent ``ChatAPI.ask`` callers. Lifted out of
-``_core.py`` so the reqid surface has one home (this file) instead of being
-woven into ``Session.__init__`` alongside metrics, drain, and auth state.
+the former ``_core.py``/``Session`` surface (both now deleted) so the reqid
+surface has one home (this file) instead of being woven into the runtime
+composition root alongside metrics, drain, and auth state.
 
 Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` and
 ``tests/unit/test_reqid_counter_concurrent.py``):
@@ -29,7 +30,7 @@ Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` an
 * Optional ``on_lock_wait`` callback receives the seconds spent blocked on
   :attr:`_lock`. Decouples the counter from
   :class:`notebooklm._client_metrics.ClientMetrics` so this class is unit-
-  testable in isolation; the Session-init helper wires it up to
+  testable in isolation; the runtime-init helper wires it up to
   ``ClientMetrics.record_lock_wait`` at construction (see
   ``_runtime_init.build_collaborators``).
 """
@@ -83,8 +84,9 @@ class ReqidCounter:
         # tax on the public ``_reqid_counter`` setter on ``Session``.
         self._value: int = baseline
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
-        # Python versions, and this object is constructed inside
-        # ``Session.__init__`` which may run outside a loop.
+        # Python versions, and this object is constructed at client
+        # composition time (``NotebookLMClient.__init__``), which may run
+        # outside a loop.
         self._lock: asyncio.Lock | None = None
         # No-op default keeps standalone construction (unit tests) free of a
         # ``Session``-shaped dependency. ``Session`` injects its own
