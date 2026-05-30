@@ -222,6 +222,37 @@ class ArtifactDownloadService:
             source="_artifact_downloads._get_artifact_content",
         )
 
+    async def _get_interactive_mind_map_tree(
+        self, notebook_id: str, artifact_id: str
+    ) -> str | None:
+        """Fetch the interactive mind-map JSON tree string.
+
+        The interactive (studio-artifact) mind map exposes its ``{"name",
+        "children"}`` node tree at ``[0][9][3]`` of the ``GET_INTERACTIVE_HTML``
+        response (vs the HTML body at ``[0][9][0]``). Returns the raw JSON
+        string, or ``None`` when the response is empty / not yet populated.
+        """
+        result = await self._rpc.rpc_call(
+            RPCMethod.GET_INTERACTIVE_HTML,
+            [artifact_id],
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+        if result is None:
+            return None
+        try:
+            tree_json = safe_index(
+                result,
+                0,
+                9,
+                3,
+                method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+                source="_artifact_downloads._get_interactive_mind_map_tree",
+            )
+        except UnknownRPCMethodError:
+            return None
+        return tree_json if isinstance(tree_json, str) else None
+
     async def download_audio(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
@@ -474,7 +505,7 @@ class ArtifactDownloadService:
         output_path: str,
         artifact_id: str | None = None,
     ) -> str:
-        """Download a mind map as JSON."""
+        """Download a mind map as JSON (note-backed or interactive kind)."""
         mind_maps_service = self._mind_maps
 
         # Fetch the note-backed list first: it is the primary backing for this
@@ -482,42 +513,49 @@ class ArtifactDownloadService:
         # the extra _list_raw artifact-collection network call entirely.
         mind_maps = await mind_maps_service.list_mind_maps(notebook_id)
 
+        # The JSON tree string to write — sourced from the note content for
+        # note-backed maps, or from GET_INTERACTIVE_HTML for interactive ones.
+        json_string: str | None = None
+
         if artifact_id:
             mind_map = next((mm for mm in mind_maps if mm[0] == artifact_id), None)
-            if mind_map is None:
+            if mind_map is not None:
+                json_string = mind_maps_service.extract_content(mind_map)
+            else:
                 # The id is not a note-backed mind map. Interactive
                 # (studio-artifact) mind maps live in the artifact collection,
-                # not the note-backed list — check there so an interactive id
-                # gets a clear "not supported here" message instead of the
-                # misleading ArtifactNotReadyError / ArtifactNotFoundError below.
-                studio_rows = await self._list_raw(notebook_id)
-                for row in studio_rows:
+                # not the note-backed list — fetch the tree there so both kinds
+                # download to the same JSON shape (issue #1256).
+                interactive = False
+                for row in await self._list_raw(notebook_id):
                     if not isinstance(row, list):
                         continue
                     artifact = Artifact.from_api_response(row)
                     if artifact.id == artifact_id and artifact.is_interactive_mind_map:
-                        raise ArtifactDownloadError(
-                            "interactive_mind_map",
-                            artifact_id=artifact_id,
-                            details=(
-                                "interactive mind maps are not downloadable via "
-                                "download_mind_map yet; unified mind-map support is pending"
-                            ),
-                        )
-                # Not interactive either: preserve the prior error precedence —
-                # an empty note-backed list reads as "not ready", a populated
-                # list with no matching id reads as "not found".
-                if not mind_maps:
+                        interactive = True
+                        break
+                if interactive:
+                    json_string = await self._get_interactive_mind_map_tree(
+                        notebook_id, artifact_id
+                    )
+                    if json_string is None:
+                        # Found the interactive artifact but its tree is not yet
+                        # readable (generation still settling).
+                        raise ArtifactNotReadyError("mind_map")
+                elif not mind_maps:
+                    # Not interactive either: preserve the prior error precedence
+                    # — an empty note-backed list reads as "not ready", a
+                    # populated list with no matching id reads as "not found".
                     raise ArtifactNotReadyError("mind_map")
-                raise ArtifactNotFoundError(artifact_id, artifact_type="mind_map")
+                else:
+                    raise ArtifactNotFoundError(artifact_id, artifact_type="mind_map")
         else:
             # No explicit id: the first note-backed mind map (if any) is used.
             if not mind_maps:
                 raise ArtifactNotReadyError("mind_map")
-            mind_map = mind_maps[0]
+            json_string = mind_maps_service.extract_content(mind_maps[0])
 
         try:
-            json_string = mind_maps_service.extract_content(mind_map)
             if json_string is None:
                 raise ArtifactParseError("mind_map_content", details="Invalid structure")
 
