@@ -12,6 +12,7 @@ __all__ = [
 ]
 
 import logging
+import math
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -25,7 +26,11 @@ MAX_RETRY_AFTER_SECONDS = 300
 
 
 def parse_retry_after(value: str | None) -> int | None:
-    """Parse RFC 7231 Retry-After: integer-seconds OR HTTP-date.
+    """Parse a Retry-After header: integer-seconds OR HTTP-date (RFC 7231).
+
+    Fractional-seconds (e.g. ``"1.5"``) are non-conformant but emitted by some
+    servers/proxies; they are accepted and rounded UP so we never retry faster
+    than the server asked.
 
     Returns seconds-until-retry as a non-negative int, clamped to
     ``MAX_RETRY_AFTER_SECONDS``. Returns ``None`` for empty or unparseable input.
@@ -38,6 +43,15 @@ def parse_retry_after(value: str | None) -> int | None:
         return min(MAX_RETRY_AFTER_SECONDS, max(0, int(value)))
     except ValueError:
         pass
+    # Fractional-seconds form: non-RFC-7231 but emitted by some servers/proxies.
+    # Round UP so we never retry faster than the server asked. Reject non-finite
+    # (inf/nan) values, which float() accepts but math.ceil() can't handle.
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = None
+    if seconds is not None and math.isfinite(seconds):
+        return min(MAX_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
     # HTTP-date form (RFC 7231 section 7.1.1.1)
     try:
         dt = parsedate_to_datetime(value)

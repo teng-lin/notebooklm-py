@@ -30,12 +30,31 @@ def test_parse_retry_after_past_date():
     assert parse_retry_after(date_str) == 0
 
 
+def test_parse_retry_after_fractional_seconds():
+    # Fractional seconds are non-RFC-7231 but emitted by some servers/proxies.
+    # Round UP so we never retry faster than the server asked.
+    assert parse_retry_after("1.5") == 2
+    assert parse_retry_after("0.4") == 1
+    assert parse_retry_after("0.0") == 0
+    assert parse_retry_after(" 2.5 ") == 3
+    # Integer-seconds form still parses unchanged (no spurious ceil).
+    assert parse_retry_after("3") == 3
+    # Negative fractional clamps to 0, same as integer.
+    assert parse_retry_after("-1.5") == 0
+    # Fractional is still capped.
+    assert parse_retry_after(f"{MAX_RETRY_AFTER_SECONDS + 0.5}") == MAX_RETRY_AFTER_SECONDS
+
+
 def test_parse_retry_after_invalid():
     assert parse_retry_after("not a date") is None
     assert parse_retry_after("") is None
     assert parse_retry_after("   ") is None
     # Partially valid but not what we want
     assert parse_retry_after("2026-05-13") is None
+    # Non-finite floats must be rejected, not crash math.ceil.
+    assert parse_retry_after("inf") is None
+    assert parse_retry_after("nan") is None
+    assert parse_retry_after("-inf") is None
 
 
 def test_runtime_deadline_pins_expired_and_exceeded_boundaries():
