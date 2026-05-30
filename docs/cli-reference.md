@@ -206,8 +206,10 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 | `flashcards [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate flashcards` |
 | `infographic [description]` | Instructions | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
 | `data-table <description>` | Instructions | (uniform options only) | `generate data-table "compare concepts"` |
-| `mind-map` | - | `--instructions TEXT` *(sync, no `--wait` / `--timeout` / `--interval` / `--retry` / `--prompt-file`)* | `generate mind-map` |
+| `mind-map` | - | `--instructions TEXT`, `--interactive` *(no `--wait` / `--timeout` / `--interval` / `--retry` / `--prompt-file`)* | `generate mind-map --interactive` |
 | `report [description]` | Instructions | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append TEXT` (no effect with `--format custom`) | `generate report --format study-guide` |
+
+> **Two kinds of mind map (issue #1256).** NotebookLM has two distinct mind-map objects. `generate mind-map` (default) builds the **note-backed** kind — a JSON node tree stored as a note, generated synchronously. `generate mind-map --interactive` builds the newer **interactive** kind — a studio artifact (the one the web app now creates) that is polled to completion. Both appear in `artifact list --type mind-map` and download via `download mind-map`. `--instructions` applies only to the note-backed kind; it is ignored (with a warning) for `--interactive`.
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 
@@ -245,7 +247,7 @@ Every `download` subcommand accepts the same selection / safety / output flag se
 | `slide-deck [path]` | Output path | `--format [pdf\|pptx]` (default: pdf) | `download slide-deck ./slides.pdf` |
 | `infographic [path]` | Output path | (none) | `download infographic ./info.png` |
 | `report [path]` | Output path | (none) | `download report ./report.md` |
-| `mind-map [path]` | Output path | (none) | `download mind-map ./map.json` |
+| `mind-map [path]` | Output path | (none) | `download mind-map ./map.json` |<!-- both note-backed and interactive kinds export their JSON node tree -->
 | `data-table [path]` | Output path | (none) | `download data-table ./data.csv` |
 | `quiz [path]` | Output path | `--format [json\|markdown\|html]` (default: json) | `download quiz --format markdown quiz.md` |
 | `flashcards [path]` | Output path | `--format [json\|markdown\|html]` (default: json) | `download flashcards cards.json` |
