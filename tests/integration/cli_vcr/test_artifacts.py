@@ -89,6 +89,21 @@ class TestArtifactListByType:
                         f"filter {artifact_type!r} (cassette {cassette})"
                     )
 
+    def test_artifact_list_type_mind_map_interactive(self, runner, mock_auth_for_vcr, mock_context):
+        """`artifact list --type mind-map` surfaces an interactive (studio-artifact) map.
+
+        Reuses the interactive recording (``mind_maps_interactive.yaml``, notebook
+        ``f7d1e2b6`` / artifact ``47523923``). Stays on the table renderer (no
+        ``--json``) so it needs only ``LIST_ARTIFACTS`` + ``GET_NOTES_AND_MIND_MAPS``,
+        both present in the cassette — proving the type-4/variant-4 map is
+        recognized end-to-end through the CLI (issue #1256).
+        """
+        nb = "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6"
+        with notebooklm_vcr.use_cassette("mind_maps_interactive.yaml", allow_playback_repeats=True):
+            result = runner.invoke(cli, ["artifact", "list", "--type", "mind-map", "-n", nb])
+            assert_command_success(result)
+            assert "47523923" in result.output
+
 
 class TestArtifactSuggestionsCommand:
     """Test 'notebooklm artifact suggestions' command."""
