@@ -244,6 +244,11 @@ def _run_generate(*, kind: str, **handler_locals: Any) -> Any:
         output_error(exc.message, exc.code, raw_args["json_output"], 1)
         raise AssertionError("unreachable") from exc  # pragma: no cover
 
+    # Behavioral warnings (an input was actually dropped) surface even under
+    # --json — stdout stays pure JSON, but stderr must tell the caller. Purely
+    # informational notices (deprecations, format hints) are human-mode only.
+    for line in plan.stderr_warnings:
+        click.echo(line, err=True)
     if not plan.json_output:
         for line in plan.warnings:
             click.echo(line, err=True)

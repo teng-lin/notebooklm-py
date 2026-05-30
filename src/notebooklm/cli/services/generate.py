@@ -235,9 +235,15 @@ class GenerationPlan:
             spinner / progress messages.
         params: Kind-specific keyword arguments forwarded to the
             ``client.artifacts.<method>`` call. Already enum-mapped.
-        warnings: Stderr warnings queued during plan construction (e.g.
-            ``--append`` with ``--format custom``). Emitted in order
-            before the API call.
+        warnings: Informational stderr warnings queued during plan
+            construction (e.g. ``--append`` with ``--format custom``, or the
+            v0.8.0 mind-map default-kind transition notice). Emitted in order
+            before the API call, but **only in human (non-JSON) mode** so they
+            never pollute machine-readable output.
+        stderr_warnings: Behavioral warnings that must surface even under
+            ``--json`` because they describe an input the CLI actually dropped
+            (e.g. ``--instructions`` ignored for interactive mind maps).
+            Always written to stderr; stdout stays pure JSON.
     """
 
     kind: GenerationKind
@@ -253,6 +259,7 @@ class GenerationPlan:
     json_output: bool
     params: Mapping[str, Any] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
+    stderr_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -646,19 +653,23 @@ def _build_mind_map_plan(
     interactive = map_kind == "interactive"
     instructions = raw_args.get("instructions")
     # The interactive (studio-artifact) generator takes only sources — it has no
-    # custom-instruction slot in its CREATE_ARTIFACT payload. Surface the
-    # mismatch instead of silently dropping --instructions.
+    # custom-instruction slot in its CREATE_ARTIFACT payload. This warning is
+    # *behavioral* (we actually drop the user's --instructions), so it goes to
+    # stderr_warnings and surfaces even under --json — silently ignoring an
+    # explicit input would be a nasty surprise for scripted callers.
     warnings: list[str] = []
+    stderr_warnings: list[str] = []
     if interactive and instructions:
-        warnings.append(
+        stderr_warnings.append(
             "Warning: --instructions is ignored for interactive mind maps "
             "(the interactive generator does not accept custom instructions)."
         )
         instructions = None
     # Managed transition (issue #1256): the default kind flips to interactive in
     # v0.8.0. Nudge users who did not pick a kind so the switch isn't a surprise.
-    # Suppressible via NOTEBOOKLM_QUIET_DEPRECATIONS; the plan layer already drops
-    # warnings in --json mode, so this never pollutes machine-readable output.
+    # Suppressible via NOTEBOOKLM_QUIET_DEPRECATIONS; this is an *informational*
+    # notice (no input was dropped), so it stays in ``warnings`` and the plan
+    # layer suppresses it in --json mode to keep machine-readable output clean.
     if not parameter_explicit("map_kind") and not _deprecations_quieted():
         warnings.append(
             "Note: 'generate mind-map' defaults to the note-backed kind today, but "
@@ -681,6 +692,7 @@ def _build_mind_map_plan(
         json_output=common["json_output"],
         params={"instructions": instructions, "kind": map_kind},
         warnings=tuple(warnings),
+        stderr_warnings=tuple(stderr_warnings),
     )
 
 

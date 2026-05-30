@@ -922,6 +922,59 @@ class TestGenerateMindMap:
             call_kwargs = mock_client.mind_maps.generate.await_args.kwargs
             assert not call_kwargs.get("instructions")
 
+    def test_generate_mind_map_interactive_json_warns_on_instructions_via_stderr(
+        self, runner, mock_auth
+    ):
+        """Under --json the dropped-instructions warning goes to stderr, stdout stays pure JSON.
+
+        Silently ignoring an explicit --instructions in JSON mode would surprise
+        scripted callers, so the behavioral warning must surface on stderr — while
+        stdout remains a parseable JSON payload (no warning text leaking in).
+        """
+        from notebooklm.types import MindMap, MindMapKind
+
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.mind_maps.generate = AsyncMock(
+                return_value=MindMap(
+                    id="art_42",
+                    notebook_id="nb_123",
+                    title="Interactive Mind Map",
+                    kind=MindMapKind.INTERACTIVE,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "generate",
+                        "mind-map",
+                        "--kind",
+                        "interactive",
+                        "--instructions",
+                        "focus on chapter 3",
+                        "-n",
+                        "nb_123",
+                        "--json",
+                    ],
+                )
+
+            assert result.exit_code == 0
+            # Warning surfaces on stderr even in JSON mode...
+            assert "--instructions is ignored" in result.stderr
+            # ...but stdout stays pure, parseable JSON (no warning text leaked in).
+            assert "--instructions is ignored" not in result.stdout
+            payload = json.loads(result.stdout)
+            assert payload["kind"] == "interactive"
+            # Behaviour still backs the warning: instructions are not forwarded.
+            mock_client.mind_maps.generate.assert_awaited_once()
+            assert not mock_client.mind_maps.generate.await_args.kwargs.get("instructions")
+
     def test_generate_mind_map_default_kind_emits_transition_notice(self, runner, mock_auth):
         """Omitting --kind warns that the default flips to interactive in v0.8.0."""
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
@@ -951,6 +1004,19 @@ class TestGenerateMindMap:
                 )
             assert result2.exit_code == 0
             assert "switches to interactive in v0.8.0" not in result2.output
+
+            # The transition notice is *informational* (no input dropped), so
+            # --json suppresses it entirely — it must not leak onto stdout or
+            # stderr, keeping machine-readable output clean (design decision).
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result3 = runner.invoke(cli, ["generate", "mind-map", "-n", "nb_123", "--json"])
+            assert result3.exit_code == 0
+            assert "switches to interactive in v0.8.0" not in result3.stdout
+            assert "switches to interactive in v0.8.0" not in result3.stderr
+            json.loads(result3.stdout)  # stdout is pure, parseable JSON
 
 
 # =============================================================================
