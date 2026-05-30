@@ -46,6 +46,7 @@ from ...types import (
     InfographicDetail,
     InfographicOrientation,
     InfographicStyle,
+    MindMapKind,
     QuizDifficulty,
     QuizQuantity,
     ReportFormat,
@@ -629,6 +630,18 @@ def _build_mind_map_plan(
     resolve_language: Callable[[str | None], str],
 ) -> GenerationPlan:
     common = _common(raw_args)
+    interactive = bool(raw_args.get("interactive"))
+    instructions = raw_args.get("instructions")
+    # The interactive (studio-artifact) generator takes only sources — it has no
+    # custom-instruction slot in its CREATE_ARTIFACT payload. Surface the
+    # mismatch instead of silently dropping --instructions.
+    warnings: list[str] = []
+    if interactive and instructions:
+        warnings.append(
+            "Warning: --instructions is ignored for --interactive mind maps "
+            "(the interactive generator does not accept custom instructions)."
+        )
+        instructions = None
     return GenerationPlan(
         kind="mind-map",
         display_name=_DISPLAY_NAME["mind-map"],
@@ -641,7 +654,8 @@ def _build_mind_map_plan(
         interval=common["interval"],
         max_retries=0,
         json_output=common["json_output"],
-        params={"instructions": raw_args.get("instructions")},
+        params={"instructions": instructions, "interactive": interactive},
+        warnings=tuple(warnings),
     )
 
 
@@ -846,12 +860,25 @@ async def execute_generation(
         return await api_method(nb_id_resolved, **call_kwargs)
 
     if plan.kind == "mind-map":
+        if plan.params.get("interactive"):
+            # The interactive kind is a studio artifact (CREATE_ARTIFACT,
+            # variant 4); route through the unified mind-map API, which polls
+            # the async generation to completion and returns a MindMap.
+            async def _generate_mind_map() -> Any:
+                return await client.mind_maps.generate(
+                    nb_id_resolved,
+                    source_ids=sources,
+                    kind=MindMapKind.INTERACTIVE,
+                    language=plan.language,
+                )
+        else:
+            _generate_mind_map = _generate
         if plan.json_output:
-            result = await _generate()
+            result = await _generate_mind_map()
         else:
             context = mind_map_context or contextlib.nullcontext
             async with context():
-                result = await _generate()
+                result = await _generate_mind_map()
         return GenerationExecutionResult(
             kind=plan.kind,
             display_name=plan.display_name,

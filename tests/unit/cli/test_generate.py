@@ -814,6 +814,105 @@ class TestGenerateMindMap:
 
             assert result.exit_code == 0
 
+    def test_generate_mind_map_interactive(self, runner, mock_auth):
+        """--interactive routes through client.mind_maps.generate(kind=INTERACTIVE)."""
+        from notebooklm.types import MindMap, MindMapKind
+
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.mind_maps.generate = AsyncMock(
+                return_value=MindMap(
+                    id="art_42",
+                    notebook_id="nb_123",
+                    title="Interactive Mind Map",
+                    kind=MindMapKind.INTERACTIVE,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["generate", "mind-map", "--interactive", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0
+            # Interactive path dispatches to the unified API, not the note-backed
+            # artifacts.generate_mind_map.
+            mock_client.artifacts.generate_mind_map.assert_not_called()
+            mock_client.mind_maps.generate.assert_awaited_once()
+            assert (
+                mock_client.mind_maps.generate.await_args.kwargs["kind"] == MindMapKind.INTERACTIVE
+            )
+            assert "art_42" in result.output
+
+    def test_generate_mind_map_interactive_json(self, runner, mock_auth):
+        """--interactive --json emits the MindMap identity as JSON."""
+        from notebooklm.types import MindMap, MindMapKind
+
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.mind_maps.generate = AsyncMock(
+                return_value=MindMap(
+                    id="art_42",
+                    notebook_id="nb_123",
+                    title="Interactive Mind Map",
+                    kind=MindMapKind.INTERACTIVE,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["generate", "mind-map", "--interactive", "--json", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["id"] == "art_42"
+            assert data["kind"] == "interactive"
+
+    def test_generate_mind_map_interactive_warns_on_instructions(self, runner, mock_auth):
+        """--interactive with --instructions warns and drops the instructions."""
+        from notebooklm.types import MindMap, MindMapKind
+
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.mind_maps.generate = AsyncMock(
+                return_value=MindMap(
+                    id="art_42",
+                    notebook_id="nb_123",
+                    title="Interactive Mind Map",
+                    kind=MindMapKind.INTERACTIVE,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "generate",
+                        "mind-map",
+                        "--interactive",
+                        "--instructions",
+                        "focus on chapter 3",
+                        "-n",
+                        "nb_123",
+                    ],
+                )
+
+            assert result.exit_code == 0
+            assert "--instructions is ignored" in result.output
+
 
 # =============================================================================
 # GENERATE REPORT TESTS

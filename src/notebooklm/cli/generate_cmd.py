@@ -16,7 +16,7 @@ import click
 from click.core import ParameterSource
 
 from ..client import NotebookLMClient
-from ..types import MindMapResult
+from ..types import MindMap, MindMapResult
 from .auth_runtime import with_client
 from .error_handler import current_json_output, output_error
 from .input import resolve_prompt
@@ -120,6 +120,26 @@ def _output_mind_map_result(result: Any, json_output: bool) -> None:
             json_error_response("GENERATION_FAILED", "Mind map generation failed")
         else:
             console.print("[yellow]No result[/yellow]")
+        return
+
+    # The interactive kind returns a ``MindMap`` value (studio artifact) rather
+    # than a note-backed ``MindMapResult``. Render its identity; the tree is
+    # fetched separately via ``client.mind_maps.get_tree``.
+    if isinstance(result, MindMap):
+        if json_output:
+            json_output_response(
+                {
+                    "id": result.id,
+                    "title": result.title,
+                    "kind": result.kind.value,
+                    "notebook_id": result.notebook_id,
+                }
+            )
+            return
+        console.print("[green]Mind map generated:[/green]")
+        console.print(f"  Artifact ID: {result.id or '-'}")
+        console.print(f"  Type: {result.kind.value}")
+        console.print(f"  Title: {result.title}")
         return
 
     # ``result`` is a ``MindMapResult`` (typed dataclass). Read it via
@@ -748,12 +768,26 @@ def generate_data_table(
 @multi_source_option
 @language_option
 @click.option("--instructions", default=None, help="Custom instructions for the mind map")
+@click.option(
+    "--interactive",
+    is_flag=True,
+    default=False,
+    help=(
+        "Generate the interactive (studio-artifact) mind map instead of the "
+        "default note-backed JSON kind. --instructions is ignored in this mode."
+    ),
+)
 @json_option
 @with_client
 def generate_mind_map(
-    ctx, notebook_id, source_ids, language, instructions, json_output, client_auth
+    ctx, notebook_id, source_ids, language, instructions, interactive, json_output, client_auth
 ):
     """Generate mind map.
+
+    \b
+    Two kinds (issue #1256):
+      (default)     note-backed JSON tree (synchronous)
+      --interactive interactive studio artifact (polled to completion)
 
     \b
     Use --json for machine-readable output.
