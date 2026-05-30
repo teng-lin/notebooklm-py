@@ -633,6 +633,79 @@ class TestSource:
         with pytest.raises(ValueError, match="Invalid source data"):
             Source.from_api_response(None)
 
+    def test_from_api_response_carries_status(self):
+        """``from_api_response`` decodes ``status`` from the row's status block.
+
+        Previously the classmethod never set ``status``, so it silently
+        fell back to ``SourceStatus.READY`` even when the wire carried a
+        PROCESSING/ERROR status block. After unifying on the single
+        ``SourceRow``-based construction it now reads the same status the
+        listing path does.
+        """
+        from notebooklm.rpc.types import SourceStatus
+
+        data = [
+            [
+                ["src_proc"],
+                "Processing Source",
+                [None, None, [1704067200, 0], None, 5, None, None, ["https://example.com"]],
+                [None, SourceStatus.PROCESSING],
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.status == SourceStatus.PROCESSING
+        assert source.is_processing is True
+        assert source.is_ready is False
+
+    def test_from_api_response_status_defaults_ready_without_block(self):
+        """A row without a status block keeps the historical READY default."""
+        from notebooklm.rpc.types import SourceStatus
+
+        # Medium-nested entry with no status block at index 3.
+        data = [[["src_no_status"], "No Status", [None, None, None, None, 5]]]
+        source = Source.from_api_response(data)
+
+        assert source.status == SourceStatus.READY
+
+        # Flat shape also defaults to READY.
+        flat = Source.from_api_response(["src_flat", "Flat"])
+        assert flat.status == SourceStatus.READY
+
+    def test_from_api_response_matches_listing_path(self):
+        """``from_api_response`` and the ``GET_NOTEBOOK`` listing path produce
+        identical ``Source`` instances from the same entry — the two parsers
+        are now a single source of truth (issue #1205, part 1/5).
+        """
+        from notebooklm._row_adapters_sources import SourceRow
+        from notebooklm.rpc import RPCMethod
+        from notebooklm.rpc.types import SourceStatus
+
+        # An entry exactly as ``SourceLister._parse_source`` receives it.
+        entry = [
+            ["src_match"],
+            "Matching Source",
+            [None, 11, [1704067200, 0], None, 5, None, None, ["https://example.com"]],
+            [None, SourceStatus.PROCESSING],
+        ]
+
+        # Listing path: ``SourceLister._parse_source`` wraps the entry with
+        # ``SourceRow.from_entry`` and funnels it through ``Source.from_row``.
+        listing_source = Source.from_row(
+            SourceRow.from_entry(entry, method_id=RPCMethod.GET_NOTEBOOK.value)
+        )
+
+        # Public classmethod path: the same entry wrapped in the medium-
+        # nested envelope that ``ADD_SOURCE``/rename responses carry.
+        api_source = Source.from_api_response([entry])
+
+        assert api_source == listing_source
+        assert api_source.status == listing_source.status == SourceStatus.PROCESSING
+        assert api_source.url == listing_source.url == "https://example.com"
+        assert api_source.created_at == listing_source.created_at
+        # type code lives at metadata[4] (== 5 → WEB_PAGE) for both paths.
+        assert api_source.kind == listing_source.kind == SourceType.WEB_PAGE
+
 
 class TestSourceTypeCompatMapping:
     """Tests for the _SOURCE_TYPE_COMPAT_MAP backward-compatible mapping."""

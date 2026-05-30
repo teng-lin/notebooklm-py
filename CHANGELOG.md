@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Not removed:** awaiting `NotebookLMClient.from_storage(...)` still works —
 > its deprecation targets v1.0, not v0.6.0.
 
+### Fixed
+
+- **`Source.from_api_response` now reports the real processing `status`.** The
+  `ADD_SOURCE` / rename parsing path previously never read the status block and
+  always fell back to `SourceStatus.READY`, while `client.sources.list()` /
+  `get()` and the source poller read the decoded status. Both parsers now
+  funnel through a single `Source.from_row` construction site, so a `Source`
+  produced from an add/rename response carries the same `status` (and `url` /
+  `created_at`) as the listing path. The `Source.status` field annotation was
+  also corrected from `int` to `SourceStatus` (still an `int`-compatible enum).
+
 ## [0.6.0] - 2026-05-29
 
 ### Breaking changes

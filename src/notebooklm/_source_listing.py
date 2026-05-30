@@ -148,14 +148,10 @@ class SourceLister:
             )
             return None
 
-        return Source(
-            id=row.id,
-            title=row.title,
-            url=row.url,
-            _type_code=row.type_code,
-            created_at=row.created_at,
-            status=row.status,
-        )
+        # Funnel through the single ``Source`` construction site shared
+        # with ``Source.from_api_response`` so the list/get/poll path and
+        # the ADD_SOURCE/rename path produce identical Sources.
+        return Source.from_row(row)
 
 
 __all__ = ["SourceLister"]

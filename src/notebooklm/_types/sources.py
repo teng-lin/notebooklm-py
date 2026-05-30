@@ -6,13 +6,16 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..rpc.types import SourceStatus
 from .common import (
     UnknownTypeWarning,
     _datetime_from_timestamp,
 )
+
+if TYPE_CHECKING:
+    from .._row_adapters_sources import SourceRow
 
 
 class SourceType(str, Enum):
@@ -139,7 +142,13 @@ class Source:
     url: str | None = None
     _type_code: int | None = field(default=None, repr=False)
     created_at: datetime | None = None
-    status: int = SourceStatus.READY
+    # ``status`` holds a :class:`~notebooklm.rpc.SourceStatus` member (an
+    # ``int`` enum) decoded from the GET_NOTEBOOK source-list status block.
+    # The annotation was previously ``int`` even though every construction
+    # path (the listing service and :meth:`from_api_response`) populates it
+    # with a ``SourceStatus``; ``SourceStatus`` is the accurate declared type
+    # and remains ``int``-compatible at runtime and for equality.
+    status: SourceStatus = SourceStatus.READY
 
     @property
     def kind(self) -> SourceType:
@@ -162,6 +171,32 @@ class Source:
         return self.status == SourceStatus.ERROR
 
     @classmethod
+    def from_row(cls, row: SourceRow) -> Source:
+        """Build a :class:`Source` from a normalized :class:`SourceRow`.
+
+        This is the **single** construction site for a :class:`Source`
+        from a parsed source row. Both :meth:`from_api_response` (the
+        public classmethod used by ``ADD_SOURCE`` / rename paths) and
+        :meth:`notebooklm._source_listing.SourceLister._parse_source`
+        (the ``GET_NOTEBOOK`` list/get/poll path) funnel through here so
+        every code path produces identical :class:`Source` instances —
+        including the decoded :attr:`status`.
+
+        The flat shape historically yields ``_type_code=None`` and skips
+        metadata-derived fields; :class:`SourceRow` already returns
+        ``None`` / ``SourceStatus.READY`` for those slots on a flat row,
+        so a single field mapping covers all three wire shapes.
+        """
+        return cls(
+            id=row.id,
+            title=row.title,
+            url=row.url,
+            _type_code=row.type_code,
+            created_at=row.created_at,
+            status=row.status,
+        )
+
+    @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> Source:
         """Parse source data from various API response formats.
 
@@ -169,30 +204,23 @@ class Source:
         medium nested, flat) is centralised in
         :meth:`notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`;
         position knowledge for the entry layout lives on
-        :class:`SourceRow` itself. This method only translates the
-        adapter's typed properties into the :class:`Source` dataclass.
-        See ``docs/improvement.md`` §6.2 for context.
+        :class:`SourceRow` itself. This method only normalizes the wire
+        shape into a :class:`SourceRow` and defers to :meth:`from_row` —
+        the single construction site shared with the
+        ``GET_NOTEBOOK`` list/get/poll path
+        (:meth:`notebooklm._source_listing.SourceLister._parse_source`) —
+        so all paths produce identical :class:`Source` instances,
+        including the decoded :attr:`status`. ``status`` earlier silently
+        fell back to the ``SourceStatus.READY`` default here while the
+        listing path read it from the row. See ``docs/improvement.md``
+        §6.2 for context.
         """
         # Keep the row-adapter dependency local so importing the source
         # dataclass package does not pull source-row parsing helpers into
         # the top-level public type facade.
-        from .._row_adapters_sources import SourceRow, SourceRowShape
+        from .._row_adapters_sources import SourceRow
 
-        row = SourceRow.from_unknown_shape(data)
-
-        # Flat shape preserves the historical contract: ``_type_code``
-        # is always ``None`` and metadata-derived fields are not
-        # consulted (legacy ``return cls(id=..., title=..., _type_code=None)``).
-        if row.shape is SourceRowShape.FLAT:
-            return cls(id=row.id, title=row.title, _type_code=None)
-
-        return cls(
-            id=row.id,
-            title=row.title,
-            url=row.url,
-            _type_code=row.type_code,
-            created_at=row.created_at,
-        )
+        return cls.from_row(SourceRow.from_unknown_shape(data))
 
 
 @dataclass
