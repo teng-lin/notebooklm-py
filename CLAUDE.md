@@ -97,7 +97,7 @@ RPC Layer (rpc/)
 | `_env.py`, `config.py` | Runtime environment defaults and the public config re-export surface |
 | `_logging.py`, `log.py` | Redaction/correlation logging internals and the public logging helper surface |
 | `_callbacks.py` | Sync-or-async callback invocation helper used by telemetry/retry hooks |
-| `_deprecation.py` | `warn_get_returns_none` — single place for the `get()`-returns-`None` `DeprecationWarning` (suppressible via `NOTEBOOKLM_QUIET_DEPRECATIONS`). The public `sources/artifacts/notes.get()` warn on a miss; the private `_get_or_none()` body never warns. Flip to raising `*NotFoundError` happens in v0.8.0 (tracked in issue #1247 / `docs/deprecations.md`). |
+| `_deprecation.py` | Deprecation helpers, both gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`: `warn_get_returns_none` — single place for the `get()`-returns-`None` `DeprecationWarning` (public `sources/artifacts/notes.get()` warn on a miss; the private `_get_or_none()` body never warns; flip to raising `*NotFoundError` in v0.8.0, issue #1247); and `deprecated_kwarg` / `deprecations_quiet` — keyword-alias helper that names the v0.8.0 removal and errors when both the old and new keyword are passed (used by `ResearchAPI.wait_for_completion` `interval` → `initial_interval`). See `docs/deprecations.md`. |
 | `_runtime_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
 | `_client_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
@@ -194,7 +194,7 @@ src/notebooklm/
 ├── _client_composed.py          # Client-owned composition holder
 ├── _client_seams.py             # Constructor-only injectable seams
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
-├── _deprecation.py              # warn_get_returns_none + NOTEBOOKLM_QUIET_DEPRECATIONS gate
+├── _deprecation.py              # Deprecation helpers (warn_get_returns_none + deprecated_kwarg keyword-alias) gated by NOTEBOOKLM_QUIET_DEPRECATIONS
 ├── _env.py                      # Runtime environment/default endpoint helpers
 ├── _idempotency.py              # Mutating-RPC idempotency registry + wrappers
 ├── _kernel.py                   # Concrete Kernel transport core

@@ -50,6 +50,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Not removed:** awaiting `NotebookLMClient.from_storage(...)` still works —
 > its deprecation targets v1.0, not v0.6.0.
 
+### Added
+
+- **`WaitTimeoutError` — one catchable base for every wait/poll timeout.** A
+  new public exception (`notebooklm.WaitTimeoutError`) is the common base of
+  `SourceTimeoutError`, `ArtifactTimeoutError` (and its
+  `ArtifactPendingTimeoutError` / `ArtifactInProgressTimeoutError` subclasses),
+  and the new `ResearchTimeoutError`, so a single `except WaitTimeoutError`
+  clause catches a wait timeout from any domain. It mixes in the built-in
+  `TimeoutError`, so this is **fully backward-compatible**: existing
+  `except TimeoutError` clauses keep catching every wait timeout unchanged.
+  ```python
+  from notebooklm import WaitTimeoutError
+  try:
+      await client.sources.wait_until_ready(nb_id, src_id)
+      await client.artifacts.wait_for_completion(nb_id, task_id)
+      await client.research.wait_for_completion(nb_id, research_task_id)
+  except WaitTimeoutError:   # was three separate / inconsistent timeout types
+      ...
+  ```
+- **`ResearchError` / `ResearchTimeoutError`.** The research domain gained a
+  catchable base (`ResearchError`, mirroring `SourceError` / `ArtifactError`)
+  and a domain timeout (`ResearchTimeoutError`). `ResearchAPI.wait_for_completion`
+  previously raised the bare built-in `TimeoutError`; it now raises
+  `ResearchTimeoutError`, a `WaitTimeoutError` (and therefore still a
+  `TimeoutError`), exposing `notebook_id` / `task_id` / `timeout` /
+  `timeout_seconds` / `last_status`. (`ResearchTaskMismatchError` stays a
+  `ValidationError` — it is caller-input validation, not a wait timeout.)
+
+### Changed / Deprecated
+
+- **`ResearchAPI.wait_for_completion(interval=...)` → `initial_interval=...`.**
+  The research waiter's poll-cadence keyword is now `initial_interval`,
+  matching `SourcesAPI.wait_until_ready` and
+  `ArtifactsAPI.wait_for_completion`. The old `interval=` keyword still works
+  as a **deprecated alias** (warns in 0.7.0, removed in v0.8.0): passing a
+  non-default value emits a `DeprecationWarning` (suppressible with
+  `NOTEBOOKLM_QUIET_DEPRECATIONS=1`), and passing both `interval` and
+  `initial_interval` raises `TypeError`. Default-shape calls stay silent and
+  the signature is otherwise unchanged, so the public-API compatibility audit
+  stays clean. See [`docs/deprecations.md`](docs/deprecations.md) for the
+  migration.
+  > **Decision — `wait_timeout` kept.** The `wait_timeout` keyword on the
+  > `SourcesAPI.add_*` family was deliberately **not** renamed to `timeout`:
+  > on those add methods `timeout` would be ambiguous with a per-request HTTP
+  > timeout, whereas the dedicated waiter methods already spell their budget
+  > `timeout`. The research `interval` → `initial_interval` rename was the only
+  > standardization with a clear, unambiguous win.
+
 ### Deprecated
 
 - **`sources.get()` / `artifacts.get()` / `notes.get()` returning `None` for a

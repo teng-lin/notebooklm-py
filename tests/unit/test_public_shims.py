@@ -399,7 +399,9 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "NotebookLMError",
     "NotebookNotFoundError",
     "RateLimitError",
+    "ResearchError",
     "ResearchTaskMismatchError",
+    "ResearchTimeoutError",
     "RPCError",
     "RPCResponseTooLargeError",
     "RPCTimeoutError",
@@ -411,6 +413,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "SourceTimeoutError",
     "UnknownRPCMethodError",
     "ValidationError",
+    "WaitTimeoutError",
 ]
 
 _TYPES_PRIVATE_HELPER_SEAMS = [

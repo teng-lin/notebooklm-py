@@ -134,7 +134,7 @@ async def execute_source_add_research(
             plan.notebook_id,
             task_id=task_id,
             timeout=float(plan.timeout),
-            interval=float(_POLL_INTERVAL_S),
+            initial_interval=float(_POLL_INTERVAL_S),
         )
     except TimeoutError:
         return SourceAddResearchResult(

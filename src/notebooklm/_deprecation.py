@@ -8,12 +8,29 @@ every deprecated call site.
 This is an implementation module. There is no public surface here; the public
 deprecation *policy* (what is deprecated, since when, removal target) is
 documented in ``docs/deprecations.md``.
+
+Two families live here:
+
+* ``warn_get_returns_none`` — marks ``<resource>.get()`` returning ``None`` on
+  a miss as deprecated (issue #1247).
+* ``deprecated_kwarg`` — the keyword-alias pattern used when a public method
+  renames a parameter but keeps the old name working for one MINOR cycle. The
+  canonical case is the wait/poll timeout standardization (issue #1208):
+  ``ResearchAPI.wait_for_completion`` renamed ``interval`` to
+  ``initial_interval`` (matching ``SourcesAPI.wait_until_ready`` /
+  ``ArtifactsAPI.wait_for_completion``) and accepts the old name as a
+  deprecated alias removed in v0.8.0.
+
+Both families share the single ``NOTEBOOKLM_QUIET_DEPRECATIONS`` suppression
+gate (read live, never cached) and a parameterized ``stacklevel`` so the
+warning's ``filename``/``lineno`` point at the *user's* call site.
 """
 
 from __future__ import annotations
 
 import os
 import warnings
+from typing import TypeVar
 
 # Suppression gate. Setting ``NOTEBOOKLM_QUIET_DEPRECATIONS`` to a truthy value
 # silences the warnings emitted through this module. This re-activates the
@@ -28,11 +45,30 @@ _QUIET_ENV_VAR = "NOTEBOOKLM_QUIET_DEPRECATIONS"
 # ``docs/deprecations.md`` so callers can find the migration guidance.
 GET_RETURNS_NONE_FLIP_ISSUE = 1247
 
+# Canonical removal target for the kwarg aliases introduced by issue #1208.
+# Kept as a module constant so the message text and the docs stay in lockstep
+# and the release gate has a single string to scan. Warns in 0.7.0, removed in
+# 0.8.0.
+DEFAULT_REMOVAL = "0.8.0"
+
+_T = TypeVar("_T")
+
 
 def _deprecations_quiet() -> bool:
     """Return ``True`` when deprecation warnings are suppressed via env var."""
     raw = os.environ.get(_QUIET_ENV_VAR, "")
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def deprecations_quiet() -> bool:
+    """Public alias for :func:`_deprecations_quiet`.
+
+    ``NOTEBOOKLM_QUIET_DEPRECATIONS=1`` (or any truthy ``1``/``true``/``yes``/
+    ``on`` spelling, case-insensitive) silences the ``DeprecationWarning``
+    emitted by :func:`deprecated_kwarg`. Any other value — including unset —
+    leaves the warning enabled.
+    """
+    return _deprecations_quiet()
 
 
 def _not_found_error_exists(exc_name: str) -> bool:
@@ -92,3 +128,78 @@ def warn_get_returns_none(resource: str, *, removal: str = "0.8.0") -> None:
     # the user's call site (3). Points the warning's filename/lineno at the
     # caller that wrote ``await client.<resource>s.get(...)``.
     warnings.warn(message, DeprecationWarning, stacklevel=3)
+
+
+def deprecated_kwarg(
+    old_value: _T | None,
+    new_value: _T | None,
+    *,
+    old: str,
+    new: str,
+    owner: str,
+    removal: str = DEFAULT_REMOVAL,
+    sentinel: object = None,
+    stacklevel: int = 3,
+) -> _T | None:
+    """Resolve a renamed keyword, warning if the deprecated name was used.
+
+    Maps a deprecated keyword (``old``) onto its replacement (``new``) for a
+    single public method. Returns the value that the method should actually
+    use, after emitting a :class:`DeprecationWarning` when (and only when) the
+    caller passed the deprecated name.
+
+    Args:
+        old_value: The value the caller passed for the deprecated keyword, or
+            ``sentinel`` when the caller did not pass it.
+        new_value: The value the caller passed for the canonical keyword, or
+            ``sentinel`` when the caller did not pass it.
+        old: Name of the deprecated keyword (for messages), e.g. ``"interval"``.
+        new: Name of the canonical replacement keyword, e.g.
+            ``"initial_interval"``.
+        owner: Human-readable owner of the parameter for the warning message,
+            e.g. ``"ResearchAPI.wait_for_completion"``.
+        removal: Version in which the deprecated keyword is removed. Defaults
+            to v0.8.0. Named in the warning text so the release gate can verify
+            it is never the shipping version.
+        sentinel: The "not provided" marker for both ``old_value`` and
+            ``new_value``. Defaults to ``None``; pass a private sentinel object
+            when ``None`` is itself a meaningful value.
+        stacklevel: ``warnings.warn`` stacklevel. The default of ``3`` points
+            the warning at the caller of the public method (caller →
+            public method → this helper). Adjust when the helper is invoked
+            through additional wrapper frames.
+
+    Returns:
+        ``new_value`` when the caller used the canonical keyword; ``old_value``
+        when the caller used the deprecated keyword (after warning); otherwise
+        ``sentinel`` (neither provided — the method keeps its own default).
+
+    Raises:
+        TypeError: If the caller passed BOTH the deprecated and the canonical
+            keyword. They name the same concept, so two values is ambiguous.
+    """
+    new_provided = new_value is not sentinel
+    old_provided = old_value is not sentinel
+
+    if old_provided and new_provided:
+        raise TypeError(
+            f"{owner}() received both {new!r} and the deprecated alias {old!r}; pass only {new!r}."
+        )
+
+    if old_provided:
+        if not _deprecations_quiet():
+            warnings.warn(
+                (
+                    f"{owner}({old}=...) is deprecated and will be removed in "
+                    f"v{removal}; use {new}=... instead (same behavior). "
+                    f"Set {_QUIET_ENV_VAR}=1 to silence this warning."
+                ),
+                DeprecationWarning,
+                stacklevel=stacklevel,
+            )
+        return old_value
+
+    # Neither provided (``new_value`` already equals ``sentinel``) or only the
+    # canonical keyword was passed: return it directly so the static type stays
+    # ``_T | None`` rather than the widened ``object`` of ``sentinel``.
+    return new_value

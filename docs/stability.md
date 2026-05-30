@@ -80,6 +80,7 @@ ChatReference, ReportSuggestion, SuggestedTopic
 # Exceptions (all inherit from NotebookLMError)
 NotebookLMError                    # Base exception
 NotFoundError                      # Cross-domain umbrella for *NotFoundError
+WaitTimeoutError                   # Cross-domain umbrella for wait/poll timeouts (also a built-in TimeoutError)
 RPCError, AuthError, RateLimitError, RPCTimeoutError, ServerError
 NetworkError, DecodingError, UnknownRPCMethodError
 ClientError, ConfigurationError, ValidationError
@@ -87,10 +88,15 @@ ClientError, ConfigurationError, ValidationError
 # Note: *NotFoundError classes mix in RPCError (catchable as either RPCError
 # or the domain base). v0.6.0 restored this symmetry across all three "not
 # found" types — see docs/python-api.md#error-handling for migration prose.
+# Note: *TimeoutError classes mix in WaitTimeoutError (and the built-in
+# TimeoutError). v0.7.0 added the WaitTimeoutError umbrella so `except
+# WaitTimeoutError` catches source/artifact/research wait timeouts uniformly,
+# while `except TimeoutError` keeps working — see docs/python-api.md#waittimeouterror.
 SourceError, SourceAddError, SourceProcessingError, SourceTimeoutError, SourceNotFoundError
 NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactFeatureUnavailableError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
 ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError
+ResearchError, ResearchTimeoutError, ResearchTaskMismatchError
 ChatError
 
 # Enums

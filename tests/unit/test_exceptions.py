@@ -28,6 +28,9 @@ from notebooklm.exceptions import (
     NotebookNotFoundError,
     NotFoundError,
     RateLimitError,
+    ResearchError,
+    ResearchTaskMismatchError,
+    ResearchTimeoutError,
     RPCError,
     RPCTimeoutError,
     ServerError,
@@ -38,6 +41,7 @@ from notebooklm.exceptions import (
     SourceTimeoutError,
     UnknownRPCMethodError,
     ValidationError,
+    WaitTimeoutError,
 )
 from notebooklm.types import AccountLimits, AccountTier, GenerationStatus
 
@@ -351,6 +355,97 @@ class TestNotFoundErrorUmbrella:
             SourceNotFoundError,
             ArtifactNotFoundError,
         ]
+
+
+class TestWaitTimeoutErrorUmbrella:
+    """The WaitTimeoutError umbrella catches every wait/poll timeout.
+
+    Added in v0.7.0 (issue #1208). It is purely additive: it mixes in the
+    built-in :class:`TimeoutError`, so existing ``except TimeoutError`` clauses
+    keep catching every wait timeout, and it widens the inheritance of the
+    source / artifact / research timeout types without disturbing their
+    domain bases.
+    """
+
+    def test_umbrella_inherits_timeout_and_base(self):
+        assert issubclass(WaitTimeoutError, TimeoutError)
+        assert issubclass(WaitTimeoutError, NotebookLMError)
+
+    def test_all_wait_timeouts_subclass_umbrella(self):
+        for exc_class in (
+            SourceTimeoutError,
+            ArtifactTimeoutError,
+            ArtifactPendingTimeoutError,
+            ArtifactInProgressTimeoutError,
+            ResearchTimeoutError,
+        ):
+            assert issubclass(exc_class, WaitTimeoutError), exc_class.__name__
+            # Still a built-in TimeoutError (backward-compatible catchability).
+            assert issubclass(exc_class, TimeoutError), exc_class.__name__
+
+    def test_domain_bases_unchanged(self):
+        """Widening to WaitTimeoutError must not disturb the domain bases."""
+        assert issubclass(SourceTimeoutError, SourceError)
+        assert issubclass(ArtifactTimeoutError, ArtifactError)
+        assert issubclass(ResearchTimeoutError, ResearchError)
+        assert issubclass(ResearchError, NotebookLMError)
+
+    def test_umbrella_catches_source_artifact_research(self):
+        """One ``except WaitTimeoutError`` clause catches all three domains."""
+        caught: list[type] = []
+        for exc in (
+            SourceTimeoutError("src-1", 12.0),
+            ArtifactTimeoutError("nb-1", "task-1", 30.0),
+            ResearchTimeoutError("nb-1", "task-1", 60.0),
+        ):
+            try:
+                raise exc
+            except WaitTimeoutError as e:
+                caught.append(type(e))
+        assert caught == [
+            SourceTimeoutError,
+            ArtifactTimeoutError,
+            ResearchTimeoutError,
+        ]
+
+    def test_builtin_timeout_error_still_catches_all(self):
+        """Backward compatibility: ``except TimeoutError`` still works."""
+        for exc in (
+            SourceTimeoutError("src-1", 12.0),
+            ArtifactTimeoutError("nb-1", "task-1", 30.0),
+            ResearchTimeoutError("nb-1", "task-1", 60.0),
+        ):
+            with pytest.raises(TimeoutError):
+                raise exc
+
+    def test_research_timeout_attributes(self):
+        err = ResearchTimeoutError("nb-1", "task-7", 60.0, last_status="in_progress")
+        assert err.notebook_id == "nb-1"
+        assert err.task_id == "task-7"
+        assert err.timeout == 60.0
+        assert err.timeout_seconds == 60.0
+        assert err.last_status == "in_progress"
+        assert "task-7" in str(err)
+        assert "in_progress" in str(err)
+
+    def test_research_task_mismatch_stays_validation_error(self):
+        """ResearchTaskMismatchError stays a ValidationError, not ResearchError.
+
+        It is a caller-input validation failure on ``import_sources``, so it
+        keeps its :class:`ValidationError` base and is deliberately NOT moved
+        under the new :class:`ResearchError` domain base.
+        """
+        assert issubclass(ResearchTaskMismatchError, ValidationError)
+        assert not issubclass(ResearchTaskMismatchError, ResearchError)
+        assert not issubclass(ResearchTaskMismatchError, WaitTimeoutError)
+
+    def test_umbrella_and_research_exports(self):
+        assert notebooklm.WaitTimeoutError is WaitTimeoutError
+        assert notebooklm.ResearchError is ResearchError
+        assert notebooklm.ResearchTimeoutError is ResearchTimeoutError
+        assert "WaitTimeoutError" in notebooklm.__all__
+        assert "ResearchError" in notebooklm.__all__
+        assert "ResearchTimeoutError" in notebooklm.__all__
 
 
 class TestRPCErrorAttributes:

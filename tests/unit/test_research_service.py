@@ -91,7 +91,7 @@ async def test_completed_returns_outcome_with_sources(base_plan):
     client.research.wait_for_completion.assert_awaited_once_with(
         "nb_123",
         timeout=5.0,
-        interval=1.0,
+        initial_interval=1.0,
     )
 
 
@@ -227,7 +227,7 @@ async def test_wait_delegates_timeout_and_interval_to_library():
     client.research.wait_for_completion.assert_awaited_once_with(
         "nb_123",
         timeout=10.0,
-        interval=1.0,
+        initial_interval=1.0,
     )
 
 

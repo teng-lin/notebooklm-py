@@ -172,13 +172,15 @@ def _make_client(extra_setup=None) -> MagicMock:
         *,
         timeout: float = 1800,
         interval: float = 5,
+        initial_interval: float | None = None,
     ) -> dict:
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
-        if interval <= 0:
-            raise ValueError("interval must be positive")
+        effective_interval = initial_interval if initial_interval is not None else interval
+        if effective_interval <= 0:
+            raise ValueError("initial_interval must be positive")
         pinned_task_id = task_id
-        attempts = max(1, math.ceil(timeout / interval) + 1)
+        attempts = max(1, math.ceil(timeout / effective_interval) + 1)
         status = {"status": "no_research"}
         for _ in range(attempts):
             status = await client.research.poll(notebook_id, task_id=pinned_task_id)

@@ -262,7 +262,7 @@ class TestResearch:
                 result = await client.research.wait_for_completion(
                     "nb_123",
                     timeout=10,
-                    interval=1,
+                    initial_interval=1,
                 )
 
         assert result["status"] == "completed"
@@ -310,7 +310,7 @@ class TestResearch:
                     "nb_123",
                     task_id="task_A",
                     timeout=10,
-                    interval=1,
+                    initial_interval=1,
                 )
 
         assert result["status"] == "completed"
@@ -328,7 +328,7 @@ class TestResearch:
             result = await client.research.wait_for_completion(
                 "nb_123",
                 timeout=10,
-                interval=1,
+                initial_interval=1,
             )
 
         assert result == {"status": "no_research", "tasks": []}
@@ -369,7 +369,7 @@ class TestResearch:
                 "nb_123",
                 task_id="task_123",
                 timeout=10,
-                interval=1,
+                initial_interval=1,
             )
 
         assert result["status"] == "completed"
@@ -402,7 +402,7 @@ class TestResearch:
                 "nb_123",
                 task_id="task_123",
                 timeout=10,
-                interval=1,
+                initial_interval=1,
             )
 
         assert result["status"] == "failed"
@@ -430,21 +430,100 @@ class TestResearch:
         )
         httpx_mock.add_response(content=response_body.encode(), method="POST")
 
+        from notebooklm.exceptions import ResearchTimeoutError, WaitTimeoutError
+
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(TimeoutError, match="task_123"):
+            # Raises the domain ResearchTimeoutError, which is catchable via the
+            # WaitTimeoutError umbrella AND the built-in TimeoutError.
+            with pytest.raises(ResearchTimeoutError, match="task_123") as exc_info:
                 await client.research.wait_for_completion(
                     "nb_123",
                     timeout=0,
-                    interval=1,
+                    initial_interval=1,
                 )
+            assert isinstance(exc_info.value, WaitTimeoutError)
+            assert isinstance(exc_info.value, TimeoutError)
+            assert exc_info.value.task_id == "task_123"
+            assert exc_info.value.timeout == 0
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_rejects_invalid_budget(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(ValueError, match="timeout must be non-negative"):
                 await client.research.wait_for_completion("nb_123", timeout=-1)
-            with pytest.raises(ValueError, match="interval must be positive"):
-                await client.research.wait_for_completion("nb_123", interval=0)
+            with pytest.raises(ValueError, match="initial_interval must be positive"):
+                await client.research.wait_for_completion("nb_123", initial_interval=0)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_interval_alias_deprecated(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """The legacy ``interval`` kwarg still works but emits a warning."""
+        response_body = build_rpc_response(
+            RPCMethod.POLL_RESEARCH,
+            [
+                [
+                    [
+                        "task_123",
+                        _build_research_task_payload(
+                            "query",
+                            "https://example.com",
+                            "Result",
+                            status_code=1,
+                        ),
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.warns(DeprecationWarning, match="initial_interval"):
+                with pytest.raises(TimeoutError):
+                    await client.research.wait_for_completion(
+                        "nb_123",
+                        timeout=0,
+                        interval=1,
+                    )
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_default_shape_is_silent(
+        self, auth_tokens, httpx_mock, build_rpc_response, recwarn
+    ):
+        """Default-shape calls (no interval kwarg) emit no deprecation warning."""
+        response_body = build_rpc_response(
+            RPCMethod.POLL_RESEARCH,
+            [
+                [
+                    [
+                        "task_123",
+                        _build_research_task_payload(
+                            "query",
+                            "https://example.com",
+                            "Result",
+                            status_code=1,
+                        ),
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(TimeoutError):
+                await client.research.wait_for_completion("nb_123", timeout=0)
+        assert not [w for w in recwarn.list if issubclass(w.category, DeprecationWarning)]
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_both_intervals_raises(self, auth_tokens):
+        """Passing both ``interval`` and ``initial_interval`` raises TypeError."""
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(TypeError, match="both 'initial_interval'"):
+                await client.research.wait_for_completion(
+                    "nb_123",
+                    interval=2,
+                    initial_interval=3,
+                )
 
     @pytest.mark.asyncio
     async def test_import_research(self, auth_tokens, httpx_mock, build_rpc_response):

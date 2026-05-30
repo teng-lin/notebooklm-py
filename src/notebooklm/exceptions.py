@@ -70,6 +70,7 @@ __all__ = [
     "NotebookLMError",
     # Cross-domain umbrellas
     "NotFoundError",
+    "WaitTimeoutError",
     # Validation/Config
     "ValidationError",
     "ConfigurationError",
@@ -113,6 +114,8 @@ __all__ = [
     "ArtifactPendingTimeoutError",
     "ArtifactInProgressTimeoutError",
     # Domain: Research
+    "ResearchError",
+    "ResearchTimeoutError",
     "ResearchTaskMismatchError",
 ]
 
@@ -173,6 +176,43 @@ class NotFoundError(NotebookLMError):
         for migration guidance (the broad ``except RPCError`` clause now
         intercepts a missing source / artifact that previously fell
         through to the specific ``*NotFoundError`` handler).
+    """
+
+
+class WaitTimeoutError(NotebookLMError, TimeoutError):
+    """Common base for *wait/poll* timeouts across the library.
+
+    Every ``wait_*`` / polling method that gives up after a time budget raises
+    a subclass of this umbrella, so callers can catch any wait timeout — source
+    readiness, artifact generation, or research completion — in one clause::
+
+        try:
+            await client.sources.wait_until_ready(nb_id, src_id)
+            await client.artifacts.wait_for_completion(nb_id, task_id)
+            await client.research.wait_for_completion(nb_id, task_id)
+        except WaitTimeoutError as e:
+            # Catches SourceTimeoutError, ArtifactTimeoutError (and its
+            # pending/in-progress subclasses), and ResearchTimeoutError.
+            handle_wait_timeout(e)
+
+    ``WaitTimeoutError`` also mixes in the built-in :class:`TimeoutError`, so
+    existing ``except TimeoutError`` clauses keep catching every wait timeout
+    exactly as before — this umbrella is *additive*. It widens the inheritance
+    of :class:`SourceTimeoutError`, :class:`ArtifactTimeoutError` (and its
+    :class:`ArtifactPendingTimeoutError` / :class:`ArtifactInProgressTimeoutError`
+    subclasses), and :class:`ResearchTimeoutError`; their existing domain bases
+    (``SourceError`` / ``ArtifactError`` / ``ResearchError``) are unchanged, so
+    every prior ``except`` clause continues to work.
+
+    .. note::
+
+        Added in v0.7.0. ``ArtifactsAPI.wait_for_completion`` and
+        ``ResearchAPI.wait_for_completion`` previously raised
+        :class:`ArtifactTimeoutError` (already a ``TimeoutError``) and the bare
+        built-in :class:`TimeoutError` respectively. Routing the research path
+        through :class:`ResearchTimeoutError` (a ``WaitTimeoutError`` and thus
+        still a ``TimeoutError``) is backward-compatible for ``except
+        TimeoutError`` callers and newly catchable via the umbrella.
     """
 
 
@@ -865,8 +905,13 @@ class SourceProcessingError(SourceError):
         super().__init__(msg)
 
 
-class SourceTimeoutError(SourceError):
+class SourceTimeoutError(WaitTimeoutError, SourceError):
     """Timed out waiting for source readiness.
+
+    Inherits from :class:`WaitTimeoutError` (and therefore the built-in
+    :class:`TimeoutError`) in addition to :class:`SourceError`. The
+    ``WaitTimeoutError`` mixin is additive: ``except SourceError`` and the new
+    ``except WaitTimeoutError`` / ``except TimeoutError`` clauses all catch it.
 
     Attributes:
         source_id: The ID of the source.
@@ -1069,13 +1114,15 @@ class ArtifactFeatureUnavailableError(RPCError, ArtifactError):
         )
 
 
-class ArtifactTimeoutError(ArtifactError, TimeoutError):
+class ArtifactTimeoutError(ArtifactError, WaitTimeoutError):
     """Artifact generation did not reach a terminal state before timeout.
 
     The exception remains catchable as built-in :class:`TimeoutError` for
-    backward compatibility, while exposing structured fields for callers that
-    need to distinguish queued tasks from tasks that started but did not
-    complete.
+    backward compatibility (via the :class:`WaitTimeoutError` umbrella, which
+    mixes in ``TimeoutError``), and is now also catchable via
+    ``except WaitTimeoutError`` alongside source and research wait timeouts,
+    while exposing structured fields for callers that need to distinguish
+    queued tasks from tasks that started but did not complete.
 
     Attributes:
         notebook_id: Notebook containing the artifact task.
@@ -1176,6 +1223,60 @@ class ArtifactInProgressTimeoutError(ArtifactTimeoutError):
 # =============================================================================
 # Domain: Research
 # =============================================================================
+
+
+class ResearchError(NotebookLMError):
+    """Base for research operations.
+
+    Added in v0.7.0 to give the research domain a catchable base mirroring
+    :class:`SourceError` / :class:`ArtifactError`. :class:`ResearchTimeoutError`
+    inherits from it (and from :class:`WaitTimeoutError`).
+
+    ``ResearchTaskMismatchError`` deliberately does NOT inherit from this base:
+    it remains a :class:`ValidationError` so existing ``except ValidationError``
+    clauses on :meth:`ResearchAPI.import_sources` keep catching it unchanged.
+    """
+
+
+class ResearchTimeoutError(WaitTimeoutError, ResearchError):
+    """Research task did not reach a terminal state before timeout.
+
+    Raised by :meth:`ResearchAPI.wait_for_completion` when the research task
+    does not reach ``completed`` / ``failed`` within the wait budget.
+
+    Inherits from :class:`WaitTimeoutError` (and therefore the built-in
+    :class:`TimeoutError`) and :class:`ResearchError`. Before v0.7.0 this path
+    raised the bare built-in :class:`TimeoutError`; routing it through this
+    subclass is backward-compatible for ``except TimeoutError`` callers and
+    newly catchable via ``except WaitTimeoutError`` / ``except ResearchError``.
+
+    Attributes:
+        notebook_id: Notebook containing the research task.
+        task_id: The research task ID (``"unknown"`` when no task id was
+            resolved before the timeout).
+        timeout: Wait budget in seconds.
+        timeout_seconds: Alias for ``timeout``.
+        last_status: Last observed research status before timeout.
+    """
+
+    def __init__(
+        self,
+        notebook_id: str,
+        task_id: str,
+        timeout: float,
+        *,
+        last_status: str | None = None,
+    ):
+        self.notebook_id = notebook_id
+        self.task_id = task_id
+        self.timeout = timeout
+        self.timeout_seconds = timeout
+        self.last_status = last_status
+        status_info = f" (last status: {last_status})" if last_status is not None else ""
+        super().__init__(
+            f"Research task {task_id} in notebook {notebook_id} timed out "
+            f"after {timeout}s{status_info}"
+        )
 
 
 class ResearchTaskMismatchError(ValidationError):

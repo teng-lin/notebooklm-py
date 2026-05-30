@@ -15,12 +15,14 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
+from ._deprecation import deprecated_kwarg
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import ResearchSource, ResearchTask, parse_research_task_models
 from ._runtime_contracts import RpcCaller
 from .exceptions import (
     NetworkError,
     ResearchTaskMismatchError,
+    ResearchTimeoutError,
     RPCError,
     RPCTimeoutError,
     ValidationError,
@@ -36,6 +38,19 @@ __all__ = ["CitedSourceSelection", "ResearchAPI"]
 logger = logging.getLogger(__name__)
 
 ResearchSourceInput = ResearchSource | Mapping[str, Any]
+
+# Sentinel marking "the canonical ``initial_interval`` keyword was not passed"
+# in ``wait_for_completion``. The deprecated ``interval`` keyword keeps its
+# original default of ``5`` (so the public-API compatibility audit sees an
+# unchanged signature), while ``initial_interval`` is a newly-added keyword
+# that defaults to this sentinel. Resolution prefers ``initial_interval`` when
+# the caller supplied it and otherwise falls back to ``interval``.
+_INITIAL_INTERVAL_UNSET: Any = object()
+
+# Original default cadence for the legacy ``interval`` keyword (seconds between
+# status checks). Preserved verbatim so default-shape callers keep the same
+# behavior and the API-compat audit sees no default change.
+_DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +441,7 @@ class ResearchAPI:
         *,
         timeout: float = 1800,
         interval: float = 5,
+        initial_interval: float = _INITIAL_INTERVAL_UNSET,
     ) -> dict[str, Any]:
         """Poll until research reaches a terminal state or times out.
 
@@ -439,7 +455,15 @@ class ResearchAPI:
             task_id: Optional research task discriminator. Pass the value
                 returned by :meth:`start` when available.
             timeout: Maximum seconds to wait.
-            interval: Seconds between status checks.
+            initial_interval: Seconds between status checks (default: 5). This
+                is the canonical poll-interval keyword, matching
+                :meth:`SourcesAPI.wait_until_ready` and
+                :meth:`ArtifactsAPI.wait_for_completion`.
+            interval: **Deprecated** alias for ``initial_interval`` (removed in
+                v0.8.0). Passing a non-default value emits a
+                :class:`DeprecationWarning`; passing both a non-default
+                ``interval`` and an explicit ``initial_interval`` raises
+                :class:`TypeError`. Default-shape calls stay silent.
 
         Returns:
             The final :meth:`poll` result for ``completed`` or ``failed``
@@ -448,15 +472,41 @@ class ResearchAPI:
             live-API state before the task appears in ``POLL_RESEARCH``.
 
         Raises:
-            TimeoutError: If research does not reach a terminal status before
-                ``timeout`` elapses.
-            ValueError: If ``timeout`` is negative or ``interval`` is not
+            ResearchTimeoutError: If research does not reach a terminal status
+                before ``timeout`` elapses. Subclass of
+                :class:`WaitTimeoutError` and the built-in :class:`TimeoutError`,
+                so ``except TimeoutError`` continues to catch it.
+            ValueError: If ``timeout`` is negative or the poll interval is not
                 positive.
+            TypeError: If both a non-default ``interval`` and an explicit
+                ``initial_interval`` are passed.
         """
+        # ``interval`` keeps its original default of ``5`` so the public-API
+        # compatibility audit sees no signature change; we treat it as
+        # "provided" only when the caller changed it from that default. This
+        # keeps default-shape calls silent while still warning on legacy use.
+        legacy_interval: Any = (
+            interval if interval != _DEFAULT_RESEARCH_POLL_INTERVAL else _INITIAL_INTERVAL_UNSET
+        )
+        resolved_interval = deprecated_kwarg(
+            legacy_interval,
+            initial_interval,
+            old="interval",
+            new="initial_interval",
+            owner="ResearchAPI.wait_for_completion",
+            sentinel=_INITIAL_INTERVAL_UNSET,
+            stacklevel=3,
+        )
+        poll_interval: float = (
+            _DEFAULT_RESEARCH_POLL_INTERVAL
+            if not isinstance(resolved_interval, (int, float))
+            else float(resolved_interval)
+        )
+
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
-        if interval <= 0:
-            raise ValueError("interval must be positive")
+        if poll_interval <= 0:
+            raise ValueError("initial_interval must be positive")
 
         loop = asyncio.get_running_loop()
         start = loop.time()
@@ -482,12 +532,14 @@ class ResearchAPI:
             elapsed = loop.time() - start
             if elapsed >= timeout:
                 task_label = pinned_task_id or "unknown"
-                raise TimeoutError(
-                    f"Research task {task_label} timed out after {timeout}s "
-                    f"(last status: {status_val})"
+                raise ResearchTimeoutError(
+                    notebook_id,
+                    task_label,
+                    timeout,
+                    last_status=status_val,
                 )
 
-            sleep_for = min(interval, timeout - elapsed)
+            sleep_for = min(poll_interval, timeout - elapsed)
             if sleep_for > 0:
                 await asyncio.sleep(sleep_for)
 

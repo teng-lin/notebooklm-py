@@ -88,7 +88,9 @@ from .exceptions import (
     NotFoundError,
     RateLimitError,
     # Domain: Research
+    ResearchError,
     ResearchTaskMismatchError,
+    ResearchTimeoutError,
     RPCError,
     RPCResponseTooLargeError,
     RPCTimeoutError,
@@ -101,6 +103,8 @@ from .exceptions import (
     SourceTimeoutError,
     UnknownRPCMethodError,
     ValidationError,
+    # Cross-domain umbrellas (wait/poll timeouts)
+    WaitTimeoutError,
 )
 
 # Public API: Types and dataclasses
@@ -239,7 +243,11 @@ __all__ = [
     "ArtifactPendingTimeoutError",
     "ArtifactInProgressTimeoutError",
     # Domain Exceptions: Research
+    "ResearchError",
+    "ResearchTimeoutError",
     "ResearchTaskMismatchError",
+    # Cross-domain umbrella: wait/poll timeouts
+    "WaitTimeoutError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)

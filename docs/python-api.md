@@ -233,7 +233,9 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `SourceNotFoundError` | `NotFoundError`, `RPCError`, `SourceError`, `NotebookLMError` |
 | `ArtifactNotFoundError` | `NotFoundError`, `RPCError`, `ArtifactError`, `NotebookLMError` |
 | `ArtifactFeatureUnavailableError` | `RPCError`, `ArtifactError`, `NotebookLMError` |
-| `ArtifactTimeoutError` | `TimeoutError`, `ArtifactError`, `NotebookLMError` |
+| `SourceTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `SourceError`, `NotebookLMError` |
+| `ArtifactTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ArtifactError`, `NotebookLMError` |
+| `ResearchTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ResearchError`, `NotebookLMError` |
 
 Use the table to pick the right level of catch. `client.sources.get(...)`,
 `client.artifacts.get(...)`, and `client.notes.get(...)` currently return
@@ -266,6 +268,36 @@ patterns without parsing the message.
 The CLI defaults to longer wait budgets for media generation (`audio`: 1200s,
 `video`: 1800s, `cinematic-video`: 3600s). In Python, pass the same budget
 explicitly with `wait_for_completion(..., timeout=...)`.
+
+##### WaitTimeoutError
+
+`WaitTimeoutError` (added in v0.7.0) is the cross-domain umbrella for every
+`wait_*` / polling timeout. It mixes in the built-in `TimeoutError`, so
+existing `except TimeoutError` clauses keep working unchanged, and it is the
+common base of `SourceTimeoutError`, `ArtifactTimeoutError` (and its
+`ArtifactPendingTimeoutError` / `ArtifactInProgressTimeoutError` subclasses),
+and `ResearchTimeoutError`. Catch it once to handle a wait timeout from any
+domain in a single clause:
+
+```python
+from notebooklm import WaitTimeoutError
+
+try:
+    ready = await client.sources.wait_until_ready(nb_id, src_id)
+    status = await client.artifacts.wait_for_completion(nb_id, task_id)
+    result = await client.research.wait_for_completion(nb_id, research_task_id)
+except WaitTimeoutError as exc:
+    # Catches SourceTimeoutError, ArtifactTimeoutError, ResearchTimeoutError.
+    log.warning("wait timed out: %s", exc)
+```
+
+`ResearchAPI.wait_for_completion` previously raised the bare built-in
+`TimeoutError`; it now raises `ResearchTimeoutError`, which is a
+`WaitTimeoutError` (and therefore still a `TimeoutError`), so the change is
+backward-compatible. The poll cadence keyword on that method is now
+`initial_interval=` (matching the source/artifact waiters); the old `interval=`
+keyword still works with a `DeprecationWarning` and is removed in v0.8.0 — see
+[deprecations](deprecations.md#migration-researchapiwait_for_completion-poll-interval-keyword).
 
 ##### Catching any "not found" across domains
 
@@ -1363,7 +1395,7 @@ if result.references:
 |--------|------------|---------|-------------|
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `dict \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `dict` | Check research status |
-| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls |
+| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.8.0). |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
 
 **Method Signatures:**
@@ -1405,7 +1437,8 @@ async def wait_for_completion(
     task_id: str | None = None,
     *,
     timeout: float = 1800,
-    interval: float = 5,
+    initial_interval: float = 5,   # canonical poll-cadence keyword
+    interval: float = 5,           # DEPRECATED alias for initial_interval (removed in v0.8.0)
 ) -> dict:
     """
     Loops on poll() until research returns "completed" / "failed" or the
@@ -1416,7 +1449,13 @@ async def wait_for_completion(
     the same notebook cannot cross-wire results.
 
     Returns: final poll() dict.
-    Raises: TimeoutError on timeout; ValueError for invalid timeout/interval.
+    Raises:
+      - ResearchTimeoutError on timeout (a WaitTimeoutError and a built-in
+        TimeoutError, so `except TimeoutError` / `except WaitTimeoutError`
+        both catch it).
+      - ValueError for invalid timeout or non-positive poll interval.
+      - TypeError if both the deprecated `interval=` and `initial_interval=`
+        are passed.
     """
 
 async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) -> list[dict]:
@@ -1458,7 +1497,7 @@ status = await client.research.wait_for_completion(
     nb_id,
     task_id=task_id,
     timeout=1800,
-    interval=5,
+    initial_interval=5,  # canonical keyword; `interval=` is a deprecated alias
 )
 
 # Import discovered sources (using the same task_id discriminator)

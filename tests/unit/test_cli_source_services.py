@@ -212,7 +212,7 @@ async def test_source_add_research_waits_with_started_task_id_and_imports(
         "nb_1",
         task_id="task_123",
         timeout=30.0,
-        interval=5.0,
+        initial_interval=5.0,
     )
     import_research_sources.assert_awaited_once_with(
         client,
@@ -577,7 +577,7 @@ async def test_source_add_research_delegates_timeout_budget_to_research_api() ->
         "nb_1",
         task_id="task_123",
         timeout=6.0,
-        interval=5.0,
+        initial_interval=5.0,
     )
 
 

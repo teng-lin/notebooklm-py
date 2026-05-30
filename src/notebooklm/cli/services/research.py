@@ -139,7 +139,7 @@ async def execute_research_wait(
             status = await client.research.wait_for_completion(
                 nb_id_resolved,
                 timeout=float(plan.timeout),
-                interval=float(plan.interval),
+                initial_interval=float(plan.interval),
             )
         except TimeoutError:
             return ResearchWaitResult(

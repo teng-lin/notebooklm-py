@@ -140,7 +140,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_REFRESH_PROFILE` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; names the resolved profile being refreshed | resolved profile |
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; path to the `storage_state.json` file the command must rewrite | resolved storage path |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
-| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the `get()`-returns-`None` `DeprecationWarning` (`sources.get` / `artifacts.get` / `notes.get` returning `None` on a miss; see `docs/deprecations.md`). Set to a truthy value (`1` / `true` / `yes` / `on`, case-insensitive) to silence it. | (warning emitted) |
+| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the project's public-API `DeprecationWarning`s: the `get()`-returns-`None` warning (`sources.get` / `artifacts.get` / `notes.get` on a miss) and deprecated keyword aliases (e.g. `ResearchAPI.wait_for_completion(interval=...)`). Set to a truthy value (`1` / `true` / `yes` / `on`, case-insensitive) to silence them; see `docs/deprecations.md`. | (warnings emitted) |
 | `NOTEBOOKLM_VCR_RECORD_ERRORS` | Synthetic-error injection mode for VCR test cassettes (`429`, `5xx`, `expired_csrf`) | - |
 
 ### Public config API vs internal resolvers
@@ -174,7 +174,7 @@ be audited from one location.
 | `NOTEBOOKLM_DEBUG_RPC` | Legacy alias that sets the package logger to `DEBUG`. Prefer `NOTEBOOKLM_LOG_LEVEL=DEBUG` for new code. | (See `NOTEBOOKLM_LOG_LEVEL`.) | `_logging.configure_logging` |
 | `NOTEBOOKLM_NOTEBOOK` | Default notebook ID when no `-n/--notebook` flag is passed. Composes with `notebooklm use <id>` so per-shell overrides do not clobber the persisted active-notebook context. | `-n/--notebook` flag → `NOTEBOOKLM_NOTEBOOK` → active context (from `notebooklm use`) → error | `cli.helpers.require_notebook` (Click also reads it natively via `cli/options.py:notebook_option`'s `envvar=`) |
 | `NOTEBOOKLM_RPC_OVERRIDES` | **JSON object** mapping `RPCMethod` enum names to RPC ID strings (e.g. `{"LIST_NOTEBOOKS": "AbC123"}`). Overrides runtime RPC IDs — community self-patch when Google rotates a method ID. Empty string / unset disables the mechanism; invalid JSON or non-object payloads emit a `WARNING` and are ignored. | Process env, evaluated per RPC resolve (cached on the raw env string). | `notebooklm.rpc.overrides._parse_rpc_overrides` |
-| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the `get()`-returns-`None` `DeprecationWarning`. When `sources.get` / `artifacts.get` / `notes.get` are about to return `None` for a missing entity, they emit a `DeprecationWarning` (the methods will raise `*NotFoundError` instead in v0.8.0; see `docs/deprecations.md`). Set to a truthy value (`1` / `true` / `yes` / `on`) to silence it. | (warning emitted) | `_deprecation._deprecations_quiet` |
+| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the project's public-API `DeprecationWarning`s. Two families are gated: (1) the `get()`-returns-`None` warning, emitted when `sources.get` / `artifacts.get` / `notes.get` are about to return `None` for a missing entity (these will raise `*NotFoundError` instead in v0.8.0); and (2) deprecated keyword aliases (e.g. `ResearchAPI.wait_for_completion(interval=...)` → `initial_interval=...`) — the keyword still works, only its warning is silenced. Set to a truthy value (`1` / `true` / `yes` / `on`) to silence them. See `docs/deprecations.md`. | (warnings emitted) | `_deprecation._deprecations_quiet` / `deprecations_quiet` |
 | `NOTEBOOKLM_STRICT_DECODE` | **Retired (ignored since v0.7.0).** Strict decoding is the only mode — `safe_index` always raises `UnknownRPCMethodError` on schema drift. The former `0` warn-and-fallback opt-out was removed; setting the variable has no effect. | (ignored) | — |
 | `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
 | `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
@@ -191,8 +191,11 @@ be audited from one location.
 `NOTEBOOKLM_STRICT_DECODE` is ignored as of v0.7.0 (strict decoding is the
 only mode); no value changes decoder behavior.
 `NOTEBOOKLM_QUIET_DEPRECATIONS` treats `1` / `true` / `yes` / `on`
-(case-insensitive) as truthy to suppress the `get()`-returns-`None`
-`DeprecationWarning`; everything else leaves the warning enabled.
+(case-insensitive) as truthy; any other value (including unset) leaves
+deprecation warnings enabled. It silences the project's public-API
+`DeprecationWarning`s — the `get()`-returns-`None` warning and deprecated
+keyword aliases (e.g. `ResearchAPI.wait_for_completion`'s legacy `interval=`) —
+without changing their behavior.
 `NOTEBOOKLM_NOTEBOOK` is treated as unset when empty or whitespace-only so a
 bare `export NOTEBOOKLM_NOTEBOOK=` does not block `notebooklm use` /
 `-n/--notebook` from resolving.
@@ -307,23 +310,39 @@ back to `en`. For the generate commands, the resolution order is:
 
 ### NOTEBOOKLM_QUIET_DEPRECATIONS
 
-Suppresses the `get()`-returns-`None` `DeprecationWarning`. When
-`client.sources.get()`, `client.artifacts.get()`, or `client.notes.get()` are
-about to return `None` for a missing entity, they emit a `DeprecationWarning`
-on the miss. These methods will **raise** the matching `*NotFoundError`
-(`SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError`) instead
-in **v0.8.0** — see [`deprecations.md`](deprecations.md) for the migration
-(wrap the call in `try/except <Resource>NotFoundError`) and the flip tracking
-issue ([#1247](https://github.com/teng-lin/notebooklm-py/issues/1247)).
+Suppresses the project's public-API `DeprecationWarning`s while you migrate. Set
+it to a truthy value (`1`, `true`, `yes`, or `on`, case-insensitive) to silence
+them; any other value (including unset) leaves them enabled. Two families are
+gated:
 
-Set the variable to a truthy value (`1` / `true` / `yes` / `on`,
-case-insensitive) to silence the warning while you migrate; any other value (or
-leaving it unset) keeps the warning enabled. Successful lookups never warn — the
-deprecation fires only on a miss.
+1. **`get()`-returns-`None`.** When `client.sources.get()`,
+   `client.artifacts.get()`, or `client.notes.get()` are about to return `None`
+   for a missing entity, they emit a `DeprecationWarning` on the miss. These
+   methods will **raise** the matching `*NotFoundError` (`SourceNotFoundError` /
+   `ArtifactNotFoundError` / `NoteNotFoundError`) instead in **v0.8.0** — see
+   [`deprecations.md`](deprecations.md) for the migration (wrap the call in
+   `try/except <Resource>NotFoundError`) and the flip tracking issue
+   ([#1247](https://github.com/teng-lin/notebooklm-py/issues/1247)). Successful
+   lookups never warn — the deprecation fires only on a miss.
+2. **Deprecated keyword aliases.** When a public method renames a parameter, the
+   old keyword keeps working for one cycle and emits a `DeprecationWarning`. The
+   current gated alias is `ResearchAPI.wait_for_completion(interval=...)`,
+   deprecated in favor of `initial_interval=...` and removed in v0.8.0. The
+   keyword still resolves to its replacement; only the warning is silenced.
 
-> **Note:** this variable was previously a no-op (it once gated a since-removed
-> `source add --mime-type` notice). It is now wired to the `get()`-returns-`None`
-> deprecation above.
+The helper that reads this variable is
+`notebooklm._deprecation._deprecations_quiet` (public alias
+`deprecations_quiet`).
+
+```bash
+# Silence the project's public-API deprecation warnings while migrating
+export NOTEBOOKLM_QUIET_DEPRECATIONS=1
+```
+
+> Note: this variable does **not** affect `source add --mime-type` /
+> `client.sources.add_file(mime_type=...)` — `mime_type` is a supported
+> parameter and emits no warning. (It was previously a no-op that once gated a
+> since-removed `--mime-type` notice; it is now wired to the deprecations above.)
 
 ### Timeouts
 
