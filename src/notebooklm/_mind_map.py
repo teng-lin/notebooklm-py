@@ -82,4 +82,6 @@ class NoteBackedMindMapService:
                 content = self.extract_content(row) or ""
                 await self._notes.update_note(notebook_id, mind_map_id, content, new_title)
                 return
-        raise ValueError(f"Note-backed mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+        raise ValueError(
+            f"Note-backed mind map {mind_map_id!r} not found in notebook {notebook_id!r}"
+        )
