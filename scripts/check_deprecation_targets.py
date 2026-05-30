@@ -105,28 +105,7 @@ class _LapsedEntry:
         return (self.path, self.version)
 
 
-LAPSED_ALLOWLIST: tuple[_LapsedEntry, ...] = (
-    _LapsedEntry(
-        "src/notebooklm/_artifact_polling.py",
-        "0.6.0",
-        1213,
-        "poll_interval shim: removal target v0.6.0 already shipped; deleted by #1224.",
-    ),
-    _LapsedEntry(
-        "src/notebooklm/_sources.py",
-        "0.6.0",
-        1213,
-        "positional wait/wait_timeout shim: removal target v0.6.0 already shipped; "
-        "deleted by #1224.",
-    ),
-    _LapsedEntry(
-        "src/notebooklm/rpc/_safe_index.py",
-        "0.6.0",
-        1213,
-        "NOTEBOOKLM_STRICT_DECODE=0 soft-mode opt-out: removal target v0.6.0 already "
-        "shipped; deleted by #1224.",
-    ),
-)
+LAPSED_ALLOWLIST: tuple[_LapsedEntry, ...] = ()
 
 _ALLOWLIST_BY_KEY = {entry.key: entry for entry in LAPSED_ALLOWLIST}
 

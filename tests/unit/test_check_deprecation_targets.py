@@ -8,8 +8,9 @@ the version shipping it.
 Tests cover:
 
 * The gate is GREEN against the live repository tree (the lapsed v0.6.0 shims
-  are allowlisted via ``LAPSED_ALLOWLIST`` referencing #1213).
-* The allowlist entries reference the tracking issue (#1213).
+  were deleted by #1224, so ``LAPSED_ALLOWLIST`` is now empty and nothing
+  trips the gate).
+* Any allowlist entry is well-formed (cites a tracking issue and a version).
 * A synthetic offender naming the current version is caught (rc 1).
 * The ``removed in`` / ``will be removed in`` / ``scheduled for removal in``
   phrasings are all detected, with and without the ``v`` prefix.
@@ -87,13 +88,14 @@ def test_live_repository_passes_the_gate(script) -> None:
 
 
 def test_lapsed_allowlist_entries_are_well_formed(script) -> None:
-    """Every allowlist entry must cite a tracking issue and name a version.
+    """Any allowlist entry must cite a tracking issue and name a version.
 
-    Kept generic (positive int issue, non-empty version + reason) rather than
-    pinning the current ``#1213`` / ``0.6.0`` values so a future lapsed entry
-    for a different issue/version does not spuriously fail this guard.
+    The allowlist is legitimately empty once the lapsed shims are deleted (the
+    #1213 v0.6.0 entries were dropped when their tracking PR removed the
+    shims). When future lapsed shims are added back, each entry must still be
+    well-formed (positive int issue, non-empty version + reason, src path) —
+    kept generic rather than pinning specific issue/version values.
     """
-    assert script.LAPSED_ALLOWLIST, "allowlist unexpectedly empty"
     for entry in script.LAPSED_ALLOWLIST:
         assert isinstance(entry.issue, int) and entry.issue > 0, entry.path
         assert isinstance(entry.version, str) and entry.version, entry.path
