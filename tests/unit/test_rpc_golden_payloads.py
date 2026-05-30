@@ -1098,7 +1098,14 @@ def _collect_drift_cases() -> list[tuple[str, RPCMethod, dict[str, Any]]]:
     """
     collected: list[tuple[str, RPCMethod, dict[str, Any]]] = []
     for method in ALL_METHODS:
-        fixture = _load_fixture(method)
+        # Runs at import/collection time, so a missing or malformed fixture must
+        # not abort collection here — the dedicated guard tests
+        # (test_every_rpc_method_has_a_fixture / the schema checks) own those
+        # failures and emit far clearer messages than a collection-time crash.
+        try:
+            fixture = _load_fixture(method)
+        except (FileNotFoundError, json.JSONDecodeError):
+            continue
         for case in fixture.get("drift_cases", []):
             name = case.get("name", "unnamed")
             collected.append((f"{method.name}-{name}", method, case))

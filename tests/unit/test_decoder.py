@@ -215,6 +215,40 @@ class TestParseChunkedResponse:
         finally:
             reset_byte_count_mismatch_total()
 
+    def test_concurrent_mismatches_do_not_lose_increments(self):
+        """The counter is lock-guarded, so concurrent parses must not race.
+
+        ``x += 1`` on a module global is a non-atomic read-modify-write in
+        CPython, so without the lock concurrent ``parse_chunked_response``
+        calls (worker threads / multiple per-thread clients) could lose
+        increments. Drive many threads at one mismatch each and assert the
+        total equals the number of parses exactly.
+        """
+        import threading
+
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["wrong-size"])
+            response = f"{len(payload) + 1}\n{payload}\n"
+            threads = 16
+            per_thread = 50
+            barrier = threading.Barrier(threads)
+
+            def worker() -> None:
+                barrier.wait()
+                for _ in range(per_thread):
+                    parse_chunked_response(response)
+
+            workers = [threading.Thread(target=worker) for _ in range(threads)]
+            for t in workers:
+                t.start()
+            for t in workers:
+                t.join()
+
+            assert byte_count_mismatch_total() == threads * per_thread
+        finally:
+            reset_byte_count_mismatch_total()
+
     def test_skips_byte_count_without_payload_below_threshold(self, caplog):
         """A trailing byte-count line without a payload is malformed and skipped."""
         valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))

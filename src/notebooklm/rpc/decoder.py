@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import threading
 from enum import IntEnum
 from typing import Any
 
@@ -53,6 +54,15 @@ logger = logging.getLogger(__name__)
 # for callers; reset only via ``reset_byte_count_mismatch_total`` (tests).
 _BYTE_COUNT_MISMATCH_TOTAL = 0
 
+# Guards every read/increment/reset of ``_BYTE_COUNT_MISMATCH_TOTAL``. The
+# counter is mutated from ``parse_chunked_response``, which can run on worker
+# threads (``run_in_executor`` / ``ThreadPoolExecutor``) or from several
+# per-thread ``NotebookLMClient`` instances at once. ``x += 1`` is a
+# read-modify-write over multiple bytecodes, so the GIL does not make it
+# atomic — without this lock increments could be lost and the "warn every N"
+# cadence could fire on a stale count.
+_BYTE_COUNT_MISMATCH_LOCK = threading.Lock()
+
 # Emit at most one byte-count-mismatch WARNING per this many observed
 # mismatches so a live multi-chunk response cannot flood CI logs while a real
 # drift event still surfaces above DEBUG. The counter is post-incremented
@@ -68,13 +78,15 @@ def byte_count_mismatch_total() -> int:
     sudden rise without re-parsing logs. The value only ever increases within
     a process; ``reset_byte_count_mismatch_total`` exists for test isolation.
     """
-    return _BYTE_COUNT_MISMATCH_TOTAL
+    with _BYTE_COUNT_MISMATCH_LOCK:
+        return _BYTE_COUNT_MISMATCH_TOTAL
 
 
 def reset_byte_count_mismatch_total() -> None:
     """Reset the byte-count-mismatch counter (test isolation only)."""
     global _BYTE_COUNT_MISMATCH_TOTAL
-    _BYTE_COUNT_MISMATCH_TOTAL = 0
+    with _BYTE_COUNT_MISMATCH_LOCK:
+        _BYTE_COUNT_MISMATCH_TOTAL = 0
 
 
 class RPCErrorCode(IntEnum):
@@ -294,8 +306,12 @@ def parse_chunked_response(response: str) -> list[Any]:
                 # alert on a sudden rise) and emit a rate-limited WARNING so a
                 # real framing-unit change rises above the per-chunk DEBUG noise
                 # without flooding CI logs on every live multi-chunk response.
-                _BYTE_COUNT_MISMATCH_TOTAL += 1
-                if _BYTE_COUNT_MISMATCH_TOTAL % _BYTE_COUNT_MISMATCH_WARN_INTERVAL == 1:
+                # Snapshot the count under the lock so the modulo decision and
+                # the logged total are consistent even under concurrent parses.
+                with _BYTE_COUNT_MISMATCH_LOCK:
+                    _BYTE_COUNT_MISMATCH_TOTAL += 1
+                    mismatch_total = _BYTE_COUNT_MISMATCH_TOTAL
+                if mismatch_total % _BYTE_COUNT_MISMATCH_WARN_INTERVAL == 1:
                     logger.warning(
                         "Byte-count mismatch in chunked response (declared %d, "
                         "actual %d bytes); tolerated. Total mismatches this "
@@ -303,7 +319,7 @@ def parse_chunked_response(response: str) -> list[Any]:
                         "batchexecute framing unit changed.",
                         byte_count,
                         actual_byte_count,
-                        _BYTE_COUNT_MISMATCH_TOTAL,
+                        mismatch_total,
                     )
 
             try:
