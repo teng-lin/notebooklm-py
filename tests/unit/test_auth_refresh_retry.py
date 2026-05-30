@@ -17,6 +17,7 @@ import pytest
 
 from notebooklm._auth_refresh_retry import RefreshBudget, refresh_and_count
 from notebooklm._client_metrics import ClientMetrics
+from notebooklm._deadline import RuntimeDeadline
 
 # ---------------------------------------------------------------------------
 # RefreshBudget
@@ -103,6 +104,101 @@ async def test_refresh_and_count_zero_delay_skips_sleep() -> None:
     )
 
     assert sleeps == []
+
+
+# ---------------------------------------------------------------------------
+# refresh_and_count — deadline clamping (issue #1271)
+# ---------------------------------------------------------------------------
+
+
+def _fixed_clock(value: float) -> RuntimeDeadline:
+    """A RuntimeDeadline whose monotonic clock never advances past ``started_at``."""
+    return RuntimeDeadline(timeout=value, started_at=0.0, monotonic=lambda: 0.0)
+
+
+@pytest.mark.asyncio
+async def test_refresh_and_count_clamps_post_refresh_sleep_to_deadline() -> None:
+    """A large ``refresh_retry_delay`` is clamped to the remaining budget.
+
+    Symmetry with ``RetryMiddleware._resolve_retry_sleep`` (issue #1271): the
+    decode-time post-refresh sleep must never wait past the aggregate
+    ``RuntimeDeadline``. Here 5s of budget remains but the configured delay is
+    100s, so the actual sleep is clamped to 5s.
+    """
+    sleeps: list[float] = []
+
+    async def refresh() -> None:
+        return None
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    await refresh_and_count(
+        refresh=refresh,
+        on_refresh_failure=lambda _e: AssertionError("unreachable"),
+        sleep=sleep,
+        refresh_retry_delay=100.0,
+        log_label="RPC X",
+        logger=logging.getLogger("notebooklm.test_arr_clamp"),
+        metrics=None,
+        retry_deadline=_fixed_clock(5.0),
+    )
+
+    assert sleeps == [5.0]
+
+
+@pytest.mark.asyncio
+async def test_refresh_and_count_skips_sleep_when_deadline_exhausted() -> None:
+    """An already-expired deadline drops the post-refresh sleep entirely.
+
+    With zero remaining budget the clamp yields 0, so the decode-time retry
+    proceeds immediately rather than sleeping the full configured delay.
+    """
+    sleeps: list[float] = []
+
+    async def refresh() -> None:
+        return None
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    await refresh_and_count(
+        refresh=refresh,
+        on_refresh_failure=lambda _e: AssertionError("unreachable"),
+        sleep=sleep,
+        refresh_retry_delay=100.0,
+        log_label="RPC X",
+        logger=logging.getLogger("notebooklm.test_arr_exhausted"),
+        metrics=None,
+        retry_deadline=_fixed_clock(0.0),
+    )
+
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_and_count_no_deadline_sleeps_full_delay() -> None:
+    """Without a deadline the historical unclamped sleep is preserved."""
+    sleeps: list[float] = []
+
+    async def refresh() -> None:
+        return None
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    await refresh_and_count(
+        refresh=refresh,
+        on_refresh_failure=lambda _e: AssertionError("unreachable"),
+        sleep=sleep,
+        refresh_retry_delay=100.0,
+        log_label="RPC X",
+        logger=logging.getLogger("notebooklm.test_arr_nodeadline"),
+        metrics=None,
+        retry_deadline=None,
+    )
+
+    assert sleeps == [100.0]
 
 
 # ---------------------------------------------------------------------------

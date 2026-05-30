@@ -360,6 +360,64 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
 
 
 @pytest.mark.asyncio
+async def test_decode_time_auth_retry_gives_up_when_aggregate_deadline_exhausted() -> None:
+    """Issue #1271: an exhausted aggregate deadline gives up after the refresh.
+
+    The executor mints a ``RuntimeDeadline`` from ``timeout_provider`` for the
+    logical call. With a zero aggregate timeout the deadline is already
+    exhausted, so after the (productive) refresh the executor must NOT sleep the
+    large ``refresh_retry_delay`` and must NOT issue a retry POST that would run
+    past the budget — it re-raises the original decoded auth error, symmetric
+    with ``RetryMiddleware`` re-raising instead of re-invoking the chain.
+    """
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(
+        refresh_callback=refresh_callback,
+        refresh_retry_delay=100.0,
+        timeout=0.0,
+    )
+    sleep_calls: list[float] = []
+    auth_rpc_error = RPCError("authentication expired")
+    decode_calls = 0
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        nonlocal decode_calls
+        decode_calls += 1
+        raise auth_rpc_error
+
+    async def sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    with pytest.raises(RPCError) as raised:
+        await _executor(
+            owner,
+            decode_response=decode,
+            is_auth_error=lambda exc: True,
+            sleep=sleep,
+        )._execute_once(
+            RPCMethod.LIST_NOTEBOOKS,
+            ["param"],
+            "/notebook/abc",
+            True,
+            False,
+            disable_internal_retries=False,
+        )
+
+    # The refresh still ran (productive: the next call benefits from the fresh
+    # token), but the exhausted budget suppressed both the post-refresh sleep
+    # and the retry POST. The original decoded auth error propagates.
+    assert raised.value is auth_rpc_error
+    assert owner.refresh_calls == 1
+    assert sleep_calls == []
+    # Exactly one transport POST — the retry was NOT issued past the deadline.
+    assert len(owner.perform_calls) == 1
+    assert decode_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_decode_time_auth_retry_preserves_none_result() -> None:
     async def refresh_callback() -> object:
         return object()
@@ -640,6 +698,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
         _refresh_budget: Any = None,
+        _retry_deadline: Any = None,
     ) -> dict[str, bool]:
         assert method is RPCMethod.LIST_NOTEBOOKS
         assert params == ["param"]

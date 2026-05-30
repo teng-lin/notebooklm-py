@@ -53,6 +53,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
+    from ._deadline import RuntimeDeadline
 
 
 class RefreshBudget:
@@ -102,6 +103,7 @@ async def refresh_and_count(
     log_label: str,
     logger: logging.Logger,
     metrics: ClientMetrics | None,
+    retry_deadline: RuntimeDeadline | None = None,
 ) -> None:
     """Run the shared refresh body common to both auth-retry layers.
 
@@ -118,7 +120,13 @@ async def refresh_and_count(
        it ``from refresh_error`` so the refresh error stays chained as
        ``__cause__`` exactly as both copies did historically.
     4. Optional post-refresh sleep when ``refresh_retry_delay > 0`` — preserves
-       the historical timing both copies applied between refresh and retry.
+       the historical timing both copies applied between refresh and retry. When
+       ``retry_deadline`` is supplied the delay is clamped to the remaining
+       aggregate budget (issue #1271), so the post-refresh sleep can never
+       overshoot the logical call's timeout — symmetric with
+       ``RetryMiddleware._resolve_retry_sleep`` on the HTTP-status layer. An
+       already-exhausted deadline clamps the sleep to ``0`` and the retry
+       proceeds immediately.
     5. Log ``"Token refresh successful, retrying <label>"``.
     6. Increment ``rpc_auth_retries`` once per successful refresh. (Before
        consolidation only the HTTP-status copy did this; the decoded-RPC copy
@@ -140,8 +148,18 @@ async def refresh_and_count(
         logger.warning("Token refresh failed: %s", refresh_error)
         raise on_refresh_failure(refresh_error) from refresh_error
 
-    if refresh_retry_delay > 0:
-        await sleep(refresh_retry_delay)
+    # Clamp the post-refresh delay to the remaining aggregate budget so the
+    # decode-time retry honors the logical call's timeout the same way the
+    # HTTP-status retry layer does (issue #1271). Without a deadline the full
+    # delay is slept (historical behavior); an exhausted deadline clamps to 0,
+    # which skips the sleep and lets the retry proceed immediately.
+    effective_delay = (
+        refresh_retry_delay
+        if retry_deadline is None
+        else retry_deadline.clamp_sleep(refresh_retry_delay)
+    )
+    if effective_delay > 0:
+        await sleep(effective_delay)
     logger.info("Token refresh successful, retrying %s", log_label)
     if metrics is not None:
         metrics.increment(rpc_auth_retries=1)
