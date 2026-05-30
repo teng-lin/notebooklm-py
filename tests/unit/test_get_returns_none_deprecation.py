@@ -64,6 +64,24 @@ class TestWarnGetReturnsNone:
         with pytest.warns(DeprecationWarning, match="v9.9.9"):
             _deprecation.warn_get_returns_none("source", removal="9.9.9")
 
+    def test_existing_exception_named_unqualified(self):
+        # SourceNotFoundError exists today, so the hint names it directly with
+        # no "(added in ...)" qualifier.
+        with pytest.warns(DeprecationWarning) as record:
+            _deprecation.warn_get_returns_none("source")
+        message = str(record[0].message)
+        assert "try/except SourceNotFoundError." in message
+        assert "added in" not in message
+
+    def test_not_yet_existing_exception_is_version_qualified(self):
+        # NoteNotFoundError is only introduced by the v0.8.0 flip (#1247), so
+        # the migration hint must flag it as not-yet-available to avoid sending
+        # users to an ImportError.
+        with pytest.warns(DeprecationWarning) as record:
+            _deprecation.warn_get_returns_none("note")
+        message = str(record[0].message)
+        assert "NoteNotFoundError (added in v0.8.0)" in message
+
     @pytest.mark.parametrize("truthy", ["1", "true", "TRUE", "yes", "on"])
     def test_quiet_env_var_suppresses(self, monkeypatch, truthy):
         monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", truthy)
@@ -164,6 +182,28 @@ class TestPublicGetDoesNotWarnOnHit:
             result = await sources_api.get("nb_1", "src_1")
         assert result is not None
         assert result.id == "src_1"
+
+    @pytest.mark.asyncio
+    async def test_artifacts_get_hit_is_silent(self, artifacts_api):
+        found = MagicMock()
+        found.id = "art_1"
+        artifacts_api.list = AsyncMock(return_value=[found])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            result = await artifacts_api.get("nb_1", "art_1")
+        assert result is found
+
+    @pytest.mark.asyncio
+    async def test_notes_get_hit_is_silent(self, notes_api):
+        # A note row whose id matches the requested note_id (item[0]).
+        notes_api._get_all_notes_and_mind_maps = AsyncMock(
+            return_value=[["note_1", ["note_1", "Body", None, None, "Title"]]]
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            result = await notes_api.get("nb_1", "note_1")
+        assert result is not None
+        assert result.id == "note_1"
 
 
 # ---------------------------------------------------------------------------
