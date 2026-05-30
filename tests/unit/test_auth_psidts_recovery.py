@@ -540,9 +540,9 @@ class TestRecoveryConcurrentCasRejection:
             if do_real_write:
                 real_save(cookie_jar, path, **{**kwargs, "return_result": True})
             if seed_disk_cookie is not None and path is not None:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 data["cookies"].append(seed_disk_cookie)
-                path.write_text(json.dumps(data))
+                path.write_text(json.dumps(data), encoding="utf-8")
             result = _auth_storage.CookieSaveResult(
                 ok=False, cas_rejected_keys=frozenset({rejected_key})
             )
@@ -573,7 +573,7 @@ class TestRecoveryConcurrentCasRejection:
         )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         assert "__Secure-1PSIDTS" in {c["name"] for c in saved["cookies"]}
 
     @pytest.mark.no_default_keepalive_mock
