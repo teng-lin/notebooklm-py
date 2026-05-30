@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from typing import Any, NoReturn, Protocol
 from urllib.parse import quote, urlencode
 
-from ._env import get_default_bl, get_default_language, is_strict_decode_enabled
+from ._env import get_default_bl, get_default_language
 from .auth import format_authuser_value
 from .exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from .rpc._safe_index import safe_index
@@ -339,20 +339,20 @@ def _extract_chunk_with_parseable(
                 # became a scalar/dict or an inner list became a wrapper. This
                 # is genuine Google-side drift that previously collapsed into a
                 # silent empty answer. Raise the same drift signal
-                # ``safe_index`` uses (``UnknownRPCMethodError`` under strict
-                # mode; soft-mode falls through) so the chat path fails loudly
-                # instead of dropping the answer (ADR-011). ``safe_index``
-                # cannot enforce the list *type* (a ``str`` answer row is still
-                # indexable), so the contract is checked explicitly here.
-                if is_strict_decode_enabled():
-                    raise UnknownRPCMethodError(
-                        f"Streamed chat answer row is not a list (got {type(first).__name__})",
-                        method_id=None,
-                        path=(0,),
-                        source=_CHUNK_SOURCE,
-                        data_at_failure=repr(first)[:200],
-                    )
-                continue
+                # ``safe_index`` uses (``UnknownRPCMethodError``) so the chat
+                # path fails loudly instead of dropping the answer (ADR-011).
+                # Strict decoding is the only mode (the
+                # ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired
+                # in v0.7.0). ``safe_index`` cannot enforce the list *type* (a
+                # ``str`` answer row is still indexable), so the contract is
+                # checked explicitly here.
+                raise UnknownRPCMethodError(
+                    f"Streamed chat answer row is not a list (got {type(first).__name__})",
+                    method_id=None,
+                    path=(0,),
+                    source=_CHUNK_SOURCE,
+                    data_at_failure=repr(first)[:200],
+                )
             if len(first) > 0:
                 # Load-bearing answer-text leaf. ``first`` already holds
                 # ``inner_data[0]`` and the ``len(first) > 0`` guard makes

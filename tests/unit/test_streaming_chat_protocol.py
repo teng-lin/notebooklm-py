@@ -458,10 +458,11 @@ def _wrb_envelope(inner: Any) -> str:
         [None],  # answer row became null
     ],
 )
-def test_drifted_answer_row_raises_under_strict_decode(drifted_inner: Any) -> None:
+def test_drifted_answer_row_raises(drifted_inner: Any) -> None:
     """A populated ``wrb.fr`` record whose answer row is not a list is drift.
 
-    Under the default strict-decode mode this must raise
+    Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+    soft-mode opt-out was retired in v0.7.0), so this raises
     :class:`UnknownRPCMethodError` instead of silently collapsing to an empty
     answer — that silent collapse was the gap the
     ``architecture-gap-review`` flagged for ``_chat_protocol`` (ADR-011:38).
@@ -470,20 +471,6 @@ def test_drifted_answer_row_raises_under_strict_decode(drifted_inner: Any) -> No
 
     with pytest.raises(UnknownRPCMethodError):
         parse_streaming_chat_response(_wrb_envelope(drifted_inner))
-
-
-def test_drifted_answer_row_degrades_under_soft_decode(monkeypatch) -> None:
-    """Soft-mode (``NOTEBOOKLM_STRICT_DECODE=0``) preserves the legacy
-    skip-and-return-empty contract for a drifted answer row."""
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-
-    # The drifted frame is still a *parseable* envelope (inner JSON decoded),
-    # so the parser returns an empty answer rather than raising
-    # ChatResponseParseError.
-    result = parse_streaming_chat_response(_wrb_envelope(["scalar-answer-row"]))
-
-    assert result.answer == ""
-    assert result.references == []
 
 
 def test_empty_answer_row_is_tolerated_as_heartbeat() -> None:
