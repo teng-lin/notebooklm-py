@@ -2,8 +2,17 @@
 
 Shared by :mod:`notebooklm.auth` and :mod:`notebooklm.cli.session_cmd` so both
 write sites for ``storage_state.json`` use the same crash- and concurrency-safe
-pattern (NamedTemporaryFile in the same directory, ``chmod 0o600``, then
-``os.replace``).
+pattern (NamedTemporaryFile in the same directory, ``chmod 0o600``, ``flush`` +
+``fsync`` of the temp file, ``os.replace``, then a best-effort ``fsync`` of the
+parent directory).
+
+The write is both **rename-atomic** (a reader sees either the old or the new
+file, never a partial one) and, on POSIX, **fsync-durable** (the bytes are
+forced to stable storage before the rename), so a power loss / kernel panic
+after :func:`atomic_write_json` returns cannot lose the file data. The
+parent-directory fsync hardens the directory entry too but is best-effort: it
+silently degrades on Windows and on filesystems that reject a directory fsync,
+since by then the (fsynced) data has already been committed by the rename.
 
 Default permission mode is ``0o600`` because the primary caller writes
 Playwright storage state containing session cookies, which are credential-
@@ -45,6 +54,7 @@ the dedicated locked writers in :mod:`notebooklm._auth`
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -70,6 +80,30 @@ logger = logging.getLogger(__name__)
 # file).
 _STORAGE_STATE_FILENAME = "storage_state.json"
 
+# Errnos that mean "this fd/filesystem does not support fsync" rather than
+# "the writeback failed". Only these are swallowed so durability degrades
+# gracefully on filesystems that reject fsync (e.g. some network/virtual
+# mounts, or a directory fd on filesystems that disallow dir fsync). A *real*
+# writeback failure (EIO, ENOSPC, …) is NOT in this set and must propagate so
+# we never replace a good file with non-durable data.
+_FSYNC_UNSUPPORTED_ERRNOS = frozenset(
+    e
+    for e in (
+        getattr(errno, "EINVAL", None),  # fsync not valid for this fd (e.g. dir)
+        getattr(errno, "ENOTSUP", None),  # operation not supported
+        getattr(errno, "EOPNOTSUPP", None),  # operation not supported (alias)
+        getattr(errno, "ENOSYS", None),  # fsync not implemented
+        getattr(errno, "EROFS", None),  # read-only filesystem
+    )
+    if e is not None
+)
+
+
+def _is_unsupported_fsync_error(exc: OSError) -> bool:
+    """True if ``exc`` means fsync is *unsupported* here (vs. a writeback error)."""
+    return exc.errno in _FSYNC_UNSUPPORTED_ERRNOS
+
+
 _WINDOWS_REPLACE_TRANSIENT_WINERRORS = {
     5,  # ERROR_ACCESS_DENIED
     32,  # ERROR_SHARING_VIOLATION
@@ -84,6 +118,61 @@ def _is_retryable_windows_replace_error(exc: PermissionError) -> bool:
         return False
     winerror = getattr(exc, "winerror", None)
     return winerror in _WINDOWS_REPLACE_TRANSIENT_WINERRORS
+
+
+def _fsync_dir(directory: Path) -> None:
+    """``fsync`` a directory fd so a freshly-committed rename is durable.
+
+    On POSIX, ``os.replace`` only updates the directory entry in the page
+    cache; the new entry can be lost on power loss / kernel panic until the
+    *directory* itself is flushed.
+
+    This step runs *after* the rename has already committed the file data
+    (which was itself fsynced before the replace), so it is **best-effort and
+    never raises**: a power-loss before this returns at worst loses only the
+    directory-entry update, not the file data. We therefore swallow:
+
+    * platforms / filesystems that cannot open a directory fd (Windows raises,
+      some mounts disallow it), and
+    * filesystems that reject ``fsync`` on a directory fd.
+
+    A *real* directory writeback failure is logged at ``warning`` (it points at
+    a genuinely sick filesystem) but still not raised, because raising here
+    would falsely report a committed write as failed.
+    """
+    if not hasattr(os, "fsync"):  # pragma: no cover - POSIX always has fsync
+        return
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY)
+    except OSError as exc:
+        if sys.platform == "win32":
+            # Windows cannot open a directory for reading (raises
+            # PermissionError); directory fsync is simply unavailable there.
+            logger.debug("Parent dir %s fsync unavailable on Windows: %s", directory, exc)
+        else:
+            # On POSIX we just wrote a temp file into this dir and replaced into
+            # it, so failing to re-open it (EACCES, EMFILE, EIO, …) is anomalous.
+            # The rename already committed the fsynced data, so do not raise, but
+            # surface it.
+            logger.warning("Could not open parent dir %s for fsync: %s", directory, exc)
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError as exc:
+        if _is_unsupported_fsync_error(exc):
+            # Filesystem rejects fsync on a directory fd (common on some
+            # network/virtual mounts). Expected; degrade quietly.
+            logger.debug("Parent dir %s does not support fsync: %s", directory, exc)
+        else:
+            # Real writeback error on an already-committed rename. The file data
+            # is durable; only the dir entry may be at risk. Surface loudly but
+            # do not raise — the write itself succeeded.
+            logger.warning("Failed to fsync parent dir %s: %s", directory, exc)
+    finally:
+        try:
+            os.close(dir_fd)
+        except OSError as exc:  # pragma: no cover - defensive
+            logger.debug("Failed to close parent dir fd for %s: %s", directory, exc)
 
 
 def replace_file_atomically(temp_path: Path, path: Path) -> None:
@@ -114,19 +203,37 @@ def replace_file_atomically(temp_path: Path, path: Path) -> None:
 
 
 def atomic_write_json(path: Path, data: Any, *, mode: int = 0o600) -> None:
-    """Write ``data`` as JSON to ``path`` atomically.
+    """Write ``data`` as JSON to ``path`` atomically and durably.
 
     Steps:
 
     1. Serialize ``data`` to a sibling :class:`tempfile.NamedTemporaryFile` in
        the same directory as ``path`` (same-filesystem for ``os.replace``
        atomicity).
-    2. ``chmod`` the temp file to ``mode`` (default ``0o600`` — cookies are
-       secrets). Skipped on Windows where POSIX permissions are a no-op and
-       can confuse ACLs.
-    3. ``os.replace`` the temp file onto ``path`` (atomic on POSIX and Windows),
+    2. ``fchmod`` the temp file to ``mode`` (default ``0o600`` — cookies are
+       secrets). Done before the fsync so the permission bits are flushed too.
+       Skipped on Windows where POSIX permissions are a no-op and can confuse
+       ACLs.
+    3. ``flush`` + ``os.fsync`` the temp file so its bytes reach stable storage
+       *before* the rename. Without this, the rename can commit while the data
+       is still only in the OS page cache, so a crash in the post-replace
+       window can leave ``path`` pointing at an inode with no data (truncated /
+       zero-length file). A *real* fsync writeback failure (``EIO``, ``ENOSPC``,
+       …) aborts the write (temp unlinked, target preserved); only a genuine
+       "fsync unsupported" error degrades to a flush-only write.
+    4. ``os.replace`` the temp file onto ``path`` (atomic on POSIX and Windows),
        with bounded retries for transient Windows replace races.
-    4. On any failure: unlink the temp file and re-raise.
+    5. Best-effort ``fsync`` of the *parent directory* so the new directory
+       entry is itself durable, not just the file data (POSIX only — silently
+       skipped on Windows and on filesystems that reject a directory fsync).
+    6. On any failure before the replace commits: unlink the temp file and
+       re-raise.
+
+    Durability note: steps 3 and 5 make the write *fsync-durable* on POSIX, so
+    a power loss / kernel panic after this call returns cannot lose a
+    previously-committed ``path``. The parent-directory fsync (step 5) is
+    best-effort and never raises — see :func:`_fsync_dir` — because the rename
+    has already committed the (fsynced) file data by that point.
 
     The caller decides whether to log/swallow the exception.
     """
@@ -147,10 +254,32 @@ def atomic_write_json(path: Path, data: Any, *, mode: int = 0o600) -> None:
             # every failed save attempt.
             temp_path = Path(temp_file.name)
             json.dump(data, temp_file, indent=2, ensure_ascii=False)
-        if sys.platform != "win32":
-            # chmod is a no-op on Windows (and can confuse ACLs)
-            os.chmod(temp_path, mode)
+            if sys.platform != "win32":
+                # chmod is a no-op on Windows (and can confuse ACLs). Done
+                # BEFORE fsync so the permission-bit change is itself flushed
+                # to stable storage along with the data.
+                os.fchmod(temp_file.fileno(), mode)
+            # Force the JSON bytes (and the fchmod metadata) to stable storage
+            # before the rename so the post-replace crash window cannot expose a
+            # truncated/empty file.
+            temp_file.flush()
+            if hasattr(os, "fsync"):
+                try:
+                    os.fsync(temp_file.fileno())
+                except OSError as exc:
+                    if not _is_unsupported_fsync_error(exc):
+                        # Real writeback failure (EIO, ENOSPC, …): the data is
+                        # NOT durable. Re-raise so the outer handler unlinks the
+                        # temp file and preserves the existing target rather than
+                        # replacing it with non-durable bytes.
+                        raise
+                    # Filesystem genuinely does not support fsync; flush already
+                    # pushed bytes to the OS, so degrade to rename-atomic.
+                    logger.debug("Temp file %s does not support fsync: %s", temp_path, exc)
         replace_file_atomically(temp_path, path)
+        # Rename committed: make the directory entry durable too. Best-effort,
+        # POSIX-only, never raises — see _fsync_dir.
+        _fsync_dir(path.parent)
     except Exception:
         if temp_path is not None:
             try:

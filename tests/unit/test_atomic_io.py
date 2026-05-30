@@ -13,8 +13,11 @@ cli/session.py initial login save):
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -247,3 +250,233 @@ def test_temp_file_uses_target_directory(tmp_path: Path) -> None:
     assert target.exists()
     # Parent dir is the one we asked for
     assert target.parent == sub
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fsync durability is POSIX-only")
+def test_fsync_called_on_temp_fd_before_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Durability contract: the temp file's data must be ``fsync``ed to stable
+    storage *before* the ``os.replace`` commits, otherwise a crash in the
+    post-replace window can leave the target pointing at an inode with no data.
+    """
+    target = tmp_path / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    real_fsync = os.fsync
+    fsynced_fds: list[int] = []
+    temp_fd_holder: dict[str, int] = {}
+
+    real_named_tempfile = tempfile.NamedTemporaryFile
+
+    def tracking_tempfile(*args, **kwargs):  # noqa: ANN002, ANN003
+        handle = real_named_tempfile(*args, **kwargs)
+        temp_fd_holder["fd"] = handle.fileno()
+        return handle
+
+    def tracking_fsync(fd: int) -> None:
+        fsynced_fds.append(fd)
+        real_fsync(fd)
+
+    replace_calls: list[int] = []
+    real_replace = mod.os.replace
+
+    def tracking_replace(src, dst):  # noqa: ANN001
+        # Record how many fds had been fsynced at the moment of replace so we
+        # can assert the temp-fd sync happened *before* the rename committed.
+        replace_calls.append(len(fsynced_fds))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(mod.tempfile, "NamedTemporaryFile", tracking_tempfile)
+    monkeypatch.setattr(mod.os, "fsync", tracking_fsync)
+    monkeypatch.setattr(mod.os, "replace", tracking_replace)
+
+    atomic_write_json(target, {"durable": True})
+
+    # The temp file's fd must have been fsynced.
+    assert temp_fd_holder["fd"] in fsynced_fds, "temp fd was never fsynced"
+    # And at least one fsync must have happened before the replace committed.
+    assert replace_calls and replace_calls[0] >= 1, "fsync did not precede os.replace"
+    # Round-trip still works.
+    assert json.loads(target.read_text(encoding="utf-8")) == {"durable": True}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fsync durability is POSIX-only")
+def test_parent_dir_fsynced_after_replace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The parent directory must be ``fsync``ed *after* the rename so the new
+    directory entry is durable, not just the file data.
+    """
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    target = sub / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    real_open = os.open
+    opened_dir_fds: set[int] = set()
+    fsynced_fds: list[int] = []
+    real_fsync = os.fsync
+
+    def tracking_open(path, flags, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        fd = real_open(path, flags, *args, **kwargs)
+        if Path(path) == sub:
+            opened_dir_fds.add(fd)
+        return fd
+
+    def tracking_fsync(fd: int) -> None:
+        fsynced_fds.append(fd)
+        real_fsync(fd)
+
+    monkeypatch.setattr(mod.os, "open", tracking_open)
+    monkeypatch.setattr(mod.os, "fsync", tracking_fsync)
+
+    atomic_write_json(target, {"k": "v"})
+
+    # The parent dir fd must have been opened and fsynced.
+    assert opened_dir_fds, "parent directory was never opened for fsync"
+    assert opened_dir_fds & set(fsynced_fds), "parent directory fd was not fsynced"
+    assert json.loads(target.read_text(encoding="utf-8")) == {"k": "v"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fsync durability is POSIX-only")
+def test_parent_dir_fsync_failure_degrades_gracefully(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A directory-fsync failure (e.g. some filesystems reject fsync on a dir)
+    must not fail the whole write — the replace already committed, so the data
+    is at least rename-atomic. The error is swallowed/logged, not raised.
+    """
+    target = tmp_path / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    real_fsync = os.fsync
+
+    def selective_fsync(fd: int) -> None:
+        # Fail only for directory fds; let regular file fsyncs through so the
+        # data path stays durable while we exercise the dir-fsync error branch.
+        try:
+            mode = os.fstat(fd).st_mode
+        except OSError:
+            real_fsync(fd)
+            return
+        import stat as _stat
+
+        if _stat.S_ISDIR(mode):
+            # EINVAL = "fsync unsupported on this fd" → expected, must degrade.
+            raise OSError(errno.EINVAL, "fsync on directory not supported")
+        real_fsync(fd)
+
+    monkeypatch.setattr(mod.os, "fsync", selective_fsync)
+
+    # Must not raise despite the directory fsync failing.
+    atomic_write_json(target, {"k": "v"})
+    assert json.loads(target.read_text(encoding="utf-8")) == {"k": "v"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fsync durability is POSIX-only")
+def test_parent_dir_real_fsync_failure_logged_but_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A *real* directory-fsync writeback error (EIO) must be logged loudly but
+    still not raised: the rename already committed the fsynced file data, so the
+    write itself succeeded and callers must not see a spurious failure.
+    """
+    target = tmp_path / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    real_fsync = os.fsync
+
+    def selective_fsync(fd: int) -> None:
+        import stat as _stat
+
+        try:
+            mode = os.fstat(fd).st_mode
+        except OSError:
+            real_fsync(fd)
+            return
+        if _stat.S_ISDIR(mode):
+            raise OSError(errno.EIO, "I/O error syncing directory")
+        real_fsync(fd)
+
+    monkeypatch.setattr(mod.os, "fsync", selective_fsync)
+
+    atomic_write_json(target, {"k": "v"})
+    assert json.loads(target.read_text(encoding="utf-8")) == {"k": "v"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fsync durability is POSIX-only")
+def test_real_temp_fsync_failure_aborts_and_preserves_original(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A *real* fsync failure on the temp file (EIO/ENOSPC) means the data is
+    not durable, so the write must abort before the replace: the pre-existing
+    target stays intact and the temp file is cleaned up.
+    """
+    target = tmp_path / "state.json"
+    original = {"original": True}
+    target.write_text(json.dumps(original), encoding="utf-8")
+    original_bytes = target.read_bytes()
+
+    import notebooklm._atomic_io as mod
+
+    real_fsync = os.fsync
+
+    def failing_file_fsync(fd: int) -> None:
+        import stat as _stat
+
+        try:
+            mode = os.fstat(fd).st_mode
+        except OSError:
+            real_fsync(fd)
+            return
+        if _stat.S_ISDIR(mode):
+            real_fsync(fd)
+            return
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(mod.os, "fsync", failing_file_fsync)
+
+    with pytest.raises(OSError) as excinfo:
+        atomic_write_json(target, {"new": "value"})
+    assert excinfo.value.errno == errno.ENOSPC
+
+    # Original preserved, temp file cleaned up — never replaced with non-durable
+    # data.
+    assert target.read_bytes() == original_bytes
+    leaked = list(tmp_path.glob(f".{target.name}.*.tmp"))
+    assert not leaked, f"leaked temp files: {leaked}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fsync durability is POSIX-only")
+def test_unsupported_temp_fsync_degrades_to_flush_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the filesystem genuinely does not support fsync (EINVAL), the temp
+    write degrades to flush-only and the replace still commits — no exception.
+    """
+    target = tmp_path / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    real_fsync = os.fsync
+
+    def unsupported_file_fsync(fd: int) -> None:
+        import stat as _stat
+
+        try:
+            mode = os.fstat(fd).st_mode
+        except OSError:
+            real_fsync(fd)
+            return
+        if _stat.S_ISDIR(mode):
+            real_fsync(fd)
+            return
+        raise OSError(errno.EINVAL, "fsync not supported on this filesystem")
+
+    monkeypatch.setattr(mod.os, "fsync", unsupported_file_fsync)
+
+    atomic_write_json(target, {"k": "v"})
+    assert json.loads(target.read_text(encoding="utf-8")) == {"k": "v"}
