@@ -915,10 +915,10 @@ print(url)
 | `get(notebook_id, source_id)` | `str, str` | `Source \| None` | Get source details (returns None if not found) |
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
 | `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
-| `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). Positional `wait` / `wait_timeout` still work in v0.5.0 but emit `DeprecationWarning`; use `wait=` / `wait_timeout=` keywords. |
-| `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. Positional `wait` / `wait_timeout` still work in v0.5.0 but emit `DeprecationWarning`; use `wait=` / `wait_timeout=` keywords. |
-| `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` emits `DeprecationWarning` and is scheduled for removal in v0.6.0. Positional `wait` / `wait_timeout` still work in v0.5.0 but emit `DeprecationWarning`; use `wait=` / `wait_timeout=` keywords. `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
-| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). Positional `wait` / `wait_timeout` still work in v0.5.0 but emit `DeprecationWarning`; use `wait=` / `wait_timeout=` keywords. |
+| `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
+| `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
+| `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
+| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
@@ -939,9 +939,8 @@ await client.sources.add_file(nb_id, Path("./document.pdf"))
 
 # Upload a file with a custom display title (rename happens after upload via
 # UPDATE_SOURCE — a brief registration wait runs even when wait=False so the
-# rename can land). The mime_type kwarg is deprecated and scheduled for
-# removal in v0.6.0; the server infers
-# MIME type from the filename extension.
+# rename can land). The mime_type kwarg is optional: omit it to infer the
+# content-type from the filename extension, or pass it to override inference.
 await client.sources.add_file(nb_id, Path("./document.pdf"), title="Q4 Strategy Memo")
 
 # Wait for several uploads to finish processing in parallel

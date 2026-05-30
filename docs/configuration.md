@@ -140,7 +140,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_REFRESH_PROFILE` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; names the resolved profile being refreshed | resolved profile |
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; path to the `storage_state.json` file the command must rewrite | resolved storage path |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
-| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress stderr deprecation notices for deprecated CLI flags | - |
+| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Legacy no-op. Formerly suppressed the `source add --mime-type` "unused for file sources" stderr notice; `--mime-type` is now a supported file-source parameter, so there is no notice to suppress. | (no effect) |
 | `NOTEBOOKLM_VCR_RECORD_ERRORS` | Synthetic-error injection mode for VCR test cassettes (`429`, `5xx`, `expired_csrf`) | - |
 
 ### Public config API vs internal resolvers
@@ -174,7 +174,7 @@ be audited from one location.
 | `NOTEBOOKLM_DEBUG_RPC` | Legacy alias that sets the package logger to `DEBUG`. Prefer `NOTEBOOKLM_LOG_LEVEL=DEBUG` for new code. | (See `NOTEBOOKLM_LOG_LEVEL`.) | `_logging.configure_logging` |
 | `NOTEBOOKLM_NOTEBOOK` | Default notebook ID when no `-n/--notebook` flag is passed. Composes with `notebooklm use <id>` so per-shell overrides do not clobber the persisted active-notebook context. | `-n/--notebook` flag → `NOTEBOOKLM_NOTEBOOK` → active context (from `notebooklm use`) → error | `cli.helpers.require_notebook` (Click also reads it natively via `cli/options.py:notebook_option`'s `envvar=`) |
 | `NOTEBOOKLM_RPC_OVERRIDES` | **JSON object** mapping `RPCMethod` enum names to RPC ID strings (e.g. `{"LIST_NOTEBOOKS": "AbC123"}`). Overrides runtime RPC IDs — community self-patch when Google rotates a method ID. Empty string / unset disables the mechanism; invalid JSON or non-object payloads emit a `WARNING` and are ignored. | Process env, evaluated per RPC resolve (cached on the raw env string). | `notebooklm.rpc.overrides._parse_rpc_overrides` |
-| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress stderr deprecation notices for deprecated CLI flags (e.g. `source add --mime-type` on file sources). Library-level `DeprecationWarning`s are unaffected. | Set to `1` to suppress; any other value (or unset) leaves the notice enabled. | individual CLI commands; see `NOTEBOOKLM_QUIET_DEPRECATIONS` section below |
+| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Legacy no-op. Formerly suppressed the `source add --mime-type` file-source notice; that flag is now a supported parameter, so no notice is emitted and this variable has no effect. | (no effect) | — |
 | `NOTEBOOKLM_STRICT_DECODE` | **Retired (ignored since v0.7.0).** Strict decoding is the only mode — `safe_index` always raises `UnknownRPCMethodError` on schema drift. The former `0` warn-and-fallback opt-out was removed; setting the variable has no effect. | (ignored) | — |
 | `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
 | `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
@@ -190,7 +190,8 @@ be audited from one location.
 (case-insensitive) as truthy; everything else is falsy.
 `NOTEBOOKLM_STRICT_DECODE` is ignored as of v0.7.0 (strict decoding is the
 only mode); no value changes decoder behavior.
-`NOTEBOOKLM_QUIET_DEPRECATIONS` requires the literal string `1`.
+`NOTEBOOKLM_QUIET_DEPRECATIONS` is a legacy no-op (its only gated notice,
+`source add --mime-type`, is no longer deprecated).
 `NOTEBOOKLM_NOTEBOOK` is treated as unset when empty or whitespace-only so a
 bare `export NOTEBOOKLM_NOTEBOOK=` does not block `notebooklm use` /
 `-n/--notebook` from resolving.
@@ -305,24 +306,16 @@ back to `en`. For the generate commands, the resolution order is:
 
 ### NOTEBOOKLM_QUIET_DEPRECATIONS
 
-Suppresses stderr deprecation notices emitted by CLI commands when a
-deprecated flag or option is used. Useful in CI logs where the deprecation
-signal would otherwise be repeated across every invocation in a pipeline.
+Legacy no-op. This variable formerly suppressed a stderr notice emitted when
+`source add --mime-type` was passed on a file source (back when that flag was
+a deprecated no-op). `--mime-type` is now a **supported** file-source
+parameter — it sets the resumable-upload content-type header — so no notice is
+emitted and this variable has no effect. Setting it is harmless and ignored;
+it is retained only so existing CI configs that export it do not error.
 
-```bash
-export NOTEBOOKLM_QUIET_DEPRECATIONS=1
-notebooklm source add ./report.pdf --type file --mime-type application/pdf
-# (no "--mime-type is unused for file sources" notice on stderr)
-```
-
-Set the value to ``1`` to suppress the notice; any other value (including
-``0`` or ``false``) leaves the deprecation notice enabled. The underlying
-behavior — that the deprecated flag remains a no-op — is unchanged; only
-the user-facing
-warning text is silenced. Library-level `DeprecationWarning`s emitted from
-the Python API (e.g. `client.sources.add_file(..., mime_type=...)`) are
-**not** affected by this variable; use standard `warnings.filterwarnings`
-to manage those programmatically.
+`client.sources.add_file(..., mime_type=...)` likewise no longer emits a
+`DeprecationWarning` (the parameter is supported), so there is nothing to
+suppress on the Python-API side either.
 
 ### Timeouts
 
