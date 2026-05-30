@@ -81,9 +81,8 @@ def _load_sibling(module_name: str, file_name: str) -> Any:
     spec = importlib.util.spec_from_file_location(
         module_name, Path(__file__).resolve().parent / file_name
     )
-    assert spec is not None and spec.loader is not None, (
-        f"Could not load {file_name} next to vcr_config.py"
-    )
+    if spec is None or spec.loader is None:  # pragma: no cover - import wiring guard
+        raise ImportError(f"Could not load {file_name} next to vcr_config.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
