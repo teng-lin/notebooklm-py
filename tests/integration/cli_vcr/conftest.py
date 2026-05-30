@@ -16,7 +16,7 @@ from click.testing import CliRunner
 # Add tests directory to path for vcr_config import
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from integration.conftest import skip_no_cassettes  # noqa: E402
+from integration.conftest import _is_vcr_record_mode, skip_no_cassettes  # noqa: E402
 from vcr_config import notebooklm_vcr  # noqa: E402
 
 # Re-export for use by test files
@@ -76,7 +76,16 @@ def mock_auth_for_vcr():
     also carries ``@pytest.mark.vcr`` (either directly or via a module-level
     ``pytestmark``), so the global autouse already disables the poke before
     this fixture runs.
+
+    Recording (``NOTEBOOKLM_VCR_RECORD=1``) is the exception: the CLI must load
+    the *real* profile's cookies/tokens to reach the live API, so the mock is
+    skipped. The root ``_isolate_notebooklm_home`` fixture likewise defers to
+    the real ``~/.notebooklm`` for vcr tests in record mode, so the normal
+    ``load_auth_from_storage`` path resolves real auth (issue #1263).
     """
+    if _is_vcr_record_mode():
+        yield
+        return
     mock_cookies = {
         "SID": "vcr_mock_sid",
         "HSID": "vcr_mock_hsid",

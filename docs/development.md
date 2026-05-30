@@ -464,6 +464,19 @@ The script is a manual maintainer helper — CI never runs it.
 NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/test_vcr_*.py -v
 ```
 
+> **Recording reads your real `~/.notebooklm` profile.** Normally the suite
+> pins `NOTEBOOKLM_HOME` at a throwaway tmp dir (autouse `_isolate_notebooklm_home`
+> in `tests/conftest.py`) so runs are reproducible and never touch your real
+> profile. Under `NOTEBOOKLM_VCR_RECORD=1`, `@pytest.mark.vcr` tests instead read
+> the real profile — so `get_vcr_auth()` (via `AuthTokens.from_storage()`) and
+> the CLI auth path resolve live credentials to record against. CLI-VCR tests
+> additionally skip their `mock_auth_for_vcr` patch in record mode for the same
+> reason. Replay runs and non-VCR tests stay isolated (a stray
+> `NOTEBOOKLM_VCR_RECORD` on a normal run never un-isolates a unit test). The
+> test must carry the `vcr` marker — most do via a module-level `pytestmark`.
+> Before #1263 this deferral did not exist and cassettes could only be recorded
+> with a standalone script.
+
 The scrubbing pipeline (`tests/vcr_config.py`) redacts cookies, CSRF tokens,
 emails, and other sensitive patterns before the cassette hits disk. Verify
 the result with the cassette guard before committing:
