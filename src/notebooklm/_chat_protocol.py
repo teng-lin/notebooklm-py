@@ -12,7 +12,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, replace
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 from urllib.parse import quote, urlencode
 
 from ._env import get_default_bl, get_default_language, is_strict_decode_enabled
@@ -354,10 +354,12 @@ def _extract_chunk_with_parseable(
                     )
                 continue
             if len(first) > 0:
-                # Load-bearing answer-text leaf. On the happy path
-                # ``inner_data[0][0]`` is valid so this is byte-for-byte
-                # identical; under drift it raises rather than dropping text.
-                text = safe_index(inner_data, 0, 0, method_id=None, source=_CHUNK_SOURCE)
+                # Load-bearing answer-text leaf. ``first`` already holds
+                # ``inner_data[0]`` and the ``len(first) > 0`` guard makes
+                # ``first[0]`` valid, so reuse it instead of re-traversing from
+                # ``inner_data``: byte-for-byte identical on the happy path,
+                # with a more localized ``(0,)`` drift path under drift.
+                text = safe_index(first, 0, method_id=None, source=_CHUNK_SOURCE)
                 if not isinstance(text, str) or not text:
                     continue
 
@@ -392,7 +394,7 @@ def _extract_chunk_with_parseable(
     return None, False, refs, None, parseable
 
 
-def _raise_chat_error_frame(item: list) -> None:
+def _raise_chat_error_frame(item: list) -> NoReturn:
     """Surface a server-side ``"er"`` error frame as a ``ChatError``.
 
     The streamed batchexecute backend emits ``["er", rpc_id, code, ...]``
