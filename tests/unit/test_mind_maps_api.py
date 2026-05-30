@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_maps_api import MindMapsAPI
+from notebooklm.exceptions import ArtifactError
 from notebooklm.rpc.types import RPCMethod
 from notebooklm.types import Artifact, MindMapKind, MindMapResult
 
@@ -31,9 +32,7 @@ def _make_api(*, note_rows=None, interactive=None):
     artifacts.wait_for_completion = AsyncMock()
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=["s1"])
-    api = MindMapsAPI(
-        rpc=rpc, notes=MagicMock(), mind_maps=mind_maps, artifacts=artifacts, notebooks=notebooks
-    )
+    api = MindMapsAPI(rpc=rpc, mind_maps=mind_maps, artifacts=artifacts, notebooks=notebooks)
     return api, rpc, mind_maps, artifacts, notebooks
 
 
@@ -114,6 +113,14 @@ async def test_generate_interactive_creates_and_polls():
     artifacts.wait_for_completion.assert_awaited_once_with("nb", "new_int")
     assert mm.kind == MindMapKind.INTERACTIVE
     assert mm.id == "new_int"
+
+
+@pytest.mark.asyncio
+async def test_generate_interactive_raises_when_no_artifact_id():
+    api, rpc, *_ = _make_api()
+    rpc.rpc_call = AsyncMock(return_value=None)  # CREATE_ARTIFACT yields no id
+    with pytest.raises(ArtifactError, match="no artifact id"):
+        await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE)
 
 
 @pytest.mark.asyncio

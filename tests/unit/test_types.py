@@ -88,6 +88,8 @@ _PUBLIC_MOVABLE_CLASSES = [
     "ConnectionLimits",
     "ConversationTurn",
     "GenerationStatus",
+    "MindMap",
+    "MindMapKind",
     "Note",
     "Notebook",
     "NotebookDescription",

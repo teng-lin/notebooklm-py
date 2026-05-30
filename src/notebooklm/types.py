@@ -227,6 +227,8 @@ for _public_moved_type in (
     ChatReference,
     ConversationTurn,
     GenerationStatus,
+    MindMap,
+    MindMapKind,
     MindMapResult,
     Note,
     Notebook,

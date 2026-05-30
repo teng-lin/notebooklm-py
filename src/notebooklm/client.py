@@ -437,7 +437,6 @@ class NotebookLMClient:
         # studio artifact); dispatches each op to the correct RPC family (#1256).
         self.mind_maps = MindMapsAPI(
             rpc=internals.executor,
-            notes=note_service,
             mind_maps=mind_maps,
             artifacts=self.artifacts,
             notebooks=self.notebooks,

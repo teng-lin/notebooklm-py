@@ -17,14 +17,13 @@ from typing import TYPE_CHECKING, Any
 from ._artifact_payloads import build_interactive_mind_map_artifact_params
 from ._row_adapters_notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
-from .exceptions import UnknownRPCMethodError
+from .exceptions import ArtifactError, UnknownRPCMethodError
 from .rpc import RPCMethod, safe_index
 from .types import ArtifactType
 
 if TYPE_CHECKING:
     from ._artifacts import ArtifactsAPI
     from ._mind_map import NoteBackedMindMapService
-    from ._note_service import NoteService
     from ._notebooks import NotebooksAPI
     from ._runtime_contracts import RpcCaller
 
@@ -60,13 +59,11 @@ class MindMapsAPI:
         self,
         *,
         rpc: RpcCaller,
-        notes: NoteService,
         mind_maps: NoteBackedMindMapService,
         artifacts: ArtifactsAPI,
         notebooks: NotebooksAPI,
     ) -> None:
         self._rpc = rpc
-        self._notes = notes
         self._mind_maps = mind_maps
         self._artifacts = artifacts
         self._notebooks = notebooks
@@ -121,6 +118,14 @@ class MindMapsAPI:
         ``INTERACTIVE`` is async (``CREATE_ARTIFACT`` returns a pending artifact);
         with ``wait=True`` this polls to completion, otherwise it returns a
         pending :class:`MindMap` whose ``tree`` is ``None`` until completed.
+
+        ``language`` and ``instructions`` only apply to ``NOTE_BACKED`` maps; the
+        interactive ``CREATE_ARTIFACT`` payload does not accept them, so they are
+        ignored when ``kind=INTERACTIVE``.
+
+        Raises:
+            ArtifactError: if the interactive ``CREATE_ARTIFACT`` call returns no
+                artifact id (null or unexpected response shape).
         """
         if kind == MindMapKind.NOTE_BACKED:
             res = await self._artifacts.generate_mind_map(
@@ -150,20 +155,24 @@ class MindMapsAPI:
             operation_variant=None,
         )
         new_id = _new_artifact_id(create_response)
-        if wait and new_id:
+        if new_id is None:
+            raise ArtifactError(
+                "CREATE_ARTIFACT returned no artifact id for the interactive mind map "
+                f"in notebook {notebook_id!r} (null or unexpected response shape)."
+            )
+        if wait:
             await self._artifacts.wait_for_completion(notebook_id, new_id)
-        if new_id:
-            art = await self._find_interactive(notebook_id, new_id)
-            if art is not None:
-                return MindMap(
-                    id=art.id,
-                    notebook_id=notebook_id,
-                    title=art.title,
-                    kind=MindMapKind.INTERACTIVE,
-                    created_at=art.created_at,
-                )
+        art = await self._find_interactive(notebook_id, new_id)
+        if art is not None:
+            return MindMap(
+                id=art.id,
+                notebook_id=notebook_id,
+                title=art.title,
+                kind=MindMapKind.INTERACTIVE,
+                created_at=art.created_at,
+            )
         return MindMap(
-            id=new_id or "",
+            id=new_id,
             notebook_id=notebook_id,
             title="Mind Map",
             kind=MindMapKind.INTERACTIVE,
