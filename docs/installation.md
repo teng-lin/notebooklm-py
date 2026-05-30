@@ -213,7 +213,7 @@ print(notebooklm.__version__)
 
 **Why no extras:** reduces the install surface to 4 deps (`httpx`, `click`, `rich`, `filelock`); avoids 200+ MB Chromium download in CI images.
 
-For runtime configuration (env vars, profiles, parallel agents), see [configuration.md#headless-and-ci-environments](configuration.md#headless-and-ci-environments).
+For runtime configuration (env vars, profiles, parallel agents), see [configuration.md#headless-servers--containers](configuration.md#headless-servers--containers).
 
 ### E. Contributor
 
@@ -265,7 +265,7 @@ Non-default browsers, cookie extraction, markdown source dumps.
 
 > ⚠️  **Don't use `[all]` for power-user setups.** `[all]` deliberately *excludes* `cookies` (see [§ All vs All-Extras](#all-vs-all-extras)). If you `pip install "notebooklm-py[all]"` and then try `--browser-cookies`, you'll get an opaque `rookiepy` import error. For everything-and-the-kitchen-sink, use `pip install "notebooklm-py[browser,cookies,markdown]"` explicitly (Python ≤ 3.12 only).
 
-- **`--browser-cookies` (no Playwright login):** `pip install "notebooklm-py[browser,cookies]"`. **Caveat:** `rookiepy` may fail to install on Python 3.13/3.14; use Python 3.12 or accept the risk. See [cli-reference.md#login](cli-reference.md#login) for the full `--browser-cookies` syntax, including `chrome::<profile-name-or-directory>` for one Chromium user-profile and `firefox::<container>` for Firefox Multi-Account Containers (on every OS — not just macOS). Use `notebooklm auth inspect --browser <browser>` for previewing available accounts before import.
+- **`--browser-cookies` (no Playwright login):** `pip install "notebooklm-py[browser,cookies]"`. **Caveat:** `rookiepy` may fail to install on Python 3.13/3.14; use Python 3.12 or accept the risk. See [cli-reference.md#authentication-login](cli-reference.md#authentication-login) for the full `--browser-cookies` syntax, including `chrome::<profile-name-or-directory>` for one Chromium user-profile and `firefox::<container>` for Firefox Multi-Account Containers (on every OS — not just macOS). Use `notebooklm auth inspect --browser <browser>` for previewing available accounts before import.
 - **Markdown source dumps:** `pip install "notebooklm-py[markdown]"` for `notebooklm source fulltext -f markdown`.
 - **Edge instead of Chromium:** install Microsoft Edge from [microsoft.com/edge](https://www.microsoft.com/edge) first — `--browser msedge` does NOT auto-install Edge (only `--browser chromium` auto-installs). Then `notebooklm login --browser msedge`.
 - **Multi-account (personal + work):** see [configuration.md#multiple-accounts](configuration.md#multiple-accounts). Common power-user flow: `notebooklm profile create work && notebooklm -p work login --browser-cookies edge --account work@corp.com`. Use `--all-accounts` to bootstrap profiles for every signed-in Google account in one command.

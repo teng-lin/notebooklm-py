@@ -157,7 +157,7 @@ class SourceRow:
     # helpers that pull the leading element from ``metadata[7]``,
     # ``metadata[5]``, etc. Kept separate from ``_ID_ENVELOPE_PLAIN_POS``
     # (also ``0``) so a future id-envelope reshape doesn't accidentally
-    # break URL extraction — claude review feedback on #1029.
+    # break URL extraction.
     _LIST_FIRST_POS: ClassVar[int] = 0
 
     # ---- Dispatchers -----------------------------------------------------
@@ -333,8 +333,8 @@ class SourceRow:
 
         Non-``None`` non-string values are coerced via ``str()`` so the
         ``str | None`` annotation is honored at runtime — aligns with
-        :attr:`ArtifactRow.title`'s coercion (claude review feedback on
-        #1029). ``None`` is preserved as-is so the legacy "missing
+        :attr:`ArtifactRow.title`'s coercion. ``None`` is preserved as-is
+        so the legacy "missing
         title" sentinel still distinguishes from "title is empty string".
         """
         if len(self._raw) <= self._TITLE_POS:
@@ -387,8 +387,8 @@ class SourceRow:
            exists for the deeply-nested ``ADD_SOURCE`` shape.
 
         Each precedence level is a tiny named helper so the dispatch
-        reads at the same level of abstraction (gemini review feedback
-        on #1029): the property body is the precedence order, and each
+        reads at the same level of abstraction: the property body is the
+        precedence order, and each
         helper owns one slot's positional knowledge.
         """
         metadata = self.metadata
@@ -511,8 +511,7 @@ class SourceRow:
         unrecognised code. The membership check uses ``SourceStatus(...)``
         directly (catching :class:`ValueError`) rather than an explicit
         member tuple so the adapter automatically accepts any new values
-        added to :class:`SourceStatus` without a parallel update here
-        (claude review feedback on #1029).
+        added to :class:`SourceStatus` without a parallel update here.
         """
         if (
             len(self._raw) <= self._STATUS_BLOCK_POS

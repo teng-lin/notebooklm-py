@@ -69,7 +69,7 @@ _ORIGINAL_GET_STORAGE_PATH = get_storage_path
 # caller (the symbol imported at module-load time). Comparisons go
 # against ``default`` (NOT against the live ``notebooklm.paths`` attribute)
 # so a patch at the canonical source does not falsely flag a stale local
-# binding as "patched" — rev-3 CodeRabbit feedback on #962.
+# binding as "patched".
 #
 # Precedence:
 #   1. Service module's own binding if patched.
@@ -513,9 +513,8 @@ def ensure_chromium_installed() -> None:
     them during launch.
 
     Both subprocess calls are bounded by timeouts so a network-stalled
-    Playwright CLI cannot hang ``notebooklm login`` indefinitely (rev-1
-    CodeRabbit feedback on #962): 30 s for the dry-run probe, 300 s for
-    the install. ``TimeoutExpired`` is treated as a pre-flight failure —
+    Playwright CLI cannot hang ``notebooklm login`` indefinitely: 30 s for
+    the dry-run probe, 300 s for the install. ``TimeoutExpired`` is treated as a pre-flight failure —
     the warning surfaces and login continues; Playwright will surface the
     real error during browser launch.
     """
@@ -556,7 +555,7 @@ def ensure_chromium_installed() -> None:
             # Prefer stderr when it has substantive content; otherwise
             # fall back to stdout. Compare on the STRIPPED value so a
             # stderr that sanitises down to whitespace doesn't shadow a
-            # stdout line carrying the actionable failure (codex review).
+            # stdout line carrying the actionable failure.
             sanitised_stderr = redact_subprocess_output(install_result.stderr or "").strip()
             sanitised_stdout = redact_subprocess_output(install_result.stdout or "").strip()
             diagnostic_tail = sanitised_stderr or sanitised_stdout

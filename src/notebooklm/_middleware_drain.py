@@ -42,10 +42,8 @@ matching the structure of every previous explicit ``begin/finish`` pair
 the codebase had before this PR. Same scope (``Exception``-aware via
 ``try/finally``, not via narrow ``except``) and same reason.
 
-See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_transport_drain.py`` for the underlying tracker, and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.5 for the
-PR sequence.
+See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
+``src/notebooklm/_transport_drain.py`` for the underlying tracker.
 """
 
 from __future__ import annotations

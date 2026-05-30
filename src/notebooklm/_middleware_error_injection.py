@@ -47,7 +47,7 @@ Behavior contract:
 - Env var set, builder wired, mode ``"429"`` → raise
   :class:`TransportRateLimited` so the OUTER ``RetryMiddleware`` retries
   (restoring ADR-009 §"ErrorInjection inside Retry — synthetic transient
-  failures trigger retry"; codex iter-1 catch on PR 12.7). The raised
+  failures trigger retry"). The raised
   exception carries the synthetic ``Retry-After`` header so the retry
   honors the rate-limit timing.
 - Env var set, builder wired, mode ``"5xx"`` → raise
@@ -60,7 +60,7 @@ Behavior contract:
   this happened naturally because the legacy ``_SyntheticErrorTransport``
   returned the synthetic 400 below httpx, and ``raise_for_status`` lifted
   it into an ``HTTPStatusError``. PR 12.8 restores that end-to-end via
-  ``AuthRefreshMiddleware`` (codex iter-1 catch on PR 12.8).
+  ``AuthRefreshMiddleware``.
 
 All raised exceptions wrap a synthetic :class:`httpx.Response` anchored to
 ``request.url`` / ``request.headers`` / ``request.body`` so callers
@@ -75,10 +75,9 @@ actually fires. Each retry re-enters this middleware, which re-raises —
 matching the pre-PR-12.6 "every retry re-fires the synthetic error"
 behavior bit-for-bit.
 
-See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
+See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
 ``src/notebooklm/_error_injection.py`` for the env-var / startup-guard
-helpers, and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.6
-for the PR sequence.
+helpers.
 """
 
 from __future__ import annotations
@@ -222,8 +221,7 @@ class ErrorInjectionMiddleware:
         #   returned the synthetic response below httpx and
         #   ``raise_for_status()`` lifted it into an ``HTTPStatusError``.
         #   Returning a plain ``RpcResponse`` here would
-        #   skip ``AuthRefreshMiddleware`` entirely (codex iter-1 catch
-        #   on PR 12.7 (429/5xx) + PR 12.8 (400)).
+        #   skip ``AuthRefreshMiddleware`` entirely.
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         original = httpx.HTTPStatusError(
             f"HTTP {status_code}",

@@ -134,9 +134,9 @@ class TransportDrainTracker:
         per-collaborator ``set_bound_loop`` propagation and before the
         ``Kernel.open`` await) so a previously-drained-then-reopened client
         admits new top-level operations again. Encapsulates the legacy
-        direct write ``host._drain_tracker._draining = False`` (Wave 1 of
-        plan ``host-protocol-removal``) so the lifecycle never touches the
-        private ``_draining`` field on this collaborator.
+        direct write ``host._drain_tracker._draining = False`` so the
+        lifecycle never touches the private ``_draining`` field on this
+        collaborator.
 
         Deliberately narrow: this resets ONLY the ``_draining`` flag. The
         ``_in_flight_posts`` counter, ``_operation_depths`` map, and lazily

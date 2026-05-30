@@ -263,7 +263,8 @@ src/notebooklm/
 │   ├── storage.py               # Profile/state persistence on disk
 │   ├── keepalive.py             # Cookie keepalive + __Secure-1PSIDTS rotation
 │   ├── psidts_recovery.py       # Inline PSIDTS recovery for cold-start (issue #865)
-│   └── refresh.py               # Token refresh driver (external login cmd, coalesced runs, redaction)
+│   ├── refresh.py               # Token refresh driver (external login cmd, coalesced runs, redaction)
+│   └── tokens.py                # AuthTokens container + load_auth_from_storage loader
 ├── _types/                      # Dataclass implementation package re-exported by types.py
 │   ├── __init__.py
 │   ├── artifacts.py
@@ -285,7 +286,9 @@ src/notebooklm/
 ├── rpc/                         # RPC protocol layer
 │   ├── types.py                 # Method IDs and enums
 │   ├── encoder.py               # Request encoding
-│   └── decoder.py               # Response parsing
+│   ├── decoder.py               # Response parsing
+│   ├── _safe_index.py           # Strict bounds-checked positional access for decoded RPC payloads
+│   └── overrides.py             # Runtime RPC ID override policy (env-driven)
 └── cli/                         # CLI implementation
     ├── __init__.py              # Re-exports click groups under historical names from *_cmd modules
     ├── _chromium_profiles.py    # Multi-user-data-profile cookie extraction for Chromium browsers

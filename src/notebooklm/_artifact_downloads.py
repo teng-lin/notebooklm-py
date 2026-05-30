@@ -84,9 +84,8 @@ async def _await_writer_exit(
       ``False`` so we don't mask the original error with a second
       cancellation.
 
-    Addresses the CodeRabbit MAJOR findings on PR #981 — both the
-    original join-vs-unlink race AND the follow-up finding that the
-    initial fix silently absorbed task cancellation.
+    Handles both the original join-vs-unlink race AND the follow-up case
+    where an initial fix could silently absorb task cancellation.
     """
     join_task = asyncio.ensure_future(asyncio.to_thread(writer_thread.join))
     cancelled_error: asyncio.CancelledError | None = None
@@ -714,9 +713,7 @@ class ArtifactDownloadService:
                         # With many concurrent downloads, default-executor
                         # saturation by long-lived writers (each blocking
                         # on ``chunk_q.get()``) could deadlock producers
-                        # trying to ``put`` via ``to_thread`` — addresses
-                        # the gemini-code-assist HIGH-severity finding on
-                        # the original PR.
+                        # trying to ``put`` via ``to_thread``.
                         #
                         # Producer puts use ``put_nowait`` first and only
                         # fall back to ``to_thread(put, ...)`` when the
@@ -728,8 +725,7 @@ class ArtifactDownloadService:
                         # ``writer_error`` and an early ``writer_failed``
                         # ``threading.Event`` so the producer can short-
                         # circuit BEFORE the writer's drain completes,
-                        # avoiding wasted network reads — addresses the
-                        # gemini-code-assist MEDIUM-severity finding.
+                        # avoiding wasted network reads.
                         chunk_q: queue.Queue[bytes | None] = queue.Queue(
                             maxsize=_DOWNLOAD_WRITER_QUEUE_SIZE
                         )
@@ -820,8 +816,7 @@ class ArtifactDownloadService:
                             # =True`` ensures a cancellation that
                             # arrived while we were waiting for the
                             # writer isn't lost when the writer happens
-                            # to finish first — CodeRabbit MAJOR
-                            # findings on PR #981.
+                            # to finish first.
                             await _await_writer_exit(writer_thread, re_raise_cancel=True)
                             if writer_error:
                                 raise writer_error[0]
@@ -863,7 +858,6 @@ class ArtifactDownloadService:
                             # keeps re-awaiting the same shielded join
                             # task across repeated cancellations until
                             # the writer thread is actually dead.
-                            # CodeRabbit MAJOR finding on PR #981.
                             await _await_writer_exit(writer_thread)
                             raise
 

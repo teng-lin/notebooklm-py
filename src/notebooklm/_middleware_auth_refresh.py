@@ -56,11 +56,9 @@ unaware of refreshes, and the once-per-call contract is restored by the
 fact that ``AuthRefreshMiddleware`` only retries ONCE per ``next_call``
 invocation.
 
-See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
+See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
 ``src/notebooklm/_runtime_auth.py`` for :class:`AuthRefreshCoordinator`
-(coalesced refresh + auth-snapshot lock), and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.8 for the
-PR sequence.
+(coalesced refresh + auth-snapshot lock).
 """
 
 from __future__ import annotations
@@ -131,8 +129,8 @@ class AuthRefreshMiddleware:
       explicit ``auth=session.auth`` collaborator (the
       Session-shaped ``_AuthRefreshHost`` Protocol was deleted in
       favor of per-method explicit args; the previously-load-bearing
-      ``Session._snapshot`` thin wrapper was inlined in PR #4b of the
-      session-refactor arc); tests that omit ``snapshot_provider``
+      ``Session._snapshot`` thin wrapper was inlined); tests that omit
+      ``snapshot_provider``
       preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
       resolved at call time via :func:`_runtime_helpers.resolve_sleep` —
@@ -187,7 +185,7 @@ class AuthRefreshMiddleware:
         ``RetryMiddleware`` (outside this middleware) re-invokes the chain on
         a 429/5xx that fires after a successful refresh. Without this guard
         the sequence ``401 → refresh → 429 → Retry retry → 401`` would refresh
-        twice (codex iter-1 catch on PR 12.8). With it, the second 401
+        twice. With it, the second 401
         propagates without a redundant refresh, matching the pre-PR-12.7
         "one refresh max per logical call" contract.
 

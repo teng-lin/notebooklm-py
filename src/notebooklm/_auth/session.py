@@ -28,9 +28,9 @@ async def refresh_auth_session(
 ) -> AuthTokens:
     """Refresh NotebookLM auth tokens through the raw homepage session path.
 
-    Wave 2 of plan ``host-protocol-removal`` replaced the legacy
-    Session-shaped core Protocol + ``ClientLifecycle`` argument shape
-    with five explicit keyword-only collaborators. The previous shape
+    This function takes five explicit keyword-only collaborators rather than
+    the legacy Session-shaped core Protocol + ``ClientLifecycle`` argument
+    shape. The previous shape
     required a Session-aliased core that re-declared the underlying
     private slots (``auth`` / ``_kernel`` / ``update_auth_tokens`` /
     ``update_auth_headers``) and a separate ``cast`` to satisfy the
@@ -68,11 +68,10 @@ async def refresh_auth_session(
     auth_coord.update_auth_headers(auth=auth, kernel=kernel)
     # Persist through ``ClientLifecycle.save_cookies`` so refresh
     # serializes with keepalive and close saves. The lifecycle's
-    # ``save_cookies`` now takes the :class:`CookiePersistence`
-    # collaborator directly — Wave 2 of plan ``host-protocol-removal``
-    # narrowed the first positional argument from a Session-shaped
-    # ``host`` to the cookie-persistence collaborator the caller already
-    # holds, eliminating the prior ``cast`` to a Protocol-typed host.
+    # ``save_cookies`` takes the :class:`CookiePersistence` collaborator
+    # directly — the first positional argument is the cookie-persistence
+    # collaborator the caller already holds rather than a Session-shaped
+    # ``host``, eliminating the prior ``cast`` to a Protocol-typed host.
     await lifecycle.save_cookies(cookie_persistence, http_client.cookies)
 
     return auth

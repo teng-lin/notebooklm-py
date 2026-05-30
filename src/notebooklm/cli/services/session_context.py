@@ -70,8 +70,7 @@ del _capture_original_get_storage_path
 # ``default`` is the import-time function reference closed over by the
 # caller. Comparisons go against ``default`` (NOT against the live
 # ``notebooklm.paths`` attribute) so a patch at the canonical source does
-# not falsely flag a stale local binding as "patched" — rev-3 CodeRabbit
-# feedback on #962.
+# not falsely flag a stale local binding as "patched".
 #
 # Precedence:
 #   1. The service module's own attribute if patched.
@@ -456,9 +455,8 @@ def execute_logout(ctx: click.Context | None) -> LogoutOutcome:
     # ``test_auth_subcommands.py::TestAuthLogoutCommand`` patch the symbol
     # with ``side_effect=OSError(...)`` to assert the diagnostic UX. The
     # ``try/except`` is therefore reachable via the test surface and must
-    # stay — claude[bot]'s rev-1 nitpick on #962 was incorrect for this
-    # site (the function is patched on the service module's namespace, not
-    # called through the real implementation).
+    # stay: the function is patched on the service module's namespace, not
+    # called through the real implementation.
     try:
         if clear_context(clear_account=True):
             removed_any = True

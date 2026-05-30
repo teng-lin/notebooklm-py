@@ -294,7 +294,7 @@ class RuntimeTransport:
         # that drive the chain without a budget (the chat path) leave the key
         # ABSENT, matching the ``RPC_CONTEXT_REFRESH_BUDGET`` docstring; the
         # auth-refresh middleware then falls back to its per-chain
-        # ``RPC_CONTEXT_AUTH_REFRESHED`` boolean (gemini/claude #1240 review).
+        # ``RPC_CONTEXT_AUTH_REFRESHED`` boolean.
         if refresh_budget is not None:
             context[RPC_CONTEXT_REFRESH_BUDGET] = refresh_budget
         snapshot = await self._snapshot_provider()
@@ -340,8 +340,7 @@ class RuntimeTransport:
             # latency. ``SemaphoreMiddleware`` writes the duration to
             # ``request.context[RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS]`` after the
             # semaphore is acquired; absence of the key means the slot
-            # was never acquired and there's nothing to record (gemini
-            # PR 12.9 finding).
+            # was never acquired and there's nothing to record.
             queue_wait = request.context.get(RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS)
             if queue_wait is not None:
                 self._metrics.record_rpc_queue_wait(queue_wait)

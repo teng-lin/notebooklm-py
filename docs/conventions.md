@@ -252,6 +252,28 @@ back-pressure contract.
 
 ---
 
+## 4. Historical-work vocabulary (glossary)
+
+Comments, ADRs, `docs/refactor-history.md`, and `CLAUDE.md` use a handful of
+recurring labels to reference past refactoring work. They are accurate but
+opaque without a key. When you write a *new* comment, prefer a one-line
+behavioral rationale over one of these labels — but when you read an existing
+one, this is what it means:
+
+| Token | Meaning |
+|-------|---------|
+| **`#NNNN`** | A GitHub pull request or issue number in `teng-lin/notebooklm-py`, e.g. <https://github.com/teng-lin/notebooklm-py/pull/1205>. Bare numbers are not clickable in most renderers; resolve them on GitHub. |
+| **ADR-NNN** | An Architecture Decision Record under [`docs/adr/`](./adr/) (zero-padded, e.g. ADR-014 → `docs/adr/0014-*.md`). The authoritative source for a design decision and its trade-offs. |
+| **Wave N** | A sequenced step of a larger multi-PR migration (e.g. the session-decoupling / host-protocol-removal effort). Waves are *planning* units, not releases; the durable record of what a wave did is the ADR it closed and the merged PRs. |
+| **Phase N** | A coarser planning grouping than a Wave, used by some older migrations. |
+| **Tier N** | Yet another planning grouping (e.g. "tier-12-13" migration); interchangeable with Phase in intent. |
+| **`Pn.Tn`** (e.g. `P3.T0`) | "Phase *n*, Task *n*" task codes from a numbered refactor plan; used in `CLAUDE.md` to date module renames. |
+| **`.sisyphus/plans/…`** | Internal planning notes that are **not checked into the repo**. References to them are unfollowable by outside readers; treat them as provenance only. New code should cite the public ADR or doc instead. |
+
+When historical labels are the *only* explanation for why code exists, that is a
+smell — promote the reasoning into a plain-language comment or an ADR so the
+rationale survives without the label.
+
 ## Related documents
 
 - [`docs/architecture.md`](./architecture.md) — the v0.5.0 collaborator graph,

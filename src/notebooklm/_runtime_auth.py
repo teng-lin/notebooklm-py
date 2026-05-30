@@ -349,9 +349,8 @@ class AuthRefreshCoordinator:
         """Cancel any in-flight refresh task during ``ClientLifecycle.close``.
 
         Mirrors the legacy close block previously inlined in
-        :meth:`ClientLifecycle.close` (Wave 1 of plan ``host-protocol-removal``)
-        so the lifecycle never touches the private ``_refresh_task`` slot
-        on this coordinator:
+        :meth:`ClientLifecycle.close` so the lifecycle never touches the
+        private ``_refresh_task`` slot on this coordinator:
 
         - **No-op** when ``_refresh_task is None`` — a freshly-opened client
           that never triggered an auth refresh has no task to cancel.

@@ -51,11 +51,15 @@ async def main():
         #
         # video_style:
         #   - AUTO_SELECT: Let AI choose the best style (default)
+        #   - CUSTOM: Caller-provided style
         #   - CLASSIC: Traditional presentation style
         #   - WHITEBOARD: Whiteboard animation style
-        #   - ABSTRACT: Abstract visual style
-        #   - CORPORATE: Professional corporate style
-        #   - DYNAMIC: Dynamic, energetic style
+        #   - KAWAII: Cute, kawaii-inspired style
+        #   - ANIME: Anime visual style
+        #   - WATERCOLOR: Watercolor painting style
+        #   - RETRO_PRINT: Retro print style
+        #   - HERITAGE: Heritage/vintage style
+        #   - PAPER_CRAFT: Paper-craft style
 
         print("\nStarting video generation...")
         print("Video generation typically takes 3-8 minutes")

@@ -131,7 +131,7 @@ _GRPC_STATUS_MESSAGES: dict[int, str] = {
 }
 
 # Hint appended to NOT_FOUND / PERMISSION_DENIED messages. Deliberately avoids
-# the substrings checked by AUTH_ERROR_PATTERNS in _core.py so these errors
+# the substrings checked by AUTH_ERROR_PATTERNS in _runtime_helpers.py so these errors
 # don't incorrectly trigger the auth-refresh retry path.
 _ACCOUNT_MISMATCH_HINT = (
     " If you have multiple Google accounts signed in, this is commonly an "
@@ -740,7 +740,7 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
             code, label = status
             message = f"RPC {rpc_id} returned null result with status code {code} ({label})."
             # Route NOT_FOUND (5) / PERMISSION_DENIED (7) through ClientError
-            # so _core.is_auth_error does not misclassify them as auth
+            # so is_auth_error does not misclassify them as auth
             # failures and trigger a spurious token-refresh retry. The
             # account-routing hint is only relevant for these two codes —
             # other codes (e.g. INTERNAL 13) get a plain message.

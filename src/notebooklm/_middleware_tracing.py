@@ -44,9 +44,7 @@ after, never touch the payload." More elaborate tracing (span IDs,
 the structured ``extra=`` fields here give downstream observers enough
 hooks to attach.
 
-See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.3 for the
-PR sequence.
+See ``docs/adr/0009-middleware-chain.md`` for the chain contract.
 """
 
 from __future__ import annotations

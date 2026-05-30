@@ -44,10 +44,8 @@ Behavior preservation (vs. pre-PR-12.7):
   ``_chat_transport.chat_aware_authed_post`` (which catches both) sees
   the same shape it always did.
 
-See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_transport_errors.py`` for the terminal error mapper, and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.7 for the
-PR sequence.
+See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
+``src/notebooklm/_transport_errors.py`` for the terminal error mapper.
 """
 
 from __future__ import annotations

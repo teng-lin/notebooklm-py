@@ -634,9 +634,7 @@ class NotebookLMClient:
                     # continues to run regardless.
                     # NOTE: deliberately NOT catching ``BaseException`` —
                     # ``KeyboardInterrupt`` and ``SystemExit`` are
-                    # process-exit signals that must propagate unchanged
-                    # (per CodeRabbit feedback on PR #950, comment
-                    # 3285205066).
+                    # process-exit signals that must propagate unchanged.
                     pass
                 raise
             # Any other exception from drain (e.g. ``ValueError`` for a
@@ -834,10 +832,9 @@ class NotebookLMClient:
         This helps prevent 'Session Expired' errors by obtaining a fresh CSRF
         token (SNlM0e) and session ID (FdrFJe).
 
-        Wave 2 of plan ``host-protocol-removal`` rewired this call site
-        onto explicit collaborators sourced from ``self._auth`` and
-        ``self._collaborators``. The five kwargs mirror the new
-        :func:`refresh_auth_session` signature: ``auth`` is the
+        This call site uses explicit collaborators sourced from
+        ``self._auth`` and ``self._collaborators``. The five kwargs mirror
+        the :func:`refresh_auth_session` signature: ``auth`` is the
         client-owned :class:`AuthTokens` instance (the Auth Instance
         Invariant guarantees this is the same object every auth consumer
         observes), and the remaining four come from the collaborator

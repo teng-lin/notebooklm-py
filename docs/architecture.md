@@ -728,8 +728,8 @@ Protocol membership, no forbidden monkeypatch) live in `tests/unit/`
 and `tests/_lint/` — changing the underlying invariant without updating
 the pin is a bug.
 
-A fuller taxonomy is in
-[`docs/test-suite-taxonomy-inventory.md`](./test-suite-taxonomy-inventory.md).
+A fuller taxonomy can be generated with
+[`scripts/test_taxonomy_inventory.py`](../scripts/test_taxonomy_inventory.py).
 
 ## Implementation surface convention (ADR-012)
 

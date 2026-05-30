@@ -26,9 +26,7 @@ Five names live here:
   to ``BuildRequestResult``. This is the contract used before handing a request
   envelope to ``Kernel.post``.
 
-See ``docs/adr/0009-middleware-chain.md`` for the full chain contract and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` section 2 for the
-PR sequence.
+See ``docs/adr/0009-middleware-chain.md`` for the full chain contract.
 """
 
 from __future__ import annotations

@@ -13,7 +13,6 @@ Adding a new download type is a single registry edit + a corresponding
 See also:
     - :mod:`notebooklm.cli.services.download` — the pure-logic plan / executor
       that consumes ``DownloadTypeSpec`` rows at run time.
-    - ``.sisyphus/phases/cli-audit-fixes/phase-3.md`` § P3.T2.
 """
 
 from __future__ import annotations

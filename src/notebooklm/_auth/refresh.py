@@ -202,7 +202,7 @@ async def _coalesced_run_refresh_cmd(
             # Intentionally LEAVE the (now-done) future in the registry so the
             # caller's CancelledError handler in ``_fetch_tokens_with_refresh``
             # can still inspect ``inflight.exception()`` after a cancel/settle
-            # race (CodeRabbit PR #621 finding). The leader-check at the
+            # race. The leader-check at the
             # get-or-create site (``existing is None or existing.done()``)
             # treats a done future as overwritable, so the next refresh
             # cycle's leader replaces this slot — no accumulation.
@@ -381,8 +381,8 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
         # Two-channel disclosure: the user sees only exit code + executable
         # basename; developers running with ``-vv`` get the full output
         # through the package's redacting DEBUG logger.
-        # Claude bot review feedback: in shell-mode ``run_target`` is the raw
-        # command STRING, not a list. Extract the basename of its first token
+        # In shell-mode ``run_target`` is the raw command STRING, not a
+        # list. Extract the basename of its first token
         # so users still see a useful script name (the string is user-supplied
         # and not a secret — its argv[0] equivalent is safe to surface).
         if isinstance(run_target, list) and run_target:
@@ -504,8 +504,8 @@ async def _fetch_tokens_with_refresh(
                     # Snapshot the inflight registry slot BEFORE entering
                     # the await. The ``_settle`` callback intentionally
                     # leaves done futures in the registry so the
-                    # cancel/settle race fix from CodeRabbit PR #621 can
-                    # still inspect ``inflight.exception()``; that
+                    # cancel/settle race fix can still inspect
+                    # ``inflight.exception()``; that
                     # retention also means the registry may still hold a
                     # STALE done future from a previous refresh cycle when
                     # our await starts. We distinguish that stale slot

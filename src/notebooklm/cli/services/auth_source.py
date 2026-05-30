@@ -164,7 +164,7 @@ class AuthSource:
         ``storage_override`` is already canonicalised by
         :meth:`from_click_context` and ``get_storage_path`` already returns
         an absolute resolved path, so no extra ``expanduser`` / ``resolve``
-        is needed here (rev-1 CodeRabbit nitpick fix on #962).
+        is needed here.
         """
         if self.storage_override is not None:
             return self.storage_override

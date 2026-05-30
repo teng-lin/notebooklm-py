@@ -242,9 +242,7 @@ class NoteService:
         re-raise must not block on cleanup) to honour the caller's
         cancel intent without leaving an orphan row behind. The legacy
         ``_mind_map.MindMapService.create_note`` path that previously
-        owned this contract was retired in Phase 6; the contract
-        itself moves here (closes the Phase 5 TODO surfaced by
-        claude[bot] and gemini-code-assist[bot] on PR #873).
+        owned this contract was retired; the contract itself now lives here.
         """
         params = [notebook_id, "", [1], None, title]
         result = await self._rpc.rpc_call(
@@ -284,8 +282,7 @@ class NoteService:
         # bare coroutine) so the cancel-time cleanup branch can await
         # it before issuing the best-effort DELETE_NOTE. If we instead
         # fired DELETE_NOTE in parallel with the still-running
-        # shielded UPDATE_NOTE (the pattern coderabbit flagged on PR
-        # #875), delete could complete first and update could then
+        # shielded UPDATE_NOTE, delete could complete first and update could then
         # write to an already-soft-deleted row — observable as an
         # inconsistent row state on the server side and a swallowed
         # exception in the cleanup task.

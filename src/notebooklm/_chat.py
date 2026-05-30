@@ -584,7 +584,7 @@ class ChatAPI:
                     for conv in group:
                         if isinstance(conv, list) and conv and isinstance(conv[0], str):
                             return conv[0]
-            # Promoted from DEBUG to WARNING (per Gemini review on PR #667):
+            # Promoted from DEBUG to WARNING:
             # the response shape is the actionable diagnostic when callers
             # (notably ``ChatAPI.ask`` post-issue-#659) raise ChatError on a
             # ``None`` return. Truncate to keep log volume bounded; the

@@ -96,7 +96,7 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Injectable seams (Phase 2 PR 3 of `.sisyphus/plans/refactor-completion-plan.md`)
+# Injectable seams
 # ---------------------------------------------------------------------------
 #
 # These two callable seams let host integrations swap the on-disk cookie
@@ -301,9 +301,8 @@ class ClientLifecycle:
         for the new substitution point. The httpx transport built here is
         always a real, unwrapped transport.
 
-        Wave 2 of plan ``host-protocol-removal`` narrowed this signature
-        from the legacy ``host`` Protocol to explicit
-        keyword-only collaborators so the lifecycle never reaches into
+        This signature takes explicit keyword-only collaborators rather than
+        the legacy ``host`` Protocol so the lifecycle never reaches into
         ``host.<X>`` attributes; the caller
         (:meth:`notebooklm.client.NotebookLMClient.__aenter__`) passes its
         owned collaborators through.
@@ -353,11 +352,10 @@ class ClientLifecycle:
         # in ``ask`` already rejects cross-loop *use*; this governs rebuild).
         chat.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
-        # admits new transport work again. Wave 1 of plan
-        # ``host-protocol-removal`` encapsulated the legacy direct write
-        # ``host._drain_tracker._draining = False`` behind a method on the
-        # tracker so the lifecycle never reaches into private collaborator
-        # fields; the method is intentionally narrow (clears ``_draining``
+        # admits new transport work again. The legacy direct write
+        # ``host._drain_tracker._draining = False`` is encapsulated behind a
+        # method on the tracker so the lifecycle never reaches into private
+        # collaborator fields; the method is intentionally narrow (clears ``_draining``
         # only, leaves in-flight counters intact — see its docstring).
         drain_tracker.reset_after_open()
         # Discard the lazy RPC semaphore so a client reopened on a different
@@ -417,9 +415,8 @@ class ClientLifecycle:
         affecting the live save path through the wrapper. Custom callables
         bypass the late-bind hop entirely.
 
-        Wave 2 of plan ``host-protocol-removal`` narrowed the first
-        positional argument from the legacy ``host`` Protocol to the
-        :class:`CookiePersistence` collaborator directly. Callers
+        The first positional argument is the :class:`CookiePersistence`
+        collaborator directly rather than the legacy ``host`` Protocol. Callers
         (lifecycle ``close`` / keepalive loop, :func:`refresh_auth_session`)
         pass the collaborator they already hold rather than a broad host
         wrapper.
@@ -468,9 +465,8 @@ class ClientLifecycle:
         continues to operate against the fresh transport state without
         a fresh executor instance.
 
-        Wave 2 of plan ``host-protocol-removal`` narrowed this signature
-        from the legacy ``host`` Protocol to explicit
-        keyword-only collaborators; the caller
+        This signature takes explicit keyword-only collaborators rather than
+        the legacy ``host`` Protocol; the caller
         (:meth:`notebooklm.client.NotebookLMClient.close`) passes its owned
         collaborators through.
         """
@@ -487,8 +483,8 @@ class ClientLifecycle:
             # racing against close would survive the close path and continue
             # holding the now-torn-down ``httpx.AsyncClient``, surfacing as a
             # confusing httpx error or a "coroutine was never awaited" GC
-            # warning. Wave 1 of plan ``host-protocol-removal`` encapsulated
-            # the cancel+gather block behind a method on the coordinator so
+            # warning. The cancel+gather block is encapsulated behind a
+            # method on the coordinator so
             # the lifecycle never reaches into the private ``_refresh_task``
             # slot; the method preserves both ``is None`` and ``done()``
             # short-circuits (true no-op outside the racing case) AND the
@@ -550,10 +546,9 @@ class ClientLifecycle:
         Both classes never propagate; the loop only exits via
         :class:`asyncio.CancelledError` from :meth:`close`.
 
-        Wave 2 of plan ``host-protocol-removal`` narrowed this signature
-        from the legacy ``host`` Protocol to the
-        :class:`CookiePersistence` collaborator (used for the per-iteration
-        cookie save). :meth:`open` spawns the task with the same
+        This signature takes the :class:`CookiePersistence` collaborator
+        (used for the per-iteration cookie save) rather than the legacy
+        ``host`` Protocol. :meth:`open` spawns the task with the same
         ``cookie_persistence`` it received, so the loop saves through the
         same collaborator the open path captured.
         """

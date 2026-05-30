@@ -178,8 +178,7 @@ __all__ = [
 # assignment is gone too: ``_auth.cookies`` already imports the canonical
 # validator from ``_cookie_policy`` (see ``_auth/cookies.py:40``), and after
 # the inversion ``auth._validate_required_cookies`` IS that same object — so
-# the reverse-assignment was a no-op (gemini-code-assist round-1 fix on
-# PR #1070).
+# the reverse-assignment was a no-op.
 _validate_required_cookies = _cookie_policy._validate_required_cookies
 
 

@@ -3,8 +3,8 @@
 Prevents silent drift in the hand-maintained file map:
 
 * documented paths must still exist; and
-* direct ``src/notebooklm`` modules/packages must be documented or explicitly
-  omitted with a reason.
+* every ``src/notebooklm`` module/package (including subpackage members) must
+  be documented or explicitly omitted with a reason.
 
 Usage:
     python scripts/check_claude_md_freshness.py
@@ -140,18 +140,25 @@ def _section_after_heading(text: str, heading: str) -> str:
 
 
 def _top_level_notebooklm_modules(repo_root: Path) -> list[str]:
-    """Return direct ``src/notebooklm`` Python modules and packages."""
+    """Return every ``src/notebooklm`` Python module and subpackage.
+
+    Recurses through subpackages so that subpackage members (e.g.
+    ``_auth/tokens.py``, ``rpc/overrides.py``) must be documented too — not
+    just direct top-level modules. ``__init__.py`` package markers are
+    excluded from the required set; the enclosing package directory stands in
+    for them.
+    """
     package_root = repo_root / "src" / "notebooklm"
     if not package_root.is_dir():
         return []
 
     paths: list[str] = []
-    for child in package_root.iterdir():
-        if child.name == "__pycache__":
+    for child in package_root.rglob("*"):
+        if "__pycache__" in child.parts:
             continue
-        if (child.is_file() and child.suffix == ".py") or (
-            child.is_dir() and (child / "__init__.py").is_file()
-        ):
+        is_package = child.is_dir() and (child / "__init__.py").is_file()
+        is_module = child.is_file() and child.suffix == ".py" and child.name != "__init__.py"
+        if is_package or is_module:
             paths.append(child.relative_to(repo_root).as_posix())
     return sorted(paths)
 
@@ -191,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             for p in missing:
                 print(f"  {p}", file=sys.stderr)
         if undocumented:
-            print("Undocumented top-level src/notebooklm modules/packages:", file=sys.stderr)
+            print("Undocumented src/notebooklm modules/packages:", file=sys.stderr)
             for p in undocumented:
                 print(f"  {p}", file=sys.stderr)
         if stale_omissions:
@@ -205,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         f"OK: {len(paths)} documented paths resolve; "
-        f"{len(top_level_modules)} top-level modules/packages "
+        f"{len(top_level_modules)} modules/packages "
         f"are documented or intentionally omitted"
     )
     return 0

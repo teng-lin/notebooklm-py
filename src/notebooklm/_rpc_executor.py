@@ -481,8 +481,7 @@ class RpcExecutor:
         ``_refresh_budget.consume()`` gate returned ``True``, so the caller
         always holds the already-consumed shared budget. Forcing it to be
         passed forecloses a contrived direct call from minting a fresh budget
-        on the retry leg and allowing a second refresh (coderabbit/claude #1240
-        review).
+        on the retry leg and allowing a second refresh.
         """
         await refresh_and_count(
             refresh=self._auth_refresh.await_refresh,

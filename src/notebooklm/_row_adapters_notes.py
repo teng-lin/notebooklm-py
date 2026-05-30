@@ -229,8 +229,7 @@ class NoteRow:
         verbatim (e.g. a note body like ``My "children": Alice, Bob``).
         Production mind-map payloads are always JSON objects, never
         arrays / strings / etc., so requiring the leading ``{`` is a
-        zero-cost reduction in false-positive surface — gemini review
-        feedback on #1028.
+        zero-cost reduction in false-positive surface.
 
         Exposed as a ``@staticmethod`` so callers that already have a
         content string in hand (e.g. ``NoteService.classify_row``

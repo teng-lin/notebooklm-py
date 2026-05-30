@@ -6,7 +6,7 @@ ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection,
 Tracing]``.
 
 PR 12.1 originally pinned six middlewares; PR 12.9 added the seventh after
-codex caught a load-bearing regression in the first cut of the audit-find
+a load-bearing regression surfaced in the first cut of the audit-find
 that moved the semaphore around the chain dispatch in
 ``Session._perform_authed_post``: queued tasks were no longer counted by
 ``DrainMiddleware`` (Drain sat outside the semaphore wait), and Metrics
@@ -34,9 +34,7 @@ on first use (loop affinity) and returns a ``contextlib.nullcontext`` when
 binding would have to be reset on loop reuse and would have a 2-call
 recursive-acquire deadlock risk; the factory closure avoids both.
 
-See ``docs/adr/0009-middleware-chain.md`` §"Chain ordering" + "PR 12.9
-close-out notes" for the rationale and ``.sisyphus/plans/
-tier-12-13-greenfield-migration.md`` row 12.9 for the PR sequence.
+See ``docs/adr/0009-middleware-chain.md`` §"Chain ordering" for the rationale.
 """
 
 from __future__ import annotations
