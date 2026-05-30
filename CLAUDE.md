@@ -130,7 +130,7 @@ RPC Layer (rpc/)
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_sources.py` | `client.sources` API |
-| `_artifacts.py` | `client.artifacts` API |
+| `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (the former `_artifact_generation.py` service was folded into this facade in #1205, ADR-012 sibling fold) |
 | `_chat.py` | `client.chat` API |
 | `_research.py` | `client.research` API |
 | `_notes.py` | `client.notes` API |
@@ -140,7 +140,6 @@ RPC Layer (rpc/)
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
 | `_artifact_downloads.py` | Asynchronous download coordinator for finished artifacts |
 | `_artifact_formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
-| `_artifact_generation.py` | Artifact generation orchestration/service |
 | `_artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_artifact_listing.py` | Listing and filtering operations for notebook artifacts |
 | `_artifact_polling.py` | Poll coordination service for artifact generation tasks |
@@ -222,7 +221,6 @@ src/notebooklm/
 ├── _mind_map.py                 # NoteBackedMindMapService
 ├── _artifact_downloads.py       # Artifact download coordinator
 ├── _artifact_formatters.py      # Artifact formatting helpers
-├── _artifact_generation.py      # Artifact generation orchestration/service
 ├── _artifact_payloads.py        # Stable artifact request payload builders
 ├── _artifact_listing.py         # Artifact listing helper
 ├── _artifact_polling.py         # Artifact polling coordinator

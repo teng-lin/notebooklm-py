@@ -554,11 +554,11 @@ await page.locator(".create-artifact-button-container:has-text('Audio')").click(
 
 **All artifact types use `R7cb6c` with different content type codes and nested configs.**
 
-**Source:** `_artifact_generation.py` (facade: `_artifacts.py`)
+**Source:** `_artifacts.py` (param builders: `_artifact_payloads.py`)
 
 #### Audio Overview (Type 1)
 
-**Source:** `_artifact_generation.py::ArtifactGenerationService` (facade: `_artifacts.py`)
+**Source:** `_artifacts.py::ArtifactsAPI` (param builders: `_artifact_payloads.py`)
 
 ```python
 source_ids_triple = [[[sid]] for sid in source_ids]  # [[[s1]], [[s2]], ...]

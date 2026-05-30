@@ -511,12 +511,12 @@ IDEMPOTENCY_REGISTRY._seed_defaults()
 # CREATE_ARTIFACT (P0-3) — mutating create. Params are nested positional
 # lists shaped like ``[[2], notebook_id, [None, None, type_code,
 # source_ids_triple, ..., config]]`` for every artifact variant (audio,
-# video, report, quiz, etc.; see ``_artifact_generation.py`` lines 75-99,
-# 143-161, 266-291, ...). Every position is structural — there is no
-# caller-supplied client-token slot. The server allocates the artifact_id
-# in the response (``ArtifactGenerationService.parse_generation_result``
-# reads ``result[0][0]`` — see ``_artifact_generation.py``), so a
-# token-dedupe strategy is impossible.
+# video, report, quiz, etc.; see the ``generate_*`` methods and the
+# ``_artifact_payloads.build_*`` helpers in ``_artifacts.py``). Every
+# position is structural — there is no caller-supplied client-token slot.
+# The server allocates the artifact_id in the response
+# (``ArtifactsAPI._parse_generation_result`` reads ``result[0][0]`` — see
+# ``_artifacts.py``), so a token-dedupe strategy is impossible.
 #
 # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
 # which suppresses ``_perform_authed_post``'s inner retry loop. Without
@@ -540,11 +540,12 @@ IDEMPOTENCY_REGISTRY.register(
 # GENERATE_MIND_MAP (P0-3) — generation RPC with no client-token slot.
 # Params are ``[source_ids_nested, None, None, None, None,
 # ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
-# [2, None, [1]]]`` (see ``_artifact_generation.py`` line 595-604). Every
-# slot is structural (sources, content config, language, mode triple). The
-# response carries the mind-map JSON directly (line 614-622 reads
-# ``result[0][0]``) — there is no task_id to probe with after the fact, so
-# token-dedupe is impossible here too.
+# [2, None, [1]]]`` (see ``ArtifactsAPI.generate_mind_map`` in
+# ``_artifacts.py`` and ``_artifact_payloads.build_mind_map_params``).
+# Every slot is structural (sources, content config, language, mode
+# triple). The response carries the mind-map JSON directly
+# (``generate_mind_map`` reads ``result[0][0]``) — there is no task_id to
+# probe with after the fact, so token-dedupe is impossible here too.
 #
 # Note: ``GENERATE_MIND_MAP`` itself does NOT persist the note server-side
 # (see ``tests/integration/test_mind_map_chain_vcr.py`` header). The actual
@@ -557,8 +558,8 @@ IDEMPOTENCY_REGISTRY.register(
 # silently mismatch what the client saw on the first commit before the
 # response was lost. Classifying CREATE_NOTE for the persisted-write side
 # of the chain is a separate follow-up (out of scope per the b-generation
-# task spec, which restricts edits to ``_artifact_generation.py`` and
-# ``_idempotency.py``).
+# task spec, which restricted edits to the artifact-generation path —
+# now folded into ``_artifacts.py`` — and ``_idempotency.py``).
 IDEMPOTENCY_REGISTRY.register(
     RPCMethod.GENERATE_MIND_MAP,
     IdempotencyPolicy.PROBE_THEN_CREATE,

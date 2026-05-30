@@ -34,7 +34,7 @@ class NoteBackedMindMapService:
 
     The download path doesn't need ``create_mind_map`` — mind-map
     creation goes through :meth:`NoteService.create_note` directly
-    from ``_artifact_generation.generate_mind_map`` (a one-shot
+    from ``ArtifactsAPI.generate_mind_map`` (a one-shot
     GENERATE_MIND_MAP + persist pipeline). The methods exposed here
     are exactly the ones the artifact download path and ``NotesAPI``
     ``list_mind_maps`` / ``delete_mind_map`` need.

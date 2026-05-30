@@ -6,6 +6,7 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 """
 
 import builtins
+import json as json_module
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -22,13 +23,28 @@ from . import (
     _mind_map,  # noqa: F401 — re-exported as facade attribute
 )
 from ._artifact_downloads import ArtifactDownloadService, DownloadResult
-from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
+from ._artifact_payloads import (
+    build_audio_artifact_params,
+    build_cinematic_video_artifact_params,
+    build_data_table_artifact_params,
+    build_flashcards_artifact_params,
+    build_infographic_artifact_params,
+    build_mind_map_params,
+    build_quiz_artifact_params,
+    build_report_artifact_params,
+    build_revise_slide_params,
+    build_slide_deck_artifact_params,
+    build_suggest_reports_params,
+    build_video_artifact_params,
+)
+from ._env import get_default_language
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._runtime_contracts import RpcCaller
+from .exceptions import ArtifactFeatureUnavailableError, ValidationError
 
 if TYPE_CHECKING:
     from ._runtime_lifecycle import ClientLifecycle
@@ -44,11 +60,14 @@ from .rpc import (
     QuizDifficulty,
     QuizQuantity,
     ReportFormat,
+    RPCError,
     RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
     VideoFormat,
     VideoStyle,
+    artifact_status_to_str,
+    safe_index,
 )
 from .types import (
     Artifact,
@@ -112,11 +131,11 @@ class ArtifactsAPI:
                 from ``mind_map_service`` in Phase 5 to reflect the
                 concrete adapter type (:class:`NoteBackedMindMapService`).
             note_service: Backend note-row primitives. Owns the
-                ``create_note`` call site that
-                ``_artifact_generation.generate_mind_map`` uses to
-                persist generated mind maps. Added in Phase 5 so the
-                generation path no longer reaches into a module-level
-                ``_mind_map.create_note`` shim (retired in Phase 6).
+                ``create_note`` call site that this API's
+                ``generate_mind_map`` uses to persist generated mind
+                maps. Added in Phase 5 so the generation path no longer
+                reaches into a module-level ``_mind_map.create_note``
+                shim (retired in Phase 6).
             storage_path: Path to storage state file for loading download cookies.
         """
         self._rpc = rpc
@@ -127,11 +146,6 @@ class ArtifactsAPI:
         self._note_service = note_service
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
-        self._generation = ArtifactGenerationService(
-            rpc=self._rpc,
-            notebooks=self._notebooks,
-            note_service=self._note_service,
-        )
         self._downloads = ArtifactDownloadService(
             rpc=self._rpc,
             listing=self._listing,
@@ -236,13 +250,23 @@ class ArtifactsAPI:
         audio_length: AudioLength | None = None,
     ) -> GenerationStatus:
         """Generate an Audio Overview (podcast)."""
-        return await self._generation.generate_audio(
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_audio_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             language=language,
             instructions=instructions,
             audio_format=audio_format,
             audio_length=audio_length,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="audio",
         )
 
     async def generate_video(
@@ -256,14 +280,32 @@ class ArtifactsAPI:
         style_prompt: str | None = None,
     ) -> GenerationStatus:
         """Generate a Video Overview."""
-        return await self._generation.generate_video(
+        if language is None:
+            language = get_default_language()
+        normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
+        if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
+            raise ValidationError("style_prompt is not supported for cinematic videos")
+        if video_style == VideoStyle.CUSTOM and not normalized_style_prompt:
+            raise ValidationError("style_prompt is required when video_style is CUSTOM")
+        if normalized_style_prompt and video_style != VideoStyle.CUSTOM:
+            raise ValidationError("style_prompt requires video_style=VideoStyle.CUSTOM")
+
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_video_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             language=language,
             instructions=instructions,
             video_format=video_format,
             video_style=video_style,
-            style_prompt=style_prompt,
+            style_prompt=normalized_style_prompt,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="video",
         )
 
     async def generate_cinematic_video(
@@ -274,11 +316,21 @@ class ArtifactsAPI:
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a Cinematic Video Overview."""
-        return await self._generation.generate_cinematic_video(
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_cinematic_video_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             language=language,
             instructions=instructions,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="cinematic video",
         )
 
     async def generate_report(
@@ -291,13 +343,23 @@ class ArtifactsAPI:
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a report artifact."""
-        return await self._generation.generate_report(
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_report_artifact_params(
             notebook_id,
+            source_ids,
             report_format=report_format,
-            source_ids=source_ids,
             language=language,
             custom_prompt=custom_prompt,
             extra_instructions=extra_instructions,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="report",
         )
 
     async def generate_study_guide(
@@ -308,8 +370,11 @@ class ArtifactsAPI:
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a study guide report."""
-        return await self._generation.generate_study_guide(
+        if language is None:
+            language = get_default_language()
+        return await self.generate_report(
             notebook_id,
+            report_format=ReportFormat.STUDY_GUIDE,
             source_ids=source_ids,
             language=language,
             extra_instructions=extra_instructions,
@@ -324,12 +389,20 @@ class ArtifactsAPI:
         difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
         """Generate a quiz."""
-        return await self._generation.generate_quiz(
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_quiz_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             instructions=instructions,
             quantity=quantity,
             difficulty=difficulty,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="quiz",
         )
 
     async def generate_flashcards(
@@ -341,12 +414,20 @@ class ArtifactsAPI:
         difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
         """Generate flashcards."""
-        return await self._generation.generate_flashcards(
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_flashcards_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             instructions=instructions,
             quantity=quantity,
             difficulty=difficulty,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="flashcards",
         )
 
     async def generate_infographic(
@@ -360,14 +441,24 @@ class ArtifactsAPI:
         style: InfographicStyle | None = None,
     ) -> GenerationStatus:
         """Generate an infographic."""
-        return await self._generation.generate_infographic(
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_infographic_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             language=language,
             instructions=instructions,
             orientation=orientation,
             detail_level=detail_level,
             style=style,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="infographic",
         )
 
     async def generate_slide_deck(
@@ -380,13 +471,23 @@ class ArtifactsAPI:
         slide_length: SlideDeckLength | None = None,
     ) -> GenerationStatus:
         """Generate a slide deck."""
-        return await self._generation.generate_slide_deck(
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_slide_deck_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             language=language,
             instructions=instructions,
             slide_format=slide_format,
             slide_length=slide_length,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="slide deck",
         )
 
     async def revise_slide(
@@ -397,12 +498,33 @@ class ArtifactsAPI:
         prompt: str,
     ) -> GenerationStatus:
         """Revise an individual slide in a completed slide deck using a prompt."""
-        return await self._generation.revise_slide(
-            notebook_id,
-            artifact_id,
-            slide_index,
-            prompt,
-        )
+        if slide_index < 0:
+            raise ValidationError(f"slide_index must be >= 0, got {slide_index}")
+
+        params = build_revise_slide_params(artifact_id, slide_index, prompt)
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.REVISE_SLIDE,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            )
+        except RPCError as e:
+            if e.rpc_code == "USER_DISPLAYABLE_ERROR":
+                return GenerationStatus(
+                    task_id="",
+                    status="failed",
+                    error=str(e),
+                    error_code=str(e.rpc_code) if e.rpc_code is not None else None,
+                )
+            raise
+        if result is None:
+            logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
+            raise ArtifactFeatureUnavailableError(
+                "slide revision",
+                method_id=RPCMethod.REVISE_SLIDE.value,
+            )
+        return self._parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
 
     async def generate_data_table(
         self,
@@ -412,11 +534,21 @@ class ArtifactsAPI:
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a data table."""
-        return await self._generation.generate_data_table(
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_data_table_artifact_params(
             notebook_id,
-            source_ids=source_ids,
+            source_ids,
             language=language,
             instructions=instructions,
+        )
+        return await self._call_generate(
+            notebook_id,
+            params,
+            null_result_artifact_type="data table",
         )
 
     async def generate_mind_map(
@@ -427,12 +559,71 @@ class ArtifactsAPI:
         instructions: str | None = None,
     ) -> dict[str, Any]:
         """Generate an interactive mind map."""
-        return await self._generation.generate_mind_map(
-            notebook_id,
-            source_ids=source_ids,
+        if language is None:
+            language = get_default_language()
+        if source_ids is None:
+            source_ids = await self._notebooks.get_source_ids(notebook_id)
+
+        params = build_mind_map_params(
+            source_ids,
             language=language,
             instructions=instructions,
         )
+
+        # GENERATE_MIND_MAP is classified PROBE_THEN_CREATE in
+        # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is passed
+        # explicitly to document this call site as the no-variant default
+        # (the registry resolves the same entry either way; the explicit
+        # kwarg is a future-proofing marker for a possible variant table).
+        result = await self._rpc.rpc_call(
+            RPCMethod.GENERATE_MIND_MAP,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+            operation_variant=None,
+        )
+
+        if result and isinstance(result, list) and len(result) > 0:
+            inner = result[0]
+            if isinstance(inner, list) and len(inner) > 0:
+                mind_map_json = inner[0]
+
+                if isinstance(mind_map_json, str):
+                    try:
+                        mind_map_data = json_module.loads(mind_map_json)
+                    except json_module.JSONDecodeError:
+                        mind_map_data = mind_map_json
+                        mind_map_json = str(mind_map_json)
+                else:
+                    mind_map_data = mind_map_json
+                    mind_map_json = json_module.dumps(mind_map_json)
+
+                title = "Mind Map"
+                if isinstance(mind_map_data, dict) and "name" in mind_map_data:
+                    title = mind_map_data["name"]
+
+                # ``NoteService.create_note`` raises ``RPCError`` when the
+                # server omits a usable row id (issue #1162); on success it
+                # always returns a ``Note`` with a non-empty id. The
+                # ``note.id or None`` below is therefore defensive only —
+                # it preserves the public dict contract ("note_id is None
+                # means persistence failed") for any future degenerate
+                # shape, but the empty-id case now surfaces as an error
+                # rather than a silent ``{"note_id": None}``. The original
+                # ``if note`` dead-code guard was removed in PR #873.
+                note = await self._note_service.create_note(
+                    notebook_id,
+                    title=title,
+                    content=mind_map_json,
+                )
+                note_id = note.id or None
+
+                return {
+                    "mind_map": mind_map_data,
+                    "note_id": note_id,
+                }
+
+        return {"mind_map": None, "note_id": None}
 
     # =========================================================================
     # Download Operations
@@ -799,17 +990,74 @@ class ArtifactsAPI:
         notebook_id: str,
     ) -> builtins.list[ReportSuggestion]:
         """Get AI-suggested report formats for a notebook."""
-        return await self._generation.suggest_reports(notebook_id)
+        params = build_suggest_reports_params(notebook_id)
+
+        result = await self._rpc.rpc_call(
+            RPCMethod.GET_SUGGESTED_REPORTS,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+
+        suggestions = []
+        if result and isinstance(result, list) and len(result) > 0:
+            items = result[0] if isinstance(result[0], list) else result
+            for item in items:
+                if isinstance(item, list) and len(item) >= 5:
+                    suggestions.append(
+                        ReportSuggestion(
+                            title=item[0] if isinstance(item[0], str) else "",
+                            description=item[1] if isinstance(item[1], str) else "",
+                            prompt=item[4] if isinstance(item[4], str) else "",
+                            audience_level=item[5] if len(item) > 5 else 2,
+                        )
+                    )
+
+        return suggestions
 
     # =========================================================================
     # Private Helpers
     # =========================================================================
 
     async def _call_generate(
-        self, notebook_id: str, params: builtins.list[Any]
+        self,
+        notebook_id: str,
+        params: builtins.list[Any],
+        *,
+        null_result_artifact_type: str | None = None,
     ) -> GenerationStatus:
         """Make a generation RPC call with error handling."""
-        return await self._generation.call_generate(notebook_id, params)
+        artifact_type = params[2][2] if len(params) > 2 and len(params[2]) > 2 else "unknown"
+        logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
+        try:
+            # CREATE_ARTIFACT is classified PROBE_THEN_CREATE in
+            # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is
+            # passed explicitly to document this call site as the
+            # no-variant default (the registry resolves the same entry
+            # either way; the explicit kwarg is a future-proofing marker
+            # for a possible variant table).
+            result = await self._rpc.rpc_call(
+                RPCMethod.CREATE_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                operation_variant=None,
+            )
+        except RPCError as e:
+            if e.rpc_code == "USER_DISPLAYABLE_ERROR":
+                return GenerationStatus(
+                    task_id="",
+                    status="failed",
+                    error=str(e),
+                    error_code=str(e.rpc_code) if e.rpc_code is not None else None,
+                )
+            raise
+        if result is None and null_result_artifact_type is not None:
+            raise ArtifactFeatureUnavailableError(
+                null_result_artifact_type,
+                method_id=RPCMethod.CREATE_ARTIFACT.value,
+            )
+        return self._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
     async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw mind-map rows via the injected mind-map facade."""
@@ -896,10 +1144,15 @@ class ArtifactsAPI:
         source: str = "_parse_generation_result",
     ) -> GenerationStatus:
         """Parse generation API result into GenerationStatus."""
-        return self._generation.parse_generation_result(
-            result,
-            method_id=method_id,
-            source=source,
+        artifact_id = safe_index(result, 0, 0, method_id=method_id, source=source)
+
+        if artifact_id:
+            status_code = safe_index(result, 0, 4, method_id=method_id, source=source)
+            status = artifact_status_to_str(status_code) if status_code is not None else "pending"
+            return GenerationStatus(task_id=artifact_id, status=status)
+
+        return GenerationStatus(
+            task_id="", status="failed", error="Generation failed - no artifact_id returned"
         )
 
     @staticmethod

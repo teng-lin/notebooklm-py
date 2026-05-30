@@ -50,7 +50,6 @@ _ARTIFACT_SERVICE_MODULES = [
     "_artifact_formatters.py",
     "_artifact_listing.py",
     "_artifact_downloads.py",
-    "_artifact_generation.py",
     "_artifact_polling.py",
 ]
 
@@ -322,10 +321,10 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 # Artifact-service "reach-in" guard
 #
 # Modeled on the core-private-access guard above. Pins the invariant that
-# artifact-service helper modules (``_artifact_downloads.py`` and
-# ``_artifact_generation.py``) do not retain or call back into the
-# ``ArtifactsAPI`` facade. Each helper migration PR appends the helper's
-# module name to ``_REACH_IN_MIGRATED_MODULES`` below.
+# artifact-service helper modules (currently ``_artifact_downloads.py``)
+# do not retain or call back into the ``ArtifactsAPI`` facade. Each helper
+# migration PR appends the helper's module name to
+# ``_REACH_IN_MIGRATED_MODULES`` below.
 # ----------------------------------------------------------------------------
 
 
@@ -334,16 +333,12 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 # Bookkeeping (mirrors the ``_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS`` pattern):
 #   * ``_artifact_downloads.py`` migrated (PR #896, T2 of the
 #     encapsulation-reach-in-remediation phase).
-#   * ``_artifact_generation.py`` migrated (T3 of the same phase, this
-#     PR; the bidirectional facade↔service reach via
-#     ``ArtifactsAPI._call_generate`` / ``ArtifactsAPI._parse_generation_result``
-#     was closed simultaneously by promoting the service-side methods to
-#     ``call_generate`` / ``parse_generation_result``).
-# Both artifact-service helpers are now constructor-injected. No further
-# migration PRs in this series are pending.
+#   * ``_artifact_generation.py`` was folded directly into the
+#     ``ArtifactsAPI`` facade (issue #1205, ADR-012 sibling fold); the
+#     service module no longer exists, so there is no separate helper to
+#     guard for facade reach-in.
 _REACH_IN_MIGRATED_MODULES: list[str] = [
     "_artifact_downloads.py",
-    "_artifact_generation.py",
 ]
 
 
@@ -368,9 +363,10 @@ class _ApiReachInVisitor(ast.NodeVisitor):
 
     ``_REACH_IN_MIGRATED_MODULES`` enumerates helpers already migrated to
     constructor injection; this guard is actively enforced for those
-    modules. Both artifact-service helpers
-    (``_artifact_downloads.py`` and ``_artifact_generation.py``) are
-    currently migrated.
+    modules. The remaining artifact-service helper
+    (``_artifact_downloads.py``) is currently migrated;
+    ``_artifact_generation.py`` was folded into the ``ArtifactsAPI``
+    facade (issue #1205) so it is no longer a separate guarded module.
     """
 
     def __init__(self, module_name: str) -> None:
