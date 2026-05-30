@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .rpc import (
+    INTERACTIVE_MIND_MAP_VARIANT,
     ArtifactTypeCode,
     AudioFormat,
     AudioLength,
@@ -308,6 +309,37 @@ def build_flashcards_artifact_params(
                     [difficulty_code, quantity_code],
                 ],
             ],
+        ],
+    ]
+
+
+def build_interactive_mind_map_artifact_params(
+    notebook_id: str,
+    source_ids: list[str],
+) -> list[Any]:
+    """Build ``CREATE_ARTIFACT`` params for the interactive mind map.
+
+    The interactive mind map is a studio artifact in the type-4 (QUIZ) family
+    with variant 4 (``[9][1][0] == INTERACTIVE_MIND_MAP_VARIANT``) — distinct
+    from the note-backed mind map built by :func:`build_mind_map_params`
+    (which uses ``GENERATE_MIND_MAP``). Shape verified live against the
+    captured GUI ``CREATE_ARTIFACT`` request (issue #1256).
+    """
+    source_ids_triple = nest_source_ids(source_ids, 2)
+    return [
+        [2],
+        notebook_id,
+        [
+            None,
+            None,
+            ArtifactTypeCode.QUIZ_FLASHCARD.value,
+            source_ids_triple,
+            None,
+            None,
+            None,
+            None,
+            None,
+            [None, [INTERACTIVE_MIND_MAP_VARIANT]],
         ],
     ]
 
