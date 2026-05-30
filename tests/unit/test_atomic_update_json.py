@@ -315,3 +315,103 @@ def test_concurrent_corrupt_recovery_does_not_lose_valid_write(tmp_path: Path) -
     # Both writers' keys must be present — neither lost the other's update.
     assert final.get("recovered_by") == "A", f"recovery worker lost: {final}"
     assert final.get("peer_wrote") == "B", f"peer worker lost: {final}"
+
+
+# ---------------------------------------------------------------------------
+# Lock-path derivation contract (#1220)
+#
+# ``atomic_update_json`` derives a NON-dotted ``<name>.lock`` sibling, which
+# diverges from the canonical dotted ``.storage_state.json.lock`` sentinel that
+# every ``storage_state.json`` mutator shares (``_storage_state_lock_path``,
+# #1215). To stop a future caller silently acquiring the wrong lock and
+# re-introducing the #1215 lost-update race, the helper rejects
+# ``storage_state.json`` paths up front. The config/context callers keep their
+# existing ``<name>.lock`` files unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_storage_state_json_path(tmp_path: Path) -> None:
+    """A ``storage_state.json`` path must be rejected with ``ValueError``.
+
+    Its ``<name>.lock`` derivation diverges from the canonical dotted
+    ``.storage_state.json.lock`` (``_storage_state_lock_path``), so routing it
+    here would acquire the wrong lock — the exact #1215 footgun #1220 closes.
+    """
+    target = tmp_path / "storage_state.json"
+
+    mutator_calls: list[dict] = []
+
+    def mutator(current: dict) -> dict:
+        mutator_calls.append(dict(current))
+        return current
+
+    with pytest.raises(ValueError, match="storage_state.json"):
+        atomic_update_json(target, mutator)
+
+    # The guard fires before any I/O: no file, no mutator call, and crucially
+    # NEITHER lock variant is created on disk.
+    assert mutator_calls == []
+    assert not target.exists()
+    assert not (tmp_path / "storage_state.json.lock").exists()  # divergent (would-be)
+    assert not (tmp_path / ".storage_state.json.lock").exists()  # canonical dotted
+
+
+def test_rejection_holds_with_recover_flag(tmp_path: Path) -> None:
+    """The guard also fires when ``recover_from_corrupt=True`` is requested."""
+    target = tmp_path / "storage_state.json"
+    target.write_text("{ corrupt", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="storage_state.json"):
+        atomic_update_json(target, lambda d: d, recover_from_corrupt=True)
+
+    # The pre-existing (corrupt) file is left untouched — no recovery write.
+    assert target.read_text(encoding="utf-8") == "{ corrupt"
+
+
+def test_rejection_matches_canonical_lock_helper(tmp_path: Path) -> None:
+    """Cross-check: the rejected name is exactly the one whose canonical lock
+    is the dotted sentinel, and that sentinel differs from this helper's
+    ``<name>.lock`` derivation.
+    """
+    from notebooklm._auth.paths import _storage_state_lock_path
+
+    target = tmp_path / "storage_state.json"
+    canonical = _storage_state_lock_path(target)
+    divergent = target.with_suffix(target.suffix + ".lock")
+
+    # Sanity: the two derivations really are different files.
+    assert canonical.name == ".storage_state.json.lock"
+    assert divergent.name == "storage_state.json.lock"
+    assert canonical != divergent
+
+    # And the helper refuses to operate on this path at all.
+    with pytest.raises(ValueError):
+        atomic_update_json(target, lambda d: d)
+
+
+@pytest.mark.parametrize("filename", ["config.json", "context.json"])
+def test_allowed_paths_use_unchanged_nondotted_lock(tmp_path: Path, filename: str) -> None:
+    """``config.json`` / ``context.json`` lock derivation is UNCHANGED.
+
+    The guard only special-cases ``storage_state.json``; the legitimate callers
+    keep acquiring their existing non-dotted ``<name>.lock`` sibling. We prove
+    this by pre-acquiring that exact lock and asserting the call times out on
+    it — i.e. it really is the file the helper contends on.
+    """
+    target = tmp_path / filename
+    expected_lock = target.with_suffix(target.suffix + ".lock")
+    assert expected_lock.name == f"{filename}.lock"  # non-dotted, unchanged
+
+    holder = FileLock(str(expected_lock))
+    holder.acquire()
+    try:
+        with pytest.raises(Timeout):
+            atomic_update_json(target, lambda d: {**d, "k": "v"}, timeout=0.1)
+    finally:
+        holder.release()
+
+    # After release the call succeeds and writes through the same lock file.
+    atomic_update_json(target, lambda d: {**d, "ok": True}, timeout=1.0)
+    assert json.loads(target.read_text(encoding="utf-8")) == {"ok": True}
+    # The dotted sentinel was never created for these allowed names.
+    assert not (tmp_path / f".{filename}.lock").exists()

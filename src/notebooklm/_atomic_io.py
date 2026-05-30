@@ -19,6 +19,28 @@ intentionally left on disk after release: ``filelock`` reuses them across
 invocations, and unlinking under contention introduces a TOCTOU race where a
 second process could create-and-acquire a fresh lock while the first is mid-
 delete. They are zero-byte and cheap.
+
+Lock-path derivation contract
+-----------------------------
+
+:func:`atomic_update_json` derives its lock as ``<name>.lock`` via
+``path.with_suffix(path.suffix + ".lock")`` (e.g. ``config.json`` ->
+``config.json.lock``). This pattern is **deliberately distinct** from the
+*dotted* ``.<name>.lock`` sentinel that the canonical ``storage_state.json``
+mutators serialize on (``_auth.paths._storage_state_lock_path`` ->
+``.storage_state.json.lock``; see #1215). Because the two patterns yield two
+*different* files, routing a ``storage_state.json`` path through
+``atomic_update_json`` would acquire the *wrong* lock and silently re-introduce
+the lost-update race that #1215 closed.
+
+To enforce that contract by construction rather than by hand-synced string
+literals, :func:`atomic_update_json` rejects ``storage_state.json`` paths up
+front (see :data:`_STORAGE_STATE_FILENAME`). The ``config.json`` /
+``context.json`` callers keep their existing ``<name>.lock`` files unchanged;
+only ``storage_state.json`` is special-cased. Cookie/account writers must use
+the dedicated locked writers in :mod:`notebooklm._auth`
+(``save_cookies_to_storage`` / ``write_account_metadata`` /
+``_clear_in_band_account``), which all share ``_storage_state_lock_path``.
 """
 
 from __future__ import annotations
@@ -36,6 +58,14 @@ from typing import Any
 from filelock import FileLock
 
 logger = logging.getLogger(__name__)
+
+# Filename whose mutators MUST serialize on the canonical dotted
+# ``.storage_state.json.lock`` sentinel (``_auth.paths._storage_state_lock_path``,
+# #1215). ``atomic_update_json`` derives a *non-dotted* ``<name>.lock`` instead,
+# so it rejects this name rather than acquire a divergent lock file and
+# re-introduce the lost-update race. Kept as a plain literal here to avoid an
+# import edge from this leaf module into ``notebooklm._auth``.
+_STORAGE_STATE_FILENAME = "storage_state.json"
 
 _WINDOWS_REPLACE_TRANSIENT_WINERRORS = {
     5,  # ERROR_ACCESS_DENIED
@@ -142,6 +172,16 @@ def atomic_update_json(
     (or an empty dict if the file does not exist), passes them to ``mutator``,
     and writes the result back via :func:`atomic_write_json`.
 
+    .. warning::
+        ``storage_state.json`` paths are **rejected** with :class:`ValueError`.
+        This helper's ``<name>.lock`` derivation diverges from the canonical
+        dotted ``.storage_state.json.lock`` sentinel that every
+        ``storage_state.json`` mutator shares (``_storage_state_lock_path``,
+        #1215); acquiring the wrong lock would silently re-introduce a
+        lost-update race. Cookie/account writers must use the dedicated locked
+        writers in :mod:`notebooklm._auth` instead. See the module docstring's
+        *Lock-path derivation contract* section.
+
     The lock is held across the entire read-modify-write sequence so that
     two concurrent CLI invocations cannot lose updates by writing stale
     snapshots over each other. The default ``timeout`` is generous enough to
@@ -172,11 +212,23 @@ def atomic_update_json(
             (default), :class:`json.JSONDecodeError` propagates to the caller.
 
     Raises:
+        ValueError: If ``path`` names ``storage_state.json`` — its lock
+            derivation diverges from the canonical ``_storage_state_lock_path``;
+            use the dedicated :mod:`notebooklm._auth` writers instead.
         filelock.Timeout: If the lock cannot be acquired within ``timeout``.
         json.JSONDecodeError: If the existing file is not valid JSON and
             ``recover_from_corrupt`` is False.
         OSError: From filesystem operations (mkdir, write, replace).
     """
+    if path.name == _STORAGE_STATE_FILENAME:
+        raise ValueError(
+            f"atomic_update_json must not be called with a {_STORAGE_STATE_FILENAME!r} "
+            "path: its '<name>.lock' lock derivation diverges from the canonical "
+            "dotted '.storage_state.json.lock' sentinel (_storage_state_lock_path, "
+            "#1215), so it would acquire the wrong lock and risk a lost-update race. "
+            "Use the dedicated notebooklm._auth writers (save_cookies_to_storage / "
+            "write_account_metadata / _clear_in_band_account) instead."
+        )
     lock_path = path.with_suffix(path.suffix + ".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(lock_path), timeout=timeout):
