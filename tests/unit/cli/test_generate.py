@@ -19,7 +19,7 @@ from notebooklm.cli.services.artifact_generation import (
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, mind_map_result
 
 # ``notebooklm.cli.generate_cmd`` (the module) is shadowed by ``cli.__init__``'s
 # re-export of the ``generate`` Click Group (same name). Use ``importlib`` so
@@ -800,7 +800,9 @@ class TestGenerateMindMap:
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_mind_map = AsyncMock(
-                return_value={"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+                return_value=mind_map_result(
+                    {"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -1040,7 +1042,9 @@ class TestGenerateJsonOutput:
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_mind_map = AsyncMock(
-                return_value={"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+                return_value=mind_map_result(
+                    {"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+                )
             )
             mock_client_cls.return_value = mock_client
 

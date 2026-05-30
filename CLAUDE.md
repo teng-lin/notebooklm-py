@@ -97,7 +97,7 @@ RPC Layer (rpc/)
 | `_env.py`, `config.py` | Runtime environment defaults and the public config re-export surface |
 | `_logging.py`, `log.py` | Redaction/correlation logging internals and the public logging helper surface |
 | `_callbacks.py` | Sync-or-async callback invocation helper used by telemetry/retry hooks |
-| `_deprecation.py` | Deprecation helpers, both gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`: `warn_get_returns_none` — single place for the `get()`-returns-`None` `DeprecationWarning` (public `sources/artifacts/notes.get()` warn on a miss; the private `_get_or_none()` body never warns; flip to raising `*NotFoundError` in v0.8.0, issue #1247); and `deprecated_kwarg` / `deprecations_quiet` — keyword-alias helper that names the v0.8.0 removal and errors when both the old and new keyword are passed (used by `ResearchAPI.wait_for_completion` `interval` → `initial_interval`). See `docs/deprecations.md`. |
+| `_deprecation.py` | Deprecation helpers, all gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`: `warn_get_returns_none` — single place for the `get()`-returns-`None` `DeprecationWarning` (public `sources/artifacts/notes.get()` warn on a miss; the private `_get_or_none()` body never warns; flip to raising `*NotFoundError` in v0.8.0, issue #1247); `deprecated_kwarg` / `deprecations_quiet` — keyword-alias helper that names the v0.8.0 removal and errors when both the old and new keyword are passed (used by `ResearchAPI.wait_for_completion` `interval` → `initial_interval`); and `MappingCompatMixin` — dict-subscript backward-compat bridge for dataclasses that replaced `dict[str, Any]` returns (issue #1209: `ResearchTask`/`ResearchStart`/`MindMapResult`/`SourceGuide`); `result["key"]` warns and returns the value from the dataclass's `to_public_dict()`, while `get`/`keys`/`in`/`iter` stay silent; dropped in v0.8.0. See `docs/deprecations.md`. |
 | `_runtime_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
 | `_client_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
@@ -194,7 +194,7 @@ src/notebooklm/
 ├── _client_composed.py          # Client-owned composition holder
 ├── _client_seams.py             # Constructor-only injectable seams
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
-├── _deprecation.py              # Deprecation helpers (warn_get_returns_none + deprecated_kwarg keyword-alias) gated by NOTEBOOKLM_QUIET_DEPRECATIONS
+├── _deprecation.py              # Deprecation helpers (warn_get_returns_none + deprecated_kwarg keyword-alias + MappingCompatMixin dict-subscript bridge) gated by NOTEBOOKLM_QUIET_DEPRECATIONS
 ├── _env.py                      # Runtime environment/default endpoint helpers
 ├── _idempotency.py              # Mutating-RPC idempotency registry + wrappers
 ├── _kernel.py                   # Concrete Kernel transport core
@@ -274,6 +274,7 @@ src/notebooklm/
 │   ├── common.py
 │   ├── notebooks.py
 │   ├── notes.py
+│   ├── research.py              # ResearchStatus enum + ResearchTask/ResearchSource/ResearchStart/MindMapResult/SourceGuide typed returns (#1209)
 │   ├── sharing.py
 │   └── sources.py
 ├── _notebooks.py                # NotebooksAPI

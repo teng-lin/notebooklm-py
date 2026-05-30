@@ -954,7 +954,7 @@ print(url)
 | `list(notebook_id, strict=False)` | `notebook_id: str, strict: bool = False` | `list[Source]` | List sources |
 | `get(notebook_id, source_id)` | `str, str` | `Source \| None` | Get source details (returns None if not found) |
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
-| `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
+| `get_guide(notebook_id, source_id)` | `str, str` | `SourceGuide` | Get AI-generated `summary` + `keywords`. Use attribute access (`guide.summary`); legacy `guide["summary"]` dict-subscript still works (with a `DeprecationWarning`) until v0.8.0. |
 | `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
@@ -1011,10 +1011,12 @@ if not is_fresh:
 fulltext = await client.sources.get_fulltext(nb_id, src.id)
 print(f"Content ({fulltext.char_count} chars): {fulltext.content[:500]}...")
 
-# Get AI-generated summary and keywords
+# Get AI-generated summary and keywords (returns a typed SourceGuide)
 guide = await client.sources.get_guide(nb_id, src.id)
-print(f"Summary: {guide['summary']}")
-print(f"Keywords: {guide['keywords']}")
+print(f"Summary: {guide.summary}")
+print(f"Keywords: {guide.keywords}")
+# Legacy guide["summary"] dict-subscript still works (with a
+# DeprecationWarning) until v0.8.0; prefer attribute access.
 ```
 
 ---
@@ -1063,7 +1065,7 @@ print(f"Keywords: {guide['keywords']}")
 | `generate_slide_deck(...)` | See below | `GenerationStatus` | Generate slide deck |
 | `generate_infographic(...)` | See below | `GenerationStatus` | Generate infographic |
 | `generate_data_table(...)` | See below | `GenerationStatus` | Generate data table |
-| `generate_mind_map(...)` | See below | `dict` | Generate mind map |
+| `generate_mind_map(...)` | See below | `MindMapResult` | Generate a mind map and persist it as a note. Use attribute access (`result.mind_map`, `result.note_id`); legacy `result["mind_map"]` dict-subscript still works (with a `DeprecationWarning`) until v0.8.0. |
 
 #### Downloading Artifacts
 
@@ -1393,10 +1395,19 @@ if result.references:
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
-| `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `dict \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
-| `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `dict` | Check research status |
-| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.8.0). |
+| `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `ResearchStart \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
+| `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `ResearchTask` | Check research status |
+| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `ResearchTask` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.8.0). |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
+
+> **Typed returns (since v0.7.0).** `start` / `poll` / `wait_for_completion`
+> return the typed dataclasses `ResearchStart` / `ResearchTask` (whose
+> `.sources` are `ResearchSource` objects), with `.status` a `ResearchStatus`
+> str-enum (`status == "completed"` still holds). Legacy dict-subscript
+> (`result["status"]` / `result["sources"][0]["url"]`) keeps working with a
+> `DeprecationWarning` until v0.8.0; prefer attribute access. `import_sources`
+> still accepts `list[dict]` **or** `ResearchSource` objects, so feeding
+> `result.sources` straight back in works.
 
 **Method Signatures:**
 
@@ -1406,26 +1417,33 @@ async def start(
     query: str,
     source: str = "web",   # "web" or "drive"
     mode: str = "fast",    # "fast" or "deep" (deep only for web)
-) -> dict | None:
+) -> ResearchStart | None:
     """
-    Returns: {"task_id": str, "report_id": str, "notebook_id": str, "query": str, "mode": str},
-        or None if the RPC returns an empty/unexpected payload
+    Returns: a ResearchStart with .task_id / .report_id / .notebook_id /
+        .query / .mode, or None if the RPC returns an empty/unexpected payload.
+        Legacy result["task_id"] dict-subscript still works (with a
+        DeprecationWarning) until v0.8.0.
     Raises: ValidationError if source/mode combination is invalid
     """
 
-async def poll(notebook_id: str, task_id: str | None = None) -> dict:
+async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
     """
-    Returns a dict for the selected research task. If task_id is None, selects the latest research task and raises/emits an ambiguity warning if multiple tasks are in-flight. Top-level keys:
-      - task_id:   str       — task/report identifier
-      - status:    str       — "completed" | "failed" | "in_progress" | "no_research"
-      - query:     str       — original research query
-      - sources:   list[dict]
-      - summary:   str       — summary text when present
-      - report:    str       — deep-research report markdown when present
-      - tasks:     list[dict] — ALL parsed tasks (same shape as the top-level
-                                latest-task fields), additive across polls
+    Returns a ResearchTask for the selected research task. If task_id is None,
+    selects the latest research task and emits an ambiguity warning if multiple
+    tasks are in-flight. Attributes:
+      - task_id:   str            — task/report identifier
+      - status:    ResearchStatus — COMPLETED | FAILED | IN_PROGRESS | NO_RESEARCH
+                                     (a str enum; == "completed" still holds)
+      - query:     str            — original research query
+      - sources:   tuple[ResearchSource, ...]
+      - summary:   str            — summary text when present
+      - report:    str            — deep-research report markdown when present
+      - tasks:     tuple[ResearchTask, ...] — ALL parsed tasks visible at this poll
 
-    Each source dict may include:
+    Legacy dict-subscript (result["status"], result["sources"][0]["url"]) keeps
+    working with a DeprecationWarning until v0.8.0; prefer attribute access.
+
+    Each ResearchSource exposes:
       - url, title
       - result_type:        int — 1=web, 2=drive, 5=deep-research report entry
       - research_task_id:   str — task/report ID that produced this source
@@ -1439,7 +1457,7 @@ async def wait_for_completion(
     timeout: float = 1800,
     initial_interval: float = 5,   # canonical poll-cadence keyword
     interval: float = 5,           # DEPRECATED alias for initial_interval (removed in v0.8.0)
-) -> dict:
+) -> ResearchTask:
     """
     Loops on poll() until research returns "completed" / "failed" or the
     timeout expires. "no_research" returns immediately only before a task_id
@@ -1448,7 +1466,7 @@ async def wait_for_completion(
     later polls reuse it as the discriminator so concurrent research tasks in
     the same notebook cannot cross-wire results.
 
-    Returns: final poll() dict.
+    Returns: the final poll() ResearchTask.
     Raises:
       - ResearchTimeoutError on timeout (a WaitTimeoutError and a built-in
         TimeoutError, so `except TimeoutError` / `except WaitTimeoutError`
@@ -1481,11 +1499,11 @@ async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) ->
 
 **Example:**
 ```python
-# Start research and capture the task_id discriminator
+# Start research and capture the task_id discriminator (typed ResearchStart)
 result = await client.research.start(nb_id, "AI safety regulations")
 if result is None:
     raise RuntimeError("Research start returned None")
-task_id = result["task_id"]
+task_id = result.task_id
 
 # If you launch multiple concurrent research tasks on the same notebook
 # (web vs drive, fast vs deep), always pass the task_id to poll() so the
@@ -1500,8 +1518,9 @@ status = await client.research.wait_for_completion(
     initial_interval=5,  # canonical keyword; `interval=` is a deprecated alias
 )
 
-# Import discovered sources (using the same task_id discriminator)
-imported = await client.research.import_sources(nb_id, task_id, status["sources"][:5])
+# `status` is a typed ResearchTask; `.sources` are ResearchSource objects,
+# which import_sources accepts directly.
+imported = await client.research.import_sources(nb_id, task_id, list(status.sources)[:5])
 print(f"Imported {len(imported)} sources")
 ```
 

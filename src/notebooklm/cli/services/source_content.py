@@ -103,10 +103,8 @@ async def execute_source_guide(
 ) -> SourceGuideResult:
     """Fetch an AI-generated source summary and keywords."""
     guide = await client.sources.get_guide(plan.notebook_id, plan.source_id)
-    if not isinstance(guide, dict):
-        guide = {}
-    summary = guide.get("summary", "")
-    keywords = guide.get("keywords", [])
+    summary = guide.summary
+    keywords = guide.keywords
     keyword_strings = (
         tuple(
             keyword.strip() for keyword in keywords if isinstance(keyword, str) and keyword.strip()

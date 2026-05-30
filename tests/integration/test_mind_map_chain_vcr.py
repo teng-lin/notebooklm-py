@@ -97,14 +97,13 @@ class TestMindMapChain:
             )
 
         # Final note is created with mind-map content.
-        assert isinstance(result, dict)
-        assert result.get("note_id"), "generate_mind_map must persist a note"
-        assert isinstance(result["note_id"], str)
+        assert result.note_id, "generate_mind_map must persist a note"
+        assert isinstance(result.note_id, str)
         # Mind-map JSON should be present and shaped like a tree
         # (either ``children`` or ``nodes`` key — both shapes are valid;
         # mirror the heuristic used by ``NoteBackedMindMapService.list_mind_maps``).
-        assert result.get("mind_map") is not None
-        mind_map = result["mind_map"]
+        assert result.mind_map is not None
+        mind_map = result.mind_map
         assert isinstance(mind_map, dict)
         assert "children" in mind_map or "nodes" in mind_map, (
             f"mind_map payload missing tree keys: {list(mind_map)[:5]}"

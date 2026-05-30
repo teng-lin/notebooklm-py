@@ -1,10 +1,95 @@
 """Shared fixtures for CLI unit tests."""
 
 import math
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
+
+from notebooklm.types import (
+    MindMapResult,
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
+    SourceGuide,
+)
+
+
+def source_guide(spec: dict | None = None, **overrides: Any) -> SourceGuide:
+    """Build a typed ``SourceGuide`` from a legacy guide dict spec.
+
+    ``sources.get_guide`` now returns a typed ``SourceGuide`` (issue #1209);
+    CLI tests historically declared canned guides as the old dict shape.
+    """
+    data: dict[str, Any] = dict(spec or {})
+    data.update(overrides)
+    return SourceGuide(
+        summary=data.get("summary", ""),
+        keywords=data.get("keywords", []),
+    )
+
+
+def research_task(spec: dict | None = None, **overrides: Any) -> ResearchTask:
+    """Build a typed ``ResearchTask`` from a legacy poll/wait dict spec.
+
+    ``research.poll`` / ``research.wait_for_completion`` now return a typed
+    ``ResearchTask`` (issue #1209). CLI tests historically declared canned
+    results as the old dict shape; this helper adapts them. Unknown status
+    strings map to ``FAILED`` (mirroring the parser); ``sources`` entries are
+    coerced into ``ResearchSource``.
+    """
+    data: dict[str, Any] = dict(spec or {})
+    data.update(overrides)
+    raw_status = data.get("status", "no_research")
+    try:
+        status = ResearchStatus(raw_status)
+    except ValueError:
+        status = ResearchStatus.FAILED
+    raw_sources = data.get("sources") or []
+    sources = tuple(
+        ResearchSource.from_public_dict(s)
+        for s in (raw_sources if isinstance(raw_sources, list) else [])
+        if isinstance(s, dict)
+    )
+    raw_tasks = data.get("tasks") or []
+    tasks = tuple(
+        research_task(t)
+        for t in (raw_tasks if isinstance(raw_tasks, list) else [])
+        if isinstance(t, dict)
+    )
+    query = data.get("query", "")
+    report = data.get("report", "")
+    return ResearchTask(
+        task_id=data.get("task_id", ""),
+        status=status,
+        query=query if isinstance(query, str) else "",
+        sources=sources,
+        summary=data.get("summary", "") if isinstance(data.get("summary"), str) else "",
+        report=report if isinstance(report, str) else "",
+        tasks=tasks,
+    )
+
+
+def research_start(spec: dict | None = None, **overrides: Any) -> ResearchStart:
+    """Build a typed ``ResearchStart`` from a legacy start dict spec."""
+    data: dict[str, Any] = dict(spec or {})
+    data.update(overrides)
+    return ResearchStart(
+        task_id=data.get("task_id", ""),
+        report_id=data.get("report_id"),
+        notebook_id=data.get("notebook_id", ""),
+        query=data.get("query", ""),
+        mode=data.get("mode", "fast"),
+    )
+
+
+def mind_map_result(spec: dict | None = None, **overrides: Any) -> MindMapResult:
+    """Build a typed ``MindMapResult`` from a legacy mind-map dict spec."""
+    data: dict[str, Any] = dict(spec or {})
+    data.update(overrides)
+    return MindMapResult(mind_map=data.get("mind_map"), note_id=data.get("note_id"))
 
 
 @pytest.fixture(autouse=True)
@@ -155,7 +240,7 @@ def create_mock_client():
     mock_client.notes = MagicMock()
     mock_client.sharing = MagicMock()
 
-    mock_client.research.poll = AsyncMock(return_value={"status": "no_research"})
+    mock_client.research.poll = AsyncMock(return_value=research_task({"status": "no_research"}))
 
     async def wait_for_research_completion(
         notebook_id,
@@ -174,14 +259,12 @@ def create_mock_client():
             raise ValueError("poll interval must be positive")
         pinned_task_id = task_id
         attempts = max(1, math.ceil(timeout / effective_interval) + 1)
-        status = {"status": "no_research"}
+        status: ResearchTask = research_task({"status": "no_research"})
         for _ in range(attempts):
             status = await mock_client.research.poll(notebook_id, task_id=pinned_task_id)
-            if pinned_task_id is None:
-                discovered_task_id = status.get("task_id")
-                if isinstance(discovered_task_id, str) and discovered_task_id:
-                    pinned_task_id = discovered_task_id
-            status_val = status.get("status")
+            if pinned_task_id is None and status.task_id:
+                pinned_task_id = status.task_id
+            status_val = status.status
             if status_val in ("completed", "failed"):
                 return status
             if status_val == "no_research" and pinned_task_id is None:

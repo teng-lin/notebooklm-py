@@ -10,7 +10,7 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 from notebooklm.types import AskResult
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, research_start
 
 
 def make_ask_result(answer: str = "The answer is 42.") -> AskResult:
@@ -171,7 +171,9 @@ class TestSourceAddResearchPromptFile:
 
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_123"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_123"})
+            )
             mock_client_cls.return_value = mock_client
 
             result = runner.invoke(

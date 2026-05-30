@@ -19,7 +19,7 @@ from notebooklm.types import (
     SourceTimeoutError,
 )
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, research_start, research_task, source_guide
 
 source_module = importlib.import_module("notebooklm.cli.source_cmd")
 research_import_module = importlib.import_module("notebooklm.cli.research_import")
@@ -1093,14 +1093,18 @@ class TestSourceAddResearch:
             ) as mock_import,
         ):
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_123"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_123"})
+            )
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                    "report": "# Report",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                        "report": "# Report",
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
             mock_client_cls.return_value = mock_client
@@ -1129,7 +1133,7 @@ class TestSourceAddResearch:
             mock_client,
             "nb_123",
             "task_123",
-            [{"title": "Source 1", "url": "http://example.com"}],
+            [{"url": "http://example.com", "title": "Source 1", "result_type": 1}],
             max_elapsed=1800,
         )
 
@@ -1141,17 +1145,21 @@ class TestSourceAddResearch:
             ) as mock_import,
         ):
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_123"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_123"})
+            )
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "sources": [
-                        {"title": "Cited", "url": "https://example.com/cited"},
-                        {"title": "Uncited", "url": "https://example.com/uncited"},
-                    ],
-                    "report": "Report cites https://example.com/cited",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "sources": [
+                            {"title": "Cited", "url": "https://example.com/cited"},
+                            {"title": "Uncited", "url": "https://example.com/uncited"},
+                        ],
+                        "report": "Report cites https://example.com/cited",
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
             mock_client_cls.return_value = mock_client
@@ -1179,7 +1187,7 @@ class TestSourceAddResearch:
             mock_client,
             "nb_123",
             "task_123",
-            [{"title": "Cited", "url": "https://example.com/cited"}],
+            [{"url": "https://example.com/cited", "title": "Cited", "result_type": 1}],
             max_elapsed=1800,
         )
 
@@ -1203,14 +1211,18 @@ class TestSourceAddResearch:
             ) as mock_import,
         ):
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_t1"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_t1"})
+            )
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_t1",
-                    "sources": [{"title": "S", "url": "http://example.com"}],
-                    "report": "",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_t1",
+                        "sources": [{"title": "S", "url": "http://example.com"}],
+                        "report": "",
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_t1", "title": "S"}]
             mock_client_cls.return_value = mock_client
@@ -1245,17 +1257,21 @@ class TestSourceAddResearch:
         5 s interval, so deep-research tasks running longer than 5 minutes
         timed out and the import branch was skipped entirely — leaving the
         web UI's "Add sources?" modal hanging open server-side."""
-        in_progress = {
-            "status": "in_progress",
-            "task_id": "task_long",
-            "sources": [],
-        }
-        completed = {
-            "status": "completed",
-            "task_id": "task_long",
-            "sources": [{"title": "S", "url": "http://example.com"}],
-            "report": "",
-        }
+        in_progress = research_task(
+            {
+                "status": "in_progress",
+                "task_id": "task_long",
+                "sources": [],
+            }
+        )
+        completed = research_task(
+            {
+                "status": "completed",
+                "task_id": "task_long",
+                "sources": [{"title": "S", "url": "http://example.com"}],
+                "report": "",
+            }
+        )
         # 70 in-progress polls before completion — past the legacy 60-cap,
         # well within a 600 s / 5 s budget (=120 polls).
         poll_responses = [in_progress] * 70 + [completed]
@@ -1268,7 +1284,9 @@ class TestSourceAddResearch:
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_long"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_long"})
+            )
             mock_client.research.poll = AsyncMock(side_effect=poll_responses)
             mock_import.return_value = [{"id": "src_long", "title": "S"}]
             mock_client_cls.return_value = mock_client
@@ -1301,9 +1319,11 @@ class TestSourceAddResearch:
     def test_add_research_tolerates_initial_no_research_after_start(self, runner, mock_auth):
         """NotebookLM can briefly return no_research immediately after START_RESEARCH."""
         poll_responses = [
-            {"status": "no_research", "tasks": []},
-            {"status": "in_progress", "task_id": "task_lag", "sources": []},
-            {"status": "completed", "task_id": "task_lag", "sources": [], "report": ""},
+            research_task({"status": "no_research", "tasks": []}),
+            research_task({"status": "in_progress", "task_id": "task_lag", "sources": []}),
+            research_task(
+                {"status": "completed", "task_id": "task_lag", "sources": [], "report": ""}
+            ),
         ]
 
         with (
@@ -1311,7 +1331,9 @@ class TestSourceAddResearch:
             patch.object(source_module.asyncio, "sleep", AsyncMock()),
         ):
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_lag"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_lag"})
+            )
             mock_client.research.poll = AsyncMock(side_effect=poll_responses)
             mock_client_cls.return_value = mock_client
 
@@ -1337,15 +1359,17 @@ class TestSourceAddResearch:
         ):
             mock_client = create_mock_client()
             mock_client.research.start = AsyncMock(
-                return_value={"task_id": "start_task", "report_id": "report_task"}
+                return_value=research_start({"task_id": "start_task", "report_id": "report_task"})
             )
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "report_task",
-                    "sources": [{"title": "S", "url": "http://example.com"}],
-                    "report": "",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "report_task",
+                        "sources": [{"title": "S", "url": "http://example.com"}],
+                        "report": "",
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_report", "title": "S"}]
             mock_client_cls.return_value = mock_client
@@ -1392,10 +1416,12 @@ class TestSourceGuide:
                 return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
-                return_value={
-                    "summary": "This is a **test** summary about AI.",
-                    "keywords": ["AI", "machine learning", "data science"],
-                }
+                return_value=source_guide(
+                    {
+                        "summary": "This is a **test** summary about AI.",
+                        "keywords": ["AI", "machine learning", "data science"],
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -1417,7 +1443,9 @@ class TestSourceGuide:
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
             )
-            mock_client.sources.get_guide = AsyncMock(return_value={"summary": "", "keywords": []})
+            mock_client.sources.get_guide = AsyncMock(
+                return_value=source_guide({"summary": "", "keywords": []})
+            )
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -1436,7 +1464,9 @@ class TestSourceGuide:
                 return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
-                return_value={"summary": "Test summary", "keywords": ["keyword1", "keyword2"]}
+                return_value=source_guide(
+                    {"summary": "Test summary", "keywords": ["keyword1", "keyword2"]}
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -1462,7 +1492,7 @@ class TestSourceGuide:
                 return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
-                return_value={"summary": "Summary without keywords", "keywords": []}
+                return_value=source_guide({"summary": "Summary without keywords", "keywords": []})
             )
             mock_client_cls.return_value = mock_client
 
@@ -1485,7 +1515,7 @@ class TestSourceGuide:
                 return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
-                return_value={"summary": "", "keywords": ["AI", "ML", "Data"]}
+                return_value=source_guide({"summary": "", "keywords": ["AI", "ML", "Data"]})
             )
             mock_client_cls.return_value = mock_client
 
@@ -3490,7 +3520,9 @@ class TestSourceBundleP1T2:
         sources into this task's import branch."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value={"task_id": "task_pinned"})
+            mock_client.research.start = AsyncMock(
+                return_value=research_start({"task_id": "task_pinned"})
+            )
             # First poll returns in_progress (so the loop continues at least once
             # and we can prove the discriminator is threaded); second returns
             # completed.
@@ -3499,13 +3531,15 @@ class TestSourceBundleP1T2:
             async def _poll(notebook_id, task_id=None):
                 poll_calls.append({"notebook_id": notebook_id, "task_id": task_id})
                 if len(poll_calls) < 2:
-                    return {"status": "in_progress", "task_id": "task_pinned"}
-                return {
-                    "status": "completed",
-                    "task_id": "task_pinned",
-                    "sources": [],
-                    "report": "",
-                }
+                    return research_task({"status": "in_progress", "task_id": "task_pinned"})
+                return research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_pinned",
+                        "sources": [],
+                        "report": "",
+                    }
+                )
 
             mock_client.research.poll = AsyncMock(side_effect=_poll)
             mock_client_cls.return_value = mock_client

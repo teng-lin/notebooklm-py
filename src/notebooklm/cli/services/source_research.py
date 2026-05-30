@@ -111,11 +111,11 @@ async def execute_source_add_research(
     if not result:
         return SourceAddResearchResult(outcome="start_failed", plan=plan)
 
-    start_task_id = result["task_id"]
+    start_task_id = result.task_id
     # Deep research polls under the report id returned in slot 1 of the
     # START_DEEP_RESEARCH response; the first slot is not stable for
     # POLL_RESEARCH / IMPORT_RESEARCH.
-    task_id = result.get("report_id") if plan.mode == "deep" else start_task_id
+    task_id = result.report_id if plan.mode == "deep" else start_task_id
     task_id = task_id or start_task_id
 
     # Non-blocking mode: return immediately. Research will keep running
@@ -144,9 +144,11 @@ async def execute_source_add_research(
             poll_task_id=task_id,
         )
 
-    status_val = status.get("status", "unknown")
-    sources = status.get("sources", []) or []
-    report = status.get("report", "") or ""
+    status_val = status.status.value
+    # ``import_research_sources`` / ``SourceAddResearchResult`` consume the
+    # legacy ``list[dict]`` source shape, so serialize the typed sources here.
+    sources = [src.to_public_dict() for src in status.sources]
+    report = status.report or ""
 
     if status_val == "completed":
         import_result: ResearchImportResult | None = None

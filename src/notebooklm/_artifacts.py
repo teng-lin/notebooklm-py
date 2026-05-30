@@ -45,6 +45,7 @@ from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._runtime_contracts import RpcCaller
+from ._types.research import MindMapResult
 from .exceptions import ArtifactFeatureUnavailableError, ValidationError
 
 if TYPE_CHECKING:
@@ -583,8 +584,17 @@ class ArtifactsAPI:
         source_ids: builtins.list[str] | None = None,
         language: str | None = "en",
         instructions: str | None = None,
-    ) -> dict[str, Any]:
-        """Generate an interactive mind map and persist it as a note."""
+    ) -> MindMapResult:
+        """Generate an interactive mind map and persist it as a note.
+
+        Returns:
+            A :class:`~notebooklm._types.research.MindMapResult` with
+            ``mind_map`` (the parsed mind-map structure, or ``None`` on an
+            empty response) and ``note_id`` (the persisted note id, or
+            ``None``). Use attribute access (``result.mind_map``). Legacy
+            ``result["mind_map"]`` dict-subscript access still works (with a
+            ``DeprecationWarning``) until v0.8.0.
+        """
         if language is None:
             language = get_default_language()
         if source_ids is None:
@@ -644,12 +654,9 @@ class ArtifactsAPI:
                 )
                 note_id = note.id or None
 
-                return {
-                    "mind_map": mind_map_data,
-                    "note_id": note_id,
-                }
+                return MindMapResult(mind_map=mind_map_data, note_id=note_id)
 
-        return {"mind_map": None, "note_id": None}
+        return MindMapResult(mind_map=None, note_id=None)
 
     # =========================================================================
     # Download Operations

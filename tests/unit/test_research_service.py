@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from notebooklm import ResearchSource, ResearchStatus, ResearchTask
 from notebooklm.cli.research_import import ResearchImportResult
 from notebooklm.cli.services.research import (
     ResearchWaitPlan,
@@ -31,11 +32,62 @@ from notebooklm.cli.services.research import (
 # ---------------------------------------------------------------------------
 
 
+# The service serializes each typed ``ResearchSource`` back to its historical
+# dict via ``to_public_dict()``, which canonicalizes key order and always
+# includes ``result_type``. This is the shape the service now hands to the
+# importer / exposes on ``ResearchWaitResult.sources``.
+_SERIALIZED_SOURCE = {"url": "http://example.com", "title": "S", "result_type": 1}
+
+
+def _task(spec: Any) -> Any:
+    """Convert a legacy dict spec into a typed ``ResearchTask`` side-effect.
+
+    ``wait_for_completion`` now returns a ``ResearchTask`` (issue #1209); these
+    tests keep declaring canned results as the historical dict shape and this
+    helper adapts them. Non-dict side effects (e.g. exceptions) pass through.
+
+    The typed return guarantees clean fields (the parser already coerces wire
+    rows), so this helper mirrors that: unknown/terminal statuses map to
+    ``FAILED`` like ``_status_from_code`` does, and non-str query/report or a
+    non-list ``sources`` collapse to their typed defaults.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    raw_status = spec.get("status", "no_research")
+    try:
+        status = ResearchStatus(raw_status)
+    except ValueError:
+        # Unknown non-terminal status (e.g. "cancelled") -> treated as FAILED,
+        # matching the parser's _status_from_code fallback for unknown codes.
+        status = ResearchStatus.FAILED
+    raw_sources = spec.get("sources") or []
+    sources = tuple(
+        ResearchSource.from_public_dict(s)
+        for s in (raw_sources if isinstance(raw_sources, list) else [])
+        if isinstance(s, dict)
+    )
+    query = spec.get("query", "")
+    report = spec.get("report", "")
+    return ResearchTask(
+        task_id=spec.get("task_id", ""),
+        status=status,
+        query=query if isinstance(query, str) else "",
+        sources=sources,
+        summary=spec.get("summary", ""),
+        report=report if isinstance(report, str) else "",
+    )
+
+
 class _FakeResearchAPI:
     """Records wait calls; returns canned values."""
 
     def __init__(self, *, side_effect: Any) -> None:
-        self.wait_for_completion = AsyncMock(side_effect=side_effect)
+        adapted = (
+            [_task(item) for item in side_effect]
+            if isinstance(side_effect, list)
+            else (_task(side_effect))
+        )
+        self.wait_for_completion = AsyncMock(side_effect=adapted)
 
 
 class _FakeClient:
@@ -84,7 +136,7 @@ async def test_completed_returns_outcome_with_sources(base_plan):
     assert result.notebook_id == "nb_123"
     assert result.task_id == "task_abc"
     assert result.query == "AI research"
-    assert result.sources == [{"title": "S", "url": "http://example.com"}]
+    assert result.sources == [_SERIALIZED_SOURCE]
     assert result.sources_count == 1
     assert result.report == "REPORT"
     assert result.import_result is None  # import_all=False default
@@ -158,7 +210,7 @@ async def test_failed_returns_outcome_without_import(base_plan):
     assert result.outcome == "failed"
     assert result.task_id == "task_failed"
     assert result.query == "AI research"
-    assert result.sources == [{"title": "S", "url": "http://example.com"}]
+    assert result.sources == [_SERIALIZED_SOURCE]
     assert result.report == "Partial report"
     assert result.import_result is None
     import_mock.assert_not_awaited()
@@ -293,7 +345,7 @@ async def test_import_all_invokes_importer_with_pinned_task_id():
         client,
         "nb_123",
         "task_abc",
-        [{"title": "S", "url": "http://example.com"}],
+        [_SERIALIZED_SOURCE],
         report="R",
         cited_only=False,
         max_elapsed=300,

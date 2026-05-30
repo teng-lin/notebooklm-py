@@ -16,6 +16,7 @@ import click
 from click.core import ParameterSource
 
 from ..client import NotebookLMClient
+from ..types import MindMapResult
 from .auth_runtime import with_client
 from .error_handler import current_json_output, output_error
 from .input import resolve_prompt
@@ -121,18 +122,32 @@ def _output_mind_map_result(result: Any, json_output: bool) -> None:
             console.print("[yellow]No result[/yellow]")
         return
 
+    # ``result`` is a ``MindMapResult`` (typed dataclass). Read it via
+    # attributes; fall back to dict access so tests/callers that still patch
+    # in a plain dict keep working.
+    if isinstance(result, MindMapResult):
+        note_id = result.note_id
+        mind_map = result.mind_map
+        json_payload: Any = {"mind_map": mind_map, "note_id": note_id}
+    elif isinstance(result, dict):
+        note_id = result.get("note_id")
+        mind_map = result.get("mind_map", {})
+        json_payload = result
+    else:
+        note_id = None
+        mind_map = result
+        json_payload = result
+
     if json_output:
-        json_output_response(result)
+        json_output_response(json_payload)
         return
 
     console.print("[green]Mind map generated:[/green]")
-    if isinstance(result, dict):
-        console.print(f"  Note ID: {result.get('note_id', '-')}")
-        mind_map = result.get("mind_map", {})
-        if isinstance(mind_map, dict):
-            console.print(f"  Root: {mind_map.get('name', '-')}")
-            console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
-    else:
+    console.print(f"  Note ID: {note_id if note_id is not None else '-'}")
+    if isinstance(mind_map, dict):
+        console.print(f"  Root: {mind_map.get('name', '-')}")
+        console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
+    elif not isinstance(result, (MindMapResult, dict)):
         console.print(result)
 
 

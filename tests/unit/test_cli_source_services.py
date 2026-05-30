@@ -34,7 +34,51 @@ from notebooklm.cli.services.source_wait import (
     SourceWaitTimeout,
     execute_source_wait,
 )
-from notebooklm.types import Source, SourceFulltext, SourceTimeoutError
+from notebooklm.types import (
+    MindMapResult,  # noqa: F401  (re-exported for shared test helpers)
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
+    Source,
+    SourceFulltext,
+    SourceGuide,
+    SourceTimeoutError,
+)
+
+
+def _wait_task(spec: dict) -> ResearchTask:
+    """Build a typed ``ResearchTask`` from a legacy wait/poll dict spec."""
+    raw_status = spec.get("status", "no_research")
+    try:
+        status = ResearchStatus(raw_status)
+    except ValueError:
+        status = ResearchStatus.FAILED
+    raw_sources = spec.get("sources") or []
+    sources = tuple(
+        ResearchSource.from_public_dict(s)
+        for s in (raw_sources if isinstance(raw_sources, list) else [])
+        if isinstance(s, dict)
+    )
+    return ResearchTask(
+        task_id=spec.get("task_id", ""),
+        status=status,
+        query=spec.get("query", "") if isinstance(spec.get("query"), str) else "",
+        sources=sources,
+        summary=spec.get("summary", ""),
+        report=spec.get("report", "") if isinstance(spec.get("report"), str) else "",
+    )
+
+
+def _start(spec: dict) -> ResearchStart:
+    """Build a typed ``ResearchStart`` from a legacy start dict spec."""
+    return ResearchStart(
+        task_id=spec.get("task_id", ""),
+        report_id=spec.get("report_id"),
+        notebook_id=spec.get("notebook_id", ""),
+        query=spec.get("query", ""),
+        mode=spec.get("mode", "fast"),
+    )
 
 
 @pytest.mark.asyncio
@@ -133,13 +177,16 @@ async def test_source_fulltext_service_returns_fetched_content() -> None:
 
 @pytest.mark.asyncio
 async def test_source_guide_service_normalizes_untrusted_backend_payload() -> None:
+    # The typed ``SourceGuide`` return carries the (still possibly untrusted)
+    # backend values; the service strips/normalizes the keywords and blanks a
+    # non-str summary.
     client = SimpleNamespace(
         sources=SimpleNamespace(
             get_guide=AsyncMock(
-                return_value={
-                    "summary": 42,
-                    "keywords": [" alpha ", 7, "", "   ", None, "beta"],
-                }
+                return_value=SourceGuide(
+                    summary=42,  # type: ignore[arg-type]
+                    keywords=[" alpha ", 7, "", "   ", None, "beta"],  # type: ignore[list-item]
+                )
             )
         )
     )
@@ -155,8 +202,10 @@ async def test_source_guide_service_normalizes_untrusted_backend_payload() -> No
 
 
 @pytest.mark.asyncio
-async def test_source_guide_service_treats_non_mapping_payload_as_empty() -> None:
-    client = SimpleNamespace(sources=SimpleNamespace(get_guide=AsyncMock(return_value=None)))
+async def test_source_guide_service_treats_empty_guide_as_empty() -> None:
+    client = SimpleNamespace(
+        sources=SimpleNamespace(get_guide=AsyncMock(return_value=SourceGuide()))
+    )
 
     result = await execute_source_guide(
         client,
@@ -176,14 +225,16 @@ async def test_source_add_research_waits_with_started_task_id_and_imports(
     monkeypatch.setattr(source_research, "import_research_sources", import_research_sources)
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
             wait_for_completion=AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "sources": [{"title": "Result"}],
-                    "report": "Report",
-                }
+                return_value=_wait_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "sources": [{"title": "Result"}],
+                        "report": "Report",
+                    }
+                )
             ),
         )
     )
@@ -204,7 +255,7 @@ async def test_source_add_research_waits_with_started_task_id_and_imports(
 
     assert result.outcome == "completed"
     assert result.poll_task_id == "task_123"
-    assert result.sources == [{"title": "Result"}]
+    assert result.sources == [{"url": "", "title": "Result", "result_type": 1}]
     assert result.report == "Report"
     assert result.import_result is imported
     client.research.start.assert_awaited_once_with("nb_1", "topic", "web", "deep")
@@ -218,7 +269,7 @@ async def test_source_add_research_waits_with_started_task_id_and_imports(
         client,
         "nb_1",
         "task_123",
-        [{"title": "Result"}],
+        [{"url": "", "title": "Result", "result_type": 1}],
         report="Report",
         cited_only=True,
         max_elapsed=30,
@@ -234,14 +285,16 @@ async def test_source_add_research_json_import_stays_silent(
     monkeypatch.setattr(source_research, "import_research_sources", import_research_sources)
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
             wait_for_completion=AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "sources": [{"title": "Result"}],
-                    "report": "Report",
-                }
+                return_value=_wait_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "sources": [{"title": "Result"}],
+                        "report": "Report",
+                    }
+                )
             ),
         )
     )
@@ -266,7 +319,7 @@ async def test_source_add_research_json_import_stays_silent(
         client,
         "nb_1",
         "task_123",
-        [{"title": "Result"}],
+        [{"url": "", "title": "Result", "result_type": 1}],
         report="Report",
         cited_only=True,
         max_elapsed=30,
@@ -394,15 +447,18 @@ def test_render_add_research_completed_text_keeps_task_ids(
     assert "[dim]Poll ID: report_456[/dim]" in printed
 
 
-@pytest.mark.parametrize("status", ["failed", "timeout"])
 @pytest.mark.asyncio
-async def test_source_add_research_failed_or_timeout_returns_terminal_outcome(
-    status: str,
-) -> None:
+async def test_source_add_research_failed_returns_terminal_outcome() -> None:
+    # ``wait_for_completion`` now returns a typed ``ResearchTask``; a ``FAILED``
+    # status maps to the ``failed`` terminal outcome. (The ``timeout`` outcome
+    # is reached only via the ``TimeoutError`` branch, not a returned status —
+    # the typed return can never carry a "timeout" status string.)
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
-            wait_for_completion=AsyncMock(return_value={"status": status, "task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
+            wait_for_completion=AsyncMock(
+                return_value=_wait_task({"status": "failed", "task_id": "task_123"})
+            ),
         )
     )
 
@@ -420,9 +476,7 @@ async def test_source_add_research_failed_or_timeout_returns_terminal_outcome(
         ),
     )
 
-    # status="failed" -> outcome="failed"; status="timeout" from the wait_for_completion
-    # return (not the TimeoutError branch) is treated as the same terminal class.
-    assert result.outcome == status
+    assert result.outcome == "failed"
     assert result.start_task_id == "task_123"
     assert result.poll_task_id == "task_123"
 
@@ -461,7 +515,7 @@ async def test_source_add_research_timeout_error_maps_to_timeout_outcome() -> No
     """``wait_for_completion`` raising :class:`TimeoutError` maps to ``timeout``."""
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
             wait_for_completion=AsyncMock(side_effect=TimeoutError("budget exhausted")),
         )
     )
@@ -486,11 +540,14 @@ async def test_source_add_research_timeout_error_maps_to_timeout_outcome() -> No
 
 @pytest.mark.asyncio
 async def test_source_add_research_unknown_status_returns_unknown_outcome() -> None:
+    # ``wait_for_completion`` should only ever return a terminal status, but the
+    # service keeps a defensive fallback for any non-terminal status it sees
+    # (here ``IN_PROGRESS``) -> ``unknown_status``.
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
             wait_for_completion=AsyncMock(
-                return_value={"status": "cancelled", "task_id": "task_123"}
+                return_value=_wait_task({"status": "in_progress", "task_id": "task_123"})
             ),
         )
     )
@@ -510,7 +567,7 @@ async def test_source_add_research_unknown_status_returns_unknown_outcome() -> N
     )
 
     assert result.outcome == "unknown_status"
-    assert result.status == "cancelled"
+    assert result.status == "in_progress"
 
 
 @pytest.mark.asyncio
@@ -518,7 +575,7 @@ async def test_source_add_research_no_wait_returns_early_outcome() -> None:
     """``--no-wait`` skips the wait loop and returns ``started_no_wait``."""
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
             wait_for_completion=AsyncMock(),
         )
     )
@@ -546,14 +603,16 @@ async def test_source_add_research_no_wait_returns_early_outcome() -> None:
 async def test_source_add_research_delegates_timeout_budget_to_research_api() -> None:
     client = SimpleNamespace(
         research=SimpleNamespace(
-            start=AsyncMock(return_value={"task_id": "task_123"}),
+            start=AsyncMock(return_value=_start({"task_id": "task_123"})),
             wait_for_completion=AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "sources": [],
-                    "report": "",
-                }
+                return_value=_wait_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "sources": [],
+                        "report": "",
+                    }
+                )
             ),
         )
     )

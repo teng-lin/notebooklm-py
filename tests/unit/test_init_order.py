@@ -1316,9 +1316,8 @@ async def test_generate_mind_map_works_without_notes_injection() -> None:
 
     result = await api.generate_mind_map("nb_123", source_ids=["src_1"])
 
-    assert isinstance(result, dict)
-    assert result["note_id"] == "note_abc"
-    assert result["mind_map"]["name"] == "Mind Map Title"
+    assert result.note_id == "note_abc"
+    assert result.mind_map["name"] == "Mind Map Title"
 
     # The flow must have gone GENERATE_MIND_MAP -> CREATE_NOTE -> UPDATE_NOTE
     method_names = [getattr(m, "name", str(m)) for m, _ in calls]

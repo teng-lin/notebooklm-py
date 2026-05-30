@@ -17,6 +17,36 @@ the broader stability policy (semver promise, supported Python versions, the
 | `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.7.0 | Warning at `src/notebooklm/_notes.py:192` |
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works; warning at `src/notebooklm/client.py:__await__` |
 | `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` — same cadence, name now matches `SourcesAPI.wait_until_ready` / `ArtifactsAPI.wait_for_completion` | v0.7.0 | v0.8.0 | Additive: `interval` keeps its default of `5` and still works; passing a non-default value emits a `DeprecationWarning`, passing both `interval` and `initial_interval` raises `TypeError`. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py` |
+| Dict-subscript access (`result["status"]`) on `research.poll` / `research.start` / `research.wait_for_completion`, `artifacts.generate_mind_map`, and `sources.get_guide` return values | Attribute access (`result.status`, `result.sources`, `result.note_id`, `guide.summary`, …) | v0.7.0 | v0.8.0 | These methods now return typed dataclasses (`ResearchTask` / `ResearchStart` / `MindMapResult` / `SourceGuide`) with a new `ResearchStatus` str-enum, instead of `dict[str, Any]`. The dataclasses mix in `MappingCompatMixin` so the legacy dict shape keeps working for one MINOR cycle: `result["key"]` warns and returns the historical value (from `to_public_dict()`), while `result.get(...)` / `result.keys()` / `"x" in result` / `iter(result)` stay silent. In v0.8.0 the mixin is dropped and the returns become attribute-only. `ResearchStatus` is a `str` enum, so `status == "completed"` keeps working in v0.8.0. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py::MappingCompatMixin`. Tracked by [#1209](https://github.com/teng-lin/notebooklm-py/issues/1209) |
+
+### Migration: typed research / mind-map / source-guide returns
+
+```python
+from notebooklm import ResearchStatus
+
+# BEFORE (still works in v0.7.0; subscript emits a DeprecationWarning)
+result = await client.research.poll(nb_id)
+if result["status"] == "completed":
+    for source in result["sources"]:
+        print(source["title"], source["url"])
+
+guide = await client.sources.get_guide(nb_id, src_id)
+print(guide["summary"], guide["keywords"])
+
+# AFTER — typed attribute access (warning-free)
+result = await client.research.poll(nb_id)
+if result.status == ResearchStatus.COMPLETED:   # also == "completed"
+    for source in result.sources:               # tuple[ResearchSource, ...]
+        print(source.title, source.url)
+
+guide = await client.sources.get_guide(nb_id, src_id)
+print(guide.summary, guide.keywords)
+```
+
+The new return types (`ResearchStatus`, `ResearchTask`, `ResearchSource`,
+`ResearchStart`, `MindMapResult`, `SourceGuide`) are exported from both
+`notebooklm` and `notebooklm.types`. Set `NOTEBOOKLM_QUIET_DEPRECATIONS=1` to
+silence the subscript warning while migrating.
 
 ### Migration: `ResearchAPI.wait_for_completion` poll-interval keyword
 

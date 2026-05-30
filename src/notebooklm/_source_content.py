@@ -7,6 +7,7 @@ import logging
 from typing import Any, Literal
 
 from ._runtime_contracts import RpcCaller
+from ._types.research import SourceGuide
 from .rpc import RPCMethod
 from .types import SourceFulltext, SourceNotFoundError, _extract_source_url
 
@@ -18,7 +19,7 @@ class SourceContentRenderer:
         self._rpc = rpc
         self._logger = logger or logging.getLogger(__name__)
 
-    async def get_guide(self, notebook_id: str, source_id: str) -> dict[str, Any]:
+    async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
         """Get AI-generated summary and keywords for a specific source."""
         params = [[[[source_id]]]]
         result = await self._rpc.rpc_call(
@@ -41,7 +42,7 @@ class SourceContentRenderer:
                     if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
                         keywords = inner[2][0] if isinstance(inner[2][0], list) else []
 
-        return {"summary": summary, "keywords": keywords}
+        return SourceGuide(summary=summary, keywords=keywords)
 
     async def get_fulltext(
         self,

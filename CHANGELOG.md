@@ -52,6 +52,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Typed return values for the research / mind-map / source-guide methods.**
+  `research.poll` / `research.start` / `research.wait_for_completion`,
+  `artifacts.generate_mind_map`, and `sources.get_guide` now return typed
+  dataclasses instead of untyped `dict[str, Any]`, with a new
+  `ResearchStatus` str-enum for the status field. The new public types are
+  exported from `notebooklm` and `notebooklm.types`:
+  `ResearchStatus`, `ResearchTask`, `ResearchSource`, `ResearchStart`,
+  `MindMapResult`, and `SourceGuide`.
+  ```python
+  from notebooklm import ResearchStatus
+
+  result = await client.research.poll(nb_id)
+  if result.status == ResearchStatus.COMPLETED:   # also == "completed"
+      for source in result.sources:
+          print(source.title, source.url)
+
+  guide = await client.sources.get_guide(nb_id, src_id)
+  print(guide.summary, guide.keywords)
+
+  mind_map = await client.artifacts.generate_mind_map(nb_id)
+  print(mind_map.note_id, mind_map.mind_map)
+  ```
+  This is **backward-compatible**: `ResearchStatus` is a `str` enum (so
+  `status == "completed"` still holds), and the returned dataclasses keep
+  working as read-only mappings — `result["status"]` / `result.get("status")`
+  / `result.keys()` / `"status" in result` all still work (subscript emits a
+  `DeprecationWarning`; see **Deprecated** below). The dict-subscript bridge is
+  removed in v0.8.0.
 - **`WaitTimeoutError` — one catchable base for every wait/poll timeout.** A
   new public exception (`notebooklm.WaitTimeoutError`) is the common base of
   `SourceTimeoutError`, `ArtifactTimeoutError` (and its
@@ -122,6 +150,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The warning fires only on a miss; successful lookups stay silent. Suppress it
   with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. See
   [`docs/deprecations.md`](docs/deprecations.md).
+- **Dict-subscript access on the new typed research / mind-map / guide
+  returns is deprecated.** Now that `research.poll` / `research.start` /
+  `research.wait_for_completion`, `artifacts.generate_mind_map`, and
+  `sources.get_guide` return typed dataclasses (see **Added**), the legacy
+  `result["status"]` dict-subscript access emits a `DeprecationWarning` and
+  will be **removed in v0.8.0**. Migrate to attribute access (`result.status`).
+  The silent `result.get(...)` / `result.keys()` / `"x" in result` mapping
+  shims also disappear in v0.8.0. Suppress the warning with
+  `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. See
+  [`docs/deprecations.md`](docs/deprecations.md).
+  ```python
+  # BEFORE (still works in 0.7.0, warns on subscript)
+  if result["status"] == "completed":
+      sources = result["sources"]
+  # AFTER
+  if result.status == "completed":
+      sources = result.sources
+  ```
 
 ### Fixed
 

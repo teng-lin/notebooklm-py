@@ -38,9 +38,33 @@ from notebooklm.types import (
     AskResult,
     Note,
     Notebook,
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
     ShareStatus,
     Source,
+    SourceGuide,
 )
+
+
+def _research_task(spec: dict) -> ResearchTask:
+    """Build a typed ``ResearchTask`` from a legacy poll/wait dict spec."""
+    try:
+        status = ResearchStatus(spec.get("status", "no_research"))
+    except ValueError:
+        status = ResearchStatus.FAILED
+    raw_sources = spec.get("sources") or []
+    sources = tuple(ResearchSource.from_public_dict(s) for s in raw_sources if isinstance(s, dict))
+    return ResearchTask(
+        task_id=spec.get("task_id", ""),
+        status=status,
+        query=spec.get("query", ""),
+        sources=sources,
+        summary=spec.get("summary", ""),
+        report=spec.get("report", ""),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Fixtures: minimal mocks needed to keep --json paths offline.
@@ -164,7 +188,7 @@ def _make_client(extra_setup=None) -> MagicMock:
     client.artifacts.list = AsyncMock(return_value=_stub_artifacts())
     client.artifacts.suggest_reports = AsyncMock(return_value=[])
     client.notes.list = AsyncMock(return_value=_stub_notes())
-    client.research.poll = AsyncMock(return_value={"status": "no_research"})
+    client.research.poll = AsyncMock(return_value=_research_task({"status": "no_research"}))
 
     async def wait_for_research_completion(
         notebook_id: str,
@@ -173,7 +197,7 @@ def _make_client(extra_setup=None) -> MagicMock:
         timeout: float = 1800,
         interval: float = 5,
         initial_interval: float | None = None,
-    ) -> dict:
+    ) -> ResearchTask:
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         effective_interval = initial_interval if initial_interval is not None else interval
@@ -181,14 +205,12 @@ def _make_client(extra_setup=None) -> MagicMock:
             raise ValueError("poll interval must be positive")
         pinned_task_id = task_id
         attempts = max(1, math.ceil(timeout / effective_interval) + 1)
-        status = {"status": "no_research"}
+        status: ResearchTask = _research_task({"status": "no_research"})
         for _ in range(attempts):
             status = await client.research.poll(notebook_id, task_id=pinned_task_id)
-            if pinned_task_id is None:
-                discovered_task_id = status.get("task_id")
-                if isinstance(discovered_task_id, str) and discovered_task_id:
-                    pinned_task_id = discovered_task_id
-            status_val = status.get("status")
+            if pinned_task_id is None and status.task_id:
+                pinned_task_id = status.task_id
+            status_val = status.status
             if status_val in ("completed", "failed"):
                 return status
             if status_val == "no_research" and pinned_task_id is None:
@@ -289,24 +311,34 @@ def _customize_source_fulltext(client: MagicMock) -> None:
 
 def _customize_source_guide(client: MagicMock) -> None:
     client.sources.get_guide = AsyncMock(
-        return_value={"summary": "a summary", "keywords": ["k1", "k2"]}
+        return_value=SourceGuide(summary="a summary", keywords=["k1", "k2"])
     )
 
 
 def _customize_source_add_research(client: MagicMock) -> None:
-    client.research.start = AsyncMock(return_value={"task_id": "task_123"})
+    client.research.start = AsyncMock(
+        return_value=ResearchStart(
+            task_id="task_123",
+            report_id=None,
+            notebook_id="abc123def456ghi789jkl",
+            query="",
+            mode="fast",
+        )
+    )
 
 
 def _customize_research_wait(client: MagicMock) -> None:
     # research wait polls until status == "completed". Return a completed
     # payload immediately so the loop exits on the first iteration.
     client.research.poll = AsyncMock(
-        return_value={
-            "status": "completed",
-            "sources": [],
-            "query": "",
-            "report": "",
-        }
+        return_value=_research_task(
+            {
+                "status": "completed",
+                "sources": [],
+                "query": "",
+                "report": "",
+            }
+        )
     )
 
 

@@ -1,108 +1,44 @@
-"""POLL_RESEARCH wire-row parsing helpers."""
+"""POLL_RESEARCH wire-row parsing helpers.
+
+The public typed models (:class:`ResearchSource`, :class:`ResearchTask`,
+:class:`ResearchStatus`) live in ``_types/research.py`` (issue #1209); they are
+re-exported here so the historical import path
+``from ._research_task_parser import ResearchSource, ResearchTask`` keeps
+working and this module stays the home of the wire-row parsing logic.
+"""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import Any
 
+from ._types.research import (
+    RESEARCH_RESULT_TYPE_REPORT,
+    RESEARCH_RESULT_TYPE_WEB,
+    ResearchResultType,
+    ResearchSource,
+    ResearchStatus,
+    ResearchTask,
+    parse_result_type,
+)
 from .rpc import RPCMethod, safe_index
+
+__all__ = [
+    "RESEARCH_RESULT_TYPE_REPORT",
+    "RESEARCH_RESULT_TYPE_WEB",
+    "ResearchResultType",
+    "ResearchSource",
+    "ResearchStatus",
+    "ResearchTask",
+    "parse_research_task_models",
+    "parse_research_tasks",
+    "parse_result_type",
+]
 
 logger = logging.getLogger(__name__)
 
 _POLL_SOURCE = "_research.poll"
 _POLL_METHOD_ID = RPCMethod.POLL_RESEARCH.value
-
-RESEARCH_RESULT_TYPE_WEB = 1
-RESEARCH_RESULT_TYPE_DRIVE = 2
-RESEARCH_RESULT_TYPE_REPORT = 5
-_RESEARCH_RESULT_TYPE_ALIASES = {
-    "web": RESEARCH_RESULT_TYPE_WEB,
-    "drive": RESEARCH_RESULT_TYPE_DRIVE,
-    "report": RESEARCH_RESULT_TYPE_REPORT,
-}
-
-ResearchResultType = int | str
-ResearchStatus = Literal["in_progress", "completed", "failed"]
-
-
-@dataclass(frozen=True)
-class ResearchSource:
-    """Typed internal representation of one parsed research source."""
-
-    url: str
-    title: str
-    result_type: ResearchResultType = RESEARCH_RESULT_TYPE_WEB
-    research_task_id: str | None = None
-    report_markdown: str = ""
-
-    @classmethod
-    def from_public_dict(cls, source: Mapping[str, Any]) -> ResearchSource:
-        """Normalize a public source dictionary into the internal model."""
-        url_raw = source.get("url", "")
-        title_raw = source.get("title", "Untitled")
-        research_task_id_raw = source.get("research_task_id")
-        report_markdown_raw = source.get("report_markdown", "")
-
-        return cls(
-            url=url_raw if isinstance(url_raw, str) else "",
-            title=title_raw if isinstance(title_raw, str) else "Untitled",
-            result_type=parse_result_type(source.get("result_type", RESEARCH_RESULT_TYPE_WEB)),
-            research_task_id=research_task_id_raw
-            if isinstance(research_task_id_raw, str)
-            else None,
-            report_markdown=report_markdown_raw if isinstance(report_markdown_raw, str) else "",
-        )
-
-    @property
-    def is_report(self) -> bool:
-        return self.result_type == RESEARCH_RESULT_TYPE_REPORT
-
-    def to_public_dict(self) -> dict[str, Any]:
-        """Return the compatibility dictionary shape exposed by public APIs."""
-        public: dict[str, Any] = {
-            "url": self.url,
-            "title": self.title,
-            "result_type": self.result_type,
-        }
-        if self.research_task_id is not None:
-            public["research_task_id"] = self.research_task_id
-        if self.report_markdown:
-            public["report_markdown"] = self.report_markdown
-        return public
-
-
-@dataclass(frozen=True)
-class ResearchTask:
-    """Typed internal representation of one POLL_RESEARCH task."""
-
-    task_id: str
-    status: ResearchStatus
-    query: str = ""
-    sources: tuple[ResearchSource, ...] = ()
-    summary: str = ""
-    report: str = ""
-
-    def to_public_dict(self) -> dict[str, Any]:
-        """Return the compatibility dictionary shape exposed by public APIs."""
-        return {
-            "task_id": self.task_id,
-            "status": self.status,
-            "query": self.query,
-            "sources": [source.to_public_dict() for source in self.sources],
-            "summary": self.summary,
-            "report": self.report,
-        }
-
-
-def parse_result_type(value: Any) -> ResearchResultType:
-    """Normalize known research source type tags while preserving unknown tags."""
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        return _RESEARCH_RESULT_TYPE_ALIASES.get(value.lower(), value)
-    return RESEARCH_RESULT_TYPE_WEB
 
 
 def extract_legacy_report_chunks(src: list[Any]) -> str:
@@ -227,10 +163,10 @@ def _status_from_code(status_code: int | None) -> ResearchStatus:
     # Unknown non-null codes are terminal failures so wait loops do not spin
     # until timeout after the backend rejects a task.
     if status_code in (2, 6):
-        return "completed"
+        return ResearchStatus.COMPLETED
     if status_code == 1 or status_code is None:
-        return "in_progress"
-    return "failed"
+        return ResearchStatus.IN_PROGRESS
+    return ResearchStatus.FAILED
 
 
 def _parse_source_row(
@@ -282,7 +218,7 @@ def _parse_source_row(
     if not report and not report_found:
         report = extract_legacy_report_chunks(src)
     if report and parsed_source is not None:
-        parsed_source = replace(parsed_source, report_markdown=report)
+        parsed_source = parsed_source.with_report_markdown(report)
 
     return parsed_source, report
 
@@ -337,5 +273,11 @@ def parse_research_task_models(result: Any) -> list[ResearchTask]:
 
 
 def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
-    """Parse a raw ``POLL_RESEARCH`` result into compatibility dictionaries."""
-    return [task.to_public_dict() for task in parse_research_task_models(result)]
+    """Parse a raw ``POLL_RESEARCH`` result into compatibility dictionaries.
+
+    Each dict has the historical per-task shape (``task_id`` / ``status`` /
+    ``query`` / ``sources`` / ``summary`` / ``report``); the top-level
+    ``tasks`` sibling key belongs to :meth:`ResearchAPI.poll`'s result, not to
+    these individual task dicts.
+    """
+    return [task._to_task_dict() for task in parse_research_task_models(result)]

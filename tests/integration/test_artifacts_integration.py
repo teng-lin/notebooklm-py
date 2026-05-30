@@ -37,6 +37,7 @@ from notebooklm.types import (
     ArtifactNotReadyError,
     ArtifactParseError,
     ArtifactType,
+    MindMapResult,
     UnknownTypeWarning,
 )
 
@@ -355,8 +356,10 @@ class TestMindMap:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.artifacts.generate_mind_map("nb_123")
 
-        # Mind map returns dict or None
-        assert result is None or isinstance(result, dict)
+        # Mind map returns a typed MindMapResult with mind_map + note_id.
+        assert isinstance(result, MindMapResult)
+        assert hasattr(result, "mind_map")
+        assert hasattr(result, "note_id")
 
 
 class TestArtifactsAPI:
@@ -1731,7 +1734,8 @@ class TestGenerateMindMapParsing:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.artifacts.generate_mind_map("nb_123")
 
-        assert result == {"mind_map": None, "note_id": None}
+        assert result.mind_map is None
+        assert result.note_id is None
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_parses_json_string(
@@ -1862,7 +1866,8 @@ class TestGenerateMindMapParsing:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.artifacts.generate_mind_map("nb_123", source_ids=None)
 
-        assert result == {"mind_map": None, "note_id": None}
+        assert result.mind_map is None
+        assert result.note_id is None
 
 
 class TestDownloadAudioErrorPaths:

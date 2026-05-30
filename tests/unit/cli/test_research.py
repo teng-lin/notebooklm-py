@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, research_task
 
 research_module = importlib.import_module("notebooklm.cli.research_cmd")
 research_import_module = importlib.import_module("notebooklm.cli.research_import")
@@ -20,7 +20,9 @@ class TestResearchStatus:
     def test_status_no_research(self, runner, mock_auth, mock_fetch_tokens):
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.research.poll = AsyncMock(return_value={"status": "no_research"})
+            mock_client.research.poll = AsyncMock(
+                return_value=research_task({"status": "no_research"})
+            )
             mock_client_cls.return_value = mock_client
 
             result = runner.invoke(cli, ["research", "status", "-n", "nb_123"])
@@ -32,7 +34,7 @@ class TestResearchStatus:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={"status": "in_progress", "query": "AI research"}
+                return_value=research_task({"status": "in_progress", "query": "AI research"})
             )
             mock_client_cls.return_value = mock_client
 
@@ -46,16 +48,18 @@ class TestResearchStatus:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "query": "AI research",
-                    "sources": [
-                        {"title": "Source 1", "url": "http://example.com/1"},
-                        {"title": "Source 2", "url": "http://example.com/2"},
-                    ],
-                    "summary": "This is a summary of the research results.",
-                    "report": "# Research Report\nDetailed findings here.",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "query": "AI research",
+                        "sources": [
+                            {"title": "Source 1", "url": "http://example.com/1"},
+                            {"title": "Source 2", "url": "http://example.com/2"},
+                        ],
+                        "summary": "This is a summary of the research results.",
+                        "report": "# Research Report\nDetailed findings here.",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -75,12 +79,14 @@ class TestResearchStatus:
                 {"title": f"Source {i}", "url": f"http://example.com/{i}"} for i in range(15)
             ]
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "query": "AI research",
-                    "sources": sources,
-                    "summary": "",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "query": "AI research",
+                        "sources": sources,
+                        "summary": "",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -91,26 +97,34 @@ class TestResearchStatus:
         assert "and 5 more" in result.output
 
     def test_status_unknown(self, runner, mock_auth, mock_fetch_tokens):
+        # ``research status`` renders any status it does not special-case
+        # (no_research / in_progress / completed) via the generic
+        # ``Status: <value>`` line. ``failed`` is a valid terminal status that
+        # hits that fallback branch. (The typed return guarantees the status is
+        # one of the ResearchStatus values, so a truly "unknown" string can no
+        # longer reach the CLI.)
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.research.poll = AsyncMock(return_value={"status": "unknown_status"})
+            mock_client.research.poll = AsyncMock(return_value=research_task({"status": "failed"}))
             mock_client_cls.return_value = mock_client
 
             result = runner.invoke(cli, ["research", "status", "-n", "nb_123"])
 
         assert result.exit_code == 0
-        assert "Status: unknown_status" in result.output
+        assert "Status: failed" in result.output
 
     def test_status_json_output(self, runner, mock_auth, mock_fetch_tokens):
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                    "summary": "Summary",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                        "summary": "Summary",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -132,13 +146,15 @@ class TestResearchWait:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                    "report": "# Test Report",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                        "report": "# Test Report",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -152,7 +168,9 @@ class TestResearchWait:
     def test_wait_no_research(self, runner, mock_auth, mock_fetch_tokens):
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.research.poll = AsyncMock(return_value={"status": "no_research"})
+            mock_client.research.poll = AsyncMock(
+                return_value=research_task({"status": "no_research"})
+            )
             mock_client_cls.return_value = mock_client
 
             result = runner.invoke(cli, ["research", "wait", "-n", "nb_123"])
@@ -164,13 +182,15 @@ class TestResearchWait:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "failed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                    "report": "# Partial",
-                }
+                return_value=research_task(
+                    {
+                        "status": "failed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                        "report": "# Partial",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -184,7 +204,7 @@ class TestResearchWait:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={"status": "in_progress", "query": "AI research"}
+                return_value=research_task({"status": "in_progress", "query": "AI research"})
             )
             mock_client_cls.return_value = mock_client
 
@@ -204,12 +224,14 @@ class TestResearchWait:
         ):
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
             mock_client_cls.return_value = mock_client
@@ -222,7 +244,7 @@ class TestResearchWait:
             mock_client,
             "nb_123",
             "task_123",
-            [{"title": "Source 1", "url": "http://example.com"}],
+            [{"url": "http://example.com", "title": "Source 1", "result_type": 1}],
             max_elapsed=300,
         )
 
@@ -235,16 +257,18 @@ class TestResearchWait:
         ):
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [
-                        {"title": "Cited", "url": "https://example.com/cited"},
-                        {"title": "Uncited", "url": "https://example.com/uncited"},
-                    ],
-                    "report": "Report cites https://example.com/cited",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [
+                            {"title": "Cited", "url": "https://example.com/cited"},
+                            {"title": "Uncited", "url": "https://example.com/uncited"},
+                        ],
+                        "report": "Report cites https://example.com/cited",
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
             mock_client_cls.return_value = mock_client
@@ -260,7 +284,7 @@ class TestResearchWait:
             mock_client,
             "nb_123",
             "task_123",
-            [{"title": "Cited", "url": "https://example.com/cited"}],
+            [{"url": "https://example.com/cited", "title": "Cited", "result_type": 1}],
             max_elapsed=300,
         )
 
@@ -275,13 +299,15 @@ class TestResearchWait:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                    "report": "# JSON Report",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                        "report": "# JSON Report",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -302,12 +328,14 @@ class TestResearchWait:
         ):
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
             mock_client_cls.return_value = mock_client
@@ -325,7 +353,7 @@ class TestResearchWait:
             mock_client,
             "nb_123",
             "task_123",
-            [{"title": "Source 1", "url": "http://example.com"}],
+            [{"url": "http://example.com", "title": "Source 1", "result_type": 1}],
             max_elapsed=300,
             json_output=True,
         )
@@ -339,16 +367,18 @@ class TestResearchWait:
         ):
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "completed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [
-                        {"title": "Cited", "url": "https://example.com/cited"},
-                        {"title": "Uncited", "url": "https://example.com/uncited"},
-                    ],
-                    "report": "Report cites https://example.com/cited",
-                }
+                return_value=research_task(
+                    {
+                        "status": "completed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [
+                            {"title": "Cited", "url": "https://example.com/cited"},
+                            {"title": "Uncited", "url": "https://example.com/uncited"},
+                        ],
+                        "report": "Report cites https://example.com/cited",
+                    }
+                )
             )
             mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
             mock_client_cls.return_value = mock_client
@@ -367,7 +397,7 @@ class TestResearchWait:
             mock_client,
             "nb_123",
             "task_123",
-            [{"title": "Cited", "url": "https://example.com/cited"}],
+            [{"url": "https://example.com/cited", "title": "Cited", "result_type": 1}],
             max_elapsed=300,
             json_output=True,
         )
@@ -375,7 +405,9 @@ class TestResearchWait:
     def test_wait_json_no_research(self, runner, mock_auth, mock_fetch_tokens):
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.research.poll = AsyncMock(return_value={"status": "no_research"})
+            mock_client.research.poll = AsyncMock(
+                return_value=research_task({"status": "no_research"})
+            )
             mock_client_cls.return_value = mock_client
 
             result = runner.invoke(cli, ["research", "wait", "-n", "nb_123", "--json"])
@@ -389,13 +421,15 @@ class TestResearchWait:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={
-                    "status": "failed",
-                    "task_id": "task_123",
-                    "query": "AI research",
-                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
-                    "report": "# Partial",
-                }
+                return_value=research_task(
+                    {
+                        "status": "failed",
+                        "task_id": "task_123",
+                        "query": "AI research",
+                        "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                        "report": "# Partial",
+                    }
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -413,7 +447,7 @@ class TestResearchWait:
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.poll = AsyncMock(
-                return_value={"status": "in_progress", "query": "AI research"}
+                return_value=research_task({"status": "in_progress", "query": "AI research"})
             )
             mock_client_cls.return_value = mock_client
 

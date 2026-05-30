@@ -88,28 +88,30 @@ def research_status(ctx, notebook_id, json_output, client_auth):
             status = await client.research.poll(nb_id_resolved)
 
             if json_output:
-                json_output_response(status)
+                # ``ResearchTask`` is a typed dataclass; serialize via its
+                # legacy dict shape so JSON output is unchanged.
+                json_output_response(status.to_public_dict())
                 return
 
-            status_val = status.get("status", "unknown")
+            status_val = status.status
 
             if status_val == "no_research":
                 console.print("[dim]No research running[/dim]")
             elif status_val == "in_progress":
-                query = status.get("query", "")
+                query = status.query
                 console.print(f"[yellow]Research in progress:[/yellow] {query}")
                 console.print("[dim]Use 'research wait' to wait for completion[/dim]")
             elif status_val == "completed":
-                query = status.get("query", "")
-                sources = status.get("sources", [])
-                summary = status.get("summary", "")
+                query = status.query
+                sources = [src.to_public_dict() for src in status.sources]
+                summary = status.summary
                 console.print(f"[green]Research completed:[/green] {query}")
                 display_research_sources(sources)
 
                 if summary:
                     console.print(f"\n[bold]Summary:[/bold]\n{summary[:_SUMMARY_PREVIEW_CHARS]}")
 
-                display_report(status.get("report", ""))
+                display_report(status.report)
 
                 console.print("\n[dim]Use 'research wait --import-all' to import sources[/dim]")
             else:

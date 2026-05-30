@@ -22,6 +22,7 @@ from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
 from ._source_upload import SourceUploadPipeline
 from ._source_upload_payloads import build_rename_source_params
+from ._types.research import SourceGuide
 from ._url_utils import is_youtube_url
 from .rpc import RPCMethod
 from .types import (
@@ -680,7 +681,7 @@ class SourcesAPI:
                 return True
         return False
 
-    async def get_guide(self, notebook_id: str, source_id: str) -> dict[str, Any]:
+    async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
         """Get AI-generated summary and keywords for a specific source.
 
         This is the "Source Guide" feature shown when clicking on a source
@@ -691,9 +692,13 @@ class SourcesAPI:
             source_id: The source ID to get guide for.
 
         Returns:
-            Dictionary containing:
-                - summary: AI-generated summary with **bold** keywords (markdown)
-                - keywords: List of topic keyword strings
+            A :class:`~notebooklm._types.research.SourceGuide` with:
+                - ``summary``: AI-generated summary with **bold** keywords (markdown)
+                - ``keywords``: list of topic keyword strings
+
+            Use attribute access (``guide.summary``). Legacy
+            ``guide["summary"]`` dict-subscript access still works (with a
+            ``DeprecationWarning``) until v0.8.0.
         """
         return await self._content.get_guide(notebook_id, source_id)
 

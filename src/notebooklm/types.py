@@ -41,6 +41,14 @@ from ._types.notebooks import (
     SuggestedTopic,
 )
 from ._types.notes import Note
+from ._types.research import (
+    MindMapResult,
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
+    SourceGuide,
+)
 from ._types.sharing import SharedUser, ShareStatus
 from ._types.sources import (
     Source,
@@ -139,6 +147,13 @@ __all__ = [
     "ChatMode",
     "SharedUser",
     "ShareStatus",
+    # Research / mind-map / source-guide typed returns
+    "ResearchStatus",
+    "ResearchSource",
+    "ResearchTask",
+    "ResearchStart",
+    "MindMapResult",
+    "SourceGuide",
     # Exceptions
     "SourceError",
     "SourceAddError",
@@ -209,15 +224,21 @@ for _public_moved_type in (
     ChatReference,
     ConversationTurn,
     GenerationStatus,
+    MindMapResult,
     Note,
     Notebook,
     NotebookDescription,
     NotebookMetadata,
     ReportSuggestion,
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
     SharedUser,
     ShareStatus,
     Source,
     SourceFulltext,
+    SourceGuide,
     SourceSummary,
     SourceType,
     SuggestedTopic,

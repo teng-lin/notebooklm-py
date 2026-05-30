@@ -119,10 +119,12 @@ class TestEmptyResults:
         async with NotebookLMClient(auth) as client:
             result = await client.research.poll(notebook_id)
 
-        # Empty-state sentinel, not None and not an exception.
-        assert isinstance(result, dict)
-        assert result["status"] == "no_research"
-        assert result["tasks"] == []
+        # Empty-state sentinel, not None and not an exception. The typed
+        # ResearchTask compares equal to the historical status string and its
+        # to_public_dict mirrors the old ``{"status": ..., "tasks": []}`` shape.
+        assert result.status == "no_research"
+        assert result.tasks == ()
+        assert result.to_public_dict() == {"status": "no_research", "tasks": []}
 
 
 # =============================================================================

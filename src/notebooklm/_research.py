@@ -11,14 +11,21 @@ import logging
 import time
 import warnings
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
 from ._deprecation import deprecated_kwarg
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
-from ._research_task_parser import ResearchSource, ResearchTask, parse_research_task_models
+from ._research_task_parser import parse_research_task_models
 from ._runtime_contracts import RpcCaller
+from ._types.research import (
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
+)
 from .exceptions import (
     NetworkError,
     ResearchTaskMismatchError,
@@ -33,7 +40,14 @@ from .types import CitedSourceSelection
 if TYPE_CHECKING:
     from .types import Source
 
-__all__ = ["CitedSourceSelection", "ResearchAPI"]
+__all__ = [
+    "CitedSourceSelection",
+    "ResearchAPI",
+    "ResearchSource",
+    "ResearchStart",
+    "ResearchStatus",
+    "ResearchTask",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +172,13 @@ class ResearchAPI:
             # Start research
             task = await client.research.start(notebook_id, "quantum computing")
 
-            # Poll for results
+            # Poll for results (typed attribute access; ``== "completed"``
+            # still works because ResearchStatus is a str enum)
             result = await client.research.poll(notebook_id)
-            if result["status"] == "completed":
+            if result.status == "completed":
                 # Import selected sources
                 imported = await client.research.import_sources(
-                    notebook_id, task["task_id"], result["sources"][:5]
+                    notebook_id, task.task_id, result.sources[:5]
                 )
     """
 
@@ -301,11 +316,11 @@ class ResearchAPI:
     def _public_poll_result(
         selected_task: ResearchTask,
         parsed_tasks: list[ResearchTask],
-    ) -> dict[str, Any]:
-        return {
-            **selected_task.to_public_dict(),
-            "tasks": [task.to_public_dict() for task in parsed_tasks],
-        }
+    ) -> ResearchTask:
+        # Carry the sibling tasks on the selected task's ``tasks`` field. The
+        # sub-tasks themselves leave ``tasks`` empty (their default), matching
+        # the historical nested-dict shape.
+        return replace(selected_task, tasks=tuple(parsed_tasks))
 
     async def start(
         self,
@@ -313,7 +328,7 @@ class ResearchAPI:
         query: str,
         source: str = "web",
         mode: str = "fast",
-    ) -> dict[str, Any] | None:
+    ) -> ResearchStart | None:
         """Start a research session.
 
         Args:
@@ -323,7 +338,11 @@ class ResearchAPI:
             mode: "fast" or "deep" (deep only available for web).
 
         Returns:
-            Dictionary with task_id, report_id, and metadata.
+            A :class:`~notebooklm._types.research.ResearchStart` with
+            ``task_id``, ``report_id``, ``notebook_id``, ``query``, and
+            ``mode``, or ``None`` when the backend returned no task. Legacy
+            ``result["task_id"]`` dict-subscript access still works (with a
+            ``DeprecationWarning``) until v0.8.0; prefer ``result.task_id``.
 
         Raises:
             ValidationError: If source/mode combination is invalid.
@@ -363,20 +382,20 @@ class ResearchAPI:
         if result and isinstance(result, list) and len(result) > 0:
             task_id = result[0]
             report_id = result[1] if len(result) > 1 else None
-            return {
-                "task_id": task_id,
-                "report_id": report_id,
-                "notebook_id": notebook_id,
-                "query": query,
-                "mode": mode_lower,
-            }
+            return ResearchStart(
+                task_id=task_id,
+                report_id=report_id,
+                notebook_id=notebook_id,
+                query=query,
+                mode=mode_lower,
+            )
         return None
 
     async def poll(
         self,
         notebook_id: str,
         task_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> ResearchTask:
         """Poll for research results.
 
         Args:
@@ -399,27 +418,33 @@ class ResearchAPI:
                 major release.
 
         Returns:
-            Dictionary representing the parsed research task for the
-            notebook. Includes:
-            - ``task_id``: task/report identifier for the selected task
-            - ``status``: ``in_progress``, ``completed``, ``failed``, or ``no_research``
-            - ``query``: original research query text
-            - ``sources``: parsed source dictionaries for the selected task
-            - ``summary``: summary text when present
-            - ``report``: extracted deep-research report markdown when present
-            - ``tasks``: list of all parsed research tasks visible at this
-              poll (filtered to the matched task when ``task_id`` is set),
-              each with the same shape as the top-level fields
+            A :class:`~notebooklm._types.research.ResearchTask` describing the
+            selected research task for the notebook. Use attribute access:
+            - ``task.task_id``: task/report identifier for the selected task
+            - ``task.status``: a :class:`~notebooklm._types.research.ResearchStatus`
+              (``IN_PROGRESS``, ``COMPLETED``, ``FAILED``, or ``NO_RESEARCH``);
+              compares equal to the historical strings (``task.status ==
+              "completed"`` still holds)
+            - ``task.query``: original research query text
+            - ``task.sources``: tuple of
+              :class:`~notebooklm._types.research.ResearchSource` for the
+              selected task
+            - ``task.summary``: summary text when present
+            - ``task.report``: extracted deep-research report markdown when present
+            - ``task.tasks``: tuple of all parsed research tasks visible at this
+              poll (filtered to the matched task when ``task_id`` is set)
 
-            Each source dictionary may include:
-            - ``url`` and ``title``
-            - ``result_type``
-            - ``research_task_id``: task/report ID that produced the source
-            - ``report_markdown`` for deep-research report entries
+            Each :class:`ResearchSource` exposes ``url``, ``title``,
+            ``result_type``, ``research_task_id`` (the task/report id that
+            produced the source), and ``report_markdown`` (for deep-research
+            report entries).
+
+            Legacy ``result["status"]`` dict-subscript access still works (with
+            a ``DeprecationWarning``) until v0.8.0; prefer ``result.status``.
 
             When ``task_id`` is supplied but no in-flight task matches, the
-            return is ``{"status": "no_research", "tasks": []}`` — the same
-            shape as the empty-poll case.
+            return is ``ResearchTask.empty()`` (status ``NO_RESEARCH``, empty
+            ``tasks``) — the same shape as the empty-poll case.
         """
         logger.debug("Polling research status for notebook %s", notebook_id)
         parsed_tasks = self._select_polled_tasks(
@@ -432,7 +457,7 @@ class ResearchAPI:
         if parsed_tasks:
             return self._public_poll_result(parsed_tasks[0], parsed_tasks)
 
-        return {"status": "no_research", "tasks": []}
+        return ResearchTask.empty()
 
     async def wait_for_completion(
         self,
@@ -442,7 +467,7 @@ class ResearchAPI:
         timeout: float = 1800,
         interval: float = 5,
         initial_interval: float = _INITIAL_INTERVAL_UNSET,
-    ) -> dict[str, Any]:
+    ) -> ResearchTask:
         """Poll until research reaches a terminal state or times out.
 
         When the first poll returns a concrete ``task_id``, subsequent polls
@@ -469,10 +494,13 @@ class ResearchAPI:
                 non-default ``interval`` values trigger the migration prompt.
 
         Returns:
-            The final :meth:`poll` result for ``completed`` or ``failed``
-            statuses. ``no_research`` is returned immediately only when no
-            task id is known; for a known/pinned task it can be a transient
-            live-API state before the task appears in ``POLL_RESEARCH``.
+            The final :meth:`poll` result (a
+            :class:`~notebooklm._types.research.ResearchTask`) for
+            ``COMPLETED`` or ``FAILED`` statuses. ``NO_RESEARCH`` is returned
+            immediately only when no task id is known; for a known/pinned task
+            it can be a transient live-API state before the task appears in
+            ``POLL_RESEARCH``. Legacy ``result["status"]`` dict-subscript
+            access still works (with a ``DeprecationWarning``) until v0.8.0.
 
         Raises:
             ResearchTimeoutError: If research does not reach a terminal status
@@ -535,11 +563,16 @@ class ResearchAPI:
             if pinned_task_id is None and selected_task is not None:
                 pinned_task_id = selected_task.task_id
 
-            status_val = selected_task.status if selected_task is not None else "no_research"
-            if selected_task is not None and status_val in ("completed", "failed"):
+            status_val: ResearchStatus = (
+                selected_task.status if selected_task is not None else ResearchStatus.NO_RESEARCH
+            )
+            if selected_task is not None and status_val in (
+                ResearchStatus.COMPLETED,
+                ResearchStatus.FAILED,
+            ):
                 return self._public_poll_result(selected_task, parsed_tasks)
-            if status_val == "no_research" and pinned_task_id is None:
-                return {"status": "no_research", "tasks": []}
+            if status_val == ResearchStatus.NO_RESEARCH and pinned_task_id is None:
+                return ResearchTask.empty()
 
             elapsed = loop.time() - start
             if elapsed >= timeout:
@@ -548,7 +581,7 @@ class ResearchAPI:
                     notebook_id,
                     task_label,
                     timeout,
-                    last_status=status_val,
+                    last_status=status_val.value,
                 )
 
             sleep_for = min(poll_interval, timeout - elapsed)

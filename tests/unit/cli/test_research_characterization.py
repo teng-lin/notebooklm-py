@@ -34,7 +34,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, research_task
 
 research_import_module = importlib.import_module("notebooklm.cli.research_import")
 
@@ -54,7 +54,10 @@ def runner_and_mocks(runner, mock_auth, mock_fetch_tokens):
 
     def factory(poll_return):
         mock_client = create_mock_client()
-        mock_client.research.poll = AsyncMock(return_value=poll_return)
+        # ``research.poll`` now returns a typed ``ResearchTask``; adapt legacy
+        # dict specs declared by these characterization fixtures.
+        adapted = research_task(poll_return) if isinstance(poll_return, dict) else poll_return
+        mock_client.research.poll = AsyncMock(return_value=adapted)
         return mock_client
 
     return runner, factory
@@ -105,7 +108,9 @@ class TestWaitHappy:
             "status": "completed",
             "query": "AI research",
             "sources_found": 1,
-            "sources": [{"title": "Source 1", "url": "http://example.com"}],
+            # Typed sources serialize back to the canonical dict shape, which
+            # always carries ``result_type``.
+            "sources": [{"url": "http://example.com", "title": "Source 1", "result_type": 1}],
             "report": "# Report\nBody",
         }
         # No import-related keys when --import-all was not passed.
@@ -284,7 +289,7 @@ class TestWaitImportAll:
             mock_client,
             "nb_123",
             "task_abc",
-            [{"title": "Source 1", "url": "http://example.com"}],
+            [{"url": "http://example.com", "title": "Source 1", "result_type": 1}],
             max_elapsed=300,
         )
 
@@ -316,7 +321,7 @@ class TestWaitImportAll:
             mock_client,
             "nb_123",
             "task_abc",
-            [{"title": "Source 1", "url": "http://example.com"}],
+            [{"url": "http://example.com", "title": "Source 1", "result_type": 1}],
             max_elapsed=300,
             json_output=True,
         )
@@ -325,16 +330,18 @@ class TestWaitImportAll:
         runner, _ = runner_and_mocks
         mock_client = create_mock_client()
         mock_client.research.poll = AsyncMock(
-            return_value={
-                "status": "completed",
-                "task_id": "task_abc",
-                "query": "AI research",
-                "sources": [
-                    {"title": "Cited", "url": "https://example.com/cited"},
-                    {"title": "Uncited", "url": "https://example.com/uncited"},
-                ],
-                "report": "Report cites https://example.com/cited",
-            }
+            return_value=research_task(
+                {
+                    "status": "completed",
+                    "task_id": "task_abc",
+                    "query": "AI research",
+                    "sources": [
+                        {"title": "Cited", "url": "https://example.com/cited"},
+                        {"title": "Uncited", "url": "https://example.com/uncited"},
+                    ],
+                    "report": "Report cites https://example.com/cited",
+                }
+            )
         )
         with (
             patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
@@ -357,7 +364,7 @@ class TestWaitImportAll:
             mock_client,
             "nb_123",
             "task_abc",
-            [{"title": "Cited", "url": "https://example.com/cited"}],
+            [{"url": "https://example.com/cited", "title": "Cited", "result_type": 1}],
             max_elapsed=300,
         )
 
@@ -365,16 +372,18 @@ class TestWaitImportAll:
         runner, _ = runner_and_mocks
         mock_client = create_mock_client()
         mock_client.research.poll = AsyncMock(
-            return_value={
-                "status": "completed",
-                "task_id": "task_abc",
-                "query": "AI research",
-                "sources": [
-                    {"title": "Cited", "url": "https://example.com/cited"},
-                    {"title": "Uncited", "url": "https://example.com/uncited"},
-                ],
-                "report": "Report cites https://example.com/cited",
-            }
+            return_value=research_task(
+                {
+                    "status": "completed",
+                    "task_id": "task_abc",
+                    "query": "AI research",
+                    "sources": [
+                        {"title": "Cited", "url": "https://example.com/cited"},
+                        {"title": "Uncited", "url": "https://example.com/uncited"},
+                    ],
+                    "report": "Report cites https://example.com/cited",
+                }
+            )
         )
         with (
             patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
@@ -408,7 +417,7 @@ class TestWaitImportAll:
             mock_client,
             "nb_123",
             "task_abc",
-            [{"title": "Cited", "url": "https://example.com/cited"}],
+            [{"url": "https://example.com/cited", "title": "Cited", "result_type": 1}],
             max_elapsed=300,
             json_output=True,
         )
@@ -433,14 +442,16 @@ class TestTaskIdPinning:
         # First poll: in_progress, with a task_id to pin. Second poll: completed.
         poll_mock = AsyncMock()
         poll_mock.side_effect = [
-            {"status": "in_progress", "task_id": "task_pinned", "query": "AI"},
-            {
-                "status": "completed",
-                "task_id": "task_pinned",
-                "query": "AI",
-                "sources": [{"title": "S", "url": "http://example.com"}],
-                "report": "R",
-            },
+            research_task({"status": "in_progress", "task_id": "task_pinned", "query": "AI"}),
+            research_task(
+                {
+                    "status": "completed",
+                    "task_id": "task_pinned",
+                    "query": "AI",
+                    "sources": [{"title": "S", "url": "http://example.com"}],
+                    "report": "R",
+                }
+            ),
         ]
         mock_client.research.poll = poll_mock
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:

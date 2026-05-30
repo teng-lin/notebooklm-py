@@ -331,7 +331,10 @@ class TestResearch:
                 initial_interval=1,
             )
 
-        assert result == {"status": "no_research", "tasks": []}
+        assert result.status == "no_research"
+        assert result.tasks == ()
+        # Legacy dict shape still available via to_public_dict / subscript.
+        assert result.to_public_dict() == {"status": "no_research", "tasks": []}
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_retries_transient_no_research_for_initial_task_id(

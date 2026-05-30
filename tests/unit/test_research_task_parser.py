@@ -251,7 +251,9 @@ class TestParseResearchTasks:
         assert tasks[0].task_id == "task_123"
         assert tasks[0].status == "completed"
         assert tasks[0].sources[0].result_type == 1
-        assert tasks[0].to_public_dict() == parse_research_tasks([[["task_123", task_info]]])[0]
+        # ``parse_research_tasks`` produces the per-task dict shape (no sibling
+        # ``tasks`` key); the model's ``_to_task_dict`` is the matching builder.
+        assert tasks[0]._to_task_dict() == parse_research_tasks([[["task_123", task_info]]])[0]
 
     def test_research_source_public_dict_preserves_unknown_result_type(self):
         source = ResearchSource(

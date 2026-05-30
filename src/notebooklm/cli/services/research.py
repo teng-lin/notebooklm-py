@@ -32,7 +32,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from ..research_import import ResearchImportResult, import_research_sources
 from ..resolve import resolve_notebook_id
@@ -148,8 +148,7 @@ async def execute_research_wait(
                 timeout=plan.timeout,
             )
 
-    raw_task_id = status.get("task_id")
-    task_id = raw_task_id if isinstance(raw_task_id, str) else None
+    task_id = status.task_id or None
 
     def _terminal(outcome: ResearchWaitOutcome, **extra: Any) -> ResearchWaitResult:
         return ResearchWaitResult(
@@ -160,16 +159,12 @@ async def execute_research_wait(
             **extra,
         )
 
-    def _as_str(value: Any) -> str:
-        return value if isinstance(value, str) else ""
-
-    def _as_sources(value: Any) -> list[dict[str, Any]]:
-        return cast(list[dict[str, Any]], value) if isinstance(value, list) else []
-
-    status_val = _as_str(status.get("status")) or "unknown"
-    query = _as_str(status.get("query"))
-    sources = _as_sources(status.get("sources"))
-    report = _as_str(status.get("report"))
+    status_val = status.status.value
+    query = status.query
+    # ``ResearchWaitResult`` / ``import_research_sources`` consume the legacy
+    # ``list[dict]`` source shape, so serialize the typed sources here.
+    sources = [src.to_public_dict() for src in status.sources]
+    report = status.report
 
     if status_val == "no_research":
         return _terminal("no_research")
