@@ -74,7 +74,7 @@ def select_cited_sources(
     generated report itself. If no cited URL subset can be resolved, falls
     back to the original source list to avoid an empty import surprise.
     """
-    source_list: list[ResearchSourceInput] = sources if isinstance(sources, list) else list(sources)
+    source_list = list(sources)
 
     cited_urls = extract_report_urls(report)
     if not cited_urls:
