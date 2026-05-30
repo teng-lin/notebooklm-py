@@ -288,6 +288,66 @@ class TestSplitRefreshCmd:
         assert _split_refresh_cmd("   ") == []
 
 
+class TestSubprocessEnv:
+    """Env-forwarding contract for the refresh subprocess (issue #1274).
+
+    The parent env is forwarded so the command can find ``PATH``/``HOME``
+    etc., but the credential-equivalent ``NOTEBOOKLM_AUTH_JSON`` must be
+    scrubbed and the refresh control vars must be injected.
+    """
+
+    @pytest.mark.asyncio
+    async def test_auth_json_scrubbed_from_subprocess_env(self, monkeypatch, tmp_path):
+        _stub_storage_path(monkeypatch, tmp_path)
+        monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
+        # A credential-equivalent payload sitting in the launching shell.
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies": [{"value": "secret"}]}')
+        recorder = _RecordingRun(returncode=0)
+        monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
+
+        await _run_refresh_cmd()
+
+        env = recorder.calls[0]["kwargs"]["env"]
+        assert "NOTEBOOKLM_AUTH_JSON" not in env, (
+            "NOTEBOOKLM_AUTH_JSON must be scrubbed from the refresh subprocess env"
+        )
+
+    @pytest.mark.asyncio
+    async def test_inherited_path_forwarded(self, monkeypatch, tmp_path):
+        """Conservative inheritance: ``PATH`` (and the wider parent env) is
+        still forwarded so the refresh command can locate its executable.
+        """
+        _stub_storage_path(monkeypatch, tmp_path)
+        monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
+        monkeypatch.setenv("PATH", "/custom/bin:/usr/bin")
+        recorder = _RecordingRun(returncode=0)
+        monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
+
+        await _run_refresh_cmd()
+
+        env = recorder.calls[0]["kwargs"]["env"]
+        assert env.get("PATH") == "/custom/bin:/usr/bin"
+
+    @pytest.mark.asyncio
+    async def test_refresh_control_vars_injected(self, monkeypatch, tmp_path):
+        """The recursion-guard + storage-path/profile vars are injected so the
+        child sees the canonical on-disk state instead of the in-env JSON.
+        """
+        storage = _stub_storage_path(monkeypatch, tmp_path)
+        monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
+        recorder = _RecordingRun(returncode=0)
+        monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
+
+        await _run_refresh_cmd(profile="work")
+
+        env = recorder.calls[0]["kwargs"]["env"]
+        assert env[refresh_mod._REFRESH_ATTEMPTED_ENV] == "1"
+        assert env["NOTEBOOKLM_REFRESH_STORAGE_PATH"] == str(storage)
+        # The explicit profile is injected verbatim so the child refreshes the
+        # right profile in place.
+        assert env["NOTEBOOKLM_REFRESH_PROFILE"] == "work"
+
+
 class TestEndToEndWithRealSubprocess:
     """Integration smoke: real subprocess invocation under shell=False."""
 

@@ -305,6 +305,32 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     ``shell=True`` behavior (e.g., when the command relies on shell features
     like pipes, redirection, or env-var expansion).
 
+    Environment forwarding:
+        The refresh command inherits the **full parent environment** (so it
+        can find ``PATH``, ``HOME``, proxy settings, and any custom config the
+        operator relies on), with three deliberate adjustments:
+
+        * ``NOTEBOOKLM_AUTH_JSON`` is **scrubbed** — it carries a
+          credential-equivalent storage_state payload the child never needs
+          (the child gets the on-disk storage path via
+          ``NOTEBOOKLM_REFRESH_STORAGE_PATH`` instead). It is the only
+          first-party storage_state credential payload we forward, so it is the
+          one var we can scrub without risking the refresh contract.
+        * ``_NOTEBOOKLM_REFRESH_ATTEMPTED`` is injected as the recursion guard.
+        * ``NOTEBOOKLM_REFRESH_PROFILE`` / ``NOTEBOOKLM_REFRESH_STORAGE_PATH``
+          are injected so the command refreshes the right profile in place.
+
+        SECURITY: only ``NOTEBOOKLM_AUTH_JSON`` is scrubbed. We deliberately do
+        **not** impose an allowlist, because a refresh command commonly
+        re-invokes this library and legitimately needs much of the inherited
+        env. As a consequence, **any other secret in the launching shell**
+        (e.g. ``GOOGLE_*`` tokens, CI secrets, API keys — and any token the
+        operator embeds in ``NOTEBOOKLM_REFRESH_CMD`` itself) is inherited by
+        the refresh command and every grandchild it spawns, and is visible via
+        ``/proc/<pid>/environ`` to the same UID. Operators MUST NOT keep
+        unrelated secrets in the environment that launches the refresh command;
+        scope secrets to the processes that need them.
+
     Raises:
         RuntimeError: If the refresh command is missing, parses to an empty
             argv, is malformed (unterminated quote), times out, or exits
@@ -313,6 +339,10 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     cmd = os.environ.get(NOTEBOOKLM_REFRESH_CMD_ENV)
     if not cmd:
         raise RuntimeError(f"{NOTEBOOKLM_REFRESH_CMD_ENV} is not set; cannot refresh cookies.")
+    # Forward the full parent env (PATH/HOME/proxy/etc. the command needs),
+    # minus the one credential-equivalent var below. See the "Environment
+    # forwarding" section of this function's docstring for the SECURITY note
+    # on why a hard allowlist is deliberately avoided (issue #1274).
     refresh_env = os.environ.copy()
     # ``NOTEBOOKLM_AUTH_JSON`` carries the full Playwright storage_state — a
     # credential-equivalent payload. Forwarding it via ``os.environ.copy()``
@@ -320,7 +350,12 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     # ``/proc/<pid>/environ`` to the same UID) and into any grandchild the
     # refresh command spawns. The refresh command already receives the
     # canonical on-disk storage path via ``NOTEBOOKLM_REFRESH_STORAGE_PATH``
-    # (set just below), so the in-env JSON is not needed by the child.
+    # (set just below), so the in-env JSON is not needed by the child. It is the
+    # only first-party storage_state credential payload we forward (audited
+    # #1274); the rest (PROFILE/HOME/BASE_URL/...) are config the child may
+    # legitimately consume when it re-invokes this library, so they stay. Any
+    # token an operator embeds in ``NOTEBOOKLM_REFRESH_CMD`` is intentionally
+    # inherited — see this function's docstring SECURITY note.
     refresh_env.pop("NOTEBOOKLM_AUTH_JSON", None)
     refresh_env[_REFRESH_ATTEMPTED_ENV] = "1"
     refresh_env["NOTEBOOKLM_REFRESH_PROFILE"] = resolve_profile(profile)

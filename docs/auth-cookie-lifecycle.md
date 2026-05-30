@@ -1555,7 +1555,26 @@ the library:
    in the child env so the script knows which profile to refresh.
 3. Sets `_NOTEBOOKLM_REFRESH_ATTEMPTED=1` in the child env to prevent
    recursive refresh loops if the script itself invokes `notebooklm`.
-4. Reloads cookies from `storage_state.json`, replays token fetch once.
+4. Scrubs `NOTEBOOKLM_AUTH_JSON` from the child env — it is a
+   credential-equivalent storage_state payload the command never needs (it
+   receives the on-disk path via step 2 instead, when present). It is the
+   only first-party storage_state credential payload forwarded, so it is the
+   one var that can be scrubbed without risking the refresh contract.
+5. Reloads cookies from `storage_state.json`, replays token fetch once.
+
+> **SECURITY — inherited environment.** The refresh command inherits the
+> **full parent environment** (so it can find `PATH`/`HOME`/proxy settings
+> and re-invoke this library), minus the `NOTEBOOKLM_AUTH_JSON` scrub in
+> step 4. We deliberately do **not** impose an allowlist, because a refresh
+> command commonly re-invokes `notebooklm` and legitimately needs much of
+> the inherited env. As a result, **any other secret in the launching
+> shell** (e.g. `GOOGLE_*` tokens, CI secrets, API keys — and any token the
+> operator embeds in `NOTEBOOKLM_REFRESH_CMD` itself) is inherited by the
+> refresh command and every grandchild it spawns, and is visible via
+> `/proc/<pid>/environ` to the same UID. Operators MUST NOT keep unrelated
+> secrets in the environment that launches the refresh command; scope
+> secrets to the processes that need them
+> ([#1274](https://github.com/teng-lin/notebooklm-py/issues/1274)).
 
 A `ContextVar` (`_REFRESH_ATTEMPTED_CONTEXT`) gates same-task retries in
 the parent process, and a per-loop / per-resolved-storage-path asyncio
