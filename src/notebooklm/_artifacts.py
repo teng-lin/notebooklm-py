@@ -1001,7 +1001,19 @@ class ArtifactsAPI:
 
         suggestions = []
         if result and isinstance(result, list) and len(result) > 0:
-            items = result[0] if isinstance(result[0], list) else result
+            # GET_SUGGESTED_REPORTS returns either a wrapped list of rows
+            # (``[[row1, row2, ...]]``) or an already-flat list of rows
+            # (``[row1, row2, ...]``). Only unwrap the wrapped case, detected
+            # by a single outer element whose first inner element is itself a
+            # list (a row). Unwrapping the flat case would mistake the first
+            # row's scalar fields for the suggestion rows and return nothing.
+            items = result
+            if (
+                len(result) == 1
+                and isinstance(result[0], list)
+                and (not result[0] or isinstance(result[0][0], list))
+            ):
+                items = result[0]
             for item in items:
                 if isinstance(item, list) and len(item) >= 5:
                     suggestions.append(

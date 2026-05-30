@@ -1008,3 +1008,85 @@ class TestPollStatusMediaReadiness:
         status = await api.poll_status("nb_123", "task_123")
         # Should remain in_progress (original status)
         assert status.status == "in_progress"
+
+
+# =============================================================================
+# suggest_reports: unwrap heuristic for GET_SUGGESTED_REPORTS (issue #1243)
+# =============================================================================
+
+
+class TestSuggestReportsUnwrap:
+    """GET_SUGGESTED_REPORTS arrives either wrapped (``[[row, row]]``) or
+    already-flat (``[row, row]``). Both must parse to the same suggestions.
+
+    Regression for issue #1243: the previous ``result[0]`` unwrap mistook the
+    first row's scalar fields for the suggestion rows in the flat case and
+    returned ``[]``.
+    """
+
+    # ``ReportSuggestion`` reads item[0]=title, item[1]=description,
+    # item[4]=prompt, item[5]=audience_level; rows therefore need >= 5 fields.
+    _ROWS = [
+        ["Briefing Doc", "Briefing on topic.", None, None, "Write a briefing.", 2],
+        ["Study Guide", "Study guide on topic.", None, None, "Write a guide.", 1],
+    ]
+
+    @pytest.mark.asyncio
+    async def test_wrapped_shape_parses(self, mock_artifacts_api):
+        """``[[row, row]]`` (real wire shape) parses to both suggestions."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = [list(self._ROWS)]
+
+        suggestions = await api.suggest_reports("nb_123")
+
+        assert [(s.title, s.prompt, s.audience_level) for s in suggestions] == [
+            ("Briefing Doc", "Write a briefing.", 2),
+            ("Study Guide", "Write a guide.", 1),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_flat_shape_parses(self, mock_artifacts_api):
+        """``[row, row]`` (already-flat) parses identically to the wrapped shape."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = list(self._ROWS)
+
+        suggestions = await api.suggest_reports("nb_123")
+
+        assert [(s.title, s.prompt, s.audience_level) for s in suggestions] == [
+            ("Briefing Doc", "Write a briefing.", 2),
+            ("Study Guide", "Write a guide.", 1),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_wrapped_and_flat_agree(self, mock_artifacts_api):
+        """The wrapped and flat shapes yield identical suggestions."""
+        api, mock_core = mock_artifacts_api
+
+        mock_core.rpc_executor.rpc_call.return_value = [list(self._ROWS)]
+        wrapped = await api.suggest_reports("nb_123")
+
+        mock_core.rpc_executor.rpc_call.return_value = list(self._ROWS)
+        flat = await api.suggest_reports("nb_123")
+
+        assert wrapped == flat
+        assert len(flat) == 2
+
+    @pytest.mark.asyncio
+    async def test_flat_single_suggestion_parses(self, mock_artifacts_api):
+        """A single flat row (``[row]``) is not mistaken for a wrapped list."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = [list(self._ROWS[0])]
+
+        suggestions = await api.suggest_reports("nb_123")
+
+        assert len(suggestions) == 1
+        assert suggestions[0].title == "Briefing Doc"
+        assert suggestions[0].prompt == "Write a briefing."
+
+    @pytest.mark.asyncio
+    async def test_empty_result_returns_empty(self, mock_artifacts_api):
+        """An empty response yields no suggestions."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = []
+
+        assert await api.suggest_reports("nb_123") == []
