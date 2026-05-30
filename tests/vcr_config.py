@@ -133,7 +133,10 @@ def get_error_injection_mode() -> str | None:
     same canonical set in :mod:`tests.cassette_patterns` so they cannot
     drift.
     """
-    raw = os.environ.get(ERROR_INJECT_ENV_VAR, "").strip().lower()
+    # ``.casefold()`` (not ``.lower()``) for parity with ``_is_vcr_record_mode``
+    # and the project's Unicode-aware case-insensitive rule — ASCII-identical
+    # for VALID_ERROR_MODES, so this is consistency hygiene (#1268).
+    raw = os.environ.get(ERROR_INJECT_ENV_VAR, "").strip().casefold()
     if not raw:
         return None
     return raw if raw in VALID_ERROR_MODES else None

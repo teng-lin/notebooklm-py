@@ -95,8 +95,10 @@ def _get_error_injection_mode() -> str | None:
     raw = os.environ.get(ERROR_INJECT_ENV_VAR, "").strip()
     if not raw:
         return None
-    # Lowercase-normalize so callers can use ``"5XX"`` / ``"429"`` / etc.
-    normalized = raw.lower()
+    # Case-fold-normalize so callers can use ``"5XX"`` / ``"429"`` / etc.
+    # (``casefold`` over ``lower`` for the project's Unicode-aware
+    # case-insensitive comparison rule; ASCII-identical here — #1268).
+    normalized = raw.casefold()
     valid = {"429", "5xx", "expired_csrf"}
     if normalized not in valid:
         return None
