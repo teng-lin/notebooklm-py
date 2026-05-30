@@ -266,6 +266,43 @@ def test_parse_response_handles_xssi_length_prefix_raw_json_and_server_conversat
     assert result.conversation_id == "server-conv-2"
 
 
+def test_xssi_prefix_strip_matches_shared_helper_on_real_wire_format() -> None:
+    """The chat parser delegates anti-XSSI stripping to ``strip_anti_xssi``.
+
+    On the real chat wire format the ``)]}'`` prefix is always followed by a
+    newline, so routing through the shared stripper yields the same parsed
+    answer whether or not the prefix is present (regression guard for the
+    duplicate-stripper consolidation in issue #1205).
+    """
+    chunk = _chunk("Prefixed answer.", conversation_id="conv")
+
+    with_prefix = parse_streaming_chat_response(_length_prefixed(chunk, xssi=True))
+    without_prefix = parse_streaming_chat_response(_length_prefixed(chunk, xssi=False))
+
+    assert with_prefix.answer == without_prefix.answer == "Prefixed answer."
+    assert with_prefix.conversation_id == without_prefix.conversation_id == "conv"
+
+
+def test_chat_parser_uses_shared_strip_anti_xssi(monkeypatch) -> None:
+    """``parse_streaming_chat_response`` calls the shared ``strip_anti_xssi``."""
+    import notebooklm._chat_wire as chat_wire
+
+    seen: list[str] = []
+    real_strip = chat_wire.strip_anti_xssi
+
+    def _spy(response: str) -> str:
+        seen.append(response)
+        return real_strip(response)
+
+    monkeypatch.setattr(chat_wire, "strip_anti_xssi", _spy)
+
+    response = _length_prefixed(_chunk("Answer.", conversation_id="conv"))
+    result = parse_streaming_chat_response(response)
+
+    assert result.answer == "Answer."
+    assert seen == [response]
+
+
 def test_marked_answer_beats_longer_unmarked_text() -> None:
     marked = _chunk("Marked.", marked=True)
     unmarked = _chunk("This unmarked text is longer than the answer marker.", marked=False)

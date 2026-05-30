@@ -19,6 +19,7 @@ from ._env import get_default_bl, get_default_language
 from .auth import format_authuser_value
 from .exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from .rpc._safe_index import safe_index
+from .rpc.decoder import strip_anti_xssi
 from .rpc.encoder import nest_source_ids
 from .rpc.types import get_query_url
 from .types import ChatReference
@@ -153,8 +154,11 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
       ``StreamingChatParseResult("", refs, conv_id)`` — empty answer is
       a valid outcome, not a parse failure.
     """
-    if response_text.startswith(")]}'"):
-        response_text = response_text[4:]
+    # Shared anti-XSSI stripper (rpc.decoder.strip_anti_xssi) is the single
+    # owner of the )]}' prefix removal. For the real chat wire format the
+    # prefix is always followed by a newline, so the subsequent ``.strip()``
+    # yields a byte-for-byte-identical result to the prior blind ``[4:]`` slice.
+    response_text = strip_anti_xssi(response_text)
 
     lines = response_text.strip().split("\n")
     best_marked_answer = ""
