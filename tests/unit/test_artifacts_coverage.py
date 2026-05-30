@@ -1084,9 +1084,29 @@ class TestSuggestReportsUnwrap:
         assert suggestions[0].prompt == "Write a briefing."
 
     @pytest.mark.asyncio
+    async def test_wrapped_single_suggestion_parses(self, mock_artifacts_api):
+        """A wrapped single row (``[[row]]``) unwraps to one suggestion."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = [[list(self._ROWS[0])]]
+
+        suggestions = await api.suggest_reports("nb_123")
+
+        assert len(suggestions) == 1
+        assert suggestions[0].title == "Briefing Doc"
+        assert suggestions[0].prompt == "Write a briefing."
+
+    @pytest.mark.asyncio
     async def test_empty_result_returns_empty(self, mock_artifacts_api):
         """An empty response yields no suggestions."""
         api, mock_core = mock_artifacts_api
         mock_core.rpc_executor.rpc_call.return_value = []
+
+        assert await api.suggest_reports("nb_123") == []
+
+    @pytest.mark.asyncio
+    async def test_wrapped_empty_returns_empty(self, mock_artifacts_api):
+        """A wrapped-empty response (``[[]]``) yields no suggestions without error."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = [[]]
 
         assert await api.suggest_reports("nb_123") == []
