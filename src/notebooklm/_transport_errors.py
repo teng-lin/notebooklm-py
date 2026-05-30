@@ -48,10 +48,10 @@ def parse_retry_after(value: str | None) -> int | None:
     # (inf/nan) values, which float() accepts but math.ceil() can't handle.
     try:
         seconds = float(value)
+        if math.isfinite(seconds):
+            return min(MAX_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
     except ValueError:
-        seconds = None
-    if seconds is not None and math.isfinite(seconds):
-        return min(MAX_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
+        pass
     # HTTP-date form (RFC 7231 section 7.1.1.1)
     try:
         dt = parsedate_to_datetime(value)
