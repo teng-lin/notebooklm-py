@@ -141,7 +141,7 @@ fail_under = 90
 # rationale in the commit message.
 [tool.notebooklm.per_file_coverage_floors]
 "src/notebooklm/__main__.py" = 0
-"src/notebooklm/cli/_firefox_containers.py" = 75
+"src/notebooklm/cli/_firefox_containers.py" = 95
 "src/notebooklm/cli/doctor_cmd.py" = 63
 "src/notebooklm/cli/profile_cmd.py" = 74
 "src/notebooklm/cli/session_cmd.py" = 83

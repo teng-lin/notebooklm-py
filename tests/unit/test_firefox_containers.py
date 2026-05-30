@@ -19,7 +19,17 @@ from typing import Any
 
 import pytest
 
+from notebooklm.cli import _firefox_containers
 from notebooklm.cli._firefox_containers import (
+    _copy_sqlite_for_read,
+    _domain_matches_any,
+    _firefox_db_uses_millisecond_expiry,
+    _firefox_root_dirs,
+    _identity_display_name,
+    _l10n_label_name,
+    _load_identities,
+    _resolve_profile_path,
+    _row_to_rookiepy_dict,
     extract_firefox_container_cookies,
     find_firefox_profile_path,
     has_container_cookies_in_use,
@@ -578,3 +588,294 @@ class TestFindFirefoxProfilePath:
         except configparser.Error:  # pragma: no cover — defensive
             pytest.fail("malformed profiles.ini should not raise to caller")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _firefox_root_dirs — platform-specific candidate lists
+# ---------------------------------------------------------------------------
+
+
+class TestFirefoxRootDirs:
+    """The default root-dir resolver is monkeypatched out elsewhere, so probe
+    each platform branch directly here."""
+
+    def test_macos_returns_application_support(self, monkeypatch):
+        monkeypatch.setattr(_firefox_containers.sys, "platform", "darwin")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("/Users/me")))
+        roots = _firefox_root_dirs()
+        assert roots == [Path("/Users/me/Library/Application Support/Firefox")]
+
+    def test_windows_uses_appdata_and_localappdata(self, monkeypatch):
+        monkeypatch.setattr(_firefox_containers.sys, "platform", "win32")
+        monkeypatch.setenv("APPDATA", r"C:\Users\me\AppData\Roaming")
+        monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\me\AppData\Local")
+        roots = _firefox_root_dirs()
+        # The roaming-AppData candidate (no "Packages" segment) and the
+        # Microsoft Store LocalCache candidate (under "Packages") must each
+        # appear. "Packages not in" uniquely pins the APPDATA candidate, since
+        # the LOCALAPPDATA path also contains a "Roaming" segment.
+        assert any("Mozilla" in str(r) and "Packages" not in str(r) for r in roots)
+        assert any("Packages" in str(r) for r in roots)
+
+    def test_windows_without_env_returns_empty(self, monkeypatch):
+        monkeypatch.setattr(_firefox_containers.sys, "platform", "win32")
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        assert _firefox_root_dirs() == []
+
+    def test_linux_includes_xdg_and_snap_locations(self, monkeypatch):
+        monkeypatch.setattr(_firefox_containers.sys, "platform", "linux")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("/home/me")))
+        monkeypatch.setenv("XDG_CONFIG_HOME", "/home/me/.config")
+        roots = _firefox_root_dirs()
+        assert Path("/home/me/.config/mozilla/firefox") in roots
+        assert Path("/home/me/.mozilla/firefox") in roots
+        assert any("snap" in str(r) for r in roots)
+
+
+# ---------------------------------------------------------------------------
+# _resolve_profile_path + find_firefox_profile_path edge branches
+# ---------------------------------------------------------------------------
+
+
+class TestResolveProfilePath:
+    def test_absolute_path_returned_verbatim(self, tmp_path):
+        abs_path = tmp_path / "absolute.default"
+        result = _resolve_profile_path(tmp_path, str(abs_path), is_relative=False)
+        assert result == abs_path
+
+    def test_relative_path_joined_to_root(self, tmp_path):
+        result = _resolve_profile_path(tmp_path, "Profiles/rel.default", is_relative=True)
+        assert result == (tmp_path / "Profiles" / "rel.default").resolve()
+
+
+class TestFindFirefoxProfilePathEdges:
+    def _write_profiles_ini(self, root: Path, content: str) -> None:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "profiles.ini").write_text(content, encoding="utf-8")
+
+    def test_skips_nonexistent_root_then_finds_next(self, tmp_path, monkeypatch):
+        missing = tmp_path / "missing"
+        root = tmp_path / "Firefox"
+        profile = root / "Profiles" / "xyz.default"
+        profile.mkdir(parents=True)
+        (profile / "cookies.sqlite").touch()
+        self._write_profiles_ini(
+            root, "[Profile0]\nName=only\nIsRelative=1\nPath=Profiles/xyz.default\n"
+        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [missing, root])
+        assert find_firefox_profile_path() == profile.resolve()
+
+    def test_skips_root_without_profiles_ini_then_finds_next(self, tmp_path, monkeypatch):
+        # An existing root dir that has no profiles.ini must be skipped (not
+        # raise) before we fall through to the next, valid root.
+        empty_root = tmp_path / "EmptyFirefox"
+        empty_root.mkdir()
+        root = tmp_path / "Firefox"
+        profile = root / "Profiles" / "xyz.default"
+        profile.mkdir(parents=True)
+        (profile / "cookies.sqlite").touch()
+        self._write_profiles_ini(
+            root, "[Profile0]\nName=only\nIsRelative=1\nPath=Profiles/xyz.default\n"
+        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [empty_root, root])
+        assert find_firefox_profile_path() == profile.resolve()
+
+    def test_legacy_default_with_absolute_path(self, tmp_path, monkeypatch):
+        root = tmp_path / "Firefox"
+        profile = tmp_path / "elsewhere" / "abs.default"
+        profile.mkdir(parents=True)
+        # IsRelative=0 + an absolute Path exercises the non-relative branch.
+        self._write_profiles_ini(
+            root,
+            f"[Profile0]\nName=def\nIsRelative=0\nPath={profile}\nDefault=1\n",
+        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [root])
+        assert find_firefox_profile_path() == profile
+
+    def test_non_profile_sections_skipped_in_all_loops(self, tmp_path, monkeypatch):
+        root = tmp_path / "Firefox"
+        profile = root / "Profiles" / "found.default"
+        profile.mkdir(parents=True)
+        (profile / "cookies.sqlite").touch()
+        # [General] is neither Install nor Profile; both the Default=1 loop and
+        # the best-effort loop must skip it. A Profile section without a Path is
+        # also skipped before we reach the one that has cookies.sqlite.
+        self._write_profiles_ini(
+            root,
+            "[General]\nStartWithLastProfile=1\n\n"
+            "[Profile0]\nName=nopath\nIsRelative=1\n\n"
+            "[Profile1]\nName=found\nIsRelative=1\nPath=Profiles/found.default\n",
+        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [root])
+        assert find_firefox_profile_path() == profile.resolve()
+
+
+# ---------------------------------------------------------------------------
+# l10n + identity display-name helpers
+# ---------------------------------------------------------------------------
+
+
+class TestL10nAndIdentityHelpers:
+    def test_l10n_label_none_for_empty(self):
+        assert _l10n_label_name(None) is None
+        assert _l10n_label_name("") is None
+
+    def test_l10n_label_none_for_non_matching_id(self):
+        # Present but not a userContext<Name>.label form -> None.
+        assert _l10n_label_name("someOther.thing") is None
+
+    def test_l10n_label_extracts_name(self):
+        assert _l10n_label_name("userContextWork.label") == "Work"
+
+    def test_identity_display_name_prefers_name(self):
+        assert _identity_display_name({"name": "Custom"}) == "Custom"
+
+    def test_identity_display_name_falls_back_to_l10n(self):
+        # No usable name -> derive from l10nID.
+        assert _identity_display_name({"l10nID": "userContextPersonal.label"}) == "Personal"
+
+    def test_unknown_name_lists_builtin_labels(self, tmp_path):
+        # Built-in identities only carry l10nID; the error listing must derive
+        # display names through _identity_display_name's l10n fallback.
+        _make_containers_json(tmp_path / "containers.json")  # built-ins only
+        with pytest.raises(ValueError) as exc:
+            resolve_container_id(tmp_path, "Nonexistent")
+        msg = str(exc.value)
+        assert "Personal" in msg
+        assert "Work" in msg
+
+
+class TestLoadIdentities:
+    def test_identities_not_a_list_returns_empty(self, tmp_path):
+        # Valid JSON, but "identities" is the wrong shape.
+        (tmp_path / "containers.json").write_text(
+            json.dumps({"identities": {"not": "a list"}}), encoding="utf-8"
+        )
+        assert _load_identities(tmp_path) == []
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        assert _load_identities(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# _copy_sqlite_for_read — WAL/SHM sidecar handling
+# ---------------------------------------------------------------------------
+
+
+class TestCopySqliteForRead:
+    def test_copies_wal_and_shm_sidecars(self, tmp_path):
+        source = tmp_path / "cookies.sqlite"
+        source.write_bytes(b"main-db")
+        (tmp_path / "cookies.sqlite-wal").write_bytes(b"wal-data")
+        (tmp_path / "cookies.sqlite-shm").write_bytes(b"shm-data")
+        dest_dir = tmp_path / "copy"
+        dest_dir.mkdir()
+
+        dest = _copy_sqlite_for_read(source, dest_dir)
+
+        assert dest.read_bytes() == b"main-db"
+        assert (dest_dir / "cookies.sqlite-wal").read_bytes() == b"wal-data"
+        assert (dest_dir / "cookies.sqlite-shm").read_bytes() == b"shm-data"
+
+
+# ---------------------------------------------------------------------------
+# _firefox_db_uses_millisecond_expiry — defensive cursor branches
+# ---------------------------------------------------------------------------
+
+
+class _FakeCursor:
+    def __init__(self, *, raise_error=False, row=("0",)):
+        self._raise = raise_error
+        self._row = row
+
+    def execute(self, *_args, **_kwargs):
+        if self._raise:
+            raise sqlite3.DatabaseError("pragma blew up")
+        return self
+
+    def fetchone(self):
+        return self._row
+
+
+class TestMillisecondExpiryDetection:
+    def test_database_error_returns_false(self):
+        assert _firefox_db_uses_millisecond_expiry(_FakeCursor(raise_error=True)) is False
+
+    def test_no_row_returns_false(self):
+        assert _firefox_db_uses_millisecond_expiry(_FakeCursor(row=None)) is False
+
+    def test_non_integer_user_version_returns_false(self):
+        assert _firefox_db_uses_millisecond_expiry(_FakeCursor(row=("notanint",))) is False
+
+    def test_schema_16_returns_true(self):
+        assert _firefox_db_uses_millisecond_expiry(_FakeCursor(row=(16,))) is True
+
+    def test_schema_below_16_returns_false(self):
+        assert _firefox_db_uses_millisecond_expiry(_FakeCursor(row=(15,))) is False
+
+
+# ---------------------------------------------------------------------------
+# _row_to_rookiepy_dict — non-numeric millisecond expiry
+# ---------------------------------------------------------------------------
+
+
+class TestRowToRookiepyDict:
+    def test_non_numeric_expiry_in_ms_left_unchanged(self):
+        # expiry is a str while expiry_in_ms is True -> the // 1000 raises
+        # TypeError and the value is left as-is (best effort).
+        row = (".google.com", "SID", "v", "/", "not-a-number", 1, 0, 0)
+        result = _row_to_rookiepy_dict(row, expiry_in_ms=True)
+        assert result["expires"] == "not-a-number"
+
+    def test_numeric_expiry_in_ms_divided(self):
+        row = (".google.com", "SID", "v", "/", 9_999_999_999_000, 1, 0, 0)
+        result = _row_to_rookiepy_dict(row, expiry_in_ms=True)
+        assert result["expires"] == 9_999_999_999
+
+    def test_none_values_get_defaults(self):
+        row = (None, None, None, None, None, 0, 0, None)
+        result = _row_to_rookiepy_dict(row, expiry_in_ms=False)
+        assert result["domain"] == ""
+        assert result["value"] == ""
+        assert result["path"] == "/"
+        assert result["secure"] is False
+
+
+# ---------------------------------------------------------------------------
+# _domain_matches_any — full branch coverage
+# ---------------------------------------------------------------------------
+
+
+class TestDomainMatchesAny:
+    def test_empty_host_is_false(self):
+        assert _domain_matches_any("", [".google.com"]) is False
+
+    def test_empty_needle_skipped(self):
+        # An empty needle is skipped; the next (matching) needle still wins.
+        assert _domain_matches_any("mail.google.com", ["", ".google.com"]) is True
+
+    def test_dotted_suffix_match(self):
+        assert _domain_matches_any("mail.google.com", [".google.com"]) is True
+
+    def test_dotted_base_exact_match(self):
+        assert _domain_matches_any("google.com", [".google.com"]) is True
+
+    def test_exact_non_dotted_match(self):
+        assert _domain_matches_any("google.com", ["google.com"]) is True
+
+    def test_no_match_returns_false(self):
+        assert _domain_matches_any("evil.com", [".google.com", "example.com"]) is False
+
+
+# ---------------------------------------------------------------------------
+# has_container_cookies_in_use — malformed DB swallowed
+# ---------------------------------------------------------------------------
+
+
+class TestHasContainerCookiesInUseErrors:
+    def test_malformed_database_returns_false(self, tmp_path):
+        # A non-sqlite file passes the is_file() gate but errors on SELECT.
+        bogus = tmp_path / "cookies.sqlite"
+        bogus.write_bytes(b"this is definitely not a sqlite database")
+        assert has_container_cookies_in_use(tmp_path) is False
