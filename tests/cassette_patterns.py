@@ -235,6 +235,14 @@ SESSION_COOKIES: list[str] = [
     "SIDCC",
     "OSID",
     "NID",
+    # ``LSID`` is the Google **login** SID cookie. Its value embeds a raw
+    # ``g.a000-...`` SID token — the same credential family as ``SID`` — yet it
+    # was historically MISSING from this list, so its value round-tripped into
+    # committed cassettes unscrubbed (the ``notebooks_share.yaml`` leak that
+    # motivated this hardening). ``LSOLH`` is the sibling login cookie that
+    # carries the same token shape; both are added so neither can leak again.
+    "LSID",
+    "LSOLH",
 ]
 
 # ``__Secure-*`` cookies are caught by the umbrella ``__Secure-[^=]+`` pattern;
@@ -380,6 +388,25 @@ _DISPLAY_NAME_ALLOWLIST_ALT = "|".join(
 )
 
 
+# Catch-all Google auth-token shapes, applied as a defense-in-depth first pass
+# over EVERY scrubbed string (bodies + headers + cookie values). These are the
+# raw credential prefixes that ride inside session cookies, OAuth flows, and
+# SIDTS rotation tokens — the ``LSID`` leak proved that a cookie-name allowlist
+# alone is insufficient, so we also scrub the token shapes directly wherever
+# they appear. Length floors keep the patterns from matching incidental short
+# literals. ``is_clean`` carries the matching detector (``_DETECT_AUTH_TOKEN``)
+# so the cassette guard flags any of these shapes that survive.
+#
+# NOTE: ``g.a000-`` deliberately requires a trailing ``-``; live tokens always
+# carry the ``g.a000-<...>`` form, and anchoring on the hyphen avoids matching
+# the bare account-prefix ``g.a000`` should it ever appear standalone.
+_AUTH_TOKEN_PATTERNS: list[str] = [
+    r"g\.a000-[A-Za-z0-9_\-]+",
+    r"sidts-[A-Za-z0-9_\-]{10,}",
+    r"ya29\.[A-Za-z0-9_\-]{20,}",
+]
+
+
 def _cookie_header_replacer(name: str) -> tuple[str, str]:
     """Build (regex, replacement) for a Cookie / Set-Cookie header pattern.
 
@@ -402,6 +429,27 @@ def _cookie_header_replacer(name: str) -> tuple[str, str]:
 # scrubbers use context-aware (callable) replacements where exact-match
 # allowlists or surrounding context need to be consulted.
 SENSITIVE_PATTERNS: list[tuple[str, str]] = [
+    # -------------------------------------------------------------------------
+    # 0. Catch-all Google auth-token shapes (defense in depth)
+    # -------------------------------------------------------------------------
+    # These run FIRST, before any cookie-name-anchored pattern, so a session
+    # token leaks NOTHING even when it rides inside a cookie whose name is not
+    # on the allowlist (the ``LSID`` leak class), inside a response/request
+    # BODY, or inside any header value. Each shape is a distinctive,
+    # high-entropy Google credential prefix with no legitimate non-secret
+    # occurrence in a cassette:
+    #
+    #   * ``g.a000-...``  — the raw SID token embedded in SID/LSID cookie
+    #                       values and OAuth flows.
+    #   * ``sidts-...``   — the ``__Secure-*PSIDTS`` rotation-timestamp token.
+    #   * ``ya29....``    — Google OAuth2 access tokens.
+    #
+    # The character class ``[A-Za-z0-9_\-]`` matches the token body; the
+    # length floors keep the patterns from firing on incidental short literals
+    # (e.g. the bare string ``ya29`` in a comment). Anything matched collapses
+    # to ``SCRUBBED`` so no fragment of the original token survives, and the
+    # replacement does not itself re-match (idempotent).
+    *((p, "SCRUBBED") for p in _AUTH_TOKEN_PATTERNS),
     # -------------------------------------------------------------------------
     # 1. Cookie-header form: "Name=Value; ..."
     # -------------------------------------------------------------------------
@@ -711,6 +759,15 @@ _DETECT_DISPLAY_NAME_ESCAPED = re.compile(r'\\"([A-Z][a-z]+(?: [A-Z][a-z]+)+)\\"
 # leak (the placeholder string doesn't itself contain ``lh3.``).
 _DETECT_AVATAR_URL = re.compile(r"https?://lh3\.googleusercontent\.com/(?:a|ogw)/[A-Za-z0-9_=\-]+")
 
+# Catch-all auth-token detector — the validator twin of
+# :data:`_AUTH_TOKEN_PATTERNS`. The scrubber collapses every ``g.a000-...`` /
+# ``sidts-...`` / ``ya29....`` token to ``SCRUBBED`` (which contains none of
+# these prefixes), so ANY match here is by definition an unredacted leak —
+# regardless of which cookie name or body field carried it. This is the guard
+# rail that would have caught the ``LSID`` leak: it never depended on ``LSID``
+# being on the cookie allowlist.
+_DETECT_AUTH_TOKEN = re.compile("|".join(_AUTH_TOKEN_PATTERNS))
+
 
 def is_clean(text: str) -> tuple[bool, list[str]]:
     """Validate that ``text`` contains no unredacted sensitive data.
@@ -812,6 +869,15 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
     # match of the raw URL form here is by definition a leak.
     for match in _DETECT_AVATAR_URL.finditer(text):
         leaks.append(f"Leak (avatar URL): {match.group(0)!r}")
+
+    # --- 8. Catch-all Google auth-token shapes -----------------------------
+    # ``g.a000-...`` / ``sidts-...`` / ``ya29....`` tokens are scrubbed to
+    # ``SCRUBBED`` wherever they appear (cookie values on or off the allowlist,
+    # response bodies, headers). Any surviving raw token is a leak by
+    # definition — this is the cookie-name-agnostic backstop that closes the
+    # ``LSID`` gap.
+    for match in _DETECT_AUTH_TOKEN.finditer(text):
+        leaks.append(f"Leak (auth token): {match.group(0)!r}")
 
     return (not leaks, leaks)
 
