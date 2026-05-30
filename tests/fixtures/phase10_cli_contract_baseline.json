@@ -4822,6 +4822,24 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "Generate the interactive (studio-artifact) mind map instead of the default note-backed JSON kind. --instructions is ignored in this mode.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "interactive",
+          "opts": [
+            "--interactive"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output as JSON",
           "is_flag": true,
           "kind": "option",
