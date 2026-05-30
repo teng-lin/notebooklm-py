@@ -486,9 +486,18 @@ class TestArtifactRename:
             data = json.loads(result.output)
             assert data == {"id": "art_123", "renamed": True, "new_title": "New Title"}
 
-    def test_artifact_rename_dispatches_mind_map(self, runner, mock_auth):
-        """A mind-map id is renamed via the unified API (kind-aware), not blocked."""
+    @pytest.mark.parametrize("map_kind_attr", ["NOTE_BACKED", "INTERACTIVE"])
+    def test_artifact_rename_dispatches_mind_map(self, runner, mock_auth, map_kind_attr):
+        """A mind-map id is renamed via the unified API (kind-aware), not blocked.
+
+        Both kinds must route through ``mind_maps.rename`` carrying the map's own
+        ``kind`` (not a hardcoded one), and the regular-artifact ``artifacts.rename``
+        path must stay unused for mind maps — so a regression that pinned one kind
+        or also called ``artifacts.rename`` would be caught here.
+        """
         from notebooklm.types import MindMap, MindMapKind
+
+        map_kind = getattr(MindMapKind, map_kind_attr)
 
         with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -502,11 +511,12 @@ class TestArtifactRename:
                         id="mm_123",
                         notebook_id="nb_123",
                         title="Old Title",
-                        kind=MindMapKind.NOTE_BACKED,
+                        kind=map_kind,
                     )
                 ]
             )
             mock_client.mind_maps.rename = AsyncMock()
+            mock_client.artifacts.rename = AsyncMock()
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -520,8 +530,10 @@ class TestArtifactRename:
             assert result.exit_code == 0
             assert "Renamed" in result.output
             mock_client.mind_maps.rename.assert_awaited_once_with(
-                "nb_123", "mm_123", "New Title", kind=MindMapKind.NOTE_BACKED
+                "nb_123", "mm_123", "New Title", kind=map_kind
             )
+            # Mind maps never fall through to the regular-artifact rename path.
+            mock_client.artifacts.rename.assert_not_called()
 
 
 # =============================================================================
