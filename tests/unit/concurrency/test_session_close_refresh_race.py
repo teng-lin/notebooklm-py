@@ -37,7 +37,7 @@ The encapsulating method preserves every aspect of the original block:
 These tests exercise both the cancel and the no-cancel-needed paths from
 the lifecycle entry point; the focused unit tests of
 :meth:`AuthRefreshCoordinator.cancel_inflight_refresh` itself live in
-``tests/unit/test_session_auth.py``.
+``tests/unit/test_runtime_auth.py``.
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._session_auth import AuthRefreshCoordinator
-from notebooklm._session_lifecycle import ClientLifecycle
+from notebooklm._runtime_auth import AuthRefreshCoordinator
+from notebooklm._runtime_lifecycle import ClientLifecycle
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits

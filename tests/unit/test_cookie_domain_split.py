@@ -46,7 +46,7 @@ from notebooklm.notebooklm_cli import cli
 class TestRequiredVsOptional:
     """REQUIRED is empirically justified; OPTIONAL is opt-in only."""
 
-    def test_required_set_includes_session_auth_domains(self):
+    def test_required_set_includes_runtime_auth_domains(self):
         """Codex caution: host + dotted variants must both stay in REQUIRED."""
         for domain in (
             ".google.com",

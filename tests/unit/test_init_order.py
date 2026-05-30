@@ -578,7 +578,7 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
 
     Stage B1 PR 2 of the post-refactoring plan moved the composition
     root out of ``Session.__init__`` into
-    ``notebooklm._session_init.compose_client_internals``. The seams live
+    ``notebooklm._runtime_init.compose_client_internals``. The seams live
     on the helper (and on the canonical test builder
     ``build_client_shell_for_tests``), NOT on ``NotebookLMClient.__init__``
     (which preserves the production surface).
@@ -592,7 +592,7 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
     """
     import inspect
 
-    from notebooklm._session_init import compose_client_internals
+    from notebooklm._runtime_init import compose_client_internals
 
     sig = inspect.signature(compose_client_internals)
     for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):

@@ -468,7 +468,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._session_helpers.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._runtime_helpers.asyncio.sleep", _no_sleep)
 
     # --- with disable_internal_retries=True: exactly 1 POST ------------
     client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)

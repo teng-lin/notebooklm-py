@@ -8,7 +8,7 @@ import pytest
 from _helpers.client_factory import build_client_shell_for_tests
 from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
-from notebooklm._session_helpers import is_auth_error
+from notebooklm._runtime_helpers import is_auth_error
 from notebooklm.rpc import (
     AuthError,
     ClientError,

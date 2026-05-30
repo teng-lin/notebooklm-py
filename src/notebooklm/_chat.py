@@ -12,7 +12,8 @@ import weakref
 from typing import TYPE_CHECKING, Any
 
 from ._chat_notes import save_chat_answer_as_note
-from ._chat_protocol import (
+from ._chat_transport import chat_aware_authed_post
+from ._chat_wire import (
     build_streaming_chat_request,
     collect_texts_from_nested,
     extract_answer_and_refs_from_chunk,
@@ -23,17 +24,16 @@ from ._chat_protocol import (
     parse_streaming_chat_response,
     raise_if_rate_limited,
 )
-from ._chat_transport import chat_aware_authed_post
 from ._conversation_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._request_types import AuthSnapshot
-from ._session_contracts import LoopGuard, RpcCaller
+from ._runtime_contracts import LoopGuard, RpcCaller
 from .exceptions import ChatError, NetworkError, ValidationError
 
 if TYPE_CHECKING:
     from ._reqid_counter import ReqidCounter
-    from ._session_transport import SessionTransport
+    from ._runtime_transport import RuntimeTransport
 from .rpc import (
     ChatGoal,
     ChatResponseLength,
@@ -114,7 +114,7 @@ class ChatAPI:
         self,
         *,
         rpc: RpcCaller,
-        transport: SessionTransport,
+        transport: RuntimeTransport,
         reqid: ReqidCounter,
         loop_guard: LoopGuard,
         conversation_cache: ConversationCache | None = None,
@@ -128,7 +128,7 @@ class ChatAPI:
         bundles them. The chat-local ``ChatRuntime`` Protocol used to
         compose ``RpcCaller`` + ``LoopGuard`` + ``transport_post`` +
         ``next_reqid``; once ``chat_aware_authed_post`` was switched to
-        take :class:`SessionTransport` directly (Wave 8 step 1), the
+        take :class:`RuntimeTransport` directly (Wave 8 step 1), the
         single-member surface that justified the Protocol disappeared, so
         the Protocol was deleted and ChatAPI takes the four underlying
         collaborators by keyword argument instead.
@@ -138,7 +138,7 @@ class ChatAPI:
                 ``session.rpc_executor``) for the ``get_conversation_*``,
                 ``configure``, ``delete_conversation``, and
                 ``save_answer_as_note`` round-trips.
-            transport: :class:`SessionTransport` collaborator (typically
+            transport: :class:`RuntimeTransport` collaborator (typically
                 ``session.session_transport``) that owns the authed-POST
                 entry point used by :meth:`ask` via
                 :func:`chat_aware_authed_post`.

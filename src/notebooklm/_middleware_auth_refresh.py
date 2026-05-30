@@ -57,7 +57,7 @@ fact that ``AuthRefreshMiddleware`` only retries ONCE per ``next_call``
 invocation.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_session_auth.py`` for :class:`AuthRefreshCoordinator`
+``src/notebooklm/_runtime_auth.py`` for :class:`AuthRefreshCoordinator`
 (coalesced refresh + auth-snapshot lock), and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.8 for the
 PR sequence.
@@ -80,8 +80,8 @@ from ._middleware_context import (
     RPC_CONTEXT_LOG_LABEL,
 )
 from ._request_types import AuthSnapshot, BuildRequest
-from ._session_config import CORE_LOGGER_NAME
-from ._session_helpers import resolve_sleep
+from ._runtime_config import CORE_LOGGER_NAME
+from ._runtime_helpers import resolve_sleep
 from ._transport_errors import TransportAuthExpired
 
 if TYPE_CHECKING:
@@ -105,9 +105,9 @@ class AuthRefreshMiddleware:
       and testable.
     - ``is_auth_error``: predicate that decides whether an exception is
       an auth failure (HTTP 400 / 401 / 403). Production wires
-      :func:`notebooklm._session_helpers.is_auth_error` through a lambda
+      :func:`notebooklm._runtime_helpers.is_auth_error` through a lambda
       that resolves it via the canonical module's globals at call time,
-      so ``monkeypatch.setattr("notebooklm._session_helpers.is_auth_error",
+      so ``monkeypatch.setattr("notebooklm._runtime_helpers.is_auth_error",
       ...)`` reaches the chain live; tests that build the middleware
       directly typically pass the function itself.
     - ``refresh_callback_enabled``: a zero-arg callable returning ``True``
@@ -131,7 +131,7 @@ class AuthRefreshMiddleware:
       session-refactor arc); tests that omit ``snapshot_provider``
       preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
-      resolved at call time via :func:`_session_helpers.resolve_sleep` —
+      resolved at call time via :func:`_runtime_helpers.resolve_sleep` —
       the same shared helper :class:`RetryMiddleware` uses).
     - ``logger``: structured logger for the "auth error detected" /
       "refresh successful" / "refresh failed" info / warning lines.
@@ -163,7 +163,7 @@ class AuthRefreshMiddleware:
         self._refresh_callback_enabled = refresh_callback_enabled
         self._refresh_retry_delay = refresh_retry_delay
         self._snapshot_provider = snapshot_provider
-        # Late-binding rationale lives on ``_session_helpers.resolve_sleep``.
+        # Late-binding rationale lives on ``_runtime_helpers.resolve_sleep``.
         self._sleep = sleep
         self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
         self._metrics = metrics
@@ -303,14 +303,14 @@ class AuthRefreshMiddleware:
           returned ``retry_request`` and the original ``request`` share
           that same context dict and therefore see the same updated
           snapshot. This mutation is what lets the terminal freshness
-          guard (:meth:`SessionTransport.refresh_request_for_current_auth`)
+          guard (:meth:`RuntimeTransport.refresh_request_for_current_auth`)
           observe the post-refresh snapshot when ``RetryMiddleware`` later
           retries the original request after a 429.
 
         The companion invariant — and the reason the in-place mutation is
         safe even though the original request's ``url`` / ``headers`` /
         ``body`` are still pre-refresh — is that
-        :meth:`SessionTransport.refresh_request_for_current_auth` rebuilds
+        :meth:`RuntimeTransport.refresh_request_for_current_auth` rebuilds
         URL / body / cookies from the current snapshot on **every** terminal
         attempt, unconditionally. Both halves are load-bearing and must be
         preserved together; deleting the unconditional rebuild reintroduces

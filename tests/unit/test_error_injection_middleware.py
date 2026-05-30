@@ -361,7 +361,7 @@ async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_
     second 400 propagates without recursion.
     """
     from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
-    from notebooklm._session_helpers import is_auth_error as auth_error_predicate
+    from notebooklm._runtime_helpers import is_auth_error as auth_error_predicate
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
@@ -406,7 +406,7 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
     success path, not just the propagation path.
     """
     from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
-    from notebooklm._session_helpers import is_auth_error as auth_error_predicate
+    from notebooklm._runtime_helpers import is_auth_error as auth_error_predicate
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []

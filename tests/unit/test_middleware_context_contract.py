@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # should not read or write request context directly.
 PRODUCTION_CONTEXT_FILES = [
     *sorted((ROOT / "src/notebooklm").glob("_middleware*.py")),
-    ROOT / "src/notebooklm/_session_transport.py",
+    ROOT / "src/notebooklm/_runtime_transport.py",
 ]
 
 

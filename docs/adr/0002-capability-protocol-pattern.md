@@ -1,5 +1,14 @@
 # ADR-002: Capability Protocol pattern (`SessionCapabilities` fat union)
 
+> **Current state (2026-05-29).** This ADR is **Superseded** and documents a
+> pre-cutover pattern for historical context only. Since it was written, the
+> concrete `Session` facade class, `_session.py`, and `_core.py` have all been
+> **deleted**, and `_session_contracts.py` was renamed to `_runtime_contracts.py`
+> (see [ADR-014](0014-feature-local-runtime-adapters.md) and
+> [`docs/architecture.md`](../architecture.md) for the live shape). Read in-body
+> references to `Session`, `_core.py`, `_session_contracts.py`, and exact
+> `file.py:NNN` line numbers as historical — they do not point at live code.
+
 ## Status
 
 Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol have been deleted; sub-clients now consume the Session facade directly, typed against shared capability Protocols in `_session_contracts.py` and feature-local runtimes (`ChatRuntime` in `_chat.py:90`, `ArtifactsRuntime` in `_artifacts.py:154`). The broader composable-capabilities arc continued in [ADR-013](0013-composable-session-capabilities.md) (#866), which finalized the per-feature Protocol model.

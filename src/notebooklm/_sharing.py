@@ -2,7 +2,7 @@
 
 import logging
 
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .rpc import RPCMethod
 from .rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from .types import ShareStatus

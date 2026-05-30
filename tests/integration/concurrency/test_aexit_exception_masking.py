@@ -46,7 +46,7 @@ def _stub_open(monkeypatch: pytest.MonkeyPatch) -> None:
 
         install_http_client_for_test(self._kernel, httpx.AsyncClient())
 
-    monkeypatch.setattr("notebooklm._session_lifecycle.ClientLifecycle.open", _stub_open)
+    monkeypatch.setattr("notebooklm._runtime_lifecycle.ClientLifecycle.open", _stub_open)
 
 
 async def test_body_raises_and_close_raises_body_wins(

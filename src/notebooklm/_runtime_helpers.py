@@ -3,9 +3,9 @@
 Small, pure helpers extracted from the historical ``notebooklm._core``
 preamble (the compatibility shim was removed in v0.5.0). Callers import
 directly from this module — e.g.
-``from notebooklm._session_helpers import is_auth_error``.
+``from notebooklm._runtime_helpers import is_auth_error``.
 
-These helpers stay separate from :mod:`notebooklm._session_config` because
+These helpers stay separate from :mod:`notebooklm._runtime_config` because
 they carry behavior (and therefore tests), while the constants module is
 data-only.
 """

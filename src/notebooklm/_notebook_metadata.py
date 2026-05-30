@@ -8,7 +8,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from ._source_listing import SourceLister as SourceListingService
 from .types import Notebook, NotebookMetadata, Source, SourceSummary
 

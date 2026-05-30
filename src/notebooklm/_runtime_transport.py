@@ -1,18 +1,19 @@
-"""Authed POST transport collaborator — the chain leaf for :class:`Session`.
+"""Authed POST transport collaborator — the middleware-chain leaf.
 
-Extracted from ``Session`` as move #4c of the session-refactor arc
-(``docs/improvement.md`` §3.1). ``SessionTransport`` owns the three
-pieces of the authed POST hot path that used to live on :class:`Session`:
+Extracted from the former ``Session`` facade (now deleted) as move #4c of
+the session-refactor arc (``docs/improvement.md`` §3.1).
+``RuntimeTransport`` owns the three pieces of the authed POST hot path
+that used to live inline on that facade:
 
-* :meth:`SessionTransport.terminal` — the middleware-chain leaf. Sends
+* :meth:`RuntimeTransport.terminal` — the middleware-chain leaf. Sends
   the populated :class:`RpcRequest` via :meth:`Kernel.post` and maps the
   raw transport errors into the ``Transport*`` exception shapes consumed
   by ``RetryMiddleware`` / ``AuthRefreshMiddleware``.
-* :meth:`SessionTransport.refresh_request_for_current_auth` — re-builds
+* :meth:`RuntimeTransport.refresh_request_for_current_auth` — re-builds
   the envelope from ``RPC_CONTEXT_BUILD_REQUEST`` if a concurrent refresh
   moved the auth snapshot between materialization and the terminal POST.
-* :meth:`SessionTransport.perform_authed_post` — the entry point the
-  RPC executor / chat path / ``Session.transport_post`` call. Runs the
+* :meth:`RuntimeTransport.perform_authed_post` — the entry point the
+  RPC executor / chat path call. Runs the
   loop-affinity guard, captures the current auth snapshot, materializes
   the request envelope, dispatches it through the wired middleware
   chain, and records the semaphore queue-wait latency.
@@ -26,15 +27,15 @@ retry-delay directly — the retry/backoff budget for the refresh path
 is owned by ``AuthRefreshMiddleware`` and by
 ``RpcExecutor.try_refresh_and_retry``, both of which read
 ``chain_host._refresh_retry_delay`` live through provider lambdas wired
-in ``_session_init.wire_middleware_chain``. Integration tests that
+in ``_runtime_init.wire_middleware_chain``. Integration tests that
 assign ``client._composed.chain_host._refresh_retry_delay = 0`` keep
 steering the live delay.
 
 Construction order in :func:`compose_client_internals`:
-:func:`notebooklm._session_init.build_session_transport` constructs the
+:func:`notebooklm._runtime_init.build_runtime_transport` constructs the
 transport **before** :func:`wire_middleware_chain`. The wired chain
 leaf is :meth:`MiddlewareChainHost._authed_post_chain_terminal` (a
-one-line forward to :meth:`SessionTransport.terminal`) — wiring through
+one-line forward to :meth:`RuntimeTransport.terminal`) — wiring through
 the host preserves the canonical fixture-rebind seam (tests that
 swap the chain leaf or the chain itself rebind on the host directly).
 The chain itself is reached by the transport through an injected
@@ -44,8 +45,8 @@ The chain itself is reached by the transport through an injected
 cycle and preserves the long-standing test pattern of reassigning
 ``core._chain_host._authed_post_chain`` to install a fake chain. The
 :class:`AuthRefreshCoordinator` snapshot is reached via an injected
-``snapshot_provider`` callable so :class:`SessionTransport` never has
-to hold a direct back-reference to :class:`Session`.
+``snapshot_provider`` callable so :class:`RuntimeTransport` never has
+to hold a direct back-reference to the composition root.
 """
 
 from __future__ import annotations
@@ -79,10 +80,11 @@ if TYPE_CHECKING:
     from ._kernel import Kernel
 
 
-class SessionTransport:
+class RuntimeTransport:
     """Authed POST chain leaf and entry-point collaborator.
 
-    Owns the three methods extracted from :class:`Session` in move #4c.
+    Owns the three methods extracted from the former ``Session`` facade
+    (now deleted) in move #4c.
     Does NOT own lifecycle (that stays on :class:`ClientLifecycle`) nor
     retry/refresh budget state (that lives on
     :class:`MiddlewareChainHost` and is threaded into middleware via
@@ -117,7 +119,7 @@ class SessionTransport:
         self._kernel = kernel
         self._snapshot_provider = snapshot_provider
         # Live-binding chain accessor. The wired chain is installed onto
-        # :class:`MiddlewareChainHost` AFTER :class:`SessionTransport`
+        # :class:`MiddlewareChainHost` AFTER :class:`RuntimeTransport`
         # is constructed (the chain's leaf is :meth:`terminal`, so the
         # transport must exist first). Tests also reassign
         # ``core._chain_host._authed_post_chain`` post-construction to
@@ -257,7 +259,7 @@ class SessionTransport:
         Raises:
             RuntimeError: if the chain provider returns ``None``. The
                 wired chain is installed by :class:`Session.__init__`
-                immediately after :class:`SessionTransport` is built; a
+                immediately after :class:`RuntimeTransport` is built; a
                 ``None`` value indicates a construction-time wiring bug,
                 not a runtime condition.
         """
@@ -302,7 +304,7 @@ class SessionTransport:
         chain = self._chain_provider()
         if chain is None:  # pragma: no cover - wiring bug guard
             raise RuntimeError(
-                "SessionTransport.perform_authed_post called before the "
+                "RuntimeTransport.perform_authed_post called before the "
                 "wired chain was installed on MiddlewareChainHost; the "
                 "composition root must assign chain_host._authed_post_chain "
                 "before any authed POST."
@@ -324,4 +326,4 @@ class SessionTransport:
                 self._metrics.record_rpc_queue_wait(queue_wait)
 
 
-__all__ = ["SessionTransport"]
+__all__ = ["RuntimeTransport"]

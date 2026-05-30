@@ -365,7 +365,7 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_source_symlink.py",
     "tests/unit/test_source_upload_pipeline.py",
     "tests/unit/test_sources_upload.py",
-    "tests/unit/test_streaming_chat_protocol.py",
+    "tests/unit/test_streaming_chat_wire.py",
     "tests/unit/test_swallow_observability.py",
     "tests/unit/test_tier_enforcement_hook.py",
     "tests/unit/test_token_regex.py",

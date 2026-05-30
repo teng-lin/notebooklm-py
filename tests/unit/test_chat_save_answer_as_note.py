@@ -17,7 +17,7 @@ These tests pin:
 
 Wave 8 of the session-decoupling plan (ADR-014 Rule 2 Corollary): the
 chat-local ``ChatRuntime`` Protocol was deleted; ``ChatAPI`` takes its
-four direct collaborators (RpcCaller, SessionTransport, ReqidCounter,
+four direct collaborators (RpcCaller, RuntimeTransport, ReqidCounter,
 LoopGuard) by keyword argument. ``save_answer_as_note`` only touches
 the ``rpc`` collaborator, so the other three are mocked without specs.
 """
@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._chat import ChatAPI
-from notebooklm._session_contracts import RpcCaller
+from notebooklm._runtime_contracts import RpcCaller
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, ChatReference
 

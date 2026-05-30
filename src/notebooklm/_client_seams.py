@@ -36,7 +36,7 @@ def _default_decode_response() -> Callable[..., Any]:
 
 def _default_is_auth_error() -> Callable[[Exception], bool]:
     """Resolve the canonical auth-error classifier."""
-    from ._session_helpers import is_auth_error
+    from ._runtime_helpers import is_auth_error
 
     return is_auth_error
 

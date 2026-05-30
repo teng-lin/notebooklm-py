@@ -14,8 +14,8 @@ from .tokens import AuthTokens
 if TYPE_CHECKING:
     from .._cookie_persistence import CookiePersistence
     from .._kernel import Kernel
-    from .._session_auth import AuthRefreshCoordinator
-    from .._session_lifecycle import ClientLifecycle
+    from .._runtime_auth import AuthRefreshCoordinator
+    from .._runtime_lifecycle import ClientLifecycle
 
 
 async def refresh_auth_session(

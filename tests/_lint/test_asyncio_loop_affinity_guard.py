@@ -97,7 +97,7 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
     # binding so the next ``open()`` rebinds. A ``reset_after_open`` would be
     # a no-op here (the locks are never held across ``open()``).
     _AllowlistEntry(
-        "src/notebooklm/_session_auth.py",
+        "src/notebooklm/_runtime_auth.py",
         "AuthRefreshCoordinator",
         "Guarded by set_bound_loop + call-site assert_bound_loop; the lazy "
         "Lock is never held across open() so reset_after_open is unnecessary.",

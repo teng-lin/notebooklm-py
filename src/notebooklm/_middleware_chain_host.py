@@ -12,7 +12,7 @@ itself:
   POST so post-construction reassignment continues to steer the live
   chain;
 * the chain leaf coroutine (``_authed_post_chain_terminal``) that
-  forwards to :meth:`SessionTransport.terminal`;
+  forwards to :meth:`RuntimeTransport.terminal`;
 * the dynamic refresh delegate (``await_refresh``) reached by the
   middleware chain (``wire_middleware_chain`` captures
   ``chain_host.await_refresh`` directly).
@@ -41,8 +41,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ._middleware import NextCall, RpcRequest, RpcResponse
-    from ._session_auth import AuthRefreshCoordinator
-    from ._session_transport import SessionTransport
+    from ._runtime_auth import AuthRefreshCoordinator
+    from ._runtime_transport import RuntimeTransport
 
 
 @dataclass
@@ -51,7 +51,7 @@ class MiddlewareChainHost:
 
     Constructed by :func:`compose_client_internals` BEFORE
     :class:`Session`. The transport is bound write-once via
-    :meth:`_bind_transport` after :func:`build_session_transport`
+    :meth:`_bind_transport` after :func:`build_runtime_transport`
     returns — this resolves the host ↔ transport construction cycle
     without giving either side a permanent back-reference to the other.
 
@@ -73,7 +73,7 @@ class MiddlewareChainHost:
             :func:`compose_client_internals` assigns it directly here.
             The transport's ``chain_provider`` lambda reads this
             attribute every authed POST.
-        _transport: The :class:`SessionTransport` collaborator. ``None``
+        _transport: The :class:`RuntimeTransport` collaborator. ``None``
             until :meth:`_bind_transport` fires; after that bind the
             chain leaf (:meth:`_authed_post_chain_terminal`) can forward
             to ``transport.terminal``.
@@ -84,15 +84,15 @@ class MiddlewareChainHost:
     _server_error_max_retries: int
     _refresh_retry_delay: float
     _authed_post_chain: NextCall | None = None
-    _transport: SessionTransport | None = None
+    _transport: RuntimeTransport | None = None
 
-    def _bind_transport(self, transport: SessionTransport) -> None:
+    def _bind_transport(self, transport: RuntimeTransport) -> None:
         """Write-once setter for :attr:`_transport`.
 
         Raises :class:`RuntimeError` on a second bind attempt — the
         composition root (:func:`compose_client_internals`) is the
         single legitimate caller, and it fires this once after
-        :func:`build_session_transport` returns. The same write-once
+        :func:`build_runtime_transport` returns. The same write-once
         shape on :class:`Session` (:meth:`Session._bind_transport`)
         guarantees both sides of the host ↔ transport relationship are
         bound exactly once at composition time.
@@ -102,7 +102,7 @@ class MiddlewareChainHost:
         self._transport = transport
 
     async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
-        """Middleware-chain leaf — forwards to :meth:`SessionTransport.terminal`.
+        """Middleware-chain leaf — forwards to :meth:`RuntimeTransport.terminal`.
 
         Tests that install a fake terminal rebind directly on the host
         (``core._chain_host._authed_post_chain_terminal = fake_terminal``)

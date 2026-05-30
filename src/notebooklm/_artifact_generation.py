@@ -45,7 +45,7 @@ from .types import GenerationStatus, ReportSuggestion
 if TYPE_CHECKING:
     from ._note_service import NoteService
     from ._notebook_metadata import NotebookSourceIdProvider
-    from ._session_contracts import RpcCaller
+    from ._runtime_contracts import RpcCaller
 
 logger = logging.getLogger(__name__)
 

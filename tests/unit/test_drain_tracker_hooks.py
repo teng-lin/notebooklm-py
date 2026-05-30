@@ -11,7 +11,7 @@ post-Wave-0.5 code MUST preserve:
 * No hooks ever registered → ``run_drain_hooks`` is a clean no-op.
 
 The lifecycle-level "drain hooks run before transport teardown" assertion
-lives in ``test_session_lifecycle.py::test_close_runs_drain_hooks_before_transport_teardown``
+lives in ``test_runtime_lifecycle.py::test_close_runs_drain_hooks_before_transport_teardown``
 — this file is the unit-level contract on the tracker itself.
 """
 

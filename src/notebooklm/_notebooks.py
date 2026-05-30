@@ -11,7 +11,7 @@ from ._notebook_metadata import (
     create_default_source_lister,
 )
 from ._row_adapters_sources import SourceRow
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
 from .exceptions import (

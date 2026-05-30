@@ -4,7 +4,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .rpc import RPCMethod
 from .types import AccountLimits, AccountTier
 

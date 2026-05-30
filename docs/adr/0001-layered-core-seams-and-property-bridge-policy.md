@@ -1,5 +1,17 @@
 # ADR-001: Layered `_core` seams and the property-bridge policy
 
+> **Current state (2026-05-29).** This ADR is **Superseded** and documents a
+> retired pattern for historical context only. The `_core.py` monolith it
+> describes was decomposed and **deleted long ago**; the later `Session`
+> facade and `_session.py` that replaced it have **also been deleted**, and the
+> `_session_*.py` collaborators were renamed to `_runtime_*.py`. No
+> `_core.py`/`_session.py` file exists today — read every in-body
+> `src/notebooklm/_core.py:NNN` reference and `Session` mention as historical.
+> The live runtime decomposition is documented in
+> [`docs/architecture.md`](../architecture.md) and
+> [`CLAUDE.md`](../../CLAUDE.md); the empty compat-bridge allowlist guard is
+> [`tests/_lint/test_no_session_compat_bridges.py`](../../tests/_lint/test_no_session_compat_bridges.py).
+
 ## Status
 
 Superseded — bridge policy retired in the session-shrink arc (PRs 0-7).

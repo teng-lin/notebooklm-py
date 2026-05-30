@@ -1,11 +1,11 @@
-"""Auth refresh coordinator helper for :class:`Session`.
+"""Auth refresh coordinator helper for the client runtime.
 
 Owns the auth refresh state machine and snapshot serialization that historically
-lived inline on ``Session``:
+lived inline on the former ``Session`` facade (now deleted):
 
 * ``_refresh_lock`` — single-flight lock guarding refresh-task creation. Lazy
   because ``asyncio.Lock()`` needs a running loop in some Python versions and
-  ``Session`` can be constructed outside one.
+  the coordinator can be constructed outside one.
 * ``_refresh_task`` — the shared in-flight refresh task. Slot is intentionally
   preserved across waiter cancellation so siblings can still join, and is
   replaced only on the next refresh wave once the existing task hits
@@ -64,7 +64,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from ._loop_affinity import assert_bound_loop
 from ._request_types import AuthSnapshot
-from ._session_config import CORE_LOGGER_NAME
+from ._runtime_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
@@ -369,7 +369,7 @@ class AuthRefreshCoordinator:
         (see :meth:`await_refresh` and the ``asyncio.shield`` it wraps
         around the join) read the slot to identify the shared task; clearing
         it here would break the concurrency invariant pinned by
-        ``tests/unit/test_session_auth.py::test_await_refresh_cancellation_preserves_task_slot``.
+        ``tests/unit/test_runtime_auth.py::test_await_refresh_cancellation_preserves_task_slot``.
         The slot is replaced only on the NEXT refresh wave once the current
         task transitions to ``done()`` — never here, never in close.
 
@@ -383,9 +383,9 @@ class AuthRefreshCoordinator:
         Regression coverage:
         ``tests/unit/concurrency/test_session_close_refresh_race.py`` and
         the three focused unit tests added with this method in
-        ``tests/unit/test_session_auth.py`` (the two companion
+        ``tests/unit/test_runtime_auth.py`` (the two companion
         ``reset_after_open`` tests for :class:`TransportDrainTracker` live
-        in ``tests/unit/test_session_lifecycle.py``).
+        in ``tests/unit/test_runtime_lifecycle.py``).
         """
         refresh_task = self._refresh_task
         if refresh_task is not None and not refresh_task.done():

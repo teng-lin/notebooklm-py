@@ -44,9 +44,9 @@ from .rpc import (
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
     from ._kernel import Kernel
-    from ._session_auth import AuthRefreshCoordinator
-    from ._session_contracts import RpcCaller
-    from ._session_transport import SessionTransport
+    from ._runtime_auth import AuthRefreshCoordinator
+    from ._runtime_contracts import RpcCaller
+    from ._runtime_transport import RuntimeTransport
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class RpcExecutor:
     """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry.
 
     ADR-014 Rule 5 (Wave 4 of the session-decoupling plan): constructor takes
-    its four runtime collaborators (Kernel, SessionTransport,
+    its four runtime collaborators (Kernel, RuntimeTransport,
     AuthRefreshCoordinator, ClientMetrics) directly via keyword-only arguments
     instead of reaching them through a Session-shaped owner. The old
     ``RpcOwner`` Protocol was deleted in the same PR.
@@ -69,7 +69,7 @@ class RpcExecutor:
         self,
         *,
         kernel: Kernel,
-        transport: SessionTransport,
+        transport: RuntimeTransport,
         auth_refresh: AuthRefreshCoordinator,
         metrics: ClientMetrics,
         decode_response: DecodeResponse,

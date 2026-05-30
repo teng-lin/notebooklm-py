@@ -2,7 +2,7 @@
 
 This module provides a single entry point — :func:`make_fake_core` — that
 returns a ``FakeSession`` instance shaped to satisfy the **shared
-capability Protocols** in :mod:`notebooklm._session_contracts`
+capability Protocols** in :mod:`notebooklm._runtime_contracts`
 (``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
 ``AsyncWorkRuntime``, ``AuthMetadata``, ``Kernel``). Feature APIs that
 need more than one capability take their direct collaborators by

@@ -1,7 +1,7 @@
 """Unit tests for chat-domain exception contracts.
 
 Pins the failure-mode contract for
-:func:`notebooklm._chat_protocol.parse_streaming_chat_response`:
+:func:`notebooklm._chat_wire.parse_streaming_chat_response`:
 
 * Zero parseable chunks (empty body, garbage, or API wire drift) →
   raise :class:`notebooklm.exceptions.ChatResponseParseError`.
@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from notebooklm._chat_protocol import (
+from notebooklm._chat_wire import (
     StreamingChatParseResult,
     parse_streaming_chat_response,
 )
@@ -27,7 +27,7 @@ def _wire_chunk(text: str, *, marked: bool = True) -> str:
     """Build a length-prefixed streaming response with a single ``wrb.fr`` chunk.
 
     Mirrors the shape that ``_chunk`` / ``_length_prefixed`` in
-    ``test_streaming_chat_protocol.py`` produce — kept inline here so this
+    ``test_streaming_chat_wire.py`` produce — kept inline here so this
     file stays self-contained.
     """
     marker = 1 if marked else 0

@@ -1696,7 +1696,7 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
             await both_submitted.wait()
             return func(*args, **kwargs)
 
-        monkeypatch.setattr("notebooklm._session_lifecycle.asyncio.to_thread", fake_to_thread)
+        monkeypatch.setattr("notebooklm._runtime_lifecycle.asyncio.to_thread", fake_to_thread)
 
         # Two jars representing distinct post-rotation states. The save that
         # acquires ``_save_lock`` first rotates *PSIDTS away from v0; the

@@ -65,7 +65,7 @@ FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
         # ``tests/integration/test_session_integration.py``) now go straight
         # to ``session._auth_coord.<attr>``. Names intentionally NOT listed
         # so the lint no longer flags legitimate direct-coordinator reads
-        # in ``test_session_auth.py`` (and the unrelated ``owner._refresh_callback``
+        # in ``test_runtime_auth.py`` (and the unrelated ``owner._refresh_callback``
         # attribute used by the fake ``_Owner`` in ``test_rpc_executor.py`` /
         # ``test_idempotency_registry.py``).
         # Observability (ClientMetrics + TransportDrainTracker) bridges
@@ -102,8 +102,8 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
     {
         "src/notebooklm/_session.py",
         "src/notebooklm/_kernel.py",
-        "src/notebooklm/_session_lifecycle.py",
-        "src/notebooklm/_session_auth.py",
+        "src/notebooklm/_runtime_lifecycle.py",
+        "src/notebooklm/_runtime_auth.py",
         "src/notebooklm/_client_metrics.py",
         "src/notebooklm/_transport_drain.py",
         "src/notebooklm/_cookie_persistence.py",
@@ -304,13 +304,13 @@ def test_linter_dynamic_access_known_negatives(source: str) -> None:
     assert scan_code(source) == []
 
 
-def test_is_carve_out_for_session_lifecycle() -> None:
-    """Sanity: the canonical lifecycle filename is ``_session_lifecycle.py``."""
-    assert is_carve_out("src/notebooklm/_session_lifecycle.py"), (
-        "_session_lifecycle.py must be in CARVE_OUT_MODULES."
+def test_is_carve_out_for_runtime_lifecycle() -> None:
+    """Sanity: the canonical lifecycle filename is ``_runtime_lifecycle.py``."""
+    assert is_carve_out("src/notebooklm/_runtime_lifecycle.py"), (
+        "_runtime_lifecycle.py must be in CARVE_OUT_MODULES."
     )
     assert not is_carve_out("src/notebooklm/_lifecycle.py"), (
-        "There is no _lifecycle.py — the canonical name is _session_lifecycle.py. "
+        "There is no _lifecycle.py — the canonical name is _runtime_lifecycle.py. "
         "If the carve-out lists the wrong name, fix it."
     )
 

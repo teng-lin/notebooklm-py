@@ -21,7 +21,7 @@ end-to-end:
   pattern).
 
 The first two tests drive a real chain through
-:meth:`SessionTransport.perform_authed_post`; the last two assert the
+:meth:`RuntimeTransport.perform_authed_post`; the last two assert the
 host-side rebind contract without a live chain.
 """
 
@@ -113,7 +113,7 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
     that bumps the budget AFTER ``open()`` still takes effect on the
     next chain call.
 
-    Drives the chain via :meth:`SessionTransport.perform_authed_post`
+    Drives the chain via :meth:`RuntimeTransport.perform_authed_post`
     so the assertion exercises the production seam used by
     :meth:`RpcExecutor._execute_once`.
     """
@@ -133,7 +133,7 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
         # ADR-007 object-target form. ``asyncio`` is a singleton module
         # so patching ``asyncio.sleep`` directly is functionally
         # identical to the string-target form
-        # ``notebooklm._session_helpers.asyncio.sleep`` — both resolve to the
+        # ``notebooklm._runtime_helpers.asyncio.sleep`` — both resolve to the
         # same callable on the same module object — while staying out
         # of the forbidden-monkeypatch allowlist.
         monkeypatch.setattr(asyncio, "sleep", fake_sleep)
@@ -213,7 +213,7 @@ async def test_authed_post_chain_on_host_steers_transport() -> None:
     """``chain_host._authed_post_chain = fake_chain`` steers the live transport.
 
     The transport's ``chain_provider`` lambda (built in
-    :func:`build_session_transport`) captures the host directly and
+    :func:`build_runtime_transport`) captures the host directly and
     reads ``chain_host._authed_post_chain`` on every authed POST, so a
     post-construction fake-chain install reaches the next dispatch
     without any further mutation.

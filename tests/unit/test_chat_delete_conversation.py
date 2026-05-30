@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._chat import ChatAPI
-from notebooklm._session_contracts import LoopGuard, RpcCaller
+from notebooklm._runtime_contracts import LoopGuard, RpcCaller
 from notebooklm.rpc import RPCMethod
 
 

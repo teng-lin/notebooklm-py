@@ -37,7 +37,7 @@ def mock_core():
     """Create a mock Session.
 
     After Wave 8 of session-decoupling, ``ChatAPI.ask`` reaches the network
-    through its injected :class:`SessionTransport` collaborator via
+    through its injected :class:`RuntimeTransport` collaborator via
     ``self._transport.perform_authed_post`` (constructor-injected by the
     ``_chat_from_mock_core`` helper below, which maps the bag-of-attributes
     ``mock_core`` fixture onto the four keyword-only collaborator slots).

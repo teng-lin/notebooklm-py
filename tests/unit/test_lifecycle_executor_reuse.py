@@ -1,7 +1,7 @@
 """Stage B1 PR 2 — executor persists across ``close()`` → ``open()``.
 
 Replacement regression test for the deleted
-``test_session_lifecycle.test_close_nulls_rpc_executor``. Before
+``test_runtime_lifecycle.test_close_nulls_rpc_executor``. Before
 Stage B1 PR 2 of the post-refactoring plan, :meth:`ClientLifecycle.close`
 nulled out ``host._rpc_executor`` so a follow-up :meth:`open` would
 trigger the lazy ``Session._get_rpc_executor`` factory to rebuild the
@@ -9,7 +9,7 @@ executor against the new ``httpx.AsyncClient``.
 
 PR 2 deleted both that null line and the lazy factory itself — the
 executor is bound exactly once by the composition root
-(:func:`notebooklm._session_init.compose_client_internals`) via
+(:func:`notebooklm._runtime_init.compose_client_internals`) via
 :class:`notebooklm._client_composed.ClientComposed`, and the same instance
 survives any ``close()`` → ``open()`` cycle. This is safe because the executor's
 transport collaborator (:class:`Kernel`) rebuilds its

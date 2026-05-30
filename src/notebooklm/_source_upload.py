@@ -19,11 +19,11 @@ import httpx
 from ._callbacks import maybe_await_callback
 from ._env import get_base_url
 from ._idempotency import idempotent_create
-from ._session_config import (
+from ._runtime_config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
-from ._session_contracts import (
+from ._runtime_contracts import (
     AuthMetadata,
     Kernel,
     RpcCaller,
@@ -48,7 +48,7 @@ from .rpc.types import SourceStatus
 from .types import Source, SourceAddError
 
 if TYPE_CHECKING:
-    from ._session_lifecycle import ClientLifecycle
+    from ._runtime_lifecycle import ClientLifecycle
     from ._transport_drain import TransportDrainTracker
 
 _SOURCE_ID_UUID_PATTERN = re.compile(
@@ -65,7 +65,7 @@ _SOURCE_ID_ENVELOPE_MAX_DEPTH = 8
 class RpcCallback(Protocol):
     """RPC callback shape used by upload registration.
 
-    Structurally distinct from :class:`notebooklm._session_contracts.RpcCaller`:
+    Structurally distinct from :class:`notebooklm._runtime_contracts.RpcCaller`:
     this is a **callable** Protocol (``async def __call__(...)``) passed as a
     keyword argument into :meth:`SourceUploadPipeline.register_file_source`,
     while the shared ``RpcCaller`` is an **object** Protocol with an

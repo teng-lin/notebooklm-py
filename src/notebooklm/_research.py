@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 from . import research as _research_pub
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import ResearchSource, ResearchTask, parse_research_task_models
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .exceptions import (
     NetworkError,
     ResearchTaskMismatchError,

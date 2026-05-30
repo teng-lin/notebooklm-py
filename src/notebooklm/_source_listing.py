@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ._row_adapters_sources import SourceRow
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .rpc import RPCError, RPCMethod
 from .types import Source
 

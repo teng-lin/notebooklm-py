@@ -6,7 +6,7 @@
 (:meth:`MiddlewareChainHost._authed_post_chain_terminal`), which
 consumes the populated ``RpcRequest.url`` / ``headers`` / ``body``
 envelope and delegates directly to ``Kernel.post`` — the transport
-seam under both :meth:`SessionTransport.perform_authed_post` AND
+seam under both :meth:`RuntimeTransport.perform_authed_post` AND
 ``RpcExecutor._execute_once``. The ``NotebookLMClient._perform_authed_post``
 compatibility forward was deleted in Wave 11c of session-decoupling;
 tests now drive the canonical collaborator method directly.
@@ -14,7 +14,7 @@ tests now drive the canonical collaborator method directly.
 These tests verify the wiring contract from
 ADR-009 §"RpcRequest.context keys":
 
-1. Both call paths (``SessionTransport.perform_authed_post`` directly
+1. Both call paths (``RuntimeTransport.perform_authed_post`` directly
    and the ``RpcExecutor._execute_once`` keyword shape) flow through
    the chain terminal to the transport.
 2. ``RpcRequest.context`` carries ``build_request`` / ``log_label`` /
@@ -88,9 +88,9 @@ def _swap_kernel_post(core: NotebookLMClient, fake: FakeKernelPost) -> None:
 
 @pytest.mark.asyncio
 async def test_chain_routes_perform_authed_post_to_transport() -> None:
-    """``SessionTransport.perform_authed_post`` flows through the chain.
+    """``RuntimeTransport.perform_authed_post`` flows through the chain.
 
-    Covers direct callers of ``SessionTransport.perform_authed_post``:
+    Covers direct callers of ``RuntimeTransport.perform_authed_post``:
     the chat path in ``_chat_transport.py:64`` and any first-party
     caller via ``client._composed.transport.perform_authed_post``.
     """
@@ -122,7 +122,7 @@ async def test_chain_routes_rpc_executor_path_to_transport() -> None:
 
     ``RpcExecutor._execute_once`` calls
     ``self._transport.perform_authed_post(...)`` (Wave 4 of
-    session-decoupling: the executor takes :class:`SessionTransport`
+    session-decoupling: the executor takes :class:`RuntimeTransport`
     directly instead of reaching through NotebookLMClient). Routing both paths
     through one seam is the whole point of wiring at
     ``perform_authed_post`` rather than at each call site.
@@ -164,7 +164,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
 
     Drives the terminal adapter directly with a hand-built ``RpcRequest``
     so we can assert the contract independently of
-    :meth:`SessionTransport.perform_authed_post`'s context-construction code.
+    :meth:`RuntimeTransport.perform_authed_post`'s context-construction code.
     This is what every middleware PR 12.3–12.8 will rely on when it
     builds a chain over ``[*middlewares, ...]`` and lets the leaf adapt
     the request into a transport call.
@@ -383,13 +383,13 @@ def test_perform_authed_post_signature_unchanged() -> None:
     accidental rename. The NotebookLMClient-level ``_perform_authed_post`` forward
     was deleted in Wave 11c of session-decoupling; the signature contract
     now lives on the canonical collaborator method
-    (``SessionTransport.perform_authed_post``).
+    (``RuntimeTransport.perform_authed_post``).
     """
     import inspect
 
-    from notebooklm._session_transport import SessionTransport
+    from notebooklm._runtime_transport import RuntimeTransport
 
-    sig = inspect.signature(SessionTransport.perform_authed_post)
+    sig = inspect.signature(RuntimeTransport.perform_authed_post)
     params = sig.parameters
     assert "build_request" in params
     assert "log_label" in params

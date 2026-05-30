@@ -44,8 +44,8 @@ from ._middleware_chain import MiddlewareChainBuilder
 from ._middleware_chain_host import MiddlewareChainHost
 from ._reqid_counter import ReqidCounter
 from ._rpc_executor import RpcExecutor
-from ._session_auth import AuthRefreshCoordinator
-from ._session_config import (
+from ._runtime_auth import AuthRefreshCoordinator
+from ._runtime_config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
@@ -53,9 +53,9 @@ from ._session_config import (
     DEFAULT_TIMEOUT,
     normalize_max_concurrent_uploads,
 )
-from ._session_helpers import _resolve_keepalive_interval
-from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
-from ._session_transport import SessionTransport
+from ._runtime_helpers import _resolve_keepalive_interval
+from ._runtime_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
+from ._runtime_transport import RuntimeTransport
 from ._transport_drain import TransportDrainTracker
 from .auth import AuthTokens
 
@@ -100,7 +100,7 @@ class ValidatedSessionConfig:
 
 
 @dataclass(frozen=True)
-class SessionCollaborators:
+class RuntimeCollaborators:
     """Constructed-collaborator bundle produced by
     :func:`build_collaborators`.
 
@@ -132,7 +132,7 @@ class WiredMiddleware:
 class ClientInternals:
     """Result of :func:`compose_client_internals`."""
 
-    collaborators: SessionCollaborators
+    collaborators: RuntimeCollaborators
     executor: RpcExecutor
 
 
@@ -278,7 +278,7 @@ def build_collaborators(
     on_rpc_event: Callable[[RpcTelemetryEvent], object] | None,
     cookie_saver: CookieSaver | None,
     cookie_rotator: CookieRotator | None,
-) -> SessionCollaborators:
+) -> RuntimeCollaborators:
     """Construct the seven extracted collaborators in dependency order.
 
     The order mirrors the pre-extraction runtime constructor exactly so
@@ -343,7 +343,7 @@ def build_collaborators(
     # HTTP-client lifecycle — owns loop binding, keepalive, and close
     # ordering while delegating the live ``httpx.AsyncClient`` to
     # ``self._kernel``. The ``_resolve_keepalive_interval`` clamp lives
-    # in :mod:`notebooklm._session_helpers` and is imported above; we
+    # in :mod:`notebooklm._runtime_helpers` and is imported above; we
     # call it directly here. (The historical ``notebooklm._core``
     # re-export was removed in v0.5.0.)
     #
@@ -375,7 +375,7 @@ def build_collaborators(
     # Owns the in-process save lock and open-time cookie baseline.
     cookie_persistence = CookiePersistence(auth, config.keepalive_storage_path)
 
-    return SessionCollaborators(
+    return RuntimeCollaborators(
         metrics=metrics,
         drain_tracker=drain_tracker,
         reqid=reqid,
@@ -386,14 +386,14 @@ def build_collaborators(
     )
 
 
-def build_session_transport(
-    collaborators: SessionCollaborators,
+def build_runtime_transport(
+    collaborators: RuntimeCollaborators,
     *,
     auth: AuthTokens,
     chain_host: MiddlewareChainHost,
     logger: logging.Logger,
-) -> SessionTransport:
-    """Construct the :class:`SessionTransport` collaborator.
+) -> RuntimeTransport:
+    """Construct the :class:`RuntimeTransport` collaborator.
 
     Built **after** :func:`build_collaborators` and **before**
     :func:`wire_middleware_chain`, because the wired chain is built
@@ -426,7 +426,7 @@ def build_session_transport(
     acquiring a new transport logger namespace that callers' log filters
     / ``caplog`` selectors would not yet recognise.
     """
-    return SessionTransport(
+    return RuntimeTransport(
         kernel=collaborators.kernel,
         snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth=auth),
         chain_provider=lambda: chain_host._authed_post_chain,
@@ -437,7 +437,7 @@ def build_session_transport(
 
 
 def wire_middleware_chain(
-    collaborators: SessionCollaborators,
+    collaborators: RuntimeCollaborators,
     *,
     chain_host: MiddlewareChainHost,
     auth: AuthTokens,
@@ -587,7 +587,7 @@ def compose_client_internals(
     composed.bind_session_collaborators(collaborators)
     composed.bind_chain_host(chain_host)
 
-    transport = build_session_transport(
+    transport = build_runtime_transport(
         collaborators,
         auth=auth,
         chain_host=chain_host,
@@ -629,11 +629,11 @@ def compose_client_internals(
 
 __all__ = [
     "ClientInternals",
-    "SessionCollaborators",
+    "RuntimeCollaborators",
     "ValidatedSessionConfig",
     "WiredMiddleware",
     "build_collaborators",
-    "build_session_transport",
+    "build_runtime_transport",
     "compose_client_internals",
     "resolve_seam_defaults",
     "validate_constructor_args",

@@ -373,7 +373,7 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
     # ``httpx.Client(cookies=jar)`` copies the source jar into a private client
     # jar; Set-Cookie responses land in ``client.cookies``, not in ``jar``. So
     # we snapshot and check the *client's* jar, mirroring how the async
-    # keepalive in ``_session_lifecycle.save_cookies`` reads ``client.cookies``.
+    # keepalive in ``_runtime_lifecycle.save_cookies`` reads ``client.cookies``.
     try:
         with httpx.Client(
             cookies=jar,

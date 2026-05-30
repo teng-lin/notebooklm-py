@@ -61,8 +61,8 @@ from ._backoff import compute_backoff_delay
 from ._deadline import Monotonic, RuntimeDeadline
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._middleware_context import RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, RPC_CONTEXT_LOG_LABEL
-from ._session_config import CORE_LOGGER_NAME
-from ._session_helpers import resolve_sleep
+from ._runtime_config import CORE_LOGGER_NAME
+from ._runtime_helpers import resolve_sleep
 from ._transport_errors import TransportRateLimited, TransportServerError, parse_retry_after
 
 if TYPE_CHECKING:
@@ -129,7 +129,7 @@ class RetryMiddleware:
         # form.
         self._rate_limit_max = rate_limit_max_retries
         self._server_error_max = server_error_max_retries
-        # Late-binding rationale lives on ``_session_helpers.resolve_sleep``;
+        # Late-binding rationale lives on ``_runtime_helpers.resolve_sleep``;
         # see that helper for why we resolve at call time instead of capturing
         # the callable at construction.
         self._retry_timeout = retry_timeout

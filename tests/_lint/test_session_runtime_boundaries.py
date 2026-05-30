@@ -22,7 +22,7 @@ all slip past a regex but not past an :mod:`ast` walk.
    surviving code path needs the host shape.
 
    Failure mode: introducing a typing import like
-   ``from .._session_lifecycle import _LifecycleHost`` or annotating a
+   ``from .._runtime_lifecycle import _LifecycleHost`` or annotating a
    parameter ``host: "_LifecycleHost"`` would re-establish the
    NotebookLMClient-as-host coupling Waves 1-3 dismantled.
 
@@ -384,7 +384,7 @@ def test_lifecycle_host_symbol_does_not_appear_in_src() -> None:
     """``_LifecycleHost`` was deleted in Wave 2 (PR #1133); reappearance is a regression.
 
     Failure mode: a future PR that re-introduces
-    ``from .._session_lifecycle import _LifecycleHost`` or annotates
+    ``from .._runtime_lifecycle import _LifecycleHost`` or annotates
     a parameter ``host: "_LifecycleHost"`` would surface here as a
     ``Name``, ``Attribute``, ``Constant``, ``ClassDef``, or ``alias``
     violation depending on the exact spelling.

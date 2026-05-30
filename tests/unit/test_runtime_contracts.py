@@ -1,5 +1,5 @@
 """Typing checks for the capability-Protocol contracts in
-``notebooklm._session_contracts``.
+``notebooklm._runtime_contracts``.
 
 Phase 7 (refactor-history.md §Migration Plan step 10) replaced the broad
 ``Session`` Protocol with four shared capability Protocols
@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from notebooklm._session_contracts import (
+from notebooklm._runtime_contracts import (
     AsyncWorkRuntime,
     AuthMetadata,
     Kernel,

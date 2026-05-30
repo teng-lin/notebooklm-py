@@ -6,7 +6,7 @@ import builtins
 import logging
 from typing import Any, Literal
 
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .rpc import RPCMethod
 from .types import SourceFulltext, SourceNotFoundError, _extract_source_url
 

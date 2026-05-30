@@ -47,14 +47,14 @@ from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
-from ._session_config import (
+from ._runtime_config import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from ._session_init import compose_client_internals
-from ._session_lifecycle import CookieRotator, CookieSaver
+from ._runtime_init import compose_client_internals
+from ._runtime_lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._source_upload import SourceUploadPipeline
@@ -416,7 +416,7 @@ class NotebookLMClient:
         # has NotesAPI delegate via constructor injection.
         #
         # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ChatAPI
-        # takes its four direct collaborators (RpcCaller, SessionTransport,
+        # takes its four direct collaborators (RpcCaller, RuntimeTransport,
         # ReqidCounter, LoopGuard) by keyword argument. The transport is
         # sourced from ``self._composed``; other runtime fields come from
         # the :class:`ClientInternals` returned by the composition root.

@@ -28,10 +28,10 @@ from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 
 if TYPE_CHECKING:
-    from ._session_lifecycle import ClientLifecycle
+    from ._runtime_lifecycle import ClientLifecycle
     from ._transport_drain import TransportDrainTracker
 from .rpc import (
     ArtifactTypeCode,

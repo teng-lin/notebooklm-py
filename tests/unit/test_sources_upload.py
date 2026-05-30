@@ -100,7 +100,7 @@ def sources_api(mock_core):
     return SourcesAPI(mock_core, uploader=uploader)
 
 
-def _self_session_auth_attr_read(node: ast.AST, attr: str) -> bool:
+def _self_runtime_auth_attr_read(node: ast.AST, attr: str) -> bool:
     return (
         isinstance(node, ast.Attribute)
         and node.attr == attr
@@ -138,14 +138,14 @@ def _self_core_http_client_cookies_read(node: ast.AST) -> bool:
         SourceUploadPipeline.cancel_upload_session,
     ],
 )
-def test_upload_helpers_do_not_read_session_auth_or_live_cookies_directly(helper):
+def test_upload_helpers_do_not_read_runtime_auth_or_live_cookies_directly(helper):
     """Upload helpers must route through the narrow capability Protocols, not broad core internals."""
     tree = ast.parse(textwrap.dedent(inspect.getsource(helper)))
     violations = [
         ast.unparse(node)
         for node in ast.walk(tree)
-        if _self_session_auth_attr_read(node, "authuser")
-        or _self_session_auth_attr_read(node, "account_email")
+        if _self_runtime_auth_attr_read(node, "authuser")
+        or _self_runtime_auth_attr_read(node, "account_email")
         or _self_core_http_client_cookies_read(node)
     ]
 

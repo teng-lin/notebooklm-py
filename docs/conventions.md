@@ -131,7 +131,7 @@ four verbs above.
 ## 2. RPC-callable Protocol names (CC3)
 
 Most feature modules type their RPC dependency as the shared
-`RpcCaller` object Protocol from `_session_contracts`. Only middleware-chain
+`RpcCaller` object Protocol from `_runtime_contracts`. Only middleware-chain
 callables and upload's keyword-injected registration callback keep local
 callable shapes. These names are NOT interchangeable — the divergence is
 structural, not stylistic. This section explains what each name signals so new
@@ -143,7 +143,7 @@ code picks the right shape.
 |---|---|---|---|
 | `NextCall` | `_middleware.py` | **type alias**, not a class: `Callable[[RpcRequest], Awaitable[RpcResponse]]` | Every `Middleware.__call__` — the "call the next link" function passed into around-style middlewares |
 | `RpcCallback` | `_source_upload.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceUploadPipeline.register_file_source` — RPC entrypoint passed as a **keyword argument** at call time |
-| `RpcCaller` | `_session_contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs and helper services (`NotesAPI`, `SourceLister`, `ShareManager`, etc.) |
+| `RpcCaller` | `_runtime_contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs and helper services (`NotesAPI`, `SourceLister`, `ShareManager`, etc.) |
 
 ### Why they diverge
 
@@ -173,7 +173,7 @@ lets mypy flag keyword-name typos at the call site.
 ### Choosing a name in new code
 
 - New pure-RPC feature API? Type the dependency as
-  **`RpcCaller`** from `_session_contracts`. This is the shared capability
+  **`RpcCaller`** from `_runtime_contracts`. This is the shared capability
   Protocol; see [`docs/architecture.md`](./architecture.md) for the protocol
   catalogue. Concrete `Session` satisfies it structurally.
 - New middleware? Use **`NextCall`** from `_middleware.py` for the chain

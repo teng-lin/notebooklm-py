@@ -1,5 +1,18 @@
 # ADR-012: Implementation surface convention (underscore-prefix policy)
 
+> **Current state (2026-05-29).** The normative body and the illustrative tree
+> below were written when `_core.py`, `_session.py`, and the `_session_*.py`
+> seam modules still existed. **`_core.py` and `_session.py` (the concrete
+> `Session` orchestrator) have since been deleted**, and the `_session_*.py`
+> collaborators were renamed to `_runtime_*.py`
+> (e.g. `_session_config.py` → `_runtime_config.py`,
+> `_session_contracts.py` → `_runtime_contracts.py`). The underscore-prefix
+> *policy* this ADR establishes is unchanged and still in force; only the
+> example module names are stale. The current module map lives in
+> [`CLAUDE.md`](../../CLAUDE.md) (Repository Structure) and
+> [`docs/architecture.md`](../architecture.md). Read in-body
+> `_core`/`_session`/`_session_*` mentions and exact line numbers as historical.
+
 ## Status
 
 Accepted (Tier 13 PR 13.9a). Amended by Tier 13 PR 13.8 to reflect

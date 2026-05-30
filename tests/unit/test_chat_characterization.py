@@ -1505,7 +1505,7 @@ class TestExtractAnswerAndRefsFromChunk:
         """A populated record whose answer row is not a list is drift.
 
         Previously this silently returned ``(None, ...)`` (the answer was
-        dropped). Since the strict-decode migration of ``_chat_protocol``
+        dropped). Since the strict-decode migration of ``_chat_wire``
         (ADR-011) a non-list answer row in a *populated* ``wrb.fr`` record is
         treated as Google-side wire drift and raises ``UnknownRPCMethodError``.
         Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``

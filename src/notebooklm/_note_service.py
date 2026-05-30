@@ -33,7 +33,7 @@ from .rpc.types import RPCMethod
 from .types import Note
 
 if TYPE_CHECKING:
-    from ._session_contracts import RpcCaller
+    from ._runtime_contracts import RpcCaller
 
 __all__ = ["NoteService"]  # NoteRowKind is intentionally NOT exported
 

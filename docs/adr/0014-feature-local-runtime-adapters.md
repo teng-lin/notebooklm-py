@@ -1,5 +1,18 @@
 # ADR-014: Feature-local runtime adapters as Protocol satisfiers
 
+> **Current state (2026-05-29).** The normative body below describes the state
+> *at decision time*, when a concrete `Session` facade class and module still
+> existed. **`Session` and `_session.py` have since been deleted** (see
+> [Revision history](#revision-history) → "2026-05-28 — Session elimination"),
+> and the former `_session_*.py` collaborator modules were renamed to
+> `_runtime_*.py` (e.g. `_session_init.py` → `_runtime_init.py`,
+> `_session_transport.py` → `_runtime_transport.py`; the `SessionTransport` /
+> `SessionCollaborators` classes are now `RuntimeTransport` /
+> `RuntimeCollaborators`). Treat in-body references to `Session`, `_session.py`,
+> `_session_*.py`, and exact `client.py:NNN` line numbers as historical; the
+> live runtime shape is documented in
+> [`docs/architecture.md`](../architecture.md).
+
 ## Status
 
 Accepted (#1082; Stage-B issue #1084; MiddlewareChainHost issue #1085).

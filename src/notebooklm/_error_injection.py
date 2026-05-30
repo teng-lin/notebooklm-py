@@ -55,7 +55,7 @@ __all__ = [
 import logging
 import os
 
-from ._session_config import CORE_LOGGER_NAME
+from ._runtime_config import CORE_LOGGER_NAME
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` — keep

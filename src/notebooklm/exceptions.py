@@ -749,7 +749,7 @@ class ChatError(NotebookLMError):
 class ChatResponseParseError(ChatError):
     """The streaming chat response yielded no parseable chunks.
 
-    Raised when :func:`notebooklm._chat_protocol.parse_streaming_chat_response`
+    Raised when :func:`notebooklm._chat_wire.parse_streaming_chat_response`
     iterates the streamed response and finds zero ``wrb.fr`` envelopes it
     could decode — that is, the wire protocol drifted or the response body
     was empty/malformed.

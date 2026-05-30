@@ -12,7 +12,7 @@ session facade while delegating the raw HTTP transport to
   ``accounts.google.com/RotateCookies`` while the client is open.
 * ``_keepalive_interval`` / ``_keepalive_storage_path`` — keepalive
   configuration; the interval is clamped against ``keepalive_min_interval``
-  via :func:`notebooklm._session_helpers._resolve_keepalive_interval`.
+  via :func:`notebooklm._runtime_helpers._resolve_keepalive_interval`.
 * ``_timeout`` / ``_connect_timeout`` / ``_limits`` — HTTP timeouts and
   connection-pool tuning consumed in :meth:`open`.
 
@@ -80,7 +80,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ._kernel import Kernel
-from ._session_config import CORE_LOGGER_NAME
+from ._runtime_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
@@ -88,7 +88,7 @@ if TYPE_CHECKING:
     from ._client_composed import ClientComposed
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
-    from ._session_auth import AuthRefreshCoordinator
+    from ._runtime_auth import AuthRefreshCoordinator
     from ._source_upload import SourceUploadPipeline
     from ._transport_drain import TransportDrainTracker
     from .auth import CookieSaveResult
@@ -204,7 +204,7 @@ class ClientLifecycle:
         # the default-resolution out of this helper avoids a types.py import
         # cycle.
         self._limits: ConnectionLimits = limits
-        # Pre-clamped by :func:`notebooklm._session_helpers._resolve_keepalive_interval`
+        # Pre-clamped by :func:`notebooklm._runtime_helpers._resolve_keepalive_interval`
         # at the client composition boundary so the floor-vs-user-value
         # branching stays in one place — the seam helper.
         self._keepalive_interval: float | None = keepalive_interval
@@ -458,7 +458,7 @@ class ClientLifecycle:
 
         Stage B1 PR 2 of the post-refactoring plan removed the
         close-time ``host._rpc_executor = None`` step. The composition
-        root (:func:`notebooklm._session_init.compose_client_internals`)
+        root (:func:`notebooklm._runtime_init.compose_client_internals`)
         binds the executor exactly once via
         :meth:`notebooklm._client_composed.ClientComposed.bind_executor`,
         and the binding is preserved across ``close()`` → ``open()``

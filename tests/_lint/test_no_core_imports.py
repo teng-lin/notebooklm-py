@@ -18,7 +18,7 @@ Single-file enforcement of a cross-cutting policy doesn't scale, so the
 policy moves here and the per-file copies are deleted.
 
 The string ``"notebooklm._core"`` still survives as ``CORE_LOGGER_NAME``
-at ``src/notebooklm/_session_config.py`` — that's a logger name, not an
+at ``src/notebooklm/_runtime_config.py`` — that's a logger name, not an
 import, and is intentional. Loggers don't trigger module load.
 
 ``_auth/session.py`` additionally bans ``notebooklm.client`` (the

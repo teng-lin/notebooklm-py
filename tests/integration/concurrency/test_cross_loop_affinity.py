@@ -14,7 +14,7 @@ a dead loop.
 Post-fix: ``NotebookLMClient.open()`` captures
 ``asyncio.get_running_loop()`` on the lifecycle (read via
 ``core._collaborators.lifecycle.get_bound_loop()``) and
-``SessionTransport.perform_authed_post`` asserts the running loop matches
+``RuntimeTransport.perform_authed_post`` asserts the running loop matches
 via a cheap ``is`` comparison through ``assert_bound_loop``. On mismatch
 we raise an actionable ``RuntimeError`` at the call site instead of
 letting the failure escalate into the httpx pool or asyncio.Lock internals.
@@ -23,7 +23,7 @@ The test exercises the surgical contract:
 
 1. **Cross-loop use raises early** — open the core under one loop, then
    call ``rpc_call`` (which routes through
-   ``SessionTransport.perform_authed_post``) under a *different* loop
+   ``RuntimeTransport.perform_authed_post``) under a *different* loop
    and assert the loop-affinity ``RuntimeError`` surfaces with the
    documented message. The error must come from G2's guard, not from a
    downstream httpx symptom.
@@ -33,7 +33,7 @@ The test exercises the surgical contract:
 3. **No binding before open()** — a freshly-constructed ``NotebookLMClient``
    that has never been ``open()``ed has
    ``core._collaborators.lifecycle.get_bound_loop() is None``; the check inside
-   ``SessionTransport.perform_authed_post`` already asserts
+   ``RuntimeTransport.perform_authed_post`` already asserts
    ``self._kernel.http_client is not None``, so an "unopened client"
    caller sees the existing assertion error, not the loop guard.
 

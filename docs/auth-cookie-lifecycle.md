@@ -530,7 +530,7 @@ reading `auth.py` against the lifecycle of `NotebookLMClient` /
 
 > **Resolved in #361.** ``CookiePersistence`` (see
 > ``src/notebooklm/_cookie_persistence.py``; driven by ``ClientLifecycle``
-> at open-time, ``src/notebooklm/_session_lifecycle.py``) now captures an
+> at open-time, ``src/notebooklm/_runtime_lifecycle.py``) now captures an
 > open-time ``CookieSnapshotKey -> CookieSnapshotValue`` snapshot of its jar;
 > ``save_cookies_to_storage``
 > accepts an ``original_snapshot=...`` kwarg and, when provided, writes only

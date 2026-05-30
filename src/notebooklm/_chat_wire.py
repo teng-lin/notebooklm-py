@@ -1,4 +1,4 @@
-"""Streamed-chat protocol mechanics for NotebookLM private chat calls.
+"""Streamed-chat wire mechanics for NotebookLM private chat calls.
 
 This module owns only streamed-chat wire request construction and response
 parsing. Conversation flow, caching, source resolution, and ``AskResult``
@@ -31,7 +31,7 @@ logger = logging.getLogger("notebooklm._chat")
 # there is no obfuscated method ID to thread — descents pass ``method_id=None``
 # and rely on these labels to localize schema drift in raised
 # ``UnknownRPCMethodError`` diagnostics (ADR-011).
-_CHUNK_SOURCE = "_chat_protocol._extract_chunk_with_parseable"
+_CHUNK_SOURCE = "_chat_wire._extract_chunk_with_parseable"
 
 _UUID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",

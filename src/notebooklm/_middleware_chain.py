@@ -2,7 +2,7 @@
 
 Tier-12 PR 12.2 wired an empty middleware chain around
 ``Kernel.post`` through ``MiddlewareChainHost._authed_post_chain_terminal``
-(the shared seam covering ``SessionTransport.perform_authed_post`` and
+(the shared seam covering ``RuntimeTransport.perform_authed_post`` and
 ``RpcExecutor._execute_once``'s dispatch into the transport).
 
 PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended

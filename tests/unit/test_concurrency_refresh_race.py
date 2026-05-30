@@ -71,8 +71,8 @@ from _fixtures.kernel_test_helpers import install_http_client_for_test
 from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._session_auth import AuthRefreshCoordinator
-from notebooklm._session_transport import SessionTransport
+from notebooklm._runtime_auth import AuthRefreshCoordinator
+from notebooklm._runtime_transport import RuntimeTransport
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -91,12 +91,12 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     would let a concurrent refresh change the cookie jar between request
     rebuild and wire send.
 
-    The terminal body lives on :meth:`SessionTransport.terminal`; the
+    The terminal body lives on :meth:`RuntimeTransport.terminal`; the
     chain leaf (:meth:`MiddlewareChainHost._authed_post_chain_terminal`)
     forwards to it. The AST guard inspects the collaborator method
     that carries the actual body.
     """
-    src = textwrap.dedent(inspect.getsource(SessionTransport.terminal))
+    src = textwrap.dedent(inspect.getsource(RuntimeTransport.terminal))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -123,7 +123,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     found_try = _find_first_try(func)
     assert found_try is not None, (
         "Could not locate the ``try:`` block guarding the POST in "
-        "SessionTransport.terminal. Update this guard to match."
+        "RuntimeTransport.terminal. Update this guard to match."
     )
 
     def is_post_await(node):
@@ -180,7 +180,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     post_await_position = min(post_await_positions, default=None)
     assert post_await_position is not None, (
         "Could not locate `await ...post(...)` in the try body of "
-        "SessionTransport.terminal. If the call site was refactored (e.g. to "
+        "RuntimeTransport.terminal. If the call site was refactored (e.g. to "
         "``client.request(...)``), update this guard to match — the "
         "invariant is 'no await between snapshot read and the POST per "
         "iteration', not specifically the `.post` attribute."
@@ -192,7 +192,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
         if isinstance(n, ast.Await) and (n.lineno, n.col_offset) < post_await_position
     ]
     assert not earlier_awaits, (
-        f"SessionTransport.terminal gained an await before the per-attempt POST "
+        f"RuntimeTransport.terminal gained an await before the per-attempt POST "
         f"at {post_await_position}: "
         f"{[(n.lineno, ast.dump(n)) for n in earlier_awaits]}. "
         "This breaks the snapshot-invariant — auth state could be mutated "
@@ -204,12 +204,12 @@ def test_terminal_freshness_check_has_no_await_after_materialization():
     """Freshness rebuild must not yield after materializing a new envelope.
 
     The freshness-rebuild body lives on
-    :meth:`SessionTransport.refresh_request_for_current_auth` after move
+    :meth:`RuntimeTransport.refresh_request_for_current_auth` after move
     #4c — ``Session._refresh_request_for_current_auth`` is now a one-line
     forward to it, so the AST guard must inspect the collaborator method
     that carries the actual body.
     """
-    src = textwrap.dedent(inspect.getsource(SessionTransport.refresh_request_for_current_auth))
+    src = textwrap.dedent(inspect.getsource(RuntimeTransport.refresh_request_for_current_auth))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 

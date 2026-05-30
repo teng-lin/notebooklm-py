@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`notebooklm._session_lifecycle`.
+"""Unit tests for :mod:`notebooklm._runtime_lifecycle`.
 
 Covers the load-bearing behaviors of :class:`ClientLifecycle` directly, in
 addition to the existing ``Session``-shaped tests in
@@ -14,7 +14,7 @@ Specifically pinned here:
   cleanly** — the task exits and is set to ``None``; the call doesn't leak a
   ``CancelledError``.
 * ``_bound_loop`` **mismatch raises ``RuntimeError``** — the cross-loop guard
-  in :meth:`SessionTransport.perform_authed_post` reads ``_bound_loop`` through
+  in :meth:`RuntimeTransport.perform_authed_post` reads ``_bound_loop`` through
   the lifecycle and raises actionably when the loops differ.
 * :meth:`ClientLifecycle.save_cookies` **invokes** the
   :class:`CookiePersistence` collaborator's ``save`` method with the right
@@ -52,8 +52,8 @@ import httpx
 import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
-from notebooklm._session_helpers import _resolve_keepalive_interval
-from notebooklm._session_lifecycle import (
+from notebooklm._runtime_helpers import _resolve_keepalive_interval
+from notebooklm._runtime_lifecycle import (
     ClientLifecycle,
     _default_cookie_rotator,
     _default_cookie_saver,
@@ -127,7 +127,7 @@ class _StubHost:
         # ``MagicMock()`` would return a non-awaitable, so the stub needs an
         # ``AsyncMock`` for that method. The real coordinator handles the
         # no-op / already-done / in-flight branches internally (covered by
-        # the focused unit tests in ``tests/unit/test_session_auth.py``).
+        # the focused unit tests in ``tests/unit/test_runtime_auth.py``).
         # ``_refresh_task`` is kept as ``None`` on the stub for
         # forward-compatibility with any future test that probes the slot
         # directly (the lifecycle itself no longer reads it).
@@ -554,7 +554,7 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
     """``get_bound_loop()`` returns the captured loop after open().
 
     The cross-loop affinity ``RuntimeError`` is raised by
-    ``SessionTransport.perform_authed_post`` on actual cross-loop reuse —
+    ``RuntimeTransport.perform_authed_post`` on actual cross-loop reuse —
     see ``tests/integration/concurrency/test_cross_loop_affinity.py`` for
     the end-to-end exercise. Here we only assert the lifecycle exposes the
     captured loop via :meth:`get_bound_loop`.

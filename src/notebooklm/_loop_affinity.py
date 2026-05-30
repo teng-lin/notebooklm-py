@@ -4,7 +4,7 @@ A single small helper that compares a previously-captured event loop reference
 against ``asyncio.get_running_loop()`` and raises an actionable
 :class:`RuntimeError` on mismatch. Lives in its own module so the helpers
 that need to call it (``_transport_drain.py`` / ``_reqid_counter.py`` /
-``_session_auth.py`` / ``_artifact_polling.py`` / ``_chat.py``) can import it
+``_runtime_auth.py`` / ``_artifact_polling.py`` / ``_chat.py``) can import it
 without dragging in the deleted concrete session type just to reach a
 bound-loop attribute.
 

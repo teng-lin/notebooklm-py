@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
 
-from notebooklm._chat_protocol import (
+from notebooklm._chat_wire import (
     StreamingChatParseResult,
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -465,7 +465,7 @@ def test_drifted_answer_row_raises(drifted_inner: Any) -> None:
     soft-mode opt-out was retired in v0.7.0), so this raises
     :class:`UnknownRPCMethodError` instead of silently collapsing to an empty
     answer — that silent collapse was the gap the
-    ``architecture-gap-review`` flagged for ``_chat_protocol`` (ADR-011:38).
+    ``architecture-gap-review`` flagged for ``_chat_wire`` (ADR-011:38).
     """
     from notebooklm.exceptions import UnknownRPCMethodError
 
@@ -503,7 +503,7 @@ def test_error_frame_without_code_still_surfaces_chat_error() -> None:
         parse_streaming_chat_response(_length_prefixed(error_frame))
 
 
-def test_chat_protocol_static_import_guard() -> None:
+def test_chat_wire_static_import_guard() -> None:
     forbidden = {
         "notebooklm",
         "notebooklm.client",
@@ -511,7 +511,7 @@ def test_chat_protocol_static_import_guard() -> None:
         "notebooklm._core",
         "notebooklm.rpc.overrides",
     }
-    tree = ast.parse((SRC_ROOT / "_chat_protocol.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC_ROOT / "_chat_wire.py").read_text(encoding="utf-8"))
 
     imports: set[str] = set()
     for node in ast.walk(tree):
@@ -526,10 +526,10 @@ def test_chat_protocol_static_import_guard() -> None:
                 imports.add(f"{module}.{alias.name}" if module else alias.name)
 
     violations = forbidden & imports
-    assert not violations, f"_chat_protocol.py imported forbidden modules: {violations}"
+    assert not violations, f"_chat_wire.py imported forbidden modules: {violations}"
 
 
-def test_chat_protocol_runtime_import_does_not_request_forbidden_modules(monkeypatch) -> None:
+def test_chat_wire_runtime_import_does_not_request_forbidden_modules(monkeypatch) -> None:
     import notebooklm  # noqa: F401
 
     forbidden = {
@@ -538,7 +538,7 @@ def test_chat_protocol_runtime_import_does_not_request_forbidden_modules(monkeyp
         "notebooklm._core",
         "notebooklm.rpc.overrides",
     }
-    sys.modules.pop("notebooklm._chat_protocol", None)
+    sys.modules.pop("notebooklm._chat_wire", None)
     real_import = builtins.__import__
 
     def guarded_import(
@@ -558,29 +558,29 @@ def test_chat_protocol_runtime_import_does_not_request_forbidden_modules(monkeyp
             candidates.update(f"{resolved}.{item}" for item in fromlist)
         violations = forbidden & candidates
         if violations:
-            raise AssertionError(f"_chat_protocol imported forbidden modules {violations}")
+            raise AssertionError(f"_chat_wire imported forbidden modules {violations}")
         return real_import(name, globals_, locals_, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
-    module = importlib.import_module("notebooklm._chat_protocol")
-    assert module.__name__ == "notebooklm._chat_protocol"
+    module = importlib.import_module("notebooklm._chat_wire")
+    assert module.__name__ == "notebooklm._chat_wire"
 
 
-def test_chat_protocol_and_chat_smoke_import_order() -> None:
-    for name in ("notebooklm._chat", "notebooklm._chat_protocol"):
+def test_chat_wire_and_chat_smoke_import_order() -> None:
+    for name in ("notebooklm._chat", "notebooklm._chat_wire"):
         sys.modules.pop(name, None)
-    protocol = importlib.import_module("notebooklm._chat_protocol")
+    protocol = importlib.import_module("notebooklm._chat_wire")
     chat = importlib.import_module("notebooklm._chat")
-    assert protocol.__name__ == "notebooklm._chat_protocol"
+    assert protocol.__name__ == "notebooklm._chat_wire"
     assert chat.__name__ == "notebooklm._chat"
 
-    for name in ("notebooklm._chat", "notebooklm._chat_protocol"):
+    for name in ("notebooklm._chat", "notebooklm._chat_wire"):
         sys.modules.pop(name, None)
     chat = importlib.import_module("notebooklm._chat")
-    protocol = importlib.import_module("notebooklm._chat_protocol")
+    protocol = importlib.import_module("notebooklm._chat_wire")
     assert chat.__name__ == "notebooklm._chat"
-    assert protocol.__name__ == "notebooklm._chat_protocol"
+    assert protocol.__name__ == "notebooklm._chat_wire"
 
 
 def test_chat_module_keeps_only_delegating_stream_parser_wrappers() -> None:

@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 import httpx
 
 from . import _source_upload
-from ._session_config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ._session_contracts import RpcCaller
+from ._runtime_config import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._runtime_contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer

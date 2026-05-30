@@ -3,7 +3,7 @@
 Holds the ``DEFAULT_*`` knobs that historically lived in the
 ``notebooklm._core`` preamble (the compatibility shim was removed in
 v0.5.0). Callers import directly from this module — e.g.
-``from notebooklm._session_config import DEFAULT_TIMEOUT``.
+``from notebooklm._runtime_config import DEFAULT_TIMEOUT``.
 
 These values are tuned for typical interactive workloads; see each docstring
 below for guidance on when an operator would want to override them via the

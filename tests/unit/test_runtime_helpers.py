@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`notebooklm._session_helpers`.
+"""Unit tests for :mod:`notebooklm._runtime_helpers`.
 
 Currently focused on :func:`resolve_sleep` — the shared helper that
 replaces the duplicated ``_resolve_sleep`` methods previously defined on
@@ -34,7 +34,7 @@ from _fixtures.chain import make_request
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._middleware_retry import RetryMiddleware
-from notebooklm._session_helpers import is_auth_error, resolve_sleep
+from notebooklm._runtime_helpers import is_auth_error, resolve_sleep
 from notebooklm._transport_errors import TransportServerError
 from notebooklm.rpc import AuthError, RPCError, ServerError
 

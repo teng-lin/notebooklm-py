@@ -50,7 +50,7 @@ class _Owner:
     """Test stub satisfying RpcExecutor's four collaborator dependencies.
 
     Wave 4 of session-decoupling (ADR-014 Rule 5): RpcExecutor takes
-    Kernel + SessionTransport + AuthRefreshCoordinator + ClientMetrics
+    Kernel + RuntimeTransport + AuthRefreshCoordinator + ClientMetrics
     directly via keyword arguments. This stub plays all four roles in
     one object — see :func:`_executor` for the wiring.
     """
@@ -87,7 +87,7 @@ class _Owner:
     def increment(self, **increments: int | float) -> None:
         self.metric_increments.append(increments)
 
-    # --- SessionTransport role ------------------------------------------
+    # --- RuntimeTransport role ------------------------------------------
     async def perform_authed_post(
         self,
         *,
@@ -473,7 +473,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
 
     The legacy module-level ``_sleep_late_bound`` wrapper used to re-import
     ``asyncio.sleep`` on every call, so a
-    ``monkeypatch.setattr("notebooklm._session_helpers.asyncio.sleep", …)`` after the
+    ``monkeypatch.setattr("notebooklm._runtime_helpers.asyncio.sleep", …)`` after the
     executor was already constructed still affected the live sleep path.
     The constructor-DI seam (``Session(..., sleep=…)``) intentionally captures
     the callable at construction time — see ``docs/improvement.md`` §4.1.

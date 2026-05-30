@@ -4,9 +4,9 @@ Covers the helpers introduced by Stage B1 PR 1 and made live by Stage B1
 PR 2 of the post-refactoring plan
 (``docs/post-refactoring-plan-2026-05-27.md``):
 
-- :class:`notebooklm._session_init.ClientInternals` dataclass
-- :func:`notebooklm._session_init.resolve_seam_defaults`
-- :func:`notebooklm._session_init.compose_client_internals`
+- :class:`notebooklm._runtime_init.ClientInternals` dataclass
+- :func:`notebooklm._runtime_init.resolve_seam_defaults`
+- :func:`notebooklm._runtime_init.compose_client_internals`
 - ``ClientComposed.bind_*`` write-once setters
 - ``ClientComposed`` required-property guards
 
@@ -27,7 +27,7 @@ import pytest
 from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._client_composed import ClientComposed
 from notebooklm._client_seams import ClientSeams
-from notebooklm._session_init import (
+from notebooklm._runtime_init import (
     ClientInternals,
     compose_client_internals,
     resolve_seam_defaults,
@@ -70,9 +70,9 @@ def test_resolve_seam_defaults_returns_module_bindings_when_none() -> None:
     # ``async_client_factory`` resolves to :class:`httpx.AsyncClient`.
     assert resolved["async_client_factory"] is httpx.AsyncClient
 
-    # ``is_auth_error`` resolves to :func:`notebooklm._session_helpers.is_auth_error`
+    # ``is_auth_error`` resolves to :func:`notebooklm._runtime_helpers.is_auth_error`
     # via the lazy import inside :func:`_default_is_auth_error`.
-    from notebooklm._session_helpers import is_auth_error as canonical_is_auth_error
+    from notebooklm._runtime_helpers import is_auth_error as canonical_is_auth_error
 
     assert resolved["is_auth_error"] is canonical_is_auth_error
 
@@ -356,7 +356,7 @@ def test_client_composed_chain_metadata_binder_raises_on_double_bind() -> None:
 
     # Build a sentinel ``WiredMiddleware`` carrying the existing values so
     # the rejection comes from the write-once guard, not a missing field.
-    from notebooklm._session_init import WiredMiddleware
+    from notebooklm._runtime_init import WiredMiddleware
 
     wired = WiredMiddleware(
         chain_builder=holder.chain_builder,

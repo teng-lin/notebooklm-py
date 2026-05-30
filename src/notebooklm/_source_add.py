@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from ._idempotency import idempotent_create
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .exceptions import (
     AuthError,
     NetworkError,

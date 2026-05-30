@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ._env import get_base_url
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .rpc import RPCMethod
 
 

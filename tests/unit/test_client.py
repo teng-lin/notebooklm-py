@@ -11,7 +11,7 @@ from pytest_httpx import HTTPXMock
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from _helpers.client_factory import build_client_shell_for_tests
 from conftest import install_post_as_stream
-from notebooklm._session_helpers import is_auth_error
+from notebooklm._runtime_helpers import is_auth_error
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCError, RPCMethod

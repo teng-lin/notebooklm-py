@@ -10,19 +10,19 @@ and exception chain.
 As of Tier-12 PR 12.5 the drain-tracking bookkeeping
 (``_begin_transport_post`` / ``_finish_transport_post``) has moved into
 ``DrainMiddleware`` at the outermost chain position around
-``SessionTransport.perform_authed_post``. ``chat_aware_authed_post`` no
+``RuntimeTransport.perform_authed_post``. ``chat_aware_authed_post`` no
 longer brackets its own transport call with explicit drain calls —
 admission and finalization are middleware concerns now. The tests
 correspondingly stub only ``perform_authed_post`` on the transport.
 
 As of Wave 8 of the session-decoupling plan (ADR-014 Rule 2 Corollary),
-``chat_aware_authed_post`` takes the :class:`SessionTransport` collaborator
+``chat_aware_authed_post`` takes the :class:`RuntimeTransport` collaborator
 directly rather than a chat-local ``ChatRuntime`` Protocol, and calls
 ``transport.perform_authed_post(build_request=..., log_label=parse_label)``
 on it.
 
 The stub ``transport`` is a lightweight ``SimpleNamespace`` rather than a
-``MagicMock(spec=SessionTransport)`` so the tests stay independent of the
+``MagicMock(spec=RuntimeTransport)`` so the tests stay independent of the
 class's exact member set — they only need the transport primitive the
 function actually calls. The drain-fires-on-exception invariant is now
 covered by
@@ -67,7 +67,7 @@ def _make_stub_transport(
     transport_side_effect: Any = None,
     transport_return_value: Any = None,
 ) -> SimpleNamespace:
-    """Build a stub ``transport`` matching the slice of ``SessionTransport`` we exercise.
+    """Build a stub ``transport`` matching the slice of ``RuntimeTransport`` we exercise.
 
     Pass ``transport_side_effect`` to make ``perform_authed_post`` raise
     (exception instance) or invoke a callable; pass ``transport_return_value``
@@ -78,7 +78,7 @@ def _make_stub_transport(
     into DrainMiddleware, so the stub no longer needs to mock them —
     ``chat_aware_authed_post`` does not call them. Wave 8 of
     session-decoupling switched the helper to take a
-    :class:`SessionTransport` directly, so the stub exposes the
+    :class:`RuntimeTransport` directly, so the stub exposes the
     transport's ``perform_authed_post`` method (the chat-side
     ``parse_label`` is forwarded to it as ``log_label``).
     """
@@ -309,7 +309,7 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
 @pytest.mark.asyncio
 async def test_raw_http_status_error_maps_to_chat_error():
     """Non-401 / non-429 / non-5xx status errors that fall through
-    ``SessionTransport.perform_authed_post`` reach this layer as raw
+    ``RuntimeTransport.perform_authed_post`` reach this layer as raw
     ``httpx.HTTPStatusError`` and get wrapped in a ``ChatError`` that
     surfaces the status code."""
     raw_exc = _make_status_error(404)

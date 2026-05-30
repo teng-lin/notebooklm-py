@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from ._row_adapters_artifacts import ArtifactRow
-from ._session_contracts import RpcCaller
+from ._runtime_contracts import RpcCaller
 from .rpc import ArtifactTypeCode, RPCError, RPCMethod
 from .types import Artifact, ArtifactNotReadyError, ArtifactType
 
