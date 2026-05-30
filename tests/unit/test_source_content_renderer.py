@@ -269,5 +269,5 @@ async def test_get_guide_shape_variants_return_stable_defaults(response: Any) ->
     guide = await renderer.get_guide("nb_1", "src_1")
 
     assert set(guide) == {"summary", "keywords"}
-    assert isinstance(guide["summary"], str)
-    assert isinstance(guide["keywords"], list)
+    assert isinstance(guide.summary, str)
+    assert isinstance(guide.keywords, tuple)

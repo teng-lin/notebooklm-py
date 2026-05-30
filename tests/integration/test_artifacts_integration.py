@@ -1786,8 +1786,8 @@ class TestGenerateMindMapParsing:
             ):
                 result = await client.artifacts.generate_mind_map("nb_123")
 
-        assert result["mind_map"] == mind_map_dict
-        assert result["note_id"] == "note_created_001"
+        assert result.mind_map == mind_map_dict
+        assert result.note_id == "note_created_001"
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_handles_dict_not_string(
@@ -1834,8 +1834,8 @@ class TestGenerateMindMapParsing:
             ):
                 result = await client.artifacts.generate_mind_map("nb_123")
 
-        assert result["mind_map"] == mind_map_dict
-        assert result["note_id"] == "note_dict_001"
+        assert result.mind_map == mind_map_dict
+        assert result.note_id == "note_dict_001"
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_with_source_ids_none_fetches_sources(

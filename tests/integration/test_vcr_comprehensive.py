@@ -162,9 +162,9 @@ class TestSourcesAPI:
             guide = await client.sources.get_guide(READONLY_NOTEBOOK_ID, sources[0].id)
         assert guide is not None
         # Verify values are actually populated (catches parsing bugs like issue #70)
-        assert guide["summary"], "Expected non-empty summary from source guide"
-        assert isinstance(guide["keywords"], list)
-        assert len(guide["keywords"]) > 0, "Expected non-empty keywords from source guide"
+        assert guide.summary, "Expected non-empty summary from source guide"
+        assert isinstance(guide.keywords, tuple)
+        assert len(guide.keywords) > 0, "Expected non-empty keywords from source guide"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -998,7 +998,7 @@ class TestResearchAPI:
             )
         assert result is not None
         assert "task_id" in result
-        assert result["mode"] == "fast"
+        assert result.mode == "fast"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -1019,7 +1019,7 @@ class TestResearchAPI:
             # Poll for results
             result = await client.research.poll(
                 MUTABLE_NOTEBOOK_ID,
-                task_id=start_result["task_id"],
+                task_id=start_result.task_id,
             )
         assert result is not None
         assert "status" in result
@@ -1043,7 +1043,7 @@ class TestResearchAPI:
             # Poll until we have sources (with timeout via cassette)
             poll_result = await client.research.poll(
                 MUTABLE_NOTEBOOK_ID,
-                task_id=start_result["task_id"],
+                task_id=start_result.task_id,
             )
             if not poll_result.get("sources"):
                 pytest.skip("No research sources found")
@@ -1051,8 +1051,8 @@ class TestResearchAPI:
             # Import first source
             imported = await client.research.import_sources(
                 MUTABLE_NOTEBOOK_ID,
-                start_result["task_id"],
-                poll_result["sources"][:1],
+                start_result.task_id,
+                poll_result.sources[:1],
             )
         assert isinstance(imported, list)
 
@@ -1070,4 +1070,4 @@ class TestResearchAPI:
             )
         assert result is not None
         assert "task_id" in result
-        assert result["mode"] == "deep"
+        assert result.mode == "deep"

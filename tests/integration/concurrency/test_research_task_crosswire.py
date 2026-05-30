@@ -88,13 +88,13 @@ async def test_scenario_a_explicit_task_id_returns_matching_task(
             warnings.simplefilter("error", DeprecationWarning)
             result_a = await client.research.poll("nb_xwire", task_id="task_A")
 
-    assert result_a["task_id"] == "task_A"
-    assert result_a["query"] == "query A"
+    assert result_a.task_id == "task_A"
+    assert result_a.query == "query A"
     # The ``tasks`` list should reflect the filtered view — only the
     # matched task remains, otherwise downstream callers iterating
     # ``tasks`` would still see the un-asked-for sibling.
-    assert [t["task_id"] for t in result_a["tasks"]] == ["task_A"]
-    assert result_a["sources"][0]["research_task_id"] == "task_A"
+    assert [t.task_id for t in result_a.tasks] == ["task_A"]
+    assert result_a.sources[0].research_task_id == "task_A"
 
     # Fresh response for the second call — httpx_mock is per-request FIFO.
     httpx_mock.add_response(content=response_body.encode(), method="POST")
@@ -103,10 +103,10 @@ async def test_scenario_a_explicit_task_id_returns_matching_task(
             warnings.simplefilter("error", DeprecationWarning)
             result_b = await client.research.poll("nb_xwire", task_id="task_B")
 
-    assert result_b["task_id"] == "task_B"
-    assert result_b["query"] == "query B"
-    assert [t["task_id"] for t in result_b["tasks"]] == ["task_B"]
-    assert result_b["sources"][0]["research_task_id"] == "task_B"
+    assert result_b.task_id == "task_B"
+    assert result_b.query == "query B"
+    assert [t.task_id for t in result_b.tasks] == ["task_B"]
+    assert result_b.sources[0].research_task_id == "task_B"
 
 
 @pytest.mark.asyncio
@@ -132,8 +132,8 @@ async def test_scenario_b_no_task_id_single_in_flight_no_warning(
             warnings.simplefilter("always")
             result = await client.research.poll("nb_solo")
 
-    assert result["task_id"] == "task_solo"
-    assert result["query"] == "solo query"
+    assert result.task_id == "task_solo"
+    assert result.query == "solo query"
     # No deprecation warning — single in-flight task is unambiguous.
     deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert deprecation_warnings == [], (
@@ -167,10 +167,10 @@ async def test_scenario_c_no_task_id_multiple_in_flight_warns(
             result = await client.research.poll("nb_ambig")
 
     # Old behavior: latest (first) task wins.
-    assert result["task_id"] == "task_A"
-    assert result["query"] == "query A"
+    assert result.task_id == "task_A"
+    assert result.query == "query A"
     # All parsed tasks remain in ``tasks`` (old shape).
-    assert [t["task_id"] for t in result["tasks"]] == ["task_A", "task_B"]
+    assert [t.task_id for t in result.tasks] == ["task_A", "task_B"]
 
     # DeprecationWarning must fire exactly once for this ambiguity.
     deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]

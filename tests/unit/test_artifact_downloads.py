@@ -447,9 +447,9 @@ class TestMindMapGeneration:
         result = await api.generate_mind_map("nb_123")
 
         assert result is not None
-        assert "mind_map" in result
+        assert result.mind_map is not None
         # note_id is from the explicit CREATE_NOTE call.
-        assert result["note_id"] == "created_note_123"
+        assert result.note_id == "created_note_123"
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_with_dict(self, mock_artifacts_api):
@@ -479,9 +479,9 @@ class TestMindMapGeneration:
         result = await api.generate_mind_map("nb_123")
 
         assert result is not None
-        assert result["mind_map"]["nodes"][0]["id"] == "1"
+        assert result.mind_map["nodes"][0]["id"] == "1"
         # note_id is from the explicit CREATE_NOTE call.
-        assert result["note_id"] == "created_note_123"
+        assert result.note_id == "created_note_123"
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_empty_result(self, mock_artifacts_api):
@@ -494,8 +494,8 @@ class TestMindMapGeneration:
 
         result = await api.generate_mind_map("nb_123")
 
-        assert result["mind_map"] is None
-        assert result["note_id"] is None
+        assert result.mind_map is None
+        assert result.note_id is None
 
 
 class TestDownloadUrl:

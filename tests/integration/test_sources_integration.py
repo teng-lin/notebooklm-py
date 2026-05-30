@@ -654,8 +654,8 @@ class TestSourcesAPI:
 
         assert "summary" in guide
         assert "keywords" in guide
-        assert "**summary**" in guide["summary"]
-        assert guide["keywords"] == ["keyword1", "keyword2", "keyword3"]
+        assert "**summary**" in guide.summary
+        assert guide.keywords == ("keyword1", "keyword2", "keyword3")
 
     @pytest.mark.asyncio
     async def test_get_guide_empty(
@@ -672,8 +672,8 @@ class TestSourcesAPI:
         async with NotebookLMClient(auth_tokens) as client:
             guide = await client.sources.get_guide("nb_123", "src_001")
 
-        assert guide["summary"] == ""
-        assert guide["keywords"] == []
+        assert guide.summary == ""
+        assert guide.keywords == ()
 
     @pytest.mark.asyncio
     async def test_rename_source(
@@ -2378,8 +2378,8 @@ class TestGetGuideEdgeCases:
         async with NotebookLMClient(auth_tokens) as client:
             guide = await client.sources.get_guide("nb_123", "src_001")
 
-        assert guide["summary"] == ""
-        assert guide["keywords"] == []
+        assert guide.summary == ""
+        assert guide.keywords == ()
 
     @pytest.mark.asyncio
     async def test_get_guide_inner_not_list(
@@ -2396,8 +2396,8 @@ class TestGetGuideEdgeCases:
         async with NotebookLMClient(auth_tokens) as client:
             guide = await client.sources.get_guide("nb_123", "src_001")
 
-        assert guide["summary"] == ""
-        assert guide["keywords"] == []
+        assert guide.summary == ""
+        assert guide.keywords == ()
 
     @pytest.mark.asyncio
     async def test_get_guide_result_false(
@@ -2413,8 +2413,8 @@ class TestGetGuideEdgeCases:
         async with NotebookLMClient(auth_tokens) as client:
             guide = await client.sources.get_guide("nb_123", "src_001")
 
-        assert guide["summary"] == ""
-        assert guide["keywords"] == []
+        assert guide.summary == ""
+        assert guide.keywords == ()
 
 
 class TestGetFulltextResult0Branches:

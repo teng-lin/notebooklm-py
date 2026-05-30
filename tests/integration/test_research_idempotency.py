@@ -275,5 +275,5 @@ async def test_start_fast_research_happy_path_one_post(auth_tokens) -> None:
         await client._collaborators.kernel.get_http_client().aclose()
 
     assert result is not None
-    assert result["task_id"] == "task_xyz"
+    assert result.task_id == "task_xyz"
     assert request_count == 1

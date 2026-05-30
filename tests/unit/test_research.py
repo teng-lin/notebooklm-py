@@ -173,8 +173,8 @@ class TestResearch:
                 notebook_id="nb_123", query="Quantum computing", mode="fast"
             )
 
-        assert result["task_id"] == "task_123"
-        assert result["mode"] == "fast"
+        assert result.task_id == "task_123"
+        assert result.mode == "fast"
 
     @pytest.mark.asyncio
     async def test_poll_research_completed(self, auth_tokens, httpx_mock, build_rpc_response):
@@ -192,14 +192,14 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "completed"
-        assert len(result["sources"]) == 1
-        assert result["sources"][0]["url"] == "http://example.com"
-        assert result["sources"][0]["result_type"] == 1
-        assert result["summary"] == "Summary text"
-        assert result["report"] == ""
-        assert len(result["tasks"]) == 1
-        assert result["tasks"][0]["task_id"] == "task_123"
+        assert result.status == "completed"
+        assert len(result.sources) == 1
+        assert result.sources[0].url == "http://example.com"
+        assert result.sources[0].result_type == 1
+        assert result.summary == "Summary text"
+        assert result.report == ""
+        assert len(result.tasks) == 1
+        assert result.tasks[0].task_id == "task_123"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_pins_discovered_task_id(
@@ -265,11 +265,11 @@ class TestResearch:
                     initial_interval=1,
                 )
 
-        assert result["status"] == "completed"
-        assert result["task_id"] == "task_A"
-        assert result["query"] == "query A"
-        assert result["sources"][0]["research_task_id"] == "task_A"
-        assert result["sources"][0]["title"] == "Final A"
+        assert result.status == "completed"
+        assert result.task_id == "task_A"
+        assert result.query == "query A"
+        assert result.sources[0].research_task_id == "task_A"
+        assert result.sources[0].title == "Final A"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_accepts_initial_task_id(
@@ -313,9 +313,9 @@ class TestResearch:
                     initial_interval=1,
                 )
 
-        assert result["status"] == "completed"
-        assert result["task_id"] == "task_A"
-        assert result["sources"][0]["title"] == "Result A"
+        assert result.status == "completed"
+        assert result.task_id == "task_A"
+        assert result.sources[0].title == "Result A"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_returns_no_research(
@@ -375,8 +375,8 @@ class TestResearch:
                 initial_interval=1,
             )
 
-        assert result["status"] == "completed"
-        assert result["task_id"] == "task_123"
+        assert result.status == "completed"
+        assert result.task_id == "task_123"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_returns_failed_terminal_status(
@@ -408,8 +408,8 @@ class TestResearch:
                 initial_interval=1,
             )
 
-        assert result["status"] == "failed"
-        assert result["task_id"] == "task_123"
+        assert result.status == "failed"
+        assert result.task_id == "task_123"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion_raises_timeout(
@@ -574,9 +574,9 @@ class TestResearch:
                 notebook_id="nb_123", query="AI research", mode="deep"
             )
 
-        assert result["task_id"] == "task_456"
-        assert result["report_id"] == "report_123"
-        assert result["mode"] == "deep"
+        assert result.task_id == "task_456"
+        assert result.report_id == "report_123"
+        assert result.mode == "deep"
 
     @pytest.mark.asyncio
     async def test_start_research_invalid_source(self, auth_tokens):
@@ -627,7 +627,7 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "no_research"
+        assert result.status == "no_research"
 
     @pytest.mark.asyncio
     async def test_poll_in_progress(self, auth_tokens, httpx_mock, build_rpc_response):
@@ -645,8 +645,8 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "in_progress"
-        assert result["query"] == "research query"
+        assert result.status == "in_progress"
+        assert result.query == "research query"
 
     @pytest.mark.asyncio
     async def test_poll_deep_research_sources(self, auth_tokens, httpx_mock, build_rpc_response):
@@ -659,14 +659,14 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "completed"
-        assert len(result["sources"]) == 1
-        assert result["sources"][0]["title"] == "Deep Research Finding"
-        assert result["sources"][0]["url"] == ""
-        assert result["sources"][0]["result_type"] == 5
-        assert result["sources"][0]["research_task_id"] == "task_123"
-        assert result["sources"][0]["report_markdown"] == "# Report markdown"
-        assert result["report"] == "# Report markdown"
+        assert result.status == "completed"
+        assert len(result.sources) == 1
+        assert result.sources[0].title == "Deep Research Finding"
+        assert result.sources[0].url == ""
+        assert result.sources[0].result_type == 5
+        assert result.sources[0].research_task_id == "task_123"
+        assert result.sources[0].report_markdown == "# Report markdown"
+        assert result.report == "# Report markdown"
 
     @pytest.mark.asyncio
     async def test_poll_returns_all_tasks(self, auth_tokens, httpx_mock, build_rpc_response):
@@ -688,12 +688,12 @@ class TestResearch:
             with pytest.warns(DeprecationWarning, match="task_id"):
                 result = await client.research.poll("nb_123")
 
-        assert result["task_id"] == "task_latest"
-        assert result["query"] == "latest query"
-        assert len(result["tasks"]) == 2
-        assert result["tasks"][0]["task_id"] == "task_latest"
-        assert result["tasks"][1]["task_id"] == "task_older"
-        assert result["tasks"][1]["query"] == "older query"
+        assert result.task_id == "task_latest"
+        assert result.query == "latest query"
+        assert len(result.tasks) == 2
+        assert result.tasks[0].task_id == "task_latest"
+        assert result.tasks[1].task_id == "task_older"
+        assert result.tasks[1].query == "older query"
 
     @pytest.mark.asyncio
     async def test_poll_joins_legacy_report_chunks(
@@ -708,8 +708,8 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["report"] == "chunk one\n\nchunk two"
-        assert result["tasks"][0]["report"] == "chunk one\n\nchunk two"
+        assert result.report == "chunk one\n\nchunk two"
+        assert result.tasks[0].report == "chunk one\n\nchunk two"
 
     @pytest.mark.asyncio
     async def test_poll_deep_research_current_report_shape(
@@ -734,12 +734,12 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "completed"
-        assert result["task_id"] == "report_123"
-        assert result["sources"][0]["title"] == "Deep Research Report"
-        assert result["sources"][0]["report_markdown"] == "# Current report markdown"
-        assert result["sources"][0]["research_task_id"] == "report_123"
-        assert result["report"] == "# Current report markdown"
+        assert result.status == "completed"
+        assert result.task_id == "report_123"
+        assert result.sources[0].title == "Deep Research Report"
+        assert result.sources[0].report_markdown == "# Current report markdown"
+        assert result.sources[0].research_task_id == "report_123"
+        assert result.report == "# Current report markdown"
 
     @pytest.mark.asyncio
     async def test_poll_fast_research_string_drive_result_type(
@@ -754,10 +754,10 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "completed"
-        assert result["sources"][0]["url"] == "https://drive.example.com/doc"
-        assert result["sources"][0]["title"] == "Drive Doc"
-        assert result["sources"][0]["result_type"] == 2
+        assert result.status == "completed"
+        assert result.sources[0].url == "https://drive.example.com/doc"
+        assert result.sources[0].title == "Drive Doc"
+        assert result.sources[0].result_type == 2
 
     @pytest.mark.asyncio
     async def test_poll_status_code_6_completed(self, auth_tokens, httpx_mock, build_rpc_response):
@@ -769,7 +769,7 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "completed"
+        assert result.status == "completed"
 
     @pytest.mark.asyncio
     async def test_poll_unknown_non_null_status_code_failed(
@@ -783,7 +783,7 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "failed"
+        assert result.status == "failed"
 
     @pytest.mark.asyncio
     async def test_import_sources_skips_result_type_5(
@@ -1151,11 +1151,11 @@ class TestResearch:
                 notebook_id="nb_123", query="AI research query", mode="fast"
             )
             assert start_result is not None
-            task_id = start_result["task_id"]
+            task_id = start_result.task_id
 
             poll_result = await client.research.poll("nb_123")
-            assert poll_result["status"] == "completed"
-            sources = poll_result["sources"]
+            assert poll_result.status == "completed"
+            sources = poll_result.sources
             assert len(sources) == 3
 
             for src in sources:
@@ -1220,16 +1220,16 @@ class TestResearch:
                 notebook_id="nb_123", query="deep AI research", mode="deep"
             )
             assert start_result is not None
-            assert start_result["mode"] == "deep"
+            assert start_result.mode == "deep"
 
             poll_result = await client.research.poll("nb_123")
-            assert poll_result["status"] == "completed"
-            assert poll_result["task_id"] == "report_789"
-            sources = poll_result["sources"]
+            assert poll_result.status == "completed"
+            assert poll_result.task_id == "report_789"
+            sources = poll_result.sources
             assert len(sources) == 4
 
             # Sources with URLs can be imported; sources without URLs are filtered
-            sources_with_urls = [s for s in sources if s.get("url")]
+            sources_with_urls = [s for s in sources if s.url]
             assert len(sources_with_urls) == 2
 
             # for deep research the authoritative id on the wire is
@@ -1239,7 +1239,7 @@ class TestResearch:
             # mismatch guard accepts the batch.
             imported = await client.research.import_sources(
                 notebook_id="nb_123",
-                task_id=poll_result["task_id"],
+                task_id=poll_result.task_id,
                 sources=sources,  # Pass all, filtering happens internally
             )
 
@@ -1260,8 +1260,8 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "no_research"
-        assert result["tasks"] == []
+        assert result.status == "no_research"
+        assert result.tasks == ()
 
     @pytest.mark.asyncio
     async def test_poll_no_research_all_invalid_returns_tasks_key(
@@ -1274,8 +1274,8 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["status"] == "no_research"
-        assert result["tasks"] == []
+        assert result.status == "no_research"
+        assert result.tasks == ()
 
     @pytest.mark.asyncio
     async def test_poll_unknown_string_result_type_preserved(
@@ -1290,7 +1290,7 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["sources"][0]["result_type"] == "video"
+        assert result.sources[0].result_type == "video"
 
     @pytest.mark.asyncio
     async def test_poll_legacy_report_mixed_chunks(
@@ -1305,7 +1305,7 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["report"] == "chunk1\n\nchunk2"
+        assert result.report == "chunk1\n\nchunk2"
 
     @pytest.mark.asyncio
     async def test_poll_source_single_element_list_title_dropped(
@@ -1320,4 +1320,4 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.research.poll("nb_123")
 
-        assert result["sources"] == []
+        assert result.sources == ()

@@ -383,6 +383,6 @@ async def test_generate_mind_map_happy_path_still_returns_mind_map(auth_tokens) 
     finally:
         await client._collaborators.kernel.get_http_client().aclose()
 
-    assert result["mind_map"] == mind_map_dict
-    assert result["note_id"] == "note_stub"
+    assert result.mind_map == mind_map_dict
+    assert result.note_id == "note_stub"
     assert mind_map_count == 1

@@ -145,8 +145,8 @@ class TestGetSourceGuide:
 
         result = await mock_client.sources.get_guide("notebook_123", "source_456")
 
-        assert result["summary"] == "This is a **summary** of the document."
-        assert result["keywords"] == ["Topic 1", "Topic 2", "Topic 3"]
+        assert result.summary == "This is a **summary** of the document."
+        assert result.keywords == ("Topic 1", "Topic 2", "Topic 3")
 
     @pytest.mark.asyncio
     async def test_get_source_guide_handles_empty(self, mock_client):
@@ -155,8 +155,8 @@ class TestGetSourceGuide:
 
         result = await mock_client.sources.get_guide("notebook_123", "source_456")
 
-        assert result["summary"] == ""
-        assert result["keywords"] == []
+        assert result.summary == ""
+        assert result.keywords == ()
 
 
 class TestGetSuggestedReportFormats:
