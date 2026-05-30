@@ -51,16 +51,12 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
     The ``khqZz`` (``GET_CONVERSATION_TURNS``) response packs each AI answer
     as ``turn[4][0][0]`` — three nested wrappers around the answer text. This
     helper delegates the inner-most descent to :func:`safe_index`, which
-    consults the strict-decode policy defined in :mod:`notebooklm._env`
-    (``is_strict_decode_enabled``). Strict-decode is the default when
-    ``NOTEBOOKLM_STRICT_DECODE`` is unset (or set to ``"1" / "true" / "True"``):
-    descent failures raise :class:`~notebooklm.exceptions.UnknownRPCMethodError`
-    so callers fail fast on Google-side shape drift. Setting
-    ``NOTEBOOKLM_STRICT_DECODE=0`` (or any other non-truthy value) opts back
-    into legacy soft-mode behavior — :func:`safe_index` logs a structured
-    warning and returns ``None`` instead of raising. See ADR-011
-    (``docs/adr/0011-schema-validation-policy.md``) for the rationale and
-    the opt-out retirement timeline.
+    enforces strict decoding: descent failures raise
+    :class:`~notebooklm.exceptions.UnknownRPCMethodError` so callers fail
+    fast on Google-side shape drift. The legacy
+    ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0.
+    See ADR-011 (``docs/adr/0011-schema-validation-policy.md``) for the
+    rationale.
 
     Args:
         next_turn: The candidate answer turn (a ``turn[2] == 2`` row from the
@@ -68,10 +64,11 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
             with ``len(next_turn) > 4`` and ``next_turn[2] == 2``.
 
     Returns:
-        The answer-text string on success. ``None`` when the inner
-        ``[4][0][0]`` chain drifts or the leaf is not a string — callers
-        should fall back to an empty-answer pair so chat history rendering
-        degrades gracefully rather than crashing.
+        The answer-text string on success, or ``None`` when the leaf at
+        ``[4][0][0]`` descends successfully to a non-string value. A genuine
+        descent failure (shape drift) raises
+        :class:`~notebooklm.exceptions.UnknownRPCMethodError` from
+        :func:`safe_index` — strict decoding is the only mode.
     """
     content = safe_index(
         next_turn,
@@ -81,13 +78,10 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
         method_id=RPCMethod.GET_CONVERSATION_TURNS.value,
         source="_chat._extract_next_turn_content",
     )
-    if content is None:
-        return None
     if not isinstance(content, str):
-        # The schema-drift contract returns ``None`` for non-string leaves so
-        # the caller's empty-answer fallback fires uniformly. A non-string
-        # leaf is rare enough to warrant a debug breadcrumb but not a warning
-        # (safe_index already emitted one for genuine descent failures).
+        # A non-string leaf at a structurally-valid path is normalised to
+        # ``None`` so the caller's empty-answer fallback fires uniformly. This
+        # is distinct from shape drift, which safe_index raises on.
         logger.debug(
             "next_turn content is not a string (type=%s); treating as drift",
             type(content).__name__,
@@ -619,10 +613,11 @@ class ChatAPI:
                 if i + 1 < len(turns):
                     next_turn = turns[i + 1]
                     if isinstance(next_turn, list) and len(next_turn) > 4 and next_turn[2] == 2:
-                        # Named extractor folds the previous ``try/except`` —
-                        # ``safe_index`` handles schema-drift logging and
-                        # returns ``None`` so the empty-answer fallback fires
-                        # uniformly. Strict-decode mode still raises through.
+                        # Named extractor folds the previous ``try/except``.
+                        # A non-string leaf yields ``None`` (empty-answer
+                        # fallback); genuine shape drift raises
+                        # ``UnknownRPCMethodError`` through ``safe_index`` under
+                        # strict decoding (the only mode).
                         content = _extract_next_turn_content(next_turn)
                         a = str(content or "")
                         i += 1  # skip the answer turn

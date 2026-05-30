@@ -4,7 +4,6 @@ These tests target specific uncovered lines identified by coverage analysis.
 """
 
 import asyncio
-import warnings
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,6 +15,7 @@ from notebooklm.exceptions import (
     ArtifactInProgressTimeoutError,
     ArtifactPendingTimeoutError,
     ArtifactTimeoutError,
+    UnknownRPCMethodError,
 )
 from notebooklm.rpc.decoder import RPCError
 from notebooklm.types import ArtifactDownloadError, GenerationStatus
@@ -428,36 +428,24 @@ class TestWaitForCompletion:
 class TestParseGenerationResult:
     """Test _parse_generation_result parsing logic."""
 
-    def test_parse_null_result(self, mock_artifacts_api, monkeypatch):
-        """Test parsing None result returns failed status.
+    def test_parse_null_result(self, mock_artifacts_api):
+        """Parsing a ``None`` result raises under strict decoding.
 
-        Soft-mode opt-in: post-PR 13.9a the strict-decode default raises on
-        the missing artifact_id descent. The "GenerationStatus(failed, '')"
-        sentinel is the legacy fallback this test pins, so opt back into
-        soft mode explicitly. Strict-mode coverage of the same input lives
+        Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+        soft-mode opt-out was retired in v0.7.0); deeper drift coverage lives
         in ``tests/unit/test_artifacts_drift.py``.
         """
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         api, _ = mock_artifacts_api
 
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            result = api._parse_generation_result(None, method_id="R7cb6c")
+        with pytest.raises(UnknownRPCMethodError):
+            api._parse_generation_result(None, method_id="R7cb6c")
 
-        assert result.status == "failed"
-        assert result.task_id == ""
-        assert "no artifact_id" in result.error.lower()
-
-    def test_parse_empty_list_result(self, mock_artifacts_api, monkeypatch):
-        """Test parsing empty list returns failed status."""
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+    def test_parse_empty_list_result(self, mock_artifacts_api):
+        """Parsing an empty list raises under strict decoding."""
         api, _ = mock_artifacts_api
 
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            result = api._parse_generation_result([], method_id="R7cb6c")
-
-        assert result.status == "failed"
-        assert result.task_id == ""
-        assert "no artifact_id" in result.error.lower()
+        with pytest.raises(UnknownRPCMethodError):
+            api._parse_generation_result([], method_id="R7cb6c")
 
     def test_parse_valid_in_progress(self, mock_artifacts_api):
         """Test parsing valid in_progress status (code 1)."""
@@ -495,43 +483,29 @@ class TestParseGenerationResult:
 
 
 # =============================================================================
-# TIER 2: Deprecation warning test (lines 1127-1135)
+# TIER 2: Removed poll_interval keyword
 # =============================================================================
 
 
-class TestDeprecationWarnings:
-    """Test deprecation warnings."""
+class TestRemovedPollIntervalKeyword:
+    """The deprecated ``poll_interval`` keyword was removed in v0.7.0."""
 
     @pytest.mark.asyncio
-    async def test_poll_interval_deprecation_warning(self, mock_artifacts_api):
-        """Test that poll_interval parameter triggers deprecation warning."""
-        api, mock_core = mock_artifacts_api
+    async def test_poll_interval_keyword_rejected(self, mock_artifacts_api):
+        """Passing the removed ``poll_interval`` keyword raises ``TypeError``.
 
-        # Return completed immediately via LIST_ARTIFACTS format
-        mock_core.rpc_executor.rpc_call.return_value = [
-            [
-                [
-                    "task_123",
-                    "Title",
-                    2,  # REPORT type (no URL check needed)
-                    None,
-                    3,  # COMPLETED status
-                ]
-            ]
-        ]
+        ``wait_for_completion`` only accepts ``initial_interval`` now (see
+        ``docs/deprecations.md``); the deprecated ``poll_interval`` alias was
+        removed, so Python's argument binding rejects it.
+        """
+        api, _ = mock_artifacts_api
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with pytest.raises(TypeError):
             await api.wait_for_completion(
                 "nb_123",
                 "task_123",
-                poll_interval=5.0,  # Deprecated parameter
+                poll_interval=5.0,  # removed keyword
             )
-
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "poll_interval is deprecated" in str(w[0].message)
-        assert "v0.6.0" in str(w[0].message)
 
 
 # =============================================================================

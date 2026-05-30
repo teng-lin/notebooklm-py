@@ -75,22 +75,21 @@ async def test_list_uses_exact_get_notebook_rpc_shape() -> None:
         ([["Notebook", "not-a-list"]], "Sources data for nb_123 is not a list"),
     ],
 )
-async def test_malformed_payloads_log_and_return_empty(
+async def test_malformed_payloads_log_and_raise(
     payload: Any,
     message: str,
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Strict-decode is the default since PR 13.9a, so the warn-and-return-[]
-    # fallback now requires an explicit opt-out (issue #1159). Pin soft mode
-    # to keep exercising the legacy path.
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+    # Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+    # soft-mode opt-out was retired in v0.7.0): a malformed payload always logs
+    # the diagnostic warning AND raises, rather than silently returning ``[]``
+    # (issue #1159).
     lister = SourceLister(RecordingRpc(payload))
     caplog.set_level("WARNING", logger="notebooklm._sources")
 
-    sources = await lister.list("nb_123")
+    with pytest.raises(RPCError):
+        await lister.list("nb_123")
 
-    assert sources == []
     assert message in caplog.text
     assert caplog.records[0].name == "notebooklm._sources"
 

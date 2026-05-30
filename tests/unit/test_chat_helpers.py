@@ -2,18 +2,18 @@
 
 Focuses on ``_extract_next_turn_content`` — the named extractor that
 replaces the raw ``next_turn[4][0][0]`` deep-index chain in
-:meth:`ChatAPI._parse_turns_to_qa_pairs`. These tests pin the soft-mode
-contract (returns ``None`` on shape drift, never raises) and exercise the
-happy path plus two canonical drift shapes.
+:meth:`ChatAPI._parse_turns_to_qa_pairs`. Strict decoding is the only mode
+(the ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0):
+shape drift raises ``UnknownRPCMethodError`` while a non-string leaf at a
+valid path normalises to ``None``.
 """
 
 from __future__ import annotations
 
-import logging
-
 import pytest
 
 from notebooklm._chat import ChatAPI, _extract_next_turn_content
+from notebooklm.exceptions import UnknownRPCMethodError
 
 # ---------------------------------------------------------------------------
 # _extract_next_turn_content — happy path
@@ -33,62 +33,35 @@ def test_extract_next_turn_content_happy_path() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _extract_next_turn_content — drift shapes (must NOT raise)
+# _extract_next_turn_content — drift shapes (raise under strict decoding)
 # ---------------------------------------------------------------------------
 
 
-def test_extract_next_turn_content_missing_inner_list(
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``turn[4]`` exists but is an empty list — descent stops at index 0."""
-    # Post-PR 13.9a the default is strict; this site pins the soft-mode
-    # warn-and-return-None contract by opting back in.
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+def test_extract_next_turn_content_missing_inner_list() -> None:
+    """``turn[4]`` exists but is an empty list — descent drift raises."""
     next_turn = [None, None, 2, None, []]
 
-    with (
-        caplog.at_level(logging.WARNING),
-        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-    ):
-        result = _extract_next_turn_content(next_turn)
-
-    assert result is None
-    # safe_index emits the structured drift warning; we don't assert on the
-    # exact wording to keep the test resilient to log-format tweaks.
-    assert any("safe_index" in rec.message or "drift" in rec.message for rec in caplog.records)
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_next_turn_content(next_turn)
 
 
-def test_extract_next_turn_content_wrong_type_at_level(
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``turn[4][0]`` is a string instead of a list — descent must fail soft."""
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-    # The inner wrapper is a scalar, so descending to index ``[0]`` of a
-    # string would succeed (yielding 'n'), but descending again would not —
-    # safe_index normalises this to ``None`` via its TypeError/IndexError
-    # catch and the helper's ``isinstance(..., str)`` check rejects single
-    # characters that are not the expected wrapper shape… here we use a
-    # non-string non-list scalar to force the safe_index drift path.
+def test_extract_next_turn_content_wrong_type_at_level() -> None:
+    """``turn[4][0]`` is a non-list scalar — descent drift raises."""
+    # The inner wrapper is a scalar, so descending past index ``[0]`` fails,
+    # which safe_index surfaces as ``UnknownRPCMethodError`` under strict
+    # decoding.
     next_turn = [None, None, 2, None, [42]]
 
-    with (
-        caplog.at_level(logging.WARNING),
-        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-    ):
-        result = _extract_next_turn_content(next_turn)
-
-    assert result is None
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_next_turn_content(next_turn)
 
 
 def test_extract_next_turn_content_non_string_leaf() -> None:
     """Leaf at ``[4][0][0]`` is a scalar instead of a string — returns ``None``.
 
     This guards the explicit ``isinstance(content, str)`` normalisation
-    branch in ``_extract_next_turn_content`` — distinct from the soft-mode
-    ``safe_index`` drift path, which only triggers when descent itself
-    fails.
+    branch in ``_extract_next_turn_content`` — distinct from the
+    ``safe_index`` drift path, which raises only when descent itself fails.
     """
     next_turn = [None, None, 2, None, [[12345]]]
 
@@ -98,19 +71,17 @@ def test_extract_next_turn_content_non_string_leaf() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Regression: _parse_turns_to_qa_pairs still degrades gracefully
+# _parse_turns_to_qa_pairs — shape drift raises under strict decoding
 # ---------------------------------------------------------------------------
 
 
-def test_parse_turns_to_qa_pairs_drift_yields_empty_answer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Answer turn with broken inner shape yields an empty answer string.
+def test_parse_turns_to_qa_pairs_drift_raises() -> None:
+    """An answer turn with a broken inner shape raises under strict decoding.
 
-    Pins the contract that the named extractor preserves the previous
-    empty-answer fallback semantics of :meth:`_parse_turns_to_qa_pairs`.
+    Strict decoding is the only mode (the soft-mode opt-out was retired in
+    v0.7.0), so a genuine ``safe_index`` drift propagates rather than being
+    silently coerced into an empty-answer pair.
     """
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     turns_data = [
         [
             [None, None, 1, "Question?"],
@@ -118,7 +89,5 @@ def test_parse_turns_to_qa_pairs_drift_yields_empty_answer(
         ]
     ]
 
-    with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-        result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
-
-    assert result == [("Question?", "")]
+    with pytest.raises(UnknownRPCMethodError):
+        ChatAPI._parse_turns_to_qa_pairs(turns_data)

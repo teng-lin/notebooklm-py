@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from .exceptions import UnknownRPCMethodError
 from .rpc import RPCMethod, safe_index
 from .types import ArtifactParseError
 
@@ -149,16 +150,15 @@ def _extract_data_table_rows(raw_data: Any) -> list[Any]:
     the table content section ``[type, flags, rows_array]``, and ``[2]`` is
     the rows array itself.
 
-    Inner-most access goes through :func:`safe_index` so a soft-mode shape
-    drift logs a structured warning and returns ``[]`` instead of raising.
-    Strict-decode mode (``NOTEBOOKLM_STRICT_DECODE=1``) lets ``safe_index``
-    raise ``UnknownRPCMethodError`` so we fail fast.
+    Inner-most access goes through :func:`safe_index`, which enforces
+    strict decoding: a shape drift raises ``UnknownRPCMethodError`` so we
+    fail fast. A path that descends successfully to a non-list scalar is
+    normalised to ``[]`` here.
 
     Returns:
-        The rows array on success, or ``[]`` on shape drift / non-list inner
-        value. NEVER raises for soft-mode drift — callers (e.g.
-        :func:`_parse_data_table`) are responsible for converting an empty
-        result into a domain-level :class:`ArtifactParseError`.
+        The rows array on success, or ``[]`` when the inner value descends
+        to a non-list scalar. Shape drift raises ``UnknownRPCMethodError``
+        from :func:`safe_index`.
     """
     rows_array = safe_index(
         raw_data,
@@ -172,15 +172,13 @@ def _extract_data_table_rows(raw_data: Any) -> list[Any]:
         source="_artifacts._extract_data_table_rows",
     )
     if not isinstance(rows_array, list):
-        # safe_index returns None on soft-mode drift, and the upstream shape
-        # is also occasionally seen as a non-list scalar — normalise both to
-        # the empty-list sentinel so the caller's "empty data table" path
-        # handles them uniformly.
-        if rows_array is not None:
-            logger.warning(
-                "data table rows_array is not a list (type=%s); treating as empty",
-                type(rows_array).__name__,
-            )
+        # The upstream shape is occasionally seen as a non-list scalar even
+        # when descent succeeds — normalise it to the empty-list sentinel so
+        # the caller's "empty data table" path handles it uniformly.
+        logger.warning(
+            "data table rows_array is not a list (type=%s); treating as empty",
+            type(rows_array).__name__,
+        )
         return []
     return rows_array
 
@@ -214,10 +212,7 @@ def _parse_data_table(
 
         rows_array = rows_extractor(raw_data)
         if not rows_array:
-            # Covers both genuinely-empty tables and soft-mode shape drift
-            # (where ``_extract_data_table_rows`` returns ``[]``). The caller
-            # converts this into ArtifactParseError so the download_data_table
-            # surface stays unchanged.
+            # Genuinely-empty data table.
             raise ArtifactParseError("data_table", details="Empty data table")
 
         headers: list[str] = []
@@ -248,7 +243,12 @@ def _parse_data_table(
 
         return headers, rows
 
-    except (IndexError, TypeError, KeyError) as e:
+    except (IndexError, TypeError, KeyError, UnknownRPCMethodError) as e:
+        # ``_extract_data_table_rows`` raises ``UnknownRPCMethodError`` on
+        # shape drift under strict decoding; convert it (and the raw
+        # index/type/key errors from cell walking) into the domain-level
+        # ``ArtifactParseError`` so the ``download_data_table`` surface stays
+        # unchanged.
         raise ArtifactParseError(
             "data_table",
             details=f"Failed to parse data table structure: {e}",

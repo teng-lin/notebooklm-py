@@ -12,6 +12,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import Notebook, NotebookLMClient
+from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCError, RPCMethod
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -579,29 +580,26 @@ class TestNotebookEdgeCases:
         assert notebooks == []
 
     @pytest.mark.asyncio
-    async def test_get_summary_empty(
+    async def test_get_summary_empty_response_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
-        monkeypatch,
     ):
-        """Test getting summary when empty.
+        """An empty SUMMARIZE response drifts and raises under strict decoding.
 
-        Soft-mode opt-out (post-PR 13.9a default is strict): pins the legacy
-        warn-and-return-"" behavior that the CLI's truthiness check relies
-        on at ``cli/notebook.py``. Strict-mode coverage of the same drift
-        shape lives in ``tests/unit/test_get_summary_drift.py``.
+        Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+        soft-mode opt-out was retired in v0.7.0); a ``[]`` response cannot be
+        descended to the summary slot, so it surfaces as
+        ``UnknownRPCMethodError``. Strict-mode unit coverage lives in
+        ``tests/unit/test_get_summary_drift.py``.
         """
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.SUMMARIZE, [])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-                result = await client.notebooks.get_summary("nb_123")
-
-        assert result == ""
+            with pytest.raises(UnknownRPCMethodError):
+                await client.notebooks.get_summary("nb_123")
 
     @pytest.mark.asyncio
     async def test_get_description_empty_topics(

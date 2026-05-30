@@ -21,7 +21,7 @@ from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
-from notebooklm.exceptions import ValidationError
+from notebooklm.exceptions import UnknownRPCMethodError, ValidationError
 from notebooklm.rpc import (
     AudioFormat,
     AudioLength,
@@ -2295,19 +2295,19 @@ class TestParseGenerationResult:
     """Tests for _parse_generation_result (lines 2092-2095, 2117-2123)."""
 
     @pytest.mark.asyncio
-    async def test_generate_returns_failed_status_when_no_artifact_id(
+    async def test_generate_raises_on_empty_artifact_result(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
-        monkeypatch,
     ):
-        """_parse_generation_result returns failed status when result has no artifact_id."""
-        # Soft-mode opt-out (post-PR 13.9a default is strict): this class pins
-        # the legacy GenerationStatus(failed, "") sentinel that downstream
-        # callers handle. Strict-mode coverage of the same inputs lives in
-        # tests/unit/test_artifacts_drift.py.
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+        """An empty (non-null) CREATE_ARTIFACT result drifts and raises.
+
+        Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+        soft-mode opt-out was retired in v0.7.0); an empty ``[]`` result is
+        not the null-result FeatureUnavailable case, so it reaches the parser
+        and surfaces shape drift as ``UnknownRPCMethodError``.
+        """
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -2327,11 +2327,8 @@ class TestParseGenerationResult:
         httpx_mock.add_response(content=empty_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-                result = await client.artifacts.generate_audio("nb_123")
-
-        assert result.status == "failed"
-        assert result.task_id == ""
+            with pytest.raises(UnknownRPCMethodError):
+                await client.artifacts.generate_audio("nb_123")
 
     @pytest.mark.asyncio
     async def test_generate_null_result_raises_feature_unavailable(
@@ -2798,33 +2795,19 @@ class TestDownloadQuizFlashcardParsing:
         assert Path(output_path).read_text() == raw_html
 
 
-class TestWaitForCompletionDeprecated:
-    """Tests for wait_for_completion deprecated poll_interval parameter."""
+class TestWaitForCompletionPollIntervalRemoved:
+    """The deprecated ``poll_interval`` keyword was removed in v0.7.0."""
 
     @pytest.mark.asyncio
-    async def test_wait_for_completion_deprecated_poll_interval_warning(
-        self,
-        auth_tokens,
-        httpx_mock: HTTPXMock,
-        build_rpc_response,
-    ):
-        """wait_for_completion issues DeprecationWarning for poll_interval parameter."""
-        import warnings
+    async def test_wait_for_completion_rejects_poll_interval(self, auth_tokens):
+        """``wait_for_completion`` no longer accepts the removed ``poll_interval``.
 
-        # Return a completed artifact immediately so it doesn't loop
-        artifact = ["task_dep", "Report", 2, None, 3]
-        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[artifact]])
-        httpx_mock.add_response(content=response.encode())
-
+        Only ``initial_interval`` remains (see ``docs/deprecations.md``); the
+        deprecated alias was removed, so Python's argument binding rejects it.
+        """
         async with NotebookLMClient(auth_tokens) as client:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                result = await client.artifacts.wait_for_completion(
-                    "nb_123", "task_dep", poll_interval=1.0
-                )
-                assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-
-        assert result.status == "completed"
+            with pytest.raises(TypeError):
+                await client.artifacts.wait_for_completion("nb_123", "task_dep", poll_interval=1.0)
 
 
 def _decoded_request_body(request) -> str:

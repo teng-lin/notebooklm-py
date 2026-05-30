@@ -150,29 +150,16 @@ class ArtifactPollingService:
         initial_interval: float = 2.0,
         max_interval: float = 10.0,
         timeout: float = 300.0,
-        poll_interval: float | None = None,
         max_not_found: int = 5,
         min_not_found_window: float = 10.0,
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None = None,
-        deprecation_warning_stacklevel: int = 2,
     ) -> GenerationStatus:
         """Wait for a generation task to complete using a shared poll loop."""
         # P0-2: catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
         # loop) or spawning a poll task on a foreign loop.
         self._loop_guard.assert_bound_loop()
-        # Backward compatibility: poll_interval overrides initial_interval.
-        if poll_interval is not None:
-            import warnings
-
-            warnings.warn(
-                "poll_interval is deprecated and will be removed in v0.6.0; "
-                "use initial_interval instead",
-                DeprecationWarning,
-                stacklevel=deprecation_warning_stacklevel,
-            )
-            initial_interval = poll_interval
 
         key = (notebook_id, task_id)
 

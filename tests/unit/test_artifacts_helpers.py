@@ -2,9 +2,11 @@
 
 Focuses on ``_extract_data_table_rows`` — the named extractor that replaces
 the raw ``raw_data[0][0][0][0][4][2]`` deep-index chain in
-:func:`_parse_data_table`. These tests pin the soft-mode contract (returns
-``[]`` on shape drift, never raises) and exercise the four canonical drift
-shapes plus the happy path.
+:func:`_parse_data_table`. Strict decoding is the only mode (the
+``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0): shape
+drift raises ``UnknownRPCMethodError`` while a non-list inner value at a valid
+path normalises to ``[]``. ``_parse_data_table`` converts the drift exception
+into ``ArtifactParseError`` so the download surface stays stable.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from notebooklm._artifact_formatters import (
     _extract_data_table_rows,
     _parse_data_table,
 )
+from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.types import ArtifactParseError
 
 # ---------------------------------------------------------------------------
@@ -41,60 +44,35 @@ def test_extract_data_table_rows_happy_path() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _extract_data_table_rows — drift shapes (must NOT raise)
+# _extract_data_table_rows — drift shapes (raise under strict decoding)
 # ---------------------------------------------------------------------------
 
 
-def test_extract_data_table_rows_missing_inner_list(
-    caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Inner ``[4]`` slot exists but lacks the ``[2]`` rows entry."""
+def test_extract_data_table_rows_missing_inner_list() -> None:
+    """Inner ``[4]`` slot exists but lacks the ``[2]`` rows entry — drift raises."""
     # The table-content section ([type, flags, rows_array]) is truncated to
-    # ``[type, flags]`` — descending to index 2 must miss without raising.
-    # Post-PR 13.9a the strict-decode default would raise, so pin soft mode
-    # explicitly to keep exercising the "must NOT raise" contract this file
-    # documents.
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+    # ``[type, flags]`` — descending to index 2 fails and safe_index raises.
     raw_data = [[[[[0, 100, None, None, [6, 7]]]]]]
 
-    with (
-        caplog.at_level(logging.WARNING),
-        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-    ):
-        result = _extract_data_table_rows(raw_data)
-
-    assert result == []
-    # safe_index emits the structured drift warning; we don't assert on the
-    # exact wording to keep the test resilient to log-format tweaks.
-    assert any("safe_index" in rec.message or "drift" in rec.message for rec in caplog.records)
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_data_table_rows(raw_data)
 
 
-def test_extract_data_table_rows_wrong_type_at_one_level(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """One of the wrapper hops is a string, not a list. Must return ``[]``."""
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+def test_extract_data_table_rows_wrong_type_at_one_level() -> None:
+    """One of the wrapper hops is a string, not a list — drift raises."""
     # Replace the third wrapper layer with a non-indexable string.
     raw_data = [[[["not-a-list", [[0, 100, None, None, [6, 7, []]]]]]]]
 
-    with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-        result = _extract_data_table_rows(raw_data)
-
-    assert result == []
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_data_table_rows(raw_data)
 
 
-def test_extract_data_table_rows_truncated_structure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_extract_data_table_rows_truncated_structure() -> None:
     """Outer wrapper is only 3 levels deep — descent stops well before [4][2]."""
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data: list = [[[]]]
 
-    with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-        result = _extract_data_table_rows(raw_data)
-
-    assert result == []
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_data_table_rows(raw_data)
 
 
 # ---------------------------------------------------------------------------
@@ -104,14 +82,13 @@ def test_extract_data_table_rows_truncated_structure(
 
 def test_extract_data_table_rows_non_list_inner_value(
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Inner ``[2]`` is a scalar (e.g. None) instead of a list. Returns ``[]``.
+    """Inner ``[2]`` is a scalar (e.g. None) at a valid path. Returns ``[]``.
 
-    This guards the ``isinstance(rows_array, list)`` normalisation branch in
+    The descent succeeds to a non-list scalar, so safe_index does NOT raise;
+    this guards the ``isinstance(rows_array, list)`` normalisation branch in
     the helper, which keeps the caller's "empty data table" path uniform.
     """
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data = [[[[[0, 100, None, None, [6, 7, None]]]]]]
 
     with caplog.at_level(logging.WARNING):
@@ -121,26 +98,20 @@ def test_extract_data_table_rows_non_list_inner_value(
 
 
 # ---------------------------------------------------------------------------
-# _parse_data_table — fallback path still raises on drift (regression)
+# _parse_data_table — converts drift into ArtifactParseError (regression)
 # ---------------------------------------------------------------------------
 
 
-def test_parse_data_table_raises_artifact_parse_error_on_drift(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The fallback at _artifacts.py:236-240 must still raise on shape drift.
+def test_parse_data_table_raises_artifact_parse_error_on_drift() -> None:
+    """``_parse_data_table`` converts shape drift into :class:`ArtifactParseError`.
 
-    Even though the helper returns ``[]`` on drift, ``_parse_data_table`` must
-    convert that to :class:`ArtifactParseError` so the
-    ``download_data_table`` surface is unchanged.
+    ``_extract_data_table_rows`` raises ``UnknownRPCMethodError`` on drift
+    under strict decoding; ``_parse_data_table`` catches it and re-raises as
+    ``ArtifactParseError`` so the ``download_data_table`` surface is unchanged.
     """
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     truncated: list = [[[]]]  # same shape as drift test above
 
-    with (
-        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        pytest.raises(ArtifactParseError),
-    ):
+    with pytest.raises(ArtifactParseError):
         _parse_data_table(truncated)
 
 

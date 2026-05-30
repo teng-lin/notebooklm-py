@@ -160,8 +160,14 @@ def _assert_async_client_uses_live_cookies(mock_client_cls, mock_core) -> None:
     assert mock_client_cls.call_args.kwargs["cookies"] is not mock_core.auth.cookie_jar
 
 
-class TestLegacyPositionalWaitArgs:
-    """Compatibility tests for v0.4.x positional wait/wait_timeout calls."""
+class TestWaitArgsKeywordOnly:
+    """``wait`` / ``wait_timeout`` are keyword-only on the ``add_*`` methods.
+
+    The v0.4.x positional-wait compatibility shim was removed in v0.7.0
+    (see ``docs/deprecations.md``). Passing ``wait`` / ``wait_timeout``
+    positionally now raises ``TypeError`` from Python's own argument
+    binding rather than emitting a ``DeprecationWarning``.
+    """
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -181,19 +187,15 @@ class TestLegacyPositionalWaitArgs:
             ),
         ],
     )
-    async def test_legacy_positional_wait_args_warn_and_forward(
-        self, sources_api, method_name, args
-    ):
+    async def test_keyword_wait_args_forward(self, sources_api, method_name, args):
         target = sources_api._uploader if method_name == "add_file" else sources_api._adder
         patched = AsyncMock(return_value=Source(id="src_123", title="Source"))
         setattr(target, method_name, patched)
 
         method = getattr(sources_api, method_name)
-        with pytest.warns(
-            DeprecationWarning,
-            match=r"Passing wait/wait_timeout positionally to SourcesAPI\.",
-        ):
-            result = await method(*args, True, 45.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            result = await method(*args, wait=True, wait_timeout=45.0)
 
         assert result.id == "src_123"
         patched.assert_awaited_once()
@@ -201,38 +203,22 @@ class TestLegacyPositionalWaitArgs:
         assert patched.call_args.kwargs["wait_timeout"] == 45.0
 
     @pytest.mark.asyncio
-    async def test_legacy_single_positional_wait_keeps_default_timeout(self, sources_api):
-        patched = AsyncMock(return_value=Source(id="src_123", title="Source"))
-        sources_api._adder.add_url = patched
-
-        with pytest.warns(DeprecationWarning, match="wait/wait_timeout"):
-            await sources_api.add_url("nb_123", "https://example.com/article", True)
-
-        assert patched.call_args.kwargs["wait"] is True
-        assert patched.call_args.kwargs["wait_timeout"] == 120.0
-
-    @pytest.mark.asyncio
-    async def test_duplicate_wait_positional_and_keyword_raises_type_error(self, sources_api):
-        with pytest.raises(TypeError, match="multiple values for argument 'wait'"):
-            await sources_api.add_url("nb_123", "https://example.com/article", True, wait=False)
-
-    @pytest.mark.asyncio
-    async def test_duplicate_wait_timeout_positional_and_keyword_raises_type_error(
-        self, sources_api
-    ):
-        with pytest.raises(TypeError, match="multiple values for argument 'wait_timeout'"):
-            await sources_api.add_url(
-                "nb_123",
-                "https://example.com/article",
-                True,
-                45.0,
-                wait_timeout=60.0,
-            )
-
-    @pytest.mark.asyncio
-    async def test_too_many_legacy_wait_args_raises_type_error(self, sources_api):
-        with pytest.raises(TypeError, match="at most 2 positional wait arguments"):
-            await sources_api.add_url("nb_123", "https://example.com/article", True, 45.0, "extra")
+    @pytest.mark.parametrize(
+        ("method_name", "args"),
+        [
+            ("add_url", ("nb_123", "https://example.com/article")),
+            ("add_text", ("nb_123", "Title", "Body")),
+            ("add_file", ("nb_123", "document.pdf", None)),
+            (
+                "add_drive",
+                ("nb_123", "drive_file_id", "Drive Doc", "application/vnd.google-apps.document"),
+            ),
+        ],
+    )
+    async def test_positional_wait_args_raise_type_error(self, sources_api, method_name, args):
+        method = getattr(sources_api, method_name)
+        with pytest.raises(TypeError):
+            await method(*args, True, 45.0)
 
 
 # =============================================================================
@@ -984,8 +970,8 @@ class TestAddFile:
         assert result.title == "doc.txt"
 
     @pytest.mark.asyncio
-    async def test_add_file_preserves_positional_wait_args(self, sources_api, mock_core, tmp_path):
-        """Existing positional wait/wait_timeout callers remain compatible."""
+    async def test_add_file_keyword_wait_args(self, sources_api, mock_core, tmp_path):
+        """``wait`` / ``wait_timeout`` keyword callers forward through to the wait."""
         test_file = tmp_path / "report.pdf"
         test_file.write_bytes(b"fake pdf content")
 

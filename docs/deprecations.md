@@ -9,16 +9,26 @@ removal, and any cross-references.
 the broader stability policy (semver promise, supported Python versions, the
 0.x pre-1.0 semantics), start there.
 
-## Scheduled for removal in v0.6.0
+## Scheduled for removal
 
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
-| `NOTEBOOKLM_STRICT_DECODE=0` soft-mode | Unset the variable (strict is the only mode) | v0.5.0 | v0.6.0 | Warning at `tests/unit/test_strict_decode_default.py:73`; rationale in `docs/stability.md` "Strict decode" + ADR-011 |
-| Positional `wait` / `wait_timeout` on `SourcesAPI.add_url`, `SourcesAPI.add_text`, `SourcesAPI.add_file`, `SourcesAPI.add_drive` | Pass `wait=...` and `wait_timeout=...` as keywords | v0.5.0 | v0.6.0 | Warning emitted by `src/notebooklm/_sources.py:_resolve_legacy_wait_args`; CLI already uses keyword arguments |
-| `SourcesAPI.add_file(mime_type=...)` | Omit `mime_type` — server infers from filename extension | v0.5.0 | v0.6.0 | Warning emitted at `src/notebooklm/_source_upload.py:287` |
-| `notebooklm source add --mime-type` (file sources) | Omit `--mime-type`; Drive-source `--mime-type` remains live | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/cli/source_cmd.py:437` |
-| `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_artifact_polling.py:154` |
-| `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_notes.py:192` |
+| `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.7.0 | Warning at `src/notebooklm/_notes.py:192` |
+| Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works; warning at `src/notebooklm/client.py:__await__` |
+
+`SourcesAPI.add_file(mime_type=...)` and `notebooklm source add --mime-type`
+(file sources) are **no longer deprecated**: `mime_type` was re-wired to set
+the resumable-upload content-type header (overriding filename-extension
+inference), so both are now supported parameters. The earlier
+`DeprecationWarning` was removed.
+
+## Removed in v0.7.0
+
+| Removed | Replacement | Deprecated since | Removed in | Notes |
+|---------|-------------|------------------|------------|-------|
+| `NOTEBOOKLM_STRICT_DECODE=0` soft-mode opt-out | Unset the variable (strict is the only mode) | v0.5.0 | v0.7.0 | The env var is now ignored; `safe_index` always raises `UnknownRPCMethodError` on shape drift. Rationale in `docs/stability.md` "Strict decode" + ADR-011 |
+| Positional `wait` / `wait_timeout` on `SourcesAPI.add_url`, `SourcesAPI.add_text`, `SourcesAPI.add_file`, `SourcesAPI.add_drive` | Pass `wait=...` and `wait_timeout=...` as keywords | v0.5.0 | v0.7.0 | `wait` / `wait_timeout` are now keyword-only; positional calls raise `TypeError`. CLI already used keyword arguments |
+| `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.7.0 | The `poll_interval` keyword was removed; passing it raises `TypeError` |
 
 ## Removed in v0.6.0
 

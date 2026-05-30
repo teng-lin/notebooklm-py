@@ -424,7 +424,7 @@ def collect_rpc_ids(chunks: list[Any]) -> list[str]:
             continue
 
         # Preserve the truthy short-circuit on an empty chunk so safe_index
-        # (which would raise under NOTEBOOKLM_STRICT_DECODE=1) is only called
+        # (which raises on shape drift under strict decoding) is only called
         # when the index is structurally valid.
         if not chunk:
             continue
@@ -484,8 +484,8 @@ def _find_wrb_status(chunks: list[Any], rpc_id: str) -> tuple[int, str] | None:
     for chunk in chunks:
         if not isinstance(chunk, list):
             continue
-        # Skip empty chunks before safe_index, which would raise under
-        # NOTEBOOKLM_STRICT_DECODE=1 on an out-of-bounds descent.
+        # Skip empty chunks before safe_index, which raises on shape drift
+        # under strict decoding on an out-of-bounds descent.
         if not chunk:
             continue
         first = safe_index(chunk, 0, method_id=rpc_id, source=source)
@@ -575,8 +575,8 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
         if not isinstance(chunk, list):
             continue
 
-        # Skip empty chunks before safe_index, which would raise under
-        # NOTEBOOKLM_STRICT_DECODE=1 on an out-of-bounds descent.
+        # Skip empty chunks before safe_index, which raises on shape drift
+        # under strict decoding on an out-of-bounds descent.
         if not chunk:
             continue
         first = safe_index(chunk, 0, method_id=rpc_id, source=source)

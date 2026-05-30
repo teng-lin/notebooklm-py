@@ -1,13 +1,14 @@
 """Tests for ``notebooklm.rpc._safe_index.safe_index``.
 
-Covers happy descent, soft-mode warn-and-fallback, strict-mode raise, and
+Covers happy descent, strict-mode raise (the only mode since the
+``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0), and
 backward-compat exception hierarchy (``except RPCError`` catches strict-mode
 errors).
 """
 
 from __future__ import annotations
 
-import logging
+import warnings
 
 import pytest
 
@@ -39,30 +40,6 @@ def test_descent_with_no_path_returns_root():
     data = ["root"]
     result = safe_index(data, method_id="abc", source="test")
     assert result == ["root"]
-
-
-def test_drift_outer_index_soft_mode_returns_none_with_warning(monkeypatch, caplog):
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-    data = ["only-one"]
-    with (
-        caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"),
-        pytest.warns(DeprecationWarning, match="NOTEBOOKLM_STRICT_DECODE=0"),
-    ):
-        result = safe_index(data, 5, method_id="abc", source="test.outer")
-    assert result is None
-    assert any(
-        "safe_index drift" in record.message and record.levelno == logging.WARNING
-        for record in caplog.records
-    )
-
-
-def test_drift_inner_index_soft_mode_returns_none(monkeypatch):
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-    data = [[["leaf"]]]
-    # Outer ok, inner index out of range.
-    with pytest.warns(DeprecationWarning, match=r"test\.inner"):
-        result = safe_index(data, 0, 0, 9, method_id="abc", source="test.inner")
-    assert result is None
 
 
 def test_drift_outer_strict_mode_raises_with_attributes(monkeypatch):
@@ -127,21 +104,19 @@ def test_strict_mode_truthy_values(monkeypatch):
             safe_index([], 0, method_id="abc", source="test")
 
 
-def test_strict_mode_falsy_values(monkeypatch, caplog):
-    """Explicit falsy values (``"0"``, ``"no"``, ``"false"``, ``""``) opt out of strict mode.
+def test_legacy_falsy_env_values_are_a_no_op(monkeypatch):
+    """The retired ``NOTEBOOKLM_STRICT_DECODE`` opt-out no longer softens decoding.
 
-    Post-PR 13.9a the unset default is now ``True`` (see
-    ``test_strict_decode_default.py``); soft mode is reached via explicit
-    opt-out only.
+    Formerly ``"0"`` / ``"no"`` / ``"false"`` / ``""`` restored
+    warn-and-return-``None``; that soft-mode path was removed in v0.7.0, so
+    every value now still raises on drift.
     """
     for value in ("0", "no", "false", ""):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", value)
-        with (
-            caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"),
-            pytest.warns(DeprecationWarning, match="NOTEBOOKLM_STRICT_DECODE=0"),
-        ):
-            result = safe_index([], 0, method_id="abc", source="test")
-        assert result is None
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            with pytest.raises(UnknownRPCMethodError):
+                safe_index([], 0, method_id="abc", source="test")
 
 
 def test_data_at_failure_is_truncated(monkeypatch):

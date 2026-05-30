@@ -7,7 +7,6 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ._env import is_strict_decode_enabled
 from ._row_adapters_sources import SourceRow
 from ._session_contracts import RpcCaller
 from .rpc import RPCError, RPCMethod
@@ -31,12 +30,10 @@ class SourceLister:
         """List all sources in a notebook.
 
         A malformed or error-shaped ``GET_NOTEBOOK`` response raises
-        :class:`RPCError` when either ``strict=True`` is passed or
-        ``NOTEBOOKLM_STRICT_DECODE`` is enabled (the default since PR
-        13.9a). This prevents a drifted response from being silently
-        reported as "0 sources" — see issue #1159. Set
-        ``NOTEBOOKLM_STRICT_DECODE=0`` to opt back into the legacy
-        warn-and-return-``[]`` behavior for one release window.
+        :class:`RPCError`. This prevents a drifted response from being
+        silently reported as "0 sources" — see issue #1159. The legacy
+        ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out into warn-and-return-``[]``
+        was retired in v0.7.0; strict decoding is now the only mode.
         """
         params = [notebook_id, None, [2], None, 0]
         notebook = await self._rpc.rpc_call(
@@ -125,14 +122,12 @@ class SourceLister:
         # of whether we go on to raise — preserving the diagnostic breadcrumb
         # in strict mode too.
         logger.warning("SourcesAPI.list: " + message, notebook_id, *log_args)
-        # Honor the global strict-decode policy (default ON since PR 13.9a)
-        # in addition to the explicit ``strict`` flag, so a drifted or
-        # error-enveloped GET_NOTEBOOK response is surfaced as an error
-        # rather than silently reported as "0 sources" (issue #1159).
-        # ``NOTEBOOKLM_STRICT_DECODE=0`` opts back into the legacy
-        # warn-and-return-``[]`` fallback for one release window.
-        if strict or is_strict_decode_enabled():
-            raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
+        # Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+        # soft-mode opt-out was retired in v0.7.0), so a drifted or
+        # error-enveloped GET_NOTEBOOK response is always surfaced as an error
+        # rather than silently reported as "0 sources" (issue #1159). The
+        # explicit ``strict`` flag is retained for call-site clarity.
+        raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
 
     @staticmethod
     def _parse_source(src: Any) -> Source | None:

@@ -162,35 +162,29 @@ For raw-RPC power-user calls, import the method enum explicitly:
 from notebooklm.rpc import RPCMethod
 ```
 
-### Strict-decode default (since PR 13.9a)
+### Strict decoding (the only mode since v0.7.0)
 
 Schema-drift helpers (notably :func:`notebooklm.rpc.safe_index`) **raise**
-:class:`~notebooklm.exceptions.UnknownRPCMethodError` by default when Google's
-batchexecute response shape does not match what the decoder expects. Pre-flip
-the default was warn-and-return-``None``; the soft-mode opt-in lives at
-``NOTEBOOKLM_STRICT_DECODE=0`` for one release window so downstream code that
-relies on the legacy sentinel can migrate at its own pace before the env
-var is retired. Since v0.5.0, using that fallback emits ``DeprecationWarning``
-when drift occurs, in addition to the structured log warning.
+:class:`~notebooklm.exceptions.UnknownRPCMethodError` when Google's
+batchexecute response shape does not match what the decoder expects. This is
+now the only behavior: the legacy ``NOTEBOOKLM_STRICT_DECODE=0`` warn-and-
+return-``None`` opt-out was retired in v0.7.0 (it had a one-release
+``DeprecationWarning`` window through v0.5.0/v0.6.0). The env var is now
+ignored.
 
 Stability implications:
 
 - **Exception type is stable.** ``UnknownRPCMethodError`` is a subclass of
   ``DecodingError`` and ``RPCError`` (both public-API exceptions). Code that
-  already catches ``RPCError`` continues to handle drift correctly under the
-  new default.
+  already catches ``RPCError`` continues to handle drift correctly.
 - **No silent shape changes.** Methods that previously returned ``None`` /
-  empty values on drift may now raise. Callers that treated ``None`` as a
-  valid sentinel must add an ``except UnknownRPCMethodError`` branch *or*
-  opt out via ``NOTEBOOKLM_STRICT_DECODE=0`` for one release while migrating.
-- **Removal of opt-out.** The ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out path is
-  scheduled for retirement in v0.6.0 once downstream call sites have migrated; see
-  `docs/adr/0011-schema-validation-policy.md` for the policy and timeline.
+  empty values on drift now raise. Callers that treated ``None`` as a valid
+  sentinel must add an ``except UnknownRPCMethodError`` branch.
 
 See [`docs/configuration.md#decoder-strictness`](configuration.md#decoder-strictness)
 for the env-var contract and
 [`docs/adr/0011-schema-validation-policy.md`](adr/0011-schema-validation-policy.md)
-for the design rationale behind the default flip.
+for the design rationale behind the strict-decode policy.
 
 ## Deprecation Policy
 
@@ -202,7 +196,8 @@ for the design rationale behind the default flip.
 ### Currently Deprecated
 
 See [`docs/deprecations.md`](deprecations.md) for the canonical list of
-APIs deprecated in v0.5.0 and scheduled for removal in v0.6.0.
+currently-deprecated APIs and their scheduled removal versions, plus the
+deprecations removed in v0.6.0 and v0.7.0.
 
 ### Removed in v0.5.0
 

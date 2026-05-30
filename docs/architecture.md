@@ -293,11 +293,10 @@ silently degrades.
 
 The single helper that decoders use to navigate row shapes is
 `notebooklm.rpc.safe_index` in
-[`rpc/_safe_index.py`](../src/notebooklm/rpc/_safe_index.py). It
-raises a typed shape-drift error by default. Explicit
-`NOTEBOOKLM_STRICT_DECODE=0` opts into the temporary legacy soft mode,
-where missing indices warn and return `None`. The `RpcExecutor` decode
-path narrowly wraps
+[`rpc/_safe_index.py`](../src/notebooklm/rpc/_safe_index.py). It always
+raises a typed shape-drift error: strict decoding is the only mode (the
+`NOTEBOOKLM_STRICT_DECODE=0` soft-mode opt-out was retired in v0.7.0). The
+`RpcExecutor` decode path narrowly wraps
 `json.JSONDecodeError`, `KeyError`, `IndexError`, and `TypeError` into
 `RPCError`; other exception types (e.g. `AttributeError`) intentionally
 propagate as code bugs rather than being conflated with shape drift.

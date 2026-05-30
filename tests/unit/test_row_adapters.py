@@ -446,16 +446,6 @@ class TestStrictModeOnDeepDrift:
         with pytest.raises(UnknownRPCMethodError):
             _ = row.variant
 
-    def test_options_block_with_too_short_inner_soft_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        raw = _full_row()
-        raw[ArtifactRow._OPTIONS_POS] = [None]
-        row = ArtifactRow(raw)
-        with pytest.warns(DeprecationWarning):
-            assert row.variant is None
-
     def test_audio_metadata_with_missing_media_list_returns_none_strict(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -803,7 +793,11 @@ class TestNoteRowContentCurrentShape:
 
 
 class TestNoteRowContentDegradation:
-    """Unknown / short / mistyped slots return ``None`` in soft mode."""
+    """Unknown / short / mistyped slots return ``None``.
+
+    These exercise content-type filtering on structurally-valid shapes (not
+    ``safe_index`` shape drift), so they hold regardless of decode mode.
+    """
 
     def test_empty_row_returns_none(self) -> None:
         assert NoteRow([]).content is None

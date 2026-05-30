@@ -1078,9 +1078,9 @@ class TestMalformedChunkResilience:
     """safe_index hot-path traversal must tolerate malformed chunks.
 
     None of these inputs should raise; the decoder API surface (collect_rpc_ids,
-    extract_rpc_result) must degrade gracefully when Google's response shape
-    drifts. This pins the soft-mode contract from rpc._safe_index: drift returns
-    None / empty rather than IndexError / TypeError bubbling up.
+    extract_rpc_result) length-guards each chunk *before* invoking
+    ``safe_index``, so structurally-empty/short chunks are skipped rather than
+    triggering a strict-decode ``UnknownRPCMethodError``.
     """
 
     RPC_ID = RPCMethod.LIST_NOTEBOOKS.value

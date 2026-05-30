@@ -635,7 +635,6 @@ class ArtifactsAPI:
         initial_interval: float = 2.0,
         max_interval: float = 10.0,
         timeout: float = 300.0,
-        poll_interval: float | None = None,  # Deprecated, use initial_interval
         max_not_found: int = 5,
         min_not_found_window: float = 10.0,
         on_status_change: Callable[[GenerationStatus], object] | None = None,
@@ -670,8 +669,6 @@ class ArtifactsAPI:
             max_interval: Maximum seconds between status checks
                 (leader only).
             timeout: Maximum seconds to wait (leader only).
-            poll_interval: Deprecated. Use initial_interval instead. Scheduled
-                for removal in v0.6.0.
             max_not_found: Consecutive "not found" polls before treating
                 the task as *removed*.  When the API removes an artifact
                 from the list (e.g. after a daily-quota rejection), the
@@ -703,12 +700,10 @@ class ArtifactsAPI:
             initial_interval=initial_interval,
             max_interval=max_interval,
             timeout=timeout,
-            poll_interval=poll_interval,
             max_not_found=max_not_found,
             min_not_found_window=min_not_found_window,
             poll_status=self.poll_status,
             on_status_change=on_status_change,
-            deprecation_warning_stacklevel=3,
         )
 
     # =========================================================================

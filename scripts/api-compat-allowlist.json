@@ -126,6 +126,56 @@
       "code": "changed-signature",
       "object": "notebooklm.client.NotebookLMClient.rpc_call",
       "reason": "Same break as notebooklm.NotebookLMClient.rpc_call above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.wait_for_completion",
+      "reason": "v0.5.0 DeprecationWarning cycle completed: the deprecated 'poll_interval' alias was removed; use 'initial_interval' (same cadence). Passing 'poll_interval' now raises TypeError. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md [Unreleased]."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.client.NotebookLMClient.artifacts.wait_for_completion",
+      "reason": "Same break as notebooklm.NotebookLMClient.artifacts.wait_for_completion above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.sources.add_url",
+      "reason": "v0.5.0 DeprecationWarning cycle completed: the positional-wait compatibility shim (*legacy_wait_args) was removed and 'wait'/'wait_timeout' are now keyword-only. Default-shape callers are unaffected; positional wait callers must switch to wait=/wait_timeout=. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md [Unreleased]."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.client.NotebookLMClient.sources.add_url",
+      "reason": "Same break as notebooklm.NotebookLMClient.sources.add_url above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.sources.add_text",
+      "reason": "v0.5.0 DeprecationWarning cycle completed: the positional-wait compatibility shim (*legacy_wait_args) was removed and 'wait'/'wait_timeout' are now keyword-only. Default-shape callers are unaffected; positional wait callers must switch to wait=/wait_timeout=. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md [Unreleased]."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.client.NotebookLMClient.sources.add_text",
+      "reason": "Same break as notebooklm.NotebookLMClient.sources.add_text above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.sources.add_file",
+      "reason": "v0.5.0 DeprecationWarning cycle completed: the positional-wait compatibility shim (*legacy_wait_args) was removed and 'wait'/'wait_timeout' are now keyword-only. The functional 'mime_type' parameter is retained (it sets the upload content-type). Default-shape callers are unaffected; positional wait callers must switch to wait=/wait_timeout=. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md [Unreleased]."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.client.NotebookLMClient.sources.add_file",
+      "reason": "Same break as notebooklm.NotebookLMClient.sources.add_file above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.sources.add_drive",
+      "reason": "v0.5.0 DeprecationWarning cycle completed: the positional-wait compatibility shim (*legacy_wait_args) was removed and 'wait'/'wait_timeout' are now keyword-only. The 'mime_type' positional parameter (Drive document MIME type) is retained. Default-shape callers are unaffected; positional wait callers must switch to wait=/wait_timeout=. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md [Unreleased]."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.client.NotebookLMClient.sources.add_drive",
+      "reason": "Same break as notebooklm.NotebookLMClient.sources.add_drive above; this entry covers the audit's dotted-module-path view of the same callable."
     }
   ]
 }

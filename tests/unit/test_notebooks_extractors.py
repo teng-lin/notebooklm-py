@@ -13,6 +13,7 @@ import logging
 import pytest
 
 from notebooklm._notebooks import _extract_suggested_topics, _extract_summary
+from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.types import SuggestedTopic
 
 
@@ -25,58 +26,23 @@ class TestExtractSummary:
 
         assert _extract_summary(outer) == "the summary"
 
-    def test_drift_missing_inner_index_returns_empty_string(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # Post-PR 13.9a default is strict; this test pins the soft-mode
-        # warn-and-return-"" contract by opting back in explicitly.
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        # outer[0] is an empty list — outer[0][0] would IndexError.
+    def test_drift_missing_inner_index_raises(self) -> None:
+        # outer[0] is an empty list — outer[0][0] drifts and raises under
+        # strict decoding (the only mode).
         outer: list = [[], [[["Q", "P"]]]]
 
-        with (
-            caplog.at_level(logging.WARNING, logger="notebooklm"),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            result = _extract_summary(outer)
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            _extract_summary(outer)
 
-        assert result == ""
-        # safe_index logs at WARNING in soft-decode mode when descent fails.
-        warning_records = [
-            r
-            for r in caplog.records
-            if r.levelno == logging.WARNING and "safe_index drift" in r.message
-        ]
-        assert warning_records, "expected safe_index drift WARNING on missing index"
-        assert any(
-            "_extract_summary" in str(r.args) or "_extract_summary" in r.message
-            for r in warning_records
-        )
+        assert exc_info.value.source == "_notebooks._extract_summary"
 
-    def test_drift_wrong_type_at_outer_zero_returns_empty_string(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        # outer[0] is an int — outer[0][0] raises TypeError.
+    def test_drift_wrong_type_at_outer_zero_raises(self) -> None:
+        # outer[0] is an int — outer[0][0] raises TypeError, surfaced by
+        # safe_index as a typed drift error.
         outer = [42, [[["Q", "P"]]]]
 
-        with (
-            caplog.at_level(logging.WARNING, logger="notebooklm"),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            result = _extract_summary(outer)
-
-        assert result == ""
-        warning_records = [
-            r
-            for r in caplog.records
-            if r.levelno == logging.WARNING and "safe_index drift" in r.message
-        ]
-        assert warning_records, "expected safe_index drift WARNING on wrong type"
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_summary(outer)
 
 
 class TestExtractSuggestedTopics:

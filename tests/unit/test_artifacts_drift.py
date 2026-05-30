@@ -1,24 +1,21 @@
-"""Schema-drift tests for ``_parse_generation_result`` (PR).
+"""Schema-drift tests for ``_parse_generation_result``.
 
-These tests pin down the contract that PR establishes:
+These tests pin down the strict-decoding contract:
 
 * ``_parse_generation_result`` accepts ``method_id`` as a keyword argument and
   threads it through ``safe_index`` so drift diagnostics know which RPC failed.
-* Under explicit soft-mode opt-out (``NOTEBOOKLM_STRICT_DECODE=0``) drift
-  returns the legacy ``GenerationStatus(status="failed", task_id="")`` shape,
-  preserving backward compatibility with callers that handle that sentinel.
-  (Post-PR 13.9a the default flipped to strict; soft mode is the opt-out
-  path for one release window — see ADR-011.)
-* Under strict mode (``NOTEBOOKLM_STRICT_DECODE=1``) drift raises
-  ``UnknownRPCMethodError`` carrying the supplied ``method_id`` so operators
-  can detect that Google's response shape moved out from under us.
+* Drift raises ``UnknownRPCMethodError`` carrying the supplied ``method_id``
+  so operators can detect that Google's response shape moved out from under us.
+  Strict decoding is the only mode — the legacy
+  ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out (which returned the
+  ``GenerationStatus(status="failed", task_id="")`` sentinel) was retired in
+  v0.7.0; see ADR-011.
 
 Real-shape happy-path coverage for the wire-level flow already exists in
 ``tests/integration/test_artifacts_integration.py::TestParseGenerationResult``
 and elsewhere. Here we exercise the parser directly with constructed dicts
-because the soft/strict mode toggle is a runtime concern that doesn't depend on
-HTTP plumbing — a VCR cassette would only add ceremony without exercising the
-new branch.
+because the drift branch is a runtime concern that doesn't depend on HTTP
+plumbing — a VCR cassette would only add ceremony without exercising it.
 """
 
 from __future__ import annotations
@@ -84,85 +81,14 @@ class TestParseGenerationResultHappyPath:
 
 
 # ---------------------------------------------------------------------------
-# Drift: explicit soft-mode opt-out (`NOTEBOOKLM_STRICT_DECODE=0`) preserves
-# the legacy "failed" sentinel for callers that still need it.
-# ---------------------------------------------------------------------------
-
-
-class TestParseGenerationResultSoftDrift:
-    """Soft-mode opt-out (``NOTEBOOKLM_STRICT_DECODE=0``) returns legacy failure.
-
-    Post-PR 13.9a strict is the default; this class pins the explicit
-    opt-out contract for one release before ADR-011 retirement.
-    """
-
-    def test_none_result_returns_failed(self, artifacts_api, monkeypatch):
-        # Post-PR 13.9a the unset env-var maps to strict mode; the soft-mode
-        # contract this class pins requires an explicit `"0"` opt-out.
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            status = artifacts_api._parse_generation_result(
-                None, method_id=RPCMethod.CREATE_ARTIFACT.value
-            )
-
-        assert status.status == "failed"
-        assert status.task_id == ""
-        assert status.error and "no artifact_id" in status.error.lower()
-
-    def test_empty_list_returns_failed(self, artifacts_api, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            status = artifacts_api._parse_generation_result(
-                [], method_id=RPCMethod.CREATE_ARTIFACT.value
-            )
-
-        assert status.status == "failed"
-        assert status.task_id == ""
-
-    def test_missing_inner_leaf_returns_failed(self, artifacts_api, monkeypatch):
-        """Inner list is too short to expose [0][0] / [0][4] — soft mode swallows."""
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-
-        # Inner list missing both task_id and status_code positions.
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            status = artifacts_api._parse_generation_result(
-                [[]], method_id=RPCMethod.REVISE_SLIDE.value
-            )
-
-        assert status.status == "failed"
-        assert status.task_id == ""
-
-    def test_status_code_missing_still_returns_pending(self, artifacts_api, monkeypatch):
-        """Drift on the optional status_code leaf must NOT break a valid task_id.
-
-        Under soft mode, ``safe_index`` returns ``None`` for the missing leaf,
-        which the parser already handles by defaulting to ``"pending"``.
-        """
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-
-        # task_id present, status_code position absent.
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            status = artifacts_api._parse_generation_result(
-                [["task_short"]], method_id=RPCMethod.CREATE_ARTIFACT.value
-            )
-
-        assert status.task_id == "task_short"
-        assert status.status == "pending"
-
-
-# ---------------------------------------------------------------------------
-# Drift: strict mode raises typed UnknownRPCMethodError.
+# Drift: strict decoding raises typed UnknownRPCMethodError (the only mode).
 # ---------------------------------------------------------------------------
 
 
 class TestParseGenerationResultStrictDrift:
-    """Strict mode (``NOTEBOOKLM_STRICT_DECODE=1``) raises typed errors."""
+    """Strict decoding raises typed errors on drift (the only mode)."""
 
-    def test_none_result_raises(self, artifacts_api, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
-
+    def test_none_result_raises(self, artifacts_api):
         with pytest.raises(UnknownRPCMethodError) as exc_info:
             artifacts_api._parse_generation_result(None, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
@@ -172,9 +98,7 @@ class TestParseGenerationResultStrictDrift:
         # Top-level descent: failing path is empty (we failed at the first index).
         assert err.path == ()
 
-    def test_none_result_raises_for_revise_slide(self, artifacts_api, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
-
+    def test_none_result_raises_for_revise_slide(self, artifacts_api):
         with pytest.raises(UnknownRPCMethodError) as exc_info:
             artifacts_api._parse_generation_result(None, method_id=RPCMethod.REVISE_SLIDE.value)
 
@@ -183,9 +107,7 @@ class TestParseGenerationResultStrictDrift:
         assert err.source == "_parse_generation_result"
         assert err.path == ()
 
-    def test_empty_list_raises_for_revise_slide(self, artifacts_api, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
-
+    def test_empty_list_raises_for_revise_slide(self, artifacts_api):
         with pytest.raises(UnknownRPCMethodError) as exc_info:
             artifacts_api._parse_generation_result([], method_id=RPCMethod.REVISE_SLIDE.value)
 
@@ -193,10 +115,8 @@ class TestParseGenerationResultStrictDrift:
         assert err.method_id == RPCMethod.REVISE_SLIDE.value
         assert err.source == "_parse_generation_result"
 
-    def test_inner_leaf_missing_raises(self, artifacts_api, monkeypatch):
+    def test_inner_leaf_missing_raises(self, artifacts_api):
         """Drift on the inner leaf reports a non-empty failing path."""
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
-
         with pytest.raises(UnknownRPCMethodError) as exc_info:
             artifacts_api._parse_generation_result([[]], method_id=RPCMethod.CREATE_ARTIFACT.value)
 
@@ -205,8 +125,8 @@ class TestParseGenerationResultStrictDrift:
         # We descended into result[0], then failed on result[0][0].
         assert err.path == (0,)
 
-    def test_status_code_missing_raises_in_strict_mode(self, artifacts_api, monkeypatch):
-        """task_id present but status_code position absent must raise in strict mode.
+    def test_status_code_missing_raises(self, artifacts_api):
+        """task_id present but status_code position absent must raise.
 
         ``status_code`` is treated as a required leaf: in every captured real
         response it sits at ``result[0][4]``. If Google starts shipping a
@@ -214,8 +134,6 @@ class TestParseGenerationResultStrictDrift:
         status_code), we want to learn about it via a typed drift exception
         rather than silently falling back to ``"pending"``.
         """
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
-
         with pytest.raises(UnknownRPCMethodError) as exc_info:
             artifacts_api._parse_generation_result(
                 [["task_short"]], method_id=RPCMethod.CREATE_ARTIFACT.value

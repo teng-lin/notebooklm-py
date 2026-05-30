@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+> **⚠ BREAKING — lapsed v0.6.0-targeted deprecations removed.**
+>
+> These deprecation shims advertised removal in v0.6.0, which has shipped, so
+> they have now been removed. This is a pre-1.0 breaking change. See
+> [`docs/deprecations.md`](docs/deprecations.md) "Removed in v0.7.0".
+>
+> - **Positional `wait` / `wait_timeout` on `SourcesAPI.add_url` / `add_text` /
+>   `add_file` / `add_drive`** — these parameters are now **keyword-only**.
+>   Passing them positionally raises `TypeError`.
+>   ```python
+>   # BEFORE (deprecated, emitted DeprecationWarning)
+>   await client.sources.add_url(nb_id, url, True, 45.0)
+>   # AFTER
+>   await client.sources.add_url(nb_id, url, wait=True, wait_timeout=45.0)
+>   ```
+> - **`ArtifactsAPI.wait_for_completion(poll_interval=...)`** — the deprecated
+>   `poll_interval` alias was removed; use `initial_interval=...` (same
+>   cadence). Passing `poll_interval` raises `TypeError`.
+>   ```python
+>   # BEFORE
+>   await client.artifacts.wait_for_completion(nb_id, task_id, poll_interval=5.0)
+>   # AFTER
+>   await client.artifacts.wait_for_completion(nb_id, task_id, initial_interval=5.0)
+>   ```
+> - **`NOTEBOOKLM_STRICT_DECODE=0` soft-mode opt-out** — removed. Strict
+>   decoding is now the only mode: schema-drift helpers (notably `safe_index`)
+>   always raise `UnknownRPCMethodError` on shape drift instead of
+>   warn-and-returning `None` / `[]`. The env var is now ignored (no-op).
+>   Callers that previously relied on the soft fallback should handle
+>   `UnknownRPCMethodError` (a subclass of `RPCError` / `DecodingError`).
+>
+> **Not removed:** `SourcesAPI.add_file(mime_type=...)` and
+> `notebooklm source add --mime-type` (file sources) were **reassessed and
+> kept** — `mime_type` was re-wired to set the resumable-upload content-type
+> header (overriding filename-extension inference), so it is a supported
+> parameter, not a dead shim. Its stale `DeprecationWarning` had already been
+> removed; the documentation now reflects this.
+>
+> **Not removed:** awaiting `NotebookLMClient.from_storage(...)` still works —
+> its deprecation targets v1.0, not v0.6.0.
+
 ## [0.6.0] - 2026-05-29
 
 ### Breaking changes

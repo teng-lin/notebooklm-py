@@ -17,6 +17,7 @@ from notebooklm._research_task_parser import (
     parse_research_tasks,
     parse_result_type,
 )
+from notebooklm.exceptions import UnknownRPCMethodError
 
 
 class TestParseResultType:
@@ -79,27 +80,18 @@ class TestExtractTaskId:
     def test_happy_path(self):
         assert _extract_task_id(["task_abc", ["info"]]) == "task_abc"
 
-    def test_empty_list_drift_returns_none(self, caplog, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with (
-            caplog.at_level(logging.WARNING),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            assert _extract_task_id([]) is None
-        assert "safe_index drift" in caplog.text
+    def test_empty_list_drift_raises(self):
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_task_id([])
 
     def test_non_string_id_drift_returns_none(self, caplog):
         with caplog.at_level(logging.WARNING):
             assert _extract_task_id([42, ["info"]]) is None
         assert "task_data[0] is not a string" in caplog.text
 
-    def test_non_list_input_returns_none(self, caplog, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with (
-            caplog.at_level(logging.WARNING),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            assert _extract_task_id(None) is None
+    def test_non_list_input_raises(self):
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_task_id(None)
 
 
 class TestExtractTaskInfo:
@@ -109,14 +101,9 @@ class TestExtractTaskInfo:
         info = [None, ["q"], None, [[]], 2]
         assert _extract_task_info(["task_id", info]) is info
 
-    def test_missing_index_returns_none(self, caplog, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with (
-            caplog.at_level(logging.WARNING),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            assert _extract_task_info(["only_id"]) is None
-        assert "safe_index drift" in caplog.text
+    def test_missing_index_raises(self):
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_task_info(["only_id"])
 
     def test_non_list_value_returns_none(self, caplog):
         with caplog.at_level(logging.WARNING):
@@ -136,14 +123,9 @@ class TestExtractQueryText:
             assert _extract_query_text([None, "query", None, [], 1]) is None
         assert "task_info[1] is not a list" in caplog.text
 
-    def test_missing_query_info_returns_none(self, caplog, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with (
-            caplog.at_level(logging.WARNING),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            assert _extract_query_text([None]) is None
-        assert "safe_index drift" in caplog.text
+    def test_missing_query_info_raises(self):
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_query_text([None])
 
     def test_non_string_query_returns_none(self, caplog):
         with caplog.at_level(logging.WARNING):
@@ -163,14 +145,9 @@ class TestExtractStatusCode:
     def test_happy_path_deep_completed(self):
         assert _extract_status_code([None, ["q"], None, [], 6]) == 6
 
-    def test_missing_index_returns_none(self, caplog, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with (
-            caplog.at_level(logging.WARNING),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            assert _extract_status_code([None, ["q"], None, []]) is None
-        assert "safe_index drift" in caplog.text
+    def test_missing_index_raises(self):
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_status_code([None, ["q"], None, []])
 
     def test_non_int_returns_none(self, caplog):
         with caplog.at_level(logging.WARNING):
@@ -204,16 +181,9 @@ class TestExtractSourcesAndSummary:
         assert sources == [["url", "title"]]
         assert summary is None
 
-    def test_missing_bundle_returns_empty(self, caplog, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with (
-            caplog.at_level(logging.WARNING),
-            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-        ):
-            sources, summary = _extract_sources_and_summary([None, ["q"], None])
-        assert sources == []
-        assert summary is None
-        assert "safe_index drift" in caplog.text
+    def test_missing_bundle_raises(self):
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_sources_and_summary([None, ["q"], None])
 
     def test_empty_bundle_returns_empty(self):
         sources, summary = _extract_sources_and_summary([None, ["q"], None, [], 2])

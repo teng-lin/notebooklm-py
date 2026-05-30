@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from notebooklm.exceptions import UnknownRPCMethodError
+
 # Path to the repo's src/notebooklm/ — used by the silent-site source inspection tests.
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 
@@ -75,21 +77,16 @@ async def test_get_source_ids_happy_path_no_warning(caplog):
     assert warnings == []
 
 
-def test_qa_pairs_warns_on_unguarded_shape(caplog, monkeypatch):
-    """_chat.py: QA-pair parser warns when next_turn[4] is not indexable.
+def test_qa_pairs_raises_on_unguarded_shape():
+    """_chat.py: QA-pair parser raises when next_turn[4] is not indexable.
 
-    Pins the soft-mode contract — the QA-pair parser preserves an empty answer
-    for callers that walked drifted turns under the legacy fallback. Post-PR
-    13.9a the default is strict, so this site needs an explicit opt-out via
-    ``NOTEBOOKLM_STRICT_DECODE=0`` to keep exercising the warn-and-empty path.
+    Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+    soft-mode opt-out was retired in v0.7.0), so a drifted answer turn raises
+    ``UnknownRPCMethodError`` rather than silently producing an empty answer.
     """
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     from notebooklm._chat import ChatAPI
 
-    # next_turn[4] is a string — string[0] returns a char (no error), but
-    # string[0][0] raises IndexError on empty char access. Use a value
-    # whose [0][0] raises TypeError: a non-subscriptable nested object.
-    # Simpler: next_turn[4] is None → None[0] → TypeError.
+    # next_turn[4] is None → None[0] raises TypeError, surfaced by safe_index.
     turns_data = [
         [
             [None, None, 1, "what?"],  # question turn (type=1)
@@ -98,61 +95,30 @@ def test_qa_pairs_warns_on_unguarded_shape(caplog, monkeypatch):
     ]
 
     chat = ChatAPI.__new__(ChatAPI)
-    with (
-        caplog.at_level(logging.WARNING, logger="notebooklm"),
-        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-    ):
-        # Direct call to the private parser
-        pairs = chat._parse_turns_to_qa_pairs(turns_data)  # type: ignore[arg-type]
-
-    # Got at least the question (answer is empty due to except)
-    assert pairs == [("what?", "")]
-    # After the fix, _chat._extract_next_turn_content delegates to safe_index,
-    # which emits its own canonical "safe_index drift" warning (rather than
-    # the older _chat-specific "schema drift" wording). Accept either so
-    # this test survives future helper renames.
-    assert any(
-        ("schema drift" in r.message or "safe_index drift" in r.message)
-        and r.levelno == logging.WARNING
-        for r in caplog.records
-    )
+    with pytest.raises(UnknownRPCMethodError):
+        chat._parse_turns_to_qa_pairs(turns_data)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
-async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
-    """_notebooks.py: summary extraction warns when result[0][0][0] raises.
+async def test_summary_raises_on_indexerror_drift():
+    """_notebooks.py: summary extraction raises when result[0][0][0] drifts.
 
-    This site was migrated to ``safe_index``; the warning message
-    now comes from ``notebooklm.rpc._safe_index`` and carries the call-site
-    label ``source='_notebooks.get_summary'`` instead of the notebook id.
+    This site was migrated to ``safe_index``; under strict decoding (the only
+    mode) a drifted response raises ``UnknownRPCMethodError`` carrying the
+    call-site label ``source='_notebooks.get_summary'``.
     """
+    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
 
-    # Pin soft mode so safe_index warns instead of raising. Post-PR 13.9a the
-    # default is strict; this site needs explicit opt-out to keep asserting
-    # the warn-and-return-"" legacy behavior the CLI's truthiness check relies on.
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-
-    from _fixtures.fake_core import make_fake_core
-
     api = NotebooksAPI.__new__(NotebooksAPI)
-    # result[0][0] is a string, so [0] returns a char; result[0][0][0] is fine
-    # We need a shape that raises IndexError. result[0] is an empty list →
-    # result[0][0] raises IndexError.
+    # result[0] is an empty list → result[0][0] raises IndexError.
     mock_core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
     api._rpc = mock_core
 
-    with (
-        caplog.at_level(logging.WARNING, logger="notebooklm"),
-        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
-    ):
-        summary = await api.get_summary("nb_summary")
+    with pytest.raises(UnknownRPCMethodError) as exc_info:
+        await api.get_summary("nb_summary")
 
-    assert summary == ""
-    assert any(
-        "safe_index drift" in r.message and "_notebooks.get_summary" in r.message
-        for r in caplog.records
-    )
+    assert exc_info.value.source == "_notebooks.get_summary"
 
 
 # ---------------------------------------------------------------------------

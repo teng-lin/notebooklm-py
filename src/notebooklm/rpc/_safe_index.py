@@ -1,11 +1,11 @@
 """Shared schema-drift helper for indexing into decoded RPC payloads.
 
-``safe_index`` walks a nested list/tuple by integer keys with soft-strict
-semantics. Since PR 13.9a the default is strict: drift raises
-``UnknownRPCMethodError`` so callers fail fast when Google's response
-shape moves out from under us. Setting ``NOTEBOOKLM_STRICT_DECODE=0``
-opts back into the legacy warn-and-return-``None`` fallback for one
-release window (see ``docs/adr/0011-schema-validation-policy.md``).
+``safe_index`` walks a nested list/tuple by integer keys with strict
+semantics: drift raises ``UnknownRPCMethodError`` so callers fail fast
+when Google's response shape moves out from under us. The legacy
+``NOTEBOOKLM_STRICT_DECODE=0`` warn-and-return-``None`` opt-out was
+retired in v0.7.0 (see ``docs/adr/0011-schema-validation-policy.md``);
+strict is now the only mode.
 
 This is the single shared point of policy for "the payload didn't look like
 we expected" — call sites should migrate to ``safe_index`` rather than
@@ -14,17 +14,12 @@ hand-rolling ``try/except IndexError`` blocks.
 
 from __future__ import annotations
 
-import logging
 import reprlib
-import warnings
 from typing import Any
 
-from .._env import is_strict_decode_enabled
 from ..exceptions import UnknownRPCMethodError
 
 __all__ = ["safe_index"]
-
-logger = logging.getLogger(__name__)
 
 _REPR_TRUNCATE = 200
 
@@ -73,14 +68,12 @@ def safe_index(
             exception's ``source`` attribute.
 
     Returns:
-        The value at ``data[path[0]][path[1]]...`` on success, or ``None`` in
-        soft mode when descent fails.
+        The value at ``data[path[0]][path[1]]...`` on success.
 
     Raises:
-        UnknownRPCMethodError: When ``NOTEBOOKLM_STRICT_DECODE`` is truthy and
-            descent fails. The exception carries ``method_id``, ``source``,
-            ``path`` (truncated to where descent stopped), and a truncated
-            ``data_at_failure`` repr.
+        UnknownRPCMethodError: When descent fails. The exception carries
+            ``method_id``, ``source``, ``path`` (truncated to where descent
+            stopped), and a truncated ``data_at_failure`` repr.
     """
     current: Any = data
     for i, key in enumerate(path):
@@ -89,33 +82,14 @@ def safe_index(
         except (IndexError, TypeError, KeyError) as exc:
             failing_path = tuple(path[:i])
             data_repr = _truncate(current)
-            if is_strict_decode_enabled():
-                # method_id/source are appended by UnknownRPCMethodError.__str__
-                # via its structured fields — don't duplicate them in the
-                # message text.
-                raise UnknownRPCMethodError(
-                    f"safe_index drift at path {failing_path}[{key}]",
-                    method_id=method_id,
-                    path=failing_path,
-                    source=source,
-                    data_at_failure=data_repr,
-                ) from exc
-            logger.warning(
-                "safe_index drift at %r[%d] (method_id=%r, source=%r): %s",
-                failing_path,
-                key,
-                method_id,
-                source,
-                data_repr,
-            )
-            warnings.warn(
-                "safe_index soft-mode fallback via NOTEBOOKLM_STRICT_DECODE=0 "
-                f"was used at source {source!r}; this opt-out is deprecated "
-                "and scheduled for removal in v0.6.0. Handle "
-                "UnknownRPCMethodError or fix the decoder call site before "
-                "the soft-mode path is removed.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            return None
+            # method_id/source are appended by UnknownRPCMethodError.__str__
+            # via its structured fields — don't duplicate them in the
+            # message text.
+            raise UnknownRPCMethodError(
+                f"safe_index drift at path {failing_path}[{key}]",
+                method_id=method_id,
+                path=failing_path,
+                source=source,
+                data_at_failure=data_repr,
+            ) from exc
     return current

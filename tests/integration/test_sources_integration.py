@@ -1179,84 +1179,73 @@ class TestGetFulltext:
 class TestListSourcesMalformedResponse:
     """Tests for list() warning paths when API response is malformed (lines 71-95)."""
 
+    # Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+    # soft-mode opt-out was retired in v0.7.0): every malformed/error-shaped
+    # GET_NOTEBOOK response raises ``RPCError`` rather than silently returning
+    # ``[]`` (issue #1159).
+
     @pytest.mark.asyncio
-    async def test_list_sources_empty_response(
+    async def test_list_sources_empty_response_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
-        monkeypatch: pytest.MonkeyPatch,
     ):
-        """Test list() returns [] when notebook response is empty (lines 71-76).
-
-        Strict-decode (default ON) would raise here; pin soft mode to assert
-        the legacy warn-and-return-[] fallback (issue #1159).
-        """
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+        """An empty notebook response raises (lines 71-76)."""
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            sources = await client.sources.list("nb_123")
-
-        assert sources == []
+            with pytest.raises(RPCError):
+                await client.sources.list("nb_123")
 
     @pytest.mark.asyncio
-    async def test_list_sources_non_list_notebook_entry(
+    async def test_list_sources_non_list_notebook_entry_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
-        monkeypatch: pytest.MonkeyPatch,
     ):
-        """Test list() returns [] when nb_info is not a list (lines 80-85)."""
+        """A non-list ``notebook[0]`` raises (lines 80-85)."""
         # notebook[0] is a string, not a list - fails isinstance(nb_info, list)
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, ["just_a_string"])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            sources = await client.sources.list("nb_123")
-
-        assert sources == []
+            with pytest.raises(RPCError):
+                await client.sources.list("nb_123")
 
     @pytest.mark.asyncio
-    async def test_list_sources_nb_info_missing_index_1(
+    async def test_list_sources_nb_info_missing_index_1_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
-        monkeypatch: pytest.MonkeyPatch,
     ):
-        """Test list() returns [] when nb_info list has no index 1 (lines 80-85)."""
+        """A too-short ``notebook[0]`` (no index 1) raises (lines 80-85)."""
         # notebook[0] is a list with only 1 element - len(nb_info) <= 1
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [["just_a_title"]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            sources = await client.sources.list("nb_123")
-
-        assert sources == []
+            with pytest.raises(RPCError):
+                await client.sources.list("nb_123")
 
     @pytest.mark.asyncio
-    async def test_list_sources_sources_list_not_a_list(
+    async def test_list_sources_sources_list_not_a_list_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
-        monkeypatch: pytest.MonkeyPatch,
     ):
-        """Test list() returns [] when sources_list is not a list (lines 89-95)."""
+        """A non-list ``nb_info[1]`` raises (lines 89-95)."""
         # nb_info[1] is a string - fails isinstance(sources_list, list)
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [["Notebook Title", "not_a_list"]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            sources = await client.sources.list("nb_123")
-
-        assert sources == []
+            with pytest.raises(RPCError):
+                await client.sources.list("nb_123")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

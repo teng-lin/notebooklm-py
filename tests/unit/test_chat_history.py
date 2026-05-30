@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._chat import ChatAPI
+from notebooklm.exceptions import UnknownRPCMethodError
 
 
 class TestParseTurnsToQaPairs:
@@ -124,24 +125,22 @@ class TestParseTurnsToQaPairs:
         # The 42 at i+1 is not a valid answer turn, so Q gets empty answer
         assert result == [("Question?", "")]
 
-    def test_answer_with_index_error(self, monkeypatch: pytest.MonkeyPatch):
-        """Answer turn with broken structure yields empty answer string.
+    def test_answer_with_index_error(self):
+        """Answer turn with broken structure raises under strict decoding.
 
-        Soft-mode fallback contract: the parser preserves an empty answer when
-        the inner shape can't be descended into. Post-PR 13.9a the default is
-        strict, so this site explicitly opts back into soft mode to keep
-        exercising the legacy degraded-payload contract.
+        Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+        soft-mode opt-out was retired in v0.7.0), so a non-descendable inner
+        shape raises ``UnknownRPCMethodError`` rather than degrading to an
+        empty answer.
         """
-        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         turns_data = [
             [
                 [None, None, 1, "Question?"],
                 [None, None, 2, None, []],  # empty nested list
             ]
         ]
-        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
-            result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
-        assert result == [("Question?", "")]
+        with pytest.raises(UnknownRPCMethodError):
+            ChatAPI._parse_turns_to_qa_pairs(turns_data)
 
     def test_answer_with_none_text(self):
         """Answer turn where text is None yields 'None' (str conversion)."""
