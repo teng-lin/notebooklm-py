@@ -87,10 +87,7 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
     # NOTE: ``ClientComposed``, ``TransportDrainTracker``,
     # ``SourceUploadPipeline``, and ``ChatAPI`` are NOT allowlisted — they each
     # define the full ``set_bound_loop`` + ``reset_after_open`` protocol and so
-    # are detected as compliant by the owner-method scan. ``ChatAPI`` joined the
-    # protocol in #1225 (the per-conversation / per-notebook lock maps), which
-    # retired the follow-up allowlist entry that used to live at the bottom of
-    # this list.
+    # are detected as compliant by the owner-method scan.
     #
     # ``set_bound_loop`` only (no ``reset_after_open``): the lazy ``asyncio.Lock``
     # is rebuilt implicitly because these coordinators are reconstructed per
@@ -349,10 +346,9 @@ def test_loop_affinity_followup_entries_reference_a_tracking_issue() -> None:
     retired. Iterating (rather than hard-keying on a specific class) keeps the
     guard robust if a future gap class is renamed or relocated.
 
-    There are intentionally **no** gap entries today — the last one
-    (``ChatAPI``'s conversation locks, #1225) was retired when ChatAPI joined
-    the owner-level protocol. This test therefore validates the *shape* of any
-    gap entry that lands in the future rather than requiring one to exist.
+    There are intentionally **no** gap entries today. This test therefore
+    validates the *shape* of any gap entry that lands in the future rather
+    than requiring one to exist.
     """
     gap_entries = [entry for entry in ALLOWLIST if entry.issue is not None]
     for entry in gap_entries:

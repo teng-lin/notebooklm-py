@@ -321,9 +321,10 @@ class ClientLifecycle:
         # points (``drain``, ``next_reqid``, ``await_refresh``) so a
         # cross-loop call surfaces an actionable ``RuntimeError`` at the
         # call site rather than hanging on a primitive bound to a dead
-        # loop. ``ChatAPI`` / ``ArtifactPollingService`` reach the bound
-        # loop through ``ClientLifecycle.get_bound_loop()`` so no further
-        # propagation is needed there.
+        # loop. ``ArtifactPollingService`` reaches the bound loop through
+        # ``ClientLifecycle.get_bound_loop()`` so no further propagation is
+        # needed there. (``ChatAPI`` now receives direct ``set_bound_loop``
+        # propagation below — #1225.)
         drain_tracker.set_bound_loop(self._bound_loop)
         reqid.set_bound_loop(self._bound_loop)
         auth_coord.set_bound_loop(self._bound_loop)

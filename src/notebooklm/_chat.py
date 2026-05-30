@@ -724,6 +724,14 @@ class ChatAPI:
             True on success. The server returns an empty body; any
             RPC-level error raises before this returns.
         """
+        # Catch cross-loop misuse before acquiring the per-conversation lock
+        # below — like ``ask`` does — so a client reused from a different loop
+        # fails fast at the call site instead of hanging on (or rebuilding) a
+        # lock bound to a dead loop. The owner-level ``set_bound_loop`` /
+        # ``reset_after_open`` protocol (#1225) only resets the locks on a
+        # *reopen*; an already-open client driven cross-loop is still rejected
+        # here by the injected guard.
+        self._loop_guard.assert_bound_loop()
         logger.debug("Deleting conversation %s in notebook %s", conversation_id, notebook_id)
         # Hold the per-``conversation_id`` lock the same way ``ask`` does
         # for follow-ups, so a concurrent follow-up ``ask`` can't read
