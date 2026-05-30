@@ -247,10 +247,12 @@ Every `download` subcommand accepts the same selection / safety / output flag se
 | `slide-deck [path]` | Output path | `--format [pdf\|pptx]` (default: pdf) | `download slide-deck ./slides.pdf` |
 | `infographic [path]` | Output path | (none) | `download infographic ./info.png` |
 | `report [path]` | Output path | (none) | `download report ./report.md` |
-| `mind-map [path]` | Output path | (none) | `download mind-map ./map.json` |<!-- both note-backed and interactive kinds export their JSON node tree -->
+| `mind-map [path]` | Output path | (none) | `download mind-map ./map.json` |
 | `data-table [path]` | Output path | (none) | `download data-table ./data.csv` |
 | `quiz [path]` | Output path | `--format [json\|markdown\|html]` (default: json) | `download quiz --format markdown quiz.md` |
 | `flashcards [path]` | Output path | `--format [json\|markdown\|html]` (default: json) | `download flashcards cards.json` |
+
+<!-- `download mind-map` handles both note-backed and interactive kinds; both export their JSON node tree. -->
 
 ### Note Commands (`notebooklm note <cmd>`)
 

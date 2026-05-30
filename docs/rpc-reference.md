@@ -56,7 +56,7 @@
 | `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_sharing.py` |
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
-| `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_artifacts.py` |
+| `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_artifact_downloads.py` |
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
@@ -1781,9 +1781,11 @@ await rpc_call(
 
 ### RPC: GET_INTERACTIVE_HTML (v9rmvd)
 
-**Source:** `_artifacts.py::_get_artifact_content()`
+**Source:** `_artifact_downloads.py::_get_artifact_content()` (quiz/flashcard HTML), `_artifact_downloads.py::_get_interactive_mind_map_tree()` (interactive mind-map tree)
 
-Fetch HTML content for quiz or flashcard artifacts. Used for downloading these artifact types in various formats.
+Fetch the interactive payload for a studio artifact. Used both for quiz/flashcard
+HTML and for the **interactive** mind-map JSON node tree (issue #1256) — the same
+RPC, but the two kinds read different cells of index `9`.
 
 ```python
 params = [artifact_id]  # Just the artifact ID
@@ -1798,12 +1800,17 @@ await rpc_call(
 # Response structure:
 # [[
 #     ...,                    # indices 0-8: metadata
-#     [html_content],         # index 9: HTML content array
+#     [                       # index 9: interactive content array
+#         html_content,       #   [9][0]: rendered HTML body (quiz / flashcard)
+#         ...,
+#         ...,
+#         tree_json,          #   [9][3]: interactive mind-map {"name","children"} tree (JSON string)
+#     ],
 #     ...
 # ]]
 #
-# HTML content contains quiz questions or flashcard data
-# that can be parsed into JSON, Markdown, or kept as HTML.
+# Quiz/flashcard download reads [0][9][0] (HTML → JSON/Markdown/HTML).
+# Interactive mind-map download reads [0][9][3] (the JSON node tree).
 ```
 
 ### RPC: GET_SUGGESTED_REPORTS (ciyUvf)

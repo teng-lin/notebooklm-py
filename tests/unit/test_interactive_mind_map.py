@@ -96,6 +96,7 @@ from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
 from notebooklm._artifact_downloads import ArtifactDownloadService  # noqa: E402
 from notebooklm._runtime_contracts import RpcCaller  # noqa: E402
+from notebooklm.rpc.types import RPCMethod  # noqa: E402
 from notebooklm.types import ArtifactNotReadyError  # noqa: E402
 
 # Raw studio row whose [9][1][0] == 4 → Artifact.is_interactive_mind_map is True.
@@ -134,6 +135,13 @@ async def test_download_interactive_id_with_zero_note_backed_maps(tmp_path):
         "name": "Root",
         "children": [{"name": "A"}],
     }
+    # Lock the retrieval contract: the tree must come from GET_INTERACTIVE_HTML
+    # addressed to this artifact id (not some other RPC / id that happens to
+    # yield the same parsed tree).
+    method, params = svc._rpc.rpc_call.await_args.args[:2]
+    assert method is RPCMethod.GET_INTERACTIVE_HTML
+    assert params == ["int_mm"]
+    assert svc._rpc.rpc_call.await_args.kwargs["source_path"] == "/notebook/nb"
 
 
 @pytest.mark.asyncio

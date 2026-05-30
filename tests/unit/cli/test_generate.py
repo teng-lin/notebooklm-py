@@ -912,6 +912,11 @@ class TestGenerateMindMap:
 
             assert result.exit_code == 0
             assert "--instructions is ignored" in result.output
+            # The warning must be backed by behaviour: the interactive
+            # generator call must not forward the dropped instructions.
+            mock_client.mind_maps.generate.assert_awaited_once()
+            call_kwargs = mock_client.mind_maps.generate.await_args.kwargs
+            assert not call_kwargs.get("instructions")
 
 
 # =============================================================================
