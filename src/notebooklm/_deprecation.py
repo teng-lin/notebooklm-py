@@ -23,7 +23,11 @@ Two families live here:
 
 Both families share the single ``NOTEBOOKLM_QUIET_DEPRECATIONS`` suppression
 gate (read live, never cached) and a parameterized ``stacklevel`` so the
-warning's ``filename``/``lineno`` point at the *user's* call site.
+warning's ``filename``/``lineno`` point at the *user's* call site. The warning
+message always names the removal version (so ``scripts/check_deprecation_targets.py``
+can verify the shipping release never names *itself* as the removal target), and
+passing BOTH the old and new keyword raises :class:`TypeError` rather than
+silently preferring one.
 """
 
 from __future__ import annotations
@@ -159,7 +163,7 @@ def deprecated_kwarg(
         owner: Human-readable owner of the parameter for the warning message,
             e.g. ``"ResearchAPI.wait_for_completion"``.
         removal: Version in which the deprecated keyword is removed. Defaults
-            to v0.8.0. Named in the warning text so the release gate can verify
+            to v0.7.0. Named in the warning text so the release gate can verify
             it is never the shipping version.
         sentinel: The "not provided" marker for both ``old_value`` and
             ``new_value``. Defaults to ``None``; pass a private sentinel object

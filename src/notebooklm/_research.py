@@ -460,7 +460,7 @@ class ResearchAPI:
                 :meth:`SourcesAPI.wait_until_ready` and
                 :meth:`ArtifactsAPI.wait_for_completion`.
             interval: **Deprecated** alias for ``initial_interval`` (removed in
-                v0.8.0). Passing a non-default value emits a
+                v0.7.0). Passing a non-default value emits a
                 :class:`DeprecationWarning`; passing both a non-default
                 ``interval`` and an explicit ``initial_interval`` raises
                 :class:`TypeError`. Default-shape calls stay silent.

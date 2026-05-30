@@ -296,7 +296,7 @@ except WaitTimeoutError as exc:
 `WaitTimeoutError` (and therefore still a `TimeoutError`), so the change is
 backward-compatible. The poll cadence keyword on that method is now
 `initial_interval=` (matching the source/artifact waiters); the old `interval=`
-keyword still works with a `DeprecationWarning` and is removed in v0.8.0 — see
+keyword still works with a `DeprecationWarning` and is removed in v0.7.0 — see
 [deprecations](deprecations.md#migration-researchapiwait_for_completion-poll-interval-keyword).
 
 ##### Catching any "not found" across domains
@@ -1395,7 +1395,7 @@ if result.references:
 |--------|------------|---------|-------------|
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `dict \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `dict` | Check research status |
-| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.8.0). |
+| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.7.0). |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
 
 **Method Signatures:**
@@ -1438,7 +1438,7 @@ async def wait_for_completion(
     *,
     timeout: float = 1800,
     initial_interval: float = 5,   # canonical poll-cadence keyword
-    interval: float = 5,           # DEPRECATED alias for initial_interval (removed in v0.8.0)
+    interval: float = 5,           # DEPRECATED alias for initial_interval (removed in v0.7.0)
 ) -> dict:
     """
     Loops on poll() until research returns "completed" / "failed" or the
