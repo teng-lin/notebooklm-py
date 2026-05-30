@@ -193,13 +193,24 @@ def _is_primitive_construction(
 
 
 class _ConstructionSite:
-    __slots__ = ("path", "lineno", "primitive", "owner")
+    __slots__ = ("path", "lineno", "primitive", "owner", "owner_line")
 
-    def __init__(self, path: str, lineno: int, primitive: str, owner: str | None) -> None:
+    def __init__(
+        self,
+        path: str,
+        lineno: int,
+        primitive: str,
+        owner: str | None,
+        owner_line: int | None,
+    ) -> None:
         self.path = path
         self.lineno = lineno
         self.primitive = primitive
+        # ``owner`` is the class *name* (used for allowlist keying + display);
+        # ``owner_line`` is its start line (used for the methods lookup so
+        # same-named classes in different scopes don't collide).
         self.owner = owner
+        self.owner_line = owner_line
 
     @property
     def key(self) -> tuple[str, str | None]:
@@ -210,12 +221,18 @@ class _ConstructionSite:
         return f"{self.path}:{self.lineno} asyncio.{self.primitive} (owner={owner})"
 
 
-def _class_methods(module: ast.Module) -> dict[str, set[str]]:
-    """Map each top-level/nested class name to the methods it defines."""
-    methods: dict[str, set[str]] = {}
+def _class_methods(module: ast.Module) -> dict[int, set[str]]:
+    """Map each class's *start line* to the methods it defines.
+
+    Keyed by start line (unique within a file) rather than by class name so two
+    same-named classes in different scopes (e.g. a helper ``_State`` nested in
+    two separate outer classes) don't collide and silently misreport
+    compliance.
+    """
+    methods: dict[int, set[str]] = {}
     for node in ast.walk(module):
         if isinstance(node, ast.ClassDef):
-            methods[node.name] = {
+            methods[node.lineno] = {
                 child.name
                 for child in node.body
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -223,13 +240,15 @@ def _class_methods(module: ast.Module) -> dict[str, set[str]]:
     return methods
 
 
-def _enclosing_class(class_ranges: list[tuple[int, int, str]], lineno: int) -> str | None:
-    """Return the innermost class whose body spans *lineno*, if any."""
+def _enclosing_class(
+    class_ranges: list[tuple[int, int, str]], lineno: int
+) -> tuple[str, int] | None:
+    """Return ``(name, start_line)`` of the innermost class spanning *lineno*."""
     best: tuple[int, int, str] | None = None
     for start, end, name in class_ranges:
         if start <= lineno <= end and (best is None or start > best[0]):
             best = (start, end, name)
-    return best[2] if best else None
+    return (best[2], best[0]) if best else None
 
 
 def _asyncio_import_bindings(module: ast.Module) -> tuple[str, dict[str, str]]:
@@ -254,9 +273,9 @@ def _asyncio_import_bindings(module: ast.Module) -> tuple[str, dict[str, str]]:
     return asyncio_alias, imported_primitives
 
 
-def _scan() -> tuple[list[_ConstructionSite], dict[str, dict[str, set[str]]]]:
+def _scan() -> tuple[list[_ConstructionSite], dict[str, dict[int, set[str]]]]:
     sites: list[_ConstructionSite] = []
-    methods_by_file: dict[str, dict[str, set[str]]] = {}
+    methods_by_file: dict[str, dict[int, set[str]]] = {}
     for path in sorted(SRC_ROOT.rglob("*.py")):
         module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         rel = path.relative_to(REPO_ROOT).as_posix()
@@ -271,8 +290,10 @@ def _scan() -> tuple[list[_ConstructionSite], dict[str, dict[str, set[str]]]]:
             primitive = _is_primitive_construction(node, asyncio_alias, imported_primitives)
             if primitive is None:
                 continue
-            owner = _enclosing_class(class_ranges, node.lineno)
-            sites.append(_ConstructionSite(rel, node.lineno, primitive, owner))
+            enclosing = _enclosing_class(class_ranges, node.lineno)
+            owner = enclosing[0] if enclosing else None
+            owner_line = enclosing[1] if enclosing else None
+            sites.append(_ConstructionSite(rel, node.lineno, primitive, owner, owner_line))
     return sites, methods_by_file
 
 
@@ -289,7 +310,10 @@ def test_every_asyncio_primitive_is_loop_affinity_guarded() -> None:
 
     violations: list[str] = []
     for site in sites:
-        owner_methods = methods_by_file.get(site.path, {}).get(site.owner or "", set())
+        file_methods = methods_by_file.get(site.path, {})
+        owner_methods = (
+            file_methods.get(site.owner_line, set()) if site.owner_line is not None else set()
+        )
         compliant = site.owner is not None and all(
             method in owner_methods for method in REQUIRED_GUARD_METHODS
         )
@@ -334,15 +358,21 @@ def test_loop_affinity_allowlist_has_no_stale_entries() -> None:
 
 
 def test_loop_affinity_followup_entries_reference_a_tracking_issue() -> None:
-    """Known-gap allowlist entries (not alt-guarded) must cite a tracking issue."""
-    # The ChatAPI locks are the only entry that is a *gap* rather than an
-    # alternative documented guard; it must carry an issue reference so the
-    # follow-up is trackable and the entry can be retired.
-    chat_entry = _ALLOWLIST_BY_KEY[("src/notebooklm/_chat.py", "ChatAPI")]
-    assert chat_entry.issue == CHAT_LOCKS_FOLLOWUP_ISSUE, (
-        "ChatAPI loop-affinity gap must reference its tracking issue "
-        f"(#{CHAT_LOCKS_FOLLOWUP_ISSUE})."
-    )
+    """Known-gap allowlist entries (not alt-guarded) must cite a tracking issue.
+
+    A *gap* entry is one that carries an ``issue`` (vs. an alternative-guard
+    entry, which is documented by reason only). Every such entry must reference
+    a positive issue number so the follow-up is trackable and the entry can be
+    retired. Iterating (rather than hard-keying on ``_chat.py``/``ChatAPI``)
+    keeps the guard robust if the gap class is renamed or relocated.
+    """
+    gap_entries = [entry for entry in ALLOWLIST if entry.issue is not None]
+    assert gap_entries, "expected at least one gap entry carrying a tracking issue"
+    for entry in gap_entries:
+        assert isinstance(entry.issue, int) and entry.issue > 0, (
+            f"gap entry for {entry.path} (owner={entry.owner}) must cite a "
+            "positive tracking issue number."
+        )
 
 
 def _detect(source: str) -> set[str]:

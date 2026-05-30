@@ -59,8 +59,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 
 # Calls whose first string argument is treated as a user-facing deprecation
-# message. ``warnings.warn`` is the canonical path; ``DeprecationWarning(...)``
-# covers messages built for a raised/constructed warning instance.
+# message:
+#   * ``warnings.warn`` — the canonical attribute-access form.
+#   * bare ``warn`` — the ``from warnings import warn; warn(...)`` form.
+#   * ``DeprecationWarning(...)`` — a constructed/raised warning instance.
+# The bare ``warn`` is broad on purpose (a release gate prefers a false
+# positive over a missed deprecation); the version-naming regex in
+# ``_removal_pattern`` keeps incidental ``warn()`` calls from matching unless
+# they actually name the shipping version as a removal target.
 _DEPRECATION_CALL_NAMES = frozenset({"warnings.warn", "warn", "DeprecationWarning"})
 
 
@@ -244,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
         if entry.key not in matched_allowlist_keys
     )
 
+    # Report BOTH problems in one pass: a developer fixing a blocking offender
+    # should also see any stale allowlist entry without needing a second run.
     if blocking:
         print(
             f"Deprecation message(s) name the current release version "
@@ -259,7 +267,6 @@ def main(argv: list[str] | None = None) -> int:
             "add the site to LAPSED_ALLOWLIST with its tracking issue.",
             file=sys.stderr,
         )
-        return 1
 
     if stale:
         print(
@@ -269,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         for line in stale:
             print(line, file=sys.stderr)
+
+    if blocking or stale:
         return 1
 
     allowlisted = len(matched_allowlist_keys)

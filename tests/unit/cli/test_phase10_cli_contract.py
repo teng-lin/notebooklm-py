@@ -502,6 +502,12 @@ def _build_json_invocation(path: str) -> list[str]:
                 argv.append(_JSON_CONTRACT_DUMMY_ARGS.get(param.name, _choice_value(param)))
         elif isinstance(param, click.Option) and param.required:
             argv.append(param.opts[0])
+            # "1" works for INT/STRING options and is enough to clear Click's
+            # parser so the command body (and its auth bootstrap) is reached.
+            # If a --json command ever gains a required option with a
+            # restrictive type (UUID, existing-Path, ...) that rejects "1",
+            # Click would exit 2 before auth; add such names to a dummy-option
+            # map here, mirroring _JSON_CONTRACT_DUMMY_ARGS for arguments.
             argv.append(_choice_value(param) if isinstance(param.type, click.Choice) else "1")
     if any(isinstance(param, click.Option) and param.name == "notebook_id" for param in cmd.params):
         argv.extend(["-n", "nb_contract"])
