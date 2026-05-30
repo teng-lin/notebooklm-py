@@ -140,7 +140,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_REFRESH_PROFILE` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; names the resolved profile being refreshed | resolved profile |
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; path to the `storage_state.json` file the command must rewrite | resolved storage path |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
-| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the `get()`-returns-`None` `DeprecationWarning` (`sources.get` / `artifacts.get` / `notes.get` returning `None` on a miss; see `docs/deprecations.md`). Set to `1` to silence it. | (warning emitted) |
+| `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the `get()`-returns-`None` `DeprecationWarning` (`sources.get` / `artifacts.get` / `notes.get` returning `None` on a miss; see `docs/deprecations.md`). Set to a truthy value (`1` / `true` / `yes` / `on`, case-insensitive) to silence it. | (warning emitted) |
 | `NOTEBOOKLM_VCR_RECORD_ERRORS` | Synthetic-error injection mode for VCR test cassettes (`429`, `5xx`, `expired_csrf`) | - |
 
 ### Public config API vs internal resolvers
