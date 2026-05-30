@@ -658,6 +658,27 @@ class TestSource:
         assert source.is_processing is True
         assert source.is_ready is False
 
+    def test_from_api_response_deeply_nested_carries_status(self):
+        """The deeply-nested dispatch path also decodes the status block.
+
+        ``from_unknown_shape`` unwraps the extra outer list and funnels
+        the entry through the same ``from_row`` construction, so the
+        decoded status must survive on the deeply-nested shape too.
+        """
+        from notebooklm.rpc.types import SourceStatus
+
+        entry = [
+            ["src_deep_err"],
+            "Deep Errored Source",
+            [None, None, None, None, 3, None, None, ["https://example.com"]],
+            [None, SourceStatus.ERROR],
+        ]
+        source = Source.from_api_response([[entry]])
+
+        assert source.id == "src_deep_err"
+        assert source.status == SourceStatus.ERROR
+        assert source.is_error is True
+
     def test_from_api_response_status_defaults_ready_without_block(self):
         """A row without a status block keeps the historical READY default."""
         from notebooklm.rpc.types import SourceStatus
