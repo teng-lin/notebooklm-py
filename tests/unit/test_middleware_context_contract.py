@@ -12,6 +12,7 @@ from notebooklm._middleware_context import (
     RPC_CONTEXT_BUILD_REQUEST,
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
+    RPC_CONTEXT_REFRESH_BUDGET,
     RPC_CONTEXT_RPC_METHOD,
     RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
 )
@@ -155,6 +156,7 @@ def test_allowed_rpc_context_keys_match_adr_vocabulary() -> None:
         RPC_CONTEXT_AUTH_SNAPSHOT,
         RPC_CONTEXT_AUTH_REFRESHED,
         RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
+        RPC_CONTEXT_REFRESH_BUDGET,
     } == ALLOWED_RPC_CONTEXT_KEYS
 
 

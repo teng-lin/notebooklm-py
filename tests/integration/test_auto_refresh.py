@@ -150,6 +150,131 @@ class TestAutoRefreshIntegration:
         assert decode_count[0] == 2, "Should have retried once"
 
     @pytest.mark.asyncio
+    async def test_wire_401_then_decoded_auth_error_refreshes_once(self):
+        """Issue #1205: a wire-401 followed by a decoded auth error on the SAME
+        logical call must drive exactly ONE refresh.
+
+        Before consolidation the HTTP-status layer (``AuthRefreshMiddleware``)
+        and the decoded-RPC layer (``RpcExecutor``) tracked their once-per-call
+        guard independently — the chain's per-request ``auth_refreshed`` flag
+        and the executor's ``_is_retry`` flag could not see each other. So a
+        ``401 → refresh#1 → 200 → decoded-auth-error → refresh#2`` sequence
+        refreshed twice. The shared :class:`RefreshBudget` threaded through both
+        layers now bounds the logical call to a single refresh; the decoded
+        auth error surfaces to the caller instead of triggering a second
+        refresh.
+        """
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="old_csrf",
+            session_id="sid",
+        )
+
+        client = NotebookLMClient(auth)
+        client._composed.chain_host._refresh_retry_delay = 0
+
+        refresh_calls = []
+
+        async def tracking_refresh():
+            refresh_calls.append(True)
+            client._auth.csrf_token = "new_csrf"
+            client._collaborators.auth_coord.update_auth_headers(
+                auth=client._auth,
+                kernel=client._collaborators.kernel,
+            )
+            return client._auth
+
+        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+
+        call_count = [0]
+
+        async def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Wire 401 → HTTP-status layer refreshes (refresh #1) and
+                # retries the POST.
+                request = httpx.Request("POST", args[0])
+                response = httpx.Response(401, request=request)
+                raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+            # The post-refresh retry returns HTTP 200; the decoded payload
+            # still carries an auth error.
+            response = MagicMock()
+            response.text = "mock response"
+            response.raise_for_status = MagicMock()
+            return response
+
+        auth_rpc_error = RPCError("authentication expired")
+
+        def mock_decode(*args, **kwargs):
+            raise auth_rpc_error
+
+        client._seams.decode_response = mock_decode
+
+        async with client:
+            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+
+            # The decoded auth error surfaces — the shared budget was already
+            # spent by the HTTP-status refresh, so the decoded layer does NOT
+            # refresh again and re-raises the original auth error.
+            with pytest.raises(RPCError) as raised:
+                await client.notebooks.list()
+
+        assert raised.value is auth_rpc_error
+        assert len(refresh_calls) == 1, "wire-401 + decoded-auth-error must refresh exactly once"
+        # Two POSTs: the initial 401 and the single post-refresh retry. No
+        # third POST, because the decoded layer did not refresh-and-retry.
+        assert call_count[0] == 2
+
+    @pytest.mark.asyncio
+    async def test_decoded_auth_retry_increments_auth_retry_metric(self):
+        """Issue #1205: the decoded-RPC refresh layer now counts the auth retry.
+
+        Before consolidation only the HTTP-status layer incremented
+        ``rpc_auth_retries``; the decode-time refresh-and-retry leg silently
+        skipped it. The shared refresh body counts on both layers.
+        """
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="old_csrf",
+            session_id="sid",
+        )
+
+        client = NotebookLMClient(auth)
+        client._composed.chain_host._refresh_retry_delay = 0
+
+        async def tracking_refresh():
+            client._auth.csrf_token = "new_csrf"
+            client._collaborators.auth_coord.update_auth_headers(
+                auth=client._auth,
+                kernel=client._collaborators.kernel,
+            )
+            return client._auth
+
+        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+
+        async def mock_post(*args, **kwargs):
+            response = MagicMock()
+            response.text = "mock response"
+            response.raise_for_status = MagicMock()
+            return response
+
+        decode_count = [0]
+
+        def mock_decode(*args, **kwargs):
+            decode_count[0] += 1
+            if decode_count[0] == 1:
+                raise RPCError("Authentication expired")
+            return [[["nb1"], ["Notebook 1"]]]
+
+        client._seams.decode_response = mock_decode
+
+        async with client:
+            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            await client.notebooks.list()
+
+        assert client._collaborators.metrics.snapshot().rpc_auth_retries == 1
+
+    @pytest.mark.asyncio
     async def test_refresh_delay_is_applied(self):
         """Test that retry delay is actually applied."""
         auth = AuthTokens(

@@ -249,6 +249,7 @@ async def test_retry_inherits_parent_request_id():
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
+        refresh_budget=None,
     ):
         captured_ids.append(get_request_id())
         # First call: raise to trigger retry path; second call: succeed.

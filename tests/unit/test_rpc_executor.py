@@ -95,6 +95,7 @@ class _Owner:
         log_label: str,
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
+        refresh_budget: Any = None,
     ) -> httpx.Response:
         url, body, headers = build_request(self.snapshot)
         self.perform_calls.append(
@@ -104,6 +105,7 @@ class _Owner:
                 "url": url,
                 "body": body,
                 "headers": headers,
+                "refresh_budget": refresh_budget,
             }
         )
         return self.response
@@ -244,6 +246,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         log_label: str,
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
+        refresh_budget: Any = None,
     ) -> httpx.Response:
         return _ok_response("wire")
 
@@ -468,6 +471,131 @@ async def test_decode_time_auth_retry_skipped_when_caller_disables_retries() -> 
 
 
 @pytest.mark.asyncio
+async def test_decode_time_auth_retry_threads_refresh_budget_to_transport() -> None:
+    """Issue #1205: the executor seeds the chain with the shared RefreshBudget.
+
+    The same budget instance reaches ``perform_authed_post`` (so the
+    HTTP-status layer can consume it) on BOTH the initial attempt and the
+    decode-time retry. The budget is consumed by the decode-time refresh, so
+    the retry leg's transport call carries a spent budget.
+    """
+    from notebooklm._auth_refresh_retry import RefreshBudget
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    decode_calls = 0
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        nonlocal decode_calls
+        decode_calls += 1
+        if decode_calls == 1:
+            raise RPCError("authentication expired")
+        return {"ok": True}
+
+    result = await _executor(
+        owner,
+        decode_response=decode,
+        is_auth_error=lambda exc: True,
+    )._execute_once(
+        RPCMethod.LIST_NOTEBOOKS,
+        [],
+        "/",
+        False,
+        False,
+    )
+
+    assert result == {"ok": True}
+    # Two transport calls (initial + decode-time retry); both carry the SAME
+    # budget instance, which is spent after the decode-time refresh.
+    budgets = [call["refresh_budget"] for call in owner.perform_calls]
+    assert len(budgets) == 2
+    assert all(isinstance(b, RefreshBudget) for b in budgets)
+    assert budgets[0] is budgets[1]
+    assert budgets[0].available is False
+
+
+@pytest.mark.asyncio
+async def test_decode_time_auth_retry_skips_when_shared_budget_already_spent() -> None:
+    """Issue #1205: a budget already consumed (e.g. by the HTTP-status layer)
+    suppresses the decode-time refresh.
+
+    Mirrors the production sequence where ``AuthRefreshMiddleware`` refreshed
+    on a wire-401, consumed the shared budget, and the post-refresh retry
+    returned a decoded auth error: the executor must NOT refresh a second time.
+    """
+    from notebooklm._auth_refresh_retry import RefreshBudget
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    auth_rpc_error = RPCError("authentication expired")
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise auth_rpc_error
+
+    spent_budget = RefreshBudget()
+    assert spent_budget.consume() is True  # pre-spend it
+
+    with pytest.raises(RPCError) as raised:
+        await _executor(
+            owner,
+            decode_response=decode,
+            is_auth_error=lambda exc: True,
+        )._execute_once(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+            refresh_budget=spent_budget,
+        )
+
+    assert raised.value is auth_rpc_error
+    assert owner.refresh_calls == 0
+    # Exactly one POST — no decode-time refresh-and-retry replay.
+    assert len(owner.perform_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_decode_time_auth_retry_increments_auth_retry_metric() -> None:
+    """Issue #1205: the decode-time refresh leg counts ``rpc_auth_retries``.
+
+    Before consolidation only the HTTP-status layer incremented this metric;
+    the shared refresh body now counts on both layers.
+    """
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    decode_calls = 0
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        nonlocal decode_calls
+        decode_calls += 1
+        if decode_calls == 1:
+            raise RPCError("authentication expired")
+        return {"ok": True}
+
+    await _executor(
+        owner,
+        decode_response=decode,
+        is_auth_error=lambda exc: True,
+    )._execute_once(
+        RPCMethod.LIST_NOTEBOOKS,
+        [],
+        "/",
+        False,
+        False,
+    )
+
+    assert {"rpc_auth_retries": 1} in owner.metric_increments
+
+
+@pytest.mark.asyncio
 async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     """Pin that the constructor-injected ``sleep`` reaches the executor.
 
@@ -511,6 +639,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
+        refresh_budget: Any = None,
     ) -> dict[str, bool]:
         assert method is RPCMethod.LIST_NOTEBOOKS
         assert params == ["param"]

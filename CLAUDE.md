@@ -105,6 +105,7 @@ RPC Layer (rpc/)
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
 | `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
 | `_runtime_auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
+| `_auth_refresh_retry.py` | Shared auth refresh-and-retry core for the two retry layers (HTTP-status `AuthRefreshMiddleware` + decoded-RPC `RpcExecutor`): the once-per-logical-call `RefreshBudget` token and the common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). Unifies the previously-divergent copies per issue #1205; the two layers keep their distinct triggers and refresh-failure exception shapes. |
 | `_runtime_lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
 | `_runtime_transport.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the middleware chain and typed transport response handling |
 | `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5). The `RpcOwner` Protocol that previously re-declared the former `Session` facade's private attribute surface was deleted in Wave 4 of session-decoupling (#1068); only the local `DecodeResponse` Protocol remains. |
@@ -187,6 +188,7 @@ src/notebooklm/
 ├── urls.py                      # Public URL helper facade
 ├── utils.py                     # Public async utility helpers
 ├── _atomic_io.py                # Atomic JSON write/update helpers
+├── _auth_refresh_retry.py       # Shared auth refresh-and-retry core (RefreshBudget + refresh_and_count) for both retry layers
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper
 ├── _client_composed.py          # Client-owned composition holder

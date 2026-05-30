@@ -71,6 +71,7 @@ from typing import TYPE_CHECKING, cast
 
 import httpx
 
+from ._auth_refresh_retry import RefreshBudget, refresh_and_count
 from ._middleware import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
 from ._middleware_context import (
     RPC_CONTEXT_AUTH_REFRESHED,
@@ -78,6 +79,7 @@ from ._middleware_context import (
     RPC_CONTEXT_BUILD_REQUEST,
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
+    RPC_CONTEXT_REFRESH_BUDGET,
 )
 from ._request_types import AuthSnapshot, BuildRequest
 from ._runtime_config import CORE_LOGGER_NAME
@@ -181,14 +183,25 @@ class AuthRefreshMiddleware:
         sentinel fallback matches DrainMiddleware / RetryMiddleware /
         ErrorInjectionMiddleware).
 
-        Tracks ``RPC_CONTEXT_AUTH_REFRESHED`` to enforce **at most one
-        refresh per logical call** even when ``RetryMiddleware`` (outside
-        this middleware) re-invokes the chain on a 429/5xx that fires
-        after a successful refresh. Without this flag the sequence
-        ``401 → refresh → 429 → Retry retry → 401`` would refresh twice
-        (codex iter-1 catch on PR 12.8). With it, the second 401
+        Enforces **at most one refresh per logical call** even when
+        ``RetryMiddleware`` (outside this middleware) re-invokes the chain on
+        a 429/5xx that fires after a successful refresh. Without this guard
+        the sequence ``401 → refresh → 429 → Retry retry → 401`` would refresh
+        twice (codex iter-1 catch on PR 12.8). With it, the second 401
         propagates without a redundant refresh, matching the pre-PR-12.7
         "one refresh max per logical call" contract.
+
+        The guard reads a shared
+        :class:`notebooklm._auth_refresh_retry.RefreshBudget` from
+        ``request.context[RPC_CONTEXT_REFRESH_BUDGET]`` when present — the
+        executor seeds one per logical ``rpc_call`` so this HTTP-status layer
+        and the decoded-RPC layer in :class:`RpcExecutor` share ONE refresh
+        allowance and a ``wire-401 → refresh → decoded-auth-error`` sequence
+        cannot drive two refreshes (issue #1205). The per-chain
+        ``RPC_CONTEXT_AUTH_REFRESHED`` boolean is still written (and read as a
+        fallback when no budget is threaded, e.g. the chat path) so the
+        RetryMiddleware-re-entry suppression and the terminal freshness
+        rebuild keep observing the post-refresh marker on the shared context.
 
         Pass-through paths:
         - No refresh callback configured → propagate any exception unchanged.
@@ -226,10 +239,19 @@ class AuthRefreshMiddleware:
         try:
             return await next_call(request)
         except httpx.HTTPStatusError as exc:
+            budget = cast(
+                "RefreshBudget | None",
+                request.context.get(RPC_CONTEXT_REFRESH_BUDGET),
+            )
+            already_refreshed = (
+                not budget.available
+                if budget is not None
+                else bool(request.context.get(RPC_CONTEXT_AUTH_REFRESHED))
+            )
             if (
                 not self._refresh_callback_enabled()
                 or not self._is_auth_error(exc)
-                or request.context.get(RPC_CONTEXT_AUTH_REFRESHED)
+                or already_refreshed
                 or bool(request.context.get(RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, False))
             ):
                 # ``disable_internal_retries`` is the post-resolution
@@ -241,30 +263,39 @@ class AuthRefreshMiddleware:
                 # propagate the original auth error untouched.
                 raise
 
-            self._logger.info(
-                "%s auth error detected, attempting token refresh",
-                log_label,
-            )
-            try:
-                await self._refresh_callable()
-            except Exception as refresh_error:
-                self._logger.warning("Token refresh failed: %s", refresh_error)
-                raise TransportAuthExpired(
+            # Bind the original auth error to a stable local: ``except ... as
+            # exc`` unbinds ``exc`` at block exit, and the failure wrapper
+            # closure must keep it after that point.
+            original_auth_error = exc
+
+            # Shared refresh body (log → refresh → on-failure raise → sleep →
+            # log → metric). Refresh failure wraps the original auth
+            # ``HTTPStatusError`` in ``TransportAuthExpired`` — the chain's
+            # historical refresh-failure shape that callers / tests pin.
+            await refresh_and_count(
+                refresh=self._refresh_callable,
+                on_refresh_failure=lambda _refresh_error: TransportAuthExpired(
                     f"auth refresh failed for {log_label}",
-                    original=exc,
-                ) from refresh_error
+                    original=original_auth_error,
+                ),
+                sleep=resolve_sleep(self._sleep),
+                refresh_retry_delay=self._refresh_retry_delay(),
+                log_label=log_label,
+                logger=self._logger,
+                metrics=self._metrics,
+            )
 
-            # Mark BEFORE the retry so a 429 thrown by the retry then
-            # caught by ``RetryMiddleware`` (outside us) doesn't trigger
-            # a second refresh when it re-enters our chain leg.
+            # Mark AFTER a successful refresh (a refresh failure raised above
+            # and never reaches here). Consuming the shared budget is what
+            # blocks the decoded-RPC layer in ``RpcExecutor`` from refreshing
+            # a second time on the SAME logical call (issue #1205). The
+            # per-chain boolean is also set so a 429 thrown by the retry then
+            # caught by ``RetryMiddleware`` (outside us) doesn't trigger a
+            # second refresh when it re-enters our chain leg, and so the
+            # terminal freshness rebuild observes the post-refresh marker.
+            if budget is not None:
+                budget.consume()
             request.context[RPC_CONTEXT_AUTH_REFRESHED] = True
-
-            delay = self._refresh_retry_delay()
-            if delay > 0:
-                await resolve_sleep(self._sleep)(delay)
-            self._logger.info("Token refresh successful, retrying %s", log_label)
-            if self._metrics is not None:
-                self._metrics.increment(rpc_auth_retries=1)
 
             retry_request = await self._rebuild_request_after_refresh(request)
 
