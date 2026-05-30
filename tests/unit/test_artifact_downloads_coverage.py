@@ -42,9 +42,14 @@ from notebooklm.types import (
 
 def _make_service(**overrides):
     """Build a service with inert MagicMock collaborators."""
+    listing = MagicMock()
+    # ``download_mind_map`` now consults the studio list (via ``_list_raw``) to
+    # detect interactive mind maps before the note-backed path; default it to an
+    # awaitable empty list so the inert service skips that guard.
+    listing.list_raw = AsyncMock(return_value=[])
     kwargs = {
         "rpc": MagicMock(),
-        "listing": MagicMock(),
+        "listing": listing,
         "mind_maps": MagicMock(),
     }
     kwargs.update(overrides)

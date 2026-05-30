@@ -141,6 +141,15 @@ class ArtifactTypeCode(int, Enum):
     DATA_TABLE = 9
 
 
+# Variant codes at artifact_data[9][1][0], distinguishing sub-kinds within the
+# type-4 (QUIZ) family. The interactive mind map is a studio artifact
+# (type 4 / variant 4) created via CREATE_ARTIFACT, distinct from the
+# note-backed mind map (surfaced with the synthetic type code 5).
+FLASHCARDS_VARIANT = 1
+QUIZ_VARIANT = 2
+INTERACTIVE_MIND_MAP_VARIANT = 4
+
+
 class ArtifactStatus(int, Enum):
     """Processing status of an artifact.
 

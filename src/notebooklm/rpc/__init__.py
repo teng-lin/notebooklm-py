@@ -22,7 +22,10 @@ from .encoder import build_request_body, encode_rpc_request, nest_source_ids
 from .overrides import resolve_rpc_id
 from .types import (
     BATCHEXECUTE_URL,
+    FLASHCARDS_VARIANT,
+    INTERACTIVE_MIND_MAP_VARIANT,
     QUERY_URL,
+    QUIZ_VARIANT,
     UPLOAD_URL,
     ArtifactStatus,
     ArtifactTypeCode,
@@ -59,6 +62,9 @@ __all__ = [
     "get_upload_url",
     "resolve_rpc_id",
     "ArtifactTypeCode",
+    "FLASHCARDS_VARIANT",
+    "QUIZ_VARIANT",
+    "INTERACTIVE_MIND_MAP_VARIANT",
     "ArtifactStatus",
     "artifact_status_to_str",
     "AudioFormat",

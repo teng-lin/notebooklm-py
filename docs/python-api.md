@@ -1586,6 +1586,8 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 
 **Note:** Mind maps are detected by checking if the content contains `'"children":' or `'"nodes":'` keys, which indicate JSON mind map data structure.
 
+**Two mind-map kinds (issue #1256):** NotebookLM has two distinct mind-map objects — the **note-backed** kind above (`list_mind_maps()`), and the newer **interactive** kind the web GUI now creates (a studio artifact, internally `type 4 / variant 4`). As of this release the interactive kind is recognized: it appears in `client.artifacts.list(ArtifactType.MIND_MAP)` (no longer mis-typed as `unknown`), and `Artifact.is_interactive_mind_map` distinguishes the backing. Full read/generate/rename and `download_mind_map` support for the interactive kind arrives with the unified mind-map API; until then, `download_mind_map` raises a clear `ArtifactDownloadError` for an interactive id rather than a misleading "not found".
+
 ---
 
 ### SettingsAPI (`client.settings`)

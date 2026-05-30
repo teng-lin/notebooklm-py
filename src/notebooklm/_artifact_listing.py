@@ -10,7 +10,14 @@ import httpx
 
 from ._row_adapters_artifacts import ArtifactRow
 from ._runtime_contracts import RpcCaller
-from .rpc import ArtifactTypeCode, RPCError, RPCMethod
+from .rpc import (
+    FLASHCARDS_VARIANT,
+    INTERACTIVE_MIND_MAP_VARIANT,
+    QUIZ_VARIANT,
+    ArtifactTypeCode,
+    RPCError,
+    RPCMethod,
+)
 from .types import Artifact, ArtifactNotReadyError, ArtifactType
 
 logger = logging.getLogger(__name__)
@@ -50,12 +57,29 @@ def _matches_artifact_type(artifact: Artifact, artifact_type: ArtifactType | Non
         return True
 
     if artifact_type == ArtifactType.QUIZ:
-        return artifact._artifact_type == ArtifactTypeCode.QUIZ.value and artifact._variant == 2
+        return (
+            artifact._artifact_type == ArtifactTypeCode.QUIZ.value
+            and artifact._variant == QUIZ_VARIANT
+        )
     if artifact_type == ArtifactType.FLASHCARDS:
-        return artifact._artifact_type == ArtifactTypeCode.QUIZ.value and artifact._variant == 1
+        return (
+            artifact._artifact_type == ArtifactTypeCode.QUIZ.value
+            and artifact._variant == FLASHCARDS_VARIANT
+        )
+    if artifact_type == ArtifactType.MIND_MAP:
+        # Two backings: note-backed (synthetic type 5) and interactive
+        # (studio artifact, type 4 / variant 4). Match either.
+        return (
+            artifact._artifact_type == ArtifactTypeCode.MIND_MAP.value
+            or artifact.is_interactive_mind_map
+        )
     if artifact_type == ArtifactType.UNKNOWN:
         if artifact._artifact_type == ArtifactTypeCode.QUIZ.value:
-            return artifact._variant not in (1, 2)
+            return artifact._variant not in (
+                FLASHCARDS_VARIANT,
+                QUIZ_VARIANT,
+                INTERACTIVE_MIND_MAP_VARIANT,
+            )
         return artifact._artifact_type not in _KNOWN_ARTIFACT_TYPE_CODES
 
     type_code = _ARTIFACT_TYPE_CODES_BY_KIND.get(artifact_type)
