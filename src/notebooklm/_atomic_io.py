@@ -64,7 +64,10 @@ logger = logging.getLogger(__name__)
 # #1215). ``atomic_update_json`` derives a *non-dotted* ``<name>.lock`` instead,
 # so it rejects this name rather than acquire a divergent lock file and
 # re-introduce the lost-update race. Kept as a plain literal here to avoid an
-# import edge from this leaf module into ``notebooklm._auth``.
+# import edge from this leaf module into ``notebooklm._auth``. Stored
+# already-casefolded so the guard can compare ``path.name.casefold()`` against
+# it directly (case-insensitive filesystems resolve casing variants to the same
+# file).
 _STORAGE_STATE_FILENAME = "storage_state.json"
 
 _WINDOWS_REPLACE_TRANSIENT_WINERRORS = {
@@ -220,7 +223,12 @@ def atomic_update_json(
             ``recover_from_corrupt`` is False.
         OSError: From filesystem operations (mkdir, write, replace).
     """
-    if path.name == _STORAGE_STATE_FILENAME:
+    # Case-insensitive match: on macOS (APFS/HFS+ default) and Windows (NTFS),
+    # ``Storage_State.json`` resolves to the same file as ``storage_state.json``,
+    # so a case-sensitive ``==`` would let a casing variant slip past the guard
+    # and re-introduce the divergent-lock race. ``casefold`` is the robust
+    # Unicode-aware lowercaser for this comparison.
+    if path.name.casefold() == _STORAGE_STATE_FILENAME:
         raise ValueError(
             f"atomic_update_json must not be called with a {_STORAGE_STATE_FILENAME!r} "
             "path: its '<name>.lock' lock derivation diverges from the canonical "

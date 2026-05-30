@@ -330,14 +330,22 @@ def test_concurrent_corrupt_recovery_does_not_lose_valid_write(tmp_path: Path) -
 # ---------------------------------------------------------------------------
 
 
-def test_rejects_storage_state_json_path(tmp_path: Path) -> None:
-    """A ``storage_state.json`` path must be rejected with ``ValueError``.
+# Casing variants are rejected too: on case-insensitive filesystems (macOS
+# APFS/HFS+, Windows NTFS) ``Storage_State.json`` resolves to the same file as
+# ``storage_state.json``, so a case-sensitive guard would let a variant slip
+# past and re-introduce the divergent-lock race. The guard compares casefolded.
+@pytest.mark.parametrize(
+    "filename",
+    ["storage_state.json", "Storage_State.json", "STORAGE_STATE.JSON"],
+)
+def test_rejects_storage_state_json_path(tmp_path: Path, filename: str) -> None:
+    """A ``storage_state.json`` path (any casing) must be rejected with ``ValueError``.
 
     Its ``<name>.lock`` derivation diverges from the canonical dotted
     ``.storage_state.json.lock`` (``_storage_state_lock_path``), so routing it
     here would acquire the wrong lock — the exact #1215 footgun #1220 closes.
     """
-    target = tmp_path / "storage_state.json"
+    target = tmp_path / filename
 
     mutator_calls: list[dict] = []
 
@@ -349,11 +357,11 @@ def test_rejects_storage_state_json_path(tmp_path: Path) -> None:
         atomic_update_json(target, mutator)
 
     # The guard fires before any I/O: no file, no mutator call, and crucially
-    # NEITHER lock variant is created on disk.
+    # NEITHER lock variant is created on disk (for the given casing).
     assert mutator_calls == []
     assert not target.exists()
-    assert not (tmp_path / "storage_state.json.lock").exists()  # divergent (would-be)
-    assert not (tmp_path / ".storage_state.json.lock").exists()  # canonical dotted
+    assert not (tmp_path / f"{filename}.lock").exists()  # divergent (would-be)
+    assert not (tmp_path / f".{filename}.lock").exists()  # canonical-shaped dotted
 
 
 def test_rejection_holds_with_recover_flag(tmp_path: Path) -> None:
