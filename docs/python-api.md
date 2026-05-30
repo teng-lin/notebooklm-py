@@ -1531,6 +1531,46 @@ print(f"Imported {len(imported)} sources")
 
 ---
 
+### MindMapsAPI (`client.mind_maps`)
+
+Unified surface over NotebookLM's **two** mind-map kinds (issue #1256): the
+**note-backed** kind (JSON tree stored as a note) and the newer **interactive**
+kind (a studio artifact, internally `type 4 / variant 4`, created by the web GUI).
+Each operation dispatches to the correct backend; you work with `MindMap` /
+`MindMapKind` and never see the split.
+
+| Method | Args | Returns | Description |
+|--------|------|---------|-------------|
+| `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries |
+| `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id |
+| `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll) |
+| `rename(notebook_id, mind_map_id, new_title, *, kind=None)` | … | `None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind |
+| `delete(notebook_id, mind_map_id, *, kind=None)` | … | `bool` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind |
+| `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree |
+
+`MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree` (populated for note-backed list rows; fetch interactive trees with `get_tree`). When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
+
+```python
+maps = await client.mind_maps.list(nb_id)
+for mm in maps:
+    print(mm.id, mm.title, mm.kind.value)
+
+# Generate the interactive (web-GUI) kind and poll to completion:
+mm = await client.mind_maps.generate(nb_id, kind=MindMapKind.INTERACTIVE)
+tree = await client.mind_maps.get_tree(nb_id, mm.id, kind=mm.kind)
+
+await client.mind_maps.rename(nb_id, mm.id, "Renamed", kind=mm.kind)
+await client.mind_maps.delete(nb_id, mm.id, kind=mm.kind)
+```
+
+In the CLI, mind maps are handled as a **type** within the existing groups (matching
+`audio`/`video`/`quiz`): `artifact list --type mind-map`, `artifact rename`,
+`artifact delete`, `generate mind-map`, and `download mind-map`.
+
+> The older `artifacts.generate_mind_map()` / `notes.list_mind_maps()` /
+> `notes.delete_mind_map()` still work (note-backed only) and are slated for
+> deprecation in favor of `client.mind_maps.*`.
+
 ### NotesAPI (`client.notes`)
 
 **CLI equivalent:** [Note Commands](cli-reference.md#note-commands-notebooklm-note-cmd) — `notebooklm note list`, `create`, `get`, `save`, `rename`, `delete`.
