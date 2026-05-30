@@ -28,10 +28,12 @@ async def test_interactive_mind_map_full_lifecycle(client, generation_notebook_i
     mind_map = await client.mind_maps.generate(
         nb_id, source_ids, kind=MindMapKind.INTERACTIVE, wait=True
     )
-    assert mind_map.kind == MindMapKind.INTERACTIVE
-    assert mind_map.id, "generate() must return a non-empty interactive artifact id"
-
+    # Enter the cleanup guard immediately after create so a failed assertion
+    # below never leaks the real interactive artifact in the live notebook.
     try:
+        assert mind_map.kind == MindMapKind.INTERACTIVE
+        assert mind_map.id, "generate() must return a non-empty interactive artifact id"
+
         # --- recognition (Phase 1) ---
         listed = {m.id: m for m in await client.mind_maps.list(nb_id)}
         assert mind_map.id in listed
@@ -50,7 +52,8 @@ async def test_interactive_mind_map_full_lifecycle(client, generation_notebook_i
         assert renamed.title == "E2E Interactive Mind Map"
     finally:
         # --- delete (DELETE_ARTIFACT) ---
-        await client.mind_maps.delete(nb_id, mind_map.id, kind=MindMapKind.INTERACTIVE)
+        if mind_map.id:
+            await client.mind_maps.delete(nb_id, mind_map.id, kind=MindMapKind.INTERACTIVE)
 
     remaining = [
         m.id for m in await client.mind_maps.list(nb_id) if m.kind == MindMapKind.INTERACTIVE
