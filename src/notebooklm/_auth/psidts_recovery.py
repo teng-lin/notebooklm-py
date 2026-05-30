@@ -348,7 +348,9 @@ def _is_psidts_persisted(storage_path: Path) -> bool:
     return not _psidts_needs_recovery(names, expiry)
 
 
-def _psidts_save_succeeded(storage_path: Path) -> bool:
+def _psidts_save_succeeded(
+    result: _auth_storage.CookieSaveResult | bool, storage_path: Path
+) -> bool:
     """Did a fresh ``__Secure-1PSIDTS`` actually land on disk after the save?
 
     The coarse ``CookieSaveResult.ok`` bool from
@@ -368,9 +370,18 @@ def _psidts_save_succeeded(storage_path: Path) -> bool:
     So disk — not the save bool — is the sole arbiter. Re-read it and accept the
     heal iff a present, unexpired PSIDTS is stored. :func:`_is_psidts_persisted`
     mirrors the precondition gate, so a stale or expired row (ours or a
-    sibling's) doesn't masquerade as a heal.
+    sibling's) doesn't masquerade as a heal. On a decline, the coarse ``result``
+    is folded into a diagnostic warning here (the only thing it is used for) so
+    callers stay a single boolean branch.
     """
-    return _is_psidts_persisted(storage_path)
+    if _is_psidts_persisted(storage_path):
+        return True
+    logger.warning(
+        "Inline PSIDTS recovery: %s did not persist (save ok=%s); on-disk state still lacks it",
+        _PSIDTS_COOKIE,
+        getattr(result, "ok", result),
+    )
+    return False
 
 
 def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
@@ -449,12 +460,7 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
         logger.warning("Inline PSIDTS recovery: persist to %s raised %s", storage_path, exc)
         return False
 
-    if not _psidts_save_succeeded(storage_path):
-        logger.warning(
-            "Inline PSIDTS recovery: %s did not persist (save ok=%s); on-disk state still lacks it",
-            _PSIDTS_COOKIE,
-            getattr(result, "ok", result),
-        )
+    if not _psidts_save_succeeded(result, storage_path):
         return False
 
     logger.info(

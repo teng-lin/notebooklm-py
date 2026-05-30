@@ -38,7 +38,7 @@ _RECOVERABLE_COOKIES: list[dict] = [
 
 
 def _write_storage(path: Path, cookies: list[dict]) -> None:
-    path.write_text(json.dumps({"cookies": cookies, "origins": []}))
+    path.write_text(json.dumps({"cookies": cookies, "origins": []}), encoding="utf-8")
 
 
 def _make_psidts_response(status_code: int = 200, *, include_psidts: bool = True):
@@ -274,7 +274,7 @@ class TestPsidtsExpiryGate:
 
         rotate_requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
         assert len(rotate_requests) == 1
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         fresh = next(c for c in saved["cookies"] if c["name"] == "__Secure-1PSIDTS")
         assert fresh["value"] == "fresh_psidts_value"
 
@@ -394,7 +394,7 @@ class TestRecoveryHappyPath:
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
 
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         names = {c["name"] for c in saved["cookies"]}
         assert "__Secure-1PSIDTS" in names
         psidts = next(c for c in saved["cookies"] if c["name"] == "__Secure-1PSIDTS")
@@ -426,7 +426,7 @@ class TestRecoveryHappyPath:
 
         psidts_recovery._recover_psidts_inline(storage_path)
 
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         names = {c["name"] for c in saved["cookies"]}
         for original in _RECOVERABLE_COOKIES:
             assert original["name"] in names
@@ -444,7 +444,7 @@ class TestRecoveryFailureModes:
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         # PSIDTS must NOT have been written.
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         assert "__Secure-1PSIDTS" not in {c["name"] for c in saved["cookies"]}
 
     @pytest.mark.no_default_keepalive_mock
@@ -466,7 +466,7 @@ class TestRecoveryFailureModes:
         )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         assert "__Secure-1PSIDTS" not in {c["name"] for c in saved["cookies"]}
 
     @pytest.mark.no_default_keepalive_mock
@@ -777,7 +777,7 @@ class TestBuildHttpxCookiesFromStorageIntegration:
         cookie_names = {c.name for c in jar.jar}
         assert "__Secure-1PSIDTS" in cookie_names
         # The file on disk must also have been healed so subsequent loaders see it.
-        saved = json.loads(storage_path.read_text())
+        saved = json.loads(storage_path.read_text(encoding="utf-8"))
         assert "__Secure-1PSIDTS" in {c["name"] for c in saved["cookies"]}
 
     @pytest.mark.no_default_keepalive_mock
@@ -1023,7 +1023,7 @@ class TestEdgeCases:
     def test_malformed_storage_cookies_non_list(self, tmp_path, httpx_mock: HTTPXMock):
         """``"cookies"`` key not a list → return False without firing POST."""
         storage_path = tmp_path / "storage_state.json"
-        storage_path.write_text(json.dumps({"cookies": "not-a-list"}))
+        storage_path.write_text(json.dumps({"cookies": "not-a-list"}), encoding="utf-8")
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
@@ -1032,11 +1032,14 @@ class TestEdgeCases:
     def test_save_returning_false_propagates_as_failure(
         self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
     ):
-        """``save_cookies_to_storage`` returns False on persist failure (not raises).
+        """A failed persist (no disk write) must make recovery decline.
 
-        Recovery must capture the return value — otherwise it logs a misleading
-        INFO ``Recovered ... and persisted`` while on-disk state is still broken
-        (Claude Important + Codex Important: issue #865).
+        The mock returns a falsy save result *without* writing to disk, so the
+        disk re-read in ``_psidts_save_succeeded`` finds no fresh PSIDTS and
+        recovery returns False. Recovery keys on disk, not on the save's return
+        value (issue #1273), so a failed persistence — for any reason — declines
+        rather than logging a misleading ``Recovered ... and persisted`` INFO
+        over still-broken state (issue #865).
         """
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
