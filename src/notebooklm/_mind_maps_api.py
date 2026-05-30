@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import builtins
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 from ._artifact_payloads import build_interactive_mind_map_artifact_params
@@ -26,6 +27,82 @@ if TYPE_CHECKING:
     from ._mind_map import NoteBackedMindMapService
     from ._notebooks import NotebooksAPI
     from ._runtime_contracts import RpcCaller
+
+logger = logging.getLogger(__name__)
+
+# The interactive (studio-artifact) mind map exposes its ``{"name", "children"}``
+# node tree at ``[0][9][3]`` of the ``GET_INTERACTIVE_HTML`` response (vs the HTML
+# body at ``[0][9][0]``). The leaf at ``[3]`` is the only position that may be
+# legitimately absent during the brief window after completion before the
+# options block is fully populated.
+_INTERACTIVE_TREE_LEAF_POS = 3
+
+
+def extract_interactive_tree_leaf(result: Any, *, source: str) -> Any | None:
+    """Return the raw ``[0][9][3]`` interactive mind-map tree leaf, or ``None``.
+
+    Distinguishes a *genuinely absent leaf* (the options block is a list but
+    its ``[3]`` tree slot is not populated yet — the legitimate "not ready"
+    window) from *real shape drift* (``[0]`` or ``[0][9]`` moved out from under
+    us, or ``[0][9]`` is no longer a list). Drift re-raises
+    ``UnknownRPCMethodError`` so the library fails loud like the sibling HTML
+    accessor ``_get_artifact_content`` (issue #1270); only the missing ``[3]``
+    leaf within a present *list* options block is tolerated. A tolerated-but-
+    absent leaf emits a WARNING with the rpcid/source so a reshape that drops
+    just the leaf position still leaves a drift signal in the logs.
+    """
+    if result is None:
+        return None
+    # Descend to the options block (``[0][9]``) strictly: if Google moves the
+    # interactive payload off ``[0][9]`` entirely, this raises and surfaces the
+    # drift instead of masquerading as "not ready".
+    options_block = safe_index(
+        result,
+        0,
+        9,
+        method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+        source=source,
+    )
+    # Only a *list* options block too short for index 3 is the legitimate
+    # "tree not populated yet" window — a non-list ``[0][9]`` is genuine drift,
+    # so fail loud rather than masking it as not-ready. (We raise explicitly
+    # rather than via ``safe_index`` because some non-list types — e.g. ``str``
+    # — are subscriptable and would not trip ``safe_index``'s descent guard.)
+    if not isinstance(options_block, list):
+        raise UnknownRPCMethodError(
+            f"safe_index drift at path (0, 9): options block is "
+            f"{type(options_block).__name__}, not a list",
+            method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+            path=(0, 9),
+            source=source,
+            data_at_failure=repr(options_block)[:200],
+        )
+    if len(options_block) <= _INTERACTIVE_TREE_LEAF_POS:
+        logger.warning(
+            "Interactive mind-map tree leaf absent at [0][9][%d] (rpcid=%s, source=%s); "
+            "treating as not-yet-populated. If this persists, Google may have reshaped "
+            "the %s response.",
+            _INTERACTIVE_TREE_LEAF_POS,
+            RPCMethod.GET_INTERACTIVE_HTML.value,
+            source,
+            RPCMethod.GET_INTERACTIVE_HTML.name,
+        )
+        return None
+    return options_block[_INTERACTIVE_TREE_LEAF_POS]
+
+
+def _tree_title(tree: dict[str, Any] | None, default: str = "Mind Map") -> str:
+    """Return a mind-map title from ``tree["name"]`` only when it is a non-empty ``str``.
+
+    The frozen :class:`MindMap.title` is typed ``str``; a malformed tree with a
+    ``null``/numeric ``name`` would otherwise smuggle a non-``str`` into it
+    (issue #1270). Falls back to ``default`` for any non-string / empty name.
+    """
+    if tree is not None:
+        name = tree.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return default
 
 
 def _parse_tree(content: Any) -> dict[str, Any] | None:
@@ -134,7 +211,7 @@ class MindMapsAPI:
                 notebook_id, source_ids, language, instructions
             )
             tree = res.mind_map if isinstance(res.mind_map, dict) else None
-            title = tree["name"] if tree and "name" in tree else "Mind Map"
+            title = _tree_title(tree)
             return MindMap(
                 id=res.note_id or "",
                 notebook_id=notebook_id,
@@ -164,7 +241,10 @@ class MindMapsAPI:
             )
         if wait:
             await self._artifacts.wait_for_completion(notebook_id, new_id)
-        art = await self._find_interactive(notebook_id, new_id)
+        # ``allow_unclassified=True``: we hold the concrete id from
+        # CREATE_ARTIFACT, so id-match a settling type-4 row whose variant slot
+        # has not yet filled rather than degrading to the placeholder MindMap.
+        art = await self._find_interactive(notebook_id, new_id, allow_unclassified=True)
         # After completion, fetch the tree so interactive maps return the same
         # populated ``MindMap.tree`` as note-backed ones. Skip when not waiting
         # (still pending) — ``get_tree`` would have nothing to read yet.
@@ -221,6 +301,15 @@ class MindMapsAPI:
         if kind == MindMapKind.NOTE_BACKED:
             await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
         else:
+            # Pre-validate the id on the explicit-interactive path. Without this,
+            # ``RENAME_ARTIFACT`` silently no-ops on a wrong id (the RPC returns
+            # null), diverging from the ``kind=None`` path which raises
+            # ``ValueError`` for an unknown id. Fail loud instead (issue #1270;
+            # aligns with the "fail loud + return object" direction of #1255).
+            if await self._find_interactive(notebook_id, mind_map_id) is None:
+                raise ValueError(
+                    f"Interactive mind map {mind_map_id!r} not found in notebook {notebook_id!r}"
+                )
             await self._artifacts.rename(notebook_id, mind_map_id, new_title)
 
     async def delete(
@@ -277,17 +366,11 @@ class MindMapsAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        try:
-            tree_json = safe_index(
-                result,
-                0,
-                9,
-                3,
-                method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
-                source="_mind_maps_api.get_tree",
-            )
-        except UnknownRPCMethodError:
-            return None
+        # ``extract_interactive_tree_leaf`` re-raises ``UnknownRPCMethodError``
+        # on genuine ``[0][9]`` shape drift (failing loud like the sibling HTML
+        # accessor) while tolerating an absent ``[3]`` leaf as the legitimate
+        # "tree not populated yet" window (issue #1270).
+        tree_json = extract_interactive_tree_leaf(result, source="_mind_maps_api.get_tree")
         return _parse_tree(tree_json)
 
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
@@ -299,8 +382,37 @@ class MindMapsAPI:
             return MindMapKind.INTERACTIVE
         raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
 
-    async def _find_interactive(self, notebook_id: str, artifact_id: str) -> Any | None:
-        for art in await self._artifacts.list(notebook_id, ArtifactType.MIND_MAP):
-            if art.id == artifact_id and art.is_interactive_mind_map:
+    async def _find_interactive(
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        *,
+        allow_unclassified: bool = False,
+    ) -> Any | None:
+        """Resolve a known interactive-mind-map id to its :class:`Artifact`.
+
+        By default matches only a *confirmed* interactive map
+        (``type 4 / variant 4``) so the auto-detect ``rename`` / ``delete`` /
+        ``get_tree`` callers and the explicit-interactive ``rename`` validation
+        never mistake a settling (or malformed) quiz/flashcard — also a type-4
+        row that may transiently read ``variant=None`` — for a mind map.
+
+        ``allow_unclassified=True`` additionally accepts a type-4 row whose
+        ``variant`` slot has not yet populated (``variant=None``). Only the
+        ``generate`` path passes this: it already holds the concrete id returned
+        by ``CREATE_ARTIFACT`` for an interactive map, so id-matching the
+        settling artifact is safe there and keeps ``generate(wait=True)`` from
+        degrading to the ``title="Mind Map"`` placeholder (no ``created_at``)
+        when completion is observed a tick before the variant slot fills
+        (issue #1270).
+
+        Lists unfiltered (rather than filtered to ``MIND_MAP``) because a
+        ``variant=None`` type-4 row is *excluded* from the ``MIND_MAP`` filter
+        and would otherwise be invisible during the settling window.
+        """
+        for art in await self._artifacts.list(notebook_id):
+            if art.id != artifact_id:
+                continue
+            if art.is_interactive_mind_map or (allow_unclassified and art.is_unclassified_type4):
                 return art
         return None

@@ -18,6 +18,8 @@ from urllib.parse import ParseResult, unquote, urlparse
 import httpx
 
 from ._artifact_formatters import _extract_app_data, _format_interactive_content, _parse_data_table
+from ._mind_maps_api import extract_interactive_tree_leaf
+from ._row_adapters_notes import NoteRow
 from .auth import load_httpx_cookies
 from .exceptions import UnknownRPCMethodError, ValidationError
 from .rpc import ArtifactTypeCode, RPCMethod, safe_index
@@ -238,19 +240,13 @@ class ArtifactDownloadService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if result is None:
-            return None
-        try:
-            tree_json = safe_index(
-                result,
-                0,
-                9,
-                3,
-                method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
-                source="_artifact_downloads._get_interactive_mind_map_tree",
-            )
-        except UnknownRPCMethodError:
-            return None
+        # ``extract_interactive_tree_leaf`` re-raises ``UnknownRPCMethodError``
+        # on genuine ``[0][9]`` shape drift (failing loud like the sibling HTML
+        # accessor ``_get_artifact_content``) while tolerating an absent ``[3]``
+        # leaf as the legitimate "tree not populated yet" window (issue #1270).
+        tree_json = extract_interactive_tree_leaf(
+            result, source="_artifact_downloads._get_interactive_mind_map_tree"
+        )
         return tree_json if isinstance(tree_json, str) else None
 
     async def download_audio(
@@ -518,7 +514,11 @@ class ArtifactDownloadService:
         json_string: str | None = None
 
         if artifact_id:
-            mind_map = next((mm for mm in mind_maps if mm[0] == artifact_id), None)
+            # Read the row id through the ``NoteRow`` adapter seam rather than a
+            # raw ``mm[0]`` index so a numeric / non-str id is ``str``-coerced
+            # consistently with the rest of the mind-map path (issue #1270) and
+            # any future row-shape change is absorbed in one place.
+            mind_map = next((mm for mm in mind_maps if NoteRow(mm).id == artifact_id), None)
             if mind_map is not None:
                 json_string = mind_maps_service.extract_content(mind_map)
             else:

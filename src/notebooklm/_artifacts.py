@@ -634,9 +634,15 @@ class ArtifactsAPI:
                     mind_map_data = mind_map_json
                     mind_map_json = json_module.dumps(mind_map_json)
 
+                # Only accept ``name`` when it is a non-empty ``str`` — a
+                # malformed tree with a ``null``/numeric ``name`` would otherwise
+                # flow into the note title and frozen ``MindMap.title: str``
+                # (issue #1270).
                 title = "Mind Map"
-                if isinstance(mind_map_data, dict) and "name" in mind_map_data:
-                    title = mind_map_data["name"]
+                if isinstance(mind_map_data, dict):
+                    name = mind_map_data.get("name")
+                    if isinstance(name, str) and name:
+                        title = name
 
                 # ``NoteService.create_note`` raises ``RPCError`` when the
                 # server omits a usable row id (issue #1162); on success it

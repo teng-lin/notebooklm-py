@@ -182,3 +182,63 @@ async def test_download_note_backed_id_still_works(tmp_path):
         "name": "Root",
         "children": [],
     }
+
+
+# --- #1270: download fail-loud + numeric-id seam ------------------------------
+
+from notebooklm.exceptions import UnknownRPCMethodError  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_download_interactive_tree_real_drift_reraises(tmp_path):
+    """A genuine [0][9] reshape in the tree response fails loud (issue #1270)."""
+    # GET_INTERACTIVE_HTML returns a short [0] row: descent to [0][9] fails
+    # before the leaf -> drift -> UnknownRPCMethodError (not silent not-ready).
+    listing = MagicMock()
+    listing.list_raw = AsyncMock(return_value=[_INTERACTIVE_ROW])
+    mind_maps = MagicMock()
+    mind_maps.list_mind_maps = AsyncMock(return_value=[])
+    rpc = MagicMock(spec=RpcCaller, rpc_call=AsyncMock(return_value=[[1, 2, 3]]))
+    svc = ArtifactDownloadService(rpc=rpc, listing=listing, mind_maps=mind_maps)
+    with pytest.raises(UnknownRPCMethodError):
+        await svc.download_mind_map("nb", str(tmp_path / "x.json"), artifact_id="int_mm")
+
+
+@pytest.mark.asyncio
+async def test_download_interactive_tree_absent_leaf_is_not_ready(tmp_path):
+    """A populated options block missing only the [3] leaf reads as not ready."""
+    listing = MagicMock()
+    listing.list_raw = AsyncMock(return_value=[_INTERACTIVE_ROW])
+    mind_maps = MagicMock()
+    mind_maps.list_mind_maps = AsyncMock(return_value=[])
+    # [0][9] present but too short to carry the [3] tree leaf.
+    response = [[None] * 9 + [[None, None]]]
+    rpc = MagicMock(spec=RpcCaller, rpc_call=AsyncMock(return_value=response))
+    svc = ArtifactDownloadService(rpc=rpc, listing=listing, mind_maps=mind_maps)
+    with pytest.raises(ArtifactNotReadyError):
+        await svc.download_mind_map("nb", str(tmp_path / "x.json"), artifact_id="int_mm")
+
+
+@pytest.mark.asyncio
+async def test_download_note_backed_numeric_id_matches_via_noterow(tmp_path):
+    """A numeric row id is str-coerced through NoteRow(mm).id, not raw mm[0]."""
+    content = '{"name": "Root", "children": []}'
+    # Row id is the integer 12345; the caller passes the string "12345".
+    svc = _download_service(studio_rows=[], note_rows=[[12345, content]])
+    out = str(tmp_path / "mm.json")
+    result = await svc.download_mind_map("nb", out, artifact_id="12345")
+    assert result == out
+    assert json.loads((tmp_path / "mm.json").read_text(encoding="utf-8")) == {
+        "name": "Root",
+        "children": [],
+    }
+
+
+# --- #1270 sub-fix 2: the transient type-4 discriminator ----------------------
+
+
+def test_is_unclassified_type4_property():
+    assert _art(4, None).is_unclassified_type4 is True  # settling window
+    assert _art(4, 4).is_unclassified_type4 is False  # resolved interactive
+    assert _art(4, 2).is_unclassified_type4 is False  # resolved quiz
+    assert _art(5, None).is_unclassified_type4 is False  # note-backed synthetic

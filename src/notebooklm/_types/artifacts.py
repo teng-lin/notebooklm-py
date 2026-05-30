@@ -320,6 +320,21 @@ class Artifact:
         )
 
     @property
+    def is_unclassified_type4(self) -> bool:
+        """Whether this is a type-4 artifact whose variant slot is not yet populated.
+
+        A just-created interactive mind map (or quiz/flashcards) is a type-4
+        (QUIZ-family) artifact, but the variant code at ``[9][1][0]`` may read
+        ``None`` for a brief window after creation before the options block
+        fills in. During that window the row is neither classifiable as
+        interactive-mind-map nor quiz/flashcards. Callers that resolved a
+        concrete id (e.g. ``MindMapsAPI._find_interactive`` after
+        ``CREATE_ARTIFACT``) use this to id-match the settling artifact rather
+        than degrading to a placeholder (issue #1270).
+        """
+        return self._artifact_type == ArtifactTypeCode.QUIZ.value and self._variant is None
+
+    @property
     def report_subtype(self) -> str | None:
         """Get the report subtype for type 2 artifacts.
 

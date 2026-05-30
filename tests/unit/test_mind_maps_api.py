@@ -6,14 +6,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._mind_maps_api import MindMapsAPI
-from notebooklm.exceptions import ArtifactError
+from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
+from notebooklm.exceptions import ArtifactError, UnknownRPCMethodError
 from notebooklm.rpc.types import RPCMethod
 from notebooklm.types import Artifact, MindMapKind, MindMapResult
 
 
 def _interactive_artifact(artifact_id: str, title: str = "INT") -> Artifact:
     return Artifact(id=artifact_id, title=title, _artifact_type=4, status=3, _variant=4)
+
+
+def _pending_type4_artifact(artifact_id: str, title: str = "INT") -> Artifact:
+    # Just-created interactive map: completed (status=3) but the variant slot
+    # at [9][1][0] is not yet populated, so _variant reads None.
+    return Artifact(id=artifact_id, title=title, _artifact_type=4, status=3, _variant=None)
 
 
 def _make_api(*, note_rows=None, interactive=None):
@@ -55,7 +61,9 @@ async def test_list_unions_both_backings():
 
 @pytest.mark.asyncio
 async def test_rename_dispatches_by_kind():
-    api, _, mind_maps, artifacts, _ = _make_api()
+    # The explicit-interactive path pre-validates the id (issue #1270), so the
+    # interactive artifact must exist for the rename to dispatch.
+    api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
     await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
     mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
     artifacts.rename.assert_not_awaited()
@@ -152,3 +160,171 @@ async def test_detect_kind_raises_when_absent():
     api, *_ = _make_api()
     with pytest.raises(ValueError, match="not found"):
         await api.rename("nb", "ghost", "X")
+
+
+# --- #1270 sub-fix 1: get_tree drift vs absent-leaf ---------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_tree_interactive_absent_leaf_tolerated_with_warning(caplog):
+    """A populated options block missing only the [3] tree leaf is 'not ready'."""
+    api, rpc, *_ = _make_api()
+    row = [None] * 10
+    row[9] = [None, None]  # [0][9] present but too short to carry the [3] leaf
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[row]))
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._mind_maps_api"):
+        tree = await api.get_tree("nb", "int_mm", kind=MindMapKind.INTERACTIVE)
+    assert tree is None  # tolerated as not-yet-populated
+    # ...but a WARNING with the rpcid/source leaves a drift breadcrumb.
+    assert any(RPCMethod.GET_INTERACTIVE_HTML.value in r.message for r in caplog.records)
+    assert any("_mind_maps_api.get_tree" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_get_tree_interactive_real_drift_reraises():
+    """Genuine [0][9] reshape must fail loud, not masquerade as 'not ready'."""
+    api, rpc, *_ = _make_api()
+    # [0] is a short row: descent to [0][9] fails before reaching the leaf.
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[[1, 2, 3]]))
+    with pytest.raises(UnknownRPCMethodError):
+        await api.get_tree("nb", "int_mm", kind=MindMapKind.INTERACTIVE)
+
+
+@pytest.mark.asyncio
+async def test_get_tree_interactive_null_response_returns_none():
+    """A null GET_INTERACTIVE_HTML response stays 'not ready' (no drift)."""
+    api, rpc, *_ = _make_api()
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=None))
+    assert await api.get_tree("nb", "int_mm", kind=MindMapKind.INTERACTIVE) is None
+
+
+def test_extract_interactive_tree_leaf_helper():
+    """The shared helper: null -> None, drift -> raise, present -> value."""
+    assert extract_interactive_tree_leaf(None, source="t") is None
+    row = [None] * 10
+    row[9] = [None, None, None, "TREE"]
+    assert extract_interactive_tree_leaf([row], source="t") == "TREE"
+    # [0] too short to reach [0][9] -> drift.
+    with pytest.raises(UnknownRPCMethodError):
+        extract_interactive_tree_leaf([[1, 2, 3]], source="t")
+    # A non-list [0][9] is drift too (not a tolerated short-list).
+    non_list_row = [None] * 10
+    non_list_row[9] = "not-a-list"
+    with pytest.raises(UnknownRPCMethodError):
+        extract_interactive_tree_leaf([non_list_row], source="t")
+    # A list [0][9] that is too short for index 3 is the tolerated not-ready leaf.
+    short_row = [None] * 10
+    short_row[9] = [None, None]
+    assert extract_interactive_tree_leaf([short_row], source="t") is None
+
+
+# --- #1270 sub-fix 2: transient type-4 variant=None classification -----------
+
+
+@pytest.mark.asyncio
+async def test_find_interactive_matches_pending_variant_none_by_id():
+    """generate(wait=True) must keep the real title during the settling window."""
+    api, rpc, _, artifacts, _ = _make_api(
+        interactive=[_pending_type4_artifact("new_int", "Real Title")]
+    )
+    tree_row = [None] * 10
+    tree_row[9] = [None, None, None, '{"name": "I", "children": []}']
+    rpc.configure_mock(
+        rpc_call=AsyncMock(
+            side_effect=[
+                [["new_int", "Real Title", 4]],  # CREATE_ARTIFACT echo
+                [tree_row],  # GET_INTERACTIVE_HTML tree
+            ]
+        )
+    )
+    mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
+    assert mm.id == "new_int"
+    # Did NOT degrade to the title="Mind Map" placeholder.
+    assert mm.title == "Real Title"
+    assert mm.tree == {"name": "I", "children": []}
+
+
+@pytest.mark.asyncio
+async def test_generate_interactive_unresolved_id_falls_back_to_placeholder():
+    """If even the unfiltered list never shows the id, fall back gracefully."""
+    api, rpc, _, artifacts, _ = _make_api(interactive=[])
+    rpc.configure_mock(
+        rpc_call=AsyncMock(
+            side_effect=[
+                [["ghost_int", "T", 4]],  # CREATE_ARTIFACT echo
+                None,  # GET_INTERACTIVE_HTML tree not ready
+            ]
+        )
+    )
+    mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
+    assert mm.id == "ghost_int"
+    assert mm.title == "Mind Map"  # placeholder fallback preserved
+
+
+# --- #1270 sub-fix 3: rename(kind=INTERACTIVE) pre-validates the id ----------
+
+
+@pytest.mark.asyncio
+async def test_rename_interactive_bad_id_raises_not_silent_noop():
+    api, _, _, artifacts, _ = _make_api(interactive=[_interactive_artifact("real_int")])
+    with pytest.raises(ValueError, match="not found"):
+        await api.rename("nb", "ghost", "X", kind=MindMapKind.INTERACTIVE)
+    artifacts.rename.assert_not_awaited()  # never dispatched the no-op RPC
+
+
+@pytest.mark.asyncio
+async def test_rename_interactive_good_id_dispatches():
+    api, _, _, artifacts, _ = _make_api(interactive=[_interactive_artifact("real_int")])
+    await api.rename("nb", "real_int", "X", kind=MindMapKind.INTERACTIVE)
+    artifacts.rename.assert_awaited_once_with("nb", "real_int", "X")
+
+
+@pytest.mark.asyncio
+async def test_rename_interactive_rejects_settling_type4_variant_none():
+    """The unclassified-type4 fallback is scoped to generate only: rename/detect
+    must NOT accept a settling (or malformed) quiz/flashcard as a mind map."""
+    api, _, _, artifacts, _ = _make_api(interactive=[_pending_type4_artifact("settling")])
+    # Explicit-interactive rename: the strict path rejects a variant=None row.
+    with pytest.raises(ValueError, match="not found"):
+        await api.rename("nb", "settling", "X", kind=MindMapKind.INTERACTIVE)
+    artifacts.rename.assert_not_awaited()
+    # Auto-detect (kind=None) also rejects it -> ValueError, never dispatched.
+    with pytest.raises(ValueError, match="not found"):
+        await api.rename("nb", "settling", "X")
+    artifacts.rename.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_tree_interactive_non_list_options_block_reraises():
+    """A non-list [0][9] is genuine drift -> fail loud, not 'not ready'."""
+    api, rpc, *_ = _make_api()
+    row = [None] * 10
+    row[9] = "not-a-list"  # [0][9] is no longer a list -> drift
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[row]))
+    with pytest.raises(UnknownRPCMethodError):
+        await api.get_tree("nb", "int_mm", kind=MindMapKind.INTERACTIVE)
+
+
+# --- #1270 sub-fix 4: non-str title coercion ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_non_str_name_falls_back_to_placeholder():
+    api, _, _, artifacts, _ = _make_api()
+    artifacts.generate_mind_map = AsyncMock(
+        return_value=MindMapResult(mind_map={"name": 123, "children": []}, note_id="n1")
+    )
+    mm = await api.generate("nb", ["s1"], kind=MindMapKind.NOTE_BACKED)
+    assert mm.title == "Mind Map"  # numeric name rejected, placeholder used
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_empty_name_falls_back_to_placeholder():
+    api, _, _, artifacts, _ = _make_api()
+    artifacts.generate_mind_map = AsyncMock(
+        return_value=MindMapResult(mind_map={"name": "", "children": []}, note_id="n1")
+    )
+    mm = await api.generate("nb", ["s1"], kind=MindMapKind.NOTE_BACKED)
+    assert mm.title == "Mind Map"  # empty name rejected, placeholder used
