@@ -2401,7 +2401,7 @@ Example:
 ```python
 from notebooklm.research import select_cited_sources
 
-status = await client.research.poll(notebook_id, task_id=task_id)
+status = await client.research.wait_for_completion(notebook_id, task_id=task_id)
 # Filter only the sources that were explicitly cited in the report markdown
 selection = select_cited_sources(status.sources, status.report)
 
