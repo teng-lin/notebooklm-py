@@ -239,6 +239,10 @@ def create_mock_client():
     mock_client.research = MagicMock()
     mock_client.notes = MagicMock()
     mock_client.sharing = MagicMock()
+    mock_client.mind_maps = MagicMock()
+    # Default: no mind maps, so non-mind-map flows (e.g. ``artifact rename`` of a
+    # regular artifact) fall through without an unmocked-await on ``mind_maps.list``.
+    mock_client.mind_maps.list = AsyncMock(return_value=[])
 
     mock_client.research.poll = AsyncMock(return_value=research_task({"status": "no_research"}))
 

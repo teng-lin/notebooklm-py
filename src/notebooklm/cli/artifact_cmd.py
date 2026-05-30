@@ -234,18 +234,17 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, json_output, clien
                 client, nb_id_resolved, artifact_id, json_output=json_output
             )
 
-            # Check if this is a mind map (stored with notes, not artifacts)
-            mind_maps = await client.notes.list_mind_maps(nb_id_resolved)
-            for mm in mind_maps:
-                if mm[0] == resolved_id:
-                    _output_error(
-                        "Error: Mind maps cannot be renamed",
-                        "VALIDATION_ERROR",
-                        json_output,
-                        1,
-                    )
-
-            await client.artifacts.rename(nb_id_resolved, resolved_id, new_title)
+            # Mind maps need kind-aware rename: note-backed maps via UPDATE_NOTE,
+            # interactive (studio-artifact) maps via RENAME_ARTIFACT — both behind
+            # the unified mind-map API (#1256). Regular artifacts use RENAME_ARTIFACT.
+            mind_maps = await client.mind_maps.list(nb_id_resolved)
+            mind_map = next((m for m in mind_maps if m.id == resolved_id), None)
+            if mind_map is not None:
+                await client.mind_maps.rename(
+                    nb_id_resolved, resolved_id, new_title, kind=mind_map.kind
+                )
+            else:
+                await client.artifacts.rename(nb_id_resolved, resolved_id, new_title)
             # The rename API returns None; if no exception was raised, the operation succeeded.
             # We display the requested new_title as confirmation.
             if json_output:

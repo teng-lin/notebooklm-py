@@ -486,18 +486,27 @@ class TestArtifactRename:
             data = json.loads(result.output)
             assert data == {"id": "art_123", "renamed": True, "new_title": "New Title"}
 
-    def test_artifact_rename_rejects_mind_map(self, runner, mock_auth):
+    def test_artifact_rename_dispatches_mind_map(self, runner, mock_auth):
+        """A mind-map id is renamed via the unified API (kind-aware), not blocked."""
+        from notebooklm.types import MindMap, MindMapKind
+
         with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution (include the mind map)
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="mm_123", title="Old Title", _artifact_type=5, status=3)]
             )
-            mock_client.notes.list_mind_maps = AsyncMock(
+            mock_client.mind_maps.list = AsyncMock(
                 return_value=[
-                    ["mm_123", ["mm_123", "{}", None, None, "Old Title"]],
+                    MindMap(
+                        id="mm_123",
+                        notebook_id="nb_123",
+                        title="Old Title",
+                        kind=MindMapKind.NOTE_BACKED,
+                    )
                 ]
             )
+            mock_client.mind_maps.rename = AsyncMock()
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -508,8 +517,11 @@ class TestArtifactRename:
                     cli, ["artifact", "rename", "mm_123", "New Title", "-n", "nb_123"]
                 )
 
-            assert result.exit_code != 0
-            assert "Mind maps cannot be renamed" in result.output
+            assert result.exit_code == 0
+            assert "Renamed" in result.output
+            mock_client.mind_maps.rename.assert_awaited_once_with(
+                "nb_123", "mm_123", "New Title", kind=MindMapKind.NOTE_BACKED
+            )
 
 
 # =============================================================================
