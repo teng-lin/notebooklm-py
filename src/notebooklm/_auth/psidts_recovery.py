@@ -585,9 +585,10 @@ def validate_with_recovery(
     Wraps :func:`notebooklm._auth.cookies.convert_rookiepy_cookies_to_storage_state`
     plus :func:`notebooklm._auth.cookies.extract_cookies_from_storage` with one
     retry through :func:`recover_psidts_in_memory` (issue #990). When the
-    recovery preconditions hold (SID present, PSIDTS absent, secondary
-    binding intact), the rotated cookies are appended to ``rookiepy_cookies``
-    in place so downstream persistence picks them up.
+    recovery preconditions hold (SID present, PSIDTS absent or expired,
+    secondary binding intact — see :func:`_psidts_needs_recovery`), the
+    rotated cookies are appended to ``rookiepy_cookies`` in place so
+    downstream persistence picks them up.
 
     Lives in the auth subpackage rather than the CLI login package so both
     CLI call sites can route through ``notebooklm.auth`` without adding a
