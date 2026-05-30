@@ -271,6 +271,8 @@ _FROZEN_TYPES_ALL = [
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "MindMap",
+    "MindMapKind",
     "MindMapResult",
     "SourceGuide",
     "SourceError",

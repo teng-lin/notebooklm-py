@@ -43,6 +43,7 @@ from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
 from ._env import get_base_url as get_base_url
 from ._mind_map import NoteBackedMindMapService
+from ._mind_maps_api import MindMapsAPI
 from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
@@ -431,6 +432,15 @@ class NotebookLMClient:
             notes=note_service,
             mind_maps=mind_maps,
             save_chat_answer=self.chat.save_answer_as_note,
+        )
+        # Unified mind-map surface over both backends (note-backed + interactive
+        # studio artifact); dispatches each op to the correct RPC family (#1256).
+        self.mind_maps = MindMapsAPI(
+            rpc=internals.executor,
+            notes=note_service,
+            mind_maps=mind_maps,
+            artifacts=self.artifacts,
+            notebooks=self.notebooks,
         )
         # Pure-RPC features (typed as ``rpc: RpcCaller``). Wave 7 of
         # session-decoupling: pass the ``RpcExecutor`` collaborator

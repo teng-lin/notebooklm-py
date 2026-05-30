@@ -33,6 +33,7 @@ from ._types.common import (
     RpcTelemetryEvent,
     UnknownTypeWarning,
 )
+from ._types.mind_maps import MindMap, MindMapKind
 from ._types.notebooks import (
     Notebook,
     NotebookDescription,
@@ -152,6 +153,8 @@ __all__ = [
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "MindMap",
+    "MindMapKind",
     "MindMapResult",
     "SourceGuide",
     # Exceptions

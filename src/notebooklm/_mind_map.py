@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from ._note_service import NoteRowKind, NoteService
+from ._row_adapters_notes import NoteRow
 
 
 class NoteBackedMindMapService:
@@ -64,3 +65,21 @@ class NoteBackedMindMapService:
         public contract is preserved.
         """
         return await self._notes.delete_note(notebook_id, note_id)
+
+    async def rename_mind_map(self, notebook_id: str, mind_map_id: str, new_title: str) -> None:
+        """Rename a note-backed mind map by retitling its backing note.
+
+        Note-backed mind maps are renamed via ``UPDATE_NOTE`` (re-sending the
+        existing content with the new title) — notes have no title-only field
+        mask. (Interactive studio-artifact mind maps rename via
+        ``RENAME_ARTIFACT`` instead; see ``MindMapsAPI``.)
+
+        Raises:
+            ValueError: if no note-backed mind map with ``mind_map_id`` exists.
+        """
+        for row in await self.list_mind_maps(notebook_id):
+            if NoteRow(row).id == mind_map_id:
+                content = self.extract_content(row) or ""
+                await self._notes.update_note(notebook_id, mind_map_id, content, new_title)
+                return
+        raise ValueError(f"Note-backed mind map {mind_map_id!r} not found in notebook {notebook_id!r}")

@@ -140,6 +140,7 @@ RPC Layer (rpc/)
 | `_settings.py` | `client.settings` API |
 | `_note_service.py` | Service layer managing note CRUD, note-backed content generation, and sync |
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
+| `_mind_maps_api.py` | `client.mind_maps` API — unified surface over both mind-map backends (note-backed JSON + interactive studio-artifact), dispatching each op to the correct RPC family (#1256) |
 | `_artifact_downloads.py` | Asynchronous download coordinator for finished artifacts |
 | `_artifact_formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
 | `_artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
@@ -223,6 +224,7 @@ src/notebooklm/
 ├── _runtime_contracts.py        # Shared runtime Protocols consumed by feature APIs
 ├── _note_service.py             # NoteService
 ├── _mind_map.py                 # NoteBackedMindMapService
+├── _mind_maps_api.py            # MindMapsAPI — unified mind-map surface over both backends (#1256)
 ├── _artifact_downloads.py       # Artifact download coordinator
 ├── _artifact_formatters.py      # Artifact formatting helpers
 ├── _artifact_payloads.py        # Stable artifact request payload builders
@@ -272,6 +274,7 @@ src/notebooklm/
 │   ├── artifacts.py
 │   ├── chat.py
 │   ├── common.py
+│   ├── mind_maps.py             # MindMap + MindMapKind pure-value types (#1256)
 │   ├── notebooks.py
 │   ├── notes.py
 │   ├── research.py              # ResearchStatus enum + ResearchTask/ResearchSource/ResearchStart/MindMapResult/SourceGuide typed returns (#1209)
