@@ -218,8 +218,7 @@ class Source:
         so all paths produce identical :class:`Source` instances,
         including the decoded :attr:`status`. ``status`` earlier silently
         fell back to the ``SourceStatus.READY`` default here while the
-        listing path read it from the row. See ``docs/improvement.md``
-        §6.2 for context.
+        listing path read it from the row.
         """
         # Keep the row-adapter dependency local so importing the source
         # dataclass package does not pull source-row parsing helpers into
