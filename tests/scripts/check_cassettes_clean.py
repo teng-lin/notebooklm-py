@@ -93,6 +93,7 @@ def _iter_cassettes(
     paths: list[str],
     recursive: bool = False,
     extensions: tuple[str, ...] = (".yaml",),
+    skip_examples: bool = True,
 ) -> list[Path]:
     """Resolve CLI arguments into a concrete list of cassette files.
 
@@ -104,10 +105,19 @@ def _iter_cassettes(
     * Non-existent paths are silently skipped — matches the bash original's
       "scan what exists" behaviour and keeps the tool friendly to pre-commit
       hooks that may pass deleted-but-still-staged paths.
-    * Files under ``tests/cassettes/examples/`` (any depth) are excluded
-      from recursive scans — they are illustrative fixtures with placeholder
+    * When ``skip_examples`` is set (the default), files under an
+      ``examples/`` directory (any depth) and ``example_*`` files are excluded
+      from directory scans — they are illustrative fixtures with placeholder
       cookies and intentional YAML quirks, not real recordings (see
-      :data:`_EXAMPLE_SUBDIRS`).
+      :data:`_EXAMPLE_SUBDIRS`). Their placeholder content trips the full
+      :func:`is_clean` heuristics, so the default cassette scan filters them.
+
+    ``skip_examples`` is set to ``False`` for ``--secrets-only`` scans: that
+    mode only matches high-severity credential shapes (which never occur in
+    placeholder fixtures), so there is no false-positive reason to skip
+    ``examples/`` — and skipping them WOULD be a blind spot for credential
+    hunting over a directory like ``tests/fixtures/`` (coderabbit review on
+    #1266). Explicitly-named file paths are always scanned regardless.
 
     The ``recursive`` flag is what P1-5 adds: CI now scans subdirectories of
     ``tests/cassettes/`` (e.g. ``gzip_coverage/``) so a recorder cannot
@@ -123,37 +133,27 @@ def _iter_cassettes(
             found.extend(d.glob(pat))
         return sorted(set(found))
 
-    def _is_example_path(p: Path, scan_root: Path) -> bool:
-        # The illustrative-``examples/`` exemption is a property of the CASSETTE
-        # tree only (placeholder cookies + intentional YAML quirks live in
-        # ``tests/cassettes/examples/``). It must NOT silently exempt an
-        # ``examples/`` subtree or ``example_*`` file under an unrelated scan
-        # root such as ``tests/fixtures/`` — that would be a blind spot for the
-        # ``--secrets-only`` fixture scan (coderabbit review on #1266).
-        # Resolve so a relative CLI arg (``tests/cassettes``) still matches the
-        # absolute ``DEFAULT_CASSETTE_DIR`` — otherwise the exemption would
-        # wrongly drop out for relative-path invocations.
-        root = scan_root.resolve()
-        if root != DEFAULT_CASSETTE_DIR and DEFAULT_CASSETTE_DIR not in root.parents:
-            return False
-        # An ``example_`` file at the top level OR any file under a
-        # ``examples/`` directory anywhere in the cassette tree is treated
-        # as illustrative and excluded from recursive scans.
+    def _is_example_path(p: Path) -> bool:
+        # An ``example_`` file at the top level OR any file under an
+        # ``examples/`` directory anywhere is treated as illustrative and
+        # excluded from directory scans (only when ``skip_examples``).
         if p.name.startswith("example_"):
             return True
         return any(part in _EXAMPLE_SUBDIRS for part in p.parts)
 
+    def _keep(p: Path) -> bool:
+        return not (skip_examples and _is_example_path(p))
+
     if not paths:
         if not DEFAULT_CASSETTE_DIR.exists():
             return []
-        root = DEFAULT_CASSETTE_DIR
-        return [p for p in _globdir(root) if not _is_example_path(p, root)]
+        return [p for p in _globdir(DEFAULT_CASSETTE_DIR) if _keep(p)]
 
     resolved: list[Path] = []
     for raw in paths:
         candidate = Path(raw)
         if candidate.is_dir():
-            resolved.extend(p for p in _globdir(candidate) if not _is_example_path(p, candidate))
+            resolved.extend(p for p in _globdir(candidate) if _keep(p))
         elif candidate.is_file():
             # Explicit file paths are always scanned, even if under
             # ``examples/`` — the operator asked for them by name.
@@ -259,7 +259,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     extensions = _SECRETS_ONLY_EXTENSIONS if args.secrets_only else (".yaml",)
-    cassettes = _iter_cassettes(args.paths, recursive=args.recursive, extensions=extensions)
+    # ``--secrets-only`` matches only credential shapes (no false positives on
+    # placeholder content), so it must NOT skip ``examples/`` — doing so would
+    # be a blind spot for credential hunting over fixture dirs (#1266). Default
+    # (full-heuristic) scans keep skipping examples to avoid placeholder noise.
+    cassettes = _iter_cassettes(
+        args.paths,
+        recursive=args.recursive,
+        extensions=extensions,
+        skip_examples=not args.secrets_only,
+    )
     if not cassettes:
         # Fresh checkout with no recorded cassettes — that's a valid clean
         # state, matching the bash original's behaviour.

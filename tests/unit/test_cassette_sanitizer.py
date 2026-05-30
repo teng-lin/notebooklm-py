@@ -459,6 +459,48 @@ def test_python_guard_recursive_skips_examples_subdir(tmp_path: Path) -> None:
     assert "Leak (email)" in res_explicit.stdout
 
 
+def test_python_guard_secrets_only_scans_examples_subtree(tmp_path: Path) -> None:
+    """``--secrets-only --recursive`` scans an ``examples/`` subtree (#1266).
+
+    The default scan skips ``examples/`` (placeholder fixtures trip the full
+    heuristics), but ``--secrets-only`` matches only credential shapes — which
+    never occur in placeholder fixtures — so it MUST descend into ``examples/``
+    or a real key hidden there would be a silent blind spot. The key is built
+    by concatenation so no contiguous key literal lives in this source file.
+    Also exercises the ``.json`` widening: the default scan globs only ``.yaml``.
+    """
+    fake_key = "AIza" + "Z" * 35
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    (examples / "leak.json").write_text(f'{{"JrWMbf":"{fake_key}"}}\n', encoding="utf-8")
+
+    # Default mode would skip the examples/ subtree AND only globs .yaml.
+    res_default = _run_guard("--recursive", str(tmp_path))
+    assert res_default.returncode == 0, res_default.stdout + res_default.stderr
+
+    # Secrets-only descends into examples/ and scans the .json file.
+    res_secrets = _run_guard("--secrets-only", "--recursive", str(tmp_path))
+    assert res_secrets.returncode == 1, res_secrets.stdout + res_secrets.stderr
+    assert "Google API key" in res_secrets.stdout
+
+
+def test_python_guard_secrets_only_ignores_placeholder_content(tmp_path: Path) -> None:
+    """``--secrets-only`` does not flag placeholder content that trips is_clean.
+
+    A real-provider email is a leak under the full heuristics but NOT a
+    high-severity credential shape — this is the property that makes scanning
+    fixture dirs full of ``"Scrubbed ..."`` / test-email placeholders viable.
+    """
+    cassette = tmp_path / "fixture.json"
+    cassette.write_text('{"email":"realname@gmail.com"}\n', encoding="utf-8")
+    # Full heuristics WOULD flag the email ...
+    assert _run_guard(str(cassette)).returncode == 1
+    # ... but secrets-only stays silent.
+    res = _run_guard("--secrets-only", str(cassette))
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "0 leaks found" in res.stdout
+
+
 def test_python_guard_exits_zero_when_no_cassettes_found(tmp_path: Path) -> None:
     """An empty cassette directory is a valid clean state (matches bash)."""
     empty_dir = tmp_path / "empty"
