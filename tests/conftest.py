@@ -16,15 +16,15 @@ _PLAYWRIGHT_INSTALLED = importlib.util.find_spec("playwright") is not None
 # Mirror of ``tests/vcr_config._is_vcr_record_mode`` — duplicated (not imported)
 # so the *root* conftest, loaded for every test, stays free of the heavier
 # ``vcr_config`` (vcrpy) import. Kept byte-for-byte identical to the canonical
-# (no ``.strip()``) so the two never disagree on a padded value and split the
-# config into a half-recording state; ``test_home_isolation`` pins the parity.
-# (#1263)
+# (same ``.casefold()``, no ``.strip()``) so the two never disagree on a padded
+# value and split the config into a half-recording state; ``test_home_isolation``
+# pins the parity. (#1263)
 _VCR_RECORD_ENV = "NOTEBOOKLM_VCR_RECORD"
 
 
 def _vcr_recording() -> bool:
     """Whether VCR is in record mode (``NOTEBOOKLM_VCR_RECORD`` truthy)."""
-    return os.environ.get(_VCR_RECORD_ENV, "").lower() in ("1", "true", "yes")
+    return os.environ.get(_VCR_RECORD_ENV, "").casefold() in ("1", "true", "yes")
 
 
 def _should_use_real_home(*, e2e: bool, vcr: bool, recording: bool) -> bool:

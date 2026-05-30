@@ -118,7 +118,7 @@ def _is_vcr_record_mode() -> bool:
     module's VCR-instance config and ``tests/integration/conftest.py``
     consume this helper to avoid drift between the two checks.
     """
-    return os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+    return os.environ.get("NOTEBOOKLM_VCR_RECORD", "").casefold() in ("1", "true", "yes")
 
 
 def get_error_injection_mode() -> str | None:
