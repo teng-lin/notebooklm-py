@@ -542,14 +542,12 @@ The gate is a pure-text static check (no pytest, no network) and runs in the
 - at least one cassette whose recorded request/response body contains the
   RPC id.
 
-**Pre-existing gaps.** A small `PREEXISTING_GAPS` set inside the script
-grandfathers methods that lacked coverage when the gate first landed
-(currently: `GET_INTERACTIVE_HTML`, `GET_SUGGESTED_REPORTS`,
-`IMPORT_RESEARCH`, `REFRESH_SOURCE`). The set is a **one-way ratchet** —
-it must not grow. When you backfill coverage for a grandfathered method,
-delete its entry from `PREEXISTING_GAPS` in the same PR. The gate prints a
-`NOTICE:` to stderr when a `PREEXISTING_GAPS` entry has acquired full
-coverage so maintainers see the prompt to remove it.
+**Pre-existing gaps.** A small `PREEXISTING_GAPS` set inside the script can
+grandfather methods that lacked coverage when the gate first landed. It is
+currently empty. The set is a **one-way ratchet** — it must not grow. When
+you backfill coverage for a grandfathered method, delete its entry from
+`PREEXISTING_GAPS` in the same PR. The gate fails when a stale
+`PREEXISTING_GAPS` entry has acquired full coverage so maintainers remove it.
 
 ```bash
 # Run locally before pushing changes that touch RPCMethod

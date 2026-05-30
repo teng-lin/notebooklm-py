@@ -1,0 +1,18 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22LBwxtb%22%2C%22%5Bnull%2C%5B1%5D%2C%5C%22task_backfill_001%5C%22%2C%5C%22bb00c9e3-656c-4fd2-b890-2b71e1cf3814%5C%22%2C%5B%5Bnull%2Cnull%2C%5B%5C%22https%3A%2F%2Fexample.com%2Fresearch-backfill%5C%22%2C%5C%22research%20backfill%20source%5C%22%5D%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C2%5D%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF&
+    headers:
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=LBwxtb&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
+  response:
+    body:
+      string: ")]}'\n99\n[[\"wrb.fr\", \"LBwxtb\", \"[[[[\\\"imported_source_001\\\"], \\\"research backfill source\\\"]]]\", null, null]]\n"
+    headers:
+      Content-Type:
+      - application/json; charset=utf-8
+    status:
+      code: 200
+      message: OK
+version: 1

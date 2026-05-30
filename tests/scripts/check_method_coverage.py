@@ -92,18 +92,8 @@ _TEST_REFERENCE_EXCLUDES: frozenset[Path] = frozenset(
 # policy. The script's bootstrap step (run once locally before commit)
 # populated this set. Each entry is the ``RPCMethod.<NAME>`` member name
 # (without the ``RPCMethod.`` prefix).
-PREEXISTING_GAPS: frozenset[str] = frozenset(
-    {
-        # Captured by the bootstrap run when this gate landed. See module docstring
-        # for the one-way-ratchet policy: shrink this set when you backfill
-        # coverage; never add new entries when introducing a new RPCMethod.
-        # ``frozenset`` (not ``set``) so the module-level constant cannot be
-        # mutated at runtime, matching ``_TEST_REFERENCE_EXCLUDES`` above and
-        # reinforcing the "only shrinks" contract structurally.
-        "IMPORT_RESEARCH",  # no cassette body contains id 'LBwxtb'
-        "REFRESH_SOURCE",  # no cassette body contains id 'FLmJqe'
-    }
-)
+# The set is intentionally empty after backfilling all bootstrap gaps.
+PREEXISTING_GAPS: frozenset[str] = frozenset()
 
 
 def _iter_test_files() -> list[Path]:
