@@ -16,7 +16,7 @@ the broader stability policy (semver promise, supported Python versions, the
 | `sources.get()` / `artifacts.get()` / `notes.get()` returning `None` on a miss | `try/except SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` | v0.7.0 | v0.8.0 | Behavior unchanged this release (still returns `None`); a `DeprecationWarning` now fires **only on a miss**. In v0.8.0 these raise the matching `*NotFoundError`, unifying the not-found contract with `notebooks.get()` (which already raises). `SourceNotFoundError` and `ArtifactNotFoundError` already exist; **`NoteNotFoundError` is added in v0.8.0** (the warning's migration hint flags this), so notes callers should defer the `except NoteNotFoundError` clause until v0.8.0. Warning emitted via `src/notebooklm/_deprecation.py::warn_get_returns_none`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS`. Flip tracked by [#1247](https://github.com/teng-lin/notebooklm-py/issues/1247) |
 | `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.7.0 | Warning at `src/notebooklm/_notes.py:192` |
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works; warning at `src/notebooklm/client.py:__await__` |
-| `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` — same cadence, name now matches `SourcesAPI.wait_until_ready` / `ArtifactsAPI.wait_for_completion` | v0.6.x | v0.7.0 | Additive: `interval` keeps its default of `5` and still works; passing a non-default value emits a `DeprecationWarning`, passing both `interval` and `initial_interval` raises `TypeError`. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py` |
+| `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` — same cadence, name now matches `SourcesAPI.wait_until_ready` / `ArtifactsAPI.wait_for_completion` | v0.7.0 | v0.8.0 | Additive: `interval` keeps its default of `5` and still works; passing a non-default value emits a `DeprecationWarning`, passing both `interval` and `initial_interval` raises `TypeError`. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py` |
 
 ### Migration: `ResearchAPI.wait_for_completion` poll-interval keyword
 
@@ -57,11 +57,11 @@ inference), so both are now supported parameters. The earlier
 | Positional `wait` / `wait_timeout` on `SourcesAPI.add_url`, `SourcesAPI.add_text`, `SourcesAPI.add_file`, `SourcesAPI.add_drive` | Pass `wait=...` and `wait_timeout=...` as keywords | v0.5.0 | v0.7.0 | `wait` / `wait_timeout` are now keyword-only; positional calls raise `TypeError`. CLI already used keyword arguments |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.7.0 | The `poll_interval` keyword was removed; passing it raises `TypeError` |
 
-## Scheduled removal — v0.7.0
+## Scheduled removal — v0.8.0
 
 | Deprecated | Replacement | Deprecated since | Removal | Notes |
 |------------|-------------|------------------|---------|-------|
-| `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` | v0.6.x | v0.7.0 | The `interval` keyword warns in the 0.6.x series and is removed in v0.7.0; after removal, passing it raises `TypeError`. Until then it stays working with a `DeprecationWarning`. |
+| `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` | v0.7.0 | v0.8.0 | The `interval` keyword warns starting in v0.7.0 and is removed in v0.8.0; after removal, passing it raises `TypeError`. Until then it stays working with a `DeprecationWarning`. |
 
 ## Removed in v0.6.0
 

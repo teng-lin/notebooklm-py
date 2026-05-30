@@ -163,7 +163,7 @@ def deprecated_kwarg(
         owner: Human-readable owner of the parameter for the warning message,
             e.g. ``"ResearchAPI.wait_for_completion"``.
         removal: Version in which the deprecated keyword is removed. Defaults
-            to v0.7.0. Named in the warning text so the release gate can verify
+            to v0.8.0. Named in the warning text so the release gate can verify
             it is never the shipping version.
         sentinel: The "not provided" marker for both ``old_value`` and
             ``new_value``. Defaults to ``None``; pass a private sentinel object
