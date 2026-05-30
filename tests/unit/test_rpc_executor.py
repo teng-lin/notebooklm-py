@@ -655,6 +655,8 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     monkeypatch.setattr(core._collaborators.auth_coord, "await_refresh", fake_await_refresh)
     monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)
 
+    from notebooklm._auth_refresh_retry import RefreshBudget
+
     result = await executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         ["param"],
@@ -662,6 +664,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         True,
         RPCError("auth"),
         disable_internal_retries=True,
+        _refresh_budget=RefreshBudget(),
     )
 
     assert core._rpc_executor is executor

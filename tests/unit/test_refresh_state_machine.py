@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from notebooklm._auth_refresh_retry import RefreshBudget
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import AuthError, RPCMethod
 
@@ -45,6 +46,7 @@ async def _trigger_refresh(core):
         "/",
         False,
         AuthError("simulated"),
+        _refresh_budget=RefreshBudget(),
     )
 
 

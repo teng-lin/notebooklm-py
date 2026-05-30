@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
+from notebooklm._auth_refresh_retry import RefreshBudget
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCMethod
@@ -102,6 +103,7 @@ async def _trigger_refresh(core: NotebookLMClient) -> object:
         "/",
         False,
         AuthError("simulated"),
+        _refresh_budget=RefreshBudget(),
     )
 
 

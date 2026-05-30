@@ -460,7 +460,7 @@ class RpcExecutor:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        _refresh_budget: RefreshBudget | None = None,
+        _refresh_budget: RefreshBudget,
     ) -> Any | None:
         """Refresh auth after a decode-time auth error and retry once.
 
@@ -475,6 +475,14 @@ class RpcExecutor:
         ``rpc_auth_retries`` too (via the shared helper); before the #1205
         consolidation only the chain layer counted the auth retry, which was
         an accidental divergence.
+
+        ``_refresh_budget`` is REQUIRED (no default): this method is only
+        reached from :meth:`_execute_once` after its
+        ``_refresh_budget.consume()`` gate returned ``True``, so the caller
+        always holds the already-consumed shared budget. Forcing it to be
+        passed forecloses a contrived direct call from minting a fresh budget
+        on the retry leg and allowing a second refresh (coderabbit/claude #1240
+        review).
         """
         await refresh_and_count(
             refresh=self._auth_refresh.await_refresh,
