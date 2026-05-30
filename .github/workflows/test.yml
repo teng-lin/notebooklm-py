@@ -169,6 +169,18 @@ jobs:
       # into a nested folder like ``tests/cassettes/gzip_coverage/`` (P1-5).
       run: uv run python tests/scripts/check_cassettes_clean.py --strict --recursive
 
+    - name: Check fixtures for credential leaks
+      # The cassette guard above is scoped to ``tests/cassettes/*.yaml``. Golden
+      # RPC fixtures live under ``tests/fixtures/`` as ``.json`` (and one
+      # captured ``.html`` page), which embed the same WIZ_global_data shapes —
+      # a Google API key smuggled into a golden HTML fixture would otherwise
+      # slip past CI entirely (the GET_INTERACTIVE_HTML.json class). ``--secrets
+      # -only`` scans .json/.html/.yaml for high-severity credential shapes
+      # (Google auth tokens + API keys) without tripping on the intentional
+      # placeholder content (``"Scrubbed ..."`` names, test emails) that fills
+      # those fixtures.
+      run: uv run python tests/scripts/check_cassettes_clean.py --secrets-only --recursive tests/fixtures
+
     - name: Run tests with coverage
       # Emit coverage.json so the per-file floor check below can read it
       # without re-running the suite. ``term-missing`` is kept so build logs

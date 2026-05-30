@@ -46,9 +46,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tests.cassette_patterns import is_clean  # noqa: E402
+from tests.cassette_patterns import find_credential_leaks, is_clean  # noqa: E402
 
 DEFAULT_CASSETTE_DIR = _REPO_ROOT / "tests" / "cassettes"
+# Extensions scanned in ``--secrets-only`` mode. Golden RPC fixtures are
+# ``.json`` and the captured-page fixture is ``.html``; the default cassette
+# scan only globs ``.yaml``, so a Google API key smuggled into a golden HTML
+# fixture (the GET_INTERACTIVE_HTML.json shape) would slip past the cassette
+# guard entirely. ``--secrets-only`` widens both the file types AND the
+# directories scanned.
+_SECRETS_ONLY_EXTENSIONS: tuple[str, ...] = (".yaml", ".yml", ".json", ".html", ".txt")
 DEFAULT_ALLOWLIST = _REPO_ROOT / "tests" / "scripts" / "cassette_repair_allowlist.txt"
 
 
@@ -82,7 +89,11 @@ def _load_allowlist(path: Path) -> set[str]:
 _EXAMPLE_SUBDIRS: frozenset[str] = frozenset({"examples"})
 
 
-def _iter_cassettes(paths: list[str], recursive: bool = False) -> list[Path]:
+def _iter_cassettes(
+    paths: list[str],
+    recursive: bool = False,
+    extensions: tuple[str, ...] = (".yaml",),
+) -> list[Path]:
     """Resolve CLI arguments into a concrete list of cassette files.
 
     * If no paths are given, scan ``tests/cassettes/*.yaml`` (non-recursive)
@@ -104,7 +115,13 @@ def _iter_cassettes(paths: list[str], recursive: bool = False) -> list[Path]:
     existing developer workflows (running the guard on a single file or the
     top-level directory) are unchanged.
     """
-    glob_pattern = "**/*.yaml" if recursive else "*.yaml"
+    glob_patterns = [(f"**/*{ext}" if recursive else f"*{ext}") for ext in extensions]
+
+    def _globdir(d: Path) -> list[Path]:
+        found: list[Path] = []
+        for pat in glob_patterns:
+            found.extend(d.glob(pat))
+        return sorted(set(found))
 
     def _is_example_path(p: Path) -> bool:
         # An ``example_`` file at the top level OR any file under a
@@ -117,15 +134,13 @@ def _iter_cassettes(paths: list[str], recursive: bool = False) -> list[Path]:
     if not paths:
         if not DEFAULT_CASSETTE_DIR.exists():
             return []
-        found = sorted(DEFAULT_CASSETTE_DIR.glob(glob_pattern))
-        return [p for p in found if not _is_example_path(p)]
+        return [p for p in _globdir(DEFAULT_CASSETTE_DIR) if not _is_example_path(p)]
 
     resolved: list[Path] = []
     for raw in paths:
         candidate = Path(raw)
         if candidate.is_dir():
-            sub = sorted(candidate.glob(glob_pattern))
-            resolved.extend(p for p in sub if not _is_example_path(p))
+            resolved.extend(p for p in _globdir(candidate) if not _is_example_path(p))
         elif candidate.is_file():
             # Explicit file paths are always scanned, even if under
             # ``examples/`` — the operator asked for them by name.
@@ -133,7 +148,7 @@ def _iter_cassettes(paths: list[str], recursive: bool = False) -> list[Path]:
     return resolved
 
 
-def _scan_file(path: Path) -> list[tuple[int, str]]:
+def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
     """Return ``(line_number, leak_description)`` for each leak.
 
     Reads the cassette line-by-line (no PyYAML parse) so the tool runs in
@@ -144,6 +159,12 @@ def _scan_file(path: Path) -> list[tuple[int, str]]:
     Each leak description is the human-readable string emitted by
     :func:`tests.cassette_patterns.is_clean` (e.g. ``"Leak (cookie header):
     cookie 'SID' value 'abc' is not a known scrub placeholder"``).
+
+    When ``secrets_only`` is set the per-line check uses
+    :func:`tests.cassette_patterns.find_credential_leaks` instead — only the
+    high-severity credential shapes (auth tokens + Google API keys), which never
+    match legitimate placeholder fixture content. That is what makes scanning
+    fixture directories full of ``"Scrubbed ..."`` placeholders viable.
     """
     leaks: list[tuple[int, str]] = []
     try:
@@ -151,9 +172,12 @@ def _scan_file(path: Path) -> list[tuple[int, str]]:
         # the guard mid-scan; we still produce useful output.
         with path.open("r", encoding="utf-8", errors="replace") as fh:
             for line_no, line in enumerate(fh, start=1):
-                ok, line_leaks = is_clean(line)
-                if ok:
-                    continue
+                if secrets_only:
+                    line_leaks = find_credential_leaks(line)
+                else:
+                    ok, line_leaks = is_clean(line)
+                    if ok:
+                        continue
                 for description in line_leaks:
                     leaks.append((line_no, description))
     except OSError as exc:
@@ -198,6 +222,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--secrets-only",
+        action="store_true",
+        help=(
+            "Scan only for high-severity credential shapes (Google auth tokens "
+            "and Google API keys) instead of the full cookie/PII heuristics. "
+            "Also widens the scanned file types to .json/.html/.txt (not just "
+            ".yaml). Use this to scan fixture directories such as "
+            "tests/fixtures/ that contain intentional placeholder content "
+            "(e.g. 'Scrubbed Note Title') which would false-positive under the "
+            "full is_clean() heuristics."
+        ),
+    )
+    parser.add_argument(
         "--allowlist",
         type=Path,
         default=DEFAULT_ALLOWLIST,
@@ -208,7 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    cassettes = _iter_cassettes(args.paths, recursive=args.recursive)
+    extensions = _SECRETS_ONLY_EXTENSIONS if args.secrets_only else (".yaml",)
+    cassettes = _iter_cassettes(args.paths, recursive=args.recursive, extensions=extensions)
     if not cassettes:
         # Fresh checkout with no recorded cassettes — that's a valid clean
         # state, matching the bash original's behaviour.
@@ -245,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
             skipped += 1
             continue
         scanned += 1
-        leaks = _scan_file(cassette)
+        leaks = _scan_file(cassette, secrets_only=args.secrets_only)
         if leaks:
             leaked_files.append(cassette)
             total_leaks += len(leaks)

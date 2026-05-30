@@ -95,6 +95,19 @@ WRB-payload JSON string:
   path forms carry per-user avatar tokens. The pattern collapses the whole
   URL (host + path + token, including any trailing ``=s512``-style sizing
   suffix) to ``SCRUBBED_AVATAR_URL``.
+
+Google API-key coverage
+-----------------------
+The NotebookLM web page embeds a Google API key in ``WIZ_global_data``. It
+surfaces across several field names (``B8SWKb``, ``VqImj``, and ``JrWMbf``);
+each is scrubbed by a name-anchored pattern. ``JrWMbf`` was originally missing,
+so its value round-tripped unscrubbed into the interactive mind-map cassettes —
+the API-key analog of the ``LSID`` cookie leak. To close that class of gap for
+good, the registry also carries a field-name-agnostic catch-all
+(:data:`_GOOGLE_API_KEY_PATTERN`) that collapses the canonical ``AIza`` +
+35-char Google API-key shape to ``SCRUBBED_API_KEY`` wherever it appears, with a
+matching ``is_clean`` detector so any unredacted key is flagged regardless of
+which field carried it.
 """
 
 from __future__ import annotations
@@ -417,6 +430,21 @@ _AUTH_TOKEN_PATTERNS: list[str] = [
     r"ya29\.[A-Za-z0-9_\-]{20,}",
 ]
 
+# Google API-key shape (``AIza`` + 35 ``[A-Za-z0-9_-]`` chars), applied as a
+# defense-in-depth catch-all alongside the name-anchored WIZ_global_data
+# ``B8SWKb`` / ``VqImj`` / ``JrWMbf`` scrubbers below. The name-anchored
+# patterns scrub whatever a *known* API-key field carries; this shape pattern
+# scrubs the key wherever it appears regardless of the surrounding field name.
+# The ``JrWMbf`` leak (the NotebookLM web API key round-tripping into the
+# ``generate_mind_map_interactive`` / ``mind_maps_interactive`` cassettes) is
+# the API-key analog of the ``LSID`` cookie leak: a credential rode in a field
+# that was not on the allowlist, so a name-anchored guard alone missed it. The
+# prefix + exact 35-char tail is the canonical Google API-key shape and never
+# occurs as legitimate fixture content, so collapsing it to the
+# ``SCRUBBED_API_KEY`` sentinel is safe. ``is_clean`` carries the matching
+# detector (``_DETECT_GOOGLE_API_KEY``) so any surviving raw key is flagged.
+_GOOGLE_API_KEY_PATTERN = r"AIza[0-9A-Za-z_\-]{35}"
+
 
 def _cookie_header_replacer(name: str) -> tuple[str, str]:
     """Build (regex, replacement) for a Cookie / Set-Cookie header pattern.
@@ -476,6 +504,12 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # Anything matched collapses to ``SCRUBBED`` so no fragment of the original
     # token survives, and the replacement does not itself re-match (idempotent).
     *((p, "SCRUBBED") for p in _AUTH_TOKEN_PATTERNS),
+    # Google API-key shape catch-all (defense in depth). Runs before the
+    # name-anchored WIZ_global_data API-key scrubbers in section 4 so a key
+    # leaks NOTHING even when it rides in a WIZ field that is not on the
+    # allowlist (the ``JrWMbf`` leak class). Collapses to ``SCRUBBED_API_KEY``,
+    # which does not itself re-match (idempotent).
+    (_GOOGLE_API_KEY_PATTERN, "SCRUBBED_API_KEY"),
     # -------------------------------------------------------------------------
     # 1. Cookie-header form: "Name=Value; ..."
     # -------------------------------------------------------------------------
@@ -513,6 +547,11 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     (r'"qDCSke"\s*:\s*"(?:[^"\\]|\\.)*"', '"qDCSke":"SCRUBBED_USER_ID"'),
     (r'"B8SWKb"\s*:\s*"(?:[^"\\]|\\.)*"', '"B8SWKb":"SCRUBBED_API_KEY"'),
     (r'"VqImj"\s*:\s*"(?:[^"\\]|\\.)*"', '"VqImj":"SCRUBBED_API_KEY"'),
+    # ``JrWMbf`` is the NotebookLM web API key embedded in WIZ_global_data. It
+    # was missing from this list, so its value round-tripped unscrubbed into the
+    # interactive mind-map cassettes (the leak this scrubber closes). Sibling of
+    # the ``B8SWKb`` / ``VqImj`` API-key fields above.
+    (r'"JrWMbf"\s*:\s*"(?:[^"\\]|\\.)*"', '"JrWMbf":"SCRUBBED_API_KEY"'),
     (r'"QGcrse"\s*:\s*"(?:[^"\\]|\\.)*"', '"QGcrse":"SCRUBBED_CLIENT_ID"'),
     (r'"iQJtYd"\s*:\s*"(?:[^"\\]|\\.)*"', '"iQJtYd":"SCRUBBED_PROJECT_ID"'),
     # -------------------------------------------------------------------------
@@ -721,6 +760,7 @@ _DETECT_TOKEN_FIELDS: list[tuple[str, re.Pattern[str]]] = [
     ("qDCSke (user_id)", re.compile(r'"qDCSke"\s*:\s*"((?:[^"\\]|\\.)*)"')),
     ("B8SWKb (api_key)", re.compile(r'"B8SWKb"\s*:\s*"((?:[^"\\]|\\.)*)"')),
     ("VqImj (api_key)", re.compile(r'"VqImj"\s*:\s*"((?:[^"\\]|\\.)*)"')),
+    ("JrWMbf (api_key)", re.compile(r'"JrWMbf"\s*:\s*"((?:[^"\\]|\\.)*)"')),
     ("QGcrse (client_id)", re.compile(r'"QGcrse"\s*:\s*"((?:[^"\\]|\\.)*)"')),
     ("iQJtYd (project_id)", re.compile(r'"iQJtYd"\s*:\s*"((?:[^"\\]|\\.)*)"')),
 ]
@@ -791,6 +831,47 @@ _DETECT_AVATAR_URL = re.compile(r"https?://lh3\.googleusercontent\.com/(?:a|ogw)
 # rail that would have caught the ``LSID`` leak: it never depended on ``LSID``
 # being on the cookie allowlist.
 _DETECT_AUTH_TOKEN = re.compile("|".join(_AUTH_TOKEN_PATTERNS))
+
+# Google API-key shape detector — the validator twin of
+# :data:`_GOOGLE_API_KEY_PATTERN`. The scrubber collapses every ``AIza...`` key
+# to the ``SCRUBBED_API_KEY`` sentinel (which does not contain the ``AIza``
+# prefix), so ANY match here is by definition an unredacted leak regardless of
+# which WIZ field carried it. This is the field-name-agnostic backstop that
+# closes the ``JrWMbf`` gap.
+_DETECT_GOOGLE_API_KEY = re.compile(_GOOGLE_API_KEY_PATTERN)
+
+
+# Detectors with ZERO legitimate-occurrence risk anywhere in the repository:
+# raw Google auth-token shapes (``g.a000-`` / ``sidts-`` / ``ya29.``) and the
+# canonical Google API-key shape (``AIza`` + 35 chars). Unlike the cookie-value
+# / display-name / email heuristics that :func:`is_clean` also runs — which
+# intentionally fire on placeholder fixture content such as ``"Scrubbed Note
+# Title"`` or ``alice@gmail.com`` — these credential shapes never match
+# legitimate test data, so they are safe to run over arbitrary files (golden
+# JSON/HTML fixtures, docs, source) with no per-file allowlist. This is what
+# the ``--secrets-only`` mode of ``check_cassettes_clean.py`` uses to extend
+# leak detection beyond ``tests/cassettes/`` without drowning in false
+# positives.
+_CREDENTIAL_DETECTORS: list[tuple[str, re.Pattern[str]]] = [
+    ("auth token", _DETECT_AUTH_TOKEN),
+    ("Google API key", _DETECT_GOOGLE_API_KEY),
+]
+
+
+def find_credential_leaks(text: str) -> list[str]:
+    """Return high-severity credential leaks (auth tokens + Google API keys).
+
+    A focused subset of :func:`is_clean` that runs ONLY the credential-shape
+    detectors in :data:`_CREDENTIAL_DETECTORS`. These shapes have no legitimate
+    occurrence anywhere in the repo, so unlike :func:`is_clean` this is safe to
+    point at fixture directories full of intentional placeholder content. Each
+    returned string is a human-readable ``"Leak (...): '...'"`` description.
+    """
+    leaks: list[str] = []
+    for label, regex in _CREDENTIAL_DETECTORS:
+        for match in regex.finditer(text):
+            leaks.append(f"Leak ({label}): {match.group(0)!r}")
+    return leaks
 
 
 def is_clean(text: str) -> tuple[bool, list[str]]:
@@ -902,6 +983,14 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
     # ``LSID`` gap.
     for match in _DETECT_AUTH_TOKEN.finditer(text):
         leaks.append(f"Leak (auth token): {match.group(0)!r}")
+
+    # --- 9. Google API-key shape (field-name-agnostic) ---------------------
+    # ``AIza...`` keys are scrubbed to ``SCRUBBED_API_KEY`` wherever they
+    # appear, regardless of the WIZ field name carrying them. Any surviving raw
+    # key is a leak by definition — this is the backstop that closes the
+    # ``JrWMbf`` gap the name-anchored field detectors missed.
+    for match in _DETECT_GOOGLE_API_KEY.finditer(text):
+        leaks.append(f"Leak (Google API key): {match.group(0)!r}")
 
     return (not leaks, leaks)
 

@@ -40,9 +40,18 @@ from cassette_patterns import (  # noqa: E402
     SCRUB_PLACEHOLDERS,
     SECURE_COOKIES,
     SESSION_COOKIES,
+    find_credential_leaks,
     is_clean,
     scrub_string,
 )
+
+# A synthetic Google API key whose *shape* (``AIza`` + 35 ``[A-Za-z0-9_-]``
+# chars) matches the canonical Google API-key pattern the registry scrubs, but
+# which is built by concatenation at runtime so no contiguous 39-char key
+# literal ever appears in this source file — embedding a real-looking key here
+# would itself trip GitHub secret scanning. The value is obviously fake.
+FAKE_GOOGLE_API_KEY = "AIza" + "FAKE0" * 7
+assert len(FAKE_GOOGLE_API_KEY) == 39  # AIza + 35
 
 # ---------------------------------------------------------------------------
 # Exports
@@ -226,6 +235,7 @@ def test_scrub_is_idempotent_on_already_scrubbed_storage_state() -> None:
         ("oPEP7c", "SCRUBBED_EMAIL"),
         ("S06Grb", "SCRUBBED_USER_ID"),
         ("B8SWKb", "SCRUBBED_API_KEY"),
+        ("JrWMbf", "SCRUBBED_API_KEY"),
         ("at", "SCRUBBED_CSRF"),
     ],
 )
@@ -337,6 +347,74 @@ def test_is_clean_flags_wiz_global_data_unscrubbed_csrf() -> None:
     assert any("SNlM0e" in leak or "CSRF" in leak.upper() for leak in leaks)
 
 
+def test_is_clean_flags_jrwmbf_unscrubbed_api_key() -> None:
+    """``JrWMbf`` left at its real Google API key value is flagged as a leak.
+
+    Regression for the ``generate_mind_map_interactive`` /
+    ``mind_maps_interactive`` cassette leak: the NotebookLM web API key rode in
+    the ``JrWMbf`` WIZ field, which had no scrubber, so the key round-tripped
+    into committed cassettes unredacted.
+    """
+    text = f'{{"JrWMbf":"{FAKE_GOOGLE_API_KEY}"}}'
+    ok, leaks = is_clean(text)
+    assert not ok
+    assert any("JrWMbf" in leak or "Google API key" in leak for leak in leaks)
+
+
+def test_is_clean_flags_bare_google_api_key_in_unknown_field() -> None:
+    """A Google API-key shape is flagged even outside any known WIZ field.
+
+    The field-name-agnostic catch-all detector is the backstop that closes the
+    ``JrWMbf`` gap class: a key in any future/unknown field is still caught.
+    """
+    text = f'{{"SomeUnknownField":"{FAKE_GOOGLE_API_KEY}"}}'
+    ok, leaks = is_clean(text)
+    assert not ok
+    assert any("Google API key" in leak for leak in leaks)
+
+
+def test_scrub_removes_google_api_key_in_unknown_field() -> None:
+    """The catch-all scrubber collapses an ``AIza`` key in any field."""
+    text = f'{{"SomeUnknownField":"{FAKE_GOOGLE_API_KEY}"}}'
+    scrubbed = scrub_string(text)
+    assert FAKE_GOOGLE_API_KEY not in scrubbed
+    assert "SCRUBBED_API_KEY" in scrubbed
+
+
+# ---------------------------------------------------------------------------
+# find_credential_leaks — high-severity-only subset (for fixture scanning)
+# ---------------------------------------------------------------------------
+
+
+def test_find_credential_leaks_flags_google_api_key() -> None:
+    """A Google API-key shape is reported by the credential-only scanner."""
+    leaks = find_credential_leaks(f'{{"JrWMbf":"{FAKE_GOOGLE_API_KEY}"}}')
+    assert any("Google API key" in leak for leak in leaks)
+
+
+def test_find_credential_leaks_flags_auth_token() -> None:
+    """A raw ``g.a000-`` auth token is reported by the credential-only scanner."""
+    leaks = find_credential_leaks("Cookie: SID=g.a000-abcdefghijklmnop")
+    assert any("auth token" in leak for leak in leaks)
+
+
+def test_find_credential_leaks_ignores_placeholder_fixture_content() -> None:
+    """Placeholder content that trips ``is_clean`` is NOT flagged here.
+
+    This is the property that makes ``--secrets-only`` safe to run over
+    ``tests/fixtures/`` — escaped display names, test emails, and scrubbed
+    cookie sentinels are all ignored; only real credential shapes match.
+    """
+    fixture_like = (
+        '[\\"Scrubbed Note Title\\",\\"alice@gmail.com\\"]'
+        ' {"SID":"SCRUBBED"} {"oPEP7c":"SCRUBBED_EMAIL"}'
+    )
+    # is_clean WOULD flag the escaped display name / email here ...
+    assert not is_clean(fixture_like)[0]
+    # ... but the credential-only scanner stays silent.
+    assert find_credential_leaks(fixture_like) == []
+
+
 # ---------------------------------------------------------------------------
 # Round-trip: scrub_string(x) is always is_clean
 # ---------------------------------------------------------------------------
@@ -364,6 +442,10 @@ def test_is_clean_flags_wiz_global_data_unscrubbed_csrf() -> None:
         '{"qDCSke":"123456789012345678901"}',
         '{"B8SWKb":"AIzaSyAREAL_API_KEY_HERE"}',
         '{"VqImj":"AIzaSyAREAL_API_KEY_HERE"}',
+        f'{{"JrWMbf":"{FAKE_GOOGLE_API_KEY}"}}',
+        # Bare Google API-key shape outside any known WIZ field — the
+        # field-name-agnostic catch-all must still scrub it.
+        f'{{"SomeUnknownField":"{FAKE_GOOGLE_API_KEY}"}}',
         '{"QGcrse":"real-client-id"}',
         '{"iQJtYd":"real-project-id"}',
         "f.sid=REAL_SESSION_TOKEN",
