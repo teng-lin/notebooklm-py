@@ -35,8 +35,11 @@ class TestNotesGet:
 
     @pytest.mark.asyncio
     async def test_get_note_not_found(self, client, read_only_notebook_id):
-        """Test getting a non-existent note returns None."""
-        note = await client.notes.get(read_only_notebook_id, "nonexistent_note_id")
+        """Test getting a non-existent note returns None (with deprecation)."""
+        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
+        # (flips to raising NoteNotFoundError in v0.8.0, issue #1247).
+        with pytest.warns(DeprecationWarning, match="NoteNotFoundError"):
+            note = await client.notes.get(read_only_notebook_id, "nonexistent_note_id")
         assert note is None
 
 

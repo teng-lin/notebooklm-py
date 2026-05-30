@@ -20,6 +20,7 @@ import logging
 import warnings
 from typing import Any, Protocol
 
+from ._deprecation import warn_get_returns_none
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
 from ._row_adapters_notes import NoteRow
@@ -125,6 +126,30 @@ class NotesAPI:
 
         Returns:
             Note object, or None if not found.
+
+        .. deprecated:: 0.7.0
+            Returning ``None`` for a missing note is deprecated and emits a
+            :class:`DeprecationWarning`. In **v0.8.0** this method will raise
+            ``NoteNotFoundError`` instead, to match ``notebooks.get`` (issue
+            #1247). Wrap the call in ``try/except NoteNotFoundError`` to keep
+            handling missing notes. Suppress the warning with
+            ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+        """
+        # v0.8.0: replace the warn-and-return-None below with
+        # ``raise NoteNotFoundError(note_id)`` (issue #1247). Internal callers
+        # that need the silent optional-lookup must use ``_get_or_none``
+        # directly so the library never self-warns.
+        result = await self._get_or_none(notebook_id, note_id)
+        if result is None:
+            warn_get_returns_none("note")
+        return result
+
+    async def _get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
+        """Fetch a note by ID, returning ``None`` when not found.
+
+        Private optional-lookup helper holding the historical ``get`` body. It
+        never emits a deprecation warning, so internal callers can probe for a
+        note without tripping the user-facing deprecation.
         """
         all_items = await self._get_all_notes_and_mind_maps(notebook_id)
         for item in all_items:

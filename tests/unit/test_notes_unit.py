@@ -443,10 +443,13 @@ class TestGetNote:
 
     @pytest.mark.asyncio
     async def test_get_returns_none_for_empty_list(self, notes_api, mock_core):
-        """Test get() returns None when notes list is empty."""
+        """Test get() returns None (with deprecation) when notes list is empty."""
         mock_core.rpc_executor.rpc_call.return_value = [[]]
 
-        result = await notes_api.get("nb_123", "note_1")
+        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
+        # (flips to raising NoteNotFoundError in v0.8.0, issue #1247).
+        with pytest.warns(DeprecationWarning, match="NoteNotFoundError"):
+            result = await notes_api.get("nb_123", "note_1")
 
         assert result is None
 

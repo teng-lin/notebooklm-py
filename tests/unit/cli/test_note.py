@@ -239,7 +239,7 @@ class TestNoteGet:
             mock_client.notes.list = AsyncMock(
                 return_value=[make_note("note_123", "My Note", "This is the content")]
             )
-            mock_client.notes.get = AsyncMock(
+            mock_client.notes._get_or_none = AsyncMock(
                 return_value=make_note("note_123", "My Note", "This is the content")
             )
             mock_client_cls.return_value = mock_client
@@ -260,7 +260,7 @@ class TestNoteGet:
             mock_client = create_mock_client()
             # Mock notes.list to return empty (no match for resolve_note_id)
             mock_client.notes.list = AsyncMock(return_value=[])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -287,7 +287,7 @@ class TestNoteGet:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -306,7 +306,7 @@ class TestNoteGet:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -329,7 +329,7 @@ class TestNoteGet:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_xyz", "Doomed", "")])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -425,7 +425,7 @@ class TestNoteRename:
             mock_client.notes.list = AsyncMock(
                 return_value=[make_note("note_123", "Old Title", "Original content")]
             )
-            mock_client.notes.get = AsyncMock(
+            mock_client.notes._get_or_none = AsyncMock(
                 return_value=make_note("note_123", "Old Title", "Original content")
             )
             mock_client.notes.update = AsyncMock(return_value=None)
@@ -448,7 +448,7 @@ class TestNoteRename:
             mock_client = create_mock_client()
             # Mock notes.list to return empty (no match for resolve_note_id)
             mock_client.notes.list = AsyncMock(return_value=[])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -610,7 +610,9 @@ class TestNoteGetJson:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "Body")])
-            mock_client.notes.get = AsyncMock(return_value=make_note("note_123", "T", "Body"))
+            mock_client.notes._get_or_none = AsyncMock(
+                return_value=make_note("note_123", "T", "Body")
+            )
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -642,7 +644,7 @@ class TestNoteGetJson:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "B")])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -722,7 +724,9 @@ class TestNoteSaveJson:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
-            mock_client.notes.get = AsyncMock(return_value=make_note("note_123", "Old", "Body"))
+            mock_client.notes._get_or_none = AsyncMock(
+                return_value=make_note("note_123", "Old", "Body")
+            )
             mock_client.notes.update = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -764,7 +768,7 @@ class TestNoteSaveJson:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client.notes.update = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -800,7 +804,7 @@ class TestNoteSaveJson:
         with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
-            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes._get_or_none = AsyncMock(return_value=None)
             mock_client.notes.update = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 

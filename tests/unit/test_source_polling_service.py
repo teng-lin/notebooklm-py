@@ -373,7 +373,9 @@ async def test_sources_api_wait_until_ready_delegates_with_call_time_dependencie
     assert kwargs["max_interval"] == 10.0
     assert kwargs["backoff_factor"] == 1.5
     assert kwargs["get_source"].__self__ is api
-    assert kwargs["get_source"].__func__ is SourcesAPI.get
+    # The poller is wired with the private _get_or_none (not the public get)
+    # so the readiness poll never trips the get()-returns-None deprecation.
+    assert kwargs["get_source"].__func__ is SourcesAPI._get_or_none
 
 
 @pytest.mark.asyncio
@@ -383,7 +385,7 @@ async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic
     ready = Source(id="src_1", status=SourceStatus.READY)
 
     with (
-        patch.object(api, "get", new_callable=AsyncMock, side_effect=[processing, ready]),
+        patch.object(api, "_get_or_none", new_callable=AsyncMock, side_effect=[processing, ready]),
         patch("notebooklm._sources.asyncio.sleep", new_callable=AsyncMock) as sleep,
         patch("notebooklm._sources.monotonic", MagicMock(return_value=0.0)) as monotonic,
     ):

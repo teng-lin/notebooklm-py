@@ -235,9 +235,17 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `ArtifactFeatureUnavailableError` | `RPCError`, `ArtifactError`, `NotebookLMError` |
 | `ArtifactTimeoutError` | `TimeoutError`, `ArtifactError`, `NotebookLMError` |
 
-Use the table to pick the right level of catch. `client.sources.get(...)`
-returns `None` for a missing source rather than raising; the workflows that
-do raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
+Use the table to pick the right level of catch. `client.sources.get(...)`,
+`client.artifacts.get(...)`, and `client.notes.get(...)` currently return
+`None` for a missing entity rather than raising — **but this is deprecated.**
+They now emit a `DeprecationWarning` on a miss and, in **v0.8.0**, will raise
+the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
+`NoteNotFoundError`) to match `client.notebooks.get(...)`, which already raises
+`NotebookNotFoundError`. Migrate any `if result is None:` check to
+`try/except <Resource>NotFoundError` before v0.8.0 (suppress the warning
+meanwhile with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`); see
+[`deprecations.md`](deprecations.md) and issue #1247. The workflows that
+*already* raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
 `client.sources.wait_until_ready(...)`. Artifact-download workflows raise
 `ArtifactNotFoundError` when a requested artifact ID is not in the listing.
 Artifact generation workflows may raise `ArtifactFeatureUnavailableError`

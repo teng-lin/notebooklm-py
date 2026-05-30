@@ -179,7 +179,7 @@ class TestSourceGetCharacterization:
     def test_get_text_mode_prints_title_and_type(self, runner, mock_auth, patched_fetch_tokens):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
             client = create_mock_client()
-            client.sources.get = AsyncMock(
+            client.sources._get_or_none = AsyncMock(
                 return_value=Source(id="src_1", title="My Source", url=None)
             )
             cls.return_value = client
@@ -192,7 +192,7 @@ class TestSourceGetCharacterization:
     def test_get_json_mode_emits_source_envelope(self, runner, mock_auth, patched_fetch_tokens):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
             client = create_mock_client()
-            client.sources.get = AsyncMock(
+            client.sources._get_or_none = AsyncMock(
                 return_value=Source(
                     id="src_1",
                     title="My Source",
@@ -213,7 +213,7 @@ class TestSourceGetCharacterization:
     def test_get_not_found_exits_1_text_mode(self, runner, mock_auth, patched_fetch_tokens):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
             client = create_mock_client()
-            client.sources.get = AsyncMock(return_value=None)
+            client.sources._get_or_none = AsyncMock(return_value=None)
             cls.return_value = client
             result = runner.invoke(
                 cli,
@@ -230,7 +230,7 @@ class TestSourceGetCharacterization:
     def test_get_not_found_exits_1_json_mode(self, runner, mock_auth, patched_fetch_tokens):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
             client = create_mock_client()
-            client.sources.get = AsyncMock(return_value=None)
+            client.sources._get_or_none = AsyncMock(return_value=None)
             cls.return_value = client
             result = runner.invoke(
                 cli,

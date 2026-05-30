@@ -50,6 +50,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **Not removed:** awaiting `NotebookLMClient.from_storage(...)` still works —
 > its deprecation targets v1.0, not v0.6.0.
 
+### Deprecated
+
+- **`sources.get()` / `artifacts.get()` / `notes.get()` returning `None` for a
+  missing entity is deprecated.** These three methods now emit a
+  `DeprecationWarning` on a miss while **still returning `None`** (behavior is
+  unchanged this release). In **v0.8.0** they will instead **raise** the
+  matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
+  `NoteNotFoundError`), unifying the not-found contract with `notebooks.get()`,
+  which already raises `NotebookNotFoundError`. Tracking issue: #1247.
+  ```python
+  # Migrate the None-check to a try/except before v0.8.0:
+  # BEFORE (deprecated)
+  src = await client.sources.get(nb_id, source_id)
+  if src is None:
+      ...
+  # AFTER
+  try:
+      src = await client.sources.get(nb_id, source_id)
+  except SourceNotFoundError:
+      ...
+  ```
+  The warning fires only on a miss; successful lookups stay silent. Suppress it
+  with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. See
+  [`docs/deprecations.md`](docs/deprecations.md).
+
 ### Fixed
 
 - **`Source.from_api_response` now reports the real processing `status`.** The

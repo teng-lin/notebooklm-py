@@ -245,7 +245,7 @@ class TestArtifactGet:
                     Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)
                 ]
             )
-            mock_client.artifacts.get = AsyncMock(
+            mock_client.artifacts._get_or_none = AsyncMock(
                 return_value=Artifact(
                     id="art_123",
                     title="Test Artifact",
@@ -271,7 +271,7 @@ class TestArtifactGet:
             mock_client = create_mock_client()
             # Mock list to return empty (no match for resolve_artifact_id)
             mock_client.artifacts.list = AsyncMock(return_value=[])
-            mock_client.artifacts.get = AsyncMock(return_value=None)
+            mock_client.artifacts._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -293,7 +293,7 @@ class TestArtifactGet:
                     Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)
                 ]
             )
-            mock_client.artifacts.get = AsyncMock(
+            mock_client.artifacts._get_or_none = AsyncMock(
                 return_value=Artifact(
                     id="art_123",
                     title="Test Artifact",
@@ -342,7 +342,7 @@ class TestArtifactGet:
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Doomed", _artifact_type=4, status=3)]
             )
-            mock_client.artifacts.get = AsyncMock(return_value=None)
+            mock_client.artifacts._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -375,7 +375,7 @@ class TestArtifactGet:
         with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=[])
-            mock_client.artifacts.get = AsyncMock(return_value=None)
+            mock_client.artifacts._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -394,7 +394,7 @@ class TestArtifactGet:
         with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=[])
-            mock_client.artifacts.get = AsyncMock(return_value=None)
+            mock_client.artifacts._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -419,7 +419,7 @@ class TestArtifactGet:
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_xyz", title="Doomed", _artifact_type=4, status=3)]
             )
-            mock_client.artifacts.get = AsyncMock(return_value=None)
+            mock_client.artifacts._get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(

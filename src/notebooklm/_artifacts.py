@@ -38,6 +38,7 @@ from ._artifact_payloads import (
     build_suggest_reports_params,
     build_video_artifact_params,
 )
+from ._deprecation import warn_get_returns_none
 from ._env import get_default_language
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
@@ -200,6 +201,31 @@ class ArtifactsAPI:
 
         Returns:
             Artifact object, or None if not found.
+
+        .. deprecated:: 0.7.0
+            Returning ``None`` for a missing artifact is deprecated and emits a
+            :class:`DeprecationWarning`. In **v0.8.0** this method will raise
+            :class:`~notebooklm.exceptions.ArtifactNotFoundError` instead, to
+            match ``notebooks.get`` (issue #1247). Wrap the call in
+            ``try/except ArtifactNotFoundError`` to keep handling missing
+            artifacts. Suppress the warning with
+            ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+        """
+        # v0.8.0: replace the warn-and-return-None below with
+        # ``raise ArtifactNotFoundError(artifact_id)`` (issue #1247). Internal
+        # callers that need the silent optional-lookup must use
+        # ``_get_or_none`` directly so the library never self-warns.
+        result = await self._get_or_none(notebook_id, artifact_id)
+        if result is None:
+            warn_get_returns_none("artifact")
+        return result
+
+    async def _get_or_none(self, notebook_id: str, artifact_id: str) -> Artifact | None:
+        """Fetch an artifact by ID, returning ``None`` when not found.
+
+        Private optional-lookup helper holding the historical ``get`` body. It
+        never emits a deprecation warning, so internal callers can probe for an
+        artifact without tripping the user-facing deprecation.
         """
         logger.debug("Getting artifact %s from notebook %s", artifact_id, notebook_id)
         return await self._listing.get(notebook_id, artifact_id, list_artifacts=self.list)

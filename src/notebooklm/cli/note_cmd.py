@@ -215,7 +215,7 @@ def note_get(ctx, note_id, notebook_id, json_output, client_auth):
             resolved_id = await resolve_note_id(
                 client, nb_id_resolved, note_id, json_output=json_output
             )
-            n = await client.notes.get(nb_id_resolved, resolved_id)
+            n = await client.notes._get_or_none(nb_id_resolved, resolved_id)
 
             # BREAKING: not-found exits 1 with a typed error instead of
             # the previous exit-0 ``found: false`` placeholder. The backend
@@ -362,7 +362,7 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
             # mypy without forcing a ``NoReturn`` annotation onto
             # ``error_handler._output_error`` (which would change the shared
             # helper's typing contract — same trick used by ``note get``).
-            n = await client.notes.get(nb_id_resolved, resolved_id)
+            n = await client.notes._get_or_none(nb_id_resolved, resolved_id)
             if not isinstance(n, Note):
                 _output_error(
                     "Note not found",

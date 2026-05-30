@@ -166,7 +166,7 @@ def artifact_get(ctx, artifact_id, notebook_id, json_output, client_auth):
             resolved_id = await resolve_artifact_id(
                 client, nb_id_resolved, artifact_id, json_output=json_output
             )
-            art = await client.artifacts.get(nb_id_resolved, resolved_id)
+            art = await client.artifacts._get_or_none(nb_id_resolved, resolved_id)
 
             # BREAKING: not-found exits 1 with a typed error instead of the
             # previous exit-0 ``found: false`` placeholder. See the matching

@@ -108,7 +108,7 @@ class TestWaitUntilReady:
         """Test that wait_until_ready returns immediately if source is ready."""
         ready_source = Source(id="src_1", title="Test", status=SourceStatus.READY)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = ready_source
 
             result = await sources_api.wait_until_ready("nb_1", "src_1", timeout=10.0)
@@ -131,7 +131,7 @@ class TestWaitUntilReady:
                 return processing_source
             return ready_source
 
-        with patch.object(sources_api, "get", side_effect=mock_get):
+        with patch.object(sources_api, "_get_or_none", side_effect=mock_get):
             result = await sources_api.wait_until_ready(
                 "nb_1", "src_1", timeout=10.0, initial_interval=0.01
             )
@@ -146,7 +146,7 @@ class TestWaitUntilReady:
         # audio-tolerance gate doesn't keep polling and trigger a timeout.
         error_source = Source(id="src_1", status=SourceStatus.ERROR, _type_code=3)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = error_source
 
             with pytest.raises(SourceProcessingError) as exc_info:
@@ -173,7 +173,7 @@ class TestWaitUntilReady:
                 return transient_error
             return ready
 
-        with patch.object(sources_api, "get", side_effect=mock_get):
+        with patch.object(sources_api, "_get_or_none", side_effect=mock_get):
             result = await sources_api.wait_until_ready(
                 "nb_1", "src_audio", timeout=10.0, initial_interval=0.01
             )
@@ -203,7 +203,7 @@ class TestWaitUntilReady:
                 return transient_error
             return ready
 
-        with patch.object(sources_api, "get", side_effect=mock_get):
+        with patch.object(sources_api, "_get_or_none", side_effect=mock_get):
             result = await sources_api.wait_until_ready(
                 "nb_1", "src_x", timeout=10.0, initial_interval=0.01
             )
@@ -218,7 +218,7 @@ class TestWaitUntilReady:
         """
         pdf_error = Source(id="src_pdf", status=SourceStatus.ERROR, _type_code=3)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = pdf_error
 
             with pytest.raises(SourceProcessingError) as exc_info:
@@ -230,7 +230,7 @@ class TestWaitUntilReady:
     @pytest.mark.asyncio
     async def test_raises_not_found_error_when_source_missing(self, sources_api):
         """Test that wait_until_ready raises SourceNotFoundError when source not found."""
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = None
 
             with pytest.raises(SourceNotFoundError) as exc_info:
@@ -243,7 +243,7 @@ class TestWaitUntilReady:
         """Test that wait_until_ready raises SourceTimeoutError on timeout."""
         processing_source = Source(id="src_1", status=SourceStatus.PROCESSING)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = processing_source
 
             with pytest.raises(SourceTimeoutError) as exc_info:
@@ -277,7 +277,7 @@ class TestWaitUntilReady:
             await original_sleep(0.001)  # Minimal actual sleep
 
         with (
-            patch.object(sources_api, "get", side_effect=mock_get),
+            patch.object(sources_api, "_get_or_none", side_effect=mock_get),
             patch("notebooklm._sources.asyncio.sleep", side_effect=mock_sleep),
         ):
             await sources_api.wait_until_ready(
@@ -309,7 +309,7 @@ class TestWaitUntilRegistered:
         """Status=PROCESSING (1) on first poll → return immediately."""
         processing = Source(id="src_1", status=SourceStatus.PROCESSING, _type_code=8)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = processing
 
             result = await sources_api.wait_until_registered("nb_1", "src_1", timeout=10.0)
@@ -322,7 +322,7 @@ class TestWaitUntilRegistered:
         """Status=READY (2) on first poll → return immediately."""
         ready = Source(id="src_1", status=SourceStatus.READY, _type_code=8)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = ready
 
             result = await sources_api.wait_until_registered("nb_1", "src_1", timeout=10.0)
@@ -344,7 +344,7 @@ class TestWaitUntilRegistered:
                 return None  # Not yet visible in listing
             return processing
 
-        with patch.object(sources_api, "get", side_effect=mock_get):
+        with patch.object(sources_api, "_get_or_none", side_effect=mock_get):
             result = await sources_api.wait_until_registered(
                 "nb_1", "src_1", timeout=10.0, initial_interval=0.01
             )
@@ -367,7 +367,7 @@ class TestWaitUntilRegistered:
                 return transient_error
             return processing
 
-        with patch.object(sources_api, "get", side_effect=mock_get):
+        with patch.object(sources_api, "_get_or_none", side_effect=mock_get):
             result = await sources_api.wait_until_registered(
                 "nb_1", "src_audio", timeout=10.0, initial_interval=0.01
             )
@@ -380,7 +380,7 @@ class TestWaitUntilRegistered:
         """Status=ERROR for a non-transient type (e.g. PDF type_code=3) → raise immediately."""
         pdf_error = Source(id="src_pdf", status=SourceStatus.ERROR, _type_code=3)
 
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = pdf_error
 
             with pytest.raises(SourceProcessingError):
@@ -389,7 +389,7 @@ class TestWaitUntilRegistered:
     @pytest.mark.asyncio
     async def test_wait_until_registered_times_out(self, sources_api):
         """If the source never registers, wait_until_registered raises SourceTimeoutError."""
-        with patch.object(sources_api, "get", new_callable=AsyncMock) as mock_get:
+        with patch.object(sources_api, "_get_or_none", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = None
 
             with pytest.raises(SourceTimeoutError):

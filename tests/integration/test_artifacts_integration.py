@@ -523,7 +523,11 @@ class TestArtifactsAPI:
             api, "list", new=AsyncMock(return_value=[other, found])
         ) as list_artifacts:
             result = await api.get("nb_123", "art_found")
-            missing = await api.get("nb_123", "art_missing")
+            # v0.7.0: a miss still returns None but now emits a
+            # DeprecationWarning (flips to raising ArtifactNotFoundError in
+            # v0.8.0, issue #1247).
+            with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
+                missing = await api.get("nb_123", "art_missing")
 
         assert result is found
         assert missing is None
@@ -820,7 +824,11 @@ class TestArtifactsAPI:
         httpx_mock.add_response(content=response2.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.artifacts.get("nb_123", "nonexistent")
+            # v0.7.0: a miss still returns None but now emits a
+            # DeprecationWarning (flips to raising ArtifactNotFoundError in
+            # v0.8.0, issue #1247).
+            with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
+                result = await client.artifacts.get("nb_123", "nonexistent")
 
         assert result is None
 
@@ -1560,7 +1568,11 @@ class TestGetArtifactReturnsNone:
         httpx_mock.add_response(content=notes_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.artifacts.get("nb_123", "art_does_not_exist")
+            # v0.7.0: a miss still returns None but now emits a
+            # DeprecationWarning (flips to raising ArtifactNotFoundError in
+            # v0.8.0, issue #1247).
+            with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
+                result = await client.artifacts.get("nb_123", "art_does_not_exist")
 
         assert result is None
 

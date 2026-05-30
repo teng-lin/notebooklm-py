@@ -36,7 +36,7 @@ class SourceGetResult:
 
 async def execute_source_get(client: NotebookLMClient, plan: SourceGetPlan) -> SourceGetResult:
     """Fetch a single source."""
-    src = await client.sources.get(plan.notebook_id, plan.source_id)
+    src = await client.sources._get_or_none(plan.notebook_id, plan.source_id)
     return SourceGetResult(notebook_id=plan.notebook_id, source_id=plan.source_id, source=src)
 
 

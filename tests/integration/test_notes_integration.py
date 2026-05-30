@@ -138,7 +138,11 @@ class TestNotesAPI:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            note = await client.notes.get("nb_123", "nonexistent")
+            # v0.7.0: a miss still returns None but now emits a
+            # DeprecationWarning (flips to raising NoteNotFoundError in v0.8.0,
+            # issue #1247).
+            with pytest.warns(DeprecationWarning, match="NoteNotFoundError"):
+                note = await client.notes.get("nb_123", "nonexistent")
 
         assert note is None
 

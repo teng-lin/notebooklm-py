@@ -499,7 +499,11 @@ class TestSourcesAPI:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            source = await client.sources.get("nb_123", "nonexistent")
+            # v0.7.0: a miss still returns None but now emits a
+            # DeprecationWarning (flips to raising SourceNotFoundError in
+            # v0.8.0, issue #1247).
+            with pytest.warns(DeprecationWarning, match="SourceNotFoundError"):
+                source = await client.sources.get("nb_123", "nonexistent")
 
         assert source is None
 
@@ -2825,7 +2829,7 @@ class TestWaitUntilReadyErrorPaths:
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
                 client.sources,
-                "get",
+                "_get_or_none",
                 new_callable=AsyncMock,
                 return_value=processing_source,
             ):
@@ -2871,7 +2875,7 @@ class TestWaitUntilReadyMidLoopTimeout:
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
                 client.sources,
-                "get",
+                "_get_or_none",
                 new_callable=AsyncMock,
                 return_value=processing_source,
             ):

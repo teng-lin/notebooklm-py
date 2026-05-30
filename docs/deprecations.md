@@ -13,6 +13,7 @@ the broader stability policy (semver promise, supported Python versions, the
 
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
+| `sources.get()` / `artifacts.get()` / `notes.get()` returning `None` on a miss | `try/except SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` | v0.7.0 | v0.8.0 | Behavior unchanged this release (still returns `None`); a `DeprecationWarning` now fires **only on a miss**. In v0.8.0 these raise the matching `*NotFoundError`, unifying the not-found contract with `notebooks.get()` (which already raises). Warning emitted via `src/notebooklm/_deprecation.py::warn_get_returns_none`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS`. Flip tracked by [#1247](https://github.com/teng-lin/notebooklm-py/issues/1247) |
 | `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.7.0 | Warning at `src/notebooklm/_notes.py:192` |
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works; warning at `src/notebooklm/client.py:__await__` |
 
@@ -44,7 +45,12 @@ inference), so both are now supported parameters. The earlier
   the user wrote, so the warning's `filename`/`lineno` point at user code
   rather than at the library internals.
 * Default-shape calls remain silent. A deprecation only fires when the
-  caller actually passes the deprecated argument.
+  caller actually passes the deprecated argument — or, for the
+  `get()`-returns-`None` deprecation, only when the lookup misses (successful
+  lookups stay silent).
+* `NOTEBOOKLM_QUIET_DEPRECATIONS=1` suppresses the `get()`-returns-`None`
+  warning for callers that have not yet migrated (see
+  `docs/configuration.md`).
 * See `docs/stability.md` "Deprecation Policy" for the broader timeline
   contract (one MINOR cycle of warnings before removal during 0.x).
 

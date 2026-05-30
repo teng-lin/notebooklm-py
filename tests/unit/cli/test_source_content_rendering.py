@@ -55,7 +55,7 @@ def test_source_get_not_found_renderer_exits_one(
 ) -> None:
     source_id = "11111111-2222-3333-4444-555555555555"
     client = create_mock_client()
-    client.sources.get = AsyncMock(return_value=None)
+    client.sources._get_or_none = AsyncMock(return_value=None)
     args = ["source", "get", source_id, "-n", "nb_123"]
     if json_output:
         args.append("--json")
