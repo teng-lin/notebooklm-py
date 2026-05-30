@@ -130,31 +130,28 @@ def _fsync_dir(directory: Path) -> None:
     This step runs *after* the rename has already committed the file data
     (which was itself fsynced before the replace), so it is **best-effort and
     never raises**: a power-loss before this returns at worst loses only the
-    directory-entry update, not the file data. We therefore swallow:
+    directory-entry update, not the file data. We therefore:
 
-    * platforms / filesystems that cannot open a directory fd (Windows raises,
-      some mounts disallow it), and
-    * filesystems that reject ``fsync`` on a directory fd.
+    * skip Windows entirely (it cannot open a directory fd), and
+    * swallow filesystems that reject ``fsync`` on a directory fd.
 
     A *real* directory writeback failure is logged at ``warning`` (it points at
     a genuinely sick filesystem) but still not raised, because raising here
     would falsely report a committed write as failed.
     """
-    if not hasattr(os, "fsync"):  # pragma: no cover - POSIX always has fsync
+    if sys.platform == "win32" or not hasattr(os, "fsync"):
+        # Windows cannot open a directory for reading (``os.open`` raises
+        # PermissionError), so directory fsync is unavailable. Return early to
+        # avoid a guaranteed-to-fail syscall + exception on every write.
         return
     try:
         dir_fd = os.open(directory, os.O_RDONLY)
     except OSError as exc:
-        if sys.platform == "win32":
-            # Windows cannot open a directory for reading (raises
-            # PermissionError); directory fsync is simply unavailable there.
-            logger.debug("Parent dir %s fsync unavailable on Windows: %s", directory, exc)
-        else:
-            # On POSIX we just wrote a temp file into this dir and replaced into
-            # it, so failing to re-open it (EACCES, EMFILE, EIO, …) is anomalous.
-            # The rename already committed the fsynced data, so do not raise, but
-            # surface it.
-            logger.warning("Could not open parent dir %s for fsync: %s", directory, exc)
+        # On POSIX we just wrote a temp file into this dir and replaced into it,
+        # so failing to re-open it (EACCES, EMFILE, EIO, …) is anomalous. The
+        # rename already committed the fsynced data, so do not raise, but
+        # surface it.
+        logger.warning("Could not open parent dir %s for fsync: %s", directory, exc)
         return
     try:
         os.fsync(dir_fd)
