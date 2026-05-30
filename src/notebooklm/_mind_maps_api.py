@@ -13,6 +13,7 @@ from __future__ import annotations
 import builtins
 import json
 import logging
+import reprlib
 from typing import TYPE_CHECKING, Any
 
 from ._artifact_payloads import build_interactive_mind_map_artifact_params
@@ -75,7 +76,10 @@ def extract_interactive_tree_leaf(result: Any, *, source: str) -> Any | None:
             method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
             path=(0, 9),
             source=source,
-            data_at_failure=repr(options_block)[:200],
+            # ``reprlib.repr`` bounds the diagnostic preview without first
+            # materialising the full repr of a pathologically large/deep
+            # ``options_block`` (mirrors ``safe_index``'s own ``_truncate``).
+            data_at_failure=reprlib.repr(options_block),
         )
     if len(options_block) <= _INTERACTIVE_TREE_LEAF_POS:
         logger.warning(
