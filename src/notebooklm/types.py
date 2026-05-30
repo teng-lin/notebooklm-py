@@ -125,9 +125,10 @@ _warned_source_types = _source_types._warned_source_types
 # but intentionally absent from ``__all__``.
 ArtifactTypeCode = _ArtifactTypeCode
 
-# Kept in this facade's globals so ``typing.get_type_hints(CitedSourceSelection)``
-# can resolve annotations after ``CitedSourceSelection.__module__`` is rewritten
-# to ``notebooklm.types`` below. Intentionally absent from ``__all__``.
+# Guards the ``ResearchSourceInput`` import from being removed as unused:
+# ``typing.get_type_hints(CitedSourceSelection)`` needs it in this facade's
+# globals after ``CitedSourceSelection.__module__`` is rewritten below.
+# Intentionally absent from ``__all__``.
 _CITED_SOURCE_SELECTION_TYPE_HINT_GLOBALS = (ResearchSourceInput,)
 
 
