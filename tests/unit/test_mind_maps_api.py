@@ -17,8 +17,11 @@ def _interactive_artifact(artifact_id: str, title: str = "INT") -> Artifact:
 
 
 def _make_api(*, note_rows=None, interactive=None):
-    rpc = MagicMock()
-    rpc.rpc_call = AsyncMock(return_value=None)
+    # ADR-007: configure the rpc_call seam via MagicMock(...) construction
+    # keyword (and configure_mock(...) for per-test overrides below) rather
+    # than dotted AsyncMock attribute assignment, which the forbidden-
+    # monkeypatch lint rejects on the rpc_call seam.
+    rpc = MagicMock(rpc_call=AsyncMock(return_value=None))
     mind_maps = MagicMock()
     mind_maps.list_mind_maps = AsyncMock(return_value=note_rows or [])
     mind_maps.extract_content = MagicMock(side_effect=lambda row: row[1])
@@ -82,7 +85,7 @@ async def test_get_tree_interactive_reads_v9rmvd_position():
     api, rpc, *_ = _make_api()
     row = [None] * 10
     row[9] = [None, None, None, '{"name": "I", "children": []}']  # [0][9][3] = tree
-    rpc.rpc_call = AsyncMock(return_value=[row])
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[row]))
     tree = await api.get_tree("nb", "int_mm", kind=MindMapKind.INTERACTIVE)
     assert tree == {"name": "I", "children": []}
     assert rpc.rpc_call.call_args[0][0] == RPCMethod.GET_INTERACTIVE_HTML
@@ -106,7 +109,9 @@ async def test_generate_interactive_creates_and_polls():
     api, rpc, _, artifacts, notebooks = _make_api(
         interactive=[_interactive_artifact("new_int", "T")]
     )
-    rpc.rpc_call = AsyncMock(return_value=[["new_int", "T", 4]])  # CREATE_ARTIFACT echo
+    rpc.configure_mock(
+        rpc_call=AsyncMock(return_value=[["new_int", "T", 4]])  # CREATE_ARTIFACT echo
+    )
     mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
     assert rpc.rpc_call.call_args[0][0] == RPCMethod.CREATE_ARTIFACT
     notebooks.get_source_ids.assert_awaited_once_with("nb")  # source ids resolved
@@ -118,7 +123,7 @@ async def test_generate_interactive_creates_and_polls():
 @pytest.mark.asyncio
 async def test_generate_interactive_raises_when_no_artifact_id():
     api, rpc, *_ = _make_api()
-    rpc.rpc_call = AsyncMock(return_value=None)  # CREATE_ARTIFACT yields no id
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=None))  # CREATE_ARTIFACT yields no id
     with pytest.raises(ArtifactError, match="no artifact id"):
         await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE)
 
