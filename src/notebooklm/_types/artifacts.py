@@ -163,7 +163,9 @@ class Artifact:
     status: int  # 1=processing, 2=pending, 3=completed, 4=failed
     created_at: datetime | None = None
     url: str | None = None
-    _variant: int | None = field(default=None, repr=False)  # For type 4: 1=flashcards, 2=quiz
+    _variant: int | None = field(
+        default=None, repr=False
+    )  # For type 4: 1=flashcards, 2=quiz, 4=interactive_mind_map
 
     @property
     def kind(self) -> ArtifactType:

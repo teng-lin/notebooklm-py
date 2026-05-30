@@ -477,36 +477,43 @@ class ArtifactDownloadService:
         """Download a mind map as JSON."""
         mind_maps_service = self._mind_maps
 
-        # Interactive (studio-artifact) mind maps live in the artifact
-        # collection, not the note-backed list this method reads. Detect them
-        # up front (only when an explicit id is given) so an interactive id
-        # gets a clear "not supported here" message instead of the misleading
-        # ArtifactNotReadyError / ArtifactNotFoundError below.
-        if artifact_id:
-            studio_rows = await self._list_raw(notebook_id)
-            for row in studio_rows:
-                if not isinstance(row, list):
-                    continue
-                artifact = Artifact.from_api_response(row)
-                if artifact.id == artifact_id and artifact.is_interactive_mind_map:
-                    raise ArtifactDownloadError(
-                        "interactive_mind_map",
-                        artifact_id=artifact_id,
-                        details=(
-                            "interactive mind maps are not downloadable via "
-                            "download_mind_map yet; unified mind-map support is pending"
-                        ),
-                    )
-
+        # Fetch the note-backed list first: it is the primary backing for this
+        # method, so an explicit id that resolves here (the happy path) avoids
+        # the extra _list_raw artifact-collection network call entirely.
         mind_maps = await mind_maps_service.list_mind_maps(notebook_id)
-        if not mind_maps:
-            raise ArtifactNotReadyError("mind_map")
 
         if artifact_id:
             mind_map = next((mm for mm in mind_maps if mm[0] == artifact_id), None)
-            if not mind_map:
+            if mind_map is None:
+                # The id is not a note-backed mind map. Interactive
+                # (studio-artifact) mind maps live in the artifact collection,
+                # not the note-backed list — check there so an interactive id
+                # gets a clear "not supported here" message instead of the
+                # misleading ArtifactNotReadyError / ArtifactNotFoundError below.
+                studio_rows = await self._list_raw(notebook_id)
+                for row in studio_rows:
+                    if not isinstance(row, list):
+                        continue
+                    artifact = Artifact.from_api_response(row)
+                    if artifact.id == artifact_id and artifact.is_interactive_mind_map:
+                        raise ArtifactDownloadError(
+                            "interactive_mind_map",
+                            artifact_id=artifact_id,
+                            details=(
+                                "interactive mind maps are not downloadable via "
+                                "download_mind_map yet; unified mind-map support is pending"
+                            ),
+                        )
+                # Not interactive either: preserve the prior error precedence —
+                # an empty note-backed list reads as "not ready", a populated
+                # list with no matching id reads as "not found".
+                if not mind_maps:
+                    raise ArtifactNotReadyError("mind_map")
                 raise ArtifactNotFoundError(artifact_id, artifact_type="mind_map")
         else:
+            # No explicit id: the first note-backed mind map (if any) is used.
+            if not mind_maps:
+                raise ArtifactNotReadyError("mind_map")
             mind_map = mind_maps[0]
 
         try:

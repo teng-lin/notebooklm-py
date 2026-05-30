@@ -82,7 +82,7 @@ class RPCMethod(str, Enum):
     RENAME_ARTIFACT = "rc3d8d"
     EXPORT_ARTIFACT = "Krh3pd"
     SHARE_ARTIFACT = "RGP97b"
-    GET_INTERACTIVE_HTML = "v9rmvd"  # Fetch quiz/flashcard HTML content
+    GET_INTERACTIVE_HTML = "v9rmvd"  # Fetch quiz/flashcard HTML content (also serves interactive mind map data at [0][9][3])
     REVISE_SLIDE = "KmcKPe"  # Revise individual slide with prompt
 
     # Research
@@ -132,7 +132,7 @@ class ArtifactTypeCode(int, Enum):
         2  # Includes: Briefing Doc, Study Guide, Blog Post, White Paper, Research Proposal, etc.
     )
     VIDEO = 3
-    QUIZ = 4  # Also used for flashcards
+    QUIZ = 4  # Also used for flashcards and interactive mind maps (variant 4)
     QUIZ_FLASHCARD = 4  # Alias for backward compatibility
     MIND_MAP = 5
     # Note: Type 6 appears unused in current API
@@ -145,9 +145,9 @@ class ArtifactTypeCode(int, Enum):
 # type-4 (QUIZ) family. The interactive mind map is a studio artifact
 # (type 4 / variant 4) created via CREATE_ARTIFACT, distinct from the
 # note-backed mind map (surfaced with the synthetic type code 5).
-FLASHCARDS_VARIANT = 1
-QUIZ_VARIANT = 2
-INTERACTIVE_MIND_MAP_VARIANT = 4
+FLASHCARDS_VARIANT: Final[int] = 1
+QUIZ_VARIANT: Final[int] = 2
+INTERACTIVE_MIND_MAP_VARIANT: Final[int] = 4
 
 
 class ArtifactStatus(int, Enum):

@@ -136,4 +136,7 @@ async def test_download_note_backed_id_still_works(tmp_path):
     out = str(tmp_path / "mm.json")
     result = await svc.download_mind_map("nb", out, artifact_id="note_mm")
     assert result == out
-    assert json.loads((tmp_path / "mm.json").read_text()) == {"name": "Root", "children": []}
+    assert json.loads((tmp_path / "mm.json").read_text(encoding="utf-8")) == {
+        "name": "Root",
+        "children": [],
+    }
