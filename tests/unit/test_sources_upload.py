@@ -100,6 +100,19 @@ def sources_api(mock_core):
     return SourcesAPI(mock_core, uploader=uploader)
 
 
+def test_sources_api_makes_uploader_share_lifecycle_collaborators(sources_api):
+    """SourcesAPI is the single owner of the source-lifecycle verbs.
+
+    The upload pipeline's ``list_sources`` / ``get_source`` / ``wait_*``
+    helpers must delegate to the SAME ``SourceLister`` / ``SourcePoller``
+    instances the public API uses, rather than parallel copies built in the
+    pipeline constructor (issue #1205). ``SourcesAPI.__init__`` injects its
+    own collaborators via ``configure_source_lifecycle``.
+    """
+    assert sources_api._uploader._lister is sources_api._lister
+    assert sources_api._uploader._poller is sources_api._poller
+
+
 def _self_runtime_auth_attr_read(node: ast.AST, attr: str) -> bool:
     return (
         isinstance(node, ast.Attribute)

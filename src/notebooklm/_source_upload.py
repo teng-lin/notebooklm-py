@@ -479,6 +479,8 @@ class SourceUploadPipeline:
         record_upload_queue_wait: QueueWaitRecorder | None = None,
         async_client_factory: AsyncClientFactory | None = None,
         get_source_limit: GetSourceLimit | None = None,
+        lister: SourceLister | None = None,
+        poller: SourcePoller | None = None,
     ):
         self._rpc = rpc
         self._drain = drain
@@ -491,13 +493,40 @@ class SourceUploadPipeline:
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
         self._bound_loop: asyncio.AbstractEventLoop | None = None
-        self._lister = SourceLister(self._rpc)
-        self._poller = SourcePoller()
+        # Single owner for the source-lifecycle verbs (list / get / poll):
+        # ``SourcesAPI`` injects its own ``SourceLister`` / ``SourcePoller``
+        # so the pipeline's ``list_sources`` / ``get_source`` /
+        # ``wait_until_ready`` / ``wait_until_registered`` delegate to the
+        # SAME shared collaborators instead of re-constructing parallel
+        # copies. Direct callers (and the pipeline's own unit tests) get
+        # freshly-constructed defaults when they pass nothing.
+        self._lister = lister if lister is not None else SourceLister(self._rpc)
+        self._poller = poller if poller is not None else SourcePoller()
         self._get_source_limit = get_source_limit
 
     def configure_source_limit_lookup(self, get_source_limit: GetSourceLimit | None) -> None:
         """Set the optional source-limit lookup used in registration hints."""
         self._get_source_limit = get_source_limit
+
+    def configure_source_lifecycle(
+        self,
+        *,
+        lister: SourceLister,
+        poller: SourcePoller,
+    ) -> None:
+        """Adopt ``SourcesAPI``'s shared lister/poller as the single owner.
+
+        Called from :class:`notebooklm._sources.SourcesAPI.__init__`
+        (alongside :meth:`configure_source_limit_lookup`) so the pipeline's
+        source-lifecycle verbs (``list_sources`` / ``get_source`` /
+        ``wait_until_ready`` / ``wait_until_registered``) delegate to the
+        SAME ``SourceLister`` / ``SourcePoller`` instances the public
+        ``SourcesAPI`` uses, instead of parallel copies built in the
+        pipeline constructor. Direct callers that never run through
+        ``SourcesAPI`` keep the freshly-constructed defaults.
+        """
+        self._lister = lister
+        self._poller = poller
 
     def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
         """Return the configured upload timeout, or ``default`` if unset."""

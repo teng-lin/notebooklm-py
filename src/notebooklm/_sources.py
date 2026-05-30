@@ -20,6 +20,7 @@ from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
 from ._source_upload import SourceUploadPipeline
+from ._source_upload_payloads import build_rename_source_params
 from ._url_utils import is_youtube_url
 from .rpc import RPCMethod
 from .types import (
@@ -98,6 +99,14 @@ class SourcesAPI:
         self._max_concurrent_uploads = max_concurrent_uploads
         self._uploader = uploader
         self._uploader.configure_source_limit_lookup(self._get_source_limit)
+        # Single owner for the source-lifecycle verbs: the upload pipeline
+        # delegates its ``list_sources`` / ``get_source`` / ``wait_*`` verbs
+        # to the SAME ``SourceLister`` / ``SourcePoller`` instances this API
+        # uses, rather than re-constructing parallel copies (issue #1205).
+        self._uploader.configure_source_lifecycle(
+            lister=self._lister,
+            poller=self._poller,
+        )
 
     async def _rpc_call(
         self,
@@ -577,7 +586,7 @@ class SourcesAPI:
             Updated Source object.
         """
         logger.debug("Renaming source %s to: %s", source_id, new_title)
-        params = [None, [source_id], [[[new_title]]]]
+        params = build_rename_source_params(source_id, new_title)
         result = await self._rpc.rpc_call(
             RPCMethod.UPDATE_SOURCE,
             params,
