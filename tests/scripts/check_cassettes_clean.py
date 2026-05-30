@@ -123,7 +123,19 @@ def _iter_cassettes(
             found.extend(d.glob(pat))
         return sorted(set(found))
 
-    def _is_example_path(p: Path) -> bool:
+    def _is_example_path(p: Path, scan_root: Path) -> bool:
+        # The illustrative-``examples/`` exemption is a property of the CASSETTE
+        # tree only (placeholder cookies + intentional YAML quirks live in
+        # ``tests/cassettes/examples/``). It must NOT silently exempt an
+        # ``examples/`` subtree or ``example_*`` file under an unrelated scan
+        # root such as ``tests/fixtures/`` — that would be a blind spot for the
+        # ``--secrets-only`` fixture scan (coderabbit review on #1266).
+        # Resolve so a relative CLI arg (``tests/cassettes``) still matches the
+        # absolute ``DEFAULT_CASSETTE_DIR`` — otherwise the exemption would
+        # wrongly drop out for relative-path invocations.
+        root = scan_root.resolve()
+        if root != DEFAULT_CASSETTE_DIR and DEFAULT_CASSETTE_DIR not in root.parents:
+            return False
         # An ``example_`` file at the top level OR any file under a
         # ``examples/`` directory anywhere in the cassette tree is treated
         # as illustrative and excluded from recursive scans.
@@ -134,13 +146,14 @@ def _iter_cassettes(
     if not paths:
         if not DEFAULT_CASSETTE_DIR.exists():
             return []
-        return [p for p in _globdir(DEFAULT_CASSETTE_DIR) if not _is_example_path(p)]
+        root = DEFAULT_CASSETTE_DIR
+        return [p for p in _globdir(root) if not _is_example_path(p, root)]
 
     resolved: list[Path] = []
     for raw in paths:
         candidate = Path(raw)
         if candidate.is_dir():
-            resolved.extend(p for p in _globdir(candidate) if not _is_example_path(p))
+            resolved.extend(p for p in _globdir(candidate) if not _is_example_path(p, candidate))
         elif candidate.is_file():
             # Explicit file paths are always scanned, even if under
             # ``examples/`` — the operator asked for them by name.
