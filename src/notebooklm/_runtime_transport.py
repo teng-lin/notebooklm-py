@@ -54,7 +54,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -284,13 +284,19 @@ class RuntimeTransport:
         # fixture); it raises only when the currently-running loop differs
         # from the one captured at ``open()``-time.
         self._bound_loop_check()
-        context = {
+        context: dict[str, Any] = {
             RPC_CONTEXT_BUILD_REQUEST: build_request,
             RPC_CONTEXT_LOG_LABEL: log_label,
             RPC_CONTEXT_DISABLE_INTERNAL_RETRIES: disable_internal_retries,
             RPC_CONTEXT_RPC_METHOD: rpc_method,
-            RPC_CONTEXT_REFRESH_BUDGET: refresh_budget,
         }
+        # Only seed the shared refresh budget when one is supplied. Callers
+        # that drive the chain without a budget (the chat path) leave the key
+        # ABSENT, matching the ``RPC_CONTEXT_REFRESH_BUDGET`` docstring; the
+        # auth-refresh middleware then falls back to its per-chain
+        # ``RPC_CONTEXT_AUTH_REFRESHED`` boolean (gemini/claude #1240 review).
+        if refresh_budget is not None:
+            context[RPC_CONTEXT_REFRESH_BUDGET] = refresh_budget
         snapshot = await self._snapshot_provider()
 
         request = materialize_rpc_request(

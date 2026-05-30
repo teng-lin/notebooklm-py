@@ -550,7 +550,7 @@ async def test_decode_time_auth_retry_skips_when_shared_budget_already_spent() -
             "/",
             False,
             False,
-            refresh_budget=spent_budget,
+            _refresh_budget=spent_budget,
         )
 
     assert raised.value is auth_rpc_error
@@ -639,7 +639,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        refresh_budget: Any = None,
+        _refresh_budget: Any = None,
     ) -> dict[str, bool]:
         assert method is RPCMethod.LIST_NOTEBOOKS
         assert params == ["param"]

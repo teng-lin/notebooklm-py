@@ -101,7 +101,7 @@ class RpcExecutor:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        refresh_budget: RefreshBudget | None = None,
+        _refresh_budget: RefreshBudget | None = None,
     ) -> Any:
         """Run an RPC wrapped with telemetry and request-id bookkeeping.
 
@@ -118,13 +118,14 @@ class RpcExecutor:
         executor can pick a method-variant-specific policy for wire shapes
         such as ``ADD_SOURCE`` and ``CREATE_NOTE``.
 
-        ``refresh_budget`` carries the shared once-per-logical-call
+        ``_refresh_budget`` carries the shared once-per-logical-call
         :class:`notebooklm._auth_refresh_retry.RefreshBudget` across the
         decode-time retry recursion so the HTTP-status refresh layer (in the
         chain) and the decoded-RPC refresh layer (here) cannot both refresh on
-        the same logical call (issue #1205). The outer call leaves it ``None``;
-        :meth:`_execute_once` mints one and threads it through the chain and
-        the retry recursion.
+        the same logical call (issue #1205). Like ``_is_retry`` it is an
+        internal-only parameter (leading underscore): external callers leave it
+        ``None``; :meth:`_execute_once` mints one and threads it through the
+        chain and the retry recursion.
         """
         # Pre-open guard — preserves the historical ``RuntimeError`` surface by
         # routing through ``Kernel.get_http_client()`` (which raises the same
@@ -149,7 +150,7 @@ class RpcExecutor:
                 _is_retry,
                 disable_internal_retries=disable_internal_retries,
                 operation_variant=operation_variant,
-                refresh_budget=refresh_budget,
+                _refresh_budget=_refresh_budget,
             )
 
         self._metrics.increment(rpc_calls_started=1)
@@ -169,7 +170,7 @@ class RpcExecutor:
                 _is_retry,
                 disable_internal_retries=disable_internal_retries,
                 operation_variant=operation_variant,
-                refresh_budget=refresh_budget,
+                _refresh_budget=_refresh_budget,
             )
         finally:
             if _reqid_token is not None:
@@ -185,21 +186,21 @@ class RpcExecutor:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        refresh_budget: RefreshBudget | None = None,
+        _refresh_budget: RefreshBudget | None = None,
     ) -> Any:
         start = time.perf_counter()
         logger.debug("RPC %s starting", method.name)
 
         # Mint the shared once-per-logical-call refresh budget on the FIRST
-        # ``_execute_once`` of a logical call (``refresh_budget is None``). The
+        # ``_execute_once`` of a logical call (``_refresh_budget is None``). The
         # same instance is threaded into the chain (so the HTTP-status refresh
         # layer in ``AuthRefreshMiddleware`` consumes it) AND into the
         # decode-time retry recursion below, so a ``wire-401 → refresh →
         # decoded-auth-error`` sequence drives ONE refresh (issue #1205).
         # Standalone ``_execute_once`` test calls pass ``None`` and get a fresh
         # budget, preserving the single-refresh-per-call contract in isolation.
-        if refresh_budget is None:
-            refresh_budget = RefreshBudget()
+        if _refresh_budget is None:
+            _refresh_budget = RefreshBudget()
 
         # Consult the idempotency registry. The registry is the single
         # source of truth for "how should this RPC behave under retry?";
@@ -234,7 +235,7 @@ class RpcExecutor:
                 log_label=f"RPC {method.name}",
                 disable_internal_retries=effective_disable_internal_retries,
                 rpc_method=method.name,
-                refresh_budget=refresh_budget,
+                refresh_budget=_refresh_budget,
             )
         except TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.
@@ -300,10 +301,13 @@ class RpcExecutor:
             # effect (issue #1157), so we surface the original error and let
             # the caller's probe-then-create wrapper disambiguate instead.
             #
-            # ``refresh_budget.consume()`` is the LAST guard (short-circuit so
-            # it's only consumed when every other condition holds). It is the
-            # shared once-per-logical-call allowance: it returns ``False`` once
-            # the HTTP-status layer (``AuthRefreshMiddleware``) has already
+            # ``_refresh_budget.consume()`` is the LAST guard and MUST remain
+            # last: it is side-effecting (claims the single refresh allowance),
+            # so it relies on ``and`` short-circuit to only consume when every
+            # other condition already holds. Reordering it earlier would burn
+            # the budget on calls that then fall through to a plain raise. It is
+            # the shared once-per-logical-call allowance: it returns ``False``
+            # once the HTTP-status layer (``AuthRefreshMiddleware``) has already
             # refreshed on this call, suppressing a redundant decode-time
             # refresh (issue #1205), and it returns ``False`` on the
             # ``_is_retry`` recursion leg — replacing the old ``not _is_retry``
@@ -312,7 +316,7 @@ class RpcExecutor:
                 not effective_disable_internal_retries
                 and self._refresh_callback_enabled_provider()
                 and self._is_auth_error(exc)
-                and refresh_budget.consume()
+                and _refresh_budget.consume()
             ):
                 refreshed = await self.try_refresh_and_retry(
                     method,
@@ -322,7 +326,7 @@ class RpcExecutor:
                     exc,
                     disable_internal_retries=disable_internal_retries,
                     operation_variant=operation_variant,
-                    refresh_budget=refresh_budget,
+                    _refresh_budget=_refresh_budget,
                 )
                 return refreshed
 
@@ -456,7 +460,7 @@ class RpcExecutor:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        refresh_budget: RefreshBudget | None = None,
+        _refresh_budget: RefreshBudget | None = None,
     ) -> Any | None:
         """Refresh auth after a decode-time auth error and retry once.
 
@@ -490,7 +494,7 @@ class RpcExecutor:
             _is_retry=True,
             disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
-            refresh_budget=refresh_budget,
+            _refresh_budget=_refresh_budget,
         )
 
 
