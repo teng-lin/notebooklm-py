@@ -80,7 +80,7 @@ class TestShareStatusCommand:
     def test_share_status_json(self, runner, mock_auth_for_vcr):
         """``share status --json`` emits the machine-readable sharing payload."""
         result = runner.invoke(cli, ["share", "status", "-n", VCR_SHARE_NOTEBOOK_ID, "--json"])
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
 
         data = parse_json_output(result.output)
         assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
@@ -163,7 +163,7 @@ class TestShareRemoveCommand:
                 "--json",
             ],
         )
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
 
         data = parse_json_output(result.output)
         assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
