@@ -49,28 +49,78 @@ def mock_auth():
 
 
 # =============================================================================
-# GENERATE AUDIO TESTS
+# PER-TYPE SMOKE TESTS (PARAMETRIZED)
 # =============================================================================
+#
+# The bare "patch client -> mock generate_<type> -> invoke -> assert" smoke
+# tests for every artifact type collapse into one parametrize over
+# ``(cmd, method, task_id, extra_args)`` crossed with text/JSON output mode.
+# Each row exercises both the text-mode happy path (exit 0 + task id surfaced)
+# and the ``--json`` envelope (parseable ``task_id``), replacing the former
+# per-type ``test_generate_<type>`` + ``TestGenerateJsonOutput`` clusters
+# (issues #1315 and #1317). Tests that assert option-specific kwargs, distinct
+# return structures, or wait/timeout behavior remain standalone below.
+
+# (cmd, method, task_id, extra_args) — extra_args carries the required
+# positional description for commands that need one (data-table).
+_STANDARD_GENERATE_CASES = [
+    ("audio", "generate_audio", "audio_123", []),
+    ("video", "generate_video", "video_123", []),
+    ("cinematic-video", "generate_cinematic_video", "cin_123", []),
+    ("quiz", "generate_quiz", "quiz_123", []),
+    ("flashcards", "generate_flashcards", "flash_123", []),
+    ("slide-deck", "generate_slide_deck", "slides_123", []),
+    ("infographic", "generate_infographic", "info_123", []),
+    ("data-table", "generate_data_table", "table_123", ["Compare key concepts"]),
+    ("report", "generate_report", "report_123", []),
+]
 
 
-class TestGenerateAudio:
-    def test_generate_audio(self, runner, mock_auth):
+class TestGenerateStandardTypes:
+    """Per-type happy-path smoke coverage across text and JSON output modes."""
+
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    @pytest.mark.parametrize(
+        "cmd,method,task_id,extra_args",
+        _STANDARD_GENERATE_CASES,
+        ids=[case[0] for case in _STANDARD_GENERATE_CASES],
+    )
+    def test_generate_standard_type(
+        self, runner, mock_auth, output_mode, cmd, method, task_id, extra_args
+    ):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.artifacts.generate_audio = AsyncMock(
-                return_value={"artifact_id": "audio_123", "status": "processing"}
+            setattr(
+                mock_client.artifacts,
+                method,
+                AsyncMock(return_value={"task_id": task_id, "status": "processing"}),
             )
             mock_client_cls.return_value = mock_client
+
+            args = ["generate", cmd, *extra_args, "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
 
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
-            assert result.exit_code == 0
-            assert "audio_123" in result.output or "Started" in result.output
+            assert result.exit_code == 0, result.output
+            if output_mode == "json":
+                data = json.loads(result.output)
+                assert data["task_id"] == task_id
+            else:
+                assert task_id in result.output or "Started" in result.output
 
+
+# =============================================================================
+# GENERATE AUDIO TESTS
+# =============================================================================
+
+
+class TestGenerateAudio:
     def test_generate_audio_with_format(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -292,22 +342,6 @@ class TestGenerateAudio:
 
 
 class TestGenerateVideo:
-    def test_generate_video(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_video = AsyncMock(
-                return_value={"artifact_id": "video_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "video", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
     def test_generate_video_with_style(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -418,22 +452,6 @@ class TestGenerateVideo:
 
 
 class TestGenerateCinematicVideo:
-    def test_generate_cinematic_video(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_cinematic_video = AsyncMock(
-                return_value={"artifact_id": "cin_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "cinematic-video", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
     def test_generate_cinematic_video_with_description(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -588,22 +606,6 @@ class TestGenerateCinematicVideo:
 
 
 class TestGenerateQuiz:
-    def test_generate_quiz(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_quiz = AsyncMock(
-                return_value={"artifact_id": "quiz_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "quiz", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
     def test_generate_quiz_with_options(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -634,50 +636,11 @@ class TestGenerateQuiz:
 
 
 # =============================================================================
-# GENERATE FLASHCARDS TESTS
-# =============================================================================
-
-
-class TestGenerateFlashcards:
-    def test_generate_flashcards(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_flashcards = AsyncMock(
-                return_value={"artifact_id": "flash_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "flashcards", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
-
-# =============================================================================
 # GENERATE SLIDE DECK TESTS
 # =============================================================================
 
 
 class TestGenerateSlideDeck:
-    def test_generate_slide_deck(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_slide_deck = AsyncMock(
-                return_value={"artifact_id": "slides_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "slide-deck", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
     def test_generate_slide_deck_with_options(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -713,22 +676,6 @@ class TestGenerateSlideDeck:
 
 
 class TestGenerateInfographic:
-    def test_generate_infographic(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_infographic = AsyncMock(
-                return_value={"artifact_id": "info_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "infographic", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
     def test_generate_infographic_with_options(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -763,31 +710,6 @@ class TestGenerateInfographic:
             assert kwargs["orientation"].name == "PORTRAIT"
             assert kwargs["detail_level"].name == "DETAILED"
             assert kwargs["style"].name == "ANIME"
-
-
-# =============================================================================
-# GENERATE DATA TABLE TESTS
-# =============================================================================
-
-
-class TestGenerateDataTable:
-    def test_generate_data_table(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_data_table = AsyncMock(
-                return_value={"artifact_id": "table_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["generate", "data-table", "Compare key concepts", "-n", "nb_123"]
-                )
-
-            assert result.exit_code == 0
 
 
 # =============================================================================
@@ -1025,22 +947,6 @@ class TestGenerateMindMap:
 
 
 class TestGenerateReport:
-    def test_generate_report(self, runner, mock_auth):
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_report = AsyncMock(
-                return_value={"artifact_id": "report_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "report", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-
     def test_generate_report_study_guide(self, runner, mock_auth):
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -1179,67 +1085,17 @@ class TestGenerateReport:
 
 
 # =============================================================================
-# JSON OUTPUT TESTS (PARAMETRIZED)
+# JSON OUTPUT TESTS (MATERIALLY DISTINCT STRUCTURE)
 # =============================================================================
+#
+# The standard-type ``--json`` cases (audio/video/.../data-table) are covered
+# by ``TestGenerateStandardTypes`` above. Only mind-map keeps a dedicated JSON
+# test here because its return payload (``mind_map`` + ``note_id``) is a
+# materially different structure, not "same data, other format".
 
 
 class TestGenerateJsonOutput:
-    """Parametrized tests for --json output across all generate commands."""
-
-    @pytest.mark.parametrize(
-        "cmd,method,task_id",
-        [
-            ("audio", "generate_audio", "audio_123"),
-            ("video", "generate_video", "video_123"),
-            ("cinematic-video", "generate_cinematic_video", "cin_123"),
-            ("quiz", "generate_quiz", "quiz_123"),
-            ("flashcards", "generate_flashcards", "flash_123"),
-            ("slide-deck", "generate_slide_deck", "slides_123"),
-            ("infographic", "generate_infographic", "info_123"),
-            ("report", "generate_report", "report_123"),
-        ],
-    )
-    def test_generate_json_output(self, runner, mock_auth, cmd, method, task_id):
-        """Test --json flag produces valid JSON output for standard generate commands."""
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            setattr(
-                mock_client.artifacts,
-                method,
-                AsyncMock(return_value={"task_id": task_id, "status": "processing"}),
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", cmd, "--json", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["task_id"] == task_id
-
-    def test_generate_data_table_json_output(self, runner, mock_auth):
-        """Test --json for data-table (requires description argument)."""
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_data_table = AsyncMock(
-                return_value={"task_id": "table_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["generate", "data-table", "Compare concepts", "--json", "-n", "nb_123"]
-                )
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["task_id"] == "table_123"
+    """JSON-output tests for commands whose envelope differs from the standard shape."""
 
     def test_generate_mind_map_json_output(self, runner, mock_auth):
         """Test --json for mind-map (different return structure)."""

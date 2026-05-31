@@ -76,39 +76,90 @@ def mock_fetch_tokens():
 
 
 # =============================================================================
+# PER-TYPE DOWNLOAD SMOKE TESTS (PARAMETRIZED)
+# =============================================================================
+#
+# The bare per-type single-download happy-path tests
+# (``test_download_<type>``) differ only by artifact type code, download
+# method name, and output extension. They collapse into one parametrize over
+# ``(cmd, method, type_code, output_name, is_dir)`` crossed with text/JSON
+# output mode — folding the per-type cluster (#1315) and the audio text-vs-JSON
+# happy-path pair (#1317) into a single matrix. Each text case asserts exit 0
+# (plus the file/dir is written); each JSON case asserts the shared
+# ``download_single`` envelope. Type-specific flag, error, and distinct-shape
+# tests remain standalone below.
+
+# (cmd, method, type_code, output_name, is_dir)
+_PER_TYPE_DOWNLOAD_CASES = [
+    ("audio", "download_audio", 1, "audio.mp3", False),
+    ("video", "download_video", 3, "video.mp4", False),
+    ("infographic", "download_infographic", 7, "infographic.png", False),
+    # ``.pptx`` suffix matches the slide-deck default --format so no
+    # format-mismatch warning is prepended to stdout (keeps --json parseable).
+    ("slide-deck", "download_slide_deck", 8, "slides.pptx", True),
+]
+
+
+class TestDownloadStandardTypes:
+    """Per-type single-download happy-path coverage across text and JSON modes."""
+
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    @pytest.mark.parametrize(
+        "cmd,method,type_code,output_name,is_dir",
+        _PER_TYPE_DOWNLOAD_CASES,
+        ids=[case[0] for case in _PER_TYPE_DOWNLOAD_CASES],
+    )
+    def test_download_standard_type(
+        self, runner, mock_auth, tmp_path, output_mode, cmd, method, type_code, output_name, is_dir
+    ):
+        artifact_id = f"{cmd.replace('-', '_')}_1"
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_target = tmp_path / output_name
+
+            async def mock_download(notebook_id, output_path, artifact_id=None):
+                if is_dir:
+                    Path(output_path).mkdir(parents=True, exist_ok=True)
+                    (Path(output_path) / "slide_1.png").write_bytes(b"fake content")
+                else:
+                    Path(output_path).write_bytes(b"fake content")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[make_artifact(artifact_id, "My Artifact", type_code)]
+            )
+            setattr(mock_client.artifacts, method, mock_download)
+            mock_client_cls.return_value = mock_client
+
+            args = ["download", cmd, str(output_target), "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, args)
+
+            assert result.exit_code == 0, result.output
+            if output_mode == "json":
+                data = json.loads(result.output)
+                assert data["operation"] == "download_single"
+                assert data["status"] == "downloaded"
+                assert data["artifact"]["id"] == artifact_id
+                # Happy path must not emit an error envelope.
+                assert "error" not in data
+                assert "code" not in data
+            elif not is_dir:
+                assert output_target.exists()
+
+
+# =============================================================================
 # DOWNLOAD AUDIO TESTS
 # =============================================================================
 
 
 class TestDownloadAudio:
-    def test_download_audio(self, runner, mock_auth, tmp_path):
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-
-            output_file = tmp_path / "audio.mp3"
-
-            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
-                Path(output_path).write_bytes(b"fake audio content")
-                return output_path
-
-            # Set up artifacts namespace (pre-created by create_mock_client)
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[make_artifact("audio_123", "My Audio", 1)]
-            )
-            mock_client.artifacts.download_audio = mock_download_audio
-            mock_client_cls.return_value = mock_client
-
-            with (
-                patch(
-                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-                ) as mock_fetch,
-            ):
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["download", "audio", str(output_file), "-n", "nb_123"])
-
-            assert result.exit_code == 0
-            assert output_file.exists()
-
     def test_download_audio_dry_run(self, runner, mock_auth, tmp_path):
         with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -143,115 +194,6 @@ class TestDownloadAudio:
                 result = runner.invoke(cli, ["download", "audio", "-n", "nb_123"])
 
             assert "No completed audio artifacts found" in result.output or result.exit_code != 0
-
-
-# =============================================================================
-# DOWNLOAD VIDEO TESTS
-# =============================================================================
-
-
-class TestDownloadVideo:
-    def test_download_video(self, runner, mock_auth, tmp_path):
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-
-            output_file = tmp_path / "video.mp4"
-
-            async def mock_download_video(notebook_id, output_path, artifact_id=None):
-                Path(output_path).write_bytes(b"fake video content")
-                return output_path
-
-            # Set up artifacts namespace (pre-created by create_mock_client)
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[make_artifact("vid_1", "My Video", 3)]
-            )
-            mock_client.artifacts.download_video = mock_download_video
-            mock_client_cls.return_value = mock_client
-
-            with (
-                patch(
-                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-                ) as mock_fetch,
-            ):
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["download", "video", str(output_file), "-n", "nb_123"])
-
-            assert result.exit_code == 0
-            assert output_file.exists()
-
-
-# =============================================================================
-# DOWNLOAD INFOGRAPHIC TESTS
-# =============================================================================
-
-
-class TestDownloadInfographic:
-    def test_download_infographic(self, runner, mock_auth, tmp_path):
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-
-            output_file = tmp_path / "infographic.png"
-
-            async def mock_download_infographic(notebook_id, output_path, artifact_id=None):
-                Path(output_path).write_bytes(b"fake image content")
-                return output_path
-
-            # Set up artifacts namespace (pre-created by create_mock_client)
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[make_artifact("info_1", "My Infographic", 7)]
-            )
-            mock_client.artifacts.download_infographic = mock_download_infographic
-            mock_client_cls.return_value = mock_client
-
-            with (
-                patch(
-                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-                ) as mock_fetch,
-            ):
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["download", "infographic", str(output_file), "-n", "nb_123"]
-                )
-
-            assert result.exit_code == 0
-            assert output_file.exists()
-
-
-# =============================================================================
-# DOWNLOAD SLIDE DECK TESTS
-# =============================================================================
-
-
-class TestDownloadSlideDeck:
-    def test_download_slide_deck(self, runner, mock_auth, tmp_path):
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-
-            output_dir = tmp_path / "slides"
-
-            async def mock_download_slide_deck(notebook_id, output_path, artifact_id=None):
-                Path(output_path).mkdir(parents=True, exist_ok=True)
-                (Path(output_path) / "slide_1.png").write_bytes(b"fake slide")
-                return output_path
-
-            # Set up artifacts namespace (pre-created by create_mock_client)
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[make_artifact("slide_1", "My Slides", 8)]
-            )
-            mock_client.artifacts.download_slide_deck = mock_download_slide_deck
-            mock_client_cls.return_value = mock_client
-
-            with (
-                patch(
-                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-                ) as mock_fetch,
-            ):
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["download", "slide-deck", str(output_dir), "-n", "nb_123"]
-                )
-
-            assert result.exit_code == 0
 
 
 # =============================================================================
@@ -2225,35 +2167,12 @@ class TestDownloadTypedErrorPath:
         assert "internet connection" in text_result.output  # error_handler hint
 
     # ----- JSON happy-path preservation (must not regress shape) -----
-
-    def test_json_happy_path_shape_unchanged(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
-        """The JSON happy-path envelope is preserved (operation/status/...)."""
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            output_file = tmp_path / "audio.mp3"
-
-            async def fake_download_audio(notebook_id, output_path, artifact_id=None):
-                Path(output_path).write_bytes(b"hello")
-                return output_path
-
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[make_artifact("audio_happy", "Happy Audio", 1)]
-            )
-            mock_client.artifacts.download_audio = fake_download_audio
-            mock_client_cls.return_value = mock_client
-
-            result = runner.invoke(
-                cli, ["download", "audio", str(output_file), "--json", "-n", "nb_123"]
-            )
-
-        assert result.exit_code == 0, result.output
-        data = json.loads(result.output)
-        assert data["operation"] == "download_single"
-        assert data["status"] == "downloaded"
-        assert data["artifact"]["id"] == "audio_happy"
-        # Make sure we did NOT add an "error" envelope on the happy path.
-        assert "error" not in data
-        assert "code" not in data
+    #
+    # The single-download JSON happy-path envelope (operation/status/artifact +
+    # no error/code keys) is asserted by ``TestDownloadStandardTypes`` above
+    # for every per-type command, so no standalone audio happy-path test is
+    # needed here. Only the *returned-error* envelope path remains below, since
+    # it pins a materially different (legacy free-form ``error`` string) shape.
 
     def test_json_returned_error_envelope_unchanged_exit_1(
         self, runner, mock_auth, mock_fetch_tokens
