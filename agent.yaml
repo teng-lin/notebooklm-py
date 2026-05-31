@@ -1,0 +1,37 @@
+spec_version: "0.1.0"
+name: notebooklm-py
+version: 0.7.0
+description: >
+  An unofficial Python client and AI-agent skill for Google NotebookLM that
+  provides full programmatic access to NotebookLM's features — including
+  capabilities not exposed in the web UI. Create and manage notebooks, import
+  sources (URLs, YouTube, PDFs, audio, video, Google Drive), chat with content,
+  generate all artifact types (audio overviews, videos, quizzes, flashcards,
+  slide decks, infographics, mind maps, data tables), and download artifacts in
+  multiple formats. Ships as a drop-in SKILL.md for Claude Code, Codex, and any
+  GitAgent-compatible runtime.
+author: teng-lin
+license: MIT
+
+model:
+  preferred: anthropic:claude-sonnet-4-6
+  constraints:
+    temperature: 0.2
+    max_tokens: 8192
+
+skills:
+  - notebooklm
+
+runtime:
+  max_turns: 50
+  timeout: 600
+
+compliance:
+  risk_tier: standard
+  supervision:
+    human_in_the_loop: destructive
+    kill_switch: true
+  recordkeeping:
+    audit_logging: false
+  data_governance:
+    pii_handling: redact
