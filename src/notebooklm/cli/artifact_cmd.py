@@ -241,8 +241,14 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, json_output, clien
             mind_map = next((m for m in mind_maps if m.id == resolved_id), None)
             # return_object=False: the CLI builds its confirmation from
             # resolved_id + new_title and never uses the hydrated object, so
-            # skip the rename re-fetch (a full LIST_ARTIFACTS / get) — "no
-            # exception = success" is sufficient in this error-raising context.
+            # skip the rename re-fetch (a full LIST_ARTIFACTS / get). For
+            # partial-id input, ``resolve_artifact_id`` already listed and
+            # raised on an absent id, so existence is proven before we get
+            # here. (A canonical full-UUID input fast-paths the resolver
+            # without a list, so a UUID pointing to a since-deleted artifact
+            # would print a benign no-op "success" — a pre-existing condition,
+            # not introduced here; hydrating to catch it would re-list on every
+            # already-resolved partial-id rename, which isn't worth it.)
             if mind_map is not None:
                 await client.mind_maps.rename(
                     nb_id_resolved, resolved_id, new_title, kind=mind_map.kind, return_object=False
