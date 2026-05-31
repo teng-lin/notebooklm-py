@@ -49,8 +49,12 @@ def _validate_profile_name_or_click(name: str) -> str:
         return _validate_profile_name(name)
     except LoginConfigurationError as exc:
         if exc.hint:
-            raise click.ClickException(f"{exc.message} {exc.hint}") from None
-        raise click.ClickException(exc.message) from None
+            raise click.ClickException(  # cli-input-validation: profile name validation translation
+                f"{exc.message} {exc.hint}"
+            ) from None
+        raise click.ClickException(  # cli-input-validation: profile name validation translation
+            exc.message
+        ) from None
 
 
 def _read_config(config_path: Path, *, suppress_errors: bool = True) -> dict:
@@ -173,9 +177,13 @@ def create_cmd(name):
     try:
         profile_dir = get_profile_dir(name)
     except ValueError as e:
-        raise click.ClickException(str(e)) from None
+        raise click.ClickException(  # cli-input-validation: profile path/name validation
+            str(e)
+        ) from None
     if profile_dir.exists():
-        raise click.ClickException(f"Profile '{name}' already exists.")
+        raise click.ClickException(  # cli-input-validation: profile create duplicate validation
+            f"Profile '{name}' already exists."
+        )
 
     get_profile_dir(name, create=True)
     console.print(f"[green]Profile '{name}' created.[/green]")
@@ -195,11 +203,15 @@ def switch_cmd(name):
     try:
         profile_dir = get_profile_dir(name)
     except ValueError as e:
-        raise click.ClickException(str(e)) from None
+        raise click.ClickException(  # cli-input-validation: profile path/name validation
+            str(e)
+        ) from None
     if not profile_dir.exists():
         available = list_profiles()
         hint = f" Available: {', '.join(available)}" if available else ""
-        raise click.ClickException(f"Profile '{name}' not found.{hint}")
+        raise click.ClickException(  # cli-input-validation: profile switch target validation
+            f"Profile '{name}' not found.{hint}"
+        )
 
     config_path = get_config_path()
     # Capture the previous value for the status message before mutating.
@@ -213,7 +225,9 @@ def switch_cmd(name):
     try:
         _atomic_write_config(config_path, _set_default)
     except OSError as e:
-        raise click.ClickException(f"Failed to update config.json: {e}") from None
+        raise click.ClickException(  # cli-input-validation: profile config write validation
+            f"Failed to update config.json: {e}"
+        ) from None
 
     console.print(f"[green]Switched default profile: {old_profile} → {name}[/green]")
 
@@ -252,19 +266,23 @@ def delete_cmd(name, yes, confirm):
     try:
         profile_dir = get_profile_dir(name)
     except ValueError as e:
-        raise click.ClickException(str(e)) from None
+        raise click.ClickException(  # cli-input-validation: profile path/name validation
+            str(e)
+        ) from None
 
     # Block deletion of active or configured default profile
     configured_default = read_default_profile() or "default"
     effective_active = resolve_profile()
     if name in (configured_default, effective_active):
-        raise click.ClickException(
+        raise click.ClickException(  # cli-input-validation: profile delete active/default validation
             f"Cannot delete active/default profile '{name}'. "
             f"Switch to another profile first with 'notebooklm profile switch <name>'."
         )
 
     if not profile_dir.exists():
-        raise click.ClickException(f"Profile '{name}' not found.")
+        raise click.ClickException(  # cli-input-validation: profile delete target validation
+            f"Profile '{name}' not found."
+        )
 
     if not yes:
         if not click.confirm(f"Delete profile '{name}' and all its data?"):
@@ -291,12 +309,18 @@ def rename_cmd(old_name, new_name):
         old_dir = get_profile_dir(old_name)
         new_dir = get_profile_dir(new_name)
     except ValueError as e:
-        raise click.ClickException(str(e)) from None
+        raise click.ClickException(  # cli-input-validation: profile path/name validation
+            str(e)
+        ) from None
 
     if not old_dir.exists():
-        raise click.ClickException(f"Profile '{old_name}' not found.")
+        raise click.ClickException(  # cli-input-validation: profile rename source validation
+            f"Profile '{old_name}' not found."
+        )
     if new_dir.exists():
-        raise click.ClickException(f"Profile '{new_name}' already exists.")
+        raise click.ClickException(  # cli-input-validation: profile rename destination validation
+            f"Profile '{new_name}' already exists."
+        )
 
     os.rename(old_dir, new_dir)
 

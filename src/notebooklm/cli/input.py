@@ -28,7 +28,9 @@ def read_stdin_text(*, source_label: str = "stdin") -> str:
     try:
         text = click.get_text_stream("stdin").read()
     except UnicodeDecodeError as e:
-        raise click.ClickException(f"{source_label} (stdin) is not valid UTF-8: {e}") from e
+        raise click.ClickException(  # cli-input-validation: stdin must decode as UTF-8 before command body runs
+            f"{source_label} (stdin) is not valid UTF-8: {e}"
+        ) from e
     return text.strip()
 
 
@@ -77,13 +79,17 @@ def resolve_prompt(
     elif prompt_file:
         path = Path(prompt_file)
         if not path.is_file():
-            raise click.ClickException(f"Prompt file '{prompt_file}' is not a regular file.")
+            raise click.ClickException(  # cli-input-validation: prompt-file path validation
+                f"Prompt file '{prompt_file}' is not a regular file."
+            )
         try:
             text = path.read_text(encoding="utf-8").strip()
         except OSError as e:
-            raise click.ClickException(f"Failed to read prompt file '{prompt_file}': {e}") from e
+            raise click.ClickException(  # cli-input-validation: prompt-file read validation
+                f"Failed to read prompt file '{prompt_file}': {e}"
+            ) from e
         except UnicodeDecodeError as e:
-            raise click.ClickException(
+            raise click.ClickException(  # cli-input-validation: prompt-file UTF-8 validation
                 f"Prompt file '{prompt_file}' is not valid UTF-8: {e}"
             ) from e
     else:

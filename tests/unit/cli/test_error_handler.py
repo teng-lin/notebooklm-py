@@ -7,8 +7,6 @@ import pytest
 
 import notebooklm.cli._encoding as encoding_module
 from notebooklm.cli.error_handler import (
-    ALLOWED_CLICK_EXCEPTION_SITES,
-    ALLOWED_RAW_SYSEXIT_SITES,
     _output_error,
     emit_cancelled_and_exit,
     exit_with_code,
@@ -72,24 +70,6 @@ class TestHandleErrorsExitCodes:
             exit_with_code(75)
 
         assert exc_info.value.code == 75
-
-
-class TestErrorHandlerAllowlists:
-    """The allowlists are intentionally structured for lint enforcement."""
-
-    def test_raw_system_exit_allowlist_entries_have_reasons(self):
-        for rel_path, line_number, reason in ALLOWED_RAW_SYSEXIT_SITES:
-            assert rel_path.startswith("src/notebooklm/cli/")
-            assert isinstance(line_number, int)
-            assert line_number > 0
-            assert reason
-
-    def test_click_exception_allowlist_entries_have_reasons(self):
-        for rel_path, line_number, reason in ALLOWED_CLICK_EXCEPTION_SITES:
-            assert rel_path.startswith("src/notebooklm/cli/")
-            assert isinstance(line_number, int)
-            assert line_number > 0
-            assert reason
 
 
 class TestHandleErrorsJsonOutput:

@@ -360,7 +360,12 @@ def register_chat_commands(cli):
                             )
                         except Exception as e:
                             note_save_error = str(e)
-                            emit_status(
+                            # Note-save is a secondary `--save-as-note` action;
+                            # emit_status keeps the warning non-fatal so the chat
+                            # response payload still prints. output_error would
+                            # SystemExit(1) and abort that payload. Revisit when
+                            # save-as-note gains a structured non-fatal error channel.
+                            emit_status(  # quiet-ok: non-fatal warning for a secondary --save-as-note action
                                 f"[yellow]Warning: Failed to save note: {e}[/yellow]",
                                 json_output=json_output,
                             )

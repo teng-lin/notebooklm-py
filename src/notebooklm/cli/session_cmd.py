@@ -158,8 +158,12 @@ def _click_exception_from(exc: LoginConfigurationError) -> click.ClickException:
     final ``Error: ...`` line carries the remediation advice.
     """
     if exc.hint:
-        return click.ClickException(f"{exc.message} {exc.hint}")
-    return click.ClickException(exc.message)
+        return click.ClickException(
+            f"{exc.message} {exc.hint}"
+        )  # cli-input-validation: login profile-name validation translation
+    return click.ClickException(
+        exc.message
+    )  # cli-input-validation: login profile-name validation translation
 
 
 def _is_valid_account_metadata(metadata: dict[str, Any]) -> bool:

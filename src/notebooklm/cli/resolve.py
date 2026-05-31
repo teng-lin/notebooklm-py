@@ -55,7 +55,9 @@ def validate_id(entity_id: str, entity_name: str = "ID") -> str:
         click.ClickException: If ID is empty or whitespace-only.
     """
     if not entity_id or not entity_id.strip():
-        raise click.ClickException(f"{entity_name} ID cannot be empty")
+        raise click.ClickException(  # cli-input-validation: entity ID argument validation
+            f"{entity_name} ID cannot be empty"
+        )
     return entity_id.strip()
 
 

@@ -27,36 +27,12 @@ from ._encoding import safe_echo
 
 logger = logging.getLogger(__name__)
 
-# Sites where direct Click exceptions remain appropriate because they are
-# input-validation boundaries before command output is committed. The lint in
-# ``tests/_lint/test_error_handler_allowlist.py`` keeps this list exact.
-ALLOWED_CLICK_EXCEPTION_SITES: list[tuple[str, int, str]] = [
-    ("src/notebooklm/cli/input.py", 31, "stdin must decode as UTF-8 before command body runs"),
-    ("src/notebooklm/cli/input.py", 80, "prompt-file path validation"),
-    ("src/notebooklm/cli/input.py", 84, "prompt-file read validation"),
-    ("src/notebooklm/cli/input.py", 86, "prompt-file UTF-8 validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 52, "profile name validation translation"),
-    ("src/notebooklm/cli/profile_cmd.py", 53, "profile name validation translation"),
-    ("src/notebooklm/cli/profile_cmd.py", 176, "profile path/name validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 178, "profile create duplicate validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 198, "profile path/name validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 202, "profile switch target validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 216, "profile config write validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 255, "profile path/name validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 261, "profile delete active/default validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 267, "profile delete target validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 294, "profile path/name validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 297, "profile rename source validation"),
-    ("src/notebooklm/cli/profile_cmd.py", 299, "profile rename destination validation"),
-    ("src/notebooklm/cli/resolve.py", 58, "entity ID argument validation"),
-    ("src/notebooklm/cli/session_cmd.py", 161, "login profile-name validation translation"),
-    ("src/notebooklm/cli/session_cmd.py", 162, "login profile-name validation translation"),
-]
-
-# Raw ``raise SystemExit`` should live in this module. If a future path truly
-# cannot route through ``exit_with_code``/``_output_error``, it must be listed
-# here with a reason.
-ALLOWED_RAW_SYSEXIT_SITES: list[tuple[str, int, str]] = []
+# NOTE: ``click.ClickException`` / raw ``raise SystemExit`` sites outside this
+# module are governed by inline marker comments
+# (``# cli-input-validation: <reason>`` / ``# cli-raw-exit: <reason>``), checked
+# by ``tests/_lint/test_error_handler_allowlist.py``. The previous
+# ``ALLOWED_*_SITES`` line-number allowlists were removed in issue #1298 because
+# any edit above a site shifted its line and failed CI with no behavior change.
 
 
 def current_json_output(default: bool = False) -> bool:

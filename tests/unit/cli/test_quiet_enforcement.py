@@ -22,7 +22,7 @@ Error-path heuristic
 --------------------
 A call site is considered to live on an *error path* when ANY of the
 following hold (the test fails on a quiet-bypassing helper at that site
-unless the site is explicitly waived):
+unless the site carries a waiver marker):
 
 1. **Inside a ``Try`` ``ExceptHandler`` body** -- by definition the program
    is currently handling an exception.
@@ -43,20 +43,28 @@ exception/error.
 
 Waiver mechanism
 ----------------
-Each pre-existing violation is listed in :data:`QUIET_WAIVED_SITES` with a
-rationale. The test fails on:
+A genuinely-intended quiet-aware call on an error path is waived with an
+inline ``# quiet-ok: <reason>`` marker comment on any physical line spanned
+by the call (the ``# noqa`` convention). This replaces the old
+``QUIET_WAIVED_SITES`` ``(module, function, line)`` table, which failed CI
+whenever an unrelated edit shifted a waived line (issue #1298). The test
+fails on:
 
 - a new (un-waived) error-path site using ``cli_print`` / ``emit_status``,
-- drift -- a waived ``(module, function, line)`` tuple that no longer maps
-  to a quiet-bypassing call.
+- a stale ``# quiet-ok:`` marker that no longer sits on a quiet-bypassing
+  error-path call (the source moved or the call was fixed), and
+- a ``# quiet-ok:`` marker with no reason text.
 
-This guarantees that the waiver list shrinks toward zero over time and
-cannot silently rot.
+This keeps the waivers minimal and prevents them from rotting, the same
+guarantees the old drift check provided.
 """
 
 from __future__ import annotations
 
 import ast
+import io
+import tokenize
+from collections.abc import Iterator
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -66,31 +74,10 @@ CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"
 # eats the diagnostic, which is the bug this test prevents.
 QUIET_AWARE_HELPERS = frozenset({"cli_print", "emit_status"})
 
-# Pre-existing error-path violations grandfathered in at the time this test
-# was introduced. Keys are ``(module, function, line)`` -- the file path is
-# repo-relative POSIX; the function is the innermost enclosing
-# ``def``/``async def`` name; the line is the call site's ``lineno``.
-#
-# Drift detection: each entry MUST still resolve to a quiet-bypassing call
-# at the recorded line, in the recorded function, in the recorded module.
-# If the source moves or the call is fixed, delete the waiver.
-QUIET_WAIVED_SITES: dict[tuple[str, str, int], str] = {
-    (
-        "src/notebooklm/cli/chat_cmd.py",
-        "_run",
-        363,
-    ): (
-        "TODO(quiet-policy): note-save failure inside `ask` reports the "
-        "underlying exception via `emit_status` so the warning is colored "
-        "and routed alongside other chat status text. Switching to "
-        "`output_error` here would also `SystemExit(1)`, aborting the "
-        "outer chat response payload; the user explicitly opted into "
-        "`--save-as-note` as a *secondary* action, so we surface the "
-        "note-save failure without killing the chat output. Revisit when "
-        "the chat-cmd save-as-note path gains a structured non-fatal "
-        "error channel."
-    ),
-}
+# Inline marker that waives an intentional quiet-aware error-path call.
+QUIET_OK_MARKER = "quiet-ok:"
+
+Span = tuple[int, int]
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +150,7 @@ def _is_error_path(ancestors: list[ast.AST]) -> bool:
     return False
 
 
-def _walk_with_ancestors(tree: ast.AST):
+def _walk_with_ancestors(tree: ast.AST) -> Iterator[tuple[ast.AST, list[ast.AST]]]:
     """Yield ``(node, ancestors)`` for every node in *tree*."""
     stack: list[tuple[ast.AST, list[ast.AST]]] = [(tree, [])]
     while stack:
@@ -174,13 +161,73 @@ def _walk_with_ancestors(tree: ast.AST):
             stack.append((child, next_ancestors))
 
 
-def _collect_quiet_bypass_error_sites() -> set[tuple[str, str, int]]:
-    """Walk every ``cli/*_cmd.py`` and return error-path quiet-aware calls."""
-    sites: set[tuple[str, str, int]] = set()
+# ---------------------------------------------------------------------------
+# Marker scanning
+# ---------------------------------------------------------------------------
+
+
+def _marker_reasons(source: str, marker: str) -> dict[int, str]:
+    """Map ``lineno -> reason`` for each ``# <marker> <reason>`` comment.
+
+    Uses ``tokenize`` so the marker is only recognized inside a real comment
+    token, never inside a string literal that happens to contain the text.
+    """
+    reasons: dict[int, str] = {}
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type != tokenize.COMMENT:
+            continue
+        body = tok.string.lstrip("#").strip()
+        if body.startswith(marker):
+            reasons[tok.start[0]] = body.removeprefix(marker).strip()
+    return reasons
+
+
+def _match_markers(spans: list[Span], marker_lines: set[int]) -> tuple[list[Span], set[int]]:
+    """Greedily assign each marker line to at most one call span.
+
+    Returns ``(unmarked_spans, orphan_lines)``. Each marker satisfies a single
+    span (claimed, then removed from the pool), so a lone marker on a line shared
+    by two overlapping error-path calls leaves the second unmarked -- every
+    waived call needs its OWN ``# quiet-ok:`` reason. ``orphan_lines`` are
+    markers no span could claim (the source moved or the call was fixed) -- the
+    stale signal that replaces the old drift check.
+    """
+    # Process spans by ascending end line (then start) and claim the lowest
+    # available marker in each: the textbook optimal greedy for assigning each
+    # interval a distinct point. A naive left-endpoint sort could let an outer
+    # span steal the only marker an overlapping inner span needs and red CI on
+    # validly-marked code -- the exact false-positive class this gate exists to
+    # remove.
+    unclaimed = set(marker_lines)
+    unmarked: list[Span] = []
+    for lo, hi in sorted(spans, key=lambda span: (span[1], span[0])):
+        claim = next((line for line in range(lo, hi + 1) if line in unclaimed), None)
+        if claim is None:
+            unmarked.append((lo, hi))
+        else:
+            unclaimed.discard(claim)
+    return unmarked, unclaimed
+
+
+def _audit_quiet_markers() -> tuple[list[str], list[str], list[str]]:
+    """Return ``(unmarked, stale, empty_reason)`` across every ``*_cmd.py``.
+
+    * ``unmarked`` -- error-path quiet-bypass calls with no ``# quiet-ok:``
+      marker (formatted ``module::func:line``).
+    * ``stale`` -- ``# quiet-ok:`` markers no such call can claim.
+    * ``empty_reason`` -- claimed ``# quiet-ok:`` markers with no reason text.
+    """
+    unmarked: list[str] = []
+    stale: list[str] = []
+    empty_reason: list[str] = []
     for path in sorted(CLI_ROOT.glob("*_cmd.py")):
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
-        rel_path = path.relative_to(REPO_ROOT).as_posix()
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        reasons = _marker_reasons(source, QUIET_OK_MARKER)
+
+        spans: list[Span] = []
+        labels: dict[int, str] = {}
         for node, ancestors in _walk_with_ancestors(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -189,12 +236,20 @@ def _collect_quiet_bypass_error_sites() -> set[tuple[str, str, int]]:
                 continue
             if not _is_error_path(ancestors):
                 continue
-            sites.add((rel_path, _enclosing_function_name(ancestors), node.lineno))
-    return sites
+            spans.append((node.lineno, node.end_lineno or node.lineno))
+            labels[node.lineno] = f"{rel}::{_enclosing_function_name(ancestors)}:{node.lineno}"
+
+        unmarked_spans, orphan_lines = _match_markers(spans, set(reasons))
+        unmarked.extend(labels[lo] for lo, _hi in unmarked_spans)
+        stale.extend(f"{rel}:{line}" for line in sorted(orphan_lines))
+        for line in sorted(set(reasons) - orphan_lines):
+            if not reasons[line]:
+                empty_reason.append(f"{rel}:{line}")
+    return unmarked, stale, empty_reason
 
 
-def _format_sites(sites: set[tuple[str, str, int]]) -> str:
-    return "\n".join(f"  {module}::{func}:{line}" for module, func, line in sorted(sites))
+def _format(sites: list[str]) -> str:
+    return "\n".join(f"  {site}" for site in sorted(sites))
 
 
 # ---------------------------------------------------------------------------
@@ -207,32 +262,28 @@ def test_no_new_quiet_bypassing_error_sites() -> None:
 
     Errors must use ``output_error(...)`` (or ``json_error_response(...)``)
     which bypass ``--quiet`` and route to stderr. Quiet-aware helpers
-    silently swallow the diagnostic and are forbidden on error paths.
+    silently swallow the diagnostic and are forbidden on error paths unless
+    waived with an inline ``# quiet-ok: <reason>`` marker.
     """
-    actual = _collect_quiet_bypass_error_sites()
-    waived = set(QUIET_WAIVED_SITES.keys())
-    unwaived = actual - waived
-    assert not unwaived, (
+    unmarked, _stale, _empty = _audit_quiet_markers()
+    assert not unmarked, (
         "New error-path uses of cli_print/emit_status detected.\n"
         "Errors must use output_error(...) (cli.error_handler) or "
         "json_error_response(...) (cli.rendering); both bypass --quiet.\n"
-        "Sites:\n" + _format_sites(unwaived)
+        "If the quiet-aware call is intentional, waive it with an inline "
+        f"`# {QUIET_OK_MARKER} <reason>` comment.\nSites:\n" + _format(unmarked)
     )
 
 
-def test_waiver_list_has_no_drift() -> None:
-    """Every waived site must still exist in source at the recorded line.
+def test_no_stale_or_empty_quiet_markers() -> None:
+    """``# quiet-ok:`` markers must sit on a quiet-bypass call and name a reason.
 
-    Drift means a waived ``(module, function, line)`` tuple no longer maps
-    to a quiet-bypassing helper in source -- either the source moved or
-    someone already fixed the violation. Either way, the waiver must be
-    deleted so the list stays minimal and trustworthy.
+    A stale marker means the source moved or the violation was fixed -- the
+    waiver must be deleted so the list stays minimal and trustworthy.
     """
-    actual = _collect_quiet_bypass_error_sites()
-    waived = set(QUIET_WAIVED_SITES.keys())
-    stale = waived - actual
+    _unmarked, stale, empty = _audit_quiet_markers()
     assert not stale, (
-        "Stale QUIET_WAIVED_SITES entries (no longer match source):\n"
-        + _format_sites(stale)
-        + "\nDelete these waivers from QUIET_WAIVED_SITES."
+        f"Stale `# {QUIET_OK_MARKER}` markers (no longer on an error-path "
+        "quiet-bypass call) -- delete them:\n" + _format(stale)
     )
+    assert not empty, f"`# {QUIET_OK_MARKER}` markers with no reason -- add one:\n" + _format(empty)
