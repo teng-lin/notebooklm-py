@@ -45,7 +45,9 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 # Full UUID of the throwaway notebook used while recording the mutation
 # cassettes. Passing the full ID with ``-n`` keeps ``resolve_notebook_id`` on
 # its fast path (no ``LIST_NOTEBOOKS`` preflight), so each cassette below holds
-# exactly one RPC.
+# exactly one RPC. ``test_share.py`` reuses the same literal value for its own,
+# independent cassettes — see the note there; the UUID is never matched against
+# the recorded body (VCR matches batchexecute on ``rpcids`` + decoded shape).
 VCR_MUTABLE_NOTEBOOK_ID = "b8d6f2a1-4c3e-4a9b-8f7d-1e2c3a4b5c6d"
 
 

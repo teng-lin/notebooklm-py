@@ -54,6 +54,13 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 # Full UUID of the throwaway notebook the sharing cassettes were recorded
 # against. A full ID keeps ``resolve_notebook_id`` on its fast path so each
 # cassette captures only the sharing RPC chain.
+#
+# This happens to share the same literal value as
+# ``test_notebook.py::VCR_MUTABLE_NOTEBOOK_ID``, but the two are independent:
+# each file owns its own single-purpose cassettes, the value is never matched
+# against the recorded body (VCR matches batchexecute on ``rpcids`` + decoded
+# shape, not the notebook UUID), and neither file imports the other's
+# constant. The duplication is cosmetic, not a shared fixture.
 VCR_SHARE_NOTEBOOK_ID = "b8d6f2a1-4c3e-4a9b-8f7d-1e2c3a4b5c6d"
 
 # Synthetic, non-routable collaborator address (RFC 2606 reserved domain).
