@@ -36,21 +36,17 @@ tests/integration/concurrency/test_refresh_cancellation_propagation.py):
 * The ``_refresh_task`` slot is intentionally NOT cleared when a waiter is
   cancelled mid-shield — concurrency tests assert task identity across
   cancellation so siblings joined to the same single-flight refresh see the
-  same completion. Per ``_core.py`` history at the relocated comment site.
+  same completion.
 
-Collaborator surface (no Session-shaped host):
+Collaborator surface:
 
-The coordinator was historically wired through a structural
-``_AuthRefreshHost`` Protocol that re-declared three private ``Session``
-slots (``auth`` / ``_metrics_obj`` / ``_kernel``). That Protocol coupled
-the coordinator to ``Session``'s private attribute names and forced
-fake-host shims in tests. It was deleted in favor of explicit per-method
-collaborators: :meth:`snapshot` and :meth:`update_auth_tokens` take an
+The coordinator depends on explicit per-method collaborators:
+:meth:`snapshot` and :meth:`update_auth_tokens` take an
 ``auth: AuthTokens`` kwarg, :meth:`update_auth_headers` takes
 ``auth: AuthTokens`` plus ``kernel: Kernel``, and the lock-wait metric is
 recorded through ``self._metrics`` (already supplied at construction).
 This keeps every dependency on the coordinator's surface concrete and
-narrow — there is no Session shape to fake.
+narrow.
 """
 
 from __future__ import annotations
@@ -80,8 +76,7 @@ class AuthRefreshCoordinator:
     """Owns refresh single-flight, snapshot serialization, and auth-header sync.
 
     Field names (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``,
-    ``_auth_snapshot_lock``) deliberately mirror the retired legacy
-    ``Session`` ivars so bridge-retirement diffs and coordinator-specific
+    ``_auth_snapshot_lock``) are kept stable so coordinator-specific
     tests remain easy to audit.
     """
 
@@ -174,10 +169,10 @@ class AuthRefreshCoordinator:
     # inspect THIS module's source via ``inspect.getsource(...)`` + AST
     # parsing — any structural change to either method body (e.g.
     # extracting a helper, refactoring the lock dance, adding an
-    # ``await`` mid-mutation) will trip those guards. ``Session._snapshot``
-    # and ``Session.update_auth_tokens`` (`_session.py`) are now thin
-    # delegates that forward through ``self._auth_coord``; there is no
-    # longer a "second body" to keep in sync.
+    # ``await`` mid-mutation) will trip those guards. Previously a facade
+    # method mirrored each body; now ``snapshot`` and ``update_auth_tokens``
+    # here are the only implementations, so there is no second body to keep
+    # in sync.
     # ------------------------------------------------------------------
 
     async def snapshot(self, *, auth: AuthTokens) -> AuthSnapshot:
@@ -197,10 +192,8 @@ class AuthRefreshCoordinator:
         guarantees the four scalars in the snapshot are coherent with each
         other; the no-await rule keeps the cookie axis aligned with them.
 
-        ``auth`` is passed explicitly per call (the previous
-        ``_AuthRefreshHost`` Protocol re-declared the ``auth`` slot from
-        ``Session``); the lock-wait metric is recorded through
-        ``self._metrics`` (supplied at construction).
+        ``auth`` is passed explicitly per call; the lock-wait metric is
+        recorded through ``self._metrics`` (supplied at construction).
         """
         wait_start = time.perf_counter()
         async with self.get_auth_snapshot_lock():
@@ -258,9 +251,7 @@ class AuthRefreshCoordinator:
         ``accounts.google.com``.
 
         ``auth`` and ``kernel`` are passed explicitly per call so the
-        coordinator does not need a ``_AuthRefreshHost``-shaped host (the
-        Protocol that re-declared Session's ``auth`` / ``_kernel`` slots was
-        deleted alongside this signature change).
+        coordinator does not need an owner-shaped host.
 
         Raises:
             RuntimeError: If the kernel's HTTP client is not initialised (the
@@ -305,7 +296,7 @@ class AuthRefreshCoordinator:
                 "AuthRefreshCoordinator.await_refresh called without a "
                 "refresh_callback configured — wire one via "
                 "AuthRefreshCoordinator(refresh_callback=...) (or by "
-                "constructing Session with refresh_callback=...) before "
+                "constructing NotebookLMClient with refresh_callback=...) before "
                 "triggering an auth refresh."
             )
 

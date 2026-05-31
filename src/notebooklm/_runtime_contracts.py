@@ -65,7 +65,7 @@ class Kernel(Protocol):
 class RpcCaller(Protocol):
     """Narrow RPC dispatch surface consumed by pure-RPC feature APIs.
 
-    Mirrors the legacy ``Session.rpc_call`` signature exactly so feature
+    Mirrors the ``NotebookLMClient.rpc_call`` signature exactly so feature
     retypes do not change call semantics. The transitional
     ``_is_retry`` parameter and the keyword-only
     ``disable_internal_retries`` / ``operation_variant`` parameters are

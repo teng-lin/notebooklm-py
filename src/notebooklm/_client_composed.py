@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class ClientComposed:
-    """Mutable holder for composition state that is migrating off ``Session``."""
+    """Mutable holder for the client's composition state."""
 
     def __init__(
         self,

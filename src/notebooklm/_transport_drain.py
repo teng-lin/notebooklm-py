@@ -10,7 +10,7 @@ Design constraints (load-bearing — see
 ``tests/unit/concurrency/test_close_cancellation_leak.py``,
 ``tests/unit/test_session_close.py``, and ``tests/unit/test_observability.py``):
 
-* ``__init__`` MUST be event-loop-agnostic. ``Session`` is routinely
+* ``__init__`` MUST be event-loop-agnostic. ``NotebookLMClient`` is routinely
   constructed outside a running loop (sync-mode
   ``NotebookLMClient(auth)`` before ``asyncio.run``), so this helper may
   not call ``asyncio.get_running_loop()`` or instantiate any ``asyncio.*``
@@ -108,7 +108,7 @@ class TransportDrainTracker:
         # for standalone fixtures.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         # ADR-014 Rule 1: close-time drain hooks are owned here, not on
-        # ``Session``. Insertion order is preserved (Python 3.7+ dict
+        # the client. Insertion order is preserved (Python 3.7+ dict
         # invariant) and :meth:`run_drain_hooks` fires them in that order
         # under ``ClientLifecycle.close``.
         self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
@@ -150,7 +150,7 @@ class TransportDrainTracker:
         """Return the per-instance drain ``asyncio.Condition``, creating it lazily.
 
         Lazy construction is required because ``asyncio.Condition()`` binds
-        to the running event loop in some Python versions, and ``Session``
+        to the running event loop in some Python versions, and ``NotebookLMClient``
         is routinely instantiated outside one. The check-then-assign is
         race-free without an outer lock because asyncio is single-threaded:
         no other coroutine can execute between the ``is None`` check and

@@ -183,7 +183,7 @@ def _file_lock_exclusive(lock_path: Path) -> Iterator[None]:
     account-metadata writes serialize on one file.
 
     The lock is per-process: threads within one process aren't serialized —
-    that's the intra-process ``threading.Lock`` in ``Session``. If the
+    that's the intra-process ``threading.Lock`` held by the client. If the
     lock can't be acquired (e.g. NFS where flock semantics vary, read-only
     parent dir, fd exhaustion), the save proceeds anyway; correctness in
     that mode is best-effort and relies on the snapshot/delta CAS guards in

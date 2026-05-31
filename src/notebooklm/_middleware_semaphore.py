@@ -6,7 +6,7 @@ ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection,
 Tracing]``.
 
 Placing the semaphore here (rather than around the chain dispatch in
-``Session._perform_authed_post``) keeps two contracts intact: queued tasks
+``RuntimeTransport.perform_authed_post``) keeps two contracts intact: queued tasks
 stay counted by ``DrainMiddleware`` (Drain sits outside the semaphore wait),
 and Metrics latency includes RPC queue wait:
 
@@ -44,7 +44,7 @@ from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._middleware_context import RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 
 # ``RpcRequest.context`` key used to communicate the per-call queue-wait
-# duration from this middleware up to ``Session._perform_authed_post``
+# duration from this middleware up to ``RuntimeTransport.perform_authed_post``
 # (which forwards it to ``ClientMetrics.record_rpc_queue_wait``). Kept as a
 # compatibility alias for older internal imports; new code should use the
 # centralized ``RPC_CONTEXT_*`` vocabulary from ``_middleware_context``.

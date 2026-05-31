@@ -31,7 +31,7 @@ that duration AFTER the successful refresh and BEFORE the retry. This
 preserves the historical transport behavior so a cassette that recorded the
 post-refresh delay replays the same timing.
 
-Request-materialization transition: ``Session`` now enters the chain with
+Request-materialization transition: ``NotebookLMClient`` now enters the chain with
 the initial ``RpcRequest.url`` / ``.headers`` / ``.body`` populated and the
 terminal consumes that envelope through ``Kernel.post``. After a successful
 refresh this middleware re-snapshots auth state and replaces the request
@@ -115,7 +115,7 @@ class AuthRefreshMiddleware:
     - ``snapshot_provider``: optional async callable returning a fresh
       :class:`AuthSnapshot` after refresh. Production wires a lambda
       that invokes :meth:`AuthRefreshCoordinator.snapshot` with the
-      explicit ``auth=session.auth`` collaborator; tests that omit
+      client's current ``auth`` tokens; tests that omit
       ``snapshot_provider``
       preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`

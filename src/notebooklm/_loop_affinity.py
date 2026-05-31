@@ -17,7 +17,7 @@ Design constraints:
 
 * ``bound_loop is None`` is a silent no-op so callers that haven't yet
   observed an ``open()`` (most notably standalone fixtures that construct
-  the helpers directly without a :class:`Session`) keep working without
+  the helpers directly without a :class:`NotebookLMClient`) keep working without
   a special-case branch on every call site.
 
 * The error message is intentionally stable so downstream call sites can

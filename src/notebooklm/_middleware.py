@@ -17,7 +17,7 @@ This module defines:
   ``NextCall`` so the leftmost middleware in the sequence becomes the
   *outermost* wrapper (matches the ordering documented in ADR-009).
 
-Production ``Session`` wiring composes these envelopes through the current
+Production ``NotebookLMClient`` wiring composes these envelopes through the current
 middleware stack. During the request-materialization migration, the chain
 enters with populated ``RpcRequest(url, headers, body)`` fields and the
 terminal consumes that envelope directly through ``Kernel.post``. See
@@ -139,7 +139,7 @@ def materialize_rpc_request(
 ) -> RpcRequest:
     """Build a populated chain envelope from the legacy request callback.
 
-    ``Session`` uses this helper to enter the chain with populated
+    ``NotebookLMClient`` uses this helper to enter the chain with populated
     ``RpcRequest(url, headers, body)`` fields while the terminal delegates
     through the ``BuildRequest`` callback. A ``Kernel.post`` terminal can
     consume the same envelope directly.

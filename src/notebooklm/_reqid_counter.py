@@ -10,7 +10,7 @@ Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` an
 ``tests/unit/test_reqid_counter_concurrent.py``):
 
 * ``__init__`` MUST be event-loop-agnostic — it must NOT instantiate
-  ``asyncio.Lock()`` eagerly. ``Session`` is routinely built outside a
+  ``asyncio.Lock()`` eagerly. ``NotebookLMClient`` is routinely built outside a
   running loop (sync-mode ``NotebookLMClient(...)`` before the caller's
   ``asyncio.run``), and ``asyncio.Lock()`` binds to the running loop on
   construction in some Python versions. The lock is therefore allocated
@@ -47,8 +47,7 @@ from ._loop_affinity import assert_bound_loop
 # instead of hard-coding ``100000``.
 DEFAULT_BASELINE: int = 100000
 # Default step applied by :meth:`ReqidCounter.next_reqid`. Matches the
-# historical bump that ``ChatAPI.ask`` performed under the legacy
-# ``self._core._reqid_counter += 100000`` contract.
+# historical bump that ``ChatAPI.ask`` performed.
 DEFAULT_STEP: int = 100000
 
 
@@ -76,8 +75,7 @@ class ReqidCounter:
     ) -> None:
         # Plain int; mutated only inside :meth:`next_reqid` under ``_lock`` or
         # via direct ``self._reqid._value = …`` writethrough from test fixtures
-        # that want to seed the counter without paying the deprecation-warning
-        # tax on the public ``_reqid_counter`` setter on ``Session``.
+        # that want to seed the counter to a deterministic baseline.
         self._value: int = baseline
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object is constructed at client
@@ -85,7 +83,7 @@ class ReqidCounter:
         # outside a loop.
         self._lock: asyncio.Lock | None = None
         # No-op default keeps standalone construction (unit tests) free of a
-        # ``Session``-shaped dependency. ``Session`` injects its own
+        # client-shaped dependency. ``NotebookLMClient`` injects its own
         # metrics-aware recorder so lock-wait latency continues to be tracked
         # in the cumulative ``ClientMetricsSnapshot``.
         self._on_lock_wait: Callable[[float], None] = (
@@ -118,8 +116,8 @@ class ReqidCounter:
         Returns a point-in-time read; the value can race with a concurrent
         :meth:`next_reqid` mutation. Callers that need an atomic post-
         increment value MUST use :meth:`next_reqid`, which serialises the
-        read-modify-write under :attr:`_lock`. This accessor exists so
-        ``Session._reqid_counter`` (read path) and test assertions
+        read-modify-write under :attr:`_lock`. This accessor exists so the
+        counter read path and test assertions
         (``assert core._reqid_counter == ...`` after a known sequence) stay
         lock-free.
         """
@@ -128,9 +126,8 @@ class ReqidCounter:
     def set_value(self, new_value: int) -> None:
         """Replace the counter value.
 
-        Used by the ``Session._reqid_counter`` setter (which emits a
-        ``DeprecationWarning`` before delegating here) and by test fixtures
-        that need to seed the counter to a deterministic baseline.
+        Used by test fixtures that seed the counter to a deterministic
+        baseline.
         """
         self._value = new_value
 

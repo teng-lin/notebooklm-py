@@ -10,7 +10,7 @@ Google does not always answer with ``Set-Cookie: __Secure-1PSIDTS``. When that
 happens, ``storage_state.json`` is saved without PSIDTS, the Tier-1 preflight
 in :mod:`notebooklm._auth.cookie_policy` rejects the next CLI invocation, and
 the keepalive recovery path (which would heal the state in one POST) is
-unreachable because it only runs inside an opened ``Session`` — a closed loop.
+unreachable because it only runs inside an opened ``NotebookLMClient`` — a closed loop.
 
 The header comment on ``MINIMUM_REQUIRED_COOKIES`` has always described PSIDTS
 as ``directly accepted by Google's homepage check, OR recoverable via the

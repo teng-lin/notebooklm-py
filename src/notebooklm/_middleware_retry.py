@@ -16,7 +16,7 @@ Auth-refresh-and-retry lives in :class:`AuthRefreshMiddleware`.
 Behavior:
 
 - **Same retry counts** — ``rate_limit_max_retries`` /
-  ``server_error_max_retries`` are propagated from ``Session`` so the
+  ``server_error_max_retries`` are propagated from ``NotebookLMClient`` so the
   budget matches the historical transport loop.
 - **Same backoff timing** — :func:`_backoff.compute_backoff_delay` is
   invoked with the same ``base=1.0`` / ``cap=30.0`` / ``jitter_ratio=0.2``
@@ -84,7 +84,7 @@ class RetryMiddleware:
     ``NotebookLMClient.__init__``):
 
     - ``rate_limit_max_retries`` / ``server_error_max_retries``: the same
-      budgets exposed by ``Session`` via ``_rate_limit_max_retries`` /
+      budgets exposed by ``NotebookLMClient`` via ``_rate_limit_max_retries`` /
       ``_server_error_max_retries``.
     - ``retry_timeout``: aggregate retry deadline in seconds. Production wires
       this to the existing client HTTP timeout so retry sleeps cannot exceed

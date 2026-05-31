@@ -22,7 +22,7 @@ The emit fires only when ``RPC_CONTEXT_RPC_METHOD`` is present in
 ``request.context``.
 Other code paths through the chain (e.g. the chat streaming path in
 ``_chat_transport.send_authed_post``, which calls
-``Session._perform_authed_post`` directly without minting an
+``RuntimeTransport.perform_authed_post`` directly without minting an
 ``RpcExecutor`` telemetry frame) leave the key absent and skip emission —
 so chat-side requests do not appear in the RPC counters or telemetry
 stream. This invariant is pinned
@@ -72,7 +72,7 @@ class MetricsMiddleware:
     as assignable into a ``Sequence[Middleware]``.
 
     Holds a reference to the shared :class:`ClientMetrics` instance owned
-    by :class:`Session`. The middleware does not own metric state; it
+    by :class:`NotebookLMClient`. The middleware does not own metric state; it
     is purely a write-through into the host's accumulator. This keeps the
     ``client.metrics`` snapshot view authoritative — a test that swaps a
     middleware out can still observe the counters.

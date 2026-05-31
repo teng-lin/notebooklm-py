@@ -21,7 +21,7 @@ from .auth import (
 
 
 class SaveCookiesToStorage(Protocol):
-    """Callable shape for the storage writer resolved by ``Session``."""
+    """Callable shape for the storage writer resolved by ``NotebookLMClient``."""
 
     def __call__(
         self,

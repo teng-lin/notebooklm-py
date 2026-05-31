@@ -15,7 +15,7 @@ from .types import ConnectionLimits
 class Kernel:
     """Own the live HTTP transport and cookie jar.
 
-    Session lifecycle code decides when to open and close. The kernel owns the
+    Client lifecycle code decides when to open and close. The kernel owns the
     concrete ``httpx.AsyncClient`` instance, its cookie jar, raw POST execution,
     and shielded teardown target.
     """

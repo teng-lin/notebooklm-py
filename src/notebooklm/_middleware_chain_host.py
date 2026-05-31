@@ -20,16 +20,16 @@ itself:
 This module is intentionally narrow:
 
 * It does NOT know about metrics, the kernel, the http client, the
-  RPC semaphore, or the auth snapshot. Those live on :class:`Session`
+  RPC semaphore, or the auth snapshot. Those live on :class:`NotebookLMClient`
   (the auth-snapshot host) and the collaborator bundle.
-* The host has no back-reference to :class:`Session` — it is reachable
-  from :class:`Session` (via ``self._chain_host``) but not the other
-  way around. This avoids a Session ↔ transport cycle, per ADR-014 Rule 4.
+* The host has no back-reference to :class:`NotebookLMClient` — it is reachable
+  from :class:`NotebookLMClient` (via ``self._chain_host``) but not the other
+  way around. This avoids a client ↔ transport cycle, per ADR-014 Rule 4.
 
 The transport / wire helpers take the host directly via the
 ``chain_host`` parameter; the chain reads ``chain_host._<attr>`` on
 every attempt. Tests that need a mid-flight mutation rebind on the
-host (``core._chain_host._<attr> = ...``); there are no Session-side
+host (``core._chain_host._<attr> = ...``); there are no client-side
 forwards in front of the host.
 """
 
@@ -49,7 +49,7 @@ class MiddlewareChainHost:
     """Owner of the middleware-chain mutable state and chain leaf.
 
     Constructed by :func:`compose_client_internals` BEFORE
-    :class:`Session`. The transport is bound write-once via
+    :class:`NotebookLMClient`. The transport is bound write-once via
     :meth:`_bind_transport` after :func:`build_runtime_transport`
     returns — this resolves the host ↔ transport construction cycle
     without giving either side a permanent back-reference to the other.
@@ -92,7 +92,7 @@ class MiddlewareChainHost:
         composition root (:func:`compose_client_internals`) is the
         single legitimate caller, and it fires this once after
         :func:`build_runtime_transport` returns. The same write-once
-        shape on :class:`Session` (:meth:`Session._bind_transport`)
+        shape on the client (:meth:`ClientComposed.bind_transport`)
         guarantees both sides of the host ↔ transport relationship are
         bound exactly once at composition time.
         """
@@ -109,9 +109,10 @@ class MiddlewareChainHost:
 
         Raises :class:`RuntimeError` if the transport is not yet bound.
         This can only happen if a caller exercised the chain before
-        the composition root finished — the fail-fast guard mirrors
-        the corresponding :meth:`Session._require_constructed` guard
-        on the Session entry points.
+        the composition root finished — this fail-fast guard raises
+        :class:`RuntimeError` when the transport is still unbound,
+        rejecting any authed POST that reaches the chain leaf before
+        :meth:`_bind_transport` has fired.
         """
         transport = self._transport
         if transport is None:
