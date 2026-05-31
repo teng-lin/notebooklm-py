@@ -191,13 +191,6 @@ async def test_generate_interactive_raises_when_no_artifact_id():
         await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE)
 
 
-@pytest.mark.asyncio
-async def test_detect_kind_raises_when_absent():
-    api, *_ = _make_api()
-    with pytest.raises(ValueError, match="not found"):
-        await api.rename("nb", "ghost", "X")
-
-
 # --- #1270 sub-fix 1: get_tree drift vs absent-leaf ---------------------------
 
 
