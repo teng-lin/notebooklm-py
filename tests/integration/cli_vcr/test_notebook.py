@@ -98,13 +98,21 @@ class TestRenameCommand:
 
     @notebooklm_vcr.use_cassette("cli_notebook_rename.yaml")
     def test_rename_notebook(self, runner, mock_auth_for_vcr):
-        """``rename`` issues a single RENAME_NOTEBOOK RPC for the full UUID."""
+        """``rename`` issues a single RENAME_NOTEBOOK RPC for the full UUID.
+
+        ``rename`` has no ``--json`` flag (see ``cli/notebook_cmd.py`` —
+        ``rename_cmd`` only decorates ``@notebook_option`` + ``@with_client``,
+        emitting human-readable ``Renamed notebook`` / ``New title`` prose), so
+        there is no machine-readable variant to cover here. The id echoed back
+        in the prose is the substantive assertion.
+        """
         result = runner.invoke(
             cli,
             ["rename", "VCR CLI Renamed", "-n", VCR_MUTABLE_NOTEBOOK_ID],
         )
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
         assert VCR_MUTABLE_NOTEBOOK_ID in result.output
+        assert "VCR CLI Renamed" in result.output
 
 
 class TestDeleteCommand:

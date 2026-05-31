@@ -47,7 +47,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import notebooklm_vcr, parse_json_output, skip_no_cassettes
+from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -74,7 +74,7 @@ class TestShareStatusCommand:
     def test_share_status(self, runner, mock_auth_for_vcr):
         """``share status`` renders the sharing summary from one RPC."""
         result = runner.invoke(cli, ["share", "status", "-n", VCR_SHARE_NOTEBOOK_ID])
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
 
     @notebooklm_vcr.use_cassette("cli_share_status.yaml")
     def test_share_status_json(self, runner, mock_auth_for_vcr):
@@ -108,7 +108,7 @@ class TestShareAddCommand:
                 "--no-notify",
             ],
         )
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
 
     @notebooklm_vcr.use_cassette("cli_share_add.yaml")
     def test_share_add_json(self, runner, mock_auth_for_vcr):
@@ -127,7 +127,7 @@ class TestShareAddCommand:
                 "--json",
             ],
         )
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
 
         data = parse_json_output(result.output)
         assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
@@ -146,7 +146,7 @@ class TestShareRemoveCommand:
             cli,
             ["share", "remove", VCR_SHARE_EMAIL, "-n", VCR_SHARE_NOTEBOOK_ID, "--yes"],
         )
-        assert result.exit_code == 0, result.output
+        assert_command_success(result, allow_no_context=False)
 
     @notebooklm_vcr.use_cassette("cli_share_remove.yaml")
     def test_share_remove_json(self, runner, mock_auth_for_vcr):
