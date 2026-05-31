@@ -35,14 +35,19 @@ allowlist) it is immune to line shifts and self-documents the conscious choice.
 A waiver on a command that is NOT a violation (does not reach RPC, or already
 reaches the envelope) is STALE and fails the gate -- waivers cannot linger
 after a command is fixed (anti-rot, mirroring the exit-path stale-marker check).
-There are zero waivers today.
+The waiver must name a non-empty reason, and must sit inside the command BODY:
+the span is ``[def-line, end-line]``, so a marker on a ``@grp.command(...)``
+decorator line (above ``def``) is an ORPHAN that waives nothing and fails the
+gate. There are zero waivers today.
 
 Honest caveat (scope)
 ---------------------
 This is a NAME-BASED call-graph heuristic -- a safety net, not a proof. It walks
 function defs under ``src/notebooklm/cli/**`` by name, so it can MISS RPC reached
 through an indirection the name-walk cannot follow (e.g. an opened client passed
-in as an opaque parameter, or a dynamic ``getattr`` dispatch). False positives
+in as an opaque parameter, or a dynamic ``getattr`` dispatch). It also only
+recognizes the ``@<group>.command(...)`` leaf-command shape (a bare ``@command``
+``Name`` decorator, which the CLI does not use, would be missed). False positives
 are unlikely because ``NotebookLMClient`` is a distinctive, unambiguous name.
 Same heuristic class as the existing exit-path gates -- strictly better than
 trusting the convention by hand.
@@ -51,6 +56,7 @@ trusting the convention by hand.
 from __future__ import annotations
 
 import ast
+import functools
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from pathlib import Path
@@ -192,54 +198,100 @@ def _command_start_set(func: ast.FunctionDef | ast.AsyncFunctionDef) -> frozense
     return frozenset(_body_names(func) | _decorator_names(func))
 
 
-def _command_is_waived(
-    func: ast.FunctionDef | ast.AsyncFunctionDef, marker_lines: set[int]
-) -> bool:
-    """True iff a ``# cli-rpc-unenveloped:`` marker sits within the command span.
+def _command_span(func: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, int]:
+    """The command's ``(lineno, end_lineno)`` (inclusive, as ``ast`` reports).
 
-    The span is the command's ``[lineno, end_lineno]`` (inclusive, as ``ast``
-    reports), which covers the body where the RPC happens.
+    The span starts at the ``def`` keyword line -- NOT the first decorator -- so
+    a marker placed on a decorator line (above ``def``) falls OUTSIDE the span
+    and is reported as an orphan, not a waiver. Keep the waiver inside the body.
     """
-    end = func.end_lineno or func.lineno
-    return any(func.lineno <= line <= end for line in marker_lines)
+    return func.lineno, func.end_lineno or func.lineno
+
+
+def _waiver_reason(span: tuple[int, int], reasons: dict[int, str]) -> str | None:
+    """The trimmed reason of a waiver within *span*, or ``None`` if unwaived.
+
+    Returns the (possibly empty) reason string for the FIRST marker line that
+    falls within the command span, so the caller can both detect the waiver and
+    enforce a non-empty reason. ``None`` means no marker sits in the span.
+    """
+    lo, hi = span
+    for line in sorted(reasons):
+        if lo <= line <= hi:
+            return reasons[line]
+    return None
 
 
 def _cli_files() -> list[Path]:
     return sorted(CLI_ROOT.rglob("*.py"))
 
 
-def _audit() -> tuple[list[str], list[str], int]:
-    """Return ``(violations, stale_waivers, rpc_command_count)`` over the CLI tree.
+class _Audit:
+    """Aggregate findings across the CLI tree.
 
-    A violation is a command that reaches RPC, does NOT reach the envelope, and
-    is NOT waived. A stale waiver is a ``# cli-rpc-unenveloped:`` marker on a
-    command that is not otherwise a violation (so the waiver is unnecessary).
+    * ``violations`` -- a command reaches RPC, NOT the envelope, and is not
+      validly waived.
+    * ``stale`` -- a waiver on a command that is not (or no longer) a violation.
+    * ``orphan`` -- a ``# cli-rpc-unenveloped:`` marker that sits in NO command
+      span (module level, on a decorator line, inside a helper) -- it can never
+      waive anything, so it is dead annotation that must be deleted.
+    * ``empty`` -- a marker that DOES waive a real violation but names no reason.
+    * ``rpc_commands`` -- count of commands reaching ``NotebookLMClient`` (the
+      sanity floor that guards against a silently-broken call graph).
+    """
+
+    def __init__(self) -> None:
+        self.violations: list[str] = []
+        self.stale: list[str] = []
+        self.orphan: list[str] = []
+        self.empty: list[str] = []
+        self.rpc_commands = 0
+
+
+@functools.cache
+def _run_audit() -> _Audit:
+    """Walk every CLI command once and classify it (cached for the session).
+
+    The call graph and per-file parse are built a single time; the two public
+    assertions then read the cached result rather than re-walking the tree.
     """
     parsed = [(path, parse_cli_file(path)) for path in _cli_files()]
     graph = _build_call_graph(tree for _path, (_src, tree) in parsed)
 
-    violations: list[str] = []
-    stale: list[str] = []
-    rpc_commands = 0
+    audit = _Audit()
     for path, (_src, tree) in parsed:
         rel = path.relative_to(REPO_ROOT).as_posix()
-        marker_lines = set(marker_reasons_for(path, UNENVELOPED_MARKER))
+        reasons = marker_reasons_for(path, UNENVELOPED_MARKER)
+        claimed: set[int] = set()
         for node in ast.walk(tree):
             if not isinstance(node, _FUNC_DEFS) or not _is_click_command(node):
                 continue
-            start = _command_start_set(node)
-            reaches_rpc = _reaches(start, RPC_TARGETS, graph)
-            reaches_env = _reaches(start, ENVELOPE_TARGETS, graph)
-            waived = _command_is_waived(node, marker_lines)
+            span = _command_span(node)
+            reason = _waiver_reason(span, reasons)
+            if reason is not None:
+                claimed.add(next(line for line in sorted(reasons) if span[0] <= line <= span[1]))
+            # An empty-reason marker does NOT waive: the command stays a
+            # violation AND the empty marker is reported (mirrors the
+            # exit-path gate's empty-reason handling).
+            waived = bool(reason)
+
+            reaches_rpc = _reaches(_command_start_set(node), RPC_TARGETS, graph)
+            reaches_env = _reaches(_command_start_set(node), ENVELOPE_TARGETS, graph)
             is_violation = reaches_rpc and not reaches_env
 
             if reaches_rpc:
-                rpc_commands += 1
+                audit.rpc_commands += 1
             if is_violation and not waived:
-                violations.append(f"{rel}:{node.lineno} {node.name}")
-            if waived and not is_violation:
-                stale.append(f"{rel}:{node.lineno} {node.name}")
-    return violations, stale, rpc_commands
+                audit.violations.append(f"{rel}:{node.lineno} {node.name}")
+            if reason is not None and not is_violation:
+                audit.stale.append(f"{rel}:{node.lineno} {node.name}")
+            if is_violation and reason == "":
+                audit.empty.append(f"{rel}:{node.lineno} {node.name}")
+
+        # A marker that claimed no command span is dead annotation.
+        for line in sorted(set(reasons) - claimed):
+            audit.orphan.append(f"{rel}:{line}")
+    return audit
 
 
 def _format(sites: list[str]) -> str:
@@ -248,29 +300,38 @@ def _format(sites: list[str]) -> str:
 
 def test_rpc_commands_route_through_error_envelope() -> None:
     """Every RPC-doing CLI command reaches the error envelope (or is waived)."""
-    violations, _stale, rpc_commands = _audit()
+    audit = _run_audit()
     # Sanity floor: the heuristic must still see the network-command class.
     # If this drops sharply the call graph likely stopped resolving an edge.
-    assert rpc_commands >= 50, (
-        f"Only {rpc_commands} CLI commands reach NotebookLMClient; the call-graph "
-        "walk likely regressed (expected ~60). Investigate before trusting a green."
+    assert audit.rpc_commands >= 50, (
+        f"Only {audit.rpc_commands} CLI commands reach NotebookLMClient; the "
+        "call-graph walk likely regressed (expected ~60). Investigate before "
+        "trusting a green."
     )
-    assert not violations, (
+    assert not audit.violations, (
         "CLI commands that open NotebookLMClient (do RPC) but do NOT route through "
         "the error envelope (handle_errors / with_auth_and_errors / "
         "run_client_workflow, i.e. @with_client). Each silently bypasses the typed "
         "JSON error envelope -- wrap it, or add an inline "
-        f"`# {UNENVELOPED_MARKER} <reason>` waiver:\n" + _format(violations)
+        f"`# {UNENVELOPED_MARKER} <reason>` waiver:\n" + _format(audit.violations)
     )
 
 
-def test_no_stale_unenveloped_waivers() -> None:
-    """``# cli-rpc-unenveloped:`` markers cannot linger on non-violating commands."""
-    _violations, stale, _rpc = _audit()
-    assert not stale, (
+def test_no_stale_or_orphan_or_empty_unenveloped_waivers() -> None:
+    """``# cli-rpc-unenveloped:`` markers must waive a real violation with a reason."""
+    audit = _run_audit()
+    assert not audit.stale, (
         f"Stale `# {UNENVELOPED_MARKER}` waivers on commands that are NOT violations "
         "(they don't reach NotebookLMClient, or already reach the envelope) -- delete "
-        "them:\n" + _format(stale)
+        "them:\n" + _format(audit.stale)
+    )
+    assert not audit.orphan, (
+        f"Orphan `# {UNENVELOPED_MARKER}` markers that sit in NO command body "
+        "(module level, on a decorator line, or inside a helper) -- they waive "
+        "nothing; delete or move them into the command body:\n" + _format(audit.orphan)
+    )
+    assert not audit.empty, (
+        f"`# {UNENVELOPED_MARKER}` waivers with no reason -- add one:\n" + _format(audit.empty)
     )
 
 
@@ -292,20 +353,31 @@ def _only_command(tree: ast.Module) -> ast.FunctionDef | ast.AsyncFunctionDef:
     return commands[0]
 
 
-def _classify(source: str) -> tuple[bool, bool]:
-    """Return ``(is_violation, is_stale_waiver)`` for the lone command in *source*."""
+def _classify(source: str) -> tuple[bool, bool, bool, bool]:
+    """Return ``(is_violation, is_stale, is_orphan, is_empty)`` for *source*.
+
+    Mirrors the per-command classification in :func:`_run_audit` but on a single
+    synthetic module (the real audit is path-keyed; these tests work in memory).
+    """
     tree = _module(source)
     graph = _build_call_graph([tree])
     command = _only_command(tree)
+    span = _command_span(command)
+    # ``marker_reasons`` is source-keyed (the synthetic tests work in memory);
+    # ``marker_reasons_for`` is the path-keyed sibling used in the real audit.
+    reasons = marker_reasons(source, UNENVELOPED_MARKER)
+    reason = _waiver_reason(span, reasons)
+    waived = bool(reason)
+
     start = _command_start_set(command)
     reaches_rpc = _reaches(start, RPC_TARGETS, graph)
     reaches_env = _reaches(start, ENVELOPE_TARGETS, graph)
-    # ``marker_reasons`` is source-keyed (the synthetic tests work in memory);
-    # ``marker_reasons_for`` is the path-keyed sibling used in the real audit.
-    marker_lines = set(marker_reasons(source, UNENVELOPED_MARKER))
-    waived = _command_is_waived(command, marker_lines)
-    is_violation = reaches_rpc and not reaches_env
-    return (is_violation and not waived), (waived and not is_violation)
+    is_violation = (reaches_rpc and not reaches_env) and not waived
+
+    is_stale = reason is not None and not (reaches_rpc and not reaches_env)
+    is_orphan = any(not (span[0] <= line <= span[1]) for line in reasons)
+    is_empty = (reaches_rpc and not reaches_env) and reason == ""
+    return is_violation, is_stale, is_orphan, is_empty
 
 
 def test_rpc_without_envelope_is_flagged() -> None:
@@ -319,9 +391,9 @@ def test_rpc_without_envelope_is_flagged() -> None:
         "                await client.notebooks.list()\n"
         "        return _run()\n"
     )
-    is_violation, is_stale = _classify(source)
+    is_violation, is_stale, is_orphan, is_empty = _classify(source)
     assert is_violation
-    assert not is_stale
+    assert not (is_stale or is_orphan or is_empty)
 
 
 def test_with_client_decorator_command_passes() -> None:
@@ -338,9 +410,8 @@ def test_with_client_decorator_command_passes() -> None:
         "            await client.notebooks.list()\n"
         "    return _run()\n"
     )
-    is_violation, is_stale = _classify(source)
-    assert not is_violation
-    assert not is_stale
+    is_violation, is_stale, is_orphan, is_empty = _classify(source)
+    assert not (is_violation or is_stale or is_orphan or is_empty)
 
 
 def test_explicit_envelope_call_command_passes() -> None:
@@ -353,9 +424,8 @@ def test_explicit_envelope_call_command_passes() -> None:
         "            await client.settings.get_output_language()\n"
         "    return with_auth_and_errors(ctx, body=body)\n"
     )
-    is_violation, is_stale = _classify(source)
-    assert not is_violation
-    assert not is_stale
+    is_violation, is_stale, is_orphan, is_empty = _classify(source)
+    assert not (is_violation or is_stale or is_orphan or is_empty)
 
 
 def test_waived_rpc_command_is_not_flagged() -> None:
@@ -368,9 +438,8 @@ def test_waived_rpc_command_is_not_flagged() -> None:
         "            await client.notebooks.list()\n"
         "    return _run()\n"
     )
-    is_violation, is_stale = _classify(source)
-    assert not is_violation
-    assert not is_stale
+    is_violation, is_stale, is_orphan, is_empty = _classify(source)
+    assert not (is_violation or is_stale or is_orphan or is_empty)
 
 
 def test_waiver_on_non_violation_is_stale() -> None:
@@ -380,9 +449,45 @@ def test_waiver_on_non_violation_is_stale() -> None:
         "def list_codes(json_output):  # cli-rpc-unenveloped: no longer needed\n"
         "    print(SUPPORTED_LANGUAGES)\n"
     )
-    is_violation, is_stale = _classify(source)
+    is_violation, is_stale, _orphan, _empty = _classify(source)
     assert not is_violation
     assert is_stale
+
+
+def test_empty_reason_waiver_does_not_waive() -> None:
+    """A reasonless ``# cli-rpc-unenveloped:`` marker is flagged, not honored."""
+    source = (
+        "@grp.command('bad')\n"
+        "def bad(ctx):\n"
+        "    async def _run():  # cli-rpc-unenveloped:\n"
+        "        async with NotebookLMClient(auth) as client:\n"
+        "            await client.notebooks.list()\n"
+        "    return _run()\n"
+    )
+    is_violation, _stale, _orphan, is_empty = _classify(source)
+    # The empty marker neither waives the violation nor silences the empty flag.
+    assert is_violation
+    assert is_empty
+
+
+def test_orphan_waiver_outside_any_command_is_flagged() -> None:
+    """A waiver on a decorator line (above ``def``) waives nothing -> orphan.
+
+    ``func.lineno`` is the ``def`` line, so a marker on the ``@grp.command(...)``
+    decorator falls outside the span; it cannot waive the command and is dead.
+    """
+    source = (
+        "@grp.command('bad')  # cli-rpc-unenveloped: misplaced on the decorator\n"
+        "def bad(ctx):\n"
+        "    async def _run():\n"
+        "        async with NotebookLMClient(auth) as client:\n"
+        "            await client.notebooks.list()\n"
+        "    return _run()\n"
+    )
+    is_violation, _stale, is_orphan, _empty = _classify(source)
+    # The marker does not waive (still a violation) AND is reported as orphan.
+    assert is_violation
+    assert is_orphan
 
 
 def test_decorator_only_envelope_path_is_recognized() -> None:
@@ -413,6 +518,5 @@ def test_decorator_only_envelope_path_is_recognized() -> None:
     # ... while the decorator-aware start set does reach the envelope.
     assert _reaches(full_start, ENVELOPE_TARGETS, graph)
 
-    is_violation, is_stale = _classify(source)
-    assert not is_violation
-    assert not is_stale
+    is_violation, is_stale, is_orphan, is_empty = _classify(source)
+    assert not (is_violation or is_stale or is_orphan or is_empty)
