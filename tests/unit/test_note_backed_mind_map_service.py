@@ -89,6 +89,80 @@ class TestDeleteMindMap:
         mock_notes.delete_note.assert_awaited_once_with("nb_abc", "mm_1")
 
 
+class TestRenameMindMap:
+    """Note-backed rename retitles the backing note via ``UPDATE_NOTE``.
+
+    Unlike the interactive studio-artifact backend (which renames via
+    ``RENAME_ARTIFACT`` in ``MindMapsAPI``), the note-backed path has no
+    title-only field mask, so the rename re-sends the existing content
+    alongside the new title.
+    """
+
+    @staticmethod
+    def _stub_list(mock_notes: MagicMock, rows: list[list[object]]) -> None:
+        """Make ``list_mind_maps`` return ``rows`` (all classified MIND_MAP)."""
+        mock_notes.fetch_note_rows = AsyncMock(return_value=rows)
+        mock_notes.classify_row = MagicMock(return_value=NoteRowKind.MIND_MAP)
+
+    @pytest.mark.asyncio
+    async def test_rename_resends_content_with_new_title(
+        self, service: NoteBackedMindMapService, mock_notes: MagicMock
+    ) -> None:
+        target = ["mm_1", json.dumps({"children": []})]
+        other = ["mm_0", json.dumps({"children": []})]
+        self._stub_list(mock_notes, [other, target])
+        mock_notes.extract_content = MagicMock(return_value="existing-content")
+        mock_notes.update_note = AsyncMock()
+
+        result = await service.rename_mind_map("nb_abc", "mm_1", "New Title")
+
+        assert result is None
+        mock_notes.extract_content.assert_called_once_with(target)
+        mock_notes.update_note.assert_awaited_once_with(
+            "nb_abc", "mm_1", "existing-content", "New Title"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rename_defaults_empty_content_when_extract_returns_none(
+        self, service: NoteBackedMindMapService, mock_notes: MagicMock
+    ) -> None:
+        target = ["mm_1", None]
+        self._stub_list(mock_notes, [target])
+        # A mind-map row whose content cannot be extracted must still be
+        # renameable — the rename sends "" rather than crashing on None.
+        mock_notes.extract_content = MagicMock(return_value=None)
+        mock_notes.update_note = AsyncMock()
+
+        await service.rename_mind_map("nb_abc", "mm_1", "Renamed")
+
+        mock_notes.update_note.assert_awaited_once_with("nb_abc", "mm_1", "", "Renamed")
+
+    @pytest.mark.asyncio
+    async def test_rename_missing_raises_and_skips_update(
+        self, service: NoteBackedMindMapService, mock_notes: MagicMock
+    ) -> None:
+        self._stub_list(mock_notes, [["mm_1", "content"]])
+        mock_notes.extract_content = MagicMock(return_value="content")
+        mock_notes.update_note = AsyncMock()
+
+        with pytest.raises(ValueError, match="ghost"):
+            await service.rename_mind_map("nb_abc", "ghost", "New Title")
+
+        mock_notes.update_note.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rename_empty_notebook_raises(
+        self, service: NoteBackedMindMapService, mock_notes: MagicMock
+    ) -> None:
+        self._stub_list(mock_notes, [])
+        mock_notes.update_note = AsyncMock()
+
+        with pytest.raises(ValueError, match="mm_1"):
+            await service.rename_mind_map("nb_abc", "mm_1", "New Title")
+
+        mock_notes.update_note.assert_not_awaited()
+
+
 class TestEndToEndWithRealNoteService:
     """Integration check: NoteBackedMindMapService backed by a real
     :class:`NoteService` must still return mind-map rows correctly."""

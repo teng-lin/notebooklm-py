@@ -366,3 +366,143 @@ async def test_generate_note_backed_empty_name_falls_back_to_placeholder():
     )
     mm = await api.generate("nb", ["s1"], kind=MindMapKind.NOTE_BACKED)
     assert mm.title == "Mind Map"  # empty name rejected, placeholder used
+
+
+@pytest.mark.asyncio
+async def test_list_excludes_non_interactive_mind_map_artifacts():
+    # A MIND_MAP-type artifact that is not a settled interactive map (variant
+    # not yet populated) is filtered out of the unified listing.
+    api, *_ = _make_api(
+        note_rows=[["note_mm", "{}"]],
+        interactive=[_pending_type4_artifact("settling"), _interactive_artifact("int_mm")],
+    )
+    ids = {m.id for m in await api.list("nb")}
+    assert ids == {"note_mm", "int_mm"}  # "settling" excluded
+
+
+# --- get() lookup ------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_returns_matching_mind_map():
+    api, *_ = _make_api(note_rows=[["note_mm", '{"name": "NB", "children": []}']])
+    mm = await api.get("nb", "note_mm")
+    assert mm is not None
+    assert mm.id == "note_mm"
+    assert mm.kind == MindMapKind.NOTE_BACKED
+
+
+@pytest.mark.asyncio
+async def test_get_returns_none_when_absent():
+    # Neither backing contains the id -> None (the v0.7.0 contract; #1247
+    # tracks the eventual flip to raise).
+    api, *_ = _make_api(note_rows=[["note_mm", "{}"]])
+    assert await api.get("nb", "ghost") is None
+
+
+# --- rename(kind=None) auto-detect dispatch ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rename_auto_detect_note_backed_dispatches():
+    # kind=None with the id in the note collection -> note-backed rename,
+    # interactive rename never consulted.
+    # Decoy first row exercises the loop-continue branch before the match.
+    api, _, mind_maps, artifacts, _ = _make_api(
+        note_rows=[["other_mm", "{}"], ["note_mm", '{"name": "NB", "children": []}']]
+    )
+    await api.rename("nb", "note_mm", "X", return_object=False)
+    mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
+    artifacts.rename.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rename_auto_detect_interactive_dispatches():
+    # kind=None with the id absent from notes but present as an interactive
+    # artifact -> artifact rename.
+    api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
+    await api.rename("nb", "int_mm", "Y", return_object=False)
+    artifacts.rename.assert_awaited_once_with("nb", "int_mm", "Y", return_object=False)
+    mind_maps.rename_mind_map.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rename_hydrate_raises_when_target_vanishes():
+    # Explicit note-backed rename whose post-rename refetch finds nothing
+    # (vanished-between-rename-and-refetch race) -> ValueError from
+    # _hydrate_renamed rather than a stale/None object.
+    api, _, mind_maps, _, _ = _make_api(note_rows=[])
+    with pytest.raises(ValueError, match="not found"):
+        await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
+    mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
+
+
+# --- get_tree auto-detect + note-backed paths -------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_tree_auto_detect_note_backed_returns_tree():
+    # Decoy first row exercises the loop-continue branch before the match.
+    api, *_ = _make_api(
+        note_rows=[["other_mm", "{}"], ["note_mm", '{"name": "NB", "children": [1]}']]
+    )
+    assert await api.get_tree("nb", "note_mm") == {"name": "NB", "children": [1]}
+
+
+@pytest.mark.asyncio
+async def test_get_tree_auto_detect_interactive_falls_through_to_rpc():
+    # kind=None, id absent from notes but present as an interactive artifact ->
+    # falls through to GET_INTERACTIVE_HTML and parses the tree leaf.
+    api, rpc, *_ = _make_api(interactive=[_interactive_artifact("int_mm")])
+    row = [None] * 10
+    row[9] = [None, None, None, '{"name": "INT", "children": []}']
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[row]))
+    assert await api.get_tree("nb", "int_mm") == {"name": "INT", "children": []}
+
+
+@pytest.mark.asyncio
+async def test_get_tree_auto_detect_missing_raises():
+    api, *_ = _make_api()
+    with pytest.raises(ValueError, match="not found"):
+        await api.get_tree("nb", "ghost")
+
+
+@pytest.mark.asyncio
+async def test_get_tree_note_backed_absent_returns_none():
+    # Explicit kind=NOTE_BACKED with an unknown id returns None (does not raise).
+    api, *_ = _make_api(note_rows=[["other", "{}"]])
+    assert await api.get_tree("nb", "ghost", kind=MindMapKind.NOTE_BACKED) is None
+
+
+@pytest.mark.asyncio
+async def test_get_tree_note_backed_invalid_json_returns_none():
+    # _parse_tree swallows a JSONDecodeError on malformed content -> None.
+    api, *_ = _make_api(note_rows=[["note_mm", "not-json{"]])
+    assert await api.get_tree("nb", "note_mm", kind=MindMapKind.NOTE_BACKED) is None
+
+
+# --- _detect_kind via delete(kind=None) -------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_auto_detect_note_backed():
+    # Decoy first row exercises the _detect_kind loop-continue branch.
+    api, _, mind_maps, artifacts, _ = _make_api(note_rows=[["other_mm", "{}"], ["note_mm", "{}"]])
+    await api.delete("nb", "note_mm")
+    mind_maps.delete_mind_map.assert_awaited_once_with("nb", "note_mm")
+    artifacts.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_auto_detect_interactive():
+    api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
+    await api.delete("nb", "int_mm")
+    artifacts.delete.assert_awaited_once_with("nb", "int_mm")
+    mind_maps.delete_mind_map.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_auto_detect_missing_raises():
+    api, *_ = _make_api()
+    with pytest.raises(ValueError, match="not found"):
+        await api.delete("nb", "ghost")
