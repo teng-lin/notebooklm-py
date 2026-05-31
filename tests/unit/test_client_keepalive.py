@@ -76,6 +76,28 @@ async def _wait_until_storage_contains(storage_path, needle: str, failure_messag
     pytest.fail(failure_message)
 
 
+def _rotate_requests(httpx_mock: HTTPXMock) -> list[httpx.Request]:
+    return [r for r in httpx_mock.get_requests() if ROTATE_URL_RE.match(str(r.url))]
+
+
+async def _wait_for_rotate_requests(
+    httpx_mock: HTTPXMock,
+    *,
+    minimum: int,
+    failure_message: str,
+) -> None:
+    """Wait until the background keepalive task has emitted RotateCookies requests."""
+    requests: list[httpx.Request] = []
+    for _ in range(50):
+        requests = _rotate_requests(httpx_mock)
+        if len(requests) >= minimum:
+            return
+        await asyncio.sleep(0.05)
+
+    requests = _rotate_requests(httpx_mock)
+    pytest.fail(f"{failure_message}; got {len(requests)}")
+
+
 class TestKeepaliveDisabledByDefault:
     @pytest.mark.asyncio
     async def test_keepalive_off_by_default(self, mock_auth, httpx_mock: HTTPXMock):
@@ -193,12 +215,11 @@ class TestKeepalivePokes:
         )
 
         async with client:
-            await asyncio.sleep(0.5)
-
-        poke_requests = [r for r in httpx_mock.get_requests() if "RotateCookies" in str(r.url)]
-        assert len(poke_requests) >= 2, (
-            f"Expected at least 2 keepalive pokes, got {len(poke_requests)}"
-        )
+            await _wait_for_rotate_requests(
+                httpx_mock,
+                minimum=2,
+                failure_message="Expected at least 2 keepalive pokes",
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
@@ -230,16 +251,19 @@ class TestKeepalivePokes:
         )
 
         async with client:
-            await asyncio.sleep(0.4)
+            await _wait_for_rotate_requests(
+                httpx_mock,
+                minimum=1,
+                failure_message="Expected first keepalive poke",
+            )
             # Task is still running after the failure
             assert client._collaborators.lifecycle._keepalive_task is not None
             assert not client._collaborators.lifecycle._keepalive_task.done()
-
-        poke_requests = [r for r in httpx_mock.get_requests() if "RotateCookies" in str(r.url)]
-        # First call raised; at least one further successful call must follow.
-        assert len(poke_requests) >= 2, (
-            f"Loop should have retried after failure; got {len(poke_requests)} pokes"
-        )
+            await _wait_for_rotate_requests(
+                httpx_mock,
+                minimum=2,
+                failure_message="Loop should have retried after failure",
+            )
 
 
 class TestKeepalivePersistenceFailure:
