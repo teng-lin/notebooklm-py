@@ -254,23 +254,25 @@ def language_get(ctx, local, json_output):
 
     # Server path: route the RPC through the standard error envelope so auth /
     # network / RPC failures hard-fail (structured envelope + non-zero exit)
-    # instead of being swallowed.
-    async def body(auth: AuthTokens) -> tuple[str | None, bool]:
+    # instead of being swallowed. The body stays pure RPC I/O -- the local
+    # config write happens outside the envelope so a (rare) disk-write error
+    # is never misreported as an RPC failure for an otherwise-successful fetch.
+    async def body(auth: AuthTokens) -> str | None:
         async with NotebookLMClient(auth) as client:
-            server_lang = await client.settings.get_output_language()
-        synced = False
-        if server_lang is not None and server_lang != get_language():
-            # Server is authoritative: persist its value locally on a change.
-            set_language(server_lang)
-            synced = True
-        return server_lang, synced
+            return await client.settings.get_output_language()
 
-    server_lang, synced = with_auth_and_errors(
+    server_lang = with_auth_and_errors(
         ctx,
         command_name="language get",
         json_output=json_output,
         body=body,
     )
+
+    # Server is authoritative: persist its value locally on a change.
+    synced = False
+    if server_lang is not None and server_lang != get_language():
+        set_language(server_lang)
+        synced = True
 
     # Server may have no value set; fall back to the local config for display.
     current = server_lang if server_lang is not None else get_language()

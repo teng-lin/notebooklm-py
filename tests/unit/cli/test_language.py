@@ -50,6 +50,22 @@ def mock_config_file(tmp_path):
         yield config_file
 
 
+def write_config(path, config):
+    """Write a config dict to ``path`` with explicit UTF-8 + LF semantics.
+
+    Centralizes the cross-platform file-write contract (utf-8 encoding, ``\n``
+    newlines, ``ensure_ascii=False``) so individual tests stay terse and no
+    test relies on the platform default of ``Path.write_text``.
+    """
+    with path.open("w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(config, ensure_ascii=False))
+
+
+def read_config(path):
+    """Read a config dict from ``path`` with explicit UTF-8 decoding."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 @contextmanager
 def mock_server(*, get_returns="en", set_returns="en", get_error=None, set_error=None):
     """Patch the auth bootstrap + ``NotebookLMClient`` for the server path.
@@ -139,7 +155,7 @@ class TestLanguageGetCommand:
     def test_language_get_when_set(self, runner, mock_config_file):
         """Test 'language get --local' when language is configured."""
         # Write config file with language
-        mock_config_file.write_text(json.dumps({"language": "zh_Hans"}))
+        write_config(mock_config_file, {"language": "zh_Hans"})
 
         # Use --local to test local config only
         result = runner.invoke(cli, ["language", "get", "--local"])
@@ -150,7 +166,7 @@ class TestLanguageGetCommand:
 
     def test_language_get_json_output(self, runner, mock_config_file):
         """Test 'language get --local --json' outputs JSON format."""
-        mock_config_file.write_text(json.dumps({"language": "ja"}))
+        write_config(mock_config_file, {"language": "ja"})
 
         # Use --local to test local config only
         result = runner.invoke(cli, ["language", "get", "--local", "--json"])
@@ -160,6 +176,8 @@ class TestLanguageGetCommand:
         assert data["language"] == "ja"
         assert data["name"] == "日本語"
         assert data["is_default"] is False
+        # --local never contacts the server, so the sync flag is always False.
+        assert data["synced_from_server"] is False
 
     def test_language_get_json_when_not_set(self, runner, mock_config_file):
         """Test 'language get --local --json' when not configured."""
@@ -190,7 +208,7 @@ class TestLanguageSetCommand:
         settings.set_output_language.assert_awaited_once_with("zh_Hans")
 
         # Verify config was written (only after the server confirmed).
-        config = json.loads(mock_config_file.read_text())
+        config = read_config(mock_config_file)
         assert config["language"] == "zh_Hans"
 
     def test_language_set_shows_global_warning(self, runner, mock_config_file):
@@ -234,7 +252,7 @@ class TestLanguageSetCommand:
         assert result.exit_code == 0
         assert "ja" in result.output
         assert "server sync skipped" in result.output
-        config = json.loads(mock_config_file.read_text())
+        config = read_config(mock_config_file)
         assert config["language"] == "ja"
 
     def test_language_set_local_json(self, runner, mock_config_file):
@@ -296,7 +314,7 @@ class TestLanguageSetCommand:
 class TestGenerateUsesConfigLanguage:
     def test_generate_audio_uses_config_language(self, runner, mock_config_file):
         """Test that generate audio uses config language when not specified."""
-        mock_config_file.write_text(json.dumps({"language": "zh_Hans"}))
+        write_config(mock_config_file, {"language": "zh_Hans"})
 
         # Just verify the help shows the default behavior
         result = runner.invoke(cli, ["generate", "audio", "--help"])
@@ -315,7 +333,7 @@ class TestGetConfigErrorPaths:
     def test_get_config_json_decode_error(self, tmp_path):
         """Test get_config() returns {} when config file has invalid JSON."""
         config_file = tmp_path / "config.json"
-        config_file.write_text("this is not valid json{{{")
+        config_file.write_text("this is not valid json{{{", encoding="utf-8")
 
         with patch.object(language_module, "get_config_path", return_value=config_file):
             result = language_module.get_config()
@@ -326,7 +344,7 @@ class TestGetConfigErrorPaths:
         """Test get_config() returns {} when config file can't be read (OSError)."""
         config_file = tmp_path / "config.json"
         # Create the file so exists() returns True, then mock read_text to raise OSError
-        config_file.write_text('{"language": "en"}')
+        config_file.write_text('{"language": "en"}', encoding="utf-8")
 
         with (
             patch.object(language_module, "get_config_path", return_value=config_file),
@@ -348,20 +366,20 @@ class TestLanguageGetServerPath:
     def test_server_different_value_updates_local(self, runner, mock_config_file):
         """'language get' updates local config when the server has a different value."""
         # Local is "en", server returns "fr" → local should be updated to "fr".
-        mock_config_file.write_text(json.dumps({"language": "en"}))
+        write_config(mock_config_file, {"language": "en"})
 
         with mock_server(get_returns="fr") as settings:
             result = runner.invoke(cli, ["language", "get"])
 
         assert result.exit_code == 0
         settings.get_output_language.assert_awaited_once()
-        config = json.loads(mock_config_file.read_text())
+        config = read_config(mock_config_file)
         assert config["language"] == "fr"
         assert "fr" in result.output
 
     def test_server_different_shows_synced(self, runner, mock_config_file):
         """'language get' shows the synced message when the server differs from local."""
-        mock_config_file.write_text(json.dumps({"language": "en"}))
+        write_config(mock_config_file, {"language": "en"})
 
         with mock_server(get_returns="ja"):
             result = runner.invoke(cli, ["language", "get"])
@@ -371,7 +389,7 @@ class TestLanguageGetServerPath:
 
     def test_server_same_value_no_update(self, runner, mock_config_file):
         """'language get' does not rewrite local config when the server value matches."""
-        mock_config_file.write_text(json.dumps({"language": "en"}))
+        write_config(mock_config_file, {"language": "en"})
 
         with (
             mock_server(get_returns="en"),
@@ -384,7 +402,7 @@ class TestLanguageGetServerPath:
 
     def test_server_returns_none_falls_back_to_local(self, runner, mock_config_file):
         """When the server has no value set, fall back to local for display."""
-        mock_config_file.write_text(json.dumps({"language": "de"}))
+        write_config(mock_config_file, {"language": "de"})
 
         with mock_server(get_returns=None):
             result = runner.invoke(cli, ["language", "get"])
@@ -402,7 +420,7 @@ class TestLanguageGetServerPath:
 
     def test_server_sync_json_output(self, runner, mock_config_file):
         """'language get --json' reflects synced_from_server when values differ."""
-        mock_config_file.write_text(json.dumps({"language": "en"}))
+        write_config(mock_config_file, {"language": "en"})
 
         with mock_server(get_returns="de"):
             result = runner.invoke(cli, ["language", "get", "--json"])
@@ -414,7 +432,7 @@ class TestLanguageGetServerPath:
 
     def test_server_error_hard_fails(self, runner, mock_config_file):
         """A server RPC failure surfaces the envelope + non-zero exit (NOT swallowed)."""
-        mock_config_file.write_text(json.dumps({"language": "en"}))
+        write_config(mock_config_file, {"language": "en"})
 
         with mock_server(get_error=NetworkError("connection refused")):
             result = runner.invoke(cli, ["language", "get"])
@@ -422,7 +440,7 @@ class TestLanguageGetServerPath:
         assert result.exit_code != 0
         assert "Network error" in result.output or "error" in result.output.lower()
         # Local config must be left untouched on a failed fetch.
-        config = json.loads(mock_config_file.read_text())
+        config = read_config(mock_config_file)
         assert config["language"] == "en"
 
     def test_server_error_json_envelope(self, runner, mock_config_file):
