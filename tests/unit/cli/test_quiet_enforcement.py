@@ -16,7 +16,12 @@ The contract therefore is:
   emit a structured JSON envelope) so the failure is always observable.
 
 This module enforces that contract structurally via an AST walk over every
-``src/notebooklm/cli/*_cmd.py`` file.
+``src/notebooklm/cli/**/*.py`` file except ``error_handler.py`` (which owns
+the quiet-bypassing error helpers themselves). The scan mirrors ``_cli_files()``
+in the sibling gate ``tests/_lint/test_error_handler_allowlist.py`` so the two
+CLI exit-path gates cover an identical file set -- including everything under
+``cli/services/`` -- and a quiet-bypassing error-path call cannot hide in a
+non-``*_cmd.py`` module (issue #1301).
 
 Error-path heuristic
 --------------------
@@ -164,8 +169,18 @@ def _walk_with_ancestors(tree: ast.AST) -> Iterator[tuple[ast.AST, list[ast.AST]
 # ---------------------------------------------------------------------------
 
 
+def _cli_files() -> list[Path]:
+    """Every ``cli/**/*.py`` except ``error_handler.py`` (which owns the helpers).
+
+    Identical file set to ``_cli_files()`` in the sibling gate
+    ``tests/_lint/test_error_handler_allowlist.py`` so both CLI exit-path gates
+    audit the same modules (issue #1301).
+    """
+    return [p for p in sorted(CLI_ROOT.rglob("*.py")) if p.name != "error_handler.py"]
+
+
 def _audit_quiet_markers() -> tuple[list[str], list[str], list[str]]:
-    """Return ``(unmarked, stale, empty_reason)`` across every ``*_cmd.py``.
+    """Return ``(unmarked, stale, empty_reason)`` across every CLI module.
 
     * ``unmarked`` -- error-path quiet-bypass calls with no ``# quiet-ok:``
       marker (formatted ``module::func:line``).
@@ -175,7 +190,7 @@ def _audit_quiet_markers() -> tuple[list[str], list[str], list[str]]:
     unmarked: list[str] = []
     stale: list[str] = []
     empty_reason: list[str] = []
-    for path in sorted(CLI_ROOT.glob("*_cmd.py")):
+    for path in _cli_files():
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
         rel = path.relative_to(REPO_ROOT).as_posix()
