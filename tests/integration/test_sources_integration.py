@@ -107,7 +107,7 @@ class TestDeleteSource:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.sources.delete("nb_123", "source_456")
 
-        assert result is True
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_delete_source_request_format(
@@ -676,23 +676,121 @@ class TestSourcesAPI:
         assert guide.keywords == ()
 
     @pytest.mark.asyncio
-    async def test_rename_source(
+    async def test_rename_source_uses_echo(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test renaming a source."""
-        response = build_rpc_response("b7Wfje", None)
-        httpx_mock.add_response(content=response.encode())
+        """When UPDATE_SOURCE echoes the row, rename returns it without a fetch."""
+        echo = build_rpc_response(
+            RPCMethod.UPDATE_SOURCE,
+            [["src_001"], "New Title", [None, None, None, None, 5], [None, 2]],
+        )
+        httpx_mock.add_response(content=echo.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             source = await client.sources.rename("nb_123", "src_001", "New Title")
 
+        assert source is not None
+        assert source.id == "src_001"
         assert source.title == "New Title"
 
-        request = httpx_mock.get_request()
-        assert "b7Wfje" in str(request.url)
+        # Only the UPDATE_SOURCE RPC — the echo path issues no fetch.
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        assert "b7Wfje" in str(requests[0].url)
+
+    @pytest.mark.asyncio
+    async def test_rename_source_falls_back_to_fetch_on_null_echo(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A null UPDATE_SOURCE echo triggers a hydrate fetch returning the server row."""
+        # 1) UPDATE_SOURCE echoes nothing.
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.UPDATE_SOURCE.value}.*"),
+            content=build_rpc_response(RPCMethod.UPDATE_SOURCE, None).encode(),
+        )
+        # 2) Hydrate via GET_NOTEBOOK — the server reflects the new title.
+        get_response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "Test Notebook",
+                    [
+                        [
+                            ["src_001"],
+                            "New Title",
+                            [None, None, None, None, 5, None, None, ["https://example.com"]],
+                            [None, 2],
+                        ]
+                    ],
+                    "nb_123",
+                ]
+            ],
+        )
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.GET_NOTEBOOK.value}.*"), content=get_response.encode()
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            source = await client.sources.rename("nb_123", "src_001", "New Title")
+
+        assert source is not None
+        assert source.id == "src_001"
+        # Server-reflected, not just echoed back from the input.
+        assert source.title == "New Title"
+
+    @pytest.mark.asyncio
+    async def test_rename_source_missing_raises(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A null echo plus an absent-from-list source raises SourceNotFoundError."""
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.UPDATE_SOURCE.value}.*"),
+            content=build_rpc_response(RPCMethod.UPDATE_SOURCE, None).encode(),
+        )
+        # Hydrate fetch: notebook exists but the source id is absent.
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.GET_NOTEBOOK.value}.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_NOTEBOOK, [["Test Notebook", [], "nb_123"]]
+            ).encode(),
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(SourceNotFoundError):
+                await client.sources.rename("nb_123", "missing_src", "New Title")
+
+    @pytest.mark.asyncio
+    async def test_rename_source_transport_error_not_rewrapped(self, auth_tokens):
+        """A transport failure during hydration propagates, not SourceNotFoundError."""
+        async with NotebookLMClient(auth_tokens) as client:
+            # UPDATE_SOURCE echoes null, then the hydrate fetch blows up.
+            rpc = AsyncMock(side_effect=[None, RPCError("boom during hydrate")])
+            client._rpc_executor.rpc_call = rpc
+            with pytest.raises(RPCError):
+                await client.sources.rename("nb_123", "src_001", "New Title")
+
+    @pytest.mark.asyncio
+    async def test_rename_source_return_object_false_skips_fetch(self, auth_tokens):
+        """return_object=False returns None and issues no hydrate fetch on a null echo."""
+        async with NotebookLMClient(auth_tokens) as client:
+            rpc = AsyncMock(return_value=None)
+            client._rpc_executor.rpc_call = rpc
+            result = await client.sources.rename(
+                "nb_123", "src_001", "New Title", return_object=False
+            )
+
+        assert result is None
+        # Only the UPDATE_SOURCE call — no hydrate fetch.
+        rpc.assert_awaited_once()
 
 
 class TestAddFileSource:

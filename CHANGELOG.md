@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes
 
+> **⚠ BREAKING — `rename()` returns the renamed object; `delete()` returns `None`.**
+>
+> These return-type changes ship **now, as a clean break with no deprecation
+> runway**, because the old returns were never usable contracts a caller could
+> depend on in good faith. (Contrast `get()`'s `None`-on-miss, which **is** a
+> real, documented contract and keeps its full deprecation runway to v0.8.0 —
+> see issue #1247. The coherent story: **reads/renames are missing-strict;
+> deletes are absence-idempotent.**)
+>
+> **`rename()` → returns the renamed object, raises `*NotFoundError` on a
+> missing target** (issues #1255, #1256):
+>
+> - `artifacts.rename` previously returned `None` **even on success** (an
+>   unusable return); it now re-fetches and returns the renamed `Artifact`,
+>   raising `ArtifactNotFoundError` when the target is absent.
+> - `sources.rename` previously **fabricated** an unverified
+>   `Source(id, title)` when the RPC echoed nothing (a silent-false-success
+>   bug); it now prefers the `UPDATE_SOURCE` echo, falls back to an internal
+>   fetch, returns the real `Source`, and raises `SourceNotFoundError` when the
+>   target is absent. **The fabrication is gone.**
+> - `notebooks.rename` already returned the re-fetched `Notebook` (the
+>   reference behavior) — unchanged.
+> - `mind_maps.rename` (both note-backed and interactive backings) now returns
+>   the renamed `MindMap` and raises on a missing target.
+> - **Error taxonomy:** only *genuine absence* (empty-payload / absent-from-list,
+>   detected via a content/list lookup — **not** a transport 404) maps to a
+>   `*NotFoundError`. Transport / `429` / `5xx` / auth errors propagate **as
+>   themselves** and are never laundered into a synthetic `*NotFoundError`.
+> - **Bulk opt-out:** every `rename()` accepts `return_object: bool = True`.
+>   Pass `return_object=False` to skip the hydrate re-fetch and return `None`
+>   (artifacts' re-fetch is a full `LIST_ARTIFACTS`, so bulk renamers that
+>   ignore the return should opt out to avoid N extra list calls).
+>
+> **`delete()` → returns `None`, idempotent on a missing target** (issue #1211):
+>
+> - `notebooks` / `sources` / `artifacts` / `notes.delete` and
+>   `notes.delete_mind_map` (and `mind_maps.delete`) previously returned a
+>   hardcoded `True`; they now return `None`. The old `True` was a tautology
+>   (never `False`), but `True → None` is a *real, observable* flip from truthy
+>   to falsy:
+>   ```python
+>   # BEFORE (entered the block; delete always returned True)
+>   if await client.sources.delete(nb_id, src_id):
+>       ...  # this branch no longer runs — delete() now returns None (falsy)
+>   ```
+>   Drop the `if`; call `delete()` for its effect. Use `get()` first if you
+>   need to assert existence.
+> - **Idempotent:** deleting an already-absent target **succeeds** (returns
+>   `None`); it does **not** raise `*NotFoundError`. This matches HTTP `DELETE`
+>   idempotency and keeps retry/teardown loops clean. (The one exception is
+>   `mind_maps.delete` *without* an explicit `kind`, which must list to pick
+>   the right RPC family and so raises `ValueError` for an unknown id; pass
+>   `kind=` to delete idempotently.)
+> - **Real failures still raise:** `allow_null=True` tolerates only a null
+>   *result*, not an RPC/HTTP error — a `403` / `5xx` / auth / transport
+>   failure on delete still propagates. "Idempotent on missing" is not "swallow
+>   all errors."
+
 > **⚠ BREAKING — lapsed v0.6.0-targeted deprecations removed.**
 >
 > These deprecation shims advertised removal in v0.6.0, which has shipped, so

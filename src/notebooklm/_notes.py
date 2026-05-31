@@ -223,21 +223,27 @@ class NotesAPI:
         """
         await self._notes.update_note(notebook_id, note_id, content, title)
 
-    async def delete(self, notebook_id: str, note_id: str) -> bool:
+    async def delete(self, notebook_id: str, note_id: str) -> None:
         """Delete a note from the notebook.
 
         Note: This clears the note content/title rather than removing it
         from the list entirely. Google may garbage collect cleared notes later.
 
+        Idempotent: deleting an already-absent note succeeds (returns
+        ``None``) and never raises. Real failures (``403``/``5xx``/auth/
+        transport) still propagate.
+
         Args:
             notebook_id: The notebook ID.
             note_id: The note ID.
 
-        Returns:
-            True if deletion succeeded.
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned a hardcoded ``True``;
+            now returns ``None`` (issue #1211). ``if await notes.delete(...):``
+            no longer enters its block.
         """
         logger.debug("Deleting note %s from notebook %s", note_id, notebook_id)
-        return await self._notes.delete_note(notebook_id, note_id)
+        await self._notes.delete_note(notebook_id, note_id)
 
     async def list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """List all mind maps in the notebook.
@@ -258,17 +264,22 @@ class NotesAPI:
         """
         return await self._mind_maps.list_mind_maps(notebook_id)
 
-    async def delete_mind_map(self, notebook_id: str, mind_map_id: str) -> bool:
+    async def delete_mind_map(self, notebook_id: str, mind_map_id: str) -> None:
         """Delete a mind map from the notebook.
+
+        Idempotent: deleting an already-absent mind map succeeds (returns
+        ``None``) and never raises. Real failures (``403``/``5xx``/auth/
+        transport) still propagate.
 
         Args:
             notebook_id: The notebook ID.
             mind_map_id: The mind map ID.
 
-        Returns:
-            True if deletion succeeded.
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned a hardcoded ``True``;
+            now returns ``None`` (issue #1211).
         """
-        return await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
+        await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
 
     # =========================================================================
     # Private Helpers

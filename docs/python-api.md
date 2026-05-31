@@ -898,8 +898,8 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 | `list()` | - | `list[Notebook]` | List all notebooks |
 | `create(title)` | `title: str` | `Notebook` | Create a notebook |
 | `get(notebook_id)` | `notebook_id: str` | `Notebook` | Get notebook details |
-| `delete(notebook_id)` | `notebook_id: str` | `bool` | Delete a notebook |
-| `rename(notebook_id, new_title)` | `notebook_id: str, new_title: str` | `Notebook` | Rename a notebook |
+| `delete(notebook_id)` | `notebook_id: str` | `None` | Delete a notebook (idempotent; returns `None` whether or not it existed) |
+| `rename(notebook_id, new_title)` | `notebook_id: str, new_title: str` | `Notebook` | Rename a notebook (re-fetched; raises `NotebookNotFoundError` if missing) |
 | `get_description(notebook_id)` | `notebook_id: str` | `NotebookDescription` | Get AI summary and topics |
 | `get_metadata(notebook_id)` | `notebook_id: str` | `NotebookMetadata` | Get notebook metadata and sources |
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
@@ -959,10 +959,10 @@ print(url)
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
-| `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
+| `rename(notebook_id, source_id, new_title, *, return_object=True)` | `str, str, str` | `Source \| None` | Rename source (prefers the `UPDATE_SOURCE` echo, else re-fetched; raises `SourceNotFoundError` if missing). `return_object=False` returns `None` without hydrating. |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
-| `delete(notebook_id, source_id)` | `str, str` | `bool` | Delete source |
+| `delete(notebook_id, source_id)` | `str, str` | `None` | Delete source (idempotent; returns `None` whether or not it existed) |
 | `wait_until_ready(notebook_id, source_id, timeout=120.0, ...)` | `str, str, float, ...` | `Source` | Poll until `status == READY` (fully processed). Raises `SourceTimeoutError`/`SourceProcessingError`/`SourceNotFoundError`. |
 | `wait_until_registered(notebook_id, source_id, timeout=30.0, ...)` | `str, str, float, ...` | `Source` | Poll until the source is visible server-side (any non-ERROR status). Completes quickly (seconds for typical sources); intended for narrow follow-up RPCs (e.g. `UPDATE_SOURCE`) that only require registration, not full processing. |
 | `wait_for_sources(notebook_id, source_ids, timeout=120.0, **kwargs)` | `str, list[str], float, ...` | `list[Source]` | Wait for multiple sources to become ready **in parallel**. Per-source timeout; `**kwargs` are forwarded to `wait_until_ready`. |
@@ -1031,8 +1031,8 @@ print(f"Keywords: {guide.keywords}")
 |--------|------------|---------|-------------|
 | `list(notebook_id, artifact_type=None)` | `str, ArtifactType \| None` | `list[Artifact]` | List artifacts |
 | `get(notebook_id, artifact_id)` | `str, str` | `Artifact \| None` | Get artifact details (returns None if not found) |
-| `delete(notebook_id, artifact_id)` | `str, str` | `bool` | Delete artifact |
-| `rename(notebook_id, artifact_id, new_title)` | `str, str, str` | `None` | Rename artifact |
+| `delete(notebook_id, artifact_id)` | `str, str` | `None` | Delete artifact (idempotent; returns `None` whether or not it existed) |
+| `rename(notebook_id, artifact_id, new_title, *, return_object=True)` | `str, str, str` | `Artifact \| None` | Rename artifact (re-fetched; raises `ArtifactNotFoundError` if missing). `return_object=False` skips the re-fetch and returns `None`. |
 | `poll_status(notebook_id, task_id)` | `str, str` | `GenerationStatus` | Check generation status |
 | `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation. Pass `on_status_change(status)` for sync or async progress callbacks. |
 
@@ -1544,8 +1544,8 @@ Each operation dispatches to the correct backend; you work with `MindMap` /
 | `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries |
 | `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id |
 | `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll) |
-| `rename(notebook_id, mind_map_id, new_title, *, kind=None)` | … | `None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind |
-| `delete(notebook_id, mind_map_id, *, kind=None)` | … | `bool` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind |
+| `rename(notebook_id, mind_map_id, new_title, *, kind=None, return_object=True)` | … | `MindMap \| None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind (re-fetched; raises `ValueError` if missing). `return_object=False` returns `None`. |
+| `delete(notebook_id, mind_map_id, *, kind=None)` | … | `None` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind (idempotent when `kind` is passed; `kind=None` raises `ValueError` for an unknown id) |
 | `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree |
 
 `MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree`. `generate(..., wait=True)` returns `tree` populated for **both** kinds (interactive maps are polled to completion, then their tree is fetched). For interactive *list* rows `tree` is `None` — fetch it with `get_tree`. When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
@@ -1583,9 +1583,9 @@ In the CLI, mind maps are handled as a **type** within the existing groups (matc
 | `create_from_chat(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | **Deprecated** (emits `DeprecationWarning`) — forwards to `client.chat.save_answer_as_note(...)`, which is now the canonical owner of the saved-from-chat workflow (data ownership, ADR-013). Signature and behavior are preserved bit-for-bit; switch to the chat-owned method at your convenience. |
 | `get(notebook_id, note_id)` | `str, str` | `Optional[Note]` | Get note by ID |
 | `update(notebook_id, note_id, content, title)` | `str, str, str, str` | `None` | Update note content and title |
-| `delete(notebook_id, note_id)` | `str, str` | `bool` | Delete note |
+| `delete(notebook_id, note_id)` | `str, str` | `None` | Delete note (idempotent; returns `None` whether or not it existed) |
 | `list_mind_maps(notebook_id)` | `str` | `list[Any]` | List mind maps in the notebook |
-| `delete_mind_map(notebook_id, mind_map_id)` | `str, str` | `bool` | Delete a mind map |
+| `delete_mind_map(notebook_id, mind_map_id)` | `str, str` | `None` | Delete a mind map (idempotent; returns `None` whether or not it existed) |
 
 **Example:**
 ```python

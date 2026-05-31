@@ -223,7 +223,7 @@ class TestWorkflowTracerBullet:
                 # earlier assertion fails. Captured in the cassette so replay
                 # also drives the delete RPC.
                 deleted = await client.notebooks.delete(notebook_id)
-                assert deleted is True
+                assert deleted is None
 
     def test_cassette_size_under_budget(self) -> None:
         """Cassette stays under the 5 MB budget documented in the module docstring.

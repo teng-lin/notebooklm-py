@@ -11,6 +11,7 @@ Cassette-backed coverage for the same API surface lives in
 
 import csv
 import json
+import re
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,7 +22,11 @@ from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
-from notebooklm.exceptions import UnknownRPCMethodError, ValidationError
+from notebooklm.exceptions import (
+    ArtifactNotFoundError,
+    UnknownRPCMethodError,
+    ValidationError,
+)
 from notebooklm.rpc import (
     AudioFormat,
     AudioLength,
@@ -325,7 +330,7 @@ class TestDeleteStudioContent:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.artifacts.delete("nb_123", "task_id_123")
 
-        assert result is True
+        assert result is None
 
 
 class TestMindMap:
@@ -544,15 +549,100 @@ class TestArtifactsAPI:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test renaming an artifact."""
-        response = build_rpc_response(RPCMethod.RENAME_ARTIFACT, None)
-        httpx_mock.add_response(content=response.encode())
+        """Renaming re-fetches (studio-only) and returns the server-reflected Artifact."""
+        # 1) RENAME_ARTIFACT (silent on success).
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.RENAME_ARTIFACT.value}.*"),
+            content=build_rpc_response(RPCMethod.RENAME_ARTIFACT, None).encode(),
+        )
+        # 2) LIST_ARTIFACTS hydrate — studio-only (no GET_NOTES_AND_MIND_MAPS),
+        #    the server reflects the new title.
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.LIST_ARTIFACTS.value}.*"),
+            content=build_rpc_response(
+                RPCMethod.LIST_ARTIFACTS,
+                [["art_001", "New Title", 7, None, 3]],
+            ).encode(),
+        )
 
         async with NotebookLMClient(auth_tokens) as client:
-            await client.artifacts.rename("nb_123", "art_001", "New Title")
+            artifact = await client.artifacts.rename("nb_123", "art_001", "New Title")
 
-        request = httpx_mock.get_request()
-        assert RPCMethod.RENAME_ARTIFACT.value in str(request.url)
+        assert artifact is not None
+        assert artifact.id == "art_001"
+        # Server-reflected, not echoed from the input argument.
+        assert artifact.title == "New Title"
+
+    @pytest.mark.asyncio
+    async def test_rename_artifact_missing_raises(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Renaming an absent artifact raises ArtifactNotFoundError (list-based)."""
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.RENAME_ARTIFACT.value}.*"),
+            content=build_rpc_response(RPCMethod.RENAME_ARTIFACT, None).encode(),
+        )
+        # Studio-only hydrate list does not contain the renamed id.
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.LIST_ARTIFACTS.value}.*"),
+            content=build_rpc_response(RPCMethod.LIST_ARTIFACTS, []).encode(),
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ArtifactNotFoundError):
+                await client.artifacts.rename("nb_123", "missing_art", "New Title")
+
+    @pytest.mark.asyncio
+    async def test_rename_artifact_note_backed_mind_map_id_raises(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A note-backed mind-map id renames via UPDATE_NOTE, not RENAME_ARTIFACT.
+
+        ``artifacts.rename`` hydrates from studio artifacts only, so a
+        note-backed mind-map id (present only in the notes listing) reads as
+        absent and raises — steering the caller to ``mind_maps.rename``.
+        """
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.RENAME_ARTIFACT.value}.*"),
+            content=build_rpc_response(RPCMethod.RENAME_ARTIFACT, None).encode(),
+        )
+        # Studio listing is empty (the id lives only in the notes backing).
+        httpx_mock.add_response(
+            url=re.compile(rf".*{RPCMethod.LIST_ARTIFACTS.value}.*"),
+            content=build_rpc_response(RPCMethod.LIST_ARTIFACTS, []).encode(),
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ArtifactNotFoundError):
+                await client.artifacts.rename("nb_123", "note_backed_mm", "New Title")
+
+    @pytest.mark.asyncio
+    async def test_rename_artifact_transport_error_not_rewrapped(self, auth_tokens):
+        """A transport failure during hydration propagates, not ArtifactNotFoundError."""
+        async with NotebookLMClient(auth_tokens) as client:
+            rpc = AsyncMock(side_effect=[None, RPCError("boom during hydrate")])
+            client._rpc_executor.rpc_call = rpc
+            with pytest.raises(RPCError):
+                await client.artifacts.rename("nb_123", "art_001", "New Title")
+
+    @pytest.mark.asyncio
+    async def test_rename_artifact_return_object_false_skips_fetch(self, auth_tokens):
+        """return_object=False returns None and issues no LIST_ARTIFACTS hydrate."""
+        async with NotebookLMClient(auth_tokens) as client:
+            rpc = AsyncMock(return_value=None)
+            client._rpc_executor.rpc_call = rpc
+            result = await client.artifacts.rename(
+                "nb_123", "art_001", "New Title", return_object=False
+            )
+
+        assert result is None
+        rpc.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_export_artifact(
@@ -953,7 +1043,7 @@ class TestArtifactsAPI:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.artifacts.delete("nb_123", "art_001")
 
-        assert result is True
+        assert result is None
         request = httpx_mock.get_request()
         assert RPCMethod.DELETE_ARTIFACT in str(request.url)
 

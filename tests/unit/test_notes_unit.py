@@ -589,13 +589,13 @@ class TestDeleteNote:
     """Tests for delete() method."""
 
     @pytest.mark.asyncio
-    async def test_delete_returns_true(self, notes_api, mock_core):
-        """Test that delete() always returns True."""
+    async def test_delete_returns_none(self, notes_api, mock_core):
+        """Test that delete() returns None (v0.7.0, issue #1211)."""
         mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await notes_api.delete("nb_123", "note_456")
 
-        assert result is True
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_delete_calls_rpc_with_correct_params(self, notes_api, mock_core):
@@ -659,13 +659,13 @@ class TestDeleteMindMap:
     """Tests for delete_mind_map() method."""
 
     @pytest.mark.asyncio
-    async def test_delete_mind_map_returns_true(self, notes_api, mock_core):
-        """Test that delete_mind_map() always returns True."""
+    async def test_delete_mind_map_returns_none(self, notes_api, mock_core):
+        """Test that delete_mind_map() returns None (v0.7.0, issue #1211)."""
         mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await notes_api.delete_mind_map("nb_123", "mm_456")
 
-        assert result is True
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_delete_mind_map_uses_same_rpc_as_delete(self, notes_api, mock_core):

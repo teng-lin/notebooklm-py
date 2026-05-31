@@ -57,14 +57,13 @@ class NoteBackedMindMapService:
         """
         return self._notes.extract_content(row)
 
-    async def delete_mind_map(self, notebook_id: str, note_id: str) -> bool:
+    async def delete_mind_map(self, notebook_id: str, note_id: str) -> None:
         """Soft-delete a mind-map row.
 
-        Delegates to :meth:`NoteService.delete_note`. Returns its bool
-        result so the v0.4.1 ``NotesAPI.delete_mind_map(...) -> bool``
-        public contract is preserved.
+        Delegates to :meth:`NoteService.delete_note`. Returns ``None`` as of
+        v0.7.0 (``NotesAPI.delete_mind_map(...) -> None``, issue #1211).
         """
-        return await self._notes.delete_note(notebook_id, note_id)
+        await self._notes.delete_note(notebook_id, note_id)
 
     async def rename_mind_map(self, notebook_id: str, mind_map_id: str, new_title: str) -> None:
         """Rename a note-backed mind map by retitling its backing note.

@@ -128,9 +128,9 @@ class TestSourceMutations:
         )
         assert source.id is not None
 
-        # Delete it
+        # Delete it (v0.7.0: returns None, idempotent — issue #1211)
         deleted = await client.sources.delete(temp_notebook.id, source.id)
-        assert deleted is True
+        assert deleted is None
 
         # Verify it's gone
         sources = await client.sources.list(temp_notebook.id)

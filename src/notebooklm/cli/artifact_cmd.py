@@ -245,8 +245,9 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, json_output, clien
                 )
             else:
                 await client.artifacts.rename(nb_id_resolved, resolved_id, new_title)
-            # The rename API returns None; if no exception was raised, the operation succeeded.
-            # We display the requested new_title as confirmation.
+            # The rename API now returns the renamed object and raises on a
+            # missing target; if no exception was raised, the operation
+            # succeeded. We display the requested new_title as confirmation.
             if json_output:
                 json_output_response({"id": resolved_id, "renamed": True, "new_title": new_title})
             else:

@@ -283,11 +283,33 @@ class MindMapsAPI:
         new_title: str,
         *,
         kind: MindMapKind | None = None,
-    ) -> None:
+        return_object: bool = True,
+    ) -> MindMap | None:
         """Rename a mind map (dispatches by kind: ``UPDATE_NOTE`` / ``RENAME_ARTIFACT``).
 
         Omitting ``kind`` triggers an extra list RPC (and possibly a second
         ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
+
+        Args:
+            return_object: When ``True`` (default), re-fetch and return the
+                renamed :class:`~notebooklm.types.MindMap`. When ``False``,
+                skip the re-fetch and return ``None``.
+
+        Returns:
+            The renamed :class:`~notebooklm.types.MindMap`, or ``None`` when
+            ``return_object=False``.
+
+        Raises:
+            ValueError: if no mind map with ``mind_map_id`` exists. (Mind maps
+                have no dedicated ``*NotFoundError``; absence is detected via a
+                content/list lookup, not a transport 404. The detection is the
+                same fail-loud-on-missing policy as ``sources``/``artifacts``
+                rename — issue #1255.)
+
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned ``None`` even on success.
+            Now re-fetches and returns the renamed ``MindMap`` (issue #1255).
+            Added the ``return_object`` opt-out.
         """
         if kind is None:
             # Auto-detect inline so the note-backed list is fetched once rather
@@ -297,10 +319,15 @@ class MindMapsAPI:
             for row in await self._mind_maps.list_mind_maps(notebook_id):
                 if NoteRow(row).id == mind_map_id:
                     await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
-                    return
+                    return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
             if await self._find_interactive(notebook_id, mind_map_id) is not None:
-                await self._artifacts.rename(notebook_id, mind_map_id, new_title)
-                return
+                # ``return_object=False`` on the artifact rename: hydration (if
+                # requested) is done once below via ``self.get`` so the
+                # interactive path doesn't also re-fetch.
+                await self._artifacts.rename(
+                    notebook_id, mind_map_id, new_title, return_object=False
+                )
+                return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
             raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
         if kind == MindMapKind.NOTE_BACKED:
             await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
@@ -314,7 +341,25 @@ class MindMapsAPI:
                 raise ValueError(
                     f"Interactive mind map {mind_map_id!r} not found in notebook {notebook_id!r}"
                 )
-            await self._artifacts.rename(notebook_id, mind_map_id, new_title)
+            await self._artifacts.rename(notebook_id, mind_map_id, new_title, return_object=False)
+        return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
+
+    async def _hydrate_renamed(
+        self, notebook_id: str, mind_map_id: str, return_object: bool
+    ) -> MindMap | None:
+        """Re-fetch the renamed map (or skip when ``return_object=False``).
+
+        The dispatch paths above already proved the id exists, so a ``None``
+        from ``get`` here means the map vanished between the rename and the
+        re-fetch (a genuine race) — surface it as the same ``ValueError`` the
+        missing-target paths raise rather than returning a stale/absent object.
+        """
+        if not return_object:
+            return None
+        mind_map = await self.get(notebook_id, mind_map_id)
+        if mind_map is None:
+            raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+        return mind_map
 
     async def delete(
         self,
@@ -322,16 +367,28 @@ class MindMapsAPI:
         mind_map_id: str,
         *,
         kind: MindMapKind | None = None,
-    ) -> bool:
+    ) -> None:
         """Delete a mind map (dispatches by kind: ``DELETE_NOTE`` / ``DELETE_ARTIFACT``).
 
         Omitting ``kind`` triggers an extra list RPC (and possibly a second
         ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
+
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned a hardcoded ``True``;
+            now returns ``None`` (issue #1211).
+
+        .. note::
+            Unlike ``sources``/``artifacts``/``notes`` delete, this is **not**
+            idempotent on a missing target: when ``kind`` is omitted it routes
+            through ``_detect_kind``, which raises ``ValueError`` for an unknown
+            id (it must list to pick the right RPC family). Pass ``kind`` to
+            skip detection and delete idempotently.
         """
         kind = kind or await self._detect_kind(notebook_id, mind_map_id)
         if kind == MindMapKind.NOTE_BACKED:
-            return await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
-        return await self._artifacts.delete(notebook_id, mind_map_id)
+            await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
+        else:
+            await self._artifacts.delete(notebook_id, mind_map_id)
 
     async def get_tree(
         self,

@@ -508,19 +508,24 @@ class NotebooksAPI:
             )
         return notebook
 
-    async def delete(self, notebook_id: str) -> bool:
+    async def delete(self, notebook_id: str) -> None:
         """Delete a notebook.
+
+        Idempotent: deleting an already-absent notebook succeeds (returns
+        ``None``) and never raises ``NotebookNotFoundError``. Real failures
+        (``403``/``5xx``/auth/transport) still propagate.
 
         Args:
             notebook_id: The notebook ID to delete.
 
-        Returns:
-            True if deletion succeeded.
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned a hardcoded ``True``;
+            now returns ``None`` (issue #1211). ``if await notebooks.delete(...):``
+            no longer enters its block.
         """
         logger.debug("Deleting notebook: %s", notebook_id)
         params = [[notebook_id], [2]]
         await self._rpc.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
-        return True
 
     async def rename(self, notebook_id: str, new_title: str) -> Notebook:
         """Rename a notebook.

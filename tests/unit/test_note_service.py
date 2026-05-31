@@ -238,10 +238,11 @@ class TestCrud:
         )
 
     @pytest.mark.asyncio
-    async def test_delete_note_returns_true_and_sends_soft_delete(
+    async def test_delete_note_returns_none_and_sends_soft_delete(
         self, service: NoteService, mock_session: FakeSession
     ) -> None:
-        assert await service.delete_note("nb_123", "note_123") is True
+        # v0.7.0: delete_note returns None (issue #1211).
+        assert await service.delete_note("nb_123", "note_123") is None
 
         mock_session.rpc_executor.rpc_call.assert_awaited_once_with(
             RPCMethod.DELETE_NOTE,

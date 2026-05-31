@@ -24,6 +24,7 @@ from ._source_upload import SourceUploadPipeline
 from ._source_upload_payloads import build_rename_source_params
 from ._types.research import SourceGuide
 from ._url_utils import is_youtube_url
+from .exceptions import SourceNotFoundError
 from .rpc import RPCMethod
 from .types import (
     Source,
@@ -581,15 +582,21 @@ class SourcesAPI:
             logger=logger,
         )
 
-    async def delete(self, notebook_id: str, source_id: str) -> bool:
+    async def delete(self, notebook_id: str, source_id: str) -> None:
         """Delete a source from a notebook.
+
+        Idempotent: deleting an already-absent source succeeds (returns
+        ``None``) and never raises ``SourceNotFoundError``. Real failures
+        (``403``/``5xx``/auth/transport) still propagate.
 
         Args:
             notebook_id: The notebook ID.
             source_id: The source ID to delete.
 
-        Returns:
-            True if deletion succeeded.
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned a hardcoded ``True``;
+            now returns ``None`` (issue #1211). ``if await source.delete(...):``
+            no longer enters its block.
         """
         logger.debug("Deleting source %s from notebook %s", source_id, notebook_id)
         params = [[[source_id]]]
@@ -599,18 +606,45 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        return True
 
-    async def rename(self, notebook_id: str, source_id: str, new_title: str) -> Source:
+    async def rename(
+        self,
+        notebook_id: str,
+        source_id: str,
+        new_title: str,
+        *,
+        return_object: bool = True,
+    ) -> Source | None:
         """Rename a source.
 
         Args:
             notebook_id: The notebook ID.
             source_id: The source ID to rename.
             new_title: The new title.
+            return_object: When ``True`` (default), return the renamed
+                :class:`~notebooklm.types.Source` — preferring the
+                ``UPDATE_SOURCE`` echo and falling back to a fetch only when
+                the echo is null. When ``False``, return ``None`` without
+                hydrating (cheaper for bulk renames that ignore the return);
+                this also skips missing-target detection, so a missing source
+                does **not** raise — pass ``return_object=True`` (the default)
+                if you need the missing-target guarantee.
 
         Returns:
-            Updated Source object.
+            The renamed :class:`~notebooklm.types.Source`, or ``None`` when
+            ``return_object=False``.
+
+        Raises:
+            SourceNotFoundError: if the source does not exist (the rename RPC
+                is silent on a missing target, so absence is detected via a
+                content/list fetch — not a transport 404). Only raised when
+                ``return_object=True``.
+
+        .. versionchanged:: 0.7.0
+            **Breaking change:** no longer fabricates an unverified
+            ``Source(id, title)`` when the RPC echoes nothing. It now hydrates
+            via an internal fetch and raises :class:`SourceNotFoundError` for a
+            missing target (issue #1255). Added the ``return_object`` opt-out.
         """
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
@@ -620,11 +654,18 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        return (
-            Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
-            if result
-            else Source(id=source_id, title=new_title)
-        )
+        if not return_object:
+            return None
+        # Prefer the UPDATE_SOURCE echo (avoids the extra fetch).
+        if result:
+            return Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
+        # Echo was null: hydrate via the internal optional-lookup (never the
+        # public ``get()``, which warns under #1247). Only genuine absence
+        # maps to ``SourceNotFoundError``; transport/auth errors propagate.
+        source = await self._get_or_none(notebook_id, source_id)
+        if source is None:
+            raise SourceNotFoundError(source_id, method_id=RPCMethod.UPDATE_SOURCE.value)
+        return source
 
     async def refresh(self, notebook_id: str, source_id: str) -> bool:
         """Refresh a source to get updated content (for URL/Drive sources).

@@ -66,9 +66,9 @@ class TestNotesCRUD:
         note_ids = [n.id for n in notes]
         assert note.id in note_ids
 
-        # Delete
+        # Delete (v0.7.0: returns None, idempotent — issue #1211)
         result = await client.notes.delete(temp_notebook.id, note.id)
-        assert result is True
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_update_note(self, client, temp_notebook):

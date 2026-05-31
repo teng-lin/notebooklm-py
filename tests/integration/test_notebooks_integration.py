@@ -268,7 +268,7 @@ class TestDeleteNotebook:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.notebooks.delete("nb_123")
 
-        assert result is True
+        assert result is None
 
 
 class TestSummary:

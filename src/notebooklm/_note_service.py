@@ -363,14 +363,14 @@ class NoteService:
             allow_null=True,
         )
 
-    async def delete_note(self, notebook_id: str, note_id: str) -> bool:
+    async def delete_note(self, notebook_id: str, note_id: str) -> None:
         """Soft-delete a note row.
 
-        Returns ``True`` on success, mirroring the v0.4.1 NotesAPI
-        contract (``client.notes.delete(...) -> bool``). The bool flow
-        is preserved so the public facade can keep returning ``True``
-        unconditionally via :class:`NoteBackedMindMapService.delete_mind_map`
-        without callers seeing a behavioral change.
+        Returns ``None``. Idempotent: a missing note still succeeds
+        (``DELETE_NOTE`` is ``allow_null=True`` with no missing-signal). The
+        public facade (``client.notes.delete`` /
+        ``NoteBackedMindMapService.delete_mind_map``) returns ``None`` as of
+        v0.7.0 (issue #1211).
         """
         params = [notebook_id, None, [note_id]]
         await self._rpc.rpc_call(
@@ -379,4 +379,3 @@ class NoteService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        return True

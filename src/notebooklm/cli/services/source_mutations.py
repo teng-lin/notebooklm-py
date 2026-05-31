@@ -351,9 +351,10 @@ async def execute_source_delete(
         }
 
     async def execute_delete(client, resolved):
-        resolved["success"] = bool(
-            await client.sources.delete(resolved["notebook_id"], resolved["source_id"])
-        )
+        # delete() now returns None and raises on real failure (issue #1211);
+        # reaching here without an exception means success.
+        await client.sources.delete(resolved["notebook_id"], resolved["source_id"])
+        resolved["success"] = True
 
     def serialize_success(resolved):
         return {
@@ -439,9 +440,10 @@ async def execute_source_delete_by_title(
         }
 
     async def execute_delete_by_title(client, resolved):
-        resolved["success"] = bool(
-            await client.sources.delete(resolved["notebook_id"], resolved["source_id"])
-        )
+        # delete() now returns None and raises on real failure (issue #1211);
+        # reaching here without an exception means success.
+        await client.sources.delete(resolved["notebook_id"], resolved["source_id"])
+        resolved["success"] = True
 
     def serialize_success(resolved):
         return {
@@ -507,7 +509,10 @@ async def execute_source_rename(
     resolved_id = await resolve_source_id(
         client, plan.notebook_id, plan.source_id, json_output=plan.json_output
     )
+    # return_object defaults to True, so rename returns a Source (or raises
+    # SourceNotFoundError on a missing target) — never None on this path.
     src = await client.sources.rename(plan.notebook_id, resolved_id, plan.new_title)
+    assert src is not None  # narrow Source | None for the rename-result dataclass
     return SourceRenameResult(source=src, notebook_id=plan.notebook_id)
 
 

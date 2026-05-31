@@ -46,7 +46,11 @@ from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._runtime_contracts import RpcCaller
 from ._types.research import MindMapResult
-from .exceptions import ArtifactFeatureUnavailableError, ValidationError
+from .exceptions import (
+    ArtifactFeatureUnavailableError,
+    ArtifactNotFoundError,
+    ValidationError,
+)
 
 if TYPE_CHECKING:
     from ._runtime_lifecycle import ClientLifecycle
@@ -794,15 +798,21 @@ class ArtifactsAPI:
     # Management Operations
     # =========================================================================
 
-    async def delete(self, notebook_id: str, artifact_id: str) -> bool:
+    async def delete(self, notebook_id: str, artifact_id: str) -> None:
         """Delete an artifact.
+
+        Idempotent: deleting an already-absent artifact succeeds (returns
+        ``None``) and never raises ``ArtifactNotFoundError``. Real failures
+        (``403``/``5xx``/auth/transport) still propagate.
 
         Args:
             notebook_id: The notebook ID.
             artifact_id: The artifact ID to delete.
 
-        Returns:
-            True if deletion succeeded.
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned a hardcoded ``True``;
+            now returns ``None`` (issue #1211). ``if await artifacts.delete(...):``
+            no longer enters its block.
         """
         logger.debug("Deleting artifact %s from notebook %s", artifact_id, notebook_id)
         params = [[2], artifact_id]
@@ -812,15 +822,47 @@ class ArtifactsAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        return True
 
-    async def rename(self, notebook_id: str, artifact_id: str, new_title: str) -> None:
+    async def rename(
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        new_title: str,
+        *,
+        return_object: bool = True,
+    ) -> Artifact | None:
         """Rename an artifact.
 
         Args:
             notebook_id: The notebook ID.
             artifact_id: The artifact ID to rename.
             new_title: The new title.
+            return_object: When ``True`` (default), re-fetch and return the
+                renamed :class:`~notebooklm.types.Artifact`. When ``False``,
+                skip the re-fetch and return ``None`` — the re-fetch is a full
+                ``LIST_ARTIFACTS`` call, so bulk renamers that ignore the
+                return should opt out to avoid N extra list calls. Opting out
+                also skips missing-target detection, so a missing artifact does
+                **not** raise — pass ``return_object=True`` (the default) if you
+                need the missing-target guarantee.
+
+        Returns:
+            The renamed :class:`~notebooklm.types.Artifact`, or ``None`` when
+            ``return_object=False``.
+
+        Raises:
+            ArtifactNotFoundError: if the artifact does not exist (the rename
+                RPC is silent on a missing target, so absence is detected via
+                a list fetch — not a transport 404). Only raised when
+                ``return_object=True``. Note-backed mind-map ids are *not*
+                renameable here (they use ``UPDATE_NOTE``); such an id is
+                treated as absent and raises — use ``mind_maps.rename`` instead.
+
+        .. versionchanged:: 0.7.0
+            **Breaking change:** previously returned ``None`` even on success.
+            Now re-fetches and returns the renamed ``Artifact``, raising
+            :class:`ArtifactNotFoundError` for a missing target (issue #1255).
+            Added the ``return_object`` opt-out.
         """
         params = [[artifact_id, new_title], [["title"]]]
         await self._rpc.rpc_call(
@@ -829,6 +871,20 @@ class ArtifactsAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
+        if not return_object:
+            return None
+        # Hydrate from studio artifacts only (never the public ``get()``, which
+        # warns under #1247, and never the merged listing — that would let a
+        # note-backed mind-map id, which ``RENAME_ARTIFACT`` no-ops on, read
+        # back as a stale "success"; it belongs to ``mind_maps.rename``). Only
+        # genuine absence maps to ``ArtifactNotFoundError``; transport/auth
+        # errors propagate as-is.
+        artifact = await self._listing.get_studio_only(
+            notebook_id, artifact_id, list_raw=self._list_raw
+        )
+        if artifact is None:
+            raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.RENAME_ARTIFACT.value)
+        return artifact
 
     async def poll_status(self, notebook_id: str, task_id: str) -> GenerationStatus:
         """Poll the status of a generation task.

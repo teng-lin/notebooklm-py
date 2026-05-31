@@ -686,13 +686,18 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_failure(self, runner, mock_auth):
+        """A real delete failure now raises (v0.7.0): delete() returns None and
+        propagates RPC/transport errors instead of signalling failure via a
+        falsy return (issue #1211)."""
+        from notebooklm.exceptions import RPCError
+
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for source delete resolution
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
             )
-            mock_client.sources.delete = AsyncMock(return_value=False)
+            mock_client.sources.delete = AsyncMock(side_effect=RPCError("delete blew up"))
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -701,8 +706,7 @@ class TestSourceDelete:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["source", "delete", "src_123", "-n", "nb_123", "-y"])
 
-            assert result.exit_code == 0
-            assert "Delete may have failed" in result.output
+            assert result.exit_code == 1
 
     def test_source_delete_full_uuid_skips_source_list(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:

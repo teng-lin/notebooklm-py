@@ -153,6 +153,28 @@ class ArtifactListingService:
                 return artifact
         return None
 
+    async def get_studio_only(
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        *,
+        list_raw: ListRawCallback,
+    ) -> Artifact | None:
+        """Get a studio artifact by ID, excluding note-backed mind-map rows.
+
+        ``RENAME_ARTIFACT`` only applies to genuine studio artifacts; note-backed
+        mind maps rename via ``UPDATE_NOTE`` (see ``MindMapsAPI``). Hydrating the
+        rename result from the *merged* listing (studio + note-backed mind maps)
+        would let a note-backed mind-map id read back as a stale "success" after
+        a no-op ``RENAME_ARTIFACT``. Restricting to studio rows makes such an id
+        correctly absent here so the caller raises ``ArtifactNotFoundError``
+        and is steered to ``mind_maps.rename``.
+        """
+        for artifact in self._filter_studio_artifacts(await list_raw(notebook_id), None):
+            if artifact.id == artifact_id:
+                return artifact
+        return None
+
     def select_artifact(
         self,
         candidates: Sequence[Any],

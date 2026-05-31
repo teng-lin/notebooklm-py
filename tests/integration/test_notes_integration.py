@@ -226,7 +226,7 @@ class TestNotesAPI:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.notes.delete("nb_123", "note_001")
 
-        assert result is True
+        assert result is None
         request = httpx_mock.get_request()
         assert RPCMethod.DELETE_NOTE in str(request.url)
 
@@ -272,6 +272,6 @@ class TestNotesAPI:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.notes.delete_mind_map("nb_123", "mm_001")
 
-        assert result is True
+        assert result is None
         request = httpx_mock.get_request()
         assert RPCMethod.DELETE_NOTE in str(request.url)

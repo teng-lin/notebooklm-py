@@ -574,6 +574,9 @@ class TestNotebookDelete:
             assert "Cleared current notebook context" in result.output
 
     def test_notebook_delete_failure(self, runner, mock_auth):
+        """A real delete failure now raises (v0.7.0): delete() returns None and
+        propagates RPC/transport errors instead of signalling failure via a
+        falsy return (issue #1211)."""
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
@@ -587,7 +590,7 @@ class TestNotebookDelete:
                     ),
                 ]
             )
-            mock_client.notebooks.delete = AsyncMock(return_value=False)
+            mock_client.notebooks.delete = AsyncMock(side_effect=RPCError("delete blew up"))
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -596,8 +599,7 @@ class TestNotebookDelete:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["delete", "-n", "nb_123", "-y"])
 
-            assert result.exit_code == 0
-            assert "Delete may have failed" in result.output
+            assert result.exit_code == 1
 
     def test_notebook_delete_json(self, runner, mock_auth):
         """--json with --yes emits a parseable success envelope (issue #1167)."""

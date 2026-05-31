@@ -63,21 +63,47 @@ async def test_list_unions_both_backings():
 async def test_rename_dispatches_by_kind():
     # The explicit-interactive path pre-validates the id (issue #1270), so the
     # interactive artifact must exist for the rename to dispatch.
+    # return_object=False keeps this focused on dispatch (no hydrate re-fetch).
     api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
-    await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
+    assert (
+        await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED, return_object=False)
+        is None
+    )
     mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
     artifacts.rename.assert_not_awaited()
 
-    await api.rename("nb", "int_mm", "Y", kind=MindMapKind.INTERACTIVE)
-    artifacts.rename.assert_awaited_once_with("nb", "int_mm", "Y")
+    await api.rename("nb", "int_mm", "Y", kind=MindMapKind.INTERACTIVE, return_object=False)
+    # The interactive artifact rename is delegated with return_object=False so
+    # the unified API hydrates once (not twice) when an object is requested.
+    artifacts.rename.assert_awaited_once_with("nb", "int_mm", "Y", return_object=False)
+
+
+@pytest.mark.asyncio
+async def test_rename_returns_renamed_mind_map():
+    # Note-backed: the post-rename list reflects the new title; rename returns it.
+    api, _, mind_maps, artifacts, _ = _make_api(
+        note_rows=[["note_mm", '{"name": "NB", "children": []}', None, None, "New Title"]]
+    )
+    result = await api.rename("nb", "note_mm", "New Title", kind=MindMapKind.NOTE_BACKED)
+    assert result is not None
+    assert result.id == "note_mm"
+    assert result.kind == MindMapKind.NOTE_BACKED
+
+
+@pytest.mark.asyncio
+async def test_rename_missing_raises():
+    # Auto-detect path: the id is in neither backing → ValueError.
+    api, *_ = _make_api()
+    with pytest.raises(ValueError, match="not found"):
+        await api.rename("nb", "ghost", "X")
 
 
 @pytest.mark.asyncio
 async def test_delete_dispatches_by_kind():
     api, _, mind_maps, artifacts, _ = _make_api()
-    assert await api.delete("nb", "note_mm", kind=MindMapKind.NOTE_BACKED) is True
+    assert await api.delete("nb", "note_mm", kind=MindMapKind.NOTE_BACKED) is None
     mind_maps.delete_mind_map.assert_awaited_once_with("nb", "note_mm")
-    assert await api.delete("nb", "int_mm", kind=MindMapKind.INTERACTIVE) is True
+    assert await api.delete("nb", "int_mm", kind=MindMapKind.INTERACTIVE) is None
     artifacts.delete.assert_awaited_once_with("nb", "int_mm")
 
 
@@ -277,8 +303,10 @@ async def test_rename_interactive_bad_id_raises_not_silent_noop():
 @pytest.mark.asyncio
 async def test_rename_interactive_good_id_dispatches():
     api, _, _, artifacts, _ = _make_api(interactive=[_interactive_artifact("real_int")])
-    await api.rename("nb", "real_int", "X", kind=MindMapKind.INTERACTIVE)
-    artifacts.rename.assert_awaited_once_with("nb", "real_int", "X")
+    await api.rename("nb", "real_int", "X", kind=MindMapKind.INTERACTIVE, return_object=False)
+    # The unified API delegates with return_object=False (it hydrates once, here
+    # skipped) — the artifact rename is not asked to re-fetch.
+    artifacts.rename.assert_awaited_once_with("nb", "real_int", "X", return_object=False)
 
 
 @pytest.mark.asyncio

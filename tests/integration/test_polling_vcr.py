@@ -181,14 +181,16 @@ class TestPollingReplay:
             assert final_status.is_complete or final_status.is_failed
 
             # 4. Rename leg — exercises RENAME_ARTIFACT regardless of whether
-            #    the artifact ended ``completed`` or ``failed``. We don't
-            #    re-fetch + assert title here because that would require an
-            #    additional cassette interaction; the regression we care
-            #    about is "the rename RPC fires without error".
+            #    the artifact ended ``completed`` or ``failed``. We pass
+            #    ``return_object=False`` to skip the post-rename re-fetch
+            #    (issue #1255), which would otherwise require an additional
+            #    cassette interaction; the regression we care about is "the
+            #    rename RPC fires without error".
             await client.artifacts.rename(
                 MUTABLE_NOTEBOOK_ID,
                 task_id,
                 "Renamed VCR Test",
+                return_object=False,
             )
 
     def test_cassette_has_multiple_polling_interactions(self) -> None:

@@ -33,9 +33,9 @@ class TestNotebookOperations:
         # Rename
         await client.notebooks.rename(notebook.id, "E2E Test Renamed")
 
-        # Delete
+        # Delete (v0.7.0: returns None, idempotent — issue #1211)
         deleted = await client.notebooks.delete(notebook.id)
-        assert deleted is True
+        assert deleted is None
         created_notebooks.remove(notebook.id)
 
     @pytest.mark.asyncio

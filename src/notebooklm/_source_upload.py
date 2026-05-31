@@ -729,7 +729,10 @@ class SourceUploadPipeline:
             try:
                 assert title is not None
                 renamed = await self.rename(notebook_id, source_id, title)
-                source = replace(source, title=renamed.title or title)
+                # ``renamed`` is ``None`` when the rename RPC echoes nothing;
+                # fall back to the requested title (the source was just
+                # uploaded, so it exists — only the echo is absent).
+                source = replace(source, title=(renamed.title if renamed else None) or title)
             except (RPCError, NetworkError):
                 module_logger.warning(
                     "Source %s uploaded but rename to %r failed",
@@ -998,8 +1001,15 @@ class SourceUploadPipeline:
             logger=module_logger,
         )
 
-    async def rename(self, notebook_id: str, source_id: str, new_title: str) -> Source:
-        """Rename an uploaded source."""
+    async def rename(self, notebook_id: str, source_id: str, new_title: str) -> Source | None:
+        """Rename a just-uploaded source, returning the ``UPDATE_SOURCE`` echo.
+
+        Internal post-upload retitle helper. Returns the echoed
+        :class:`~notebooklm.types.Source` when present, or ``None`` when the
+        RPC echoes nothing — the caller (:meth:`add_file`) falls back to the
+        requested title. Does not fabricate an unverified ``Source`` (the
+        public ``sources.rename`` policy, issue #1255).
+        """
         module_logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
         result = await self._rpc.rpc_call(
@@ -1008,11 +1018,9 @@ class SourceUploadPipeline:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        return (
-            Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
-            if result
-            else Source(id=source_id, title=new_title)
-        )
+        if result:
+            return Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
+        return None
 
     async def start_resumable_upload(
         self,

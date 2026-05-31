@@ -78,12 +78,13 @@ class TestExtractContent:
 
 class TestDeleteMindMap:
     @pytest.mark.asyncio
-    async def test_delete_mind_map_delegates_and_returns_bool(
+    async def test_delete_mind_map_delegates_and_returns_none(
         self, service: NoteBackedMindMapService, mock_notes: MagicMock
     ) -> None:
-        mock_notes.delete_note = AsyncMock(return_value=True)
+        mock_notes.delete_note = AsyncMock(return_value=None)
 
-        assert await service.delete_mind_map("nb_abc", "mm_1") is True
+        # v0.7.0: delete now returns None (issue #1211).
+        assert await service.delete_mind_map("nb_abc", "mm_1") is None
 
         mock_notes.delete_note.assert_awaited_once_with("nb_abc", "mm_1")
 

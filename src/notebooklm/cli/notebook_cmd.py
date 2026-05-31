@@ -164,9 +164,11 @@ def register_notebook_commands(cli):
                     return {"notebook_id": resolved_id, "success": False}
 
                 async def execute_delete(client, resolved):
-                    resolved["success"] = bool(
-                        await client.notebooks.delete(resolved["notebook_id"])
-                    )
+                    # delete() now returns None and raises on real failure
+                    # (issue #1211); reaching here without an exception means
+                    # success.
+                    await client.notebooks.delete(resolved["notebook_id"])
+                    resolved["success"] = True
 
                 plan = MutationPlan(
                     entity_label="notebook",

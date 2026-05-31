@@ -844,7 +844,7 @@ class TestSourcesAdditionalAPI:
             assert source is not None
             # Delete it
             result = await client.sources.delete(MUTABLE_NOTEBOOK_ID, source.id)
-        assert result is True
+        assert result is None
 
 
 # =============================================================================
@@ -878,7 +878,7 @@ class TestNotebooksAdditionalAPI:
             assert notebook is not None
             # Delete it
             result = await client.notebooks.delete(notebook.id)
-        assert result is True
+        assert result is None
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -914,7 +914,7 @@ class TestNotesAdditionalAPI:
             assert note is not None
             # Delete it
             result = await client.notes.delete(MUTABLE_NOTEBOOK_ID, note.id)
-        assert result is True
+        assert result is None
 
 
 # =============================================================================
@@ -937,10 +937,15 @@ class TestArtifactsAdditionalAPI:
                 pytest.skip("No artifacts available")
             artifact = artifacts[0]
             original_title = artifact.title
-            # Rename
-            await client.artifacts.rename(MUTABLE_NOTEBOOK_ID, artifact.id, "VCR Renamed Artifact")
+            # Rename. return_object=False skips the post-rename re-fetch so the
+            # existing cassette (rename RPC only) keeps replaying (issue #1255).
+            await client.artifacts.rename(
+                MUTABLE_NOTEBOOK_ID, artifact.id, "VCR Renamed Artifact", return_object=False
+            )
             # Restore original name
-            await client.artifacts.rename(MUTABLE_NOTEBOOK_ID, artifact.id, original_title)
+            await client.artifacts.rename(
+                MUTABLE_NOTEBOOK_ID, artifact.id, original_title, return_object=False
+            )
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -955,7 +960,7 @@ class TestArtifactsAdditionalAPI:
             # Delete the first one
             artifact_id = artifacts[0].id
             deleted = await client.artifacts.delete(MUTABLE_NOTEBOOK_ID, artifact_id)
-        assert deleted is True
+        assert deleted is None
 
     @pytest.mark.vcr
     @pytest.mark.asyncio

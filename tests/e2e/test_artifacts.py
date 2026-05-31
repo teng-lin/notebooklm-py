@@ -252,9 +252,9 @@ class TestArtifactMutations:
 
         await asyncio.sleep(2)
 
-        # Delete it
+        # Delete it (v0.7.0: returns None, idempotent — issue #1211)
         deleted = await client.artifacts.delete(temp_notebook.id, artifact_id)
-        assert deleted is True
+        assert deleted is None
 
         # Verify it's gone
         artifacts = await client.artifacts.list(temp_notebook.id)
