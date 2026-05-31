@@ -1,8 +1,10 @@
-"""CLI contract baseline captured before the runtime/auth/completion refactors.
+"""CLI contract baseline: pins the public command tree, options, and help.
 
-This file intentionally characterizes public behavior without moving code; later
-internal refactors can be compared against the JSON baseline generated from
-``build_phase10_cli_contract``.
+This file characterizes public CLI behavior so later refactors (and intentional
+surface changes) can be compared against the JSON baseline generated from
+``build_cli_contract``. Regenerate the baseline after an intended change with::
+
+    uv run python tests/unit/cli/test_cli_contract.py > tests/fixtures/cli_contract_baseline.json
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ def _find_repo_root() -> Path:
     raise RuntimeError("Could not locate repository root")
 
 
-BASELINE_PATH = _find_repo_root() / "tests/fixtures/phase10_cli_contract_baseline.json"
+BASELINE_PATH = _find_repo_root() / "tests/fixtures/cli_contract_baseline.json"
 
 TRACKED_GROUPS = (
     "download",
@@ -218,7 +220,7 @@ def _same_params(left: click.Command, right: click.Command) -> bool:
     return [_param_contract(p) for p in left.params] == [_param_contract(p) for p in right.params]
 
 
-def build_phase10_cli_contract() -> dict[str, object]:
+def build_cli_contract() -> dict[str, object]:
     """Return the deterministic public CLI inventory used by the baseline."""
     download_cinematic_video = _command_for("download cinematic-video")
     download_video = _command_for("download video")
@@ -254,10 +256,10 @@ def build_phase10_cli_contract() -> dict[str, object]:
     }
 
 
-def test_phase10_cli_contract_matches_baseline() -> None:
-    """Public command tree, options, defaults, help, and aliases match T11.0."""
+def test_cli_contract_matches_baseline() -> None:
+    """Public command tree, options, defaults, help, and aliases match the baseline."""
     expected = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-    assert build_phase10_cli_contract() == expected
+    assert build_cli_contract() == expected
 
 
 @pytest.mark.parametrize("path,snippets", HELP_SNIPPETS.items(), ids=lambda value: value or "root")
@@ -582,4 +584,4 @@ def test_json_error_envelope_and_exit_code_are_uniform(command_path: str) -> Non
 
 
 if __name__ == "__main__":
-    print(json.dumps(build_phase10_cli_contract(), indent=2, sort_keys=True))
+    print(json.dumps(build_cli_contract(), indent=2, sort_keys=True))

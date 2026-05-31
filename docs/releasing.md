@@ -133,7 +133,7 @@ Proceed with release preparation?
 - [ ] If CLI commands, flags, arguments, help text, or env-var bindings changed,
   also run the CLI contract baseline:
   ```bash
-  uv run pytest tests/unit/cli/test_phase10_cli_contract.py
+  uv run pytest tests/unit/cli/test_cli_contract.py
   ```
 
 The allowlist is not a bypass for accidental breakage. It is a paper trail for
