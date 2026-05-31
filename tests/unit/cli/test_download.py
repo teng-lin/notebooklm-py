@@ -89,14 +89,13 @@ def mock_fetch_tokens():
 # ``download_single`` envelope. Type-specific flag, error, and distinct-shape
 # tests remain standalone below.
 
-# (cmd, method, type_code, output_name, is_dir)
-_PER_TYPE_DOWNLOAD_CASES = [
-    ("audio", "download_audio", 1, "audio.mp3", False),
-    ("video", "download_video", 3, "video.mp4", False),
-    ("infographic", "download_infographic", 7, "infographic.png", False),
-    # ``.pptx`` suffix matches the slide-deck default --format so no
-    # format-mismatch warning is prepended to stdout (keeps --json parseable).
-    ("slide-deck", "download_slide_deck", 8, "slides.pptx", True),
+# File-based single-download types: (cmd, method, type_code, output_name).
+# These write a single file to ``output_name`` and emit pure stdout in both
+# text and JSON modes, so they run the full text x JSON matrix.
+_FILE_DOWNLOAD_CASES = [
+    ("audio", "download_audio", 1, "audio.mp3"),
+    ("video", "download_video", 3, "video.mp4"),
+    ("infographic", "download_infographic", 7, "infographic.png"),
 ]
 
 
@@ -105,28 +104,24 @@ class TestDownloadStandardTypes:
 
     @pytest.mark.parametrize("output_mode", ["text", "json"])
     @pytest.mark.parametrize(
-        "cmd,method,type_code,output_name,is_dir",
-        _PER_TYPE_DOWNLOAD_CASES,
-        ids=[case[0] for case in _PER_TYPE_DOWNLOAD_CASES],
+        "cmd,method,type_code,output_name",
+        _FILE_DOWNLOAD_CASES,
+        ids=[case[0] for case in _FILE_DOWNLOAD_CASES],
     )
-    def test_download_standard_type(
-        self, runner, mock_auth, tmp_path, output_mode, cmd, method, type_code, output_name, is_dir
+    def test_download_file_type(
+        self, runner, mock_auth, tmp_path, output_mode, cmd, method, type_code, output_name
     ):
-        artifact_id = f"{cmd.replace('-', '_')}_1"
+        expected_id = f"{cmd}_1"
         with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_target = tmp_path / output_name
 
             async def mock_download(notebook_id, output_path, artifact_id=None):
-                if is_dir:
-                    Path(output_path).mkdir(parents=True, exist_ok=True)
-                    (Path(output_path) / "slide_1.png").write_bytes(b"fake content")
-                else:
-                    Path(output_path).write_bytes(b"fake content")
+                Path(output_path).write_bytes(b"fake content")
                 return output_path
 
             mock_client.artifacts.list = AsyncMock(
-                return_value=[make_artifact(artifact_id, "My Artifact", type_code)]
+                return_value=[make_artifact(expected_id, "My Artifact", type_code)]
             )
             setattr(mock_client.artifacts, method, mock_download)
             mock_client_cls.return_value = mock_client
@@ -142,16 +137,50 @@ class TestDownloadStandardTypes:
                 result = runner.invoke(cli, args)
 
             assert result.exit_code == 0, result.output
+            # The file is written in both modes — that is the command's purpose.
+            assert output_target.exists()
             if output_mode == "json":
                 data = json.loads(result.output)
                 assert data["operation"] == "download_single"
                 assert data["status"] == "downloaded"
-                assert data["artifact"]["id"] == artifact_id
+                assert data["artifact"]["id"] == expected_id
                 # Happy path must not emit an error envelope.
                 assert "error" not in data
                 assert "code" not in data
-            elif not is_dir:
-                assert output_target.exists()
+
+    def test_download_slide_deck(self, runner, mock_auth, tmp_path):
+        """Slide-deck downloads a directory of slides (text mode only).
+
+        Kept off the file-type JSON matrix because slide-deck writes a
+        directory and the command prepends a format-extension warning to
+        stdout, so it never emitted a clean JSON document in the original
+        suite either.
+        """
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "slides"
+
+            async def mock_download_slide_deck(notebook_id, output_path, artifact_id=None):
+                Path(output_path).mkdir(parents=True, exist_ok=True)
+                (Path(output_path) / "slide_1.png").write_bytes(b"fake slide")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[make_artifact("slide_1", "My Slides", 8)]
+            )
+            mock_client.artifacts.download_slide_deck = mock_download_slide_deck
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["download", "slide-deck", str(output_dir), "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0, result.output
+            assert (output_dir / "slide_1.png").exists()
 
 
 # =============================================================================
