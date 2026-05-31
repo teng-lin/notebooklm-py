@@ -142,7 +142,7 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
     # distinguish "user passed empty" from "user passed nothing"; the explicit
     # ``content_flag is not None`` check means ``--content ""`` still wins.
     if content and content_flag is not None:
-        raise click.UsageError(
+        raise click.UsageError(  # cli-input-validation: positional CONTENT and --content are mutually exclusive
             "Cannot use both the positional CONTENT argument and --content. Choose one."
         )
     if content_flag is not None:

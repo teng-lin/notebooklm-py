@@ -202,7 +202,9 @@ def _emit_source_fulltext_flag_conflict(message: str, *, json_output: bool) -> N
     if json_output:
         _output_error(message, "VALIDATION_ERROR", json_output, 1)
         raise AssertionError("unreachable")  # pragma: no cover
-    raise click.UsageError(message)
+    raise click.UsageError(  # cli-input-validation: source fulltext flag conflict
+        message
+    )
 
 
 def _resolve_source_fulltext_output_path(
@@ -677,7 +679,9 @@ def source_add(
             if json_output:
                 _output_error(message, "VALIDATION_ERROR", json_output, 1)
                 raise AssertionError("unreachable") from None  # pragma: no cover
-            raise click.UsageError(message)
+            raise click.UsageError(  # cli-input-validation: stdin '-' incompatible with non-text --type
+                message
+            )
         content = read_stdin_text(source_label="source content")
         source_type = "text"
 
@@ -910,7 +914,9 @@ def _emit_add_research_flag_conflict(message: str, *, json_output: bool) -> NoRe
     if json_output:
         _output_error(message, "VALIDATION_ERROR", json_output, 1)
         raise AssertionError("unreachable")  # pragma: no cover
-    raise click.UsageError(message)
+    raise click.UsageError(  # cli-input-validation: source add-research flag conflict
+        message
+    )
 
 
 def _print_add_research_task_ids(result: SourceAddResearchResult) -> None:

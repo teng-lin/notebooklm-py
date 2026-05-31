@@ -170,7 +170,9 @@ def research_wait(
                 json_output,
                 1,
             )
-        raise click.UsageError("--cited-only requires --import-all")
+        raise click.UsageError(  # cli-input-validation: --cited-only requires --import-all
+            "--cited-only requires --import-all"
+        )
 
     nb_id = require_notebook(notebook_id)
     plan = ResearchWaitPlan(

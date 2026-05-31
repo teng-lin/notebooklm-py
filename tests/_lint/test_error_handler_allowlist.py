@@ -1,18 +1,25 @@
 """CLI exit-path marker enforcement.
 
-``click.ClickException`` and raw ``raise SystemExit`` bypass the typed
-``{"error": true, "code": ...}`` JSON envelope owned by ``error_handler.py``.
-Every such site OUTSIDE ``error_handler.py`` must carry an inline marker
-comment naming why, so each one stays a conscious, documented choice that
-cannot silently break ``--json`` consumers.
+``ClickException`` and its envelope-bypassing subclasses (``UsageError``,
+``BadParameter``, ``MissingParameter``, ``NoSuchOption``, ``BadArgumentUsage``,
+``FileError``) and raw ``raise SystemExit`` bypass the typed
+``{"error": true, "code": ...}`` JSON envelope owned by ``error_handler.py``:
+Click prints ``Error:`` / ``Usage:`` to stderr and exits the process. Every such
+site OUTSIDE ``error_handler.py`` must carry an inline marker comment naming why,
+so each one stays a conscious, documented choice that cannot silently break
+``--json`` consumers.
+
+``click.Abort`` and ``click.exceptions.Exit`` are deliberately EXCLUDED: they
+are control-flow (user-abort / explicit exit code), not error-message exits, so
+the gate neither detects nor requires a marker on them (issue #1307).
 
 The markers follow the ``# noqa`` / ``# type: ignore`` convention -- the
 reason lives at the call site, so (unlike the previous ``(file, line)``
 allowlist) they are immune to line shifts in unrelated code and need no central
 list to regenerate (issue #1298):
 
-* ``click.ClickException(...)``  ->  ``# cli-input-validation: <reason>``
-* ``raise SystemExit(...)``      ->  ``# cli-raw-exit: <reason>``
+* ``ClickException(...)`` and subclasses  ->  ``# cli-input-validation: <reason>``
+* ``raise SystemExit(...)``               ->  ``# cli-raw-exit: <reason>``
 
 A marker may sit on any physical line spanned by its call, so multi-line calls
 can carry it on the opening or the closing line.
@@ -58,6 +65,23 @@ CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"
 CLICK_EXCEPTION_MARKER = "cli-input-validation:"
 RAW_SYSEXIT_MARKER = "cli-raw-exit:"
 
+#: ``ClickException`` and the subclasses that bypass the JSON error envelope
+#: identically (Click prints ``Error:`` / ``Usage:`` to stderr and exits). Each
+#: requires a ``# cli-input-validation:`` marker. ``Abort`` / ``exceptions.Exit``
+#: are control-flow, not error-message exits, and are intentionally absent
+#: (issue #1307).
+ENVELOPE_BYPASSING_CLICK_EXCEPTIONS = frozenset(
+    {
+        "ClickException",
+        "UsageError",
+        "BadParameter",
+        "MissingParameter",
+        "NoSuchOption",
+        "BadArgumentUsage",
+        "FileError",
+    }
+)
+
 # Defense-in-depth ceiling: raw ``SystemExit`` outside ``error_handler.py``
 # must stay rare even when individually marked.
 MAX_RAW_SYSEXIT_SITES = 5
@@ -77,10 +101,29 @@ def _cli_files() -> list[Path]:
     return [p for p in sorted(CLI_ROOT.rglob("*.py")) if p.name != "error_handler.py"]
 
 
+def _is_envelope_bypassing_click_exception(func: ast.AST) -> bool:
+    """True for ``click.<Name>`` or bare ``<Name>`` in the bypassing family.
+
+    Matches both the qualified ``click.UsageError`` attribute form and the bare
+    ``UsageError`` name form (``from click import UsageError``), while rejecting
+    unrelated identifiers and any deeper / differently-rooted attribute chain
+    (e.g. ``foo.UsageError`` or ``click.exceptions.Exit``).
+    """
+    if isinstance(func, ast.Attribute):
+        return (
+            isinstance(func.value, ast.Name)
+            and func.value.id == "click"
+            and func.attr in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
+        )
+    if isinstance(func, ast.Name):
+        return func.id in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
+    return False
+
+
 def _click_exception_spans(tree: ast.AST) -> list[Span]:
     spans: list[Span] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_name(node.func) == "click.ClickException":
+        if isinstance(node, ast.Call) and _is_envelope_bypassing_click_exception(node.func):
             spans.append((node.lineno, node.end_lineno or node.lineno))
     return spans
 
@@ -136,12 +179,12 @@ def _format(sites: list[str]) -> str:
 
 
 def test_click_exception_sites_are_marked() -> None:
-    """Every ``click.ClickException`` call must carry an input-validation marker."""
+    """Every ``ClickException`` (and envelope-bypassing subclass) call is marked."""
     unmarked, _stale, _empty, _total = _audit(_click_exception_spans, CLICK_EXCEPTION_MARKER)
     assert not unmarked, (
-        "Unmarked click.ClickException call sites. Each bypasses the JSON error "
-        "envelope (see error_handler.py) and must carry an inline "
-        f"`# {CLICK_EXCEPTION_MARKER} <reason>` comment:\n" + _format(unmarked)
+        "Unmarked ClickException (or envelope-bypassing subclass) call sites. Each "
+        "bypasses the JSON error envelope (see error_handler.py) and must carry an "
+        f"inline `# {CLICK_EXCEPTION_MARKER} <reason>` comment:\n" + _format(unmarked)
     )
 
 
@@ -149,8 +192,8 @@ def test_no_stale_or_empty_click_exception_markers() -> None:
     """``# cli-input-validation:`` markers must sit on a call and name a reason."""
     _unmarked, stale, empty, _total = _audit(_click_exception_spans, CLICK_EXCEPTION_MARKER)
     assert not stale, (
-        f"Stale `# {CLICK_EXCEPTION_MARKER}` markers (not on a click.ClickException "
-        "call) -- delete them:\n" + _format(stale)
+        f"Stale `# {CLICK_EXCEPTION_MARKER}` markers (not on a ClickException or "
+        "envelope-bypassing subclass call) -- delete them:\n" + _format(stale)
     )
     assert not empty, (
         f"`# {CLICK_EXCEPTION_MARKER}` markers with no reason -- add one:\n" + _format(empty)
@@ -232,6 +275,27 @@ def test_raw_sysexit_spans_detects_bare_and_called() -> None:
     """
     tree = ast.parse("def called():\n    raise SystemExit(1)\ndef bare():\n    raise SystemExit\n")
     assert sorted(lo for lo, _hi in _raw_sysexit_spans(tree)) == [2, 4]
+
+
+def test_click_exception_spans_detects_subclasses_and_bare_import() -> None:
+    """Envelope-bypassing subclasses are detected in both attribute + bare form.
+
+    The gate widened from literal ``click.ClickException`` to the whole
+    envelope-bypassing family, in both the ``click.<Name>`` attribute form and
+    the bare ``<Name>`` form (``from click import UsageError``) (issue #1307).
+    An unrelated attribute chain (``click.exceptions.Exit``) and a same-named
+    attribute on a different root (``other.UsageError``) must NOT match.
+    """
+    tree = ast.parse(
+        "import click\n"
+        "from click import UsageError\n"
+        "raise click.UsageError('x')\n"
+        "raise click.BadParameter('x')\n"
+        "raise UsageError('x')\n"
+        "raise click.exceptions.Exit(0)\n"
+        "raise other.UsageError('x')\n"
+    )
+    assert sorted(lo for lo, _hi in _click_exception_spans(tree)) == [3, 4, 5]
 
 
 def test_parse_cli_file_is_memoized_and_byte_identical() -> None:

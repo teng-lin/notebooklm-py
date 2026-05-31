@@ -227,7 +227,9 @@ def register_chat_commands(cli):
                     json_output,
                     1,
                 )
-            raise click.UsageError(mutual_exclusion_message)
+            raise click.UsageError(  # cli-input-validation: --new and --conversation-id are mutually exclusive
+                mutual_exclusion_message
+            )
         question = resolve_prompt(question, prompt_file, "question", required=True)
         nb_id = require_notebook(notebook_id)
 

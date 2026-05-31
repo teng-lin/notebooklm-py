@@ -203,7 +203,9 @@ def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
     try:
         return _cookie_domains._parse_include_domains(values)
     except _cookie_domains.IncludeDomainsParseError as exc:
-        raise click.BadParameter(str(exc)) from None
+        raise click.BadParameter(  # cli-input-validation: --include-domains value parse failure
+            str(exc)
+        ) from None
 
 
 def _warn_missing_optional_domains(include_domains: set[str]) -> None:

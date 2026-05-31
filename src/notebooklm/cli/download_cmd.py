@@ -136,7 +136,9 @@ def _run_artifact_download(ctx: click.Context, spec: DownloadTypeSpec, **kwargs:
     except DownloadPlanValidationError as exc:
         if json_output:
             output_error(exc.message, exc.code, True, 1)
-        raise click.UsageError(exc.message) from exc
+        raise click.UsageError(  # cli-input-validation: download plan flag/argument validation
+            exc.message
+        ) from exc
 
     for warning in plan.warnings:
         click.echo(warning, err=True)

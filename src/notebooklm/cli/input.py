@@ -69,7 +69,7 @@ def resolve_prompt(
         click.ClickException: Prompt file is unreadable or not valid UTF-8.
     """
     if argument_value and prompt_file:
-        raise click.UsageError(
+        raise click.UsageError(  # cli-input-validation: argument and --prompt-file are mutually exclusive
             f"Cannot use both the {param_name} argument and --prompt-file. Choose one."
         )
 
@@ -96,5 +96,7 @@ def resolve_prompt(
         text = argument_value or ""
 
     if required and not text:
-        raise click.UsageError(f"Provide a {param_name} argument or --prompt-file.")
+        raise click.UsageError(  # cli-input-validation: required prompt missing from argument and --prompt-file
+            f"Provide a {param_name} argument or --prompt-file."
+        )
     return text
