@@ -242,7 +242,7 @@ def test_parse_cli_file_is_memoized_and_byte_identical() -> None:
     to one read + parse + tokenize per file per session (issue #1302) -- but
     only if it stays behavior-identical to the source-keyed helpers it replaces.
     """
-    path = next(iter(_cli_files()))
+    path = _cli_files()[0]
 
     # Same path -> the *identical* cached (source, tree); not a re-parse.
     source, tree = parse_cli_file(path)

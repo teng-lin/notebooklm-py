@@ -59,22 +59,29 @@ def marker_reasons(source: str, marker: str) -> dict[int, str]:
     return _reasons_from_bodies(_comment_bodies(source), marker)
 
 
-@functools.cache
 def parse_cli_file(path: Path) -> tuple[str, ast.Module]:
     """Read and ``ast.parse`` *path* once, caching ``(source, tree)`` per path.
 
     Memoized for the test session: the exit-path gate audits each CLI file
     under multiple marker families and assertions, and the source does not
     change mid-run, so each file is read + parsed exactly once (issue #1302).
+
+    Paths are canonicalized before they reach the cache so a relative and an
+    absolute reference to the same physical file share one entry.
     """
+    return _parse_cli_file_cached(path.expanduser().resolve())
+
+
+@functools.cache
+def _parse_cli_file_cached(path: Path) -> tuple[str, ast.Module]:
     source = path.read_text(encoding="utf-8")
     return source, ast.parse(source, filename=str(path))
 
 
 @functools.cache
 def _comment_bodies_for(path: Path) -> tuple[tuple[int, str], ...]:
-    """Tokenize *path* once, caching its comment ``(lineno, body)`` pairs."""
-    source, _tree = parse_cli_file(path)
+    """Tokenize *path* (canonicalized) once, caching its comment pairs."""
+    source, _tree = _parse_cli_file_cached(path)
     return _comment_bodies(source)
 
 
@@ -84,7 +91,7 @@ def marker_reasons_for(path: Path, marker: str) -> dict[int, str]:
     Byte-identical to ``marker_reasons(parse_cli_file(path)[0], marker)`` but
     reuses the cached single tokenize pass across every marker family.
     """
-    return _reasons_from_bodies(_comment_bodies_for(path), marker)
+    return _reasons_from_bodies(_comment_bodies_for(path.expanduser().resolve()), marker)
 
 
 def match_markers(spans: list[Span], marker_lines: set[int]) -> tuple[list[int], set[int]]:
