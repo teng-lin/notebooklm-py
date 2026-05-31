@@ -141,7 +141,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 - `notebooklm doctor` - check environment health
 
 **Ask before running:**
-- `notebooklm delete` - destructive
+- `notebooklm delete` / `source delete` / `note delete` / `share remove` / `profile delete` - destructive. Once approved, pass `--yes`/`-y` to skip the confirmation prompt (uniform across every destructive command; `--json` implies `--yes` so non-interactive callers never hang on the prompt).
 - `notebooklm generate *` - long-running, may fail
 - `notebooklm download *` - writes to filesystem
 - `notebooklm artifact wait` - long-running (when in main conversation)
@@ -217,14 +217,14 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 | Download quiz (markdown) | `notebooklm download quiz --format markdown quiz.md` |
 | Download flashcards | `notebooklm download flashcards cards.json` |
 | Download flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
-| Delete notebook | `notebooklm delete -n <id>` |
+| Delete notebook | `notebooklm delete -n <id>` (add `--yes` to skip the prompt non-interactively) |
 | List languages | `notebooklm language list` |
 | Get language | `notebooklm language get` |
 | Set language | `notebooklm language set zh_Hans` |
 | List profiles | `notebooklm profile list` |
 | Create profile | `notebooklm profile create work` |
 | Switch profile | `notebooklm profile switch work` |
-| Delete profile | `notebooklm profile delete old` |
+| Delete profile | `notebooklm profile delete old --yes` (`-y`; `--confirm` is a deprecated alias) |
 | Rename profile | `notebooklm profile rename old new` |
 | Use profile (one-off) | `notebooklm -p work list` |
 | Health check | `notebooklm doctor` |
