@@ -100,11 +100,8 @@ class TestRenameCommand:
     def test_rename_notebook(self, runner, mock_auth_for_vcr):
         """``rename`` issues a single RENAME_NOTEBOOK RPC for the full UUID.
 
-        ``rename`` has no ``--json`` flag (see ``cli/notebook_cmd.py`` —
-        ``rename_cmd`` only decorates ``@notebook_option`` + ``@with_client``,
-        emitting human-readable ``Renamed notebook`` / ``New title`` prose), so
-        there is no machine-readable variant to cover here. The id echoed back
-        in the prose is the substantive assertion.
+        The id and the new title echoed back in the prose are the substantive
+        assertions.
         """
         result = runner.invoke(
             cli,
@@ -113,6 +110,28 @@ class TestRenameCommand:
         assert_command_success(result, allow_no_context=False)
         assert VCR_MUTABLE_NOTEBOOK_ID in result.output
         assert "VCR CLI Renamed" in result.output
+
+    @notebooklm_vcr.use_cassette("cli_notebook_rename.yaml")
+    def test_rename_notebook_json(self, runner, mock_auth_for_vcr):
+        """``rename --json`` reuses the same RPC and reports a structured result.
+
+        ``rename_cmd`` (``cli/notebook_cmd.py``) carries ``@json_option`` and,
+        when ``--json`` is passed, emits
+        ``{"notebook_id", "new_title", "success": True}`` instead of the prose.
+        Same cassette: the JSON branch only changes the *output formatting*, not
+        the underlying RENAME_NOTEBOOK call.
+        """
+        result = runner.invoke(
+            cli,
+            ["rename", "VCR CLI Renamed", "-n", VCR_MUTABLE_NOTEBOOK_ID, "--json"],
+        )
+        assert_command_success(result, allow_no_context=False)
+
+        data = parse_json_output(result.output)
+        assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
+        assert data.get("notebook_id") == VCR_MUTABLE_NOTEBOOK_ID
+        assert data.get("new_title") == "VCR CLI Renamed"
+        assert data.get("success") is True
 
 
 class TestDeleteCommand:
