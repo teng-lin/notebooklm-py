@@ -239,12 +239,18 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, json_output, clien
             # the unified mind-map API (#1256). Regular artifacts use RENAME_ARTIFACT.
             mind_maps = await client.mind_maps.list(nb_id_resolved)
             mind_map = next((m for m in mind_maps if m.id == resolved_id), None)
+            # return_object=False: the CLI builds its confirmation from
+            # resolved_id + new_title and never uses the hydrated object, so
+            # skip the rename re-fetch (a full LIST_ARTIFACTS / get) — "no
+            # exception = success" is sufficient in this error-raising context.
             if mind_map is not None:
                 await client.mind_maps.rename(
-                    nb_id_resolved, resolved_id, new_title, kind=mind_map.kind
+                    nb_id_resolved, resolved_id, new_title, kind=mind_map.kind, return_object=False
                 )
             else:
-                await client.artifacts.rename(nb_id_resolved, resolved_id, new_title)
+                await client.artifacts.rename(
+                    nb_id_resolved, resolved_id, new_title, return_object=False
+                )
             # The rename API now returns the renamed object and raises on a
             # missing target; if no exception was raised, the operation
             # succeeded. We display the requested new_title as confirmation.

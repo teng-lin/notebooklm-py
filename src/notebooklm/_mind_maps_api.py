@@ -349,10 +349,12 @@ class MindMapsAPI:
     ) -> MindMap | None:
         """Re-fetch the renamed map (or skip when ``return_object=False``).
 
-        The dispatch paths above already proved the id exists, so a ``None``
-        from ``get`` here means the map vanished between the rename and the
-        re-fetch (a genuine race) — surface it as the same ``ValueError`` the
-        missing-target paths raise rather than returning a stale/absent object.
+        A ``None`` from ``get`` here means the map is absent — surface it as
+        the same ``ValueError`` the missing-target dispatch paths raise rather
+        than returning a stale/absent object. For paths that pre-validate the
+        id (auto-detect and explicit-interactive) this is a vanished-between-
+        rename-and-refetch race; for the explicit ``kind=NOTE_BACKED`` path it
+        is the primary missing-target signal. Either way, absent → raise.
         """
         if not return_object:
             return None

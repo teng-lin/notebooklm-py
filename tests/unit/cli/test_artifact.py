@@ -529,8 +529,10 @@ class TestArtifactRename:
 
             assert result.exit_code == 0
             assert "Renamed" in result.output
+            # The CLI ignores the rename return, so it passes return_object=False
+            # to skip the (unused) hydrate re-fetch.
             mock_client.mind_maps.rename.assert_awaited_once_with(
-                "nb_123", "mm_123", "New Title", kind=map_kind
+                "nb_123", "mm_123", "New Title", kind=map_kind, return_object=False
             )
             # Mind maps never fall through to the regular-artifact rename path.
             mock_client.artifacts.rename.assert_not_called()

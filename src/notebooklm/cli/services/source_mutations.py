@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from ...types import DriveMimeType, Source
 from ..resolve import resolve_source_id, validate_id
@@ -510,9 +510,13 @@ async def execute_source_rename(
         client, plan.notebook_id, plan.source_id, json_output=plan.json_output
     )
     # return_object defaults to True, so rename returns a Source (or raises
-    # SourceNotFoundError on a missing target) — never None on this path.
-    src = await client.sources.rename(plan.notebook_id, resolved_id, plan.new_title)
-    assert src is not None  # narrow Source | None for the rename-result dataclass
+    # SourceNotFoundError on a missing target) — never None on this path. Use
+    # cast (not assert, which -O strips) to narrow Source | None for the
+    # rename-result dataclass.
+    src = cast(
+        Source,
+        await client.sources.rename(plan.notebook_id, resolved_id, plan.new_title),
+    )
     return SourceRenameResult(source=src, notebook_id=plan.notebook_id)
 
 
