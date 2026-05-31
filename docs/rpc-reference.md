@@ -935,7 +935,7 @@ params = [
 
 ### RPC: CREATE_NOTE (saved-from-chat variant) (CYK0Xb)
 
-**Source:** `_chat_notes.py::save_chat_answer_as_note()` (canonical owner) — exposed publicly as `ChatAPI.save_answer_as_note(...)`; `NotesAPI.create_from_chat(...)` is a deprecated forwarder that delegates to the same primitive.
+**Source:** `_chat_notes.py::save_chat_answer_as_note()` (canonical owner) — exposed publicly as `ChatAPI.save_answer_as_note(...)`.
 
 **Note:** This is the same RPC method ID as plain CREATE_NOTE above, but uses a **7-element** params array (vs the 5-element blank-note form) and **mode flag `[2]`** to tell the server the note carries a saved chat answer. The server stores per-citation source-passage metadata so `[N]` markers in the answer render as hover-anchored links in the NotebookLM web UI. No follow-up UPDATE_NOTE is needed — this is a single round-trip.
 
@@ -1000,7 +1000,7 @@ params = [
 
 **Encoding quirks**:
 - Rendering-flag arrays use the integer `0`, not the boolean `false` — `json.dumps(False)` emits `false`, which the server *normalizes* but the wire-channel match is strict. The encoder uses integer `0` to stay byte-exact with the captured request.
-- The server appears to apply a "smart title" pass for `[2]`-mode notes — the captured response title differed from the captured request title (the request sent `"New Saved Note"`; the response stored `"Le Verger de la Connaissance : Le Cas de la Pomme"`). `ChatAPI.save_answer_as_note()` (and the deprecated `NotesAPI.create_from_chat()` forwarder) surface the server-stored title in the returned `Note`.
+- The server appears to apply a "smart title" pass for `[2]`-mode notes — the captured response title differed from the captured request title (the request sent `"New Saved Note"`; the response stored `"Le Verger de la Connaissance : Le Cas de la Pomme"`). `ChatAPI.save_answer_as_note()` surfaces the server-stored title in the returned `Note`.
 
 **Known gaps**:
 - The `passage_id` UUID at slot `[3][0][5][0][0]` does NOT appear in the streaming chat response shape we currently parse. `_build_source_passage_descriptor` falls back to `chunk_id` as a placeholder when `ChatReference.passage_id` is unset (which is always, in production today). Empirically the server accepts this and the web UI still renders hover anchors. If a future capture reveals where this UUID comes from, populate `ChatReference.passage_id` in `_chat_wire.py::parse_single_citation()` and the encoder will use it automatically.

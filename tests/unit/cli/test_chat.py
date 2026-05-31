@@ -129,8 +129,9 @@ class TestAskSaveAsNote:
         path, issue #660) rather than the plain-text ``notes.create()``
         path.
 
-        Note: ``notes.create_from_chat`` is a deprecated forwarder; the
-        CLI calls the canonical ``chat.save_answer_as_note`` directly.
+        Note: the CLI calls the canonical ``chat.save_answer_as_note``
+        directly (the former ``notes.create_from_chat`` forwarder was
+        removed in v0.7.0).
         """
         with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()

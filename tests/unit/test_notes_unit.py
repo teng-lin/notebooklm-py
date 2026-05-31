@@ -8,7 +8,6 @@ from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
 from notebooklm.exceptions import RPCError
-from notebooklm.types import Note
 
 
 @pytest.fixture
@@ -26,32 +25,18 @@ def mock_core():
 
 
 @pytest.fixture
-def save_chat_answer():
-    """Stub callback for the saved-from-chat path.
-
-    The default returns an empty :class:`Note`; tests that exercise
-    ``create_from_chat`` override the return value via
-    ``save_chat_answer.return_value = ...``.
-    """
-    return AsyncMock(return_value=Note(id="", notebook_id="", title="", content=""))
-
-
-@pytest.fixture
-def notes_api(mock_core, save_chat_answer):
+def notes_api(mock_core):
     """Create NotesAPI with mocked core + real note/mind-map services.
 
     The services are real instances backed by ``mock_core`` so the
     fixture exercises the production wiring rather than a fully-mocked
-    collaborator surface. ``save_chat_answer`` is an injected
-    :class:`AsyncMock` matching the
-    :class:`notebooklm._notes.SaveChatAnswerCallback` Protocol.
+    collaborator surface.
     """
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     return NotesAPI(
         notes=note_service,
         mind_maps=mind_maps,
-        save_chat_answer=save_chat_answer,
     )
 
 
@@ -680,91 +665,3 @@ class TestDeleteMindMap:
         assert params[0] == "nb_123"
         assert params[1] is None
         assert params[2] == ["mm_456"]
-
-
-# =============================================================================
-# create_from_chat() deprecation-forwarder tests (issue #660)
-# =============================================================================
-#
-# Per refactor-history.md Step 8 / ADR-013, ``NotesAPI.create_from_chat`` is now a
-# deprecated pure-delegate to the injected ``save_chat_answer`` callback —
-# the encoder semantics + empty-references handling live on
-# ``ChatAPI.save_answer_as_note`` and are covered by
-# ``tests/unit/test_chat_save_answer_as_note.py``. The tests below pin the
-# forwarder contract: signature preservation, deprecation warning,
-# argument pass-through.
-
-
-def _make_ask_result(
-    answer: str = "One fruit mentioned is apples [1].",
-    n_refs: int = 1,
-):
-    from notebooklm.types import AskResult, ChatReference
-
-    refs = [
-        ChatReference(
-            source_id=f"src-{i}",
-            citation_number=i + 1,
-            cited_text=f"passage {i}",
-            start_char=0,
-            end_char=9,
-            chunk_id=f"chunk-{i}",
-        )
-        for i in range(n_refs)
-    ]
-    return AskResult(
-        answer=answer,
-        conversation_id="conv-1",
-        turn_number=1,
-        is_follow_up=False,
-        references=refs,
-        raw_response="",
-    )
-
-
-class TestCreateFromChatForwarder:
-    """Pin the deprecation + delegation contract of ``create_from_chat``."""
-
-    @pytest.mark.asyncio
-    async def test_create_from_chat_emits_deprecation_warning(self, notes_api, save_chat_answer):
-        save_chat_answer.return_value = Note(
-            id="note_1", notebook_id="nb-1", title="Chat: foo", content="answer"
-        )
-        ask_result = _make_ask_result()
-        with pytest.warns(DeprecationWarning, match="save_answer_as_note"):
-            await notes_api.create_from_chat("nb-1", ask_result)
-
-    @pytest.mark.asyncio
-    async def test_create_from_chat_delegates_with_default_title(self, notes_api, save_chat_answer):
-        save_chat_answer.return_value = Note(
-            id="note_1", notebook_id="nb-1", title="x", content="x"
-        )
-        ask_result = _make_ask_result()
-        with pytest.warns(DeprecationWarning):
-            await notes_api.create_from_chat("nb-1", ask_result)
-        # Default title is None — delegation passes it through unchanged
-        # so the callback (= ChatAPI.save_answer_as_note) owns derivation.
-        save_chat_answer.assert_awaited_once_with("nb-1", ask_result, title=None)
-
-    @pytest.mark.asyncio
-    async def test_create_from_chat_delegates_with_explicit_title(
-        self, notes_api, save_chat_answer
-    ):
-        save_chat_answer.return_value = Note(
-            id="note_1", notebook_id="nb-1", title="Custom", content="x"
-        )
-        ask_result = _make_ask_result()
-        with pytest.warns(DeprecationWarning):
-            await notes_api.create_from_chat("nb-1", ask_result, title="Custom")
-        save_chat_answer.assert_awaited_once_with("nb-1", ask_result, title="Custom")
-
-    @pytest.mark.asyncio
-    async def test_create_from_chat_returns_callback_result_verbatim(
-        self, notes_api, save_chat_answer
-    ):
-        expected = Note(id="note_x", notebook_id="nb-1", title="ServerTitle", content="answer text")
-        save_chat_answer.return_value = expected
-        ask_result = _make_ask_result()
-        with pytest.warns(DeprecationWarning):
-            result = await notes_api.create_from_chat("nb-1", ask_result)
-        assert result is expected

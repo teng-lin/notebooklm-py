@@ -78,7 +78,7 @@ QUIET_WAIVED_SITES: dict[tuple[str, str, int], str] = {
     (
         "src/notebooklm/cli/chat_cmd.py",
         "_run",
-        344,
+        343,
     ): (
         "TODO(quiet-policy): note-save failure inside `ask` reports the "
         "underlying exception via `emit_status` so the warning is colored "
