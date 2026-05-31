@@ -156,7 +156,7 @@ class ArtifactPollingService:
         on_status_change: StatusChangeCallback | None = None,
     ) -> GenerationStatus:
         """Wait for a generation task to complete using a shared poll loop."""
-        # P0-2: catch cross-loop wait_for_completion before touching the
+        # Catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
         # loop) or spawning a poll task on a foreign loop.
         self._loop_guard.assert_bound_loop()

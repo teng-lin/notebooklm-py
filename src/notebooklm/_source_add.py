@@ -88,8 +88,7 @@ class SourceAddService:
                 # Transport- and auth-level probe failures must propagate.
                 # Silently returning None here lets ``idempotent_create``
                 # re-issue the create on top of a broken probe, which is
-                # exactly the duplicate-source bug we are guarding against
-                # (P1-2).
+                # exactly the duplicate-source bug we are guarding against.
                 raise
             except Exception:
                 logger.debug(
@@ -184,7 +183,7 @@ class SourceAddService:
         """Add a Google Drive document as a source.
 
         Drive sources go through the same probe-then-create idempotency
-        pattern as ``add_url`` (P0-3-sources): a 5xx / network failure
+        pattern as ``add_url``: a 5xx / network failure
         between server-side commit and client-side response could
         otherwise duplicate the source on a naive retry. The probe matches
         by ``file_id`` substring against ``source.url`` (Drive URLs embed
@@ -253,7 +252,7 @@ class SourceAddService:
                 sources = await list_sources(notebook_id)
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 # Transport- and auth-level probe failures must propagate
-                # — see the rationale in ``add_url._probe`` (P1-2).
+                # — see the rationale in ``add_url._probe``.
                 raise
             except Exception:
                 logger.debug(

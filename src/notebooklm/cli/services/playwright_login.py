@@ -2,8 +2,7 @@
 
 Owns the entire Playwright fast path for ``notebooklm login`` (the rookiepy
 ``--browser-cookies`` path stays in :mod:`notebooklm.cli.services.login`).
-Extracted from :mod:`notebooklm.cli.session_cmd` in P3.T3 so the Click
-handler can stay a thin orchestrator.
+The Click handler stays a thin orchestrator over this service.
 
 Public entry points
 ===================
@@ -17,7 +16,7 @@ Public entry points
   for a ``login`` invocation (including the ``--fresh`` profile wipe).
 * :func:`validate_login_flag_conflicts` — flag mutual-exclusion gate.
 * :func:`filter_storage_state_cookies_by_domain_policy` — applies the
-  P1-17 cookie-domain allowlist to a Playwright ``storage_state`` dict.
+  cookie-domain allowlist to a Playwright ``storage_state`` dict.
 
 The handler keeps the legacy ``_run_playwright_login`` / ``_prepare_login_paths``
 patch surfaces (re-exported via ``session_cmd.py``) so existing tests
@@ -137,7 +136,7 @@ CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
 
 
 # ---------------------------------------------------------------------------
-# Subprocess output sanitisation (audit G4)
+# Subprocess output sanitisation
 # ---------------------------------------------------------------------------
 #
 # When we surface captured stderr / stdout from a Playwright subprocess to
@@ -317,7 +316,7 @@ def filter_storage_state_cookies_by_domain_policy(
     include_optional: bool = False,
     include_domains: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Filter a Playwright ``storage_state`` dict to the configured cookie-domain policy (P1-17).
+    """Filter a Playwright ``storage_state`` dict to the configured cookie-domain policy.
 
     The rookiepy / ``--browser-cookies`` extraction path asks Chrome only for
     cookies on the explicit domain allowlist from
@@ -778,7 +777,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
     on ImportError), runs the chromium pre-flight when the bundled browser is
     selected, opens a persistent context, retries navigation on transient
     connection errors, waits for login completion, pins ``.google.com``
-    cookies, applies the cookie-domain allowlist filter (P1-17), atomically
+    cookies, applies the cookie-domain allowlist filter, atomically
     writes ``storage_state.json``, and writes account metadata when the active
     Google account can be identified safely.
     """
@@ -988,7 +987,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
             # Atomic write with chmod 0o600 — Playwright's path= argument
             # writes directly (non-atomic + world-readable window).
             #
-            # P1-17: apply the same cookie-domain allowlist that the rookiepy
+            # Apply the same cookie-domain allowlist that the rookiepy
             # path uses (``_build_google_cookie_domains``) so sibling-product
             # cookies (mail, myaccount, docs, youtube) the user happens to be
             # signed into in the same browser session don't leak into

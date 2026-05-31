@@ -1,7 +1,6 @@
 """Auth refresh coordinator helper for the client runtime.
 
-Owns the auth refresh state machine and snapshot serialization that historically
-lived inline on the former ``Session`` facade (now deleted):
+Owns the auth refresh state machine and snapshot serialization:
 
 * ``_refresh_lock`` — single-flight lock guarding refresh-task creation. Lazy
   because ``asyncio.Lock()`` needs a running loop in some Python versions and
@@ -97,19 +96,16 @@ class AuthRefreshCoordinator:
         self._refresh_lock: asyncio.Lock | None = None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = refresh_callback
-        # Wave 3b of session-decoupling: ``await_refresh`` records lock-wait
-        # latency via this metrics dep (was previously read off the host
-        # parameter — see plan Task 1.0). The same ``self._metrics`` slot is
-        # now read by :meth:`snapshot` and :meth:`update_auth_tokens` too —
-        # the deleted ``_AuthRefreshHost`` Protocol's ``_metrics_obj`` slot
-        # is no longer threaded through method args. ``None`` is a safe
+        # ``await_refresh`` records lock-wait latency via this metrics dep.
+        # The same ``self._metrics`` slot is read by :meth:`snapshot` and
+        # :meth:`update_auth_tokens` too. ``None`` is a safe
         # fallback for tests that construct the coordinator standalone
         # without a metrics collaborator; the lock-wait latency is simply not
         # recorded in that case.
         self._metrics: ClientMetrics | None = metrics
         # Distinct from ``_refresh_lock`` — see module docstring.
         self._auth_snapshot_lock: asyncio.Lock | None = None
-        # P0-2: loop-affinity guard. Set by :meth:`ClientLifecycle.open`
+        # Loop-affinity guard. Set by :meth:`ClientLifecycle.open`
         # so :meth:`await_refresh` can short-circuit cross-loop misuse
         # before touching the lazily-built ``_refresh_lock`` (bound to
         # the loop the lock was first acquired under). ``None`` is a
@@ -131,11 +127,9 @@ class AuthRefreshCoordinator:
 
         Used by :class:`notebooklm._middleware_auth_refresh.AuthRefreshMiddleware`
         to gate the refresh-and-retry branch: a client constructed without
-        a ``refresh_callback`` should propagate auth errors directly,
-        matching the pre-Tier-12 leaf behavior. Exposing this as a
-        property avoids reaching into the private
-        ``_refresh_callback`` attribute from outside the coordinator
-        (PR 12.9 cleanup of the inline lambda the chain seed used pre-12.9).
+        a ``refresh_callback`` should propagate auth errors directly.
+        Exposing this as a property avoids reaching into the private
+        ``_refresh_callback`` attribute from outside the coordinator.
         """
         return self._refresh_callback is not None
 
@@ -295,15 +289,13 @@ class AuthRefreshCoordinator:
         intact across the cancellation and is replaced only on the next
         refresh wave once the current task transitions to ``done()``.
 
-        Wave 3b of the session-decoupling plan (Task 1.0): this method no
-        longer takes a host parameter — the only host attribute it touched
-        (``_metrics_obj``) is supplied via the ``metrics`` kwarg on
-        :meth:`__init__`. The other coordinator methods (``snapshot``,
-        ``update_auth_tokens``, ``update_auth_headers``) were migrated to
-        explicit per-method collaborators in a follow-up so the
-        coordinator no longer depends on any Session-shaped Protocol.
+        This method takes no host parameter — the metrics dependency it needs
+        is supplied via the ``metrics`` kwarg on :meth:`__init__`. The other
+        coordinator methods (``snapshot``, ``update_auth_tokens``,
+        ``update_auth_headers``) likewise take explicit per-method
+        collaborators rather than an owner facade.
         """
-        # P0-2: catch cross-loop refresh before touching ``_refresh_lock``.
+        # Catch cross-loop refresh before touching ``_refresh_lock``.
         # The lock is lazily bound to the loop that first awaited
         # ``get_refresh_lock`` — a cross-loop call would hang on the
         # ``await lock.acquire()`` if we let it through.
@@ -372,7 +364,7 @@ class AuthRefreshCoordinator:
         The slot is replaced only on the NEXT refresh wave once the current
         task transitions to ``done()`` — never here, never in close.
 
-        Behavior is identical to the pre-Wave-1 inlined block:
+        Behavior is equivalent to:
 
             refresh_task = host._auth_coord._refresh_task
             if refresh_task is not None and not refresh_task.done():

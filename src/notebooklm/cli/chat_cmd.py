@@ -301,7 +301,7 @@ def register_chat_commands(cli):
                     set_current_conversation(result.conversation_id)
 
                 # Text-mode: original interactive layout (Answer first,
-                # save-as-note status after). JSON-mode (P1.T1 contract):
+                # save-as-note status after). In JSON mode:
                 # save-as-note runs first into a stderr-routed status path
                 # and its outcome is merged into the JSON envelope, which
                 # is emitted LAST as the terminal stdout output.
@@ -548,7 +548,7 @@ def register_chat_commands(cli):
                     pre_clear_count = client.chat.cache_size()
                     cleared = client.chat.clear_cache()
                     if json_output:
-                        # P1.T1 contract: stdout must be a single JSON
+                        # In JSON mode, stdout must be a single JSON
                         # document; no Rich/text output.
                         json_output_response(
                             {
@@ -582,7 +582,7 @@ def register_chat_commands(cli):
                     title = note_title or "Chat History"
                     note = await client.notes.create(nb_id_resolved, title, content)
                     if json_output:
-                        # P1.T1 contract: emit a single JSON envelope that
+                        # In JSON mode, emit a single JSON envelope that
                         # carries both the history payload and the
                         # note-save outcome. Status text routes to stderr.
                         emit_status(

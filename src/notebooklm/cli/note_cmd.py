@@ -352,7 +352,7 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
             # typed-error path as ``note get``'s Path B (resolve→missing)
             # rather than the previous exit-0 ``{renamed: false, error: ...}``
             # placeholder so ``set -e`` / ``check_call`` callers can branch on
-            # the exit code without parsing prose (audit P1.T5). See
+            # the exit code without parsing prose. See
             # ``docs/cli-exit-codes.md`` and the BREAKING entry in
             # ``CHANGELOG.md`` (Unreleased → Changed).
             #
@@ -417,7 +417,7 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
 
                 # In JSON mode, refuse to prompt: ``click.confirm`` writes to
                 # stdout, which would corrupt the parseable JSON contract callers
-                # rely on. Preserve the P1.T5 typed error + exit-1 contract.
+                # rely on. Preserve the typed error + exit-1 contract.
                 if json_output and not yes:
                     _output_error(
                         "Pass --yes to confirm deletion in --json mode",

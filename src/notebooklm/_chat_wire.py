@@ -24,7 +24,8 @@ from .rpc.encoder import nest_source_ids
 from .rpc.types import get_query_url
 from .types import ChatReference
 
-# Deliberate: preserve the pre-extraction chat parser logger namespace.
+# Deliberate: use the ``notebooklm._chat`` logger namespace (not this module's)
+# so existing log filters keep matching the chat parser diagnostics.
 logger = logging.getLogger("notebooklm._chat")
 
 # ``safe_index`` source labels for the streamed-chat descents. The streamed

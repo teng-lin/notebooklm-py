@@ -53,7 +53,7 @@ class AuthTokens:
 
     # Secret fields are excluded from the dataclass-generated ``__repr__`` via
     # ``field(repr=False)`` and re-surfaced as redacted placeholders by the
-    # custom ``__repr__`` below (P1-1). This prevents accidental secret
+    # custom ``__repr__`` below. This prevents accidental secret
     # leakage through ``logger.debug("%r", auth)``, ``pytest -vv`` failure
     # diffs, and any third-party tooling that calls ``repr()`` on the dataclass.
     cookies: DomainCookieMap = field(repr=False)

@@ -17,7 +17,7 @@ Five names live here:
 - :data:`PostBody` — body type accepted by the legacy tuple-return
   ``BuildRequest`` shape and by the low-level streaming POST helper.
 - :class:`BuildRequestResult` — the *named* dataclass form of the same
-  ``(url, body, headers)`` triple, introduced for PR 12.8's
+  ``(url, body, headers)`` triple, used by the
   ``AuthRefreshMiddleware.build_request_factory`` callback. The dataclass
   shape is preferred for new code (named fields, immutable, type-checked
   at construction) over the legacy tuple return. Existing callers continue
@@ -63,8 +63,8 @@ BuildRequest = Callable[[AuthSnapshot], tuple[str, PostBody, dict[str, str] | No
 class BuildRequestResult:
     """Named dataclass form of the ``(url, body, headers)`` request triple.
 
-    Introduced for the Tier-12 ``AuthRefreshMiddleware`` (ADR-009, PR 12.8):
-    the middleware's ``build_request_factory`` callback returns this dataclass
+    Used by ``AuthRefreshMiddleware`` (ADR-009): the middleware's
+    ``build_request_factory`` callback returns this dataclass
     instead of the legacy ``(url, body, headers)`` tuple so the constructor
     signature reads as a single named value rather than positional unpacking.
 

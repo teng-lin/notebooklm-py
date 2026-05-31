@@ -62,13 +62,11 @@ logger = logging.getLogger(__name__)
 def _exit_on_outcome(outcome: BrowserCookieOutcome) -> NoReturn:
     """Render a helper-chain failure outcome and exit with code 1.
 
-    Preserves the pre-refactor text-mode behavior for refresh.py-driven
+    Implements the text-mode behavior for refresh.py-driven
     paths: the Rich-markup message is printed and the process exits.
-    This module is still in :data:`TRANSITIONAL_GUARDED_PATHS` (the
-    ``Pattern A`` inventory tracks the ``console.print`` +
-    ``exit_with_code`` pairs in each refresh driver function), so the
-    inline call is intentional. Lifting refresh.py to the typed-outcome
-    JSON envelope shape is tracked separately.
+    This module is listed in :data:`TRANSITIONAL_GUARDED_PATHS`, which
+    tracks the ``console.print`` + ``exit_with_code`` pairs in each
+    refresh driver function, so the inline call here is intentional.
     """
     console.print(outcome.message)
     exit_with_code(1)

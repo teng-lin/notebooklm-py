@@ -1,10 +1,9 @@
 """Saved-from-chat note encoder (private; refactor-history.md Step 8, ADR-013).
 
 Owns the CREATE_NOTE wire format used by the web UI's "Save to note"
-button on a chat answer (issue #660). Moved out of ``_mind_map.py`` in
-Phase 6 so the saved-chat path lives next to ``ChatAPI`` rather than
-the mind-map module — the two paths are unrelated despite both being
-CREATE_NOTE variants.
+button on a chat answer (issue #660). The saved-chat path lives next to
+``ChatAPI`` rather than in the mind-map module — the two paths are
+unrelated despite both being CREATE_NOTE variants.
 
 The exported call site is :func:`save_chat_answer_as_note`, invoked
 exclusively by :meth:`ChatAPI.save_answer_as_note`. All other names

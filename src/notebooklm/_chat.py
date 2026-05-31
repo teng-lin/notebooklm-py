@@ -122,16 +122,11 @@ class ChatAPI:
     ):
         """Initialize the chat API.
 
-        Per ADR-014 Rule 2 Corollary (Wave 8 of the session-decoupling
-        plan), ``ChatAPI`` depends on the **direct** collaborators it
-        actually exercises rather than a chat-local Runtime Protocol that
-        bundles them. The chat-local ``ChatRuntime`` Protocol used to
-        compose ``RpcCaller`` + ``LoopGuard`` + ``transport_post`` +
-        ``next_reqid``; once ``chat_aware_authed_post`` was switched to
-        take :class:`RuntimeTransport` directly (Wave 8 step 1), the
-        single-member surface that justified the Protocol disappeared, so
-        the Protocol was deleted and ChatAPI takes the four underlying
-        collaborators by keyword argument instead.
+        Per ADR-014 Rule 2 Corollary, ``ChatAPI`` depends on the
+        **direct** collaborators it actually exercises rather than a
+        chat-local Runtime Protocol that bundles them. ``ChatAPI`` takes
+        the four underlying collaborators (``rpc``, ``transport``,
+        ``reqid``, ``loop_guard``) by keyword argument.
 
         Args:
             rpc: RPC dispatch collaborator (the client's
@@ -343,7 +338,7 @@ class ChatAPI:
             last_conversation_id)`` — the server then has nothing to
             extend and the next ``ask()`` starts a new conversation.
         """
-        # P0-2: catch cross-loop ``ask`` before any work — particularly
+        # Catch cross-loop ``ask`` before any work — particularly
         # before acquiring the per-conversation lock below, which would
         # otherwise hang on a lock bound to a dead loop. The POST-path
         # guard in ``Session._perform_authed_post`` only catches misuse on
@@ -372,14 +367,10 @@ class ChatAPI:
             active_source_ids: list[str] = source_ids
 
             # Mint the request-id under the asyncio-safe counter helper so two
-            # concurrent ``ask`` calls on the same client never collide. The
-            # previous direct mutation ``self._core._reqid_counter += 100000``
-            # (``self._core`` was the pre-Phase-2 attribute name, now
-            # ``self._runtime``) raced under ``asyncio.gather`` and produced
-            # duplicate ``_reqid`` URL params. After Wave 8 of session-
-            # decoupling, ``ChatAPI`` holds the :class:`ReqidCounter`
-            # directly (constructor injection) instead of reaching for it
-            # through a runtime composite.
+            # concurrent ``ask`` calls on the same client never collide.
+            # A direct counter mutation would race under ``asyncio.gather``
+            # and produce duplicate ``_reqid`` URL params. ``ChatAPI`` holds
+            # the :class:`ReqidCounter` directly (constructor injection).
             reqid = await self._reqid.next_reqid()
 
             def build_request(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
@@ -674,7 +665,6 @@ class ChatAPI:
                 if i + 1 < len(turns):
                     next_turn = turns[i + 1]
                     if isinstance(next_turn, list) and len(next_turn) > 4 and next_turn[2] == 2:
-                        # Named extractor folds the previous ``try/except``.
                         # A non-string leaf yields ``None`` (empty-answer
                         # fallback); genuine shape drift raises
                         # ``UnknownRPCMethodError`` through ``safe_index`` under

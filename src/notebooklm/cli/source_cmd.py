@@ -17,7 +17,7 @@ The full per-command listing lives in the ``source`` click group docstring
 below (it is what ``notebooklm source --help`` shows).
 """
 
-import asyncio  # noqa: F401 — re-exported for P1.T2 regression tests that patch source_cmd.asyncio.sleep
+import asyncio  # noqa: F401 — re-exported for regression tests that patch source_cmd.asyncio.sleep
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -323,7 +323,7 @@ def _render_source_guide_result(result: SourceGuideResult, *, json_output: bool)
 def _render_source_wait_outcome(outcome: SourceWaitOutcome, *, json_output: bool) -> None:
     """Render the ``source wait`` outcome and exit with the documented code.
 
-    Exit codes (preserved from the pre-extraction service-side contract):
+    Exit codes (preserved from the service-side contract):
         * 0 — :class:`SourceWaitReady`.
         * 1 — :class:`SourceWaitNotFound` or :class:`SourceWaitProcessingError`.
         * 2 — :class:`SourceWaitTimeout`.
@@ -933,7 +933,7 @@ def _render_add_research_result(result: SourceAddResearchResult, *, json_output:
     The handler owns all CLI I/O — text vs JSON, exit codes, the
     ``Starting ... research`` info line, and the ``Imported N sources``
     summary — so the service layer can stay pure (ADR-008) and exit-policy
-    free (no Pattern A).
+    free.
     """
     if result.outcome == "start_failed":
         if json_output:
@@ -1094,7 +1094,7 @@ def source_add_research(
         _emit_add_research_flag_conflict(
             "--cited-only requires --import-all", json_output=json_output
         )
-    # P1.T2 bug 7: --no-wait + --import-all is silently broken — refuse it.
+    # --no-wait + --import-all is silently broken — refuse it.
     if no_wait and import_all:
         _emit_add_research_flag_conflict(
             "--import-all requires --wait (the default) or a separate "
@@ -1359,7 +1359,7 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 with cli_status("Fetching sources for cleanup...", ctx=ctx):
                     return await client.sources.list(notebook_id_inner)
 
-            # P1.T2 bug 3: in --json mode, never prompt — automation cannot
+            # In --json mode, never prompt — automation cannot
             # answer the question. Pass a non-interactive ``confirm_delete``
             # that always declines; once the service returns ``cancelled`` we
             # synthesize a structured ``CONFIRM_REQUIRED`` error below.
@@ -1406,16 +1406,15 @@ def _dispatch_source_clean_result(
 ) -> None:
     """Render the source-clean outcome and exit per the result's status.
 
-    Owns the Click-side rendering + exit-code policy that used to live
-    inside ``execute_source_clean`` in :mod:`.services.source_clean`.
+    Owns the Click-side rendering + exit-code policy, kept separate from
+    ``execute_source_clean`` in :mod:`.services.source_clean`.
     Keeping presentation here lets the service module stay free of
-    ``click`` / ``..rendering`` / ``..error_handler`` imports (audit C4
-    Pattern A).
+    ``click`` / ``..rendering`` / ``..error_handler`` imports.
     """
     candidate_payload = candidates_payload(result.candidates)
 
     if json_output:
-        # P1.T2 bug 3: synthesize structured error when --json + no --yes
+        # Synthesize structured error when --json + no --yes
         # left candidates uncleaned. ``require_yes_in_json`` raises a typed
         # source-mutation error for the command layer — it never returns.
         if result.status == "cancelled" and not yes:
@@ -1444,7 +1443,7 @@ def _dispatch_source_clean_result(
         if result.status == "completed":
             payload["failures"] = [{"id": sid, "error": err} for sid, err in result.failures]
         json_output_response(payload)
-        # P1.T2 bug 8: partial-failure exits non-zero so shell automation
+        # Partial-failure exits non-zero so shell automation
         # (set -e, CI) sees the failure.
         if result.failures:
             exit_with_code(1)
@@ -1483,7 +1482,7 @@ def _dispatch_source_clean_result(
             console.print(
                 f"  [dim]...and {len(result.failures) - 5} more[/dim]",
             )
-        # P1.T2 bug 8: text-mode parity with JSON-mode exit code.
+        # Text-mode parity with JSON-mode exit code.
         exit_with_code(1)
         return
 

@@ -9,13 +9,11 @@ exceptions (``TransportAuthExpired``, ``TransportRateLimited``,
 ``ChatError`` or ``NetworkError`` so callers (currently only
 :class:`ChatAPI.ask`) stay free of HTTP-status branching.
 
-After the D2 cutover (PR-2 / arch-d2-cutover), :meth:`ChatAPI.ask`
-calls :func:`chat_aware_authed_post` directly, replacing the prior
-chat-side wrapper that lived on the core's RPC executor. As of Wave 8
-of the session-decoupling plan (ADR-014 Rule 2 Corollary), this helper
-takes the :class:`RuntimeTransport` collaborator directly rather than a
-local ``ChatRuntime`` Protocol — the indirection through a chat-local
-Protocol added no value once ``transport_post`` was its only member.
+:meth:`ChatAPI.ask` calls :func:`chat_aware_authed_post` directly. Per
+ADR-014 Rule 2 Corollary, this helper takes the :class:`RuntimeTransport`
+collaborator directly rather than a local ``ChatRuntime`` Protocol — the
+indirection through a chat-local Protocol added no value once
+``transport_post`` was its only member.
 """
 
 from __future__ import annotations
@@ -50,17 +48,15 @@ async def chat_aware_authed_post(
     network/rate-limit failures become
     :class:`~notebooklm.exceptions.NetworkError` /
     :class:`~notebooklm.exceptions.ChatError` respectively. This keeps
-    ChatAPI free of HTTP-status branching and matches the historical
-    contract of ``ChatAPI.ask``, which calls this helper directly
-    post-D2-cutover (replacing the prior wrapper on the core's RPC
-    executor).
+    ChatAPI free of HTTP-status branching. ``ChatAPI.ask`` calls this
+    helper directly.
 
     Args:
         transport: :class:`RuntimeTransport` collaborator that owns the
             authed POST entry point on the shared transport pipeline.
             Passed directly via constructor injection from
-            ``NotebookLMClient.__init__`` (ADR-014 Rule 2 Corollary, Wave 8
-            of session-decoupling) — no chat-local Protocol intermediates.
+            ``NotebookLMClient.__init__`` (ADR-014 Rule 2 Corollary) — no
+            chat-local Protocol intermediates.
         build_request: Request builder forwarded to
             :meth:`RuntimeTransport.perform_authed_post`.
         parse_label: Caller-friendly label used in log lines and error

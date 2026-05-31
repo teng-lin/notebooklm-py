@@ -79,7 +79,7 @@ The greenfield design in `docs/architecture-evolution.md` §3.4 proposes
 lifting each concern into a composable middleware, leaving `Kernel.post`
 as a pure-transport function. The chain is the composition substrate.
 
-Five details that shaped this ADR (the others are in the master plan):
+Five details that shaped this ADR:
 
 1. **HTTP-level, not RPC-level.** The chain wraps the transport, not the
    encoder. Middlewares see already-encoded bytes; encoding and decoding
@@ -217,8 +217,8 @@ Per-position rationale:
 | `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` from `_middleware_context.py`; `RPC_QUEUE_WAIT_CONTEXT_KEY` remains a compatibility alias in `_middleware_semaphore.py`) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
 
 Middlewares are forbidden from inventing new keys without an ADR update.
-The dict is mutable by reference (deliberately, per master plan
-§"Per-request behavior") but read-mostly in practice. See
+The dict is mutable by reference (deliberately) but read-mostly in
+practice. See
 §"Decision: `RpcRequest.context: dict[str, Any]` is the long-term shape"
 below for the rationale and the policy that governs additions.
 

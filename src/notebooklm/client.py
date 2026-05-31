@@ -202,14 +202,14 @@ class NotebookLMClient:
                 backend-agnostic ``RpcTelemetryEvent`` so applications can
                 forward telemetry to logging, Prometheus, OpenTelemetry, or
                 another metrics backend without this package depending on one.
-            cookie_saver: Optional injectable seam (Phase 2 PR 3) overriding
+            cookie_saver: Optional injectable seam overriding
                 the on-disk cookie writer used on close / refresh / keepalive.
                 ``None`` (default) preserves the current behavior of resolving
                 ``notebooklm._auth.storage.save_cookies_to_storage`` via a
                 late-bound wrapper. Must be sync (``def``, not ``async def``)
                 — it runs inside ``asyncio.to_thread``. Custom callables
                 bypass the late-bind hop entirely.
-            cookie_rotator: Optional injectable seam (Phase 2 PR 3)
+            cookie_rotator: Optional injectable seam
                 overriding the keepalive-loop cookie rotator. ``None``
                 (default) preserves the current behavior of resolving
                 ``notebooklm._auth.keepalive._rotate_cookies`` via a
@@ -241,8 +241,7 @@ class NotebookLMClient:
         #
         # ``refresh_auth()``, the public ``auth`` property, and the
         # ``SourceUploadPipeline(auth=...)`` constructor argument all back
-        # off this field instead of any former Session-owned auth
-        # reference. The client shell helper
+        # off this field. The client shell helper
         # (``tests/_helpers/client_factory.build_client_shell_for_tests``)
         # mirrors the production attribute shape so tests exercise the
         # same code path as production.
@@ -290,10 +289,8 @@ class NotebookLMClient:
                     "clean back-pressure."
                 )
 
-        # Stage B1 PR 2 of the post-refactoring plan inverted the
-        # composition root. Session-elimination Phase 3 finishes the
-        # ownership move: :func:`compose_client_internals` binds
-        # composition state onto ``self._composed`` and returns only the
+        # The client is the composition root: :func:`compose_client_internals`
+        # binds composition state onto ``self._composed`` and returns only the
         # collaborators + executor that feature adapters need.
         #
         # The public NotebookLMClient kwarg surface is unchanged — the
@@ -321,10 +318,9 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
             max_concurrent_rpcs=max_concurrent_rpcs,
             on_rpc_event=on_rpc_event,
-            # Phase 2 PR 3 injectable seams — pass-through to the
-            # lifecycle. ``None`` (default) preserves the legacy late-
-            # binding contract via ``_default_cookie_saver`` /
-            # ``_default_cookie_rotator``.
+            # Injectable seams — pass-through to the lifecycle. ``None``
+            # (default) preserves the late-binding contract via
+            # ``_default_cookie_saver`` / ``_default_cookie_rotator``.
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
             seams=self._seams,
@@ -375,10 +371,8 @@ class NotebookLMClient:
         # ``ClientLifecycle.open`` which calls
         # ``set_bound_loop`` / ``reset_after_open`` on it.
         self._source_uploader = source_uploader
-        # ADR-014 Rule 3 Stage B (Stage B1 PR 2 of the post-refactoring
-        # plan): simple features take their RpcCaller dependency directly
-        # from the composition root's executor, not from a Stage A
-        # accessor on the deleted Session surface.
+        # Per ADR-014 Rule 3: simple features take their RpcCaller dependency
+        # directly from the composition root's executor.
         self.sources = SourcesAPI(
             internals.executor,
             uploader=source_uploader,
@@ -386,9 +380,7 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
         )
         self.notebooks = NotebooksAPI(internals.executor, sources_api=self.sources)
-        # Phase 5 wiring per docs/refactor-history.md Migration Plan steps 6-7:
-        # the legacy single-service handoff passed as ``mind_map_service=``
-        # is replaced with the explicit
+        # Note wiring (see docs/refactor-history.md): an explicit
         # NoteService + NoteBackedMindMapService split. NoteService owns the
         # raw row primitives; NoteBackedMindMapService is the mind-map-only
         # adapter the download path uses; the artifact-generation path uses
@@ -410,7 +402,7 @@ class NotebookLMClient:
             note_service=note_service,
             storage_path=storage_path,
         )
-        # ChatAPI (ADR-014 Rule 2 Corollary, session-decoupling) takes its
+        # ChatAPI (per ADR-014) takes its
         # four direct collaborators (RpcCaller, RuntimeTransport,
         # ReqidCounter, LoopGuard) by keyword argument. The transport is
         # sourced from ``self._composed``; other runtime fields come from
@@ -434,11 +426,9 @@ class NotebookLMClient:
             artifacts=self.artifacts,
             notebooks=self.notebooks,
         )
-        # Pure-RPC features (typed as ``rpc: RpcCaller``). Wave 7 of
-        # session-decoupling: pass the ``RpcExecutor`` collaborator
-        # directly. Stage B1 PR 2 updated the source from
-        # the deleted Session executor accessor to the
-        # composed executor.
+        # Pure-RPC features (typed as ``rpc: RpcCaller``). Pass the
+        # ``RpcExecutor`` collaborator directly, sourced from the composed
+        # executor.
         self.research = ResearchAPI(internals.executor)
         self.settings = SettingsAPI(internals.executor)
         self.sharing = SharingAPI(internals.executor)
@@ -674,10 +664,8 @@ class NotebookLMClient:
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client.
 
-        Stage B1 PR 2 of the post-refactoring plan migrated the read off
-        the deleted Stage A collaborator accessor onto the
-        bundle stored by :meth:`__init__` from the composition root's
-        :class:`ClientInternals`.
+        Reads from the collaborator bundle stored by :meth:`__init__` from
+        the composition root's :class:`ClientInternals`.
         """
         return self._collaborators.metrics.snapshot()
 

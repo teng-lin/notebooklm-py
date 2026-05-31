@@ -7,8 +7,7 @@ and translates the three ``SourceWaitError`` subclasses into a typed
 :class:`SourceWaitOutcome`. The caller renders the outcome and decides the
 exit code.
 
-Typed-outcome contract (matches ``source_cmd.source_wait`` pre-extraction
-exit policy, now owned by the caller):
+Typed-outcome contract (the exit policy is owned by the caller):
 
 * :class:`SourceWaitReady`           — source reached READY before timeout (caller exits 0).
 * :class:`SourceWaitNotFound`        — :class:`SourceNotFoundError` (caller exits 1).

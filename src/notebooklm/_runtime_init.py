@@ -1,14 +1,11 @@
 """Construction-time helpers for the NotebookLM client composition root.
 
-Mechanical decomposition of the former monolithic client-runtime constructor
-(``docs/improvement.md`` §3.1) into three concerns:
+Splits the client-runtime constructor into three concerns:
 :func:`validate_constructor_args` (kwarg validation + normalization),
 :func:`build_collaborators` (the seven collaborators in dependency order),
 and :func:`wire_middleware_chain` (the seven-middleware ADR-009 chain).
-Behavior is bit-for-bit identical to the pre-extraction constructor;
-dependency-ordering and seam-resolution comments are preserved where still
-applicable inside the helpers so future readers see *why* the order matters
-without looking for a concrete ``Session`` owner.
+Dependency-ordering and seam-resolution comments live inside the helpers so
+future readers see *why* the order matters.
 
 Builds on the constructor-DI work in #1027 (``36dcc634`` —
 "refactor(session): constructor DI for late-bound test seams; drop
@@ -104,10 +101,10 @@ class RuntimeCollaborators:
     """Constructed-collaborator bundle produced by
     :func:`build_collaborators`.
 
-    The construction order inside ``build_collaborators`` mirrors the
-    pre-extraction runtime constructor exactly (see the inline comments
-    there for the rationale); this container exists only to give the
-    client constructor a single hand-off shape after the construction phase.
+    The construction order inside ``build_collaborators`` is dependency-driven
+    (see the inline comments there for the rationale); this container exists
+    only to give the client constructor a single hand-off shape after the
+    construction phase.
     """
 
     metrics: ClientMetrics
@@ -206,10 +203,8 @@ def validate_constructor_args(
     if limits is not None:
         _resolved_limits = limits
     else:
-        # Lazy import — defensive guard against the historical
-        # ``types.py`` -> runtime-construction cycle (preserved from
-        # the pre-extraction comment "Lazy import to break the
-        # types.py -> _core.py cycle").
+        # Lazy import — defensive guard against the ``types.py`` ->
+        # runtime-construction import cycle.
         from .types import ConnectionLimits
 
         _resolved_limits = ConnectionLimits()
@@ -281,14 +276,13 @@ def build_collaborators(
 ) -> RuntimeCollaborators:
     """Construct the seven extracted collaborators in dependency order.
 
-    The order mirrors the pre-extraction runtime constructor exactly so
-    the load-bearing inter-collaborator wiring stays obvious to future
-    readers: metrics is built first because it absorbs the optional
-    ``on_rpc_event`` callback AND because the lock-wait metric callback
-    captured by ``ReqidCounter`` is its bound method (so ``metrics``
-    MUST exist before ``ReqidCounter`` is constructed — otherwise the
-    counter would close over an attribute that has not yet been set,
-    re-introducing the pre-PR-8 ordering trap); the drain tracker /
+    The order is dependency-driven so the load-bearing inter-collaborator
+    wiring stays obvious to future readers: metrics is built first because
+    it absorbs the optional ``on_rpc_event`` callback AND because the
+    lock-wait metric callback captured by ``ReqidCounter`` is its bound
+    method (so ``metrics`` MUST exist before ``ReqidCounter`` is
+    constructed — otherwise the counter would close over an attribute
+    that has not yet been set); the drain tracker /
     reqid counter / auth coordinator follow because they are leaf
     collaborators with no inter-helper dependencies; ``Kernel`` is
     built next because ``ClientLifecycle`` holds a reference to it;
@@ -328,14 +322,11 @@ def build_collaborators(
     # ``_refresh_lock`` — mixing them would re-introduce the
     # reentrancy ambiguity that snapshot-side serialization was added
     # to avoid. The attribute name ``_auth_coord`` is part of the
-    # inter-helper contract for the upcoming B2/C1 extractions; do not
-    # rename.
-    # Wave 3b of session-decoupling (Task 1.0): supply ``metrics`` so
-    # ``await_refresh`` records lock-wait latency without needing a host
-    # parameter. The remaining coordinator methods (``snapshot``,
-    # ``update_auth_tokens``, ``update_auth_headers``) take their explicit
-    # ``auth`` / ``kernel`` collaborators per call — the ``_AuthRefreshHost``
-    # Protocol was deleted alongside that signature change.
+    # inter-helper contract; do not rename.
+    # Supply ``metrics`` so ``await_refresh`` records lock-wait latency
+    # without needing a host parameter. The remaining coordinator methods
+    # (``snapshot``, ``update_auth_tokens``, ``update_auth_headers``) take
+    # their explicit ``auth`` / ``kernel`` collaborators per call.
     auth_coord = AuthRefreshCoordinator(
         refresh_callback=refresh_callback,
         metrics=metrics,
@@ -365,10 +356,9 @@ def build_collaborators(
         keepalive_interval=config.keepalive_interval,
         keepalive_storage_path=config.keepalive_storage_path,
         kernel=kernel,
-        # Phase 2 PR 3 injectable seams. ``None`` is forwarded so the
-        # lifecycle's ``or _default_*`` resolves to the late-binding
-        # wrapper — preserving the existing ``_core`` monkeypatch
-        # surface for unchanged callers.
+        # Injectable seams. ``None`` is forwarded so the lifecycle's
+        # ``or _default_*`` resolves to the late-binding wrapper —
+        # preserving the existing monkeypatch surface for unchanged callers.
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
     )
@@ -402,15 +392,13 @@ def build_runtime_transport(
     ``chain_host._authed_post_chain`` on every authed POST; that
     attribute is assigned by :func:`compose_client_internals`
     immediately after :func:`wire_middleware_chain` returns. Using a
-    provider closure (rather than a frozen reference) preserves the
-    pre-extraction behavior where tests reassign
+    provider closure (rather than a frozen reference) lets tests reassign
     ``core._composed.chain_host._authed_post_chain = fake_chain`` to
     install a fake chain and expect the next call to honor it.
 
     The ``snapshot_provider`` closure passes the client-owned
     :class:`AuthTokens` collaborator directly to
-    :meth:`AuthRefreshCoordinator.snapshot`; the former host-shaped
-    ``_AuthRefreshHost`` Protocol was deleted, and the coordinator routes
+    :meth:`AuthRefreshCoordinator.snapshot`; the coordinator routes
     its lock-wait metric through ``self._metrics`` (supplied at
     construction). The ``bound_loop_check`` lambda reads through
     ``collaborators.lifecycle.assert_bound_loop`` at call time, preserving

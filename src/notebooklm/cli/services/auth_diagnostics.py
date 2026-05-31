@@ -1,7 +1,6 @@
 """``auth check`` diagnostic service.
 
-Extracted from :mod:`notebooklm.cli.session_cmd` in P3.T3. Owns the
-"validate the cookies on disk" probe and returns a structured
+Owns the "validate the cookies on disk" probe and returns a structured
 :class:`AuthCheckResult` to the caller. Rendering and exit-code policy
 live in the command layer (see ``cli/session_cmd.py``).
 
@@ -144,7 +143,7 @@ def _read_storage_state(plan: AuthCheckPlan) -> tuple[dict[str, Any] | None, str
     except json.JSONDecodeError as exc:
         return None, f"Invalid JSON: {exc}"
     except (OSError, UnicodeDecodeError) as exc:
-        # P1.T3 contract: ``OSError`` on read (e.g. PermissionError) or
+        # ``OSError`` on read (e.g. PermissionError) or
         # ``UnicodeDecodeError`` on a corrupt file must route through the
         # structured renderer so --json callers see a parseable
         # ``status: "error"`` envelope.

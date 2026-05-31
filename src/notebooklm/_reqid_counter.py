@@ -2,8 +2,7 @@
 
 Owns the monotonic ``_reqid`` value that Google's chat backend requires per
 request, plus the lazily-allocated ``asyncio.Lock`` that serialises the
-read-modify-write under concurrent ``ChatAPI.ask`` callers. Lifted out of
-the former ``_core.py``/``Session`` surface (both now deleted) so the reqid
+read-modify-write under concurrent ``ChatAPI.ask`` callers. The reqid
 surface has one home (this file) instead of being woven into the runtime
 composition root alongside metrics, drain, and auth state.
 
@@ -64,12 +63,9 @@ def _noop_record_lock_wait(_wait_seconds: float) -> None:
 class ReqidCounter:
     """Monotonic request-id counter with lazy ``asyncio.Lock`` serialisation.
 
-    The canonical accessor surface is ``self._reqid._value`` and
-    ``self._reqid._lock`` on ``Session``. The ``_reqid_counter_value`` /
-    ``_reqid_lock`` compat ``@property`` bridges on ``Session`` that
-    previously delegated here were dropped in D1-audit-full once their
-    callers migrated; the field names persist for direct access from
-    ``Session`` and from unit-test fixtures.
+    The accessor surface is ``self._reqid._value`` and
+    ``self._reqid._lock``; the field names are kept stable for direct
+    access from unit-test fixtures.
     """
 
     def __init__(
@@ -95,7 +91,7 @@ class ReqidCounter:
         self._on_lock_wait: Callable[[float], None] = (
             on_lock_wait if on_lock_wait is not None else _noop_record_lock_wait
         )
-        # P0-2: loop-affinity guard. Captured at ``ClientLifecycle.open()``
+        # Loop-affinity guard. Captured at ``ClientLifecycle.open()``
         # time via :meth:`set_bound_loop` and consulted by
         # :meth:`next_reqid` so a cross-loop call raises an actionable
         # ``RuntimeError`` rather than hanging on ``_lock`` (which is
@@ -163,7 +159,7 @@ class ReqidCounter:
             raise TypeError(f"step must be int, got {type(step).__name__}")
         if step <= 0:
             raise ValueError(f"step must be positive, got {step!r}")
-        # P0-2 loop-affinity guard. Runs BEFORE the lazy ``Lock()`` allocation
+        # Loop-affinity guard. Runs BEFORE the lazy ``Lock()`` allocation
         # so a cross-loop call (counter created under loop A, awaited from
         # loop B) raises ``RuntimeError`` at the call site instead of binding
         # the lazy lock to the wrong loop. The check is a silent no-op when
@@ -177,7 +173,7 @@ class ReqidCounter:
             self._lock = asyncio.Lock()
         wait_start = time.perf_counter()
         await self._lock.acquire()
-        # P1-19: lock release MUST happen before the ``on_lock_wait``
+        # Lock release MUST happen before the ``on_lock_wait``
         # callback runs. A misbehaving callback (slow telemetry sink,
         # accidental re-entry, or one that itself awaits) must not widen
         # the critical section by holding ``_lock`` while it executes.

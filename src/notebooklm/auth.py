@@ -164,21 +164,20 @@ __all__ = [
 ]
 
 
-# ADR-014 + Wave 4 T2.2 of session-decoupling: ``_validate_required_cookies``
-# is now a direct re-export of ``_auth.cookie_policy._validate_required_cookies``.
+# Per ADR-014, ``_validate_required_cookies`` is a direct re-export of
+# ``_auth.cookie_policy._validate_required_cookies``.
 # The prior write-through that copy-forwarded facade-level rebindings of
 # ``MINIMUM_REQUIRED_COOKIES`` / ``_EXTRACTION_HINT`` /
 # ``_has_valid_secondary_binding`` into ``_cookie_policy`` (and mirrored
-# ``_SECONDARY_BINDING_WARNED`` back) was deleted as a behaviour-change
+# ``_SECONDARY_BINDING_WARNED`` back) was removed as a behaviour-change
 # masquerading as a refactor. Tests that need to rebind policy names now
 # patch the canonical home in ``_auth.cookie_policy`` directly — see
 # ``tests/unit/test_public_shims.py::test_auth_validation_uses_cookie_policy_rebindings_directly``.
 #
-# The previous ``_auth_cookies._validate_required_cookies = ...`` reverse-
-# assignment is gone too: ``_auth.cookies`` already imports the canonical
-# validator from ``_cookie_policy`` (see ``_auth/cookies.py:40``), and after
-# the inversion ``auth._validate_required_cookies`` IS that same object — so
-# the reverse-assignment was a no-op.
+# There is no reverse-assignment back onto ``_auth.cookies``: that module
+# already imports the canonical validator from ``_cookie_policy`` (see
+# ``_auth/cookies.py:40``), and ``auth._validate_required_cookies`` IS that
+# same object — so any reverse-assignment would be a no-op.
 _validate_required_cookies = _cookie_policy._validate_required_cookies
 
 
@@ -226,8 +225,7 @@ async def enumerate_accounts(
     )
 
 
-# ``load_auth_from_storage`` body lives in ``_auth/tokens.py`` per Wave 3a of
-# the session-decoupling plan (ADR-014 + Stage 6 of architecture-fix-plan).
+# ``load_auth_from_storage`` lives in ``_auth/tokens.py`` (see ADR-014).
 # This module re-exports it so ``notebooklm.auth.load_auth_from_storage``
 # stays a stable public import.
 load_auth_from_storage = _auth_tokens.load_auth_from_storage
@@ -252,7 +250,7 @@ _REFRESH_ATTEMPTED_ENV = _auth_paths._REFRESH_ATTEMPTED_ENV
 # ``_rotate_cookies``) keeps resolving against this module. Tests that
 # need to substitute a moved body should patch the canonical home directly
 # (``_auth.keepalive.X``) — production code no longer mirrors writes
-# (``_AuthFacadeModule`` retired in D1 PR-2, ADR-003).
+# (``_AuthFacadeModule`` retired per ADR-003).
 KEEPALIVE_ROTATE_URL = _auth_keepalive.KEEPALIVE_ROTATE_URL
 _KEEPALIVE_ROTATE_HEADERS = _auth_keepalive._KEEPALIVE_ROTATE_HEADERS
 _KEEPALIVE_ROTATE_BODY = _auth_keepalive._KEEPALIVE_ROTATE_BODY
@@ -309,11 +307,10 @@ _rotation_lock_path = _auth_paths._rotation_lock_path
 # ``notebooklm._auth.refresh``. Re-exported so the public surface
 # (``fetch_tokens`` + ``fetch_tokens_with_domains`` listed in ``__all__``) and
 # the white-box surface (lock registries, ContextVar, ``_run_refresh_cmd``
-# carrying the tier-9 E (P1-18) redaction logic, etc.) keep resolving against
+# carrying the redaction logic, etc.) keep resolving against
 # ``notebooklm.auth``. Tests that need to substitute a moved body should
 # patch the canonical home directly (``_auth.refresh.X``) — production
-# code no longer mirrors writes (``_AuthFacadeModule`` retired in D1 PR-2,
-# ADR-003).
+# code no longer mirrors writes (``_AuthFacadeModule`` retired per ADR-003).
 _REFRESH_ATTEMPTED_CONTEXT = _auth_refresh._REFRESH_ATTEMPTED_CONTEXT
 _REFRESH_STATE_LOCK = _auth_refresh._REFRESH_STATE_LOCK
 _REFRESH_LOCKS_BY_LOOP = _auth_refresh._REFRESH_LOCKS_BY_LOOP

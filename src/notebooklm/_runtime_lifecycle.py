@@ -1,7 +1,6 @@
 """HTTP-client lifecycle helper for the client-owned runtime.
 
-Owns the open/close ordering that historically lived inline on the deleted
-session facade while delegating the raw HTTP transport to
+Owns the open/close ordering while delegating the raw HTTP transport to
 :class:`notebooklm._kernel.Kernel`:
 
 * ``_http_client`` — compatibility property backed by the concrete Kernel's
@@ -36,8 +35,8 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
   ``aclose()`` is critical: without it, a ``CancelledError`` arriving
   mid-close leaks the underlying httpx transport.
 
-* :meth:`open` no longer wraps the inner transport for synthetic-error
-  injection — Tier-12 PR 12.6 lifted that path into the chain
+* :meth:`open` does not wrap the inner transport for synthetic-error
+  injection — that path lives in the chain
   (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`,
   wired by client internals composition). When
   ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, the chain middleware
@@ -57,16 +56,11 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 
 Field names (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
 ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
-``_connect_timeout``, ``_limits``) historically mirrored the legacy
-legacy session ivars when the deleted session facade still held ``@property``
-bridges that forwarded to them. Those bridges were retired in the
-session-shrink arc
-(see ``tests/_lint/test_no_session_compat_bridges.py`` and the
-"closed for the property-shim debt" note in ``docs/architecture.md``);
-the names are kept verbatim now for grep discoverability across the test
-suite — callers reach the storage through the client-owned lifecycle
-collaborator. ``_http_client`` is a thin accessor returning the live
-``httpx.AsyncClient`` from the concrete Kernel.
+``_connect_timeout``, ``_limits``) are kept stable for grep-discoverability
+across the test suite (see ``tests/_lint/test_no_session_compat_bridges.py``);
+callers reach the storage through the client-owned lifecycle collaborator.
+``_http_client`` is a thin accessor returning the live ``httpx.AsyncClient``
+from the concrete Kernel.
 """
 
 from __future__ import annotations
@@ -173,11 +167,9 @@ logger = logging.getLogger(CORE_LOGGER_NAME)
 class ClientLifecycle:
     """Owns HTTP-client open/close, keepalive, cookie persistence on close.
 
-    Field names mirror the legacy lifecycle ivars for grep discoverability
-    across the test suite. The ``@property`` bridges that historically
-    delegated with ``return self._lifecycle._<attr>`` were retired in the
-    session-shrink arc; callers now reach these fields directly via
-    the client-owned lifecycle collaborator.
+    Field names are kept stable for grep-discoverability across the test
+    suite; callers reach these fields directly via the client-owned
+    lifecycle collaborator.
 
     Construction is event-loop-agnostic — only plain values and ``None``
     placeholders are stored. The ``httpx.AsyncClient`` and the keepalive
@@ -214,7 +206,7 @@ class ClientLifecycle:
         # attribute for tests and private callers that probe it directly.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
-        # Injectable seams (Phase 2 PR 3). ``None`` resolves to the module-
+        # Injectable seams. ``None`` resolves to the module-
         # level late-binding default — the default wraps the canonical
         # ``_auth.storage`` / ``_auth.keepalive`` lookup inside its body.
         # Custom callables skip the late-bind hop entirely and run directly
@@ -295,10 +287,9 @@ class ClientLifecycle:
         intentionally replaces the binding — ``open()`` is the only binding
         moment.
 
-        Synthetic-error injection moved from this layer to the chain in
-        Tier-12 PR 12.6 — see
+        Synthetic-error injection lives in the chain, not this layer — see
         :class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`
-        for the new substitution point. The httpx transport built here is
+        for the substitution point. The httpx transport built here is
         always a real, unwrapped transport.
 
         This signature takes explicit keyword-only collaborators rather than
@@ -314,7 +305,7 @@ class ClientLifecycle:
         # so the binding is consistent with the loop that owns every primitive
         # constructed below.
         self._bound_loop = asyncio.get_running_loop()
-        # P0-2: propagate the captured loop into every helper that owns a
+        # Propagate the captured loop into every helper that owns a
         # loop-bound primitive (lock / condition / task slot). Each helper
         # consults its own ``_bound_loop`` at the top of its async entry
         # points (``drain``, ``next_reqid``, ``await_refresh``) so a
@@ -408,7 +399,7 @@ class ClientLifecycle:
 
         Single chokepoint used by :meth:`close`, :meth:`_keepalive_loop`, and
         ``NotebookLMClient.refresh_auth``. The storage writer is delegated
-        to ``self._cookie_saver`` (Phase 2 PR 3 injectable seam). The
+        to ``self._cookie_saver`` (injectable seam). The
         default :func:`_default_cookie_saver` wrapper performs a late-bound
         ``from ._auth.storage import save_cookies_to_storage`` lookup inside
         its body so a ``monkeypatch.setattr`` on the canonical seam keeps
@@ -453,9 +444,9 @@ class ClientLifecycle:
         so a single misbehaving hook can't block the rest of the close
         sequence.
 
-        Stage B1 PR 2 of the post-refactoring plan removed the
-        close-time ``host._rpc_executor = None`` step. The composition
-        root (:func:`notebooklm._runtime_init.compose_client_internals`)
+        There is no close-time ``host._rpc_executor = None`` step. The
+        composition root
+        (:func:`notebooklm._runtime_init.compose_client_internals`)
         binds the executor exactly once via
         :meth:`notebooklm._client_composed.ClientComposed.bind_executor`,
         and the binding is preserved across ``close()`` → ``open()``
@@ -478,7 +469,7 @@ class ClientLifecycle:
                 await asyncio.gather(self._keepalive_task, return_exceptions=True)
                 self._keepalive_task = None
 
-            # P0-1: cancel any in-flight auth refresh task BEFORE the cookie
+            # Cancel any in-flight auth refresh task BEFORE the cookie
             # save or shielded ``aclose()``. Without this, a slow refresh
             # racing against close would survive the close path and continue
             # holding the now-torn-down ``httpx.AsyncClient``, surfacing as a
@@ -511,10 +502,10 @@ class ClientLifecycle:
                 # Shield: cancellation arriving mid-aclose must not leak
                 # the transport. The shielded aclose runs to completion;
                 # ``self._http_client = None`` then makes ``is_open``
-                # return False correctly. Stage B1 PR 2 dropped the
-                # ``host._rpc_executor = None`` step that previously
-                # lived here — the executor is composition-root-bound
-                # and persists across close() → open() cycles.
+                # return False correctly. There is no
+                # ``host._rpc_executor = None`` step here — the executor is
+                # composition-root-bound and persists across
+                # close() → open() cycles.
                 await asyncio.shield(self._kernel.aclose())
 
     # ------------------------------------------------------------------
@@ -553,8 +544,8 @@ class ClientLifecycle:
         same collaborator the open path captured.
         """
         logger.debug("Keepalive task started (interval=%.1fs)", interval)
-        # Rotation is delegated to ``self._cookie_rotator`` (Phase 2 PR 3
-        # injectable seam). The default :func:`_default_cookie_rotator`
+        # Rotation is delegated to ``self._cookie_rotator`` (injectable
+        # seam). The default :func:`_default_cookie_rotator`
         # wrapper performs a late-bound ``from ._auth.keepalive import
         # _rotate_cookies`` lookup inside its body so a
         # ``monkeypatch.setattr`` on the canonical seam keeps affecting

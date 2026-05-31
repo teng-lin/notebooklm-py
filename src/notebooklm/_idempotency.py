@@ -507,7 +507,7 @@ IDEMPOTENCY_REGISTRY._seed_defaults()
 # Active classifications — artifact and generation create patterns
 # ---------------------------------------------------------------------------
 #
-# CREATE_ARTIFACT (P0-3) — mutating create. Params are nested positional
+# CREATE_ARTIFACT — mutating create. Params are nested positional
 # lists shaped like ``[[2], notebook_id, [None, None, type_code,
 # source_ids_triple, ..., config]]`` for every artifact variant (audio,
 # video, report, quiz, etc.; see the ``generate_*`` methods and the
@@ -520,7 +520,7 @@ IDEMPOTENCY_REGISTRY._seed_defaults()
 # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
 # which suppresses ``_perform_authed_post``'s inner retry loop. Without
 # this, a 5xx between server-side commit and client-side response would
-# trigger a naive re-POST and duplicate the artifact (the original P0-3
+# trigger a naive re-POST and duplicate the artifact (the original
 # audit finding). Callers can layer a list-based probe + retry on top of
 # this foundation via ``idempotent_create`` in a follow-up; for B-generation
 # the classification alone removes the duplicate-write risk.
@@ -536,7 +536,7 @@ IDEMPOTENCY_REGISTRY.register(
     ),
 )
 
-# GENERATE_MIND_MAP (P0-3) — generation RPC with no client-token slot.
+# GENERATE_MIND_MAP — generation RPC with no client-token slot.
 # Params are ``[source_ids_nested, None, None, None, None,
 # ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
 # [2, None, [1]]]`` (see ``ArtifactsAPI.generate_mind_map`` in
@@ -549,8 +549,7 @@ IDEMPOTENCY_REGISTRY.register(
 # Note: ``GENERATE_MIND_MAP`` itself does NOT persist the note server-side
 # (see ``tests/integration/test_mind_map_chain_vcr.py`` header). The actual
 # persistence is the subsequent ``CREATE_NOTE`` + ``UPDATE_NOTE`` chain in
-# ``NoteService.create_note`` (formerly ``_mind_map.create_note``, removed
-# in Phase 6). PROBE_THEN_CREATE here suppresses the inner retry loop on
+# ``NoteService.create_note``. PROBE_THEN_CREATE here suppresses the inner retry loop on
 # the *generation* RPC for two reasons: (a) a blind re-POST wastes the
 # expensive LLM inference, and (b) LLM nondeterminism means a retried
 # generation may return a *different* mind-map JSON, which would
@@ -613,8 +612,8 @@ IDEMPOTENCY_REGISTRY.register(
 #   list the current ACL, so the *correct* policy is ``PROBE_THEN_CREATE``
 #   — the transport must NOT retry blindly, and a future wrapper can
 #   ``get_status()`` to decide whether the prior call landed before
-#   re-issuing. Wave-2 scope is the classification (which suppresses the
-#   blind retry today); the caller-side probe-then-create wrapper is a
+#   re-issuing. Today only the classification is in place (which suppresses
+#   the blind retry); the caller-side probe-then-create wrapper is a
 #   follow-up.
 IDEMPOTENCY_REGISTRY.register(
     RPCMethod.CREATE_NOTEBOOK,
@@ -841,7 +840,7 @@ IDEMPOTENCY_REGISTRY.register(
 # of 30s mirrors the cadence of similar advisory-log throttles elsewhere in the
 # codebase.
 _AT_LEAST_ONCE_LOG_INTERVAL: float = 30.0
-# Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
+# Single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
 _at_least_once_last_logged: dict[tuple[RPCMethod, str | None], float] = {}
 
 

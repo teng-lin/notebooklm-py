@@ -1,9 +1,7 @@
 """Authed POST transport collaborator — the middleware-chain leaf.
 
-Extracted from the former ``Session`` facade (now deleted) as move #4c of
-the session-refactor arc (``docs/improvement.md`` §3.1).
 ``RuntimeTransport`` owns the three pieces of the authed POST hot path
-that used to live inline on that facade:
+(history: docs/refactor-history.md):
 
 * :meth:`RuntimeTransport.terminal` — the middleware-chain leaf. Sends
   the populated :class:`RpcRequest` via :meth:`Kernel.post` and maps the
@@ -85,8 +83,7 @@ if TYPE_CHECKING:
 class RuntimeTransport:
     """Authed POST chain leaf and entry-point collaborator.
 
-    Owns the three methods extracted from the former ``Session`` facade
-    (now deleted) in move #4c.
+    Owns the three authed-POST hot-path methods.
     Does NOT own lifecycle (that stays on :class:`ClientLifecycle`) nor
     retry/refresh budget state (that lives on
     :class:`MiddlewareChainHost` and is threaded into middleware via
@@ -98,8 +95,7 @@ class RuntimeTransport:
     closure (typically ``lambda: chain_host._authed_post_chain``). The
     lookup is intentionally deferred so a chain reassignment that
     happens while the snapshot capture awaits still steers the
-    dispatch, matching the pre-extraction behavior where the chain
-    was read at the dispatch site.
+    dispatch; the chain is read at the dispatch site.
 
     The injected ``logger`` is held so error messages mapped through
     :func:`notebooklm._transport_errors.raise_mapped_post_error` keep

@@ -200,7 +200,7 @@ async def enumerate_accounts(
 
 _ACCOUNT_CONTEXT_KEY = "account"
 
-# P1-20: the unified atomic profile-state format embeds account metadata
+# The unified atomic profile-state format embeds account metadata
 # inside ``storage_state.json`` under a ``notebooklm`` namespace key, so
 # a single ``atomic_write_json`` covers both cookies and account in one
 # crash-safe commit. ``version`` is bumped only when the in-band schema
@@ -213,9 +213,9 @@ def _account_context_path(storage_path: Path) -> Path:
     """Return the context.json path that annotates ``storage_path``.
 
     Legacy two-file layout: this sibling held ``account`` metadata before
-    P1-20 unified it into ``storage_state.json``. Post-migration, it keeps
-    CLI context state (``notebook_id``, ``conversation_id``) but no longer
-    stores the ``account`` key.
+    the unified format embedded it in ``storage_state.json``. Post-migration,
+    it keeps CLI context state (``notebook_id``, ``conversation_id``) but no
+    longer stores the ``account`` key.
     """
     return storage_path.with_name("context.json")
 
@@ -266,7 +266,7 @@ def _read_legacy_account(storage_path: Path) -> dict[str, Any]:
 def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
     """Read profile account metadata, preferring the unified in-band record.
 
-    P1-20 unified layout: account metadata lives inside ``storage_state.json``
+    Unified layout: account metadata lives inside ``storage_state.json``
     under the ``notebooklm`` namespace key. Legacy two-file installs are
     still supported via fallback to sibling ``context.json``; the next write
     will migrate them in-band.
@@ -370,7 +370,7 @@ def _drop_legacy_account_key(storage_path: Path) -> None:
 
 
 def write_account_metadata(storage_path: Path, *, authuser: int, email: str | None = None) -> None:
-    """Persist account metadata atomically inside ``storage_state.json`` (P1-20).
+    """Persist account metadata atomically inside ``storage_state.json``.
 
     The account record lands under the ``notebooklm`` namespace key so the
     (cookies, account) pair commits together via a single
@@ -384,7 +384,7 @@ def write_account_metadata(storage_path: Path, *, authuser: int, email: str | No
     Args:
         storage_path: Path to ``storage_state.json``. The file is created
             with empty ``cookies`` / ``origins`` arrays if missing — matching
-            the pre-P1-20 semantics of "writing account metadata never fails
+            the previous semantics of "writing account metadata never fails
             because cookies haven't been written yet."
         authuser: ``authuser`` index used when extracting cookies for this
             profile (0 for the default account).
@@ -423,7 +423,7 @@ def _load_storage_state_for_write(storage_path: Path) -> dict[str, Any]:
     """Read ``storage_state.json`` for a read-modify-write under the lock.
 
     Returns a synthetic empty document if the file is missing — matches
-    pre-P1-20 semantics where account writes never failed just because the
+    the earlier behavior where account writes never failed just because the
     cookie file hadn't been written yet. Corruption is fatal because the
     primary cookie data can't be recovered from account metadata; surface
     a ``RuntimeError`` so the caller can prompt the user to re-run login.
@@ -442,7 +442,7 @@ def _load_storage_state_for_write(storage_path: Path) -> dict[str, Any]:
 
 
 def clear_account_metadata(storage_path: Path | None) -> None:
-    """Remove account metadata from both in-band and legacy locations (P1-20).
+    """Remove account metadata from both in-band and legacy locations.
 
     Holds a sibling ``.lock`` file via :class:`filelock.FileLock` so
     concurrent ``write_account_metadata`` calls serialize against the

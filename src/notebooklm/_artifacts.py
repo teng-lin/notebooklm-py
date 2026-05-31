@@ -134,14 +134,14 @@ class ArtifactsAPI:
             mind_maps: Note-backed mind-map facade. Owns the
                 ``list_mind_maps`` / ``extract_content`` paths consumed
                 by ``_artifact_downloads.download_mind_map``. Renamed
-                from ``mind_map_service`` in Phase 5 to reflect the
+                from ``mind_map_service`` to reflect the
                 concrete adapter type (:class:`NoteBackedMindMapService`).
             note_service: Backend note-row primitives. Owns the
                 ``create_note`` call site that this API's
                 ``generate_mind_map`` uses to persist generated mind
-                maps. Added in Phase 5 so the generation path no longer
+                maps. The generation path no longer
                 reaches into a module-level ``_mind_map.create_note``
-                shim (retired in Phase 6).
+                shim.
             storage_path: Path to storage state file for loading download cookies.
         """
         self._rpc = rpc
@@ -611,7 +611,7 @@ class ArtifactsAPI:
         )
 
         # GENERATE_MIND_MAP is classified PROBE_THEN_CREATE in
-        # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is passed
+        # ``_idempotency.py``. ``operation_variant=None`` is passed
         # explicitly to document this call site as the no-variant default
         # (the registry resolves the same entry either way; the explicit
         # kwarg is a future-proofing marker for a possible variant table).
@@ -655,8 +655,7 @@ class ArtifactsAPI:
                 # it preserves the public dict contract ("note_id is None
                 # means persistence failed") for any future degenerate
                 # shape, but the empty-id case now surfaces as an error
-                # rather than a silent ``{"note_id": None}``. The original
-                # ``if note`` dead-code guard was removed in PR #873.
+                # rather than a silent ``{"note_id": None}``.
                 note = await self._note_service.create_note(
                     notebook_id,
                     title=title,
@@ -1138,7 +1137,7 @@ class ArtifactsAPI:
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         try:
             # CREATE_ARTIFACT is classified PROBE_THEN_CREATE in
-            # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is
+            # ``_idempotency.py``. ``operation_variant=None`` is
             # passed explicitly to document this call site as the
             # no-variant default (the registry resolves the same entry
             # either way; the explicit kwarg is a future-proofing marker

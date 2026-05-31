@@ -1,7 +1,6 @@
-"""Type-only scaffolding for the Tier-12 middleware chain.
+"""Type-only scaffolding for the middleware chain.
 
-This module ships in PR 12.1 of the Tier-12/13 greenfield migration. It
-defines:
+This module defines:
 
 - :class:`RpcRequest` / :class:`RpcResponse` — the HTTP-shape envelopes the
   chain passes around (NOT RPC-shape; encoding/decoding lives above the
@@ -62,7 +61,7 @@ class RpcRequest:
 
     Frozen: middlewares that want to alter the request build a new
     :class:`RpcRequest` via :func:`dataclasses.replace`. The
-    :class:`AuthRefreshMiddleware` (PR 12.8) does exactly this when
+    :class:`AuthRefreshMiddleware` does exactly this when
     rebuilding headers and URL after an auth refresh.
 
     :attr:`context` is mutable by reference (it's a plain :class:`dict`) and
@@ -140,11 +139,10 @@ def materialize_rpc_request(
 ) -> RpcRequest:
     """Build a populated chain envelope from the legacy request callback.
 
-    This is a behavior-neutral bridge for the Tier-13 request-materialization
-    migration. ``Session`` uses this helper to enter the chain with populated
-    ``RpcRequest(url, headers, body)`` fields while the transitional terminal
-    still delegates through the legacy ``BuildRequest`` callback. A later
-    ``Kernel.post`` terminal can consume the same envelope directly.
+    ``Session`` uses this helper to enter the chain with populated
+    ``RpcRequest(url, headers, body)`` fields while the terminal delegates
+    through the ``BuildRequest`` callback. A ``Kernel.post`` terminal can
+    consume the same envelope directly.
 
     ``context`` is intentionally retained by reference, matching ADR-009's
     mutable per-request metadata contract.
@@ -168,9 +166,8 @@ def materialize_rpc_request(
 #: request via :func:`dataclasses.replace` — what
 #: :class:`AuthRefreshMiddleware` does on its retry leg) to continue the
 #: chain. A middleware may also short-circuit by returning a response
-#: without invoking ``next_call`` at all; no production middleware in the
-#: Tier-12 set does this, but test middlewares (e.g. a "deny all" canary)
-#: are free to.
+#: without invoking ``next_call`` at all; no production middleware does
+#: this, but test middlewares (e.g. a "deny all" canary) are free to.
 NextCall = Callable[[RpcRequest], Awaitable[RpcResponse]]
 
 
@@ -190,7 +187,7 @@ class Middleware(Protocol):
       (metrics, tracing).
     - Short-circuit (return without calling ``next_call``). Used only by
       error-injection middlewares in tests; not by any production
-      middleware in the Tier-12 set.
+      middleware.
 
     The constructor of a middleware is not constrained by this Protocol —
     each middleware takes whatever collaborators it needs (the

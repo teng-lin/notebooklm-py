@@ -109,7 +109,7 @@ RPC Layer (rpc/)
 | `_auth_refresh_retry.py` | Shared auth refresh-and-retry core for the two retry layers (HTTP-status `AuthRefreshMiddleware` + decoded-RPC `RpcExecutor`): the once-per-logical-call `RefreshBudget` token and the common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). Unifies the previously-divergent copies per issue #1205; the two layers keep their distinct triggers and refresh-failure exception shapes. |
 | `_runtime_lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
 | `_runtime_transport.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the middleware chain and typed transport response handling |
-| `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5). The `RpcOwner` Protocol that previously re-declared the former `Session` facade's private attribute surface was deleted in Wave 4 of session-decoupling (#1068); only the local `DecodeResponse` Protocol remains. |
+| `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5). Defines a single local `DecodeResponse` Protocol. |
 | `_request_types.py` | Shared authed POST request construction types: `AuthSnapshot`, `BuildRequest`, `PostBody`, and materialization helpers. |
 | `_transport_errors.py` | Transport exceptions, `Retry-After` parsing, and terminal `Kernel.post` error mapping for retry/auth middleware. |
 | `_streaming_post.py` | Size-capped streaming POST helper used by `Kernel.post`. |
@@ -132,7 +132,7 @@ RPC Layer (rpc/)
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_sources.py` | `client.sources` API |
-| `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (the former `_artifact_generation.py` service was folded into this facade in #1205, ADR-012 sibling fold) |
+| `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (see ADR-012) |
 | `_chat.py` | `client.chat` API |
 | `_research.py` | `client.research` API |
 | `_notes.py` | `client.notes` API |
@@ -162,7 +162,7 @@ RPC Layer (rpc/)
 | `_middleware_chain.py` | Constructs the middleware chain in the canonical ADR-009 order |
 | `_middleware*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module. The previous write-through (`_validate_required_cookies` copy-forwarding `MINIMUM_REQUIRED_COOKIES` / `_EXTRACTION_HINT` / `_has_valid_secondary_binding` into `_cookie_policy` and mirroring `_SECONDARY_BINDING_WARNED` back) was inverted in Wave 4 T2.2 (#1070); `auth._validate_required_cookies` is now identity-equal to `_auth.cookie_policy._validate_required_cookies`. `load_auth_from_storage` body was moved to `_auth/tokens.py` in Wave 3a (#1066). `AuthTokens` was moved to `_auth/tokens.py` in #1055. **ADR-003 flat-re-export goal closed by ADR-014** (session-decoupling Waves 3a + 4 T2.2 + 5). Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
+| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-003's flat-re-export goal was closed by ADR-014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/headers.py` | HTTP header construction |
@@ -298,27 +298,27 @@ src/notebooklm/
 └── cli/                         # CLI implementation
     ├── __init__.py              # Re-exports click groups under historical names from *_cmd modules
     ├── _chromium_profiles.py    # Multi-user-data-profile cookie extraction for Chromium browsers
-    ├── _download_specs.py       # Registry data for `download <type>` leaf commands (P3.T2)
+    ├── _download_specs.py       # Registry data for `download <type>` leaf commands
     ├── _encoding.py             # Encoding-safe CLI output helpers
     ├── _firefox_containers.py   # Container-aware Firefox cookie extraction
-    ├── agent_cmd.py             # agent show commands (renamed in P3.T0)
+    ├── agent_cmd.py             # agent show commands
     ├── agent_templates.py       # agent prompts and configurations
-    ├── artifact_cmd.py          # artifact commands (renamed in P3.T0)
+    ├── artifact_cmd.py          # artifact commands
     ├── auth_runtime.py          # CLI authentication + command runtime helpers
-    ├── chat_cmd.py              # ask, configure, history (renamed in P3.T0)
+    ├── chat_cmd.py              # ask, configure, history
     ├── completion.py            # Best-effort shell-completion providers for live IDs
     ├── context.py              # CLI context persistence helpers
-    ├── doctor_cmd.py            # diagnostic/repair tool (renamed in P3.T0)
-    ├── download_cmd.py          # download commands (renamed in P3.T0)
+    ├── doctor_cmd.py            # diagnostic/repair tool
+    ├── download_cmd.py          # download commands
     ├── download_helpers.py      # Helper functions for download commands
     ├── error_handler.py         # Centralized CLI error handling
-    ├── generate_cmd.py          # generate audio, video, etc. (renamed in P3.T0)
+    ├── generate_cmd.py          # generate audio, video, etc.
     ├── grouped.py               # Custom Click group with sectioned help output
     ├── helpers.py               # Shared Click utilities
     ├── input.py                 # CLI prompt and stdin input helpers
     ├── language_cmd.py          # Language configuration CLI commands
-    ├── notebook_cmd.py          # list, create, delete, rename (renamed in P3.T0)
-    ├── note_cmd.py              # note commands (renamed in P3.T0)
+    ├── notebook_cmd.py          # list, create, delete, rename
+    ├── note_cmd.py              # note commands
     ├── options.py               # Shared CLI option decorators
     ├── polling_ui.py            # Command-layer UI helpers for long-running polling
     ├── profile_cmd.py           # Profile management CLI commands
@@ -327,10 +327,10 @@ src/notebooklm/
     ├── research_import.py       # Research import helpers shared by CLI commands
     ├── resolve.py               # CLI notebook/entity ID resolution helpers
     ├── runtime.py               # CLI runtime primitives
-    ├── session_cmd.py           # login, use, status, clear (renamed in P3.T0)
+    ├── session_cmd.py           # login, use, status, clear
     ├── share_cmd.py             # Sharing management CLI commands
     ├── skill_cmd.py             # Skill management commands
-    ├── source_cmd.py            # source add, list, delete (renamed in P3.T0)
+    ├── source_cmd.py            # source add, list, delete
     └── services/                # CLI-specific service layer (ADR-008 Click-to-service extraction)
         ├── __init__.py
         ├── artifact_generation.py # `generate` artifact orchestration service
@@ -340,7 +340,7 @@ src/notebooklm/
         ├── download.py          # Pure-logic download plan + executor
         ├── generate.py          # Service layer for `notebooklm generate` commands
         ├── listing.py           # Shared list-command pipeline for CLI resources
-        ├── login/               # Browser-cookie login helper package (split in P3.T4)
+        ├── login/               # Browser-cookie login helper package
         │   ├── __init__.py      # re-export-only patch surface
         │   ├── browser_accounts.py
         │   ├── chromium_accounts.py

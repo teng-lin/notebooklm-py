@@ -48,7 +48,7 @@ class ClientComposed:
         self._middlewares: list[Middleware] | None = None
         # Avoid a plain `.collaborators` attribute here: the ADR-014 lint
         # reserves that bare name so feature APIs can't grab the whole
-        # bundle (it formerly backed the deleted Stage A Session accessor).
+        # bundle.
         self._runtime_collaborators: RuntimeCollaborators | None = None
 
     @staticmethod

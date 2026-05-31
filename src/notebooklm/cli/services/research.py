@@ -19,8 +19,8 @@ Contract
   which currently emits log messages and (in text mode) its own Rich
   status spinner; that I/O is part of the importer, not this service.
 
-Task-id pinning (P1.T2)
------------------------
+Task-id pinning
+---------------
 
 The protocol-level pinning invariant lives in
 ``ResearchAPI.wait_for_completion``. This service delegates the wait loop to
@@ -128,9 +128,8 @@ async def execute_research_wait(
           ``client.research.wait_for_completion``.
         * Import is only invoked when ``plan.import_all`` is true AND the
           completed status has sources AND a ``task_id`` was discovered.
-          (The third guard preserves the pre-extraction handler's behavior
-          exactly — without a task_id the importer has nothing to verify
-          against.)
+          (The third guard is required because without a task_id the
+          importer has nothing to verify against.)
     """
     nb_id_resolved = await resolve_id(client, plan.notebook_id, json_output=plan.json_output)
 
@@ -184,8 +183,7 @@ async def execute_research_wait(
     import_result: ResearchImportResult | None = None
     if plan.import_all and sources and task_id:
         # In text mode the importer renders its own "Importing sources..."
-        # status; in JSON mode it stays silent. The kwarg delta below mirrors
-        # the pre-extraction handler exactly.
+        # status; in JSON mode it stays silent.
         import_kwargs: dict[str, Any] = {
             "report": report,
             "cited_only": plan.cited_only,

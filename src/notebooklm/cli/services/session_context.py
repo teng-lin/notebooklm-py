@@ -1,7 +1,6 @@
 """Notebook-context CLI services for ``use``, ``status``, and ``auth logout``.
 
-Extracted from :mod:`notebooklm.cli.session_cmd` in P3.T3 so the Click
-handlers stay thin orchestrators around small plan + executor pairs:
+The Click handlers stay thin orchestrators around small plan + executor pairs:
 
 * :func:`verify_and_set_notebook` — async; resolves a partial ID,
   hits ``client.notebooks.get`` for verification, persists the result
@@ -13,8 +12,7 @@ handlers stay thin orchestrators around small plan + executor pairs:
 * :func:`execute_logout` — sync; removes the resolved storage file +
   browser profile + cached context. Returns a typed
   :class:`LogoutOutcome` capturing success or per-step failure; the
-  handler owns the presentation and exit-code decisions (C4 Pattern A,
-  ADR-015).
+  handler owns the presentation and exit-code decisions (ADR-015).
 
 Presentation (Rich tables, ``console.print``) and exit-code policy live
 in :mod:`notebooklm.cli.session_cmd`; this service module returns typed

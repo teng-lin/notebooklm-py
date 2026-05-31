@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # Task storage from GC-ing them mid-flight. Sharing one set across all
 # ``NoteService`` instances is correct and simpler than per-instance
 # bookkeeping — there is no per-instance state on the tasks themselves.
-# Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
+# Single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
 _cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 
@@ -60,9 +60,9 @@ class NoteRowKind(Enum):
     """Private classification of rows from ``GET_NOTES_AND_MIND_MAPS``.
 
     Not part of the public API — kept private so the wire-shape
-    classification can evolve without a SemVer hit. Phase 6 may add
-    further variants (e.g. distinct treatment for saved-from-chat
-    notes) without breaking external callers.
+    classification can evolve without a SemVer hit. Further variants
+    (e.g. distinct treatment for saved-from-chat notes) can be added
+    without breaking external callers.
     """
 
     NOTE = "note"
@@ -198,7 +198,7 @@ class NoteService:
         if content is None:
             return NoteRowKind.UNKNOWN
 
-        # Phase 6 may grow saved-chat detection; for now default to NOTE
+        # Saved-chat detection may grow later; for now default to NOTE
         # so a chat-mode note never silently drops out of NotesAPI.list().
         return NoteRowKind.NOTE
 
@@ -234,15 +234,13 @@ class NoteService:
         up with ``UPDATE_NOTE`` to set both content and title. Returns a
         :class:`Note` dataclass for consistency with ``NotesAPI``.
 
-        Cancellation behaviour (audit item §28): the UPDATE_NOTE
-        finalize is wrapped in ``asyncio.shield`` so an outer cancel
+        Cancellation behaviour: the UPDATE_NOTE finalize is wrapped in
+        ``asyncio.shield`` so an outer cancel
         cannot abort an in-flight finalize. If ``CancelledError``
         propagates while the shielded UPDATE_NOTE is still running, a
         best-effort DELETE_NOTE cleanup is scheduled (NOT awaited —
         re-raise must not block on cleanup) to honour the caller's
-        cancel intent without leaving an orphan row behind. The legacy
-        ``_mind_map.MindMapService.create_note`` path that previously
-        owned this contract was retired; the contract itself now lives here.
+        cancel intent without leaving an orphan row behind.
         """
         params = [notebook_id, "", [1], None, title]
         result = await self._rpc.rpc_call(

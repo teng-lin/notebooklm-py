@@ -10,11 +10,8 @@ Contents:
 * :class:`AuthMetadata` and :class:`Kernel` — selected-account routing
   metadata + pure transport surface consumed by the upload pipeline.
 * :class:`RpcCaller`, :class:`LoopGuard`, :class:`OperationScopeProvider`,
-  :class:`AsyncWorkRuntime` — the four shared capability Protocols
-  promoted in Phase 1 of the capability refactor.
+  :class:`AsyncWorkRuntime` — the four shared capability Protocols.
 
-The broad ``Session`` Protocol that previously bundled all of these
-together was deleted in Phase 7 (refactor-history.md §Migration Plan step 10).
 Feature APIs that need more than one capability take their direct
 collaborators by keyword-only constructor argument (``ChatAPI`` in
 ``_chat.py``, ``ArtifactsAPI`` in ``_artifacts.py``, and

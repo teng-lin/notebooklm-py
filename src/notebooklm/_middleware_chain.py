@@ -1,26 +1,18 @@
 """Composes the ADR-009 middleware chain.
 
-Tier-12 PR 12.2 wired an empty middleware chain around
-``Kernel.post`` through ``MiddlewareChainHost._authed_post_chain_terminal``
-(the shared seam covering ``RuntimeTransport.perform_authed_post`` and
+The chain wraps ``Kernel.post`` through
+``MiddlewareChainHost._authed_post_chain_terminal`` (the shared seam
+covering ``RuntimeTransport.perform_authed_post`` and
 ``RpcExecutor._execute_once``'s dispatch into the transport).
 
-PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
-``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware`` outermost,
-PR 12.6 inserted ``ErrorInjectionMiddleware`` between
-``MetricsMiddleware`` and ``TracingMiddleware``, PR 12.7 inserted
-``RetryMiddleware`` between ``MetricsMiddleware`` and
-``ErrorInjectionMiddleware``, and PR 12.8 inserts
-``AuthRefreshMiddleware`` BETWEEN ``RetryMiddleware`` and
-``ErrorInjectionMiddleware`` so the list now reads the **final** ADR-009
-ordering ``[Drain, Metrics, Semaphore, Retry, AuthRefresh,
+The ADR-009 ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh,
 ErrorInjection, Tracing]`` (outermost → innermost). ``build_chain``
 composes the leftmost entry as the outermost wrapper, so keeping
 ``TracingMiddleware`` at the RIGHT end of the list preserves Tracing as
 the innermost wrapper.
 
-PR 12.7 lifted the 429 / 5xx retry loops out of the leaf into
-``RetryMiddleware``; PR 12.8 lifts the auth-refresh-once retry too.
+The 429 / 5xx retry loops and the auth-refresh-once retry live in
+``RetryMiddleware`` and ``AuthRefreshMiddleware`` respectively.
 The leaf is a *pure* POST — every retry decision happens in the chain. The
 terminal maps raw ``Kernel.post`` errors to ``TransportRateLimited`` /
 ``TransportServerError`` for 429 / 5xx so ``RetryMiddleware`` can catch; raw
@@ -106,7 +98,7 @@ class MiddlewareChainBuilder:
             # wait), but BEFORE Retry can re-enter the inner chain — that
             # way ``RetryMiddleware``'s retry attempts stay in the same
             # slot rather than racing to claim another, preserving the
-            # pre-Tier-12 "one slot per logical RPC" contract.
+            # "one slot per logical RPC" contract.
             # ``rpc_semaphore_factory`` returns ``contextlib.nullcontext``
             # when ``max_concurrent_rpcs is None`` (unbounded), so the
             # ``async with`` collapses to a no-op for opted-out clients.
@@ -115,8 +107,8 @@ class MiddlewareChainBuilder:
             # ``chain_host._rate_limit_max_retries`` /
             # ``chain_host._server_error_max_retries`` (an integration-test
             # idiom; production never mutates these) still takes effect —
-            # bit-for-bit preserving the pre-PR-12.7 live-binding
-            # contract where the retry loop read these attrs LIVE.
+            # preserving the live-binding contract where the retry loop
+            # reads these attrs LIVE.
             RetryMiddleware(
                 rate_limit_max_retries=self._rate_limit_max_retries_provider,
                 server_error_max_retries=self._server_error_max_retries_provider,

@@ -25,8 +25,8 @@ __all__ = [
 # Single source of truth for the logger name every client-runtime /
 # middleware seam pins. Tests that filter logs via
 # ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` (or, more commonly,
-# the literal string) match this name. PR 12.9 audit fix: was previously
-# repeated verbatim across seven modules; promoting it here eliminates
+# the literal string) match this name. Promoting it to a single constant
+# here (it was previously repeated verbatim across modules) eliminates
 # the drift risk on rename. Callers do
 # ``logger = logging.getLogger(CORE_LOGGER_NAME)``.
 #

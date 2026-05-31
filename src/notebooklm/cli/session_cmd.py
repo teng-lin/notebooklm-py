@@ -7,7 +7,7 @@ Commands:
     clear   Clear current notebook context
     auth    Authentication management (logout / inspect / check / refresh)
 
-P3.T3 split this module into thin Click handlers over four service
+This module is split into thin Click handlers over four service
 modules:
 
 * :mod:`notebooklm.cli.services.playwright_login` — Playwright login flow
@@ -219,11 +219,11 @@ def _use_notebook_table() -> Table:
 def _render_status(report: StatusReport, *, json_output: bool) -> None:
     """Render a :class:`StatusReport` to the configured console.
 
-    Moved out of :mod:`notebooklm.cli.services.session_context` so the
-    service layer no longer reaches into ``..rendering`` (ADR-008 / C4
-    Pattern A). Supports ``--paths`` (resolved configuration paths) and
-    ``--json`` (machine-readable envelope); preserves the legacy
-    contract from the pre-refactor service-side renderer byte-for-byte.
+    Lives here rather than in
+    :mod:`notebooklm.cli.services.session_context` so the service layer
+    does not reach into ``..rendering`` (ADR-008). Supports ``--paths``
+    (resolved configuration paths) and ``--json`` (machine-readable
+    envelope).
     """
     if report.paths is not None:
         # --paths flag was set; render the paths view and stop.
@@ -328,10 +328,9 @@ def _render_status(report: StatusReport, *, json_output: bool) -> None:
 def _render_logout_outcome(outcome: LogoutOutcome) -> None:
     """Render a :class:`LogoutOutcome` and apply its exit policy.
 
-    Owns the presentation + exit policy that the pre-refactor
-    ``run_logout`` service function owned (C4 Pattern A,
-    typed-outcome lift). On per-step :class:`OSError` failures, prints
-    the same diagnostic the service used to print, then exits 1; on
+    Owns the presentation + exit policy for the ``run_logout`` flow,
+    keeping the service function Click-free. On per-step
+    :class:`OSError` failures, prints the diagnostic and then exits 1; on
     success prints either the green "Logged out." line or the yellow
     "No active session found." no-op line and returns normally.
     """

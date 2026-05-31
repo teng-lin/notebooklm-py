@@ -61,11 +61,9 @@ class DecodeResponse(Protocol):
 class RpcExecutor:
     """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry.
 
-    ADR-014 Rule 5 (Wave 4 of the session-decoupling plan): constructor takes
-    its four runtime collaborators (Kernel, RuntimeTransport,
-    AuthRefreshCoordinator, ClientMetrics) directly via keyword-only arguments
-    instead of reaching them through a Session-shaped owner. The old
-    ``RpcOwner`` Protocol was deleted in the same PR.
+    Per ADR-014 Rule 5, the constructor takes its four runtime collaborators
+    (Kernel, RuntimeTransport, AuthRefreshCoordinator, ClientMetrics) directly
+    via keyword-only arguments rather than reaching them through an owner facade.
     """
 
     def __init__(

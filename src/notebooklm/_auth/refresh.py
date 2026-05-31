@@ -407,7 +407,7 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
             f"{NOTEBOOKLM_REFRESH_CMD_ENV} failed to execute: {refresh_err}"
         ) from refresh_err
     if result.returncode != 0:
-        # P1-18: do NOT interpolate stdout/stderr into the user-facing raise.
+        # Do NOT interpolate stdout/stderr into the user-facing raise.
         # Subprocesses commonly print bearer tokens, cookies, and absolute
         # paths into a user's credentials directory. ``RuntimeError`` bubbles
         # up through ``cli.error_handler`` and lands on stderr (or a JSON

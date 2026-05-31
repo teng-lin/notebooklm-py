@@ -22,16 +22,11 @@ explicit ``builder=`` argument (issue #1005).
 middleware delegates straight to ``next_call``; the ``Kernel.post`` chain
 terminal runs exactly as it would without the middleware in the chain.
 
-Pre-Tier-12 history (deleted in PR 12.9): this module previously
-defined a ``_SyntheticErrorTransport`` httpx transport that wrapped the
-``AsyncClient`` BELOW VCR so the substituted response was recorded into
-the cassette. Tier-12 PR 12.6 lifted the substitution into
-``ErrorInjectionMiddleware`` (chain-level, ABOVE VCR), which closed the
-"record synthetic errors into cassettes" workflow — replay-only is the
-documented contract going forward; the synthetic-error cassettes in
+``ErrorInjectionMiddleware`` substitutes responses at the chain level
+(ABOVE VCR), so recording synthetic errors into cassettes is not supported
+— replay-only is the documented contract: the synthetic-error cassettes in
 ``tests/cassettes/`` are hand-written from the canonical shapes in
-``tests/cassette_patterns.py``. PR 12.9 deleted the legacy transport
-class and its direct-instantiation tests.
+``tests/cassette_patterns.py``.
 
 Public surface kept:
 
@@ -106,14 +101,11 @@ def _get_error_injection_mode() -> str | None:
 
 
 def _refuse_synthetic_error_outside_test_context() -> None:
-    """Refuse :class:`Session` instantiation when the test-only env var leaks.
+    """Refuse client instantiation when the test-only env var leaks.
 
-    P1-12: ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only.
-    Pre-Tier-12, leaving it set in a deploy env would silently wrap the
-    production transport in the legacy ``_SyntheticErrorTransport``. After
-    Tier-12 the activation moved into ``ErrorInjectionMiddleware``, but
-    the operator-visible blast radius is the same (every chain call
-    returns a fake response). The guard remains load-bearing.
+    ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only. Leaving it
+    set in a deploy env would activate ``ErrorInjectionMiddleware`` so every
+    chain call returns a fake response. The guard remains load-bearing.
 
     The guard fires only when:
 

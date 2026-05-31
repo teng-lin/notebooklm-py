@@ -247,7 +247,7 @@ _HTML_UPLOAD_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".xht"})
 _HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 
 
-# Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
+# Single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
 
 
@@ -624,7 +624,7 @@ class SourceUploadPipeline:
         Raises ``ValidationError`` for HTML-family uploads because
         NotebookLM's upload endpoint rejects those file extensions.
         """
-        # Audit C1: catch cross-loop add_file *before* touching
+        # Catch cross-loop add_file *before* touching
         # ``operation_scope`` or lazily allocating the upload semaphore.
         # Both are loop-bound on first use, so a cross-loop call would
         # otherwise attach a primitive to the wrong loop before the
@@ -756,7 +756,7 @@ class SourceUploadPipeline:
         """Register a file source intent and get SOURCE_ID.
 
         Uses the same probe-then-create idempotency pattern as ``add_url`` /
-        ``add_drive`` (P0-3-sources). The ADD_SOURCE_FILE RPC is mutating: a
+        ``add_drive``. The ADD_SOURCE_FILE RPC is mutating: a
         5xx / network failure between server-side commit and client-side
         response could otherwise duplicate the source on a naive retry.
 
@@ -814,7 +814,7 @@ class SourceUploadPipeline:
                 sources = await list_sources(notebook_id)
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 # Transport- and auth-level probe failures must propagate
-                # (P1-2) — otherwise idempotent_create would retry the
+                # — otherwise idempotent_create would retry the
                 # register on top of a broken probe.
                 raise
             except Exception:

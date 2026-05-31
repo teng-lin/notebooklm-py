@@ -1,30 +1,26 @@
-"""SemaphoreMiddleware — RPC concurrency gate for the Tier-12 chain.
+"""SemaphoreMiddleware — RPC concurrency gate for the chain.
 
-Per ADR-009 §"Chain ordering" (revised by PR 12.9), ``SemaphoreMiddleware``
-sits between ``MetricsMiddleware`` and ``RetryMiddleware``. The final chain
+Per ADR-009 §"Chain ordering", ``SemaphoreMiddleware``
+sits between ``MetricsMiddleware`` and ``RetryMiddleware``. The chain
 ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection,
 Tracing]``.
 
-PR 12.1 originally pinned six middlewares; PR 12.9 added the seventh after
-a load-bearing regression surfaced in the first cut of the audit-find
-that moved the semaphore around the chain dispatch in
-``Session._perform_authed_post``: queued tasks were no longer counted by
-``DrainMiddleware`` (Drain sat outside the semaphore wait), and Metrics
-latency no longer included RPC queue wait. The middleware insertion restores
-both contracts in one place:
+Placing the semaphore here (rather than around the chain dispatch in
+``Session._perform_authed_post``) keeps two contracts intact: queued tasks
+stay counted by ``DrainMiddleware`` (Drain sits outside the semaphore wait),
+and Metrics latency includes RPC queue wait:
 
 - **Drain admits queued tasks** — ``DrainMiddleware`` (outermost) increments
   ``_in_flight_posts`` before this middleware acquires the slot, so a
   ``client.close()`` mid-flight blocks on queued tasks instead of rejecting
   them once they finally pull a slot.
 - **Metrics latency includes queue wait** — ``MetricsMiddleware`` starts its
-  ``perf_counter`` BEFORE this middleware's ``async with``, matching the
-  pre-PR-12.9 (PR 12.8) telemetry shape.
+  ``perf_counter`` BEFORE this middleware's ``async with``, so the telemetry
+  shape includes queue wait.
 - **Retry stays in one slot** — ``RetryMiddleware`` sits INSIDE this
   middleware, so its retry attempts re-invoke the inner chain (AuthRefresh,
   ErrorInjection, Tracing, terminal) WITHOUT releasing the semaphore. This
-  preserves the pre-Tier-12 "one slot per logical RPC" backpressure
-  contract.
+  preserves the "one slot per logical RPC" backpressure contract.
 
 The semaphore is supplied as a zero-arg async-context-manager factory rather
 than the raw ``asyncio.Semaphore`` so the middleware can be live-bound to

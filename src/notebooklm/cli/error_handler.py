@@ -289,7 +289,7 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         # Let Click handle its own exceptions (--help, bad args, etc.)
         raise
     except Exception as e:
-        # P1-18: emit only the exception's primary message (``args[0]``) to
+        # Emit only the exception's primary message (``args[0]``) to
         # the user. ``str(e)`` would walk Python's default representation,
         # which for some third-party exceptions includes repr of every arg
         # — surfacing whatever the raise site put in (potentially full

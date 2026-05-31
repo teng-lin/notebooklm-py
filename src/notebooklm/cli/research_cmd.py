@@ -6,7 +6,7 @@ Commands:
 
 The ``wait`` command is a thin Click handler over
 :func:`notebooklm.cli.services.research.execute_research_wait` — the polling
-loop, P1.T2 task-id pinning, and import orchestration live in the service.
+loop, task-id pinning, and import orchestration live in the service.
 This module owns input validation, spinner I/O, rendering, and exit codes.
 """
 

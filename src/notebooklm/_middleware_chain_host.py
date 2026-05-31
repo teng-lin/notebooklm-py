@@ -24,8 +24,7 @@ This module is intentionally narrow:
   (the auth-snapshot host) and the collaborator bundle.
 * The host has no back-reference to :class:`Session` — it is reachable
   from :class:`Session` (via ``self._chain_host``) but not the other
-  way around. This breaks the historical Session ↔ transport cycle the
-  way ADR-014 Rule 4 anticipated.
+  way around. This avoids a Session ↔ transport cycle, per ADR-014 Rule 4.
 
 The transport / wire helpers take the host directly via the
 ``chain_host`` parameter; the chain reads ``chain_host._<attr>`` on

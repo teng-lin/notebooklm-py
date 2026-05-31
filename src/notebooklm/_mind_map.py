@@ -8,8 +8,8 @@ the note-row primitives into a mind-map-only surface. Both
 ``ArtifactsAPI`` (download path) and ``NotesAPI`` (forward-compatible
 ``list_mind_maps`` / ``delete_mind_map`` surface) consume this adapter.
 
-Phase 6 (refactor-history.md Step 9, ADR-013) retired the legacy
-``MindMapService`` class and its module-level compatibility wrappers
+The legacy ``MindMapService`` class was retired (see refactor-history.md
+Step 9, ADR-013) along with its module-level compatibility wrappers
 (``create_note``, ``list_mind_maps``, ``update_note``, ...) together
 with the saved-from-chat encoder, which now lives in
 :mod:`_chat_notes`. Only the :class:`NoteBackedMindMapService`

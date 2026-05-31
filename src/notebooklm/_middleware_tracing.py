@@ -1,6 +1,6 @@
-"""TracingMiddleware — innermost middleware in the Tier-12 chain.
+"""TracingMiddleware — innermost middleware in the chain.
 
-Per ADR-009 §"Chain ordering" and master plan §2, ``TracingMiddleware`` is
+Per ADR-009 §"Chain ordering", ``TracingMiddleware`` is
 the **innermost** wrapper around the ``Kernel.post`` transport leaf. It logs one
 "starting" record before invoking ``next_call`` and one "completed"
 (success) or "failed" (exception) record after, capturing per-attempt
@@ -16,16 +16,15 @@ sees exactly what the leaf returned.
 Trace record fields (emitted via ``logger.<level>(..., extra={...})`` so
 structured-logging consumers see them as ``LogRecord`` attributes):
 
-- ``rpc_method`` — value of ``RPC_CONTEXT_RPC_METHOD``. Populated
-  as of PR 12.4 (via ``Session._perform_authed_post``'s ``rpc_method``
-  kwarg, passed by ``RpcExecutor._execute_once``). ``None`` only for the chat
-  streaming path (``_chat_transport.send_authed_post`` — chat-side
+- ``rpc_method`` — value of ``RPC_CONTEXT_RPC_METHOD``, supplied via the
+  ``rpc_method`` kwarg passed by ``RpcExecutor._execute_once``. ``None`` only
+  for the chat streaming path (``_chat_transport.send_authed_post`` — chat-side
   requests are not classified RPCs) and for ``__new__``-built fixtures
   driving the chain directly.
-- ``log_label`` — value of ``RPC_CONTEXT_LOG_LABEL``. The
-  empty middleware chain wired in PR 12.2 always populates this key (it
-  is one of the three transport-call kwargs). May be ``None`` only for a
-  ``__new__``-built fixture exercising a malformed request.
+- ``log_label`` — value of ``RPC_CONTEXT_LOG_LABEL``. The middleware chain
+  always populates this key (it is one of the three transport-call kwargs).
+  May be ``None`` only for a ``__new__``-built fixture exercising a malformed
+  request.
 - ``status_code`` — ``response.response.status_code`` on the success
   record (omitted from "starting" and "failed" records).
 - ``duration_ms`` — wall-clock duration of the ``next_call`` invocation
@@ -83,10 +82,9 @@ class TracingMiddleware:
         consumers. The message strings themselves stay short and stable
         so a string-matching grep is also possible. Keys absent from
         ``request.context`` surface as ``None`` rather than raising
-        ``KeyError`` — the chain is wired by PR 12.2 to always carry
-        ``log_label``; ``rpc_method`` is populated as of PR 12.4 by
-        ``Session._perform_authed_post`` for the RPC path and left
-        ``None`` for the chat streaming path.
+        ``KeyError`` — the chain always carries ``log_label``; ``rpc_method``
+        is populated by ``RpcExecutor._execute_once`` for the RPC path and
+        left ``None`` for the chat streaming path.
         """
         context = request.context
         rpc_method = context.get(RPC_CONTEXT_RPC_METHOD)

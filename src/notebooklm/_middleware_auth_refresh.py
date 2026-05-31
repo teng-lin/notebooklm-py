@@ -1,12 +1,8 @@
 """AuthRefreshMiddleware — 401/403/400-CSRF retry-with-refresh for the chain.
 
 Per ADR-009 §"Chain ordering", ``AuthRefreshMiddleware`` sits just *inside*
-``RetryMiddleware`` and just *outside* ``ErrorInjectionMiddleware``. The final
-Tier-12 chain (post-PR 12.9, after ``SemaphoreMiddleware`` was inserted between
-``Metrics`` and ``Retry``) is
-``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]`` —
-PR 12.8 inserts ``AuthRefresh`` between ``Retry`` and ``ErrorInjection`` so
-this ordering is now realized end-to-end.
+``RetryMiddleware`` and just *outside* ``ErrorInjectionMiddleware``. The chain
+is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
 
 This middleware owns the **auth-refresh-once retry** loop. The leaf is a
 *pure* ``Kernel.post`` terminal that lets ``httpx.HTTPStatusError`` /
@@ -29,7 +25,6 @@ Refresh-failure path: if the refresh callback itself raises (network
 flake, login expired, etc.), the middleware wraps the original
 ``httpx.HTTPStatusError`` in :class:`TransportAuthExpired` so callers
 that key on the transport exception type still see a coherent shape.
-Matches the pre-PR-12.8 leaf-side ``TransportAuthExpired`` raise.
 
 Pre-refresh sleep: when ``refresh_retry_delay > 0`` the middleware sleeps
 that duration AFTER the successful refresh and BEFORE the retry. This
@@ -46,15 +41,9 @@ for the full in-place context-mutation contract and the paired terminal
 rebuild invariant that keeps the post-refresh 429 retry from sending a
 stale envelope.
 
-This regression-fix from PR 12.7 also closes here: pre-PR-12.7 the leaf's
-``refreshed_this_call`` lived in the same loop as 429/5xx retries (one
-refresh max per logical call). PR 12.7 split the loops, leaving each
-``RetryMiddleware`` retry to spawn a fresh leaf invocation with its own
-``refreshed_this_call`` — up to N refreshes per call. PR 12.8 collapses
-this back: refresh is now a chain-level concern, ``RetryMiddleware`` is
-unaware of refreshes, and the once-per-call contract is restored by the
-fact that ``AuthRefreshMiddleware`` only retries ONCE per ``next_call``
-invocation.
+Refresh is a chain-level concern: ``RetryMiddleware`` is unaware of
+refreshes, and the once-per-call contract holds because
+``AuthRefreshMiddleware`` only retries ONCE per ``next_call`` invocation.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
 ``src/notebooklm/_runtime_auth.py`` for :class:`AuthRefreshCoordinator`
@@ -122,14 +111,11 @@ class AuthRefreshMiddleware:
       post-refresh sleep duration. Production wires
       ``lambda: chain_host._refresh_retry_delay`` so a test that mutates
       the attr on the live host still takes effect (matches the
-      live-binding contract preserved for retry budgets in PR 12.7).
+      live-binding contract used for retry budgets).
     - ``snapshot_provider``: optional async callable returning a fresh
       :class:`AuthSnapshot` after refresh. Production wires a lambda
       that invokes :meth:`AuthRefreshCoordinator.snapshot` with the
-      explicit ``auth=session.auth`` collaborator (the
-      Session-shaped ``_AuthRefreshHost`` Protocol was deleted in
-      favor of per-method explicit args; the previously-load-bearing
-      ``Session._snapshot`` thin wrapper was inlined); tests that omit
+      explicit ``auth=session.auth`` collaborator; tests that omit
       ``snapshot_provider``
       preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
@@ -140,12 +126,8 @@ class AuthRefreshMiddleware:
       Defaults to the project-canonical ``notebooklm._core`` logger so
       ``caplog.at_level(..., logger="notebooklm._core")`` keeps matching.
     - ``metrics``: a :class:`ClientMetrics` whose ``increment(...)`` is
-      called once per successful refresh (replaces the historical
-      ``host._increment_metrics(rpc_auth_retries=1)`` site —
-      ``Session._increment_metrics`` was a thin forward to this
-      ``ClientMetrics.increment`` call and was deleted in Wave 11b of
-      the session-decoupling arc, so middleware now reaches the
-      collaborator directly).
+      called once per successful refresh. The middleware reaches this
+      collaborator directly.
     """
 
     def __init__(
@@ -186,7 +168,7 @@ class AuthRefreshMiddleware:
         a 429/5xx that fires after a successful refresh. Without this guard
         the sequence ``401 → refresh → 429 → Retry retry → 401`` would refresh
         twice. With it, the second 401
-        propagates without a redundant refresh, matching the pre-PR-12.7
+        propagates without a redundant refresh, matching the
         "one refresh max per logical call" contract.
 
         The guard reads a shared

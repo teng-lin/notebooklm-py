@@ -1,4 +1,4 @@
-"""Service layer for ``notebooklm generate`` commands (P3.T1, ADR-008).
+"""Service layer for ``notebooklm generate`` commands (ADR-008).
 
 This module owns the Click-free orchestration for all 11 ``generate``
 leaf commands:
@@ -29,7 +29,7 @@ NotebookLMClient(...) as client:`` block.
 This module does NOT introduce parallel abstractions to
 ``services/artifact_generation.py`` (that module's
 ``generate_with_retry`` + ``handle_generation_result`` is the retry-core
-and is reused as-is; see phase-3.md → P3.T1 must_not_do).
+and is reused as-is).
 """
 
 from __future__ import annotations
@@ -99,9 +99,7 @@ _REPORT_DISPLAY: Mapping[str, str] = {
     "custom": "custom report",
 }
 
-# Pre-extraction generate.py had the infographic style map inlined; reuse the
-# same exhaustive mapping here so handler-regression byte-for-byte parity is
-# preserved. Sourced from cli/generate_cmd.py at f1be552.
+# Exhaustive infographic style map used by the generate handlers.
 _INFOGRAPHIC_STYLE_MAP: Mapping[str, InfographicStyle] = {
     "auto": InfographicStyle.AUTO_SELECT,
     "sketch-note": InfographicStyle.SKETCH_NOTE,
@@ -707,7 +705,7 @@ def _build_report_plan(
     append_instructions = raw_args.get("append_instructions")
 
     # Smart detection: a bare description with the default --format briefing-doc
-    # is treated as a custom report (preserves pre-extraction behavior).
+    # is treated as a custom report.
     actual_format = report_format
     custom_prompt: str | None = None
     if description:
@@ -828,9 +826,8 @@ def _build_call_kwargs(plan: GenerationPlan, *, notebook_id: str, sources: Any) 
     if plan.language is not None:
         base["language"] = plan.language
 
-    # data-table requires ``instructions``; pre-extraction code passed
-    # ``description`` (not ``description or None``) since the Click layer
-    # enforces ``required=True``. Preserve that contract.
+    # data-table requires ``instructions``; pass ``description`` (not
+    # ``description or None``) since the Click layer enforces ``required=True``.
     if plan.kind == "data-table":
         base["instructions"] = plan.description
 

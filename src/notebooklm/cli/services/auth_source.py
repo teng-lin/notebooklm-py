@@ -1,6 +1,6 @@
 """Single source of truth for resolving the active CLI auth source.
 
-Before P3.T3, the question "where does authentication come from for this
+Historically, the question "where does authentication come from for this
 command?" was answered by three independent reimplementations that all had
 slightly different shapes:
 

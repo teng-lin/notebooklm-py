@@ -80,7 +80,7 @@ async def execute_source_add_research(
     """Start research, poll until completion, and optionally import sources.
 
     Returns a :class:`SourceAddResearchResult` whose ``outcome`` discriminates
-    every terminal state the pre-extraction handler distinguished:
+    every terminal state:
 
     * ``started_no_wait`` — ``--no-wait`` returned early after ``research.start``.
     * ``start_failed`` — ``research.start`` returned empty.

@@ -354,7 +354,7 @@ class NotebooksAPI:
 
         async def _probe() -> Notebook | None:
             # Transport- and auth-level errors during the probe MUST
-            # propagate (P1-2): the original create may have committed
+            # propagate: the original create may have committed
             # server-side and we have no way to confirm. Silently
             # returning None would let ``idempotent_create`` re-issue the
             # create on the next attempt and duplicate the notebook.
@@ -374,8 +374,7 @@ class NotebooksAPI:
                 # Transport- and auth-level probe failures must propagate.
                 # Silently returning None here lets ``idempotent_create``
                 # re-issue the create on top of a broken probe, which is
-                # exactly the duplicate-resource bug we are guarding against
-                # (P1-2).
+                # exactly the duplicate-resource bug we are guarding against.
                 logger.warning(
                     "create: probe list() failed with transport/auth error; "
                     "propagating so the caller can avoid a duplicate-resource retry"

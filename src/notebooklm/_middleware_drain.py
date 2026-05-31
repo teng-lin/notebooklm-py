@@ -1,11 +1,8 @@
-"""DrainMiddleware — in-flight transport-operation tracker for the Tier-12 chain.
+"""DrainMiddleware — in-flight transport-operation tracker for the middleware chain.
 
-Per ADR-009 §"Chain ordering" and master plan §2, ``DrainMiddleware`` sits at
-the OUTERMOST position of the final Tier-12 chain
+Per ADR-009 §"Chain ordering", ``DrainMiddleware`` sits at
+the OUTERMOST position of the chain
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
-PR 12.5 ships it as the first entry of the three-middleware chain
-``[Drain, Metrics, Tracing]``; PRs 12.6–12.9 insert the remaining
-middlewares inside ``Metrics`` while keeping Drain outermost.
 
 Pure observer of the transport leg with bookkeeping side-effects: brackets
 ``next_call`` with calls to :meth:`TransportDrainTracker.begin_transport_post`
@@ -15,12 +12,11 @@ caller (``Session._perform_authed_post``) always populates ``log_label``,
 so the middleware reads it via ``RPC_CONTEXT_LOG_LABEL`` and falls back
 to a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
-This PR lifts the drain bookkeeping from the logical RPC wrapper and from
-``_chat_transport.send_authed_post`` (the chat-streaming entry).
-After PR 12.5, drain admission is owned by the chain — the explicit
-bookkeeping calls in those two call sites are gone.
+Drain admission is owned by the chain rather than by the logical RPC
+wrapper or ``_chat_transport.send_authed_post`` (the chat-streaming
+entry); those two call sites carry no explicit bookkeeping calls.
 
-Drain admission semantics preserved:
+Drain admission semantics:
 - ``begin_transport_post`` STILL rejects new top-level work once
   ``TransportDrainTracker._draining`` is set, raising ``RuntimeError``.
   This propagates out of ``next_call`` as it always did — the chain
@@ -93,9 +89,9 @@ class DrainMiddleware:
         ``await begin_transport_post`` may raise ``RuntimeError`` when
         the tracker is in draining mode and the current task has no
         prior operation depth. The exception propagates out of the
-        chain unchanged — that's exactly the pre-PR-12.5 behavior; the
-        RPC dispatch path and ``_chat_transport.send_authed_post`` both let
-        drain admission errors propagate without catching.
+        chain unchanged; the RPC dispatch path and
+        ``_chat_transport.send_authed_post`` both let drain admission errors
+        propagate without catching.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         token = await self._drain_tracker.begin_transport_post(log_label)

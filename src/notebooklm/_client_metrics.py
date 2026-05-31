@@ -1,8 +1,7 @@
 """Observability metrics helper for the NotebookLM client runtime.
 
 Owns the cumulative ``ClientMetricsSnapshot`` counters, the threading lock that
-guards them, and the optional ``on_rpc_event`` telemetry callback. Lifted out of
-the former ``_core.py``/``Session`` surface (both now deleted) so the metrics
+guards them, and the optional ``on_rpc_event`` telemetry callback. The metrics
 surface has one home (this file) instead of being woven into the runtime
 composition root alongside drain, reqid, and auth state.
 

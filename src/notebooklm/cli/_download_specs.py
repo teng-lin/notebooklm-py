@@ -1,4 +1,4 @@
-"""Registry data for the ``notebooklm download <type>`` leaf commands (P3.T2).
+"""Registry data for the ``notebooklm download <type>`` leaf commands.
 
 This module is intentionally **data-only** — no Click decorators, no async
 runtime calls. The 9 leaf commands (audio / video / slide-deck / infographic
@@ -101,9 +101,8 @@ DOWNLOAD_SPECS: list[DownloadTypeSpec] = [
         # to avoid churning ``download_cmd.py`` kwargs flowing through the
         # factory.
         format_param_name="slide_format",
-        # Slide-deck historically only bound output_format when the user
-        # picked pptx — keep that wiring so the underlying API call is
-        # identical to the pre-refactor flow.
+        # Slide-deck only binds output_format when the user picks pptx —
+        # keep that wiring so the underlying API call stays correct.
         forward_format_only_if_set=True,
         help_summary="Download slide deck(s) as PDF or PPTX.",
         help_examples=_stock_examples(

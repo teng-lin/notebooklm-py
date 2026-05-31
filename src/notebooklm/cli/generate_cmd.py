@@ -1,4 +1,4 @@
-"""Generate content CLI commands — thin Click handlers (P3.T1 ADR-008).
+"""Generate content CLI commands — thin Click handlers (ADR-008).
 
 All validation, enum mapping, retry/wait orchestration, and output
 dispatch live in ``cli/services/generate.py``. Tests patch

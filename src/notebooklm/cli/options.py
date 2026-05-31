@@ -225,14 +225,14 @@ def multi_source_option(f: FC) -> FC:
 
     Multi-valued, optional ``--source`` flag that collects source IDs into a
     ``source_ids`` tuple (matches the ``multiple=True`` shape used by every
-    ``generate`` subcommand pre-extraction). Distinct from
+    ``generate`` subcommand). Distinct from
     :func:`source_option`, which is single-valued and required (used by
     ``download source-content`` and friends).
 
     Tab completion follows the same notebook-resolution rules as
     :func:`source_option`.
     """
-    # Decl order matches the pre-extraction inline ``@click.option("--source",
+    # Decl order matches the inline ``@click.option("--source",
     # "-s", "source_ids", ...)`` form in cli/generate_cmd.py. Click preserves
     # decl order in ``param.opts`` and the CLI-contract baseline pins it; the
     # long-flag-first order must stay even though the single-source

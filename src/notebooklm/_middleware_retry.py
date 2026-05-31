@@ -1,13 +1,9 @@
-"""RetryMiddleware — 429/5xx retry loop for the Tier-12 chain.
+"""RetryMiddleware — 429/5xx retry loop for the chain.
 
 Per ADR-009 §"Chain ordering", ``RetryMiddleware`` sits just *inside*
 ``SemaphoreMiddleware`` and just *outside* ``AuthRefreshMiddleware``. The
-final Tier-12 chain is
+chain is
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
-PR 12.7 shipped the interim 5-middleware chain
-``[Drain, Metrics, Retry, ErrorInjection, Tracing]``; PR 12.8 inserted
-``AuthRefresh`` BETWEEN ``Retry`` and ``ErrorInjection``, and PR 12.9 inserted
-``Semaphore`` BETWEEN ``Metrics`` and ``Retry``.
 
 This middleware owns the **retry-on-429** and **retry-on-5xx/network** loops.
 The chain leaf is a single ``Kernel.post`` attempt that raises
@@ -17,7 +13,7 @@ The chain leaf is a single ``Kernel.post`` attempt that raises
 exceptions and decides whether to retry by re-invoking the chain.
 Auth-refresh-and-retry lives in :class:`AuthRefreshMiddleware`.
 
-Behavior preservation (vs. pre-PR-12.7):
+Behavior:
 
 - **Same retry counts** — ``rate_limit_max_retries`` /
   ``server_error_max_retries`` are propagated from ``Session`` so the
@@ -29,7 +25,7 @@ Behavior preservation (vs. pre-PR-12.7):
   a retry cannot wait past the logical call's aggregate budget.
 - **Same base log shape** — "rate-limited (HTTP 429); sleeping (…);
   retrying (n/N)" and "server/network error (…); backing off …; retrying
-  (n/N)" still prefix-match the pre-PR-12.7 shape. Deadline exhaustion emits
+  (n/N)" are the emitted shapes. Deadline exhaustion emits
   an additional timeout warning when no retry budget remains.
 - **Same metrics** — ``rpc_rate_limit_retries`` and
   ``rpc_server_error_retries`` are incremented per retry attempt, same as

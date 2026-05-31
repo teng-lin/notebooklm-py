@@ -154,8 +154,7 @@ def handle_auth_error(json_output: bool = False) -> NoReturn:
     has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
     storage_source = path_info["home_source"]
     # ``AUTH_JSON_ENV_NAME`` exposes the env-var name as a constant so this
-    # module does not redeclare the literal — see P3.T3 AuthSource
-    # consolidation gate.
+    # module does not redeclare the literal.
     env_var_name = AUTH_JSON_ENV_NAME
 
     if json_output:

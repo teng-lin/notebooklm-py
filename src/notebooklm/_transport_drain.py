@@ -2,8 +2,7 @@
 
 Owns the in-flight transport-operation counters, the lazy
 ``asyncio.Condition`` that ``drain()`` parks on, the per-``asyncio.Task``
-operation-depth map, and the ``_draining`` flag. Lifted out of the former
-``_core.py``/``Session`` surface (both now deleted) so the drain surface has
+operation-depth map, and the ``_draining`` flag. The drain surface has
 one home (this file) instead of being woven into the runtime composition root
 alongside metrics, reqid, and auth state.
 
@@ -34,13 +33,9 @@ Design constraints (load-bearing — see
   counter and stall ``drain`` forever — keep the body trivial and
   fully inside the ``async with condition`` block.
 
-Field names are deliberately the same as the legacy ``Session`` ivars
-(``_in_flight_posts``, ``_draining``, ``_drain_condition``) so the
-surviving compat ``@property`` bridges on ``Session`` can delegate via
-``return self._drain_tracker._<attr>`` and stay readable. The
-``_operation_depths`` compat bridge on ``Session`` was dropped in
-D1-audit-full once its callers migrated; the field itself remains on
-``TransportDrainTracker`` because the drain bookkeeping needs it.
+Field names (``_in_flight_posts``, ``_draining``, ``_drain_condition``,
+``_operation_depths``) are kept stable for grep-discoverability across the
+test suite; the drain bookkeeping needs each of them.
 """
 
 from __future__ import annotations
@@ -106,7 +101,7 @@ class TransportDrainTracker:
         self._operation_depths: weakref.WeakKeyDictionary[asyncio.Task[Any], int] = (
             weakref.WeakKeyDictionary()
         )
-        # P0-2: loop-affinity guard. Set by :meth:`ClientLifecycle.open`
+        # Loop-affinity guard. Set by :meth:`ClientLifecycle.open`
         # so :meth:`drain` can short-circuit cross-loop misuse before
         # touching the lazily-built ``_drain_condition`` (which is bound
         # to the loop that constructed it). ``None`` is a silent no-op
@@ -179,7 +174,7 @@ class TransportDrainTracker:
         ``drain()`` starts. See
         ``tests/unit/test_observability.py::test_drain_allows_nested_work_inside_accepted_operation``.
 
-        Audit C1: catch cross-loop admission *before* touching the lazy
+        Catch cross-loop admission *before* touching the lazy
         ``_drain_condition``. The condition is loop-bound on first
         ``get_drain_condition`` — a cross-loop call would either silently
         bind it to the wrong loop or hang on ``async with condition``
@@ -255,7 +250,7 @@ class TransportDrainTracker:
         Wraps :meth:`begin_transport_post` / :meth:`finish_transport_post`
         so feature code can write ``async with tracker.operation_scope("upload"):``
         without managing the token by hand. Satisfies ``OperationScopeProvider``
-        directly — ``Session.operation_scope`` becomes a thin forward.
+        directly.
         """
         token = await self.begin_transport_post(label)
         try:
@@ -266,10 +261,10 @@ class TransportDrainTracker:
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook.
 
-        ADR-014 Rule 1 + close-out for plan Wave 0.5: the storage moved from
-        ``Session._drain_hooks`` to this tracker so ``DrainHookRegistration``
-        is satisfied directly. ``ClientLifecycle.close`` fires registered
-        hooks via :meth:`run_drain_hooks`.
+        Per ADR-014 Rule 1, this tracker owns the drain-hook storage so
+        ``DrainHookRegistration`` is satisfied directly.
+        ``ClientLifecycle.close`` fires registered hooks via
+        :meth:`run_drain_hooks`.
         """
         self._drain_hooks[name] = hook
 
@@ -315,7 +310,7 @@ class TransportDrainTracker:
         tracker remains in draining mode so shutdown callers do not
         accidentally admit new work after a missed deadline.
         """
-        # P0-2: catch cross-loop drain before touching ``_drain_condition``.
+        # Catch cross-loop drain before touching ``_drain_condition``.
         # The condition is lazily bound to the loop that first awaited
         # ``get_drain_condition`` — a cross-loop call would hang on
         # ``async with condition`` if we let it through.

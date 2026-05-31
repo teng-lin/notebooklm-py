@@ -109,8 +109,7 @@ def _enumerate_browser_accounts(
 
         On failure — a :class:`.outcomes.BrowserCookieOutcome` subclass.
         The Chromium-profile fan-out and scoped-Chromium paths still
-        ``exit_with_code`` directly on internal failures (those modules
-        own their own transitional pattern-A inventory); only the legacy
+        ``exit_with_code`` directly on internal failures; only the legacy
         single-jar path and the unknown-browser dispatch return outcomes
         from this function.
     """

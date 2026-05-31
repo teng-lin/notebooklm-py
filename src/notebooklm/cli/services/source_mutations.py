@@ -2,8 +2,8 @@
 
 Each command has its own plan + executor pair. The shared resolver
 helpers (``resolve_source_for_delete``, ``resolve_source_by_exact_title``,
-``require_yes_in_json``) also live here because they are mutation-specific
-and were previously private helpers on ``cli/source_cmd.py``. Typed result
+``require_yes_in_json``) also live here because they are mutation-specific.
+Typed result
 dataclasses carry presentation payloads back to the command layer. The
 :class:`MutationPlan` pipeline from
 ``cli/services/confirming_mutation.py`` handles the resolve → confirm →
@@ -331,7 +331,7 @@ async def execute_source_delete(
         resolution = await resolve_source_for_delete(
             client, plan.notebook_id, plan.source_id, json_output=plan.json_output
         )
-        # P1.T2 bug 1: In --json mode, never prompt — automation cannot
+        # In --json mode, never prompt — automation cannot
         # answer an interactive confirmation. Require --yes and emit a
         # structured JSON error otherwise.
         if plan.json_output and not plan.yes:
@@ -422,7 +422,7 @@ async def execute_source_delete_by_title(
         source = await resolve_source_by_exact_title(
             client, plan.notebook_id, plan.title, json_output=plan.json_output
         )
-        # P1.T2 bug 2: same JSON-mode confirmation contract as ``source delete``.
+        # Same JSON-mode confirmation contract as ``source delete``.
         if plan.json_output and not plan.yes:
             require_yes_in_json(
                 action="delete-by-title",

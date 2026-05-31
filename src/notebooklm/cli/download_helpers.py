@@ -41,8 +41,8 @@ def resolve_partial_artifact_id(artifacts: list[ArtifactDict], artifact_id: str)
 
     The "no match" / "ambiguous" message text retains its historical wording
     rather than the canonical resolver's wording - the download command's
-    user-visible error envelope text predates P2.T1 consolidation and a
-    customer or external test could rely on it. The translation costs about
+    user-visible error envelope text predates the resolver consolidation
+    and a customer or external test could rely on it. The translation costs about
     8 lines and keeps the user contract verbatim. Successful partial matches
     also remain silent, matching the historical download helper behavior.
 

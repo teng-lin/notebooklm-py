@@ -1,13 +1,9 @@
-"""ErrorInjectionMiddleware — synthetic-error short-circuit for the Tier-12 chain.
+"""ErrorInjectionMiddleware — synthetic-error short-circuit for the chain.
 
 Per ADR-009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
-``RetryMiddleware`` / ``AuthRefreshMiddleware`` (which extract in PRs 12.7–12.8)
-and just *outside* ``TracingMiddleware``. The final Tier-12 chain (post-PR 12.9,
-after ``SemaphoreMiddleware`` was inserted between ``Metrics`` and ``Retry``) is
-``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``. PR 12.6 ships
-the interim 4-middleware chain ``[Drain, Metrics, ErrorInjection, Tracing]``;
-PRs 12.7–12.8 insert ``Retry`` and ``AuthRefresh`` BETWEEN ``Metrics`` and
-``ErrorInjection`` so the ordering rationale holds at every step.
+``RetryMiddleware`` / ``AuthRefreshMiddleware`` and just *outside*
+``TracingMiddleware``. The chain is
+``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
 
 Test-only path. Production behavior is unchanged when no builder is wired
 into the middleware — the constructor's default ``builder=None`` makes
@@ -32,11 +28,8 @@ still fires at client construction (``NotebookLMClient.__init__``) so a leaked
 deploy env never reaches production wiring; the builder-not-wired default is the
 second line of defense closing the issue-#1005 attack surface.
 
-Tier-12 history: PR 12.6 lifted the substitution from the pre-Tier-12
-httpx transport (``_error_injection._SyntheticErrorTransport``,
-which wrapped ``httpx.AsyncClient`` in ``ClientLifecycle``) into this
-middleware. PR 12.9 deleted the legacy transport class outright; this
-middleware is now the only production substitution surface.
+This middleware is the only production substitution surface for synthetic
+errors.
 
 Behavior contract:
 
@@ -55,25 +48,17 @@ Behavior contract:
   exponential backoff.
 - Env var set, builder wired, mode ``"expired_csrf"`` (HTTP 400) → raise
   the raw :class:`httpx.HTTPStatusError` so ``AuthRefreshMiddleware``
-  (outside this middleware in the final chain ordering) catches it via
-  ``is_auth_error`` and drives the refresh-then-retry flow. Pre-PR-12.6
-  this happened naturally because the legacy ``_SyntheticErrorTransport``
-  returned the synthetic 400 below httpx, and ``raise_for_status`` lifted
-  it into an ``HTTPStatusError``. PR 12.8 restores that end-to-end via
-  ``AuthRefreshMiddleware``.
+  (outside this middleware in the chain ordering) catches it via
+  ``is_auth_error`` and drives the refresh-then-retry flow.
 
 All raised exceptions wrap a synthetic :class:`httpx.Response` anchored to
 ``request.url`` / ``request.headers`` / ``request.body`` so callers
 inspecting ``response.request`` see what the leaf would have sent.
 
-Restored retry semantics: pre-PR-12.6 the httpx-layer
-:class:`_SyntheticErrorTransport` fired on *every* batchexecute POST.
-PR 12.6 lifted the middleware above the leaf, which broke that. PR 12.7
-added ``RetryMiddleware`` OUTSIDE this middleware AND has this middleware
-raise the proper transport exceptions for 429/5xx so the outer retry
-actually fires. Each retry re-enters this middleware, which re-raises —
-matching the pre-PR-12.6 "every retry re-fires the synthetic error"
-behavior bit-for-bit.
+Retry semantics: ``RetryMiddleware`` sits OUTSIDE this middleware, and this
+middleware raises the proper transport exceptions for 429/5xx so the outer
+retry fires. Each retry re-enters this middleware, which re-raises — so every
+retry re-fires the synthetic error.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
 ``src/notebooklm/_error_injection.py`` for the env-var / startup-guard
@@ -143,9 +128,9 @@ class ErrorInjectionMiddleware:
         # ``tests/cassette_patterns.py``, which broke wheel installs AND
         # exposed an arbitrary-code-exec path keyed off the env var).
         self._builder: _SyntheticBuilder | None = builder
-        # Gates the one-shot "injection enabled" log line — preserves the
-        # pre-PR-12.6 ``_runtime_lifecycle`` log signal that operators running
-        # cassette-recording flows rely on to confirm their env var was picked up.
+        # Gates the one-shot "injection enabled" log line — the log signal
+        # that operators running cassette-recording flows rely on to confirm
+        # their env var was picked up.
         self._logged_activation = False
 
     async def __call__(
@@ -208,20 +193,16 @@ class ErrorInjectionMiddleware:
             request=synthetic_request,
         )
         # Raise the proper exception for each mode so the OUTER chain
-        # middlewares actually fire — restoring ADR-009 §"Chain ordering
-        # rationale" end-to-end:
+        # middlewares actually fire — per ADR-009 §"Chain ordering
+        # rationale":
         # - 429 → ``TransportRateLimited`` → ``RetryMiddleware`` retries
         #   with Retry-After or exponential backoff
         # - 5xx → ``TransportServerError`` → ``RetryMiddleware`` retries
         #   with exponential backoff
         # - 400 / expired_csrf → raw ``httpx.HTTPStatusError`` →
         #   ``AuthRefreshMiddleware`` catches via ``is_auth_error``,
-        #   refreshes, retries once (PR 12.8). Pre-PR-12.6 this happened
-        #   naturally because the legacy ``_SyntheticErrorTransport``
-        #   returned the synthetic response below httpx and
-        #   ``raise_for_status()`` lifted it into an ``HTTPStatusError``.
-        #   Returning a plain ``RpcResponse`` here would
-        #   skip ``AuthRefreshMiddleware`` entirely.
+        #   refreshes, retries once. Returning a plain ``RpcResponse`` here
+        #   would skip ``AuthRefreshMiddleware`` entirely.
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         original = httpx.HTTPStatusError(
             f"HTTP {status_code}",
