@@ -44,7 +44,13 @@ import ast
 from collections.abc import Callable
 from pathlib import Path
 
-from _fixtures.cli_exit_markers import Span, marker_reasons, match_markers
+from _fixtures.cli_exit_markers import (
+    Span,
+    marker_reasons,
+    marker_reasons_for,
+    match_markers,
+    parse_cli_file,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"
@@ -108,10 +114,9 @@ def _audit(
     empty_reason: list[str] = []
     total = 0
     for path in _cli_files():
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(path))
+        _source, tree = parse_cli_file(path)  # cached: read + parse once per session
         rel = path.relative_to(REPO_ROOT).as_posix()
-        reasons = marker_reasons(source, marker)
+        reasons = marker_reasons_for(path, marker)
         spans = spanner(tree)
         total += len(spans)
 
@@ -227,3 +232,26 @@ def test_raw_sysexit_spans_detects_bare_and_called() -> None:
     """
     tree = ast.parse("def called():\n    raise SystemExit(1)\ndef bare():\n    raise SystemExit\n")
     assert sorted(lo for lo, _hi in _raw_sysexit_spans(tree)) == [2, 4]
+
+
+def test_parse_cli_file_is_memoized_and_byte_identical() -> None:
+    """The single-pass cache must reuse one read/parse/tokenize per file.
+
+    Each audit pass calls ``parse_cli_file`` / ``marker_reasons_for`` once per
+    CLI file, and the gate runs four passes. Caching on the path collapses that
+    to one read + parse + tokenize per file per session (issue #1302) -- but
+    only if it stays behavior-identical to the source-keyed helpers it replaces.
+    """
+    path = next(iter(_cli_files()))
+
+    # Same path -> the *identical* cached (source, tree); not a re-parse.
+    source, tree = parse_cli_file(path)
+    again_source, again_tree = parse_cli_file(path)
+    assert again_tree is tree
+    assert again_source is source
+    assert source == path.read_text(encoding="utf-8")
+
+    # Path-keyed reasons are byte-identical to the source-keyed helper for
+    # every marker family the gate audits.
+    for marker in (CLICK_EXCEPTION_MARKER, RAW_SYSEXIT_MARKER):
+        assert marker_reasons_for(path, marker) == marker_reasons(source, marker)
