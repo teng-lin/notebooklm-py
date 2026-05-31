@@ -81,13 +81,23 @@ async def test_rename_dispatches_by_kind():
 @pytest.mark.asyncio
 async def test_rename_returns_renamed_mind_map():
     # Note-backed: the post-rename list reflects the new title; rename returns it.
+    # Current row shape carries the title in the inner envelope at row[1][4]
+    # (see NoteRow.title); extract_content reads row[1] (the JSON tree string).
     api, _, mind_maps, artifacts, _ = _make_api(
-        note_rows=[["note_mm", '{"name": "NB", "children": []}', None, None, "New Title"]]
+        note_rows=[
+            [
+                "note_mm",
+                ["note_mm", '{"name": "NB", "children": []}', None, None, "New Title"],
+            ]
+        ]
     )
     result = await api.rename("nb", "note_mm", "New Title", kind=MindMapKind.NOTE_BACKED)
     assert result is not None
     assert result.id == "note_mm"
     assert result.kind == MindMapKind.NOTE_BACKED
+    # Server-reflected title (NoteRow.title slot), not the input echoed back —
+    # guards against re-fetching a stale row with the old title.
+    assert result.title == "New Title"
 
 
 @pytest.mark.asyncio

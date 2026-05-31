@@ -889,6 +889,22 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 
 ---
 
+> **v0.7.0 breaking change — `delete()` / `rename()` returns (issues #1211, #1255).**
+> Applies to `notebooks`, `sources`, `artifacts`, `notes`, and `mind_maps`:
+>
+> - **`delete()` returns `None`** (was a hardcoded `True`). `True → None` flips
+>   truthy → falsy, so `if await client.X.delete(id): ...` **no longer enters
+>   its block** — drop the `if` and call `delete()` for its effect. `delete()`
+>   is **idempotent**: deleting an already-absent target succeeds (returns
+>   `None`) and does not raise `*NotFoundError`; real failures
+>   (`403`/`5xx`/auth/transport) still raise. Use `get()` first to assert
+>   existence.
+> - **`rename()` returns the renamed object** and raises `*NotFoundError`
+>   (`ValueError` for mind maps) on a missing target — detected via a
+>   content/list lookup, never a transport 404. Pass **`return_object=False`**
+>   to skip the hydrate re-fetch and return `None`; that opt-out **also skips
+>   missing-target detection**, so a missing target does not raise under it.
+
 ### NotebooksAPI (`client.notebooks`)
 
 **CLI equivalent:** [Notebook Commands](cli-reference.md#notebook-commands) — `notebooklm list`, `create`, `delete`, `rename`, `summary`.
