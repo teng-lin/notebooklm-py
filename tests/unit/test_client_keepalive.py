@@ -95,7 +95,8 @@ async def _wait_for_rotate_requests(
         await asyncio.sleep(0.05)
 
     requests = _rotate_requests(httpx_mock)
-    pytest.fail(f"{failure_message}; got {len(requests)}")
+    if len(requests) < minimum:
+        pytest.fail(f"{failure_message}; got {len(requests)}")
 
 
 class TestKeepaliveDisabledByDefault:
