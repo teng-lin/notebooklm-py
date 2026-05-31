@@ -1,14 +1,14 @@
 """Unit tests for ``ChatAPI.save_answer_as_note`` (Phase 6, issue #660).
 
-Saved-chat ownership moved from ``NotesAPI.create_from_chat`` to
-``ChatAPI.save_answer_as_note`` in refactor-history.md Step 8 / ADR-013. The
-``NotesAPI.create_from_chat`` forwarder still exists (deprecated, pure
-delegate) but the encoder + title-derivation semantics now live here.
+Saved-chat ownership moved from the former ``NotesAPI.create_from_chat``
+forwarder to ``ChatAPI.save_answer_as_note`` in refactor-history.md Step 8 /
+ADR-013; the forwarder was removed in v0.7.0 and the encoder +
+title-derivation semantics now live here.
 
 These tests pin:
 
 * the empty-references guard (raises ``ValueError``, mirroring the
-  v0.4.1 ``NotesAPI.create_from_chat`` contract),
+  original saved-from-chat contract),
 * the default-title derivation (derived from ``ask_result.answer`` —
   ``AskResult`` has no ``question`` field today),
 * the explicit-title override path,

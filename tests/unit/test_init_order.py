@@ -988,41 +988,6 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     assert _self_attr_name(_call_keyword_value(notebooks_call, "sources_api")) == "sources"
 
 
-def test_client_constructs_chat_before_notes_and_injects_save_chat_answer() -> None:
-    """Phase 6 (refactor-history.md Step 8, ADR-013): the composition root MUST
-    construct ``self.chat`` before ``self.notes`` so the
-    ``save_chat_answer=self.chat.save_answer_as_note`` callback exists
-    at ``NotesAPI`` construction time.
-
-    The check is structural (AST) so a future refactor that re-orders
-    the assignments — or drops the ``save_chat_answer`` kwarg — fails
-    loudly here rather than at runtime under a missing-attribute
-    error.
-    """
-    client_tree = ast.parse((SRC_ROOT / "client.py").read_text(encoding="utf-8"))
-    init_body = _method_body(client_tree, "NotebookLMClient", "__init__")
-    chat_index, _chat_assignment = _self_attr_assignment(init_body, "chat")
-    notes_index, notes_assignment = _self_attr_assignment(init_body, "notes")
-
-    assert chat_index < notes_index, (
-        "client.chat must be constructed before client.notes — Phase 6 "
-        "passes self.chat.save_answer_as_note as a required kwarg to NotesAPI."
-    )
-
-    notes_value = _assignment_value(notes_assignment)
-    assert isinstance(notes_value, ast.Call)
-    save_chat_answer_arg = _call_keyword_value(notes_value, "save_chat_answer")
-    assert save_chat_answer_arg is not None, (
-        "NotesAPI must receive a save_chat_answer= callback (Phase 6)."
-    )
-    # The expected wiring is `save_chat_answer=self.chat.save_answer_as_note`.
-    assert isinstance(save_chat_answer_arg, ast.Attribute)
-    assert save_chat_answer_arg.attr == "save_answer_as_note"
-    inner = save_chat_answer_arg.value
-    assert isinstance(inner, ast.Attribute)
-    assert inner.attr == "chat"
-
-
 def test_core_private_access_guard_detects_simple_aliases() -> None:
     tree = ast.parse(
         """
@@ -1174,7 +1139,6 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
     notes = NotesAPI(
         notes=MagicMock(spec=NoteService),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        save_chat_answer=AsyncMock(),
     )
     with pytest.raises(TypeError):
         ArtifactsAPI(  # type: ignore[call-arg]
@@ -1189,12 +1153,9 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
 def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> None:
     """Both construction orders must succeed and produce working APIs.
 
-    Per Phase 6 (refactor-history.md Step 8, ADR-013), ``NotesAPI`` requires an
-    injected ``save_chat_answer`` callback at construction; in the
-    composition root that callback is
-    ``ChatAPI.save_answer_as_note``. This test uses an ``AsyncMock``
-    stand-in so the ordering constraint stays explicit without pulling
-    in the full ``ChatAPI`` build path.
+    ``ArtifactsAPI`` and ``NotesAPI`` have no construction-order
+    dependency on each other; this test pins that building either one
+    first still yields working APIs.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
@@ -1215,7 +1176,6 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
         return NotesAPI(
             notes=MagicMock(spec=NoteService),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            save_chat_answer=AsyncMock(),
         )
 
     artifacts_first = _make_artifacts()

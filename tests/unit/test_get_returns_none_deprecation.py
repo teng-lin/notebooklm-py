@@ -112,7 +112,6 @@ def notes_api():
     return NotesAPI(
         notes=note_service,
         mind_maps=mind_maps,
-        save_chat_answer=AsyncMock(),
     )
 
 

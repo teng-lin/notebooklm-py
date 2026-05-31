@@ -25,7 +25,7 @@ from notebooklm import NotebookLMClient
 async def main(topic: str):
     print(f"=== Research to Podcast: {topic} ===\n")
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # 1. Create a notebook
         print("Creating notebook...")
         nb = await client.notebooks.create(f"Research: {topic}")

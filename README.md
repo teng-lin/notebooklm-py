@@ -189,7 +189,7 @@ import asyncio
 from notebooklm import NotebookLMClient
 
 async def main():
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # Create notebook and add sources
         nb = await client.notebooks.create("Research")
         await client.sources.add_url(nb.id, "https://example.com", wait=True)

@@ -99,6 +99,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 >   warn-and-returning `None` / `[]`. The env var is now ignored (no-op).
 >   Callers that previously relied on the soft fallback should handle
 >   `UnknownRPCMethodError` (a subclass of `RPCError` / `DecodingError`).
+> - **`NotesAPI.create_from_chat(...)`** — removed (deprecated since v0.5.0,
+>   two MINOR cycles of warnings served; the documented removal target was
+>   v0.7.0). It was a pure forwarder. Use `ChatAPI.save_answer_as_note(...)`,
+>   the canonical citation-rich saved-from-chat method and data owner
+>   (ADR-013): `await client.chat.save_answer_as_note(nb_id, ask_result)`.
+>   The now-unused `save_chat_answer` injection plumbing on `NotesAPI` was
+>   removed with it.
 >
 > **Not removed:** `SourcesAPI.add_file(mime_type=...)` and
 > `notebooklm source add --mime-type` (file sources) were **reassessed and

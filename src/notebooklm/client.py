@@ -410,14 +410,8 @@ class NotebookLMClient:
             note_service=note_service,
             storage_path=storage_path,
         )
-        # ``chat`` MUST be constructed before ``notes`` so the
-        # ``save_chat_answer`` callback (= ``chat.save_answer_as_note``)
-        # exists at NotesAPI construction time. Phase 6 (refactor-history.md
-        # Step 8, ADR-013) moves saved-chat ownership to ChatAPI and
-        # has NotesAPI delegate via constructor injection.
-        #
-        # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ChatAPI
-        # takes its four direct collaborators (RpcCaller, RuntimeTransport,
+        # ChatAPI (ADR-014 Rule 2 Corollary, session-decoupling) takes its
+        # four direct collaborators (RpcCaller, RuntimeTransport,
         # ReqidCounter, LoopGuard) by keyword argument. The transport is
         # sourced from ``self._composed``; other runtime fields come from
         # the :class:`ClientInternals` returned by the composition root.
@@ -431,7 +425,6 @@ class NotebookLMClient:
         self.notes = NotesAPI(
             notes=note_service,
             mind_maps=mind_maps,
-            save_chat_answer=self.chat.save_answer_as_note,
         )
         # Unified mind-map surface over both backends (note-backed + interactive
         # studio artifact); dispatches each op to the correct RPC family (#1256).
