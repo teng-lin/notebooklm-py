@@ -117,7 +117,8 @@ class TestRenameCommand:
 
         ``rename_cmd`` (``cli/notebook_cmd.py``) carries ``@json_option`` and,
         when ``--json`` is passed, emits
-        ``{"notebook_id", "title", "success": True}`` instead of the prose.
+        ``{"notebook_id": "<id>", "title": "<title>", "success": True}`` instead
+        of the prose.
         Same cassette: the JSON branch only changes the *output formatting*, not
         the underlying RENAME_NOTEBOOK call.
         """
