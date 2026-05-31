@@ -84,25 +84,46 @@ def test_guard_detects_a_known_bad_cassette() -> None:
 
     Without this, the clean-scan assertions above could pass even if the
     scanner silently regressed into a no-op (e.g. a broken pattern import).
-    Scanning the deliberately-unscrubbed fixture must return a non-zero exit.
+    Scanning the deliberately-unscrubbed fixture must return a non-zero exit
+    **and** name the file in the leak report — a crash in the checker also
+    exits non-zero, so the exit code alone can't prove a leak was detected.
     """
     assert KNOWN_BAD_CASSETTE.exists(), f"missing positive-control fixture: {KNOWN_BAD_CASSETTE}"
     result = _run_guard(str(KNOWN_BAD_CASSETTE))
     assert result.returncode == 1, (
         f"guard failed to flag a known leak (exit {result.returncode}):\n{result.stdout}"
     )
+    assert KNOWN_BAD_CASSETTE.name in result.stdout, (
+        f"exit 1 but the leak was not reported — the guard may have crashed "
+        f"rather than detected:\n{result.stdout}\n{result.stderr}"
+    )
 
 
-def test_guard_detects_a_credential_shape(tmp_path: Path) -> None:
-    """Positive control for the ``--secrets-only`` path.
+def test_guard_detects_credential_shapes(tmp_path: Path) -> None:
+    """Positive control for the ``--secrets-only`` path, across every shape.
 
-    The shape is assembled at runtime and written to a temp file (outside the
-    scanned fixture tree) so this source file carries no static
-    credential-shaped literal that the repo-wide secrets scan would flag.
+    Covers all four credential-shape detectors (the Google API key plus the
+    ``g.a000-`` / ``sidts-`` / ``ya29.`` auth-token shapes), so a single dead
+    detector is caught. Shapes are assembled at runtime so this source file
+    carries no static credential-shaped literal that the repo-wide secrets scan
+    would flag. Asserting one reported leak *per shape* (not merely a non-zero
+    exit, which a scanner crash also produces) keeps the control robust.
     """
+    shapes = (
+        "AIza" + "B" * 35,  # Google API key
+        "g.a" + "000-" + "D" * 20,  # g.a000- SID token
+        "sid" + "ts-" + "E" * 20,  # sidts- rotation token
+        "ya2" + "9." + "C" * 40,  # ya29. OAuth access token
+    )
     leaky = tmp_path / "leaky.txt"
-    leaky.write_text("api_key: " + "AIza" + "B" * 35 + "\n", encoding="utf-8")
+    leaky.write_text(
+        "".join(f"token_{i}: {shape}\n" for i, shape in enumerate(shapes)),
+        encoding="utf-8",
+    )
     result = _run_guard("--secrets-only", str(leaky))
-    assert result.returncode == 1, (
-        f"shape detector missed a synthetic Google API-key shape:\n{result.stdout}"
+    assert result.returncode == 1, f"shape detector missed a synthetic shape:\n{result.stdout}"
+    reported = [line for line in result.stdout.splitlines() if "Leak (" in line]
+    assert len(reported) >= len(shapes), (
+        f"expected >= {len(shapes)} reported leaks (one per shape), got {len(reported)} — "
+        f"a shape detector may be dead or the guard crashed:\n{result.stdout}\n{result.stderr}"
     )
