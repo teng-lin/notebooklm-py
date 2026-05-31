@@ -1,5 +1,6 @@
 """Tests for chat CLI commands (save-as-note, enhanced history)."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1171,6 +1172,23 @@ class TestAskQuietSuppressesStatusProse:
     that previously used raw ``console.print`` gated only by ``not
     json_output`` — so they leaked to stdout even under ``--quiet``.
     """
+
+    @pytest.fixture(autouse=True)
+    def _restore_notebooklm_log_level(self):
+        """Restore the ``notebooklm`` logger level around each test.
+
+        ``notebooklm --quiet`` calls ``getLogger("notebooklm").setLevel(ERROR)``
+        in the CLI's main group (``notebooklm_cli.py``). ``CliRunner`` does not
+        isolate process-global logging, so without this guard the ERROR floor
+        from the ``--quiet`` invocation below leaks into every later test's
+        ``caplog`` capture. Snapshot + restore keeps this class self-contained.
+        """
+        logger = logging.getLogger("notebooklm")
+        prev_level = logger.level
+        try:
+            yield
+        finally:
+            logger.setLevel(prev_level)
 
     def _run(self, runner, tmp_path, *, quiet: bool):
         context_file = tmp_path / "context.json"
