@@ -20,6 +20,7 @@ from .error_handler import _output_error, exit_with_code
 from .input import resolve_prompt
 from .options import _complete_sources, json_option, notebook_option, prompt_file_option
 from .rendering import (
+    cli_print,
     console,
     emit_status,
     json_output_response,
@@ -48,7 +49,7 @@ def _determine_conversation_id(
     cached_notebook = get_current_notebook()
     if explicit_notebook_id and cached_notebook and resolved_notebook_id != cached_notebook:
         if not json_output:
-            console.print("[dim]Different notebook specified, starting new conversation...[/dim]")
+            cli_print("[dim]Different notebook specified, starting new conversation...[/dim]")
         return None
 
     return get_current_conversation()
@@ -61,11 +62,12 @@ async def _get_latest_conversation_from_server(
 
     Returns None if unavailable or empty.
     """
+    history_unavailable = False
     try:
         conv_id = await client.chat.get_conversation_id(notebook_id)
         if conv_id:
             if not json_output:
-                console.print(f"[dim]Continuing conversation {conv_id[:8]}...[/dim]")
+                cli_print(f"[dim]Continuing conversation {conv_id[:8]}...[/dim]")
             return conv_id
     except Exception as e:
         logger.debug(
@@ -73,8 +75,13 @@ async def _get_latest_conversation_from_server(
             type(e).__name__,
             e,
         )
-        if not json_output:
-            console.print("[dim]Starting new conversation (history unavailable)[/dim]")
+        history_unavailable = True
+    # Emit the fallback status *outside* the ``except`` handler: it is a
+    # status line (so it must honor root ``--quiet`` via ``cli_print``), not
+    # an error diagnostic, and emitting it inside the handler would trip the
+    # error-path heuristic in ``tests/unit/cli/test_quiet_enforcement.py``.
+    if history_unavailable and not json_output:
+        cli_print("[dim]Starting new conversation (history unavailable)[/dim]")
     return None
 
 

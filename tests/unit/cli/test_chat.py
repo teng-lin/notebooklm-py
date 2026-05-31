@@ -1161,3 +1161,55 @@ class TestChatJsonStdoutContract:
             # Rich save-as-note status must not leak onto stdout.
             assert "Saved as note" not in result.stdout
             assert "[green]" not in result.stdout
+
+
+class TestAskQuietSuppressesStatusProse:
+    """Root ``--quiet`` must suppress chat *status* prose (not the answer).
+
+    Regression guard for the conversation-selection status lines in
+    ``_determine_conversation_id`` / ``_get_latest_conversation_from_server``
+    that previously used raw ``console.print`` gated only by ``not
+    json_output`` — so they leaked to stdout even under ``--quiet``.
+    """
+
+    def _run(self, runner, tmp_path, *, quiet: bool):
+        context_file = tmp_path / "context.json"
+        # No local conversation_id -> the ask flow consults the server, which
+        # returns one, emitting the "Continuing conversation ..." status line.
+        context_file.write_text('{"notebook_id": "nb_123"}')
+        ask_result = AskResult(
+            answer="The answer.",
+            conversation_id="conv-server-abc",
+            turn_number=1,
+            is_follow_up=True,
+            references=[],
+            raw_response="",
+        )
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=ask_result)
+            mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
+            mock_client_cls.return_value = mock_client
+            with (
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
+                patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+            ):
+                mock_fetch.return_value = ("csrf", "session")
+                args = (["--quiet"] if quiet else []) + ["ask", "-n", "nb_123", "question"]
+                return runner.invoke(cli, args)
+
+    def test_status_prose_present_without_quiet(self, runner, mock_auth, tmp_path):
+        result = self._run(runner, tmp_path, quiet=False)
+        assert result.exit_code == 0, result.output
+        assert "Continuing conversation" in result.output
+
+    def test_status_prose_suppressed_under_quiet(self, runner, mock_auth, tmp_path):
+        result = self._run(runner, tmp_path, quiet=True)
+        assert result.exit_code == 0, result.output
+        # The status line is gone...
+        assert "Continuing conversation" not in result.output
+        # ...but the answer itself still prints (quiet silences status, not output).
+        assert "The answer." in result.output
