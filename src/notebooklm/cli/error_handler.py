@@ -101,7 +101,7 @@ def _output_error(
     exit_code: int,
     extra: dict[str, Any] | None = None,
     hint: str | None = None,
-) -> None:
+) -> NoReturn:
     """Output error message in text or JSON format and exit.
 
     Args:
