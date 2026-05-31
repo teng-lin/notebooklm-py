@@ -12,14 +12,14 @@ import logging
 import click
 from rich.table import Table
 
+from ..auth import AuthTokens
 from ..client import NotebookLMClient
 from ..io import atomic_update_json
 from ..paths import get_config_path, get_home_dir
-from .auth_runtime import get_auth_tokens
+from .auth_runtime import with_auth_and_errors
 from .error_handler import exit_with_code
 from .options import json_option
 from .rendering import console, json_error_response, json_output_response
-from .runtime import run_async
 
 logger = logging.getLogger(__name__)
 
@@ -168,59 +168,6 @@ def set_language(code: str) -> None:
     atomic_update_json(config_path, _set_lang, recover_from_corrupt=True)
 
 
-def _run_language_rpc(coro):
-    """Run a language RPC coroutine and close it if the sync runner does not."""
-    try:
-        return run_async(coro)
-    finally:
-        coro.close()
-
-
-def _sync_language_to_server(code: str, ctx: click.Context) -> str | None:
-    """Sync language setting to server via RPC.
-
-    Args:
-        code: Language code to set.
-        ctx: Click context for auth.
-
-    Returns:
-        Server's response language, or None on failure.
-    """
-    try:
-        auth = get_auth_tokens(ctx)
-
-        async def _set():
-            async with NotebookLMClient(auth) as client:
-                return await client.settings.set_output_language(code)
-
-        return _run_language_rpc(_set())
-    except Exception as e:
-        logger.debug("Failed to sync language to server: %s", e)
-        return None
-
-
-def _get_language_from_server(ctx: click.Context) -> str | None:
-    """Get current language from server via RPC.
-
-    Args:
-        ctx: Click context for auth.
-
-    Returns:
-        Server's language setting, or None on failure.
-    """
-    try:
-        auth = get_auth_tokens(ctx)
-
-        async def _get():
-            async with NotebookLMClient(auth) as client:
-                return await client.settings.get_output_language()
-
-        return _run_language_rpc(_get())
-    except Exception as e:
-        logger.debug("Failed to get language from server: %s", e)
-        return None
-
-
 @click.group()
 def language():
     """Manage output language for artifact generation.
@@ -259,33 +206,8 @@ def language_list(json_output):
     console.print(f"\n[dim]Total: {len(SUPPORTED_LANGUAGES)} languages[/dim]")
 
 
-@language.command("get")
-@click.option("--local", is_flag=True, help="Show local config only (skip server sync)")
-@json_option
-@click.pass_context
-def language_get(ctx, local, json_output):
-    """Get current language setting.
-
-    Shows the currently configured output language for artifact generation.
-    By default, fetches from server and updates local config if different.
-    Use --local to skip server sync.
-    """
-    local_lang = get_language()
-    server_lang = None
-    synced = False
-
-    # Try to get from server unless --local is set
-    if not local:
-        server_lang = _get_language_from_server(ctx)
-        if server_lang is not None:
-            # Update local config if server has different value
-            if server_lang != local_lang:
-                set_language(server_lang)
-                synced = True
-            local_lang = server_lang
-
-    current = local_lang
-
+def _render_get(current: str | None, synced: bool, json_output: bool) -> None:
+    """Render the resolved ``language get`` state in JSON or text mode."""
     if json_output:
         json_output_response(
             {
@@ -308,6 +230,53 @@ def language_get(ctx, local, json_output):
         console.print("\n[dim]Use 'notebooklm language set <code>' to set a default.[/dim]")
 
 
+@language.command("get")
+@click.option("--local", is_flag=True, help="Show local config only (skip server sync)")
+@json_option
+@click.pass_context
+def language_get(ctx, local, json_output):
+    """Get current language setting.
+
+    Shows the currently configured output language for artifact generation.
+    By default, fetches from server (the source of truth) and updates local
+    config if different. Use --local to read the local config offline without
+    contacting the server (no auth required).
+
+    Without --local an auth/network/RPC failure surfaces as the structured
+    error envelope with a non-zero exit code -- it is not silently degraded to
+    the stale local value.
+    """
+    # --local is the offline escape hatch: short-circuit BEFORE any auth or
+    # client construction so it works with no credentials available.
+    if local:
+        _render_get(get_language(), synced=False, json_output=json_output)
+        return
+
+    # Server path: route the RPC through the standard error envelope so auth /
+    # network / RPC failures hard-fail (structured envelope + non-zero exit)
+    # instead of being swallowed.
+    async def body(auth: AuthTokens) -> tuple[str | None, bool]:
+        async with NotebookLMClient(auth) as client:
+            server_lang = await client.settings.get_output_language()
+        synced = False
+        if server_lang is not None and server_lang != get_language():
+            # Server is authoritative: persist its value locally on a change.
+            set_language(server_lang)
+            synced = True
+        return server_lang, synced
+
+    server_lang, synced = with_auth_and_errors(
+        ctx,
+        command_name="language get",
+        json_output=json_output,
+        body=body,
+    )
+
+    # Server may have no value set; fall back to the local config for display.
+    current = server_lang if server_lang is not None else get_language()
+    _render_get(current, synced=synced, json_output=json_output)
+
+
 @language.command("set")
 @click.argument("code")
 @click.option("--local", is_flag=True, help="Set local config only (skip server sync)")
@@ -327,7 +296,8 @@ def language_set(ctx, code, local, json_output):
       notebooklm language set ja         # Japanese
       notebooklm language set en         # English
     """
-    # Validate the language code
+    # Validate the language code BEFORE any auth/client/local write so a bad
+    # code never touches storage or the network.
     if code not in SUPPORTED_LANGUAGES:
         if json_output:
             # Match the shared JSON error schema from ``cli/rendering.py``:
@@ -343,15 +313,31 @@ def language_set(ctx, code, local, json_output):
         console.print("\nRun [cyan]notebooklm language list[/cyan] to see supported codes.")
         exit_with_code(1)
 
-    # Save locally first
-    set_language(code)
     name = SUPPORTED_LANGUAGES[code]
 
-    # Sync to server unless --local is set
-    synced = False
-    if not local:
-        server_result = _sync_language_to_server(code, ctx)
-        synced = server_result is not None
+    # --local is the offline escape hatch: persist to local config only,
+    # short-circuiting BEFORE any auth or client construction so it works with
+    # no credentials available.
+    if local:
+        set_language(code)
+        synced = False
+    else:
+        # Server-authoritative ordering: sync to the server FIRST (inside the
+        # error envelope), and only persist locally once the server confirms.
+        # This way a failed sync hard-fails (structured envelope + non-zero
+        # exit) instead of silently leaving a misleading local value behind.
+        async def body(auth: AuthTokens) -> None:
+            async with NotebookLMClient(auth) as client:
+                await client.settings.set_output_language(code)
+
+        with_auth_and_errors(
+            ctx,
+            command_name="language set",
+            json_output=json_output,
+            body=body,
+        )
+        set_language(code)
+        synced = True
 
     if json_output:
         json_output_response(
@@ -368,7 +354,5 @@ def language_set(ctx, code, local, json_output):
     console.print(f"\nLanguage set to: [cyan]{code}[/cyan] ({name})")
     if synced:
         console.print("[dim](synced to server)[/dim]")
-    elif not local:
-        console.print(
-            "[dim](saved locally, server sync failed - server may still use previous value)[/dim]"
-        )
+    elif local:
+        console.print("[dim](saved locally, server sync skipped)[/dim]")

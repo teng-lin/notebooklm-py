@@ -7,13 +7,15 @@ subcommand; see ``src/notebooklm/cli/language_cmd.py``). The task brief uses
 the conceptual name ``settings set-language``; the test exercises the
 real exposed name without touching the CLI implementation.
 
-The CLI ``language set <code>`` flow:
+The CLI ``language set <code>`` flow (server-authoritative since #1309):
 
 1. Validates ``<code>`` against the local ``SUPPORTED_LANGUAGES`` table.
-2. Writes the language to ``config.json`` (no RPC).
-3. Unless ``--local`` is passed, calls
+2. Unless ``--local`` is passed, calls
    ``client.settings.set_output_language(<code>)`` — a single
-   ``SET_USER_SETTINGS`` (rpcids ``hT54vc``) RPC.
+   ``SET_USER_SETTINGS`` (rpcids ``hT54vc``) RPC — routed through the standard
+   error envelope so a failed sync hard-fails instead of silently degrading.
+3. Writes the language to ``config.json`` only after the server confirms
+   (or immediately, with no RPC, when ``--local`` is passed).
 
 The dedicated CLI cassette ``cli_settings_set_language.yaml`` captures
 exactly that single-RPC chain (plus the bootstrap homepage GET). It is
