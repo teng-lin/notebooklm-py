@@ -1689,7 +1689,7 @@ await rpc_call(
 Common language codes include:
 - `en` (English), `ja` (日本語), `zh_Hans` (中文简体), `zh_Hant` (中文繁體)
 - `ko` (한국어), `es` (Español), `fr` (Français), `de` (Deutsch), `pt_BR` (Português)
-- See `cli/language.py::SUPPORTED_LANGUAGES` for the full list of 80+ languages
+- See `cli/language_cmd.py::SUPPORTED_LANGUAGES` for the full list of 80+ languages
 
 ---
 

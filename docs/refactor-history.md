@@ -5,6 +5,15 @@
 > **Ratifying decision:** [ADR-013 — composable session capabilities](adr/0013-composable-session-capabilities.md), which supersedes [ADR-010 — Session/Kernel split](adr/0010-session-kernel-split.md).
 > **Last updated:** 2026-05-21
 
+> **⚠️ Superseded in part by [ADR-014](adr/0014-feature-local-runtime-adapters.md).**
+> A later refactor removed the `Session` facade class entirely and renamed the
+> `_session_*` home modules to `_runtime_*` (`_session_contracts` →
+> `_runtime_contracts`, `_session_auth` → `_runtime_auth`, `_session_lifecycle`
+> → `_runtime_lifecycle`, `_session_config` → `_runtime_config`,
+> `_session_helpers` → `_runtime_helpers`). The module names in the tables below
+> are the **v0.5.0 as-shipped** names, not the current tree — see
+> [`docs/architecture.md`](architecture.md) for the current module map.
+
 This document is the historical record of the Tier 12 / Tier 13 refactor arc.
 It exists for two audiences:
 

@@ -28,7 +28,7 @@ All data is stored under `~/.notebooklm/` by default, organized by profile:
 `config.json` stores process-wide settings — the persisted default profile
 name (under the `default_profile` key) and the configured interface language
 (`language`). It is **global, not per-profile** (see
-`src/notebooklm/paths.py` and `src/notebooklm/cli/language.py`).
+`src/notebooklm/paths.py` and `src/notebooklm/cli/language_cmd.py`).
 
 **Legacy layout:** If upgrading from a pre-profile version, the first run auto-migrates flat files into `profiles/default/`. The migration runs under a single-writer `filelock` rooted at `~/.notebooklm/.migration.lock`, so concurrent CLI invocations (e.g., container start-up races) cannot interleave copies — the loser of the lock re-checks the completion marker and no-ops (see `src/notebooklm/migration.py`). The legacy flat layout continues to work as a fallback.
 
@@ -304,8 +304,8 @@ back to `en`. For the generate commands, the resolution order is:
    `notebooklm language set <code>`). The language is stored once per
    `NOTEBOOKLM_HOME`, **not** per profile — switching `notebooklm -p work`
    does not switch the configured language. See
-   `src/notebooklm/cli/language.py:111-151` for the resolver and
-   `src/notebooklm/paths.py:331-337` for the storage location.
+   `src/notebooklm/cli/language_cmd.py` for the resolver and
+   `src/notebooklm/paths.py` for the storage location.
 4. `en` (built-in default)
 
 ### NOTEBOOKLM_QUIET_DEPRECATIONS

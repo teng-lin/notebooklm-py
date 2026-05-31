@@ -147,7 +147,7 @@ def _read_default_profile() -> str | None:
     """Read default_profile from config.json (cached by mtime).
 
     Standalone config reader in paths.py to avoid circular imports
-    with cli/language.py (which imports from paths.py).
+    with cli/language_cmd.py (which imports from paths.py).
 
     Returns:
         The default profile name, or None if not configured or on any error.
