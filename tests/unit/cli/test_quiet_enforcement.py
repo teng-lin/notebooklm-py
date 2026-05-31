@@ -62,10 +62,10 @@ guarantees the old drift check provided.
 from __future__ import annotations
 
 import ast
-import io
-import tokenize
 from collections.abc import Iterator
 from pathlib import Path
+
+from _fixtures.cli_exit_markers import Span, marker_reasons, match_markers
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"
@@ -76,8 +76,6 @@ QUIET_AWARE_HELPERS = frozenset({"cli_print", "emit_status"})
 
 # Inline marker that waives an intentional quiet-aware error-path call.
 QUIET_OK_MARKER = "quiet-ok:"
-
-Span = tuple[int, int]
 
 
 # ---------------------------------------------------------------------------
@@ -166,49 +164,6 @@ def _walk_with_ancestors(tree: ast.AST) -> Iterator[tuple[ast.AST, list[ast.AST]
 # ---------------------------------------------------------------------------
 
 
-def _marker_reasons(source: str, marker: str) -> dict[int, str]:
-    """Map ``lineno -> reason`` for each ``# <marker> <reason>`` comment.
-
-    Uses ``tokenize`` so the marker is only recognized inside a real comment
-    token, never inside a string literal that happens to contain the text.
-    """
-    reasons: dict[int, str] = {}
-    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
-        if tok.type != tokenize.COMMENT:
-            continue
-        body = tok.string.lstrip("#").strip()
-        if body.startswith(marker):
-            reasons[tok.start[0]] = body.removeprefix(marker).strip()
-    return reasons
-
-
-def _match_markers(spans: list[Span], marker_lines: set[int]) -> tuple[list[Span], set[int]]:
-    """Greedily assign each marker line to at most one call span.
-
-    Returns ``(unmarked_spans, orphan_lines)``. Each marker satisfies a single
-    span (claimed, then removed from the pool), so a lone marker on a line shared
-    by two overlapping error-path calls leaves the second unmarked -- every
-    waived call needs its OWN ``# quiet-ok:`` reason. ``orphan_lines`` are
-    markers no span could claim (the source moved or the call was fixed) -- the
-    stale signal that replaces the old drift check.
-    """
-    # Process spans by ascending end line (then start) and claim the lowest
-    # available marker in each: the textbook optimal greedy for assigning each
-    # interval a distinct point. A naive left-endpoint sort could let an outer
-    # span steal the only marker an overlapping inner span needs and red CI on
-    # validly-marked code -- the exact false-positive class this gate exists to
-    # remove.
-    unclaimed = set(marker_lines)
-    unmarked: list[Span] = []
-    for lo, hi in sorted(spans, key=lambda span: (span[1], span[0])):
-        claim = next((line for line in range(lo, hi + 1) if line in unclaimed), None)
-        if claim is None:
-            unmarked.append((lo, hi))
-        else:
-            unclaimed.discard(claim)
-    return unmarked, unclaimed
-
-
 def _audit_quiet_markers() -> tuple[list[str], list[str], list[str]]:
     """Return ``(unmarked, stale, empty_reason)`` across every ``*_cmd.py``.
 
@@ -224,10 +179,13 @@ def _audit_quiet_markers() -> tuple[list[str], list[str], list[str]]:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
         rel = path.relative_to(REPO_ROOT).as_posix()
-        reasons = _marker_reasons(source, QUIET_OK_MARKER)
+        reasons = marker_reasons(source, QUIET_OK_MARKER)
 
+        # ``spans`` and ``labels`` are index-aligned so an unmarked call maps
+        # back to its OWN label even if two qualifying calls share a start line
+        # (a dict keyed by lineno would collapse them and mislabel — PR #1299).
         spans: list[Span] = []
-        labels: dict[int, str] = {}
+        labels: list[str] = []
         for node, ancestors in _walk_with_ancestors(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -237,10 +195,10 @@ def _audit_quiet_markers() -> tuple[list[str], list[str], list[str]]:
             if not _is_error_path(ancestors):
                 continue
             spans.append((node.lineno, node.end_lineno or node.lineno))
-            labels[node.lineno] = f"{rel}::{_enclosing_function_name(ancestors)}:{node.lineno}"
+            labels.append(f"{rel}::{_enclosing_function_name(ancestors)}:{node.lineno}")
 
-        unmarked_spans, orphan_lines = _match_markers(spans, set(reasons))
-        unmarked.extend(labels[lo] for lo, _hi in unmarked_spans)
+        unmarked_idx, orphan_lines = match_markers(spans, set(reasons))
+        unmarked.extend(labels[i] for i in unmarked_idx)
         stale.extend(f"{rel}:{line}" for line in sorted(orphan_lines))
         for line in sorted(set(reasons) - orphan_lines):
             if not reasons[line]:
