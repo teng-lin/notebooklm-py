@@ -8,7 +8,7 @@ This ADR ships in the `arch-d1-fixtures-scaffolding` PR (D1 PR-1). It defines th
 
 ## Context
 
-The `.sisyphus/plans/arch-biggest-problem-audit.md` audit identifies "test-monkeypatch gravity" as the first of three architectural diseases — a *gravity well* in which the test suite's preferred mocking strategy welds module boundaries shut and forces every seam extraction to ship a write-through facade, a property bridge, or a parallel-implementation invariant.
+An internal architecture audit identifies "test-monkeypatch gravity" as the first of three architectural diseases — a *gravity well* in which the test suite's preferred mocking strategy welds module boundaries shut and forces every seam extraction to ship a write-through facade, a property bridge, or a parallel-implementation invariant.
 
 The audit's verified counts at HEAD `22355cf` are:
 

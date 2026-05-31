@@ -1,15 +1,12 @@
-"""Characterization (golden-snapshot) tests for download CLI commands (P3.T2).
+"""Characterization (golden-snapshot) tests for download CLI commands.
 
 This file locks the observable CLI behavior of all 9 leaf download commands
 (audio, video, slide-deck, infographic, report, mind-map, data-table, quiz,
-flashcards) BEFORE the P3.T2 extraction so the registry-driven rewrite can be
-proven byte-for-byte equivalent.
+flashcards) so the registry-driven implementation stays byte-for-byte
+equivalent.
 
-The PR ordering discipline (.sisyphus/phases/cli-audit-fixes/phase-3.md →
-Characterization-Test Discipline) requires this file to be added in commit 1
-and pass green against the unmodified ``download_cmd.py``. After the
-extraction commit lands, every test in this file MUST still pass without
-modification.
+These characterization tests must keep passing without modification as
+``download_cmd.py`` evolves — that is what makes them a behavioral safety net.
 
 Coverage matrix (parametrized across the 9 leaf commands):
 

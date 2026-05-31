@@ -50,7 +50,7 @@ different things to a caller:
   exception types. They reach the `except click.ClickException: raise`
   branch in `error_handler.py` and skip the envelope.
 
-The CLI audit (`.sisyphus/plans/cli-audit-2026-05-27.md`, the **P1#2
+The CLI audit (the **P1#2
 "command-body `UsageError`/`BadParameter` bypass"** finding at lines 54-90)
 enumerated post-parse raise sites that ride this bypass:
 
@@ -69,7 +69,7 @@ enumerated post-parse raise sites that ride this bypass:
 For each of these, `<cmd> ... --json` exits `2` with Click's usage text on
 stderr and **no JSON on stdout**. Automation branching on
 `json.loads(stdout)` (the published recipe in `docs/cli-exit-codes.md`)
-breaks. The meta-audit (`.sisyphus/plans/cli-audit-2026-05-27-audit.md`)
+breaks. The meta-audit
 reframed the finding in three ways that matter here:
 
 - **C1** declared the contract decision a stop-sentinel: no implementation

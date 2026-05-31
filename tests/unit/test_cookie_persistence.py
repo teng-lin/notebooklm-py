@@ -61,9 +61,7 @@ async def test_client_core_save_cookies_routes_through_injected_seam_and_to_thre
     ``asyncio.to_thread`` (off the loop) and then invokes the
     constructor-injected ``cookie_saver``.
 
-    Phase 2 PR 4+5 (``.sisyphus/plans/refactor-completion-plan.md``)
-    migrated both halves of this test off the legacy
-    ``_core`` indirection:
+    Both halves of this test avoid the legacy ``_core`` indirection:
 
     - ``save_cookies_to_storage`` is injected at construction via the
       ``cookie_saver`` seam (Wave 1's :class:`ClientLifecycle` change).

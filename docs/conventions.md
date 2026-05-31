@@ -280,7 +280,7 @@ rationale survives without the label.
   capability Protocols, and the `RpcCaller` catalogue entry.
 - [`docs/development.md`](./development.md) — contributor on-ramp; this
   conventions doc is linked from its "Key Design Decisions" section.
-- The architecture audit (findings CC2, CC3, CC5) that motivated this
-  catalogue lives in the internal planning notes (`.sisyphus/plans/`, not
-  checked in). Future codebase audits with naming-convention findings should
+- The architecture audit that motivated this catalogue lives in internal
+  planning notes that are not checked into the repo. Future codebase audits
+  with naming-convention findings should
   extend this document rather than spawn parallel tiebreaker files.

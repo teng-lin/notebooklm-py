@@ -35,7 +35,7 @@ UploadConcurrencyProvider · LoopAffinityProvider
 
 Each Protocol describes the smallest collaborator surface the audit could identify at the time of extraction. A concrete adapter class `SessionCapabilities` then multi-inherits *all ten* Protocols and forwards every method to an underlying `Session` instance (`src/notebooklm/_capabilities.py:149-160`). Sub-clients accept a `SessionCapabilities` parameter in their constructors and rely on it for every collaborator interaction.
 
-The audit (`.sisyphus/plans/arch-biggest-problem-audit.md`, disease D2) classified the result as a *fat-union god-interface wearing a Protocol mask*. The Protocols are narrow individually, but every sub-client takes the union, so the *effective* contract sub-clients depend on is the full ten-Protocol surface. The hoped-for narrowing never materialized because the adapter pre-merges them.
+An internal architecture audit (disease D2) classified the result as a *fat-union god-interface wearing a Protocol mask*. The Protocols are narrow individually, but every sub-client takes the union, so the *effective* contract sub-clients depend on is the full ten-Protocol surface. The hoped-for narrowing never materialized because the adapter pre-merges them.
 
 ## Decision
 

@@ -38,7 +38,7 @@ Five retry-safety profiles cover every verified NotebookLM RPC shape:
 
 The taxonomy and the production registry (`IDEMPOTENCY_REGISTRY` in `_idempotency.py`) are consulted by `RpcExecutor` to compute the effective `disable_internal_retries` value. Variants (e.g. `ADD_SOURCE` `"url"` vs `"text"` vs `"drive"`) carry their own classifications when the wire-shape differs by call-site.
 
-The audit (`.sisyphus/plans/arch-biggest-problem-audit.md`, disease D3) flagged ten references to "Wave 2" in `_idempotency.py` whose design rationale lived only in the gitignored `.sisyphus/plans/tier-9-p0-p1.md`. This ADR is the public home for that rationale; the in-code references now point here.
+An internal architecture audit (disease D3) flagged ten references to "Wave 2" in `_idempotency.py` whose design rationale lived only in internal planning notes. This ADR is the public home for that rationale; the in-code references now point here.
 
 ## Decision
 

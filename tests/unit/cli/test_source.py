@@ -3250,7 +3250,7 @@ class TestSourceAddStdinDash:
 # pins the *fixed* contract; on `main` (pre-fix) every test in this class
 # should be red.
 #
-# Bug index (matches .sisyphus/plans/cli-audit-fixes.md §P1.T2):
+# Bug index:
 #   1. source delete --json without --yes -> structured JSON error, no prompt.
 #   2. source delete-by-title --json without --yes -> same.
 #   3. source clean --json without --yes (with candidates) -> structured error.
