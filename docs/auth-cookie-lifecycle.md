@@ -1385,7 +1385,7 @@ when prompted (typically days to weeks between prompts).
 ### 8.2 Long-lived in-process client (agent, MCP server, worker)
 
 ```python
-async with await NotebookLMClient.from_storage(keepalive=600) as client:
+async with NotebookLMClient.from_storage(keepalive=600) as client:
     ...
 ```
 
@@ -1485,7 +1485,7 @@ from notebooklm import NotebookLMClient, AuthError
 
 async def verify_and_save(context, STORAGE):
     try:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             await client.notebooks.list()  # confirms auth
     except (AuthError, ValueError):
         # ValueError: from_storage()'s CSRF / session-id extraction

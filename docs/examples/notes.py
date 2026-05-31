@@ -23,7 +23,7 @@ from notebooklm import NotebookLMClient, ReportFormat
 async def main():
     """Demonstrate notes and mind map functionality."""
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # Create a notebook for our examples
         print("Creating notebook...")
         notebook = await client.notebooks.create("Study Notes Demo")

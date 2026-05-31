@@ -22,7 +22,7 @@ from notebooklm import NotebookLMClient, VideoFormat, VideoStyle
 async def main():
     """Generate a video overview from notebook sources."""
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # Step 1: Create a notebook with content
         print("Creating notebook...")
         notebook = await client.notebooks.create("Video Demo Notebook")

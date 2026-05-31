@@ -46,7 +46,7 @@ SOURCES = {
 async def main():
     print("=== Bulk Import Example ===\n")
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # 1. Create a notebook
         print("Creating notebook...")
         nb = await client.notebooks.create("Bulk Import Demo")

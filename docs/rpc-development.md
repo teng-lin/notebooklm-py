@@ -473,7 +473,7 @@ async def validate_rpc_call(rpc_id: str, params: list, expected_action: str):
     from notebooklm import NotebookLMClient
     from notebooklm.rpc import RPCMethod
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         result = await client.rpc_call(RPCMethod(rpc_id), params)
 
     assert result is not None, f"RPC {rpc_id} returned None"
