@@ -205,10 +205,10 @@ from those catalogues rather than introducing parallel patterns.
    (the broad `Session` Protocol was deleted; see ADR-013). Depend on the
    narrow capability Protocols in `_runtime_contracts` instead.
 3. Add to `client.py`: wire each collaborator explicitly from the
-   composition root (e.g. `self.newfeature = NewFeatureAPI(rpc=composed.executor,
-   ...)`). The concrete collaborator instances on
-   `ClientComposed.collaborators` structurally satisfy every
-   capability Protocol, so the wiring stays straightforward.
+   composition root (e.g. `self.newfeature = NewFeatureAPI(rpc=internals.executor,
+   ...)`, where `internals = compose_client_internals(...)`). The concrete
+   collaborator instances on `ClientInternals.collaborators` structurally
+   satisfy every capability Protocol, so the wiring stays straightforward.
 4. **Tests** should use `tests/_fixtures/fake_core.py:FakeSession`
    which exposes the union of all capability protocols — it lets a
    feature test substitute the broad runtime without constructing a
@@ -373,7 +373,7 @@ tests/
 │   ├── test_research_deep_poll_vcr.py
 │   ├── test_research_idempotency.py
 │   ├── test_save_chat_as_note_integration.py
-│   ├── test_session_integration.py  # Session + RPC plumbing
+│   ├── test_session_integration.py  # Client init + RPC plumbing
 │   ├── test_settings_integration.py  # SettingsAPI integration
 │   ├── test_settings_vcr.py
 │   ├── test_sharing_integration.py   # SharingAPI integration
