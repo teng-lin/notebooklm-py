@@ -49,35 +49,15 @@ def mock_auth():
 
 
 class TestSourceList:
-    def test_source_list(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_1", title="Source One"),
-                ]
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "list", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-            assert "Sources in nb_123" in result.output
-            assert "src_1" in result.output
-            assert "Source One" in result.output
-
-    def test_source_list_json_output(self, runner, mock_auth):
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_list(self, runner, mock_auth, output_mode):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
                     Source(
                         id="src_1",
-                        title="Test Source",
+                        title="Source One",
                         url="https://example.com",
                         _type_code=5,
                     ),
@@ -86,54 +66,43 @@ class TestSourceList:
             mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test Notebook"))
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "list", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "list", "-n", "nb_123", "--json"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert list(data) == ["notebook_id", "notebook_title", "sources", "count"]
-            assert data["notebook_id"] == "nb_123"
-            assert data["notebook_title"] == "Test Notebook"
-            assert "sources" in data
-            assert data["count"] == 1
-            assert list(data["sources"][0]) == [
-                "index",
-                "id",
-                "title",
-                "type",
-                "url",
-                "status",
-                "status_id",
-                "created_at",
-            ]
-            assert data["sources"][0]["id"] == "src_1"
-            assert data["sources"][0]["type"] == "web_page"
+            if output_mode == "text":
+                assert "Sources in nb_123" in result.output
+                assert "src_1" in result.output
+                assert "Source One" in result.output
+            else:
+                data = json.loads(result.output)
+                assert list(data) == ["notebook_id", "notebook_title", "sources", "count"]
+                assert data["notebook_id"] == "nb_123"
+                assert data["notebook_title"] == "Test Notebook"
+                assert "sources" in data
+                assert data["count"] == 1
+                assert list(data["sources"][0]) == [
+                    "index",
+                    "id",
+                    "title",
+                    "type",
+                    "url",
+                    "status",
+                    "status_id",
+                    "created_at",
+                ]
+                assert data["sources"][0]["id"] == "src_1"
+                assert data["sources"][0]["type"] == "web_page"
 
-    def test_source_list_limit_caps_rows(self, runner, mock_auth):
-        """`source list --limit N` returns at most N data rows."""
-        many = [Source(id=f"src_{i:02d}", title=f"Source {i:02d}") for i in range(20)]
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=many)
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "list", "-n", "nb_123", "--limit", "4"])
-
-            assert result.exit_code == 0, result.output
-            for i in range(4):
-                assert f"src_{i:02d}" in result.output
-            for i in range(4, 20):
-                assert f"src_{i:02d}" not in result.output
-
-    def test_source_list_limit_json_caps_rows(self, runner, mock_auth):
-        """`source list --limit N --json` caps the JSON `sources` array."""
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_list_limit_caps_rows(self, runner, mock_auth, output_mode):
+        """`source list --limit N` returns at most N data rows in both formats."""
         many = [Source(id=f"src_{i:02d}", title=f"Source {i:02d}") for i in range(20)]
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -141,19 +110,27 @@ class TestSourceList:
             mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test"))
             mock_client_cls.return_value = mock_client
 
+            limit = "4" if output_mode == "text" else "2"
+            args = ["source", "list", "-n", "nb_123", "--limit", limit]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "list", "-n", "nb_123", "--limit", "2", "--json"]
-                )
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0, result.output
-            data = json.loads(result.output)
-            assert data["count"] == 2
-            assert len(data["sources"]) == 2
-            assert [s["id"] for s in data["sources"]] == ["src_00", "src_01"]
+            if output_mode == "text":
+                for i in range(4):
+                    assert f"src_{i:02d}" in result.output
+                for i in range(4, 20):
+                    assert f"src_{i:02d}" not in result.output
+            else:
+                data = json.loads(result.output)
+                assert data["count"] == 2
+                assert len(data["sources"]) == 2
+                assert [s["id"] for s in data["sources"]] == ["src_00", "src_01"]
 
     def test_source_list_no_truncate_disables_ellipsis(self, runner, mock_auth):
         """`source list --no-truncate` shows full title without ellipsis.
@@ -208,7 +185,8 @@ class TestSourceList:
 
 
 class TestSourceAdd:
-    def test_source_add_url(self, runner, mock_auth):
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_add_url(self, runner, mock_auth, output_mode):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
@@ -221,15 +199,20 @@ class TestSourceAdd:
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "add", "https://example.com", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "add", "https://example.com", "-n", "nb_123"]
-                )
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0
+            if output_mode == "json":
+                data = json.loads(result.output)
+                assert data["source"]["id"] == "src_new"
+                assert data["source"]["type"] == "web_page"
 
     def test_source_add_youtube_url(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
@@ -401,32 +384,6 @@ class TestSourceAdd:
         assert "unused for file sources" not in result.output
         call_args = mock_client.sources.add_file.call_args.args
         assert call_args == ("nb_123", str(test_file.resolve()), "application/pdf")
-
-    def test_source_add_json_output(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.add_url = AsyncMock(
-                return_value=Source(
-                    id="src_new",
-                    title="Example",
-                    url="https://example.com",
-                    _type_code=5,
-                )
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "add", "https://example.com", "-n", "nb_123", "--json"]
-                )
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["source"]["id"] == "src_new"
-            assert data["source"]["type"] == "web_page"
 
     def test_source_add_timeout_flag_threaded_to_client(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
@@ -1413,7 +1370,8 @@ class TestSourceAddResearch:
 
 
 class TestSourceGuide:
-    def test_source_guide_with_summary_and_keywords(self, runner, mock_auth):
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_guide_with_summary_and_keywords(self, runner, mock_auth, output_mode):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -1429,17 +1387,26 @@ class TestSourceGuide:
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "guide", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "guide", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0
-            assert "Summary" in result.output
-            assert "test" in result.output
-            assert "Keywords" in result.output
-            assert "AI" in result.output
+            if output_mode == "text":
+                assert "Summary" in result.output
+                assert "test" in result.output
+                assert "Keywords" in result.output
+                assert "AI" in result.output
+            else:
+                data = json.loads(result.output)
+                assert data["source_id"] == "src_123"
+                assert data["summary"] == "This is a **test** summary about AI."
+                assert data["keywords"] == ["AI", "machine learning", "data science"]
 
     def test_source_guide_no_guide_available(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
@@ -1460,33 +1427,6 @@ class TestSourceGuide:
 
             assert result.exit_code == 0
             assert "No guide available" in result.output
-
-    def test_source_guide_json_output(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source")]
-            )
-            mock_client.sources.get_guide = AsyncMock(
-                return_value=source_guide(
-                    {"summary": "Test summary", "keywords": ["keyword1", "keyword2"]}
-                )
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "guide", "src_123", "-n", "nb_123", "--json"]
-                )
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["source_id"] == "src_123"
-            assert data["summary"] == "Test summary"
-            assert data["keywords"] == ["keyword1", "keyword2"]
 
     def test_source_guide_summary_only(self, runner, mock_auth):
         """Test that summary is displayed even when keywords are empty."""
@@ -1541,7 +1481,8 @@ class TestSourceGuide:
 
 
 class TestSourceStale:
-    def test_source_stale_is_stale(self, runner, mock_auth):
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_stale_is_stale(self, runner, mock_auth, output_mode):
         """Default exit code is 0 (success) when the check completes — stale branch.
 
         The freshness result is reported on stdout; callers branch on the
@@ -1556,17 +1497,27 @@ class TestSourceStale:
             mock_client.sources.check_freshness = AsyncMock(return_value=False)  # Not fresh = stale
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "stale", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0  # success — check completed
-            assert "stale" in result.output.lower()
-            assert "refresh" in result.output.lower()
+            if output_mode == "text":
+                assert "stale" in result.output.lower()
+                assert "refresh" in result.output.lower()
+            else:
+                data = json.loads(result.output)
+                assert data["stale"] is True
+                assert data["fresh"] is False
+                assert data["source_id"] == "src_123"
 
-    def test_source_stale_is_fresh(self, runner, mock_auth):
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_stale_is_fresh(self, runner, mock_auth, output_mode):
         """Default exit code is 0 (success) when the check completes — fresh branch."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -1576,14 +1527,23 @@ class TestSourceStale:
             mock_client.sources.check_freshness = AsyncMock(return_value=True)  # Fresh
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "stale", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0  # success — check completed
-            assert "fresh" in result.output.lower()
+            if output_mode == "text":
+                assert "fresh" in result.output.lower()
+            else:
+                data = json.loads(result.output)
+                assert data["stale"] is False
+                assert data["fresh"] is True
+                assert data["source_id"] == "src_123"
 
 
 # =============================================================================
@@ -1926,8 +1886,9 @@ class TestSourceAddPathShapedMissing:
 
 
 class TestSourceFulltext:
-    def test_source_fulltext_console_output(self, runner, mock_auth):
-        """Short content (<= 2000 chars) is displayed in full."""
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_fulltext_console_output(self, runner, mock_auth, output_mode):
+        """Short content (<= 2000 chars) is displayed in full in both formats."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -1938,24 +1899,37 @@ class TestSourceFulltext:
                     source_id="src_123",
                     title="Test Source",
                     content="This is the full text content.",
+                    _type_code=5,
                     char_count=30,
                     url=None,
                 )
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "fulltext", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "fulltext", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0
-            assert "src_123" in result.output
-            assert "Test Source" in result.output
-            assert "This is the full text content." in result.output
-            # Should NOT show truncation message for short content
-            assert "more chars" not in result.output
+            if output_mode == "text":
+                assert "src_123" in result.output
+                assert "Test Source" in result.output
+                assert "This is the full text content." in result.output
+                # Should NOT show truncation message for short content
+                assert "more chars" not in result.output
+            else:
+                data = json.loads(result.output)
+                assert data["source_id"] == "src_123"
+                assert data["title"] == "Test Source"
+                assert data["kind"] == "web_page"
+                assert data["content"] == "This is the full text content."
+                assert data["char_count"] == 30
+                assert "_type_code" not in data
 
     def test_source_fulltext_truncated_output(self, runner, mock_auth):
         """Long content (> 2000 chars) is truncated with a 'more chars' message."""
@@ -2018,42 +1992,6 @@ class TestSourceFulltext:
             assert result.exit_code == 0
             assert "Saved" in result.output
             assert output_file.read_text(encoding="utf-8") == content
-
-    def test_source_fulltext_json_output(self, runner, mock_auth):
-        """--json outputs JSON with fulltext fields."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source")]
-            )
-            mock_client.sources.get_fulltext = AsyncMock(
-                return_value=SourceFulltext(
-                    source_id="src_123",
-                    title="Test Source",
-                    content="Some content",
-                    _type_code=5,
-                    char_count=12,
-                    url=None,
-                )
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "fulltext", "src_123", "-n", "nb_123", "--json"]
-                )
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["source_id"] == "src_123"
-            assert data["title"] == "Test Source"
-            assert data["kind"] == "web_page"
-            assert data["content"] == "Some content"
-            assert data["char_count"] == 12
-            assert "_type_code" not in data
 
     def test_source_fulltext_format_markdown_propagates(self, runner, mock_auth):
         """`-f markdown` propagates output_format='markdown' to the API."""
@@ -2122,8 +2060,9 @@ class TestSourceFulltext:
 
 
 class TestSourceWait:
-    def test_source_wait_success(self, runner, mock_auth):
-        """wait_until_ready returns a Source → prints 'ready'."""
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_wait_success(self, runner, mock_auth, output_mode):
+        """wait_until_ready returns a Source → prints 'ready' / emits ready JSON."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -2134,14 +2073,22 @@ class TestSourceWait:
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "wait", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 0
-            assert "ready" in result.output.lower()
+            if output_mode == "text":
+                assert "ready" in result.output.lower()
+            else:
+                data = json.loads(result.output)
+                assert data["source_id"] == "src_123"
+                assert data["status"] == "ready"
 
     def test_source_wait_success_with_title(self, runner, mock_auth):
         """Source has a title → prints the title after 'ready' message."""
@@ -2164,31 +2111,9 @@ class TestSourceWait:
             assert result.exit_code == 0
             assert "My Source Title" in result.output
 
-    def test_source_wait_success_json(self, runner, mock_auth):
-        """--json output on successful wait."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source")]
-            )
-            mock_client.sources.wait_until_ready = AsyncMock(
-                return_value=Source(id="src_123", title="Test Source", status=2)
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123", "--json"])
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["source_id"] == "src_123"
-            assert data["status"] == "ready"
-
-    def test_source_wait_not_found(self, runner, mock_auth):
-        """Raises SourceNotFoundError → exit code 1."""
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_wait_not_found(self, runner, mock_auth, output_mode):
+        """SourceNotFoundError → exit 1 (text message / not_found JSON)."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -2199,40 +2124,26 @@ class TestSourceWait:
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "wait", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 1
-            assert "not found" in result.output.lower()
+            if output_mode == "text":
+                assert "not found" in result.output.lower()
+            else:
+                data = json.loads(result.output)
+                assert data["status"] == "not_found"
+                assert data["source_id"] == "src_123"
 
-    def test_source_wait_not_found_json(self, runner, mock_auth):
-        """--json on SourceNotFoundError → JSON with status 'not_found', exit 1."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source")]
-            )
-            mock_client.sources.wait_until_ready = AsyncMock(
-                side_effect=SourceNotFoundError("src_123")
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123", "--json"])
-
-            assert result.exit_code == 1
-            data = json.loads(result.output)
-            assert data["status"] == "not_found"
-            assert data["source_id"] == "src_123"
-
-    def test_source_wait_processing_error(self, runner, mock_auth):
-        """Raises SourceProcessingError → exit code 1."""
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_wait_processing_error(self, runner, mock_auth, output_mode):
+        """SourceProcessingError → exit 1 (text message / error JSON)."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -2243,41 +2154,27 @@ class TestSourceWait:
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "wait", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 1
-            assert "processing failed" in result.output.lower()
+            if output_mode == "text":
+                assert "processing failed" in result.output.lower()
+            else:
+                data = json.loads(result.output)
+                assert data["status"] == "error"
+                assert data["source_id"] == "src_123"
+                assert data["status_code"] == 3
 
-    def test_source_wait_processing_error_json(self, runner, mock_auth):
-        """--json on SourceProcessingError → JSON with status 'error', exit 1."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source")]
-            )
-            mock_client.sources.wait_until_ready = AsyncMock(
-                side_effect=SourceProcessingError("src_123", status=3)
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123", "--json"])
-
-            assert result.exit_code == 1
-            data = json.loads(result.output)
-            assert data["status"] == "error"
-            assert data["source_id"] == "src_123"
-            assert data["status_code"] == 3
-
-    def test_source_wait_timeout(self, runner, mock_auth):
-        """Raises SourceTimeoutError → exit code 2."""
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_wait_timeout(self, runner, mock_auth, output_mode):
+        """SourceTimeoutError → exit 2 (text message / timeout JSON)."""
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -2288,14 +2185,24 @@ class TestSourceWait:
             )
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "wait", "src_123", "-n", "nb_123"]
+            if output_mode == "json":
+                args.append("--json")
             with patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code == 2
-            assert "timeout" in result.output.lower()
+            if output_mode == "text":
+                assert "timeout" in result.output.lower()
+            else:
+                data = json.loads(result.output)
+                assert data["status"] == "timeout"
+                assert data["source_id"] == "src_123"
+                assert data["timeout_seconds"] == 30
+                assert data["last_status_code"] == 1
 
     def test_source_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`source wait <id> --timeout 60 --interval 5` plumbs both into
@@ -2345,31 +2252,6 @@ class TestSourceWait:
             assert kwargs.get("initial_interval") == 5.0, (
                 f"expected --interval=5 to plumb into wait_until_ready, got kwargs={kwargs}"
             )
-
-    def test_source_wait_timeout_json(self, runner, mock_auth):
-        """--json on SourceTimeoutError → JSON with status 'timeout', exit 2."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source")]
-            )
-            mock_client.sources.wait_until_ready = AsyncMock(
-                side_effect=SourceTimeoutError("src_123", timeout=30.0, last_status=1)
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "wait", "src_123", "-n", "nb_123", "--json"])
-
-            assert result.exit_code == 2
-            data = json.loads(result.output)
-            assert data["status"] == "timeout"
-            assert data["source_id"] == "src_123"
-            assert data["timeout_seconds"] == 30
-            assert data["last_status_code"] == 1
 
     def test_source_wait_invokes_console_status(self, runner, mock_auth):
         """`source wait` wraps the polling call in `console.status`.
@@ -2981,51 +2863,6 @@ class TestSourceJsonOutput:
             assert data["source"]["mime_type"] == "pdf"
             assert data["notebook_id"] == "nb_123"
 
-    def test_source_stale_json_is_stale_exits_zero(self, runner, mock_auth):
-        """``source stale --json`` default: exit 0 on success (stale branch).
-
-        Default policy follows the standard CLI convention: exit 0 means
-        the check completed; callers branch on the ``stale``/``fresh``
-        JSON fields. See docs/cli-exit-codes.md.
-        """
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Stale")])
-            mock_client.sources.check_freshness = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            with self._patch_fetch_tokens():
-                result = runner.invoke(
-                    cli, ["source", "stale", "src_123", "-n", "nb_123", "--json"]
-                )
-
-            # Standard exit code: success when the check completes.
-            assert result.exit_code == 0, result.output
-            data = json.loads(result.output)
-            assert data["stale"] is True
-            assert data["fresh"] is False
-            assert data["source_id"] == "src_123"
-
-    def test_source_stale_json_is_fresh_exits_one(self, runner, mock_auth):
-        """``source stale --json`` default: exit 0 on success (fresh branch)."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Fresh")])
-            mock_client.sources.check_freshness = AsyncMock(return_value=True)
-            mock_client_cls.return_value = mock_client
-
-            with self._patch_fetch_tokens():
-                result = runner.invoke(
-                    cli, ["source", "stale", "src_123", "-n", "nb_123", "--json"]
-                )
-
-            # Standard exit code: success when the check completes.
-            assert result.exit_code == 0, result.output
-            data = json.loads(result.output)
-            assert data["stale"] is False
-            assert data["fresh"] is True
-            assert data["source_id"] == "src_123"
-
     def test_source_clean_json_already_clean(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -3597,7 +3434,8 @@ class TestSourceBundleP1T2:
     # ------------------------------------------------------------------
     # Bug 8: source clean partial-failure exit code
     # ------------------------------------------------------------------
-    def test_source_clean_partial_failure_exits_nonzero_text_mode(self, runner, mock_auth):
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_clean_partial_failure_exits_nonzero(self, runner, mock_auth, output_mode):
         sources = [
             _src("src_a", status=SourceStatus.ERROR),
             _src("src_b", status=SourceStatus.ERROR),
@@ -3613,38 +3451,22 @@ class TestSourceBundleP1T2:
             mock_client.sources.delete = AsyncMock(side_effect=fake_delete)
             mock_client_cls.return_value = mock_client
 
+            args = ["source", "clean", "-n", "nb_123", "-y"]
+            if output_mode == "json":
+                args.append("--json")
             with self._patch_fetch_tokens():
-                result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
+                result = runner.invoke(cli, args)
 
             assert result.exit_code != 0, result.output
-            assert "1 deletion(s) failed" in result.output
-            assert "src_b" in result.output
-            assert "boom" in result.output
-
-    def test_source_clean_partial_failure_exits_nonzero_json_mode(self, runner, mock_auth):
-        sources = [
-            _src("src_a", status=SourceStatus.ERROR),
-            _src("src_b", status=SourceStatus.ERROR),
-        ]
-
-        async def fake_delete(nb, sid):
-            if sid == "src_b":
-                raise RuntimeError("boom")
-
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=sources)
-            mock_client.sources.delete = AsyncMock(side_effect=fake_delete)
-            mock_client_cls.return_value = mock_client
-
-            with self._patch_fetch_tokens():
-                result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y", "--json"])
-
-            assert result.exit_code != 0, result.output
-            data = json.loads(result.output)
-            # Behavior parity with text mode: the JSON envelope still carries
-            # the full clean report so callers can introspect which IDs failed.
-            assert data["status"] == "completed"
-            assert data["deleted_count"] == 1
-            assert data["failure_count"] == 1
-            assert data["failures"] == [{"id": "src_b", "error": "boom"}]
+            if output_mode == "text":
+                assert "1 deletion(s) failed" in result.output
+                assert "src_b" in result.output
+                assert "boom" in result.output
+            else:
+                data = json.loads(result.output)
+                # Behavior parity with text mode: the JSON envelope still carries
+                # the full clean report so callers can introspect which IDs failed.
+                assert data["status"] == "completed"
+                assert data["deleted_count"] == 1
+                assert data["failure_count"] == 1
+                assert data["failures"] == [{"id": "src_b", "error": "boom"}]
