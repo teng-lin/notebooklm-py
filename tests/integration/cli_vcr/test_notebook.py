@@ -117,7 +117,7 @@ class TestRenameCommand:
 
         ``rename_cmd`` (``cli/notebook_cmd.py``) carries ``@json_option`` and,
         when ``--json`` is passed, emits
-        ``{"notebook_id", "new_title", "success": True}`` instead of the prose.
+        ``{"notebook_id", "title", "success": True}`` instead of the prose.
         Same cassette: the JSON branch only changes the *output formatting*, not
         the underlying RENAME_NOTEBOOK call.
         """
@@ -130,7 +130,7 @@ class TestRenameCommand:
         data = parse_json_output(result.output)
         assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
         assert data.get("notebook_id") == VCR_MUTABLE_NOTEBOOK_ID
-        assert data.get("new_title") == "VCR CLI Renamed"
+        assert data.get("title") == "VCR CLI Renamed"
         assert data.get("success") is True
 
 
