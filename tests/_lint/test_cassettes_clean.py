@@ -5,10 +5,16 @@ The strict cassette guard already runs in CI
 --recursive`` plus a ``--secrets-only`` scan of ``tests/fixtures``), but it is
 **not** part of the ``pytest`` suite. A contributor running ``uv run pytest``
 locally — the common workflow — would not catch a recorded credential leak
-until CI. These tests invoke the *same* entrypoint
-(:func:`tests.scripts.check_cassettes_clean.main`) with the *same* arguments,
+until CI. These tests run the *same script* with the *same arguments* as CI,
 so the local ``pytest`` run enforces the identical gate and the two cannot
 drift (issue #1292).
+
+The guard is invoked as a **subprocess** (not imported) on purpose:
+``check_cassettes_clean.py`` bootstraps ``sys.path`` and imports the
+``tests.*`` namespace for its pattern registry; doing that in-process would
+register a ``tests`` package in ``sys.modules`` and break sibling tests that
+spawn their own in-process pytest runs (e.g. ``test_tier_enforcement_hook``).
+A child process keeps that bootstrap fully isolated.
 
 ``is_clean()`` is necessary-not-sufficient — it is name/shape-anchored, so a
 credential family it doesn't yet know about can pass silently. This guard is
@@ -18,30 +24,32 @@ one layer; GitHub secret-scanning remains the backstop (see ADR-0006 and
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-# The cassette guard lives under ``tests/`` (not an installed package). Put the
-# repo root on ``sys.path`` so the ``tests.*`` imports below resolve regardless
-# of pytest's import mode — mirroring the bootstrap that
-# ``tests/scripts/check_cassettes_clean.py`` performs for its own
-# ``tests.cassette_patterns`` import.
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from tests.cassette_patterns import find_credential_leaks  # noqa: E402
-from tests.scripts.check_cassettes_clean import main  # noqa: E402
-
 pytestmark = pytest.mark.repo_lint
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CHECKER = REPO_ROOT / "tests" / "scripts" / "check_cassettes_clean.py"
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 # Deliberately-unscrubbed fixture used as a positive control (a real-looking
 # ``SID`` cookie value beginning with ``S`` — the exact shape the legacy
 # "starts with S" heuristic missed; see the file's own header comment).
 KNOWN_BAD_CASSETTE = FIXTURES_DIR / "bad_cassettes" / "bad_sid_starting_with_s.yaml"
+
+
+def _run_guard(*args: str) -> subprocess.CompletedProcess[str]:
+    """Invoke ``check_cassettes_clean.py`` in a child process (exit 0 == clean)."""
+    return subprocess.run(
+        [sys.executable, str(CHECKER), *args],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
 
 
 def test_all_cassettes_clean_strict_recursive() -> None:
@@ -51,7 +59,10 @@ def test_all_cassettes_clean_strict_recursive() -> None:
     the repair allowlist (``tests/scripts/cassette_repair_allowlist.txt``) to be
     empty, so this also fails if the allowlist quietly regrows.
     """
-    assert main(["--strict", "--recursive"]) == 0
+    result = _run_guard("--strict", "--recursive")
+    assert result.returncode == 0, (
+        f"cassette guard reported leaks:\n{result.stdout}\n{result.stderr}"
+    )
 
 
 def test_fixture_dirs_have_no_credential_shapes() -> None:
@@ -62,7 +73,10 @@ def test_fixture_dirs_have_no_credential_shapes() -> None:
     ``.json`` / ``.html`` / ``.txt``) that the cassette-only ``.yaml`` scan
     above would miss.
     """
-    assert main(["--secrets-only", "--recursive", str(FIXTURES_DIR)]) == 0
+    result = _run_guard("--secrets-only", "--recursive", str(FIXTURES_DIR))
+    assert result.returncode == 0, (
+        f"credential shape found under tests/fixtures:\n{result.stdout}\n{result.stderr}"
+    )
 
 
 def test_guard_detects_a_known_bad_cassette() -> None:
@@ -73,15 +87,22 @@ def test_guard_detects_a_known_bad_cassette() -> None:
     Scanning the deliberately-unscrubbed fixture must return a non-zero exit.
     """
     assert KNOWN_BAD_CASSETTE.exists(), f"missing positive-control fixture: {KNOWN_BAD_CASSETTE}"
-    assert main([str(KNOWN_BAD_CASSETTE)]) == 1
+    result = _run_guard(str(KNOWN_BAD_CASSETTE))
+    assert result.returncode == 1, (
+        f"guard failed to flag a known leak (exit {result.returncode}):\n{result.stdout}"
+    )
 
 
-def test_credential_shape_detector_is_live() -> None:
-    """Positive control for the ``--secrets-only`` path (find_credential_leaks).
+def test_guard_detects_a_credential_shape(tmp_path: Path) -> None:
+    """Positive control for the ``--secrets-only`` path.
 
-    The shape strings are assembled at runtime so this source file carries no
-    static credential-shaped literal (which the repo-wide secrets scan would
-    otherwise flag).
+    The shape is assembled at runtime and written to a temp file (outside the
+    scanned fixture tree) so this source file carries no static
+    credential-shaped literal that the repo-wide secrets scan would flag.
     """
-    assert find_credential_leaks("AIza" + "B" * 35), "Google API-key shape not detected"
-    assert find_credential_leaks("ya2" + "9." + "C" * 40), "OAuth access-token shape not detected"
+    leaky = tmp_path / "leaky.txt"
+    leaky.write_text("api_key: " + "AIza" + "B" * 35 + "\n", encoding="utf-8")
+    result = _run_guard("--secrets-only", str(leaky))
+    assert result.returncode == 1, (
+        f"shape detector missed a synthetic Google API-key shape:\n{result.stdout}"
+    )
