@@ -327,12 +327,14 @@ def generate():
     "audio_format",
     type=click.Choice(["deep-dive", "brief", "critique", "debate"]),
     default="deep-dive",
+    help="Conversation style (default: deep-dive)",
 )
 @click.option(
     "--length",
     "audio_length",
     type=click.Choice(["short", "default", "long"]),
     default="default",
+    help="Audio length (default: default)",
 )
 @language_option
 @multi_source_option
@@ -381,6 +383,7 @@ def generate_audio(
     "video_format",
     type=click.Choice(["explainer", "brief", "cinematic"]),
     default="explainer",
+    help="Video format; 'cinematic' uses Veo 3 footage (default: explainer)",
 )
 @click.option(
     "--style",
@@ -399,6 +402,7 @@ def generate_audio(
         ]
     ),
     default="auto",
+    help="Visual style (default: auto). Use 'custom' with --style-prompt.",
 )
 @click.option("--style-prompt", default=None, help="Custom visual style prompt")
 @language_option
@@ -482,12 +486,14 @@ alias_command(
     "deck_format",
     type=click.Choice(["detailed", "presenter"]),
     default="detailed",
+    help="Slide deck format (default: detailed)",
 )
 @click.option(
     "--length",
     "deck_length",
     type=click.Choice(["default", "short"]),
     default="default",
+    help="Slide deck length (default: default)",
 )
 @language_option
 @multi_source_option
@@ -582,8 +588,18 @@ def generate_revise_slide(
 @click.argument("description", default="", required=False)
 @prompt_file_option
 @notebook_option
-@click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
-@click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option(
+    "--quantity",
+    type=click.Choice(["fewer", "standard", "more"]),
+    default="standard",
+    help="Number of questions (default: standard)",
+)
+@click.option(
+    "--difficulty",
+    type=click.Choice(["easy", "medium", "hard"]),
+    default="medium",
+    help="Question difficulty (default: medium)",
+)
 @multi_source_option
 @wait_option
 @wait_polling_options(default_timeout=300, default_interval=2)
@@ -623,8 +639,18 @@ def generate_quiz(
 @click.argument("description", default="", required=False)
 @prompt_file_option
 @notebook_option
-@click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
-@click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option(
+    "--quantity",
+    type=click.Choice(["fewer", "standard", "more"]),
+    default="standard",
+    help="Number of flashcards (default: standard)",
+)
+@click.option(
+    "--difficulty",
+    type=click.Choice(["easy", "medium", "hard"]),
+    default="medium",
+    help="Flashcard difficulty (default: medium)",
+)
 @multi_source_option
 @wait_option
 @wait_polling_options(default_timeout=300, default_interval=2)
@@ -668,16 +694,19 @@ def generate_flashcards(
     "--orientation",
     type=click.Choice(["landscape", "portrait", "square"]),
     default="landscape",
+    help="Infographic orientation (default: landscape)",
 )
 @click.option(
     "--detail",
     type=click.Choice(["concise", "standard", "detailed"]),
     default="standard",
+    help="Level of detail (default: standard)",
 )
 @click.option(
     "--style",
     type=click.Choice(list(_INFOGRAPHIC_STYLE_MAP)),
     default="auto",
+    help="Visual style (default: auto)",
 )
 @language_option
 @multi_source_option

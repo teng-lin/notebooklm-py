@@ -738,6 +738,37 @@ class TestNotebookRename:
             assert "Renamed notebook" in result.output
             mock_client.notebooks.rename.assert_called_once_with("nb_123", "New Title")
 
+    def test_notebook_rename_json(self, runner, mock_auth):
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_client.notebooks.rename = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["rename", "New Title", "-n", "nb_123", "--json"])
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output)
+            assert payload == {
+                "notebook_id": "nb_123",
+                "title": "New Title",
+                "success": True,
+            }
+            mock_client.notebooks.rename.assert_called_once_with("nb_123", "New Title")
+
 
 # =============================================================================
 # NOTEBOOK SHARE TESTS (moved to share command group)
@@ -814,6 +845,41 @@ class TestNotebookSummary:
             assert result.exit_code == 0
             assert "Suggested Topics" in result.output
             assert "machine learning" in result.output
+
+    def test_notebook_summary_json(self, runner, mock_auth):
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_desc = MagicMock()
+            mock_desc.summary = "This is a summary."
+            mock_topic = MagicMock()
+            mock_topic.question = "What is machine learning?"
+            mock_desc.suggested_topics = [mock_topic]
+            mock_client.notebooks.get_description = AsyncMock(return_value=mock_desc)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["summary", "-n", "nb_123", "--topics", "--json"])
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output)
+            assert payload == {
+                "notebook_id": "nb_123",
+                "summary": "This is a summary.",
+                "suggested_topics": ["What is machine learning?"],
+            }
 
     def test_notebook_summary_not_available(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:

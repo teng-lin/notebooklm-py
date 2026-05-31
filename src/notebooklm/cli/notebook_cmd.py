@@ -226,8 +226,9 @@ def register_notebook_commands(cli):
     @cli.command("rename")
     @click.argument("new_title")
     @notebook_option
+    @json_option
     @with_client
-    def rename_cmd(ctx, new_title, notebook_id, client_auth):
+    def rename_cmd(ctx, new_title, notebook_id, json_output, client_auth):
         """Rename a notebook.
 
         NOTEBOOK_ID supports partial matching (e.g., 'abc' matches 'abc123...').
@@ -236,8 +237,19 @@ def register_notebook_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                resolved_id = await resolve_notebook_id(client, notebook_id)
+                resolved_id = await resolve_notebook_id(
+                    client, notebook_id, json_output=json_output
+                )
                 await client.notebooks.rename(resolved_id, new_title)
+                if json_output:
+                    json_output_response(
+                        {
+                            "notebook_id": resolved_id,
+                            "title": new_title,
+                            "success": True,
+                        }
+                    )
+                    return
                 cli_print(f"[green]Renamed notebook:[/green] {resolved_id}", ctx=ctx)
                 cli_print(f"[bold]New title:[/bold] {new_title}", ctx=ctx)
 
@@ -246,8 +258,9 @@ def register_notebook_commands(cli):
     @cli.command("summary")
     @notebook_option
     @click.option("--topics", is_flag=True, help="Include suggested topics")
+    @json_option
     @with_client
-    def summary_cmd(ctx, notebook_id, topics, client_auth):
+    def summary_cmd(ctx, notebook_id, topics, json_output, client_auth):
         """Get notebook summary with AI-generated insights.
 
         NOTEBOOK_ID supports partial matching (e.g., 'abc' matches 'abc123...').
@@ -256,13 +269,34 @@ def register_notebook_commands(cli):
         Examples:
           notebooklm summary              # Summary only
           notebooklm summary --topics     # With suggested topics
+          notebooklm summary --json       # JSON output
         """
         notebook_id = require_notebook(notebook_id)
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                resolved_id = await resolve_notebook_id(client, notebook_id)
+                resolved_id = await resolve_notebook_id(
+                    client, notebook_id, json_output=json_output
+                )
                 description = await client.notebooks.get_description(resolved_id)
+
+                if json_output:
+                    payload: dict = {
+                        "notebook_id": resolved_id,
+                        "summary": description.summary if description else None,
+                    }
+                    # ``--topics`` is opt-in for the text view; in JSON mode include
+                    # the key only when requested so the default envelope stays lean
+                    # and callers can branch on its presence.
+                    if topics:
+                        payload["suggested_topics"] = (
+                            [topic.question for topic in description.suggested_topics]
+                            if description and description.suggested_topics
+                            else []
+                        )
+                    json_output_response(payload)
+                    return
+
                 if description and description.summary:
                     console.print("[bold cyan]Summary:[/bold cyan]")
                     console.print(description.summary)

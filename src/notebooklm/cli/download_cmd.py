@@ -209,10 +209,17 @@ def register_download_command(group: click.Group, spec: DownloadTypeSpec) -> cli
 
     decorators.extend(
         [
-            click.option("--no-clobber", is_flag=True, help="Skip if file exists"),
+            click.option(
+                "--no-clobber",
+                is_flag=True,
+                # A single download fails if the file exists (matching
+                # ``source fulltext --no-clobber``); ``--all`` skips the
+                # conflicting files instead of aborting the whole batch.
+                help="Don't overwrite existing files (single download fails; --all skips them)",
+            ),
             click.option("--force", is_flag=True, help="Overwrite existing files"),
             click.option("--dry-run", is_flag=True, help="Preview without downloading"),
-            click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text"),
+            click.option("--json", "json_output", is_flag=True, help="Output as JSON"),
             click.option(
                 "-a",
                 "--artifact",

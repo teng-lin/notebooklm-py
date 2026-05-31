@@ -124,7 +124,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `ask --new --yes` (alias `-y`) | Skip the `--new` destructive-delete confirmation prompt. | `notebooklm ask --new --yes "..."` |
 | `ask -s <id>` | Limit to specific source IDs (repeatable) | `notebooklm ask "Summarize" -s src1 -s src2` |
 | `ask --json` | Get answer with source references | `notebooklm ask "Explain X" --json` |
-| `ask --timeout N` | Per-invocation HTTP timeout in seconds (default: library default 30s) | `notebooklm ask "long prompt" --timeout 120` |
+| `ask --request-timeout N` | Per-invocation HTTP request timeout in seconds (default: library default 30s). `--timeout` is a back-compat alias for the same flag. | `notebooklm ask "long prompt" --request-timeout 120` |
 | `ask --save-as-note` | Save response as a note. When the answer contains `[N]` citations, the saved note preserves interactive hover-anchored citation links matching the NotebookLM web UI's "Save to note" behavior ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)). Answers without citations fall back to a plain-text note. | `notebooklm ask "Explain X" --save-as-note` |
 | `ask --save-as-note --note-title` | Save response with custom note title. The NotebookLM server may apply smart-title generation for citation-rich saves and override the requested title; the success message reflects what the server actually stored. | `notebooklm ask "Explain X" --save-as-note --note-title "Title"` |
 | `configure --mode` | Set predefined chat mode (`default`, `learning-guide`, `concise`, `detailed`) | `notebooklm configure --mode learning-guide` |
@@ -239,7 +239,7 @@ All `artifact` subcommands also accept `-n/--notebook ID`.
 
 ### Download Commands (`notebooklm download <type>`)
 
-Every `download` subcommand accepts the same selection / safety / output flag set: `-n/--notebook ID`, `-a/--artifact ID`, `--all`, `--latest` (default), `--earliest`, `--name TEXT` (fuzzy title match), `--dry-run`, `--force`, `--no-clobber` (opt-in to skip existing; default is auto-rename), and `--json`.
+Every `download` subcommand accepts the same selection / safety / output flag set: `-n/--notebook ID`, `-a/--artifact ID`, `--all`, `--latest` (default), `--earliest`, `--name TEXT` (fuzzy title match), `--dry-run`, `--force`, `--no-clobber` (don't overwrite existing files: a single download fails, `--all` skips them; default is auto-rename), and `--json`.
 
 | Command | Arguments | Type-specific options | Example |
 |---------|-----------|-----------------------|---------|
@@ -1117,7 +1117,7 @@ notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
 - `-a, --artifact ID` - Select specific artifact by ID (supports partial IDs)
 - `--dry-run` - Show what would be downloaded without actually downloading
 - `--force` - Overwrite existing files
-- `--no-clobber` - Skip if file already exists (opt-in; default is auto-rename)
+- `--no-clobber` - Don't overwrite existing files (a single download fails; `--all` skips them; default is auto-rename)
 - `--format [pdf|pptx]` - Slide deck format (slide-deck command only, default: pdf)
 - `--json` - Output result in JSON format
 
@@ -1252,7 +1252,7 @@ notebooklm profile <list|create|switch|delete|rename> [OPTIONS]
 | `list` | (none) | `--json` |
 | `create` | `NAME` | — |
 | `switch` | `NAME` | — |
-| `delete` | `NAME` | `--confirm` (skip prompt; the active default profile cannot be deleted) |
+| `delete` | `NAME` | `--yes`/`-y` (skip prompt; `--confirm` is a deprecated alias; the active default profile cannot be deleted) |
 | `rename` | `OLD_NAME NEW_NAME` | — |
 
 **Examples:**
@@ -1271,7 +1271,7 @@ notebooklm profile switch work
 notebooklm profile rename work work-old
 
 # Delete a non-active profile without prompting
-notebooklm profile delete old-account --confirm
+notebooklm profile delete old-account --yes
 ```
 
 > **Note:** `profile delete` refuses to remove the currently active default profile. Switch to a different profile first (`notebooklm profile switch <other>`) and then delete.

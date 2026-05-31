@@ -184,6 +184,9 @@ def _make_client(extra_setup=None) -> MagicMock:
     client.notebooks.get_metadata = AsyncMock(
         return_value=MagicMock(to_dict=lambda: {"id": "abc123def456ghi789jkl"})
     )
+    client.notebooks.get_description = AsyncMock(
+        return_value=MagicMock(summary="a summary", suggested_topics=[])
+    )
     client.sources.list = AsyncMock(return_value=_stub_sources())
     client.artifacts.list = AsyncMock(return_value=_stub_artifacts())
     client.artifacts.suggest_reports = AsyncMock(return_value=[])
@@ -489,6 +492,7 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
     # notebook group (top-level via session/notebook modules)
     ("notebook_list", ["list", "--json"], None),
     ("notebook_metadata", ["metadata", "-n", "abc123def456ghi789jkl", "--json"], None),
+    ("notebook_summary", ["summary", "-n", "abc123def456ghi789jkl", "--json"], None),
     # session group
     ("status_cmd", ["status", "--json"], None),
     # chat group
@@ -673,6 +677,9 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
     # top-level notebook `delete` mutation — success path is covered by
     # tests/unit/cli/test_notebook.py::TestNotebookDelete.
     ("delete",): _MUTATION_RATIONALE_SUCCESS,
+    # top-level notebook `rename` mutation — matches the other rename commands
+    # (source/note/artifact rename); success path covered by test_notebook.py.
+    ("rename",): _MUTATION_RATIONALE_SUCCESS,
     # download group — success path needs a real artifact + HTTP fetch.
     ("download", "audio"): _DOWNLOAD_RATIONALE_SUCCESS,
     ("download", "cinematic-video"): _DOWNLOAD_RATIONALE_SUCCESS,
@@ -746,6 +753,8 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     # top-level notebook `delete` mutation — error path is covered by
     # tests/unit/cli/test_notebook.py::TestNotebookDelete.
     ("delete",): _MUTATION_RATIONALE_ERROR,
+    # top-level notebook `rename` mutation — matches source/note/artifact rename.
+    ("rename",): _MUTATION_RATIONALE_ERROR,
     # download group — these error paths are covered for audio/video/...; the
     # remaining download_* cases below haven't been added yet.
     ("download", "cinematic-video"): _DOWNLOAD_RATIONALE_ERROR,
@@ -765,6 +774,7 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     # primary contract; error envelope can grow with the suite.
     ("history",): _INTROSPECTION_RATIONALE,
     ("metadata",): _INTROSPECTION_RATIONALE,
+    ("summary",): _INTROSPECTION_RATIONALE,
     ("research", "status"): _INTROSPECTION_RATIONALE,
     ("status",): _INTROSPECTION_RATIONALE,
     # language group — see success rationale.

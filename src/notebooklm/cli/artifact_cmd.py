@@ -592,7 +592,7 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
 
 @artifact.command("suggestions")
 @notebook_option
-@click.option("--json", "json_output", is_flag=True, help="Output JSON format")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
     """Get AI-suggested report topics based on notebook content."""

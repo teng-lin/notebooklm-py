@@ -607,12 +607,18 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
     help="MIME type for uploaded file sources. Overrides filename-extension inference.",
 )
 @click.option(
+    # ``--request-timeout`` is the self-documenting canonical name (per-request
+    # HTTP socket timeout, not a poll/wait budget); ``--timeout`` stays as a
+    # back-compat alias. See the matching wiring on ``chat ask``.
+    "--request-timeout",
     "--timeout",
+    "timeout",
     default=None,
     type=float,
     help=(
         "HTTP request timeout in seconds (default: 30, from the library). "
-        "Increase when adding slow URLs or large files that exceed the default."
+        "Increase when adding slow URLs or large files that exceed the default. "
+        "(--timeout is a back-compat alias.)"
     ),
 )
 @click.option(

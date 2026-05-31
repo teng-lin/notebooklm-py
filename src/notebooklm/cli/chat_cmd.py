@@ -155,14 +155,27 @@ def register_chat_commands(cli):
             "back to a plain-text note."
         ),
     )
-    @click.option("--note-title", default=None, help="Note title (use with --save-as-note)")
+    # ``-t`` consistently means "note title" across `note create`, `chat history`,
+    # and here, so the short flag carries the same meaning everywhere it appears.
     @click.option(
+        "-t",
+        "--note-title",
+        "note_title",
+        default=None,
+        help="Note title (use with --save-as-note)",
+    )
+    # ``--request-timeout`` is the self-documenting canonical name: this is the
+    # per-request HTTP socket timeout, NOT the poll/wait budget that other
+    # commands spell ``--timeout``. ``--timeout`` stays as a back-compat alias.
+    @click.option(
+        "--request-timeout",
         "--timeout",
+        "timeout",
         default=None,
         type=click.IntRange(min=1),
         help=(
             "HTTP request timeout in seconds (default: 30, from the library). "
-            "Increase for long or complex prompts."
+            "Increase for long or complex prompts. (--timeout is a back-compat alias.)"
         ),
     )
     @with_client
