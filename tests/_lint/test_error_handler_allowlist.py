@@ -101,32 +101,53 @@ def _cli_files() -> list[Path]:
     return [p for p in sorted(CLI_ROOT.rglob("*.py")) if p.name != "error_handler.py"]
 
 
-def _is_envelope_bypassing_click_exception(func: ast.AST) -> bool:
-    """True for a ``click``-rooted or bare call in the bypassing family.
+def _click_bare_exception_bindings(tree: ast.AST) -> set[str]:
+    """Local names bound to a family member via ``from click import ...``.
+
+    Only these may match the bare ``<Name>`` form -- a locally defined class or
+    a same-named import from another module must NOT be linted as a Click exit
+    (the gate's "reject unrelated identifiers" goal). Honors ``as`` aliases.
+    """
+    bindings: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "click":
+            for alias in node.names:
+                if alias.name in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS:
+                    bindings.add(alias.asname or alias.name)
+    return bindings
+
+
+def _is_envelope_bypassing_click_exception(func: ast.AST, *, bare_bindings: set[str]) -> bool:
+    """True for a ``click``-rooted or click-bound bare call in the family.
 
     Resolves the dotted call path via :func:`_call_name` and accepts:
 
-    * a bare ``<Name>`` (``from click import UsageError``), and
+    * a bare ``<Name>`` *only* when it was bound by ``from click import <Name>``
+      in this module (see :func:`_click_bare_exception_bindings`), and
     * any ``click``-rooted chain whose leaf is in the family --
       ``click.UsageError`` *and* the canonical ``click.exceptions.UsageError``.
 
-    Rejects a differently-rooted chain (``other.UsageError``) and any leaf
-    outside the family, so the deliberately-excluded control-flow exits
-    ``click.Abort`` / ``click.exceptions.Exit`` never match (issue #1307).
+    Rejects a differently-rooted chain (``other.UsageError``), a bare name not
+    imported from ``click``, and any leaf outside the family, so the
+    deliberately-excluded control-flow exits ``click.Abort`` /
+    ``click.exceptions.Exit`` never match (issue #1307).
     """
     name = _call_name(func)
     if not name:
         return False
     parts = name.split(".")
     if len(parts) == 1:
-        return parts[0] in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
+        return parts[0] in bare_bindings
     return parts[0] == "click" and parts[-1] in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
 
 
 def _click_exception_spans(tree: ast.AST) -> list[Span]:
     spans: list[Span] = []
+    bare_bindings = _click_bare_exception_bindings(tree)
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _is_envelope_bypassing_click_exception(node.func):
+        if isinstance(node, ast.Call) and _is_envelope_bypassing_click_exception(
+            node.func, bare_bindings=bare_bindings
+        ):
             spans.append((node.lineno, node.end_lineno or node.lineno))
     return spans
 
@@ -285,10 +306,11 @@ def test_click_exception_spans_detects_subclasses_and_bare_import() -> None:
 
     The gate widened from literal ``click.ClickException`` to the whole
     envelope-bypassing family, in the ``click.<Name>`` attribute form, the
-    canonical ``click.exceptions.<Name>`` chain, and the bare ``<Name>`` form
-    (``from click import UsageError``) (issue #1307). The control-flow exit
-    ``click.exceptions.Exit`` and a same-named attribute on a different root
-    (``other.UsageError``) must NOT match.
+    canonical ``click.exceptions.<Name>`` chain, and the bare ``<Name>`` form --
+    but only when bound by ``from click import <Name>`` (issue #1307). The
+    control-flow exit ``click.exceptions.Exit``, a same-named attribute on a
+    different root (``other.UsageError``), and a bare name not imported from
+    ``click`` (``BadParameter`` here, never imported) must NOT match.
     """
     tree = ast.parse(
         "import click\n"
@@ -299,6 +321,7 @@ def test_click_exception_spans_detects_subclasses_and_bare_import() -> None:
         "raise click.exceptions.Exit(0)\n"
         "raise other.UsageError('x')\n"
         "raise click.exceptions.UsageError('x')\n"
+        "raise BadParameter('x')\n"
     )
     assert sorted(lo for lo, _hi in _click_exception_spans(tree)) == [3, 4, 5, 8]
 
