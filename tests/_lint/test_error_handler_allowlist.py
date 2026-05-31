@@ -100,16 +100,19 @@ def _click_exception_spans(tree: ast.AST) -> list[Span]:
 def _raw_sysexit_spans(tree: ast.AST) -> list[Span]:
     spans: list[Span] = []
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Raise)
-            and isinstance(node.exc, ast.Call)
-            and _call_name(node.exc.func) == "SystemExit"
-        ):
+        if not isinstance(node, ast.Raise) or node.exc is None:
+            continue
+        exc = node.exc
+        if isinstance(exc, ast.Call) and _call_name(exc.func) == "SystemExit":
             # Anchor to the ``SystemExit(...)`` call node, not the enclosing
             # ``Raise``: a marker on a multi-line ``raise ... from <cause>`` tail
             # (outside the call) must not count (symmetric with click below).
-            call = node.exc
-            spans.append((call.lineno, call.end_lineno or call.lineno))
+            spans.append((exc.lineno, exc.end_lineno or exc.lineno))
+        elif isinstance(exc, ast.Name) and exc.id == "SystemExit":
+            # Bare ``raise SystemExit`` (no parens) is an ``ast.Name``, not a
+            # ``Call``; it would otherwise bypass the gate entirely. The marker
+            # sits on the raise statement, so anchor to the ``Raise`` span.
+            spans.append((node.lineno, node.end_lineno or node.lineno))
     return spans
 
 
@@ -255,3 +258,13 @@ def test_match_markers_is_per_site_one_to_one() -> None:
     unmarked, orphan = _match_markers([(1, 1)], {1, 9})
     assert unmarked == []
     assert orphan == {9}
+
+
+def test_raw_sysexit_spans_detects_bare_and_called() -> None:
+    """Both ``raise SystemExit(1)`` and bare ``raise SystemExit`` are detected.
+
+    Bare ``raise SystemExit`` is an ``ast.Name`` (not a ``Call``); missing it
+    would let a raw exit bypass the gate (gemini-code-assist, PR #1299).
+    """
+    tree = ast.parse("def called():\n    raise SystemExit(1)\ndef bare():\n    raise SystemExit\n")
+    assert sorted(lo for lo, _hi in _raw_sysexit_spans(tree)) == [2, 4]
