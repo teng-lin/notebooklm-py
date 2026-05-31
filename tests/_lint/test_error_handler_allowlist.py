@@ -212,6 +212,12 @@ def test_match_markers_is_per_site_one_to_one() -> None:
     assert unmarked == []
     assert orphan == {9}
 
+    # Degenerate inputs: nothing to check; a marker with no call is orphaned;
+    # a call with no marker is unmarked.
+    assert match_markers([], set()) == ([], set())
+    assert match_markers([], {5}) == ([], {5})
+    assert match_markers([(1, 1)], set()) == ([0], set())
+
 
 def test_raw_sysexit_spans_detects_bare_and_called() -> None:
     """Both ``raise SystemExit(1)`` and bare ``raise SystemExit`` are detected.
