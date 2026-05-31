@@ -160,16 +160,11 @@ The architecture tests encode the current layer contract:
   compatibility manifest in `tests/unit/test_public_shims.py` enforces the
   current first-party surface for that move; it is not a broader public API
   decision, and removing a listed name needs a separate deprecation plan.
-- `tests/unit/test_init_order.py` records the temporary baseline of feature
-  APIs that still access `Session` private state directly. Future capability
-  migration PRs should reduce that baseline as private state moves behind
-  explicit `Session` methods; do not add new entries unless the PR also
-  explains the follow-up migration path.
-- `tests/unit/test_init_order.py` also guards the notebook-composition
+- `tests/unit/test_init_order.py` guards the notebook-composition
   boundaries: `NotebookLMClient` constructs `SourcesAPI` before `NotebooksAPI`
   and passes it through the legacy `sources_api=` slot; notebook metadata
   services must not import or construct `SourcesAPI`; artifact/source/notebook
-  composition services must not runtime-import facade APIs or `Session`.
+  composition services must not runtime-import facade APIs.
   Add new private services to those guard lists when they take ownership of
   cross-facade behavior.
 
