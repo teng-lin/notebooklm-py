@@ -23,14 +23,30 @@ pytestmark = pytest.mark.repo_lint
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README_MD = REPO_ROOT / "README.md"
 EXAMPLES_DIR = REPO_ROOT / "docs" / "examples"
+# Prose docs that carry copy-paste quickstarts and were corrected to the
+# canonical idiom — guarded so they can't regress. (``docs/python-api.md``
+# deliberately keeps the deprecated form as a *labeled* example, and
+# ``docs/refactor-history.md`` is a historical record — both excluded.)
+GUARDED_PROSE_DOCS = (
+    REPO_ROOT / "docs" / "rpc-development.md",
+    REPO_ROOT / "docs" / "auth-cookie-lifecycle.md",
+)
 
 # The deprecated idiom: awaiting ``from_storage`` inside the context manager.
 DEPRECATED_AWAIT_IDIOM = "async with await NotebookLMClient.from_storage"
 
 
 def _copy_paste_docs() -> list[Path]:
-    """README plus every runnable example — the snippets users copy first."""
-    return [README_MD, *sorted(EXAMPLES_DIR.glob("*.py"))]
+    """README + guarded prose docs + every runnable example.
+
+    These are the snippets users copy first; all must use the canonical
+    no-``await`` ``from_storage`` idiom.
+    """
+    return [
+        README_MD,
+        *(p for p in GUARDED_PROSE_DOCS if p.exists()),
+        *sorted(EXAMPLES_DIR.glob("*.py")),
+    ]
 
 
 @pytest.mark.parametrize(
