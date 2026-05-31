@@ -102,22 +102,25 @@ def _cli_files() -> list[Path]:
 
 
 def _is_envelope_bypassing_click_exception(func: ast.AST) -> bool:
-    """True for ``click.<Name>`` or bare ``<Name>`` in the bypassing family.
+    """True for a ``click``-rooted or bare call in the bypassing family.
 
-    Matches both the qualified ``click.UsageError`` attribute form and the bare
-    ``UsageError`` name form (``from click import UsageError``), while rejecting
-    unrelated identifiers and any deeper / differently-rooted attribute chain
-    (e.g. ``foo.UsageError`` or ``click.exceptions.Exit``).
+    Resolves the dotted call path via :func:`_call_name` and accepts:
+
+    * a bare ``<Name>`` (``from click import UsageError``), and
+    * any ``click``-rooted chain whose leaf is in the family --
+      ``click.UsageError`` *and* the canonical ``click.exceptions.UsageError``.
+
+    Rejects a differently-rooted chain (``other.UsageError``) and any leaf
+    outside the family, so the deliberately-excluded control-flow exits
+    ``click.Abort`` / ``click.exceptions.Exit`` never match (issue #1307).
     """
-    if isinstance(func, ast.Attribute):
-        return (
-            isinstance(func.value, ast.Name)
-            and func.value.id == "click"
-            and func.attr in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
-        )
-    if isinstance(func, ast.Name):
-        return func.id in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
-    return False
+    name = _call_name(func)
+    if not name:
+        return False
+    parts = name.split(".")
+    if len(parts) == 1:
+        return parts[0] in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
+    return parts[0] == "click" and parts[-1] in ENVELOPE_BYPASSING_CLICK_EXCEPTIONS
 
 
 def _click_exception_spans(tree: ast.AST) -> list[Span]:
@@ -281,10 +284,11 @@ def test_click_exception_spans_detects_subclasses_and_bare_import() -> None:
     """Envelope-bypassing subclasses are detected in both attribute + bare form.
 
     The gate widened from literal ``click.ClickException`` to the whole
-    envelope-bypassing family, in both the ``click.<Name>`` attribute form and
-    the bare ``<Name>`` form (``from click import UsageError``) (issue #1307).
-    An unrelated attribute chain (``click.exceptions.Exit``) and a same-named
-    attribute on a different root (``other.UsageError``) must NOT match.
+    envelope-bypassing family, in the ``click.<Name>`` attribute form, the
+    canonical ``click.exceptions.<Name>`` chain, and the bare ``<Name>`` form
+    (``from click import UsageError``) (issue #1307). The control-flow exit
+    ``click.exceptions.Exit`` and a same-named attribute on a different root
+    (``other.UsageError``) must NOT match.
     """
     tree = ast.parse(
         "import click\n"
@@ -294,8 +298,9 @@ def test_click_exception_spans_detects_subclasses_and_bare_import() -> None:
         "raise UsageError('x')\n"
         "raise click.exceptions.Exit(0)\n"
         "raise other.UsageError('x')\n"
+        "raise click.exceptions.UsageError('x')\n"
     )
-    assert sorted(lo for lo, _hi in _click_exception_spans(tree)) == [3, 4, 5]
+    assert sorted(lo for lo, _hi in _click_exception_spans(tree)) == [3, 4, 5, 8]
 
 
 def test_parse_cli_file_is_memoized_and_byte_identical() -> None:
