@@ -3654,7 +3654,7 @@
           "default": "default",
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Audio length (default: default)",
+          "help": "Audio length: short, default, or long (default: default)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -5574,7 +5574,7 @@
           "default": "default",
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Slide deck length (default: default)",
+          "help": "Slide deck length: default or short (default: default)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -7164,7 +7164,24 @@
           "name": "yes",
           "opts": [
             "--yes",
-            "-y",
+            "-y"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "[Deprecated] Alias for --yes/-y.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "confirm",
+          "opts": [
             "--confirm"
           ],
           "required": false,

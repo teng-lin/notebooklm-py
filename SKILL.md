@@ -141,7 +141,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 - `notebooklm doctor` - check environment health
 
 **Ask before running:**
-- `notebooklm delete` / `source delete` / `note delete` / `share remove` / `profile delete` - destructive. Once approved, pass `--yes`/`-y` to skip the confirmation prompt (uniform across every destructive command; `--json` implies `--yes` so non-interactive callers never hang on the prompt).
+- `notebooklm delete` / `source delete` / `note delete` / `share remove` / `profile delete` - destructive. Once approved, pass `--yes`/`-y` to skip the confirmation prompt (uniform across every destructive command). On the commands that also expose `--json` (e.g. `delete`, `source delete`, `note delete`, `share remove`), `--json` implies `--yes` so non-interactive callers never hang on the prompt; `profile delete` has no `--json`, so pass `--yes` explicitly there.
 - `notebooklm generate *` - long-running, may fail
 - `notebooklm download *` - writes to filesystem
 - `notebooklm artifact wait` - long-running (when in main conversation)

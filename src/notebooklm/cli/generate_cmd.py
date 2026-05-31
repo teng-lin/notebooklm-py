@@ -334,7 +334,7 @@ def generate():
     "audio_length",
     type=click.Choice(["short", "default", "long"]),
     default="default",
-    help="Audio length (default: default)",
+    help="Audio length: short, default, or long (default: default)",
 )
 @language_option
 @multi_source_option
@@ -493,7 +493,7 @@ alias_command(
     "deck_length",
     type=click.Choice(["default", "short"]),
     default="default",
-    help="Slide deck length (default: default)",
+    help="Slide deck length: default or short (default: default)",
 )
 @language_option
 @multi_source_option

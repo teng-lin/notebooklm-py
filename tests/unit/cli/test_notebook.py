@@ -881,6 +881,40 @@ class TestNotebookSummary:
                 "suggested_topics": ["What is machine learning?"],
             }
 
+    def test_notebook_summary_json_without_topics(self, runner, mock_auth):
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_desc = MagicMock()
+            mock_desc.summary = "This is a summary."
+            mock_topic = MagicMock()
+            mock_topic.question = "What is machine learning?"
+            mock_desc.suggested_topics = [mock_topic]
+            mock_client.notebooks.get_description = AsyncMock(return_value=mock_desc)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["summary", "-n", "nb_123", "--json"])
+
+            assert result.exit_code == 0
+            payload = json.loads(result.output)
+            # Without --topics the envelope stays lean: the key is omitted entirely
+            # (not an empty list) so callers branch on its presence.
+            assert payload == {"notebook_id": "nb_123", "summary": "This is a summary."}
+            assert "suggested_topics" not in payload
+
     def test_notebook_summary_not_available(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
