@@ -6,6 +6,7 @@ authentication or network access is needed.
 
 import json
 from datetime import datetime
+from urllib.parse import urlparse
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -615,16 +616,15 @@ class TestDeepResearchPrompt:
         from notebooklm_mcp.server import notebooklm_deep_research
 
         result = notebooklm_deep_research(topic="AI safety", urls="https://a.com, https://b.com")
-        # Check URLs appear as individual bullet entries, not as arbitrary substrings
+        # Check URLs appear as individual bullet entries, validated by parsed components
         bullet_urls = [
             ln.strip().lstrip("- ").strip()
             for ln in result.splitlines()
             if ln.strip().startswith("- http")
         ]
-        # The string https://a.com may be at an arbitrary position in the sanitized URL.
-        assert any("https://a.com" in u for u in bullet_urls)
-        # The string https://b.com may be at an arbitrary position in the sanitized URL.
-        assert any("https://b.com" in u for u in bullet_urls)
+        parsed_urls = [urlparse(u) for u in bullet_urls]
+        assert any(p.scheme == "https" and p.hostname == "a.com" for p in parsed_urls)
+        assert any(p.scheme == "https" and p.hostname == "b.com" for p in parsed_urls)
 
     def test_prompt_has_all_steps(self):
         from notebooklm_mcp.server import notebooklm_deep_research
@@ -644,8 +644,8 @@ class TestDeepResearchPrompt:
             if ln.strip().startswith("- http")
         ]
         # The string https://only.com may be at an arbitrary position in the sanitized URL.
-        assert any("https://only.com" in u for u in bullet_urls)
-
+        parsed_urls = [urlparse(u) for u in bullet_urls]
+        assert any(p.scheme == "https" and p.hostname == "only.com" for p in parsed_urls)
     def test_prompt_returns_string(self):
         from notebooklm_mcp.server import notebooklm_deep_research
 
