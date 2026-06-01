@@ -2,17 +2,18 @@
 """
 
 import json
-from unittest.mock import MagicMock
+
 import pytest
-from notebooklm_mcp.server import _handle_exception, notebooklm_troubleshoot
+
 from notebooklm.exceptions import (
-    AuthError,
-    RateLimitError,
-    NotebookNotFoundError,
     ArtifactTimeoutError,
+    AuthError,
     NotebookLimitError,
-    NetworkError,
+    NotebookNotFoundError,
+    RateLimitError,
 )
+from notebooklm_mcp.server import _handle_exception, notebooklm_troubleshoot
+
 
 def test_handle_exception_auth_error():
     exc = AuthError("Unauthorized")

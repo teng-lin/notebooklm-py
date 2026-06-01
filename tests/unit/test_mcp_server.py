@@ -6,8 +6,8 @@ authentication or network access is needed.
 
 import json
 from datetime import datetime
-from urllib.parse import urlparse
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import urlparse
 
 import pytest
 
@@ -428,8 +428,8 @@ class TestGenerateAudioPodcast:
 
     async def test_temp_file_cleaned_up_when_no_download_path(self, patched_get_client):
         """Test that temporary file is cleaned up when no download_path is provided."""
+
         from notebooklm_mcp.server import notebooklm_generate_audio_podcast
-        from pathlib import Path
 
         # Mock that download succeeds
         saved_path = "/tmp/generated_podcast.mp4"
