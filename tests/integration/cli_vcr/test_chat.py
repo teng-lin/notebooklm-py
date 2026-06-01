@@ -30,7 +30,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import notebooklm_vcr, parse_json_output, skip_no_cassettes
+from .conftest import notebooklm_vcr, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -51,7 +51,9 @@ class TestAskCommand:
         result = runner.invoke(cli, ["ask", "--json", "What is this notebook about?"])
         assert result.exit_code == 0, result.output
 
-        data = parse_json_output(result.output)
+        # Parse strictly: a ``--json`` command's whole stdout must be valid
+        # JSON with no stray prefix.
+        data = json.loads(result.output)
         assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
         assert "answer" in data, f"Expected an 'answer' key: {data!r}"
         assert "references" in data, f"Expected a 'references' key: {data!r}"
@@ -80,10 +82,9 @@ class TestHistoryCommand:
         result = runner.invoke(cli, ["history", "--json"])
         assert result.exit_code == 0, result.output
 
-        data = parse_json_output(result.output)
+        # Parse strictly: the whole stdout must be valid JSON (no stray prefix).
+        data = json.loads(result.output)
         assert isinstance(data, dict | list), f"Expected JSON, got: {result.output!r}"
-        # Re-parse strictly: the whole stdout must be valid JSON (no stray prefix).
-        json.loads(result.output)
 
 
 class TestGetConversationTurnsCommand:
