@@ -148,17 +148,25 @@ _PATTERN_ASYNCMOCK_ASSIGN = re.compile(
 # ``from unittest.mock import patch``), ``mock.patch(``, and
 # ``unittest.mock.patch(`` forms all match, while ``monkeypatch(`` / ``dispatch(``
 # (where ``patch`` is preceded by a word char) and ``patch.object(`` (no ``(``
-# immediately after ``patch``) do not. Scoped to ``notebooklm\._`` so only
+# immediately after ``patch``) do not. The optional ``(?:target\s*=\s*)?``
+# catches the keyword-argument spelling ``patch(target="notebooklm._…")`` and
+# the optional ``[rRfFuUbB]*`` catches string-literal prefixes
+# (``patch(r"notebooklm._…")``), so neither can silently bypass the rule
+# (gemini-code-assist review on #1336). Scoped to ``notebooklm\._`` so only
 # *private* targets are flagged — patches at public facades are out of scope for
 # this rule (issue #1325).
-_PATTERN_MOCK_PATCH_PRIVATE = re.compile(r"(?<![\w.])(?:[\w]+\.)*patch\(\s*[\"']notebooklm\._")
+_PATTERN_MOCK_PATCH_PRIVATE = re.compile(
+    r"(?<![\w.])(?:[\w]+\.)*patch\(\s*(?:target\s*=\s*)?[rRfFuUbB]*[\"']notebooklm\._"
+)
 
 # (e) ``patch.object(notebooklm._private…, "attr", …)`` — the object-target
 #     ``unittest.mock`` form aimed at a private module reference. No occurrences
 #     exist today; the rule guards against regressions on this second
-#     ``unittest.mock`` shape.
+#     ``unittest.mock`` shape. The optional ``(?:target\s*=\s*)?`` likewise
+#     catches the ``patch.object(target=notebooklm._…)`` keyword spelling
+#     (gemini-code-assist review on #1336).
 _PATTERN_MOCK_PATCH_OBJECT_PRIVATE = re.compile(
-    r"(?<![\w.])(?:[\w]+\.)*patch\.object\(\s*[\w.]*notebooklm\._"
+    r"(?<![\w.])(?:[\w]+\.)*patch\.object\(\s*(?:target\s*=\s*)?[\w.]*notebooklm\._"
 )
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
