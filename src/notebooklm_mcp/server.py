@@ -792,10 +792,12 @@ async def notebooklm_troubleshoot(
     if any(k in error_lower for k in ["unauthorized", "csrf", "snlm0e", "fdrfje", "login", "authentication failed"]):
         diagnosis = "Authentication expired or session cookies invalid."
         action_steps = [
+            "Run 'notebooklm auth check --test' to diagnose the specific auth issue.",
             "Run 'notebooklm login' in your local terminal to refresh cookies.",
-            "If using --browser-cookies, ensure you are logged into Google in that browser.",
+            "If using --browser-cookies on macOS and getting prompts, try 'Always Allow' or using Firefox.",
+            "If using Firefox Multi-Account Containers, use the 'firefox::ContainerName' syntax.",
         ]
-        debug_hint = "Run 'notebooklm auth check --test' to verify connectivity."
+        debug_hint = "If re-login fails, try deleting the browser profile in ~/.notebooklm/profiles/."
 
     # 2. Rate limiting
     elif any(k in error_lower for k in ["rate limit", "r7cb6c", "[3]", "429"]):
@@ -804,17 +806,19 @@ async def notebooklm_troubleshoot(
             "Wait 5-10 minutes and retry the operation.",
             "If using the CLI, try adding the --retry flag (e.g. --retry 3).",
             "Reduce the frequency of intensive operations like audio generation.",
+            "Check if you have reached the daily quota for Audio/Video overviews.",
         ]
-        debug_hint = "Check 'notebooklm --help' for retry options on specific commands."
+        debug_hint = "Intensive operations like deep research or media generation have tighter quotas."
 
-    # 3. RPC method drift
-    elif "rpc id" in error_lower or "unknownrpc" in error_lower:
+    # 3. RPC method drift or failures
+    elif "rpc id" in error_lower or "unknownrpc" in error_lower or "no result found for rpc id" in error_lower:
         diagnosis = "RPC method mapping may have drifted or changed upstream."
         action_steps = [
             "Wait a few minutes and retry (sometimes transient).",
             "Check for 'notebooklm-py' library updates: 'pip install -U notebooklm-py'.",
+            "Report the new RPC ID to the maintainers if it persists.",
         ]
-        debug_hint = "Try setting 'NOTEBOOKLM_DEBUG_RPC=1' to see the new RPC IDs returned by the server."
+        debug_hint = "Try 'NOTEBOOKLM_DEBUG_RPC=1' to see the actual RPC IDs returned by the server."
 
     # 4. X.com / Twitter issues
     elif any(k in error_lower for k in ["x.com", "twitter"]) or (
@@ -824,31 +828,44 @@ async def notebooklm_troubleshoot(
         action_steps = [
             "Pre-fetch the content using the 'bird' CLI: 'bird read <URL> > source.md'.",
             "Then add the local markdown file instead of the URL.",
-            "Alternatively, copy the text manually and use 'notebooklm source add-text'.",
+            "Alternatively, use browser automation (Playwright) to fetch the markdown locally.",
         ]
+        debug_hint = "Check if the source title shows 'Fixing X.com Privacy Errors' — if so, the ingest failed."
 
     # 5. File upload issues
     elif "html" in error_lower and "add" in (operation or "").lower():
-        diagnosis = "NotebookLM rejects direct HTML file uploads."
+        diagnosis = "NotebookLM rejects direct HTML/XHTML file uploads."
         action_steps = [
-            "Convert the HTML file to plain text or Markdown first.",
+            "Convert the HTML file to plain text, Markdown, or PDF first.",
             "Use 'notebooklm source add' with the converted file.",
+        ]
+    elif "none" in error_lower and operation == "adding text source":
+        diagnosis = "Known issue with native text file uploads returning None."
+        action_steps = [
+            "Use 'notebooklm source add' with the raw text content instead of a file path.",
+            "In Python, use client.sources.add_text() instead of add_file().",
         ]
 
     # 6. Artifact generation issues
     elif (operation and "generate" in operation.lower()) or "artifact" in error_lower:
         if "timeout" in error_lower:
-            diagnosis = "Generation task timed out before completion."
+            diagnosis = "Generation task timed out before completion (media queue delay)."
             action_steps = [
-                "The task may still be running. Use 'notebooklm artifact list' to check progress.",
-                "Retry with a higher --timeout value (e.g., 600 for audio).",
+                "The task may still be running upstream. Use 'notebooklm artifact list' to check status.",
+                "Retry with a higher --timeout value (audio=1200, video=1800, cinematic=3600).",
             ]
         elif "none" in error_lower or "unavailable" in error_lower:
             diagnosis = "Generation feature is unavailable or returned no result."
             action_steps = [
                 "This account may have reached its generation quota for today.",
-                "Wait 24 hours or try a different notebook.",
-                "Ensure you have at least one source in the notebook.",
+                "Wait 24 hours or try a notebook with fewer sources.",
+                "Ensure you have at least one valid source in the notebook.",
+            ]
+        elif "mind map" in error_lower or "data table" in error_lower:
+            diagnosis = "Generation may have silently failed."
+            action_steps = [
+                "Wait 60 seconds and check 'notebooklm artifact list'.",
+                "Try regenerating with different or fewer sources.",
             ]
 
     # 7. Resource not found
@@ -857,24 +874,33 @@ async def notebooklm_troubleshoot(
         action_steps = [
             "Verify the ID is correct using 'notebooklm_list_notebooks' or 'notebook_metadata'.",
             "Ensure you are working in the correct profile/account.",
-            "The resource may have been deleted by another process.",
+            "If it's an artifact download, fetch fresh URLs as they expire in hours.",
         ]
 
     # 8. Notebook limits
     elif "notebook limit reached" in error_lower:
-        diagnosis = "The account has reached the maximum number of notebooks allowed by Google."
+        diagnosis = "The account has reached the maximum number of notebooks (approx 100)."
         action_steps = [
             "Delete old or unused notebooks using 'notebooklm_delete_notebook'.",
-            "Note that NotebookLM currently has a limit (often around 100 notebooks).",
+            "You can also use the web UI to delete notebooks if you prefer.",
         ]
 
-    # 9. Network issues
-    elif "network" in error_lower or "connection" in error_lower:
-        diagnosis = "Network connectivity issue."
+    # 9. Network / SSL / Timeout issues
+    elif any(k in error_lower for k in ["network", "connection", "ssl", "timeout", "deadline"]):
+        diagnosis = "Network connectivity or transport timeout issue."
         action_steps = [
-            "Check your internet connection.",
-            "Verify that you can access https://notebooklm.google.com in a browser.",
-            "If you are behind a proxy or VPN, ensure it allows traffic to Google domains.",
+            "Check your internet connection and proxy/VPN settings.",
+            "If direct connection to Google is blocked, ensure your environment allows it.",
+            "For direct API users, check if you are sharing a client across threads (it's not thread-safe).",
+        ]
+        debug_hint = "On Windows, if the CLI hangs, ensure WindowsSelectorEventLoopPolicy is set."
+
+    # 10. Windows specific (issue #75, #80)
+    elif "unicodeencodeerror" in error_lower and os.name == "nt":
+        diagnosis = "Windows Unicode encoding error (CP950/CP932/etc)."
+        action_steps = [
+            "Set the environment variable 'PYTHONUTF8=1' before running the command.",
+            "Or run Python with the '-X utf8' flag.",
         ]
 
     result = {
