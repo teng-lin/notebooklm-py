@@ -78,7 +78,7 @@ async def test_get_source_ids_happy_path_no_warning(caplog):
 
 
 def test_qa_pairs_raises_on_unguarded_shape():
-    """_chat.py: QA-pair parser raises when next_turn[4] is not indexable.
+    """_chat/api.py: QA-pair parser raises when next_turn[4] is not indexable.
 
     Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
     soft-mode opt-out was retired in v0.7.0), so a drifted answer turn raises
@@ -214,7 +214,7 @@ def test_auth_corrupt_legacy_context_does_not_block_in_band_write(tmp_path):
 
 
 def test_stream_parser_debug_guarded_by_isenabledfor(caplog):
-    """_chat_wire.py — non-JSON chunk debug log is guarded before it fires."""
+    """_chat/wire.py — non-JSON chunk debug log is guarded before it fires."""
 
     # Direct: ensure the module has a guarded debug call (structural check).
     src = (SRC_ROOT / "_chat" / "wire.py").read_text(encoding="utf-8")

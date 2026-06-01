@@ -241,7 +241,7 @@ async def test_download_mind_map_runs_write_off_loop_thread(
             "list_mind_maps",
             new=AsyncMock(return_value=mind_map_rows),
         ),
-        # Patch the `json` module as imported by `_artifact_downloads` so the
+        # Patch the `json` module as imported by `_artifact.downloads` so the
         # closure inside `download_mind_map` resolves to the stub.
         patch.object(artifact_downloads.json, "dump", recording_json_dump),
         # Cover the legacy ``Path.write_text``-based path too so a

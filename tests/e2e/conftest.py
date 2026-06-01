@@ -26,7 +26,7 @@ from notebooklm.paths import get_profile_dir
 # Substrings in ChatError / skip messages that mark a server-side rate-limit
 # or quota rejection rather than a client bug. Covers both the explicit
 # UserDisplayableError message and the HTTP-status-wrapped 429 path in
-# _chat.py:156, plus the generation skip phrase in assert_generation_started.
+# _chat/api.py:156, plus the generation skip phrase in assert_generation_started.
 _RATE_LIMIT_PHRASES = (
     "rate limit",
     "rate limited",

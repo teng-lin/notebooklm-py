@@ -131,7 +131,7 @@ def _make_api_with_recording_pipeline() -> tuple[SourcesAPI, _RecordingPipeline]
 
 @pytest.mark.asyncio
 async def test_uploader_is_the_pipeline() -> None:
-    """SourcesAPI builds its upload collaborator from _source_upload.py."""
+    """SourcesAPI builds its upload collaborator from _source/upload.py."""
     api = _make_sources_api()
     assert isinstance(api._uploader, SourceUploadPipeline)
 

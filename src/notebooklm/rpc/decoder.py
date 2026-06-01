@@ -131,7 +131,7 @@ _GRPC_STATUS_MESSAGES: dict[int, str] = {
 }
 
 # Hint appended to NOT_FOUND / PERMISSION_DENIED messages. Deliberately avoids
-# the substrings checked by AUTH_ERROR_PATTERNS in _runtime_helpers.py so these errors
+# the substrings checked by AUTH_ERROR_PATTERNS in _runtime/helpers.py so these errors
 # don't incorrectly trigger the auth-refresh retry path.
 _ACCOUNT_MISMATCH_HINT = (
     " If you have multiple Google accounts signed in, this is commonly an "
