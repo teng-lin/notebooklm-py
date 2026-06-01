@@ -1,0 +1,46 @@
+{
+  "method_name": "GET_SUGGESTED_REPORTS",
+  "method_id": "ciyUvf",
+  "description": "Fetch AI-suggested report formats for a notebook.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "ciyUvf",
+          "[\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "ciyUvf",
+          "[[\"Scrubbed Briefing Doc\",\"Briefing doc on scrubbed topic.\"],[\"Scrubbed Study Guide\",\"Study guide on scrubbed topic.\"]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        "Scrubbed Briefing Doc",
+        "Briefing doc on scrubbed topic."
+      ],
+      [
+        "Scrubbed Study Guide",
+        "Study guide on scrubbed topic."
+      ]
+    ]
+  }
+}

@@ -50,12 +50,12 @@
 | Category | Capabilities |
 |----------|--------------|
 | **Notebooks** | Create, list, rename, delete |
-| **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, audio, video, images), Google Drive, pasted text; refresh, get guide/fulltext |
+| **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, EPUB, audio, video, images), Google Drive, pasted text; refresh, get guide/fulltext |
 | **Chat** | Questions, conversation history, custom personas |
 | **Research** | Web and Drive research agents (fast/deep modes) with auto-import |
 | **Sharing** | Public/private links, user permissions (viewer/editor), view level control |
 
-### Content Generation (All NotebookLM Studio Types)
+### Content Generation (All Artifact Types)
 
 | Type | Options | Download Format |
 |------|---------|-----------------|
@@ -83,29 +83,29 @@ These features are available via API/CLI but not exposed in NotebookLM's web int
 - **Save chat to notes** - Save Q&A answers or conversation history as notebook notes
 - **Source fulltext access** - Retrieve the indexed text content of any source
 - **Programmatic sharing** - Manage permissions without the UI
+- **Multi-account profiles** - Switch between Google accounts without re-authenticating
+- **Browser cookie import** - Reuse cookies from your existing browser session instead of driving Playwright
 
 ## Installation
 
-```bash
-# Basic installation
-pip install notebooklm-py
+The full install guide — six personas (agent, end-user, library, headless, contributor, power-user), optional extras matrix, platform notes — lives in **[docs/installation.md](docs/installation.md)**.
 
-# With browser login support (required for first-time setup)
-pip install "notebooklm-py[browser]"
-playwright install chromium
-```
-
-If `playwright install chromium` fails with `TypeError: onExit is not a function`, see the Linux workaround in [Troubleshooting](docs/troubleshooting.md#linux).
-
-### Development Installation
-
-For contributors or testing unreleased features:
+**Quickest start** (CLI users and AI agents):
 
 ```bash
-pip install git+https://github.com/teng-lin/notebooklm-py@main
+pip install "notebooklm-py[browser]"   # core + Playwright
+playwright install chromium             # ~170 MB; no progress bar — be patient (30–90 s)
+notebooklm login                        # opens browser for Google sign-in
+notebooklm auth check --test --json     # verify: expect "status": "ok"
 ```
 
-⚠️ The main branch may contain unstable changes. Use PyPI releases for production.
+**As a library** (embedded in your app — no Playwright, no Chromium):
+
+```bash
+pip install notebooklm-py               # ~10 MB; ship a pre-acquired storage_state.json
+```
+
+If `playwright install chromium` fails on Linux with `TypeError: onExit is not a function`, see the [Linux workaround](docs/troubleshooting.md#linux). **Contributors:** see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Quick Start
 
@@ -122,6 +122,12 @@ pip install git+https://github.com/teng-lin/notebooklm-py@main
 notebooklm login
 # Or use Microsoft Edge (for orgs that require Edge for SSO)
 # notebooklm login --browser msedge
+# Or reuse cookies from an already-logged-in browser session
+# notebooklm login --browser-cookies chrome
+# notebooklm login --browser-cookies 'chrome::Profile 1'  # one Chromium profile
+# (combine with --profile to populate a specific profile;
+#  use --account / --all-accounts after auth inspect when several
+#  Google accounts are signed in)
 
 # 2. Create a notebook and add sources
 notebooklm create "My Research"
@@ -131,8 +137,9 @@ notebooklm source add "./paper.pdf"
 
 # 3. Chat with your sources
 notebooklm ask "What are the key themes?"
+notebooklm ask --prompt-file ./long_question.txt  # Read question from file
 
-# 4. Generate content
+# 4. Generate content (use --prompt-file for long prompts)
 notebooklm generate audio "make it engaging" --wait
 notebooklm generate video --style whiteboard --wait
 notebooklm generate cinematic-video "documentary-style summary" --wait
@@ -159,6 +166,9 @@ Other useful CLI commands:
 
 ```bash
 notebooklm auth check --test         # Diagnose auth/cookie issues
+notebooklm auth refresh --quiet      # One-shot cookie keepalive (for cron / launchd / systemd)
+notebooklm auth refresh --browser-cookies chrome  # Re-extract and repair account routing
+notebooklm auth inspect --browser 'chrome::Profile 1'  # Preview one Chromium profile
 notebooklm agent show codex          # Print bundled Codex instructions
 notebooklm agent show claude         # Print bundled Claude Code skill template
 notebooklm language list             # List supported output languages
@@ -166,7 +176,11 @@ notebooklm metadata --json           # Export notebook metadata and sources
 notebooklm share status              # Inspect sharing state
 notebooklm source add-research "AI"  # Start web research and import sources
 notebooklm skill status              # Check local agent skill installation
+notebooklm profile list              # List all Google account profiles
+notebooklm profile switch work       # Switch active account profile
 ```
+
+Use `--prompt-file PATH` with `ask`, prompt-based `generate` commands, and `source add-research` when the text is too long for the shell command line. This reads prompt/query text from a file and is separate from `source add ./file.pdf`, which still uploads that file as a NotebookLM source.
 
 ### Python API
 
@@ -175,7 +189,7 @@ import asyncio
 from notebooklm import NotebookLMClient
 
 async def main():
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # Create notebook and add sources
         nb = await client.notebooks.create("Research")
         await client.sources.add_url(nb.id, "https://example.com", wait=True)
@@ -231,6 +245,7 @@ Fetches the canonical [SKILL.md](SKILL.md) directly from GitHub.
 
 ### For Contributors
 
+- **[Architecture](docs/architecture.md)** - Architectural overview and design principles
 - **[Development Guide](docs/development.md)** - Architecture, testing, and releasing
 - **[RPC Development](docs/rpc-development.md)** - Protocol capture and debugging
 - **[RPC Reference](docs/rpc-reference.md)** - Payload structures

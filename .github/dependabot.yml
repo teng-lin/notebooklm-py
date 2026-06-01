@@ -19,5 +19,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Group all GitHub Actions updates into a single PR per week. Each PR
+    # touches multiple ``uses:`` lines, so grouping reduces review noise and
+    # keeps SHA-pinned third-party actions (publish/testpypi/claude/rpc-health
+    # /nightly/verify-package) moving together with their first-party
+    # ``actions/*`` peers. See ``scripts/check_action_pinning.py`` for the
+    # invariant Dependabot must keep honoring.
+    groups:
+      actions:
+        patterns:
+          - "*"
     commit-message:
       prefix: "ci"

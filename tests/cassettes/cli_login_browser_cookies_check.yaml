@@ -1,0 +1,48 @@
+interactions:
+- request:
+    body: ''
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Cookie:
+      - SID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED;
+        __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        OSID=SCRUBBED; __Secure-OSID=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: GET
+    uri: https://notebooklm.google.com/
+  response:
+    body:
+      string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><title>Google\
+        \ NotebookLM</title></head><body><script nonce=\"SCRUBBED_NONCE\">window.WIZ_global_data\
+        \ = {\"SNlM0e\":\"SCRUBBED_CSRF\",\"FdrFJe\":\"SCRUBBED_SESSION\",\"qwAQke\":\"LabsTailwindUi\"\
+        ,\"S06Grb\":\"SCRUBBED_USER_ID\",\"oPEP7c\":\"SCRUBBED_EMAIL@example.com\"\
+        };</script></body></html>"
+    headers:
+      Cache-Control:
+      - private, max-age=0
+      Content-Type:
+      - text/html; charset=utf-8
+      Set-Cookie:
+      - SIDCC=SCRUBBED; expires=Thu, 21-Jan-2027 02:50:20 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 21-Jan-2027 02:50:20 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - DENY
+    status:
+      code: 200
+      message: OK
+version: 1

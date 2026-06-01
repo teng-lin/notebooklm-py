@@ -1,9 +1,11 @@
 # RPC Development Guide
 
 **Status:** Active
-**Last Updated:** 2026-01-20
+**Last Updated:** 2026-05-23
 
 This guide covers everything about NotebookLM's RPC protocol: capturing calls, debugging issues, and implementing new methods.
+
+See also: [Python API Reference](python-api.md)
 
 ---
 
@@ -290,7 +292,7 @@ async def new_method(self, notebook_id: str, param: str) -> SomeResult:
         [2],             # Position 2: Fixed flag
     ]
 
-    result = await self._core.rpc_call(
+    result = await self._rpc.rpc_call(
         RPCMethod.NEW_METHOD,
         params,
         source_path=f"/notebook/{notebook_id}",
@@ -320,7 +322,7 @@ class SomeResult:
 def test_encode_new_method():
     params = ["value", "notebook_id", [2]]
     result = encode_rpc_request(RPCMethod.NEW_METHOD, params)
-    assert "AbCdEf" in result
+    assert result[0][0][0] == "AbCdEf"
 ```
 
 **Integration test** (`tests/integration/`):
@@ -328,7 +330,7 @@ def test_encode_new_method():
 @pytest.mark.asyncio
 async def test_new_method(mock_client):
     mock_response = ["result_id", "Result Title"]
-    with patch('notebooklm._core.ClientCore.rpc_call', new_callable=AsyncMock) as mock:
+    with patch('notebooklm._rpc_executor.RpcExecutor.rpc_call', new_callable=AsyncMock) as mock:
         mock.return_value = mock_response
         result = await mock_client.some_api.new_method("nb_id", "param")
         assert result.id == "result_id"
@@ -392,10 +394,10 @@ Some methods require `source_path` for routing:
 
 ```python
 # May fail without source_path
-await self._core.rpc_call(RPCMethod.X, params)
+await self._rpc.rpc_call(RPCMethod.X, params)
 
 # Correct
-await self._core.rpc_call(
+await self._rpc.rpc_call(
     RPCMethod.X,
     params,
     source_path=f"/notebook/{notebook_id}",
@@ -407,7 +409,7 @@ await self._core.rpc_call(
 API returns nested arrays. Print raw response first:
 
 ```python
-result = await self._core.rpc_call(...)
+result = await self._rpc.rpc_call(...)
 print(f"DEBUG: {result}")  # See actual structure
 ```
 
@@ -469,10 +471,47 @@ Document:
 ```python
 async def validate_rpc_call(rpc_id: str, params: list, expected_action: str):
     from notebooklm import NotebookLMClient
+    from notebooklm.rpc import RPCMethod
 
-    async with await NotebookLMClient.from_storage() as client:
-        result = await client._rpc_call(RPCMethod(rpc_id), params)
+    async with NotebookLMClient.from_storage() as client:
+        result = await client.rpc_call(RPCMethod(rpc_id), params)
 
     assert result is not None, f"RPC {rpc_id} returned None"
     return {"rpc_id": rpc_id, "action": expected_action, "status": "verified"}
 ```
+
+## RPC Health Check Triage Policy
+
+The `rpc-health.yml` workflow runs daily for `main` (07:00 UTC). Release branch
+health checks are manual via `custom_branch=release/vX.Y.Z`. The workflow opens
+an issue on any detected RPC ID mismatch, auth failure, or non-transient RPC
+error:
+
+- **RPC ID mismatch** issues (exit code 1): labeled `bug, rpc-breakage, automated`.
+- **Auth failure** issues (exit code 2): labeled `bug, automated` (no `rpc-breakage`
+  label — auth is an operational concern, not a protocol break).
+- **Non-transient ERROR detected** issues (exit code 3): labeled `rpc-error, bug,
+  automated`. Opened when `check_rpc_health.py` surfaces failures that survive
+  the rate-limit / `RESOURCE_EXHAUSTED` filter (timeouts, parse failures,
+  unexpected HTTP errors). The issue body lists the affected method IDs
+  extracted from the report, so triage can start without re-running the check.
+  See the `Extract failing methods for ERROR issue` step in
+  `.github/workflows/rpc-health.yml` for the body-assembly logic.
+
+Routing:
+
+- **Maintainer assignment**: Issues land in the `teng-lin/notebooklm-py`
+  default issue inbox. The maintainer triages within 24 hours during business
+  days. (No auto-assignee — the project has a single maintainer and
+  auto-assignment adds noise.)
+- **Acknowledged-but-deferred**: If an upstream RPC change is observed but
+  the library still functions for the majority of users (e.g., one optional
+  field renamed), the maintainer closes the issue with the `acknowledged`
+  label and links the PR that resolves it.
+- **Notifying users**: If the breakage affects an RPC most users invoke
+  (e.g., `LIST_NOTEBOOKS`, `CREATE_NOTEBOOK`), the maintainer additionally
+  files a release-note draft + pins the issue.
+
+If you see an `rpc-breakage` issue sitting unattended for >7 days, ping the
+maintainer in a comment — it likely fell out of the inbox. The intent of this
+workflow is fast detection, not perpetual auto-noise.

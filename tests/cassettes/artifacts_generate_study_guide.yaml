@@ -1346,9 +1346,7 @@ interactions:
         fill=\"#249A41\"></path><path d=\"M33.49,34.77C37.49,31.12,40,25.85,40,20c0-5.86-2.52-11.13-6.54-14.79l-1.37,1.46C35.72,9.97,38,14.72,38,20c0,5.25-2.26,9.98-5.85,13.27L33.49,34.77z\"
         fill=\"#3174F1\"></path><path d=\"M20,2c4.65,0,8.89,1.77,12.09,4.67l1.37-1.46C29.91,1.97,25.19,0,20,0l0,0C12.21,0,5.46,4.46,2.16,10.96L3.88,12C6.83,6.08,12.95,2,20,2\"
         fill=\"#E92D18\"></path></svg></div><span class=\"gb_be\"><img class=\"gb_Q
-        gbii\" src=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s32-c-mo\"
-        srcset=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s32-c-mo
-        1x, https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s64-c-mo
+        gbii\" src=\"SCRUBBED_AVATAR_URL\" srcset=\"SCRUBBED_AVATAR_URL 1x, SCRUBBED_AVATAR_URL
         2x \" alt=\"\" aria-hidden=\"true\" data-noaft=\"\"></span><div class=\"gb_R
         gb_S\" aria-hidden=\"true\"><svg class=\"gb_La\" height=\"14\" viewBox=\"0
         0 14 14\" width=\"14\" xmlns=\"http://www.w3.org/2000/svg\"><circle class=\"gb_Ma\"
@@ -1356,9 +1354,7 @@ interactions:
         2H8V8H6V2Z\"></path></svg></div></a></div><div class=\"gb_Ab gb_ma gb_4 gb_Bb\"
         aria-label=\"Account Information\" aria-hidden=\"true\"><div class=\"gb_Kb\"><div
         class=\"gb_Lb\"><img class=\"gb_nb gbip gb_Pb gb_Sb\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==\"
-        data-src=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s83-c-mo\"
-        data-srcset=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s83-c-mo
-        1x, https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s192-c-mo
+        data-src=\"SCRUBBED_AVATAR_URL\" data-srcset=\"SCRUBBED_AVATAR_URL 1x, SCRUBBED_AVATAR_URL
         2x \" title=\"Profile\" alt=\"\" aria-hidden=\"true\"><div class=\"gb_Hc\"><svg
         height=\"88\" width=\"88\" focusable=\"false\" version=\"1.1\" viewbox=\"0
         0 108 108\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"
@@ -1384,11 +1380,11 @@ interactions:
         gb_ec\"><div class=\"gb_Cf gb_Ic gb_S\"><div class=\"gb_Jc\"></div></div><div
         class=\"gb_zf gb_gc gb_S\" aria-hidden=\"true\"><a class=\"gb_fc gb_pc\" aria-hidden=\"true\"
         href=\"/?authuser=0\" target=\"_blank\"><img class=\"gb_rc gb_Pb\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==\"
-        data-src=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s48-c-mo\"
-        alt=\"\" aria-hidden=\"true\"><div class=\"gb_ic\"><div><div class=\"gb_wc\">Default</div></div><div
-        class=\"gb_tc\">SCRUBBED_NAME</div><div class=\"gb_vc\">SCRUBBED_EMAIL@example.com</div></div></a></div><div
-        class=\"gb_8b\" aria-hidden=\"true\"><svg class=\"gb_9b\" focusable=\"false\"
-        height=\"20\" viewbox=\"0 0 20 20\" width=\"20\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\"
+        data-src=\"SCRUBBED_AVATAR_URL\" alt=\"\" aria-hidden=\"true\"><div class=\"gb_ic\"><div><div
+        class=\"gb_wc\">Default</div></div><div class=\"gb_tc\">SCRUBBED_NAME</div><div
+        class=\"gb_vc\">SCRUBBED_EMAIL@example.com</div></div></a></div><div class=\"gb_8b\"
+        aria-hidden=\"true\"><svg class=\"gb_9b\" focusable=\"false\" height=\"20\"
+        viewbox=\"0 0 20 20\" width=\"20\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\"
         xmlns:xlink=\"http://www.w3.org/1999/xlink\"><path d=\"M0 0h20v20H0V0z\" fill=\"none\"></path><path
         d=\"M6.18 7L10 10.82 13.82 7 15 8.17l-5 5-5-5z\"></path></svg></div><a class=\"gb_yc
         gb_S gb_jc\" href=\"https://myaccount.google.com/brandaccounts?authuser=0&amp;continue=https://notebooklm.google.com/&amp;service=/%3Fauthuser%3D%24authuser%26pageId%3D%24pageId\"
@@ -1585,7 +1581,7 @@ interactions:
     uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
   response:
     body:
-      string: ")]}'\n\n13828\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"GENERATION: Claude Code
+      string: ")]}'\n\n13831\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"GENERATION: Claude Code
         Deep Dive: Skills, Agents, Commands \\\\u0026 Plugins\\\",[[[\\\"45cbeb85-a1ee-42b5-b4a4-888b01393fe9\\\"],\\\"Adding
         Semantic Code Search to Claude Code : r/ClaudeAI - Reddit\\\",[null,3765,[1768174650,66854000],[\\\"31c5c02a-0c6b-427b-b46e-f96059acdfed\\\",[1768174649,762990000]],5,null,2,[\\\"https://www.reddit.com/r/ClaudeAI/comments/1mn0hzd/adding_semantic_code_search_to_claude_code/\\\"]],[null,2]],[[\\\"cd42ebd4-1bec-46f1-8af9-2f3707c5115a\\\"],\\\"Agent
         Skills - Claude Code Docs\\\",[null,3445,[1768174650,66854000],[\\\"1354258c-c0e4-45db-a9d4-937806e1927c\\\",[1768174649,762990000]],5,null,2,[\\\"https://code.claude.com/docs/en/skills\\\"]],[null,2]],[[\\\"20d66b0b-787f-480e-a9c1-6823f7a12d8e\\\"],\\\"Artificial
@@ -1640,7 +1636,7 @@ interactions:
         A Plugin Marketplace for Claude Code - Emergent Minds | paddo.dev\\\",[null,1199,[1768174650,66854000],[\\\"901865a6-be26-4258-821e-64609fbdf859\\\",[1768174649,762990000]],5,null,2,[\\\"https://paddo.dev/blog/claude-tools-plugin-marketplace/\\\"]],[null,2]],[[\\\"539ffb83-2f2e-43f0-8efe-40891ae1ad9e\\\"],\\\"wshobson/agents:
         Intelligent automation and multi-agent ... - GitHub\\\",[null,1948,[1768174650,66854000],[\\\"dd5817ab-df62-4584-9eca-6a0b7f986d9f\\\",[1768174649,762990000]],5,null,2,[\\\"https://github.com/wshobson/agents\\\"]],[null,2]],[[\\\"91a3791b-c3a5-4a95-b7f7-ab832f771858\\\"],\\\"zilliztech/claude-context:
         Code search MCP for Claude Code. Make entire codebase the context for any
-        coding agent. - GitHub\\\",[null,2886,[1768174650,66854000],[\\\"5b98e924-95c2-4c51-8580-19fbdf91e3f6\\\",[1768174649,762990000]],5,null,2,[\\\"https://github.com/zilliztech/claude-context\\\"]],[null,2]]],\\\"f66923f0-1df4-4ffe-9822-3ed63c558b1c\\\",\\\"\U0001F916\\\",null,[1,false,true,null,null,[1768312246,739512000],1,false,[1768174413,819385000],null,null,null,false,true,1,false],null,null,null,[true,true,true],[6,500,300,500000]]]\",null,null,null,\"generic\"]]\n57\n[[\"di\",169],[\"af.httprm\",169,\"4502585993599189848\",10]]\n27\n[[\"e\",4,null,null,13932]]\n"
+        coding agent. - GitHub\\\",[null,2886,[1768174650,66854000],[\\\"5b98e924-95c2-4c51-8580-19fbdf91e3f6\\\",[1768174649,762990000]],5,null,2,[\\\"https://github.com/zilliztech/claude-context\\\"]],[null,2]]],\\\"f66923f0-1df4-4ffe-9822-3ed63c558b1c\\\",\\\"\U0001F916\\\",null,[1,false,true,null,null,[1768312246,739512000],1,false,[1768174413,819385000],null,null,null,false,true,1,false],null,null,null,[true,true,true],[6,500,300,500000]]]\",null,null,null,\"generic\"]]\n55\n[[\"di\",169],[\"af.httprm\",169,\"4502585993599189848\",10]]\n25\n[[\"e\",4,null,null,13932]]\n"
     headers:
       Accept-CH:
       - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
@@ -1733,7 +1729,7 @@ interactions:
       string: ')]}''
 
 
-        4391
+        4389
 
         [["wrb.fr","R7cb6c","[[\"51a3f53e-d65d-44e1-8030-dd5d6950da56\",\"GENERATION:
         Claude Code Deep Dive: Skills, Agents, Commands \\u0026 Plugins\",2,[[[\"45cbeb85-a1ee-42b5-b4a4-888b01393fe9\"]],[[\"cd42ebd4-1bec-46f1-8af9-2f3707c5115a\"]],[[\"20d66b0b-787f-480e-a9c1-6823f7a12d8e\"]],[[\"9d41a4fb-744d-4d22-bb8f-5b4f8b49a467\"]],[[\"8e4b9f83-3c7a-44f7-b771-f76f854d9823\"]],[[\"2f9830fa-920b-48a3-8d8f-864aa435704f\"]],[[\"a0240bda-510d-461a-a0b7-ce8badca4e5a\"]],[[\"2c58820a-912e-4801-8313-9eadd5ccd5e1\"]],[[\"6ad4fced-a87f-42bc-a11f-b92cc700fa5f\"]],[[\"452b831f-c5d0-4b3a-bac4-73dae11e3c61\"]],[[\"99e6776d-16ed-49b6-8fd4-32d6ac5ebc8b\"]],[[\"de1d4079-fa77-47e4-b595-c18d0f13034f\"]],[[\"a04f0e0e-9f65-4a2f-8a3b-c942803f7f6d\"]],[[\"c9df7735-b84c-4d25-8da5-d907d86aa4f9\"]],[[\"62969650-0dff-481c-bba3-8d5fe63e9b31\"]],[[\"11fb3c5c-a7c7-47e1-b6c0-b7aac637f4c6\"]],[[\"26fb689d-5696-4354-814d-dbcb6a486fee\"]],[[\"80411885-3680-42ba-a233-ac770b5f4843\"]],[[\"51c16a20-1423-4491-a49f-735737776dd9\"]],[[\"5d201aca-cc28-4ff9-a439-8de0206b6e48\"]],[[\"c6aa69fc-cb8d-48c3-a75e-c0fd3cb6e3d8\"]],[[\"bce3db69-fb2f-44bf-937c-fa9141c5d960\"]],[[\"4686ccff-3aad-4065-becd-54822b9628d0\"]],[[\"9e4b0d3b-43f8-4746-bede-3bc50669bd8d\"]],[[\"e4190287-453f-40ae-91d7-3060b5c7cacf\"]],[[\"d2474a8a-5e68-46b7-bd50-7dbb7e568025\"]],[[\"531b7fac-0e79-4529-ba50-11b843b356a8\"]],[[\"57723d8f-6741-4af1-a7cb-3c37c59306ba\"]],[[\"1386cbc4-9c12-47b2-bac6-513f16d0b20f\"]],[[\"5808a9af-e419-400c-a1fb-6235cb4835be\"]],[[\"086f7bf2-a336-4c73-aa05-e6c29429fe8e\"]],[[\"a2743380-9b2b-42d0-b57a-b5a8a0edae8d\"]],[[\"5663cdfd-266c-4d46-a37b-fa15fb72dc1d\"]],[[\"a6d18c9a-9b4d-4aa0-852b-a30bcc26dded\"]],[[\"30cefcd0-8d52-40ce-9062-d1ef25c21e88\"]],[[\"49ef2cdd-2e51-423e-b10d-e0179d89abf9\"]],[[\"df4a3c0e-65eb-4201-a459-4ee56328d17a\"]],[[\"69693383-f33d-4e9b-8487-07b50cd56aa9\"]],[[\"e337d69a-a472-4139-abdf-501118183415\"]],[[\"467b7f67-1b66-45fb-8cc7-6c04723f152d\"]],[[\"d6587c53-688e-4fdf-8178-bc6803e674ac\"]],[[\"1a0009fc-12b1-435e-9f78-c61387dd7db8\"]],[[\"539ffb83-2f2e-43f0-8efe-40891ae1ad9e\"]],[[\"91a3791b-c3a5-4a95-b7f7-ab832f771858\"]]],1,null,null,[null,[\"Study
@@ -1742,11 +1738,11 @@ interactions:
         questions, essay prompts for deeper exploration, and a glossary of important
         terms.\",null,true]],null,null,null,null,null,null,null,null,null,null,null,1]]",null,null,null,"generic"]]
 
-        59
+        57
 
         [["di",1940],["af.httprm",1939,"4722701124611537020",10]]
 
-        26
+        24
 
         [["e",4,null,null,4490]]
 

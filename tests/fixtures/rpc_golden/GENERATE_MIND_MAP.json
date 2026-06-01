@@ -1,0 +1,42 @@
+{
+  "method_name": "GENERATE_MIND_MAP",
+  "method_id": "yyryJe",
+  "description": "Generate a mind map from a notebook's selected sources.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      [
+        5
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "yyryJe",
+          "[\"SCRUBBED_NB_001\",[5]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "yyryJe",
+          "[\"SCRUBBED_ARTIFACT_MINDMAP_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_ARTIFACT_MINDMAP_001"
+    ]
+  }
+}

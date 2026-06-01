@@ -45,8 +45,11 @@ class TestArtifactRetrieval:
     @pytest.mark.asyncio
     @pytest.mark.readonly
     async def test_get_artifact_not_found(self, client, read_only_notebook_id):
-        """Test getting a non-existent artifact returns None."""
-        artifact = await client.artifacts.get(read_only_notebook_id, "nonexistent_artifact_id")
+        """Test getting a non-existent artifact returns None (with deprecation)."""
+        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
+        # (flips to raising ArtifactNotFoundError in v0.8.0, issue #1247).
+        with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
+            artifact = await client.artifacts.get(read_only_notebook_id, "nonexistent_artifact_id")
         assert artifact is None
 
 
@@ -168,8 +171,11 @@ class TestArtifactMutations:
     """
 
     @pytest.mark.skip(
-        reason="generation + wait_for_completion exceeds 60s pytest timeout; "
-        "individual operations covered by other tests"
+        reason="Replaced by VCR-based replay in tests/integration/test_polling_vcr.py: "
+        "the live generate + wait_for_completion flow regularly exceeded "
+        "the 60s pytest timeout. The new test records the polling sequence once "
+        "(real wall-clock) and replays it offline with asyncio.sleep monkey-patched "
+        "to a no-op, so the same coverage runs in <2s on every CI build."
     )
     @pytest.mark.asyncio
     async def test_poll_rename_wait(self, client, temp_notebook):
@@ -182,6 +188,13 @@ class TestArtifactMutations:
         4. Rename it and rename back
 
         Uses flashcards (more reliable than quiz for generation).
+
+        .. note::
+            See ``tests/integration/test_polling_vcr.py`` for the cassette-backed
+            replacement that exercises the same flow without the 60s timeout
+            risk. This e2e remains in the file as living documentation of the
+            real-API sequence; rerun it manually if you need to re-record the
+            cassette and want to validate the live flow first.
         """
         # Generate ONE artifact for all operations
         result = await client.artifacts.generate_flashcards(temp_notebook.id)
@@ -239,9 +252,9 @@ class TestArtifactMutations:
 
         await asyncio.sleep(2)
 
-        # Delete it
+        # Delete it (v0.7.0: returns None, idempotent — issue #1211)
         deleted = await client.artifacts.delete(temp_notebook.id, artifact_id)
-        assert deleted is True
+        assert deleted is None
 
         # Verify it's gone
         artifacts = await client.artifacts.list(temp_notebook.id)

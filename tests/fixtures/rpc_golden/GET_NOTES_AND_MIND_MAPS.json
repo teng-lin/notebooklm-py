@@ -1,0 +1,54 @@
+{
+  "method_name": "GET_NOTES_AND_MIND_MAPS",
+  "method_id": "cFji9",
+  "description": "Fetch all notes and mind-maps for a notebook (production shape [notebook_id]).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "cFji9",
+          "[\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "cFji9",
+          "[[[\"SCRUBBED_NOTE_001\",\"Scrubbed Note Title\",\"Scrubbed note body.\",1]],[[\"SCRUBBED_ARTIFACT_MINDMAP_001\",\"Scrubbed Mind Map\",null,5]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "SCRUBBED_NOTE_001",
+          "Scrubbed Note Title",
+          "Scrubbed note body.",
+          1
+        ]
+      ],
+      [
+        [
+          "SCRUBBED_ARTIFACT_MINDMAP_001",
+          "Scrubbed Mind Map",
+          null,
+          5
+        ]
+      ]
+    ]
+  }
+}

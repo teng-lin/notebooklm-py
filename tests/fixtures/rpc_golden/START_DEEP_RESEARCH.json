@@ -1,0 +1,41 @@
+{
+  "method_name": "START_DEEP_RESEARCH",
+  "method_id": "QA9ei",
+  "description": "Start a deep (long-running) research task on a notebook.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      "Scrubbed deep research prompt.",
+      null
+    ],
+    "expected_f_req": [
+      [
+        [
+          "QA9ei",
+          "[\"SCRUBBED_NB_001\",\"Scrubbed deep research prompt.\",null]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "QA9ei",
+          "[\"SCRUBBED_RESEARCH_002\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_RESEARCH_002"
+    ]
+  }
+}

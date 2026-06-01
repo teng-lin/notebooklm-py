@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 **Status:** Active
-**Last Updated:** 2026-03-13
+**Last Updated:** 2026-05-09
 
 ## Project Structure & Module Organization
 
@@ -9,13 +9,16 @@
 
 ## Build, Test, and Development Commands
 
-Use `uv` for local work:
+Canonical contributor install (full guide: [docs/installation.md](docs/installation.md)):
 
 ```bash
-uv sync --extra dev --extra browser
+uv sync --frozen --extra browser --extra dev --extra markdown
+source .venv/bin/activate
+uv run playwright install chromium
 uv run pytest
-uv run ruff check src/ tests/
-uv run ruff format src/ tests/
+uv run pytest -n auto --dist=worksteal  # optional faster local run
+uv run ruff check .
+uv run ruff format .
 uv run mypy src/notebooklm
 uv run pre-commit run --all-files
 ```
@@ -28,8 +31,14 @@ Target Python 3.10+, 4-space indentation, and double quotes. Ruff enforces forma
 
 ## Testing Guidelines
 
-Put pure logic in `tests/unit/`, VCR-backed flows in `tests/integration/`, and authenticated NotebookLM coverage in `tests/e2e/`. Name tests `test_<behavior>.py` and record cassettes with `NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/test_vcr_*.py -v`. Coverage is expected to stay at or above the configured 90% threshold.
+Put pure logic in `tests/unit/`, VCR-backed flows in `tests/integration/`, and authenticated NotebookLM coverage in `tests/e2e/`. Name tests `test_<behavior>.py` and record cassettes with `NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/ -v` (the integration suite uses `vcrpy` throughout — there is no `test_vcr_*.py` glob). Coverage is expected to stay at or above the configured 90% threshold.
 
 ## Commit, PR, and Agent Notes
 
-Follow the existing commit style: `feat(cli): ...`, `fix(cli): ...`, `refactor(test): ...`, `style: ...`. PRs should include a short summary, linked issue when relevant, and the commands run locally. For Codex or other parallel agents, prefer `--json`, pass explicit notebook IDs instead of relying on `notebooklm use`, and isolate runs with `NOTEBOOKLM_HOME=/tmp/<agent-id>` when multiple agents share one machine.
+Follow the existing commit style: `feat(cli): ...`, `fix(cli): ...`, `refactor(test): ...`, `style: ...`. PRs should include a short summary, linked issue when relevant, and the commands run locally.
+
+For Codex or other parallel agents:
+
+- Prefer `--json` output and pass explicit notebook IDs instead of relying on `notebooklm use`.
+- Isolate concurrent runs with `NOTEBOOKLM_PROFILE=agent-<id>` so each agent gets its own context file under `~/.notebooklm/profiles/<name>/`. Fall back to `NOTEBOOKLM_HOME=/tmp/agent-<id>` only when separate home directories are required.
+- In headless environments where Playwright login is impractical, authenticate with `notebooklm login --browser-cookies <browser>` (requires `pip install "notebooklm-py[cookies]"`).

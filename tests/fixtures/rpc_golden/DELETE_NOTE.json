@@ -1,0 +1,41 @@
+{
+  "method_name": "DELETE_NOTE",
+  "method_id": "AH0mwd",
+  "description": "Delete a note by id (production shape [notebook_id, None, [note_id]]).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      null,
+      [
+        "SCRUBBED_NOTE_001"
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "AH0mwd",
+          "[\"SCRUBBED_NB_001\",null,[\"SCRUBBED_NOTE_001\"]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "AH0mwd",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

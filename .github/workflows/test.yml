@@ -10,12 +10,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -23,19 +28,67 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[all]"
+      run: uv sync --frozen --extra browser --extra dev --extra markdown
 
     - name: Run pre-commit checks
-      run: pre-commit run --all-files
+      run: uv run pre-commit run --all-files
 
     - name: Run type checking
-      run: mypy src/notebooklm --ignore-missing-imports
+      run: uv run mypy src/notebooklm --ignore-missing-imports
+
+    - name: Assert workflow permissions are scoped
+      run: uv run python scripts/check_workflow_permissions.py
+
+    - name: Assert workflow secret-bearing jobs are gated
+      # Companion to the permissions check: prevents a new
+      # ``${{ secrets.NAME }}`` reference from landing without picking up
+      # a job-level ``environment:`` declaration or a step-level
+      # ``is_standard`` guard. See docs/development.md →
+      # "Workflow secret gates".
+      run: uv run python scripts/check_workflow_secret_gates.py
+
+    - name: Assert third-party actions in privileged workflows are SHA-pinned
+      # Supply-chain gate: every third-party action (non ``actions/*``) in
+      # publish / testpypi-publish / claude / rpc-health / nightly /
+      # verify-package must use a 40-char commit SHA, not a floating
+      # ``@v1`` / ``@release/v1`` / branch ref. Dependabot bumps the
+      # SHAs weekly via the grouped ``actions`` updates in
+      # ``.github/dependabot.yml``.
+      run: uv run python scripts/check_action_pinning.py
+
+    - name: Assert no deprecation targets the shipping version
+      # Release gate: a DeprecationWarning must never name the version in
+      # pyproject.toml as its removal target. Lapsed shims are allowlisted
+      # inside the script with a tracking issue.
+      run: uv run python scripts/check_deprecation_targets.py
+
+    - name: Assert coverage thresholds match
+      run: uv run python scripts/check_coverage_thresholds.py
+
+    - name: Assert CI install matches CONTRIBUTING.md
+      run: uv run python scripts/check_ci_install_parity.py
+
+    - name: Assert CLAUDE.md paths are fresh
+      run: uv run python scripts/check_claude_md_freshness.py
+
+    - name: Audit public API compatibility
+      run: uv run python scripts/audit_public_api_compat.py
+
+    - name: Assert per-method RPC coverage
+      # Static check: each RPCMethod member must have at least one test
+      # reference AND at least one cassette body containing its RPC id.
+      # Pre-existing gaps are grandfathered via PREEXISTING_GAPS inside the
+      # script — that set is a one-way ratchet and must not grow.
+      run: uv run python tests/scripts/check_method_coverage.py
 
     - name: Verify e2e test fixtures
-      run: pytest tests/e2e --collect-only -q
+      run: uv run pytest tests/e2e --collect-only -q
 
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -46,6 +99,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    env:
+      # Pin Playwright's browser install dir to a single workspace-relative
+      # path on every OS. The previous dual-path cache stanza (``~/.cache``
+      # + ``~/AppData/Local``) intermittently failed the cache restore on
+      # Windows with ``actions/cache@v5`` — the missing Linux path tripped
+      # the post-restore validation on a cache hit. Pinning the path here
+      # lets the cache stanza below carry exactly one entry on every OS.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
     steps:
     - uses: actions/checkout@v6
@@ -56,31 +117,81 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[all]"
+      run: uv sync --frozen --extra browser --extra dev --extra markdown
 
     - name: Get Playwright version
       id: playwright-version
       shell: bash
       run: |
-        echo "version=$(pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        echo "version=$(uv pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
       uses: actions/cache@v5
+      # Tolerate transient cache-backend failures: a miss already falls
+      # through to the install step below, and a backend hiccup should be
+      # treated the same. Without this, a 29s backend flake on a single
+      # matrix entry hard-fails the job and skips the entire test run.
+      continue-on-error: true
       with:
-        path: |
-          ~/.cache/ms-playwright
-          ~/AppData/Local/ms-playwright
-        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}
+        path: ${{ github.workspace }}/.playwright-browsers
+        # ``-ws`` suffix invalidates archives keyed to the prior dual-path
+        # stanza so first restores after this change land on the new path.
+        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}-ws
 
     - name: Install Playwright browsers
-      run: playwright install chromium
+      run: uv run playwright install chromium
 
     - name: Install Playwright system dependencies (Linux)
       if: runner.os == 'Linux'
-      run: playwright install-deps
+      shell: bash
+      run: |
+        if ! timeout 180s uv run playwright install-deps chromium; then
+          echo "::warning::Playwright system dependency installation timed out or failed."
+          echo "::warning::Continuing so the non-browser test matrix can run."
+        fi
+
+    - name: Assert cassettes are sanitized
+      # Runs on all matrix entries (ubuntu, macos, windows × 5 Python versions).
+      # An earlier bash-only gate was replaced by a portable Python invocation
+      # so the check runs uniformly across the cross-platform test matrix.
+      #
+      # ``--strict`` flips the repair-allowlist from "best-effort suppressor"
+      # to "must be empty" — the phase-2 cassette cleanup is done, so any
+      # entry sneaking back in is a CI failure (P1-5).
+      # ``--recursive`` extends the scan from ``tests/cassettes/*.yaml`` to
+      # ``tests/cassettes/**/*.yaml`` so a recorder can't smuggle a leak
+      # into a nested folder like ``tests/cassettes/gzip_coverage/`` (P1-5).
+      run: uv run python tests/scripts/check_cassettes_clean.py --strict --recursive
+
+    - name: Check fixtures for credential leaks
+      # The cassette guard above is scoped to ``tests/cassettes/*.yaml``. Golden
+      # RPC fixtures live under ``tests/fixtures/`` as ``.json`` (and one
+      # captured ``.html`` page), which embed the same WIZ_global_data shapes —
+      # a Google API key smuggled into a golden HTML fixture would otherwise
+      # slip past CI entirely (the GET_INTERACTIVE_HTML.json class). ``--secrets
+      # -only`` scans .json/.html/.yaml for high-severity credential shapes
+      # (Google auth tokens + API keys) without tripping on the intentional
+      # placeholder content (``"Scrubbed ..."`` names, test emails) that fills
+      # those fixtures.
+      run: uv run python tests/scripts/check_cassettes_clean.py --secrets-only --recursive tests/fixtures
 
     - name: Run tests with coverage
-      run: pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=70
+      # Emit coverage.json so the per-file floor check below can read it
+      # without re-running the suite. ``term-missing`` is kept so build logs
+      # still show the missing-lines summary.
+      run: uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90
+
+    - name: Assert per-file coverage floors
+      # Linux-only because ``coverage.json`` on Windows records backslash
+      # paths (e.g. ``src\notebooklm\cli\doctor.py``) that won't match the
+      # forward-slash keys in ``[tool.notebooklm.per_file_coverage_floors]``
+      # in pyproject.toml. macOS uses forward slashes and would also work,
+      # but a single OS is enough — the floors are platform-independent.
+      if: runner.os == 'Linux'
+      run: uv run python scripts/check_coverage_thresholds.py --coverage-json coverage.json

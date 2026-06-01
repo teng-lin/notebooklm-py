@@ -4,6 +4,7 @@ These tests use VCR cassettes with real NotebookLMClient instances,
 exercising the full CLI → Client → RPC path without mocking the client.
 """
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -15,7 +16,7 @@ from click.testing import CliRunner
 # Add tests directory to path for vcr_config import
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from integration.conftest import skip_no_cassettes  # noqa: E402
+from integration.conftest import _is_vcr_record_mode, skip_no_cassettes  # noqa: E402
 from vcr_config import notebooklm_vcr  # noqa: E402
 
 # Re-export for use by test files
@@ -26,7 +27,12 @@ __all__ = [
     "notebooklm_vcr",
     "assert_command_success",
     "parse_json_output",
+    "VCR_READONLY_NOTEBOOK_ID",
+    "VCR_READONLY_SOURCE_ID",
 ]
+
+VCR_READONLY_NOTEBOOK_ID = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
+VCR_READONLY_SOURCE_ID = "fdfc8ac4-3237-4f2a-8a79-3e24297a7040"
 
 
 @pytest.fixture
@@ -40,12 +46,19 @@ def mock_context(tmp_path: Path):
     """Mock context file with a test notebook ID.
 
     CLI commands that require a notebook ID will use this context.
-    The notebook ID doesn't matter for VCR replay - cassettes have recorded responses.
+    Use a full recorded notebook UUID rather than a short placeholder. A
+    placeholder is treated as a partial ID by the CLI and triggers an extra
+    LIST_NOTEBOOKS RPC before the command under test, which breaks replay now
+    that VCR matches batchexecute calls by ``rpcids``.
     """
     context_file = tmp_path / "context.json"
-    context_file.write_text(json.dumps({"notebook_id": "test_notebook_id"}))
+    context_file.write_text(json.dumps({"notebook_id": VCR_READONLY_NOTEBOOK_ID}))
 
-    with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+    with (
+        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+    ):
         yield context_file
 
 
@@ -53,9 +66,26 @@ def mock_context(tmp_path: Path):
 def mock_auth_for_vcr():
     """Mock authentication that works with VCR cassettes.
 
-    VCR replays recorded responses regardless of auth tokens,
-    so we use mock auth to avoid requiring real credentials.
+    VCR replays recorded responses regardless of auth tokens, so we use mock
+    auth to avoid requiring real credentials.
+
+    The layer-1 ``RotateCookies`` keepalive-poke disable that used to live
+    here (``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1``) was globalized —
+    see the ``_disable_keepalive_poke_for_vcr`` autouse fixture in
+    ``tests/integration/conftest.py``. Every test that pulls this fixture
+    also carries ``@pytest.mark.vcr`` (either directly or via a module-level
+    ``pytestmark``), so the global autouse already disables the poke before
+    this fixture runs.
+
+    Recording (``NOTEBOOKLM_VCR_RECORD=1``) is the exception: the CLI must load
+    the *real* profile's cookies/tokens to reach the live API, so the mock is
+    skipped. The root ``_isolate_notebooklm_home`` fixture likewise defers to
+    the real ``~/.notebooklm`` for vcr tests in record mode, so the normal
+    ``load_auth_from_storage`` path resolves real auth (issue #1263).
     """
+    if _is_vcr_record_mode():
+        yield
+        return
     mock_cookies = {
         "SID": "vcr_mock_sid",
         "HSID": "vcr_mock_hsid",
@@ -66,7 +96,7 @@ def mock_auth_for_vcr():
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage", return_value=mock_cookies),
         patch(
-            "notebooklm.cli.helpers.fetch_tokens",
+            "notebooklm.auth.fetch_tokens_with_domains",
             return_value=("vcr_mock_csrf", "vcr_mock_session"),
         ),
     ):
@@ -114,3 +144,20 @@ def parse_json_output(output: str) -> list | dict | None:
             continue
 
     return None
+
+
+@pytest.fixture
+def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Monkey-patch ``asyncio.sleep`` to an immediate no-op.
+
+    Async generate flows (e.g. interactive mind maps) poll
+    ``LIST_ARTIFACTS`` with ``await asyncio.sleep(interval)`` backoff between
+    attempts. During cassette replay the cassette already encodes the server
+    progression, so the waits add only wall-clock time. Narrow on purpose:
+    only ``asyncio.sleep`` is patched. Mirrors ``test_polling_vcr.fast_sleep``.
+    """
+
+    async def instant_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", instant_sleep)

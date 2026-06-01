@@ -7,7 +7,13 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
+from .conftest import (
+    VCR_READONLY_SOURCE_ID,
+    assert_command_success,
+    notebooklm_vcr,
+    parse_json_output,
+    skip_no_cassettes,
+)
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -76,7 +82,7 @@ class TestSourceContentCommands:
     def test_source_content(self, runner, mock_auth_for_vcr, mock_context, command, cassette):
         """Get source content works with real client."""
         with notebooklm_vcr.use_cassette(cassette):
-            result = runner.invoke(cli, ["source", command, "test_source_id"])
+            result = runner.invoke(cli, ["source", command, VCR_READONLY_SOURCE_ID])
             assert_command_success(result)
 
 

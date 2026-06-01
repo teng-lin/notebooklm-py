@@ -1,0 +1,44 @@
+{
+  "method_name": "GET_SHARE_STATUS",
+  "method_id": "JFMDGd",
+  "description": "Get notebook share settings (production shape [notebook_id, [2]]).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "JFMDGd",
+          "[\"SCRUBBED_NB_001\",[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "JFMDGd",
+          "[1,0,[]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      1,
+      0,
+      []
+    ]
+  }
+}

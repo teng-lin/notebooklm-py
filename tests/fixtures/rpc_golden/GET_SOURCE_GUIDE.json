@@ -1,0 +1,39 @@
+{
+  "method_name": "GET_SOURCE_GUIDE",
+  "method_id": "tr032e",
+  "description": "Fetch the auto-generated source-guide for a notebook.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "tr032e",
+          "[\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "tr032e",
+          "[\"Scrubbed source-guide markdown.\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "Scrubbed source-guide markdown."
+    ]
+  }
+}

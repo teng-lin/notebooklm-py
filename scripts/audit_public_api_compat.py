@@ -1,0 +1,739 @@
+"""Audit public API compatibility against a previous release tag.
+
+This is a release gate, not a replacement for unit tests. It compares the
+runtime public surface in this checkout against a baseline git ref (by default
+the latest reachable tag) and reports unapproved removals or call-signature
+changes.
+
+Usage:
+    uv run python scripts/audit_public_api_compat.py
+    uv run python scripts/audit_public_api_compat.py --baseline-ref v0.4.1
+    uv run python scripts/audit_public_api_compat.py --json
+
+Exit codes:
+    0  No unapproved compatibility breaks.
+    1  Unapproved public API breakage detected.
+    2  Script/setup error, bad baseline ref, or import/introspection failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tarfile
+import tempfile
+import textwrap
+from dataclasses import asdict, dataclass
+from fnmatch import fnmatchcase
+from pathlib import Path
+from typing import Any
+
+PUBLIC_PACKAGE = "notebooklm"
+DEFAULT_ALLOWLIST = "scripts/api-compat-allowlist.json"
+EXCLUDED_TOP_LEVEL_MODULES = {"__main__", "notebooklm_cli"}
+EXTRA_PUBLIC_PACKAGES = ("rpc",)
+CLIENT_NAMESPACE_ATTRIBUTES = (
+    "artifacts",
+    "chat",
+    "notes",
+    "notebooks",
+    "research",
+    "settings",
+    "sharing",
+    "sources",
+)
+
+
+@dataclass(frozen=True)
+class ApiBreak:
+    """A backward-incompatible public surface change."""
+
+    code: str
+    object: str
+    detail: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.code}:{self.object}"
+
+
+@dataclass(frozen=True)
+class Allowance:
+    """A reviewed compatibility break that is allowed for this release."""
+
+    code: str
+    object: str
+    reason: str
+
+    def matches(self, breakage: ApiBreak) -> bool:
+        # These are fnmatch globs, so "*" can cross dots. Keep release
+        # allowlists exact unless a broad match is intentional.
+        return fnmatchcase(breakage.code, self.code) and fnmatchcase(
+            breakage.object,
+            self.object,
+        )
+
+
+def _run_git(args: list[str], cwd: Path, *, capture: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=capture,
+        text=False,
+        check=False,
+    )
+
+
+def latest_release_tag(repo_root: Path) -> str:
+    """Return the latest reachable version tag."""
+    result = _run_git(["describe", "--tags", "--abbrev=0"], repo_root)
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(
+            "could not resolve latest tag: "
+            f"{stderr.strip()}. Fetch tags/history or pass --baseline-ref explicitly."
+        )
+    return result.stdout.decode("utf-8").strip()
+
+
+def export_git_ref(repo_root: Path, ref: str, destination: Path) -> Path:
+    """Extract ``ref`` into ``destination`` and return the extracted repo path."""
+    result = _run_git(["archive", "--format=tar", ref], repo_root)
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(f"could not archive baseline ref {ref!r}: {stderr.strip()}")
+
+    destination.mkdir(parents=True, exist_ok=True)
+    archive_path = destination / "baseline.tar"
+    archive_path.write_bytes(result.stdout)
+    source_root = destination / "baseline"
+    source_root.mkdir()
+    with tarfile.open(archive_path) as archive:
+        archive.extractall(source_root, filter="data")
+    return source_root
+
+
+_COLLECTOR = r"""
+from __future__ import annotations
+
+import dataclasses
+import enum
+import importlib
+import inspect
+import json
+import pathlib
+import sys
+import warnings
+
+ROOT = pathlib.Path(sys.argv[1]).resolve()
+EXTRA_PUBLIC_NAMES = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+CLIENT_NAMESPACE_ATTRIBUTES = set(json.loads(sys.argv[3])) if len(sys.argv) > 3 else set()
+PKG = sys.argv[4]
+EXCLUDED = set(json.loads(sys.argv[5]))
+EXTRA_PACKAGES = tuple(json.loads(sys.argv[6]))
+
+
+def discover_modules() -> list[str]:
+    package_dir = ROOT / "src" / PKG
+    modules = {PKG}
+    if package_dir.is_dir():
+        for path in package_dir.glob("*.py"):
+            stem = path.stem
+            if stem.startswith("_") or stem in EXCLUDED:
+                continue
+            modules.add(f"{PKG}.{stem}")
+        for name in EXTRA_PACKAGES:
+            if (package_dir / name / "__init__.py").is_file():
+                modules.add(f"{PKG}.{name}")
+    return sorted(modules)
+
+
+def signature_payload(obj):
+    try:
+        sig = inspect.signature(obj)
+    except (TypeError, ValueError):
+        return None
+    params = []
+    for param in sig.parameters.values():
+        params.append(
+            {
+                "name": param.name,
+                "kind": param.kind.name,
+                "has_default": param.default is not inspect.Parameter.empty,
+                "default_repr": None
+                if param.default is inspect.Parameter.empty
+                else repr(param.default),
+            }
+        )
+    return {"text": str(sig), "parameters": params}
+
+
+def kind_of(obj) -> str:
+    if inspect.isclass(obj):
+        if issubclass(obj, enum.Enum):
+            return "enum"
+        return "class"
+    if inspect.isfunction(obj) or inspect.ismethod(obj) or inspect.iscoroutinefunction(obj):
+        return "function"
+    if inspect.ismodule(obj):
+        return "module"
+    return type(obj).__name__
+
+
+def unwrap_member(obj):
+    if isinstance(obj, (staticmethod, classmethod)):
+        return obj.__func__
+    if isinstance(obj, property):
+        return obj.fget
+    return obj
+
+
+def member_kind(obj) -> str:
+    if isinstance(obj, property):
+        return "property"
+    unwrapped = unwrap_member(obj)
+    if inspect.isfunction(unwrapped) or inspect.ismethod(unwrapped):
+        return "method"
+    if inspect.isclass(unwrapped):
+        return "class"
+    return type(obj).__name__
+
+
+def collect_class(cls) -> dict:
+    payload = {
+        "kind": kind_of(cls),
+        "signature": signature_payload(cls),
+        "members": {},
+        "enum_members": {},
+    }
+    enum_member_names = set(cls.__members__) if issubclass(cls, enum.Enum) else set()
+    if issubclass(cls, enum.Enum):
+        payload["enum_members"] = {name: member.value for name, member in cls.__members__.items()}
+    if dataclasses.is_dataclass(cls):
+        for field in dataclasses.fields(cls):
+            payload["members"][field.name] = {
+                "kind": "dataclass-field",
+                "signature": None,
+            }
+    for base in reversed(cls.__mro__):
+        if base is object:
+            continue
+        if not getattr(base, "__module__", "").startswith(PKG):
+            continue
+        for name, raw in vars(base).items():
+            if name.startswith("_"):
+                continue
+            if name in enum_member_names:
+                continue
+            if name in payload["members"]:
+                continue
+            target = unwrap_member(raw)
+            payload["members"][name] = {
+                "kind": member_kind(raw),
+                "signature": signature_payload(target),
+            }
+    if cls.__module__ == f"{PKG}.client" and cls.__name__ == "NotebookLMClient":
+        from notebooklm.auth import AuthTokens
+
+        instance = cls(
+            AuthTokens(
+                cookies={"SID": "compat-audit"},
+                csrf_token="compat-audit",
+                session_id="compat-audit",
+            )
+        )
+        for name in vars(instance):
+            if not name.startswith("_"):
+                payload["members"].setdefault(
+                    name,
+                    {
+                        "kind": "instance-attribute",
+                        "signature": None,
+                    },
+                )
+                if name not in CLIENT_NAMESPACE_ATTRIBUTES:
+                    continue
+                subclient = getattr(instance, name)
+                for base in reversed(type(subclient).__mro__):
+                    if base is object:
+                        continue
+                    if not getattr(base, "__module__", "").startswith(PKG):
+                        continue
+                    for child_name, raw in vars(base).items():
+                        if child_name.startswith("_"):
+                            continue
+                        target = unwrap_member(raw)
+                        payload["members"][f"{name}.{child_name}"] = {
+                            "kind": member_kind(raw),
+                            "signature": signature_payload(target),
+                        }
+    return payload
+
+
+def collect_module(module_name: str) -> dict:
+    module = importlib.import_module(module_name)
+    all_names = list(getattr(module, "__all__", []))
+    extra_names = list(EXTRA_PUBLIC_NAMES.get(module_name, []))
+    names = []
+    for name in [*all_names, *extra_names]:
+        if name not in names:
+            names.append(name)
+    payload = {"exports": {}, "has_all": hasattr(module, "__all__")}
+    for name in names:
+        try:
+            value = getattr(module, name)
+        except AttributeError:
+            if name in extra_names and name not in all_names:
+                continue
+            raise
+        entry = {
+            "kind": kind_of(value),
+            "signature": signature_payload(value)
+            if (
+                inspect.isfunction(value)
+                or inspect.ismethod(value)
+                or inspect.iscoroutinefunction(value)
+            )
+            else None,
+        }
+        if inspect.isclass(value):
+            entry.update(collect_class(value))
+        payload["exports"][name] = entry
+    return payload
+
+
+def main() -> None:
+    sys.path.insert(0, str(ROOT / "src"))
+    warnings.simplefilter("ignore", DeprecationWarning)
+    modules = discover_modules()
+    manifest = {"modules": {}}
+    errors = []
+    for module_name in modules:
+        try:
+            manifest["modules"][module_name] = collect_module(module_name)
+        except Exception as exc:
+            errors.append(f"{module_name}: {type(exc).__name__}: {exc}")
+    if errors:
+        print(json.dumps({"errors": errors}, sort_keys=True))
+        raise SystemExit(2)
+    print(json.dumps(manifest, sort_keys=True))
+
+
+main()
+"""
+
+
+def collect_manifest(
+    source_root: Path,
+    extra_public_names: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Run the collector in a clean Python process for ``source_root``."""
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    pythonpath = str(source_root / "src")
+    if existing_pythonpath:
+        pythonpath = pythonpath + os.pathsep + existing_pythonpath
+    env["PYTHONPATH"] = pythonpath
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _COLLECTOR,
+            str(source_root),
+            json.dumps(extra_public_names or {}, sort_keys=True),
+            json.dumps(CLIENT_NAMESPACE_ATTRIBUTES),
+            PUBLIC_PACKAGE,
+            json.dumps(sorted(EXCLUDED_TOP_LEVEL_MODULES)),
+            json.dumps(EXTRA_PUBLIC_PACKAGES),
+        ],
+        cwd=source_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip()
+        if result.stdout.strip():
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                pass
+            else:
+                errors = payload.get("errors") if isinstance(payload, dict) else None
+                if isinstance(errors, list):
+                    message = "; ".join(str(error) for error in errors)
+        raise RuntimeError(f"public API collection failed for {source_root}: {message}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"public API collection returned invalid JSON for {source_root}: {exc}"
+        ) from exc
+
+
+def _has_kind(params: list[dict[str, Any]], kind: str) -> bool:
+    return any(param["kind"] == kind for param in params)
+
+
+def _accepts_keyword(param: dict[str, Any]) -> bool:
+    return param["kind"] in {"POSITIONAL_OR_KEYWORD", "KEYWORD_ONLY", "VAR_KEYWORD"}
+
+
+def _accepts_positional(param: dict[str, Any]) -> bool:
+    return param["kind"] in {
+        "POSITIONAL_ONLY",
+        "POSITIONAL_OR_KEYWORD",
+        "VAR_POSITIONAL",
+    }
+
+
+def _signature_breakage(old: dict[str, Any] | None, new: dict[str, Any] | None) -> str | None:
+    """Return a short incompatibility reason, or ``None`` when old calls still fit."""
+    if old is None or new is None:
+        if old != new:
+            return f"signature changed from {old!r} to {new!r}"
+        return None
+
+    old_params = old["parameters"]
+    new_params = new["parameters"]
+    old_by_name = {param["name"]: param for param in old_params}
+    new_by_name = {param["name"]: param for param in new_params}
+    new_has_var_keyword = _has_kind(new_params, "VAR_KEYWORD")
+    new_has_var_positional = _has_kind(new_params, "VAR_POSITIONAL")
+
+    for old_param in old_params:
+        kind = old_param["kind"]
+        name = old_param["name"]
+        if kind == "VAR_POSITIONAL" and not new_has_var_positional:
+            return f"old signature accepted *{name}, new signature does not"
+        if kind == "VAR_KEYWORD" and not new_has_var_keyword:
+            return f"old signature accepted **{name}, new signature does not"
+        if _accepts_keyword(old_param):
+            new_param = new_by_name.get(name)
+            if new_param is None:
+                if not new_has_var_keyword:
+                    return f"keyword parameter {name!r} was removed"
+                continue
+            if not _accepts_keyword(new_param):
+                return f"parameter {name!r} no longer accepts keyword calls"
+            if old_param["has_default"] and not new_param["has_default"]:
+                return f"optional parameter {name!r} became required"
+            if (
+                old_param["has_default"]
+                and new_param["has_default"]
+                and old_param.get("default_repr") != new_param.get("default_repr")
+            ):
+                return (
+                    f"default for parameter {name!r} changed from "
+                    f"{old_param.get('default_repr')} to {new_param.get('default_repr')}"
+                )
+
+    old_positional = [param for param in old_params if _accepts_positional(param)]
+    new_positional = [param for param in new_params if _accepts_positional(param)]
+    if not new_has_var_positional and len(new_positional) < len(old_positional):
+        return (
+            f"new signature accepts only {len(new_positional)} positional argument(s); "
+            f"old accepted {len(old_positional)}"
+        )
+
+    old_fixed_positional = [param for param in old_positional if param["kind"] != "VAR_POSITIONAL"]
+    new_fixed_positional = [param for param in new_positional if param["kind"] != "VAR_POSITIONAL"]
+    new_fixed_names = [param["name"] for param in new_fixed_positional]
+    for index, old_param in enumerate(old_fixed_positional):
+        if index >= len(new_fixed_positional):
+            break
+        old_name = old_param["name"]
+        new_name = new_fixed_positional[index]["name"]
+        if old_name == new_name:
+            continue
+        if old_name in new_fixed_names:
+            new_index = new_fixed_names.index(old_name)
+            return (
+                f"positional parameter {old_name!r} moved from position "
+                f"{index + 1} to {new_index + 1}"
+            )
+        return (
+            f"positional parameter {old_name!r} was replaced at position "
+            f"{index + 1} by {new_name!r}"
+        )
+
+    for new_param in new_params:
+        if new_param["kind"] in {"VAR_POSITIONAL", "VAR_KEYWORD"}:
+            continue
+        if new_param["has_default"]:
+            continue
+        if new_param["name"] not in old_by_name:
+            return f"new required parameter {new_param['name']!r} was added"
+
+    return None
+
+
+def _compare_export(
+    module_name: str,
+    export_name: str,
+    old: dict[str, Any],
+    new: dict[str, Any],
+) -> list[ApiBreak]:
+    path = f"{module_name}.{export_name}"
+    breaks: list[ApiBreak] = []
+    if old["kind"] != new["kind"]:
+        breaks.append(
+            ApiBreak(
+                "changed-kind",
+                path,
+                f"kind changed from {old['kind']!r} to {new['kind']!r}",
+            )
+        )
+        return breaks
+
+    if old["kind"] in {"function", "class", "enum"}:
+        reason = _signature_breakage(old.get("signature"), new.get("signature"))
+        if reason:
+            breaks.append(ApiBreak("changed-signature", path, reason))
+
+    for member_name, old_member in old.get("members", {}).items():
+        new_member = new.get("members", {}).get(member_name)
+        member_path = f"{path}.{member_name}"
+        if new_member is None:
+            breaks.append(
+                ApiBreak(
+                    "removed-member",
+                    member_path,
+                    f"{member_path} existed in the baseline and is missing now",
+                )
+            )
+            continue
+        if old_member["kind"] != new_member["kind"]:
+            breaks.append(
+                ApiBreak(
+                    "changed-member-kind",
+                    member_path,
+                    f"kind changed from {old_member['kind']!r} to {new_member['kind']!r}",
+                )
+            )
+            continue
+        reason = _signature_breakage(old_member.get("signature"), new_member.get("signature"))
+        if reason:
+            breaks.append(ApiBreak("changed-signature", member_path, reason))
+
+    for enum_name, old_value in old.get("enum_members", {}).items():
+        enum_members = new.get("enum_members", {})
+        enum_path = f"{path}.{enum_name}"
+        if enum_name not in enum_members:
+            breaks.append(
+                ApiBreak(
+                    "removed-enum-member",
+                    enum_path,
+                    f"{enum_path} existed in the baseline and is missing now",
+                )
+            )
+        elif enum_members[enum_name] != old_value:
+            breaks.append(
+                ApiBreak(
+                    "changed-enum-value",
+                    enum_path,
+                    f"value changed from {old_value!r} to {enum_members[enum_name]!r}",
+                )
+            )
+
+    return breaks
+
+
+def compare_manifests(baseline: dict[str, Any], current: dict[str, Any]) -> list[ApiBreak]:
+    """Return public API breaks from ``baseline`` to ``current``."""
+    breaks: list[ApiBreak] = []
+    current_modules = current.get("modules", {})
+    for module_name, old_module in sorted(baseline.get("modules", {}).items()):
+        new_module = current_modules.get(module_name)
+        if new_module is None:
+            breaks.append(
+                ApiBreak(
+                    "removed-module",
+                    module_name,
+                    f"public module {module_name} existed in the baseline and is missing now",
+                )
+            )
+            continue
+        for export_name, old_export in sorted(old_module.get("exports", {}).items()):
+            new_export = new_module.get("exports", {}).get(export_name)
+            export_path = f"{module_name}.{export_name}"
+            if new_export is None:
+                breaks.append(
+                    ApiBreak(
+                        "removed-export",
+                        export_path,
+                        f"{export_path} existed in the baseline public surface and is missing now",
+                    )
+                )
+                continue
+            breaks.extend(_compare_export(module_name, export_name, old_export, new_export))
+    return sorted(breaks, key=lambda item: (item.code, item.object, item.detail))
+
+
+def load_policy(path: Path | None) -> tuple[list[Allowance], dict[str, list[str]]]:
+    if path is None or str(path) == "":
+        return [], {}
+    if not path.exists():
+        raise RuntimeError(f"allowlist file not found: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid JSON in {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{path} must contain a JSON object")
+    schema_version = payload.get("schema_version", 1)
+    if schema_version != 1:
+        raise RuntimeError(f"{path}: unsupported schema_version {schema_version!r} (expected 1)")
+    entries = payload.get("allowed_breaks", [])
+    if not isinstance(entries, list):
+        raise RuntimeError(f"{path} must contain an 'allowed_breaks' list")
+    extra_public_names = payload.get("extra_public_names", {})
+    if not isinstance(extra_public_names, dict):
+        raise RuntimeError(f"{path} extra_public_names must be an object")
+    normalized_extra_names: dict[str, list[str]] = {}
+    for module_name, names in extra_public_names.items():
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise RuntimeError(
+                f"{path} extra_public_names[{module_name!r}] must be a list of strings"
+            )
+        normalized_extra_names[str(module_name)] = sorted(set(names), key=str.lower)
+
+    allowances: list[Allowance] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"{path}: allowed_breaks[{index}] must be an object")
+        try:
+            code = str(entry["code"])
+            obj = str(entry["object"])
+            reason = str(entry["reason"])
+        except KeyError as exc:
+            raise RuntimeError(
+                f"{path}: allowed_breaks[{index}] is missing required key {exc.args[0]!r}"
+            ) from exc
+        allowances.append(Allowance(code=code, object=obj, reason=reason))
+    return allowances, normalized_extra_names
+
+
+def partition_allowed(
+    breakages: list[ApiBreak],
+    allowances: list[Allowance],
+) -> tuple[list[ApiBreak], list[tuple[ApiBreak, Allowance]]]:
+    unapproved: list[ApiBreak] = []
+    approved: list[tuple[ApiBreak, Allowance]] = []
+    for breakage in breakages:
+        allowance = next((item for item in allowances if item.matches(breakage)), None)
+        if allowance is None:
+            unapproved.append(breakage)
+        else:
+            approved.append((breakage, allowance))
+    return unapproved, approved
+
+
+def _render_breakages(title: str, breakages: list[ApiBreak]) -> str:
+    if not breakages:
+        return ""
+    lines = [title]
+    for breakage in breakages:
+        lines.append(f"  - [{breakage.code}] {breakage.object}: {breakage.detail}")
+    return "\n".join(lines)
+
+
+def _render_approved(approved: list[tuple[ApiBreak, Allowance]]) -> str:
+    if not approved:
+        return ""
+    lines = ["Allowlisted compatibility breaks:"]
+    for breakage, allowance in approved:
+        lines.append(f"  - [{breakage.code}] {breakage.object}: {allowance.reason}")
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    repo_root = Path(__file__).resolve().parent.parent
+    parser = argparse.ArgumentParser(
+        description="Compare the public Python API against a previous release tag."
+    )
+    parser.add_argument(
+        "--baseline-ref",
+        default=None,
+        help="Git ref to compare against. Defaults to `git describe --tags --abbrev=0`.",
+    )
+    parser.add_argument(
+        "--allowlist",
+        default=str(repo_root / DEFAULT_ALLOWLIST),
+        help=(
+            "JSON file containing reviewed compatibility breaks. Use an empty string to disable."
+        ),
+    )
+    parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
+    args = parser.parse_args(argv)
+
+    try:
+        baseline_ref = args.baseline_ref or latest_release_tag(repo_root)
+        allowlist_path = Path(args.allowlist) if args.allowlist else None
+        allowances, extra_public_names = load_policy(allowlist_path)
+        with tempfile.TemporaryDirectory(prefix="notebooklm-api-compat-") as tmp:
+            baseline_root = export_git_ref(repo_root, baseline_ref, Path(tmp))
+            baseline_manifest = collect_manifest(baseline_root, extra_public_names)
+            current_manifest = collect_manifest(repo_root, extra_public_names)
+
+        breakages = compare_manifests(baseline_manifest, current_manifest)
+        unapproved, approved = partition_allowed(breakages, allowances)
+    except RuntimeError as exc:
+        if args.json:
+            print(json.dumps({"error": str(exc)}, sort_keys=True))
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "baseline_ref": baseline_ref,
+                    "approved": [
+                        {"break": asdict(breakage), "reason": allowance.reason}
+                        for breakage, allowance in approved
+                    ],
+                    "unapproved": [asdict(item) for item in unapproved],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    elif unapproved:
+        print(
+            textwrap.dedent(
+                f"""\
+                Public API compatibility audit failed.
+                Baseline: {baseline_ref}
+
+                {_render_breakages("Unapproved compatibility breaks:", unapproved)}
+
+                Add back-compat shims, or document an intentional break in
+                {allowlist_path or DEFAULT_ALLOWLIST} with a reviewer-readable reason.
+                """
+            ).strip(),
+            file=sys.stderr,
+        )
+        approved_text = _render_approved(approved)
+        if approved_text:
+            print("\n" + approved_text, file=sys.stderr)
+    else:
+        print(
+            f"OK: public API is compatible with {baseline_ref} "
+            f"({len(approved)} reviewed break(s) allowlisted)."
+        )
+        approved_text = _render_approved(approved)
+        if approved_text:
+            print(approved_text)
+
+    return 1 if unapproved else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

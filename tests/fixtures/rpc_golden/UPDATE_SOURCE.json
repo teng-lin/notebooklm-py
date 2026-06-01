@@ -1,0 +1,47 @@
+{
+  "method_name": "UPDATE_SOURCE",
+  "method_id": "b7Wfje",
+  "description": "Update a source's title (production shape [None, [source_id], [[[new_title]]]]).",
+  "request": {
+    "params": [
+      null,
+      [
+        "SCRUBBED_SRC_001"
+      ],
+      [
+        [
+          [
+            "Scrubbed Updated Title"
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "b7Wfje",
+          "[null,[\"SCRUBBED_SRC_001\"],[[[\"Scrubbed Updated Title\"]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "b7Wfje",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

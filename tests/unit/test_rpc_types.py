@@ -1,5 +1,10 @@
 """Unit tests for RPC types and constants."""
 
+import ast
+import subprocess
+import sys
+from pathlib import Path
+
 from notebooklm.rpc.types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
@@ -8,8 +13,68 @@ from notebooklm.rpc.types import (
     RPCMethod,
     SourceStatus,
     artifact_status_to_str,
+    get_batchexecute_url,
+    get_query_url,
     source_status_to_str,
 )
+
+
+def test_rpc_types_does_not_own_runtime_override_policy() -> None:
+    """Runtime override env parsing belongs in rpc.overrides, not rpc.types."""
+    path = Path(__file__).parents[2] / "src/notebooklm/rpc/types.py"
+    tree = ast.parse(path.read_text())
+
+    imported_os: list[int] = []
+    environ_access: list[int] = []
+    direct_override_defs: list[int] = []
+    override_aliases: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "os":
+                    imported_os.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "os":
+                imported_os.append(node.lineno)
+            for alias in node.names:
+                if (node.module, node.level) == ("overrides", 1):
+                    override_aliases.add(alias.asname or alias.name)
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        ):
+            environ_access.append(node.lineno)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
+            "_parse_rpc_overrides",
+            "_load_rpc_overrides",
+        }:
+            direct_override_defs.append(node.lineno)
+
+    assert imported_os == []
+    assert environ_access == []
+    assert direct_override_defs == []
+    assert {
+        "_load_rpc_overrides",
+        "_logged_override_hashes",
+        "_parse_rpc_overrides",
+        "resolve_rpc_id",
+    } <= override_aliases
+
+
+def test_rpc_override_import_order_smoke() -> None:
+    """Both public and compatibility import orders must resolve cleanly."""
+    snippets = [
+        "from notebooklm.rpc import RPCMethod, resolve_rpc_id; "
+        "assert resolve_rpc_id(RPCMethod.LIST_NOTEBOOKS.name, RPCMethod.LIST_NOTEBOOKS.value)",
+        "from notebooklm.rpc.types import RPCMethod, resolve_rpc_id, _parse_rpc_overrides; "
+        "assert resolve_rpc_id(RPCMethod.LIST_NOTEBOOKS.name, RPCMethod.LIST_NOTEBOOKS.value); "
+        "assert hasattr(_parse_rpc_overrides, 'cache_clear')",
+    ]
+    for snippet in snippets:
+        subprocess.run([sys.executable, "-c", snippet], check=True)
 
 
 class TestRPCConstants:
@@ -22,6 +87,13 @@ class TestRPCConstants:
     def test_query_url(self):
         """Test query URL for streaming chat."""
         assert "GenerateFreeFormStreamed" in QUERY_URL
+
+    def test_endpoint_helpers_honor_env_after_import(self, monkeypatch):
+        """Test lazy endpoint helpers are not locked to import-time env."""
+        monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+
+        assert get_batchexecute_url().startswith("https://notebooklm.cloud.google.com/")
+        assert get_query_url().startswith("https://notebooklm.cloud.google.com/")
 
 
 class TestRPCMethod:
@@ -56,6 +128,10 @@ class TestRPCMethod:
     def test_list_artifacts(self):
         """Test LIST_ARTIFACTS RPC ID."""
         assert RPCMethod.LIST_ARTIFACTS == "gArtLc"
+
+    def test_get_user_tier(self):
+        """Test GET_USER_TIER RPC ID."""
+        assert RPCMethod.GET_USER_TIER == "ozz5Z"
 
     def test_rpc_method_is_string(self):
         """Test RPCMethod values are strings (for JSON serialization)."""

@@ -133,13 +133,85 @@ class TestSelectArtifact:
 
 
 class TestResolvePartialArtifactId:
-    def test_full_id_returned_unchanged(self):
-        """Full IDs (20+ chars) should bypass prefix search and return as-is."""
-        artifacts = [{"id": "abcdefghij1234567890", "title": "A", "created_at": 1000}]
+    def test_full_uuid_returned_unchanged(self):
+        """36-char UUID-shaped IDs should bypass prefix search and return as-is."""
+        full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
+        assert len(full_uuid) == 36
+        artifacts = [{"id": full_uuid, "title": "A", "created_at": 1000}]
 
-        result = resolve_partial_artifact_id(artifacts, "abcdefghij1234567890")
+        result = resolve_partial_artifact_id(artifacts, full_uuid)
 
-        assert result == "abcdefghij1234567890"
+        assert result == full_uuid
+
+    def test_full_uuid_mixed_case_returned_unchanged(self):
+        """Mixed-case 36-char UUID-shaped IDs should also fast-path."""
+        full_uuid = "ABC12345-6789-4ABC-Def0-1234567890aB"
+        assert len(full_uuid) == 36
+        artifacts = [{"id": full_uuid, "title": "A", "created_at": 1000}]
+
+        result = resolve_partial_artifact_id(artifacts, full_uuid)
+
+        assert result == full_uuid
+
+    def test_25_char_prefix_of_uuid_resolves_via_local_matching(self):
+        """A 25-char prefix of a 36-char UUID must resolve via local prefix matching.
+
+        Regression for P1.T9: the previous length-based fast-path (>= 20 chars)
+        treated any 20–35 char prefix of a UUID as a full ID and returned it
+        verbatim, which downstream would 404 against the backend.
+        """
+        full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
+        partial_25 = full_uuid[:25]
+        assert len(partial_25) == 25
+        artifacts = [{"id": full_uuid, "title": "A", "created_at": 1000}]
+
+        result = resolve_partial_artifact_id(artifacts, partial_25)
+
+        assert result == full_uuid
+
+    def test_36_char_non_hex_string_is_not_fast_pathed(self):
+        """A 36-char string containing non-hex characters does NOT fast-path.
+
+        It must go through local prefix matching, where it will either find a
+        unique match or raise an error — not be returned verbatim to the caller.
+        """
+        non_hex_36 = "zzz12345-6789-4zzz-zzz0-1234567890ab"
+        assert len(non_hex_36) == 36
+        # No artifact with this exact ID exists, so local matching should fail
+        # with a "not found" error — proving the input was NOT fast-pathed.
+        artifacts = [{"id": "abc12345-6789-4abc-def0-1234567890ab", "title": "A", "created_at": 1}]
+
+        with pytest.raises(ValueError, match="not found"):
+            resolve_partial_artifact_id(artifacts, non_hex_36)
+
+    def test_36_char_all_dashes_is_not_fast_pathed(self):
+        """Degenerate 36-char input (all dashes) does NOT fast-path."""
+        all_dashes = "-" * 36
+        assert len(all_dashes) == 36
+        artifacts = [{"id": "abc12345-6789-4abc-def0-1234567890ab", "title": "A", "created_at": 1}]
+
+        with pytest.raises(ValueError, match="not found"):
+            resolve_partial_artifact_id(artifacts, all_dashes)
+
+    def test_35_char_uuid_shaped_is_not_fast_pathed(self):
+        """A 35-char string (one short of a UUID) is NOT fast-pathed."""
+        short_uuid = "abc12345-6789-4abc-def0-1234567890a"
+        assert len(short_uuid) == 35
+        full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
+        artifacts = [{"id": full_uuid, "title": "A", "created_at": 1}]
+
+        result = resolve_partial_artifact_id(artifacts, short_uuid)
+
+        assert result == full_uuid
+
+    def test_37_char_uuid_shaped_is_not_fast_pathed(self):
+        """A 37-char string (one over a UUID) is NOT fast-pathed."""
+        long_uuid = "abc12345-6789-4abc-def0-1234567890abc"
+        assert len(long_uuid) == 37
+        artifacts = [{"id": "abc12345-6789-4abc-def0-1234567890ab", "title": "A", "created_at": 1}]
+
+        with pytest.raises(ValueError, match="not found"):
+            resolve_partial_artifact_id(artifacts, long_uuid)
 
     def test_partial_id_resolves_to_full(self):
         """Partial prefix should resolve to the matching full ID."""

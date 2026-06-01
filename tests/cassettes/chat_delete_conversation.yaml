@@ -1,0 +1,101 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22J7Gthc%22%2C%22%5B%5B%5D%2C%5C%223f1410ec-f2ff-45bd-bb1d-6f293c9fc99c%5C%22%2Cnull%2C1%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1779118606196&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '191'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - APISID=SCRUBBED; HSID=SCRUBBED; SAPISID=SCRUBBED; SID=SCRUBBED; SSID=SCRUBBED;
+        __Secure-1PAPISID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PAPISID=SCRUBBED;
+        __Secure-3PSID=SCRUBBED; SEARCH_SAMESITE=CgQI0KAB; __Secure-BUCKET=SCRUBBED;
+        AEC=AaJma5ssYAi5QcPUyxo9ZKvi9khoy2CIZ06cPX1Y2Cv0xSndCEWq-nMbMuc; __Secure-1PSIDTS=SCRUBBED;
+        __Secure-3PSIDTS=SCRUBBED; NID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
+        __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED; __Secure-OSID=SCRUBBED; _ga=GA1.1.1877697584.1776743929;
+        _gcl_au=1.1.1879663310.1776743929; _ga_W0LDH41ZCB=GS2.1.s1778936769$o6$g1$t1778937095$j60$l0$h0
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=J7Gthc&source-path=%2Fnotebook%2F4462cd3d-e77a-4d8c-8b1f-8bfd7232f995&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+  response:
+    body:
+      string: ')]}''
+
+
+        105
+
+        [["wrb.fr","J7Gthc","[]",null,null,null,"generic"],["di",149],["af.httprm",148,"3074633450539867275",39]]
+
+        23
+
+        [["e",4,null,null,143]]
+
+        '
+    headers:
+      Accept-CH:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Security-Policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      Content-Type:
+      - application/json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin-allow-popups
+      Cross-Origin-Resource-Policy:
+      - same-site
+      Date:
+      - Mon, 18 May 2026 15:36:56 GMT
+      Expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      Permissions-Policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      Pragma:
+      - no-cache
+      Server:
+      - ESF
+      Set-Cookie:
+      - SIDCC=SCRUBBED; expires=Tue, 18-May-2027 15:36:56 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Tue, 18-May-2027 15:36:56 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Tue, 18-May-2027 15:36:56 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Tue, 18-May-2027 15:36:56 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Tue, 18-May-2027 15:36:56 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Tue, 18-May-2027 15:36:56 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '143'
+    status:
+      code: 200
+      message: OK
+version: 1

@@ -1,0 +1,54 @@
+# Repair allowlist — cassettes the Tier 8 phase-1 audit flagged for phase-2 repair.
+#
+# Entries are cassette basenames (one per line).  Blank lines and comment
+# lines (starting with ``#``) are ignored.
+#
+# Cassettes listed here are SKIPPED by ``tests/scripts/check_cassettes_clean.py``
+# unless the tool is invoked with ``--strict``.  This lets the guard be wired
+# into CI as a non-blocking step today while phase-2 cassette re-recording
+# catches up; the ``--strict`` flag will be flipped on once all entries below
+# are repaired and this file is empty / deleted.
+#
+# Two groupings (a cassette flagged for *both* reasons appears only once):
+#
+# 1. Spec-explicit entries — cassettes the audit named for repair on grounds
+#    other than ``/ogw/`` avatar URLs alone (display-name leaks, upload-token
+#    leaks, Drive-token leaks, etc.).
+#
+# 2. ``/ogw/`` avatar URL group — cleared in T8.B6 (this PR). The 61-entry
+#    block that used to live here was bulk re-scrubbed through
+#    ``scripts/rescrub-cassettes.py`` (the script collapses every avatar URL
+#    to ``SCRUBBED_AVATAR_URL`` and re-derives chunk byte-counts via
+#    ``cassette_patterns.recompute_chunk_prefix`` so every affected cassette
+#    is now self-consistent under shape-lint). Adding a new cassette to this
+#    file should now be a rare, deliberate event tied to an open audit
+#    ticket — NOT a phase-1 catch-up obligation.
+#
+# When phase-2 lands the corresponding scrubber, re-record the cassette and
+# remove its entry from this list.  Do NOT delete the file outright — the
+# guard tolerates an empty file and an empty file makes the eventual
+# ``--strict`` flip a no-op.
+
+# --- illustrative documentation fixtures (not real recordings) -------------
+# ``example_batchexecute_pattern.yaml`` + ``example_scrubbed_cookies.yaml``
+# were relocated to ``tests/cassettes/examples/`` in T8.E2 per the cassette
+# naming convention in ``tests/cassettes/README.md``. The default guard scan
+# (``tests/scripts/check_cassettes_clean.py``) globs ``tests/cassettes/*.yaml``
+# non-recursively, so files under ``examples/`` are no longer scanned — and
+# the allowlist entries that previously suppressed their (false-positive)
+# trailing-quote line-boundary "leak" became dead code. Removed in T8.E2.
+
+# --- spec-explicit entries (none remaining) -------------------------------
+# All spec-explicit phase-2 cassettes have been repaired or removed:
+# - ``artifacts_revise_slide.yaml`` — re-recorded in T8.B1 against the live
+#   REVISE_SLIDE RPC; f.req is real urlencoded JSON now.
+# - ``chat_ask.yaml`` + ``chat_ask_with_references.yaml`` — re-recorded in
+#   T8.B2 against the current 9-param streaming-chat builder.
+# - ``sharing_get_status.yaml`` + ``sharing_set_public.yaml`` — re-scrubbed
+#   in T8.B3 for escaped display names + avatar URLs.
+# - ``sources_add_file.yaml`` — re-scrubbed in T8.B4 for upload tokens.
+# - ``sources_add_drive.yaml`` + ``sources_check_freshness_drive.yaml`` —
+#   re-scrubbed in T8.B5 for Drive tokens.
+# - The 61 ``/ogw/`` avatar URL entries — bulk re-scrubbed in T8.B6 (this PR)
+#   via scripts/rescrub-cassettes.py.
+# - ``example_httpbin_*.yaml`` — deleted in T8.B7 (illustrative fixtures).

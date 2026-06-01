@@ -1,0 +1,137 @@
+"""Unit tests for public artifact-generation rate-limit retry helpers."""
+
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from notebooklm.artifacts import (
+    RATE_LIMIT_RETRY_MAX_DELAY,
+    RateLimitRetryEvent,
+    calculate_backoff_delay,
+    with_rate_limit_retry,
+)
+from notebooklm.types import GenerationStatus
+
+
+def _rate_limited_status() -> GenerationStatus:
+    return GenerationStatus(
+        task_id="",
+        status="failed",
+        error="Rate limited",
+        error_code="USER_DISPLAYABLE_ERROR",
+    )
+
+
+class TestCalculateBackoffDelay:
+    def test_exponential_backoff_with_cap(self) -> None:
+        assert calculate_backoff_delay(0, initial_delay=60.0) == 60.0
+        assert calculate_backoff_delay(1, initial_delay=60.0) == 120.0
+        assert calculate_backoff_delay(2, initial_delay=60.0) == 240.0
+        assert (
+            calculate_backoff_delay(10, initial_delay=60.0, max_delay=RATE_LIMIT_RETRY_MAX_DELAY)
+            == RATE_LIMIT_RETRY_MAX_DELAY
+        )
+
+    def test_custom_multiplier(self) -> None:
+        assert calculate_backoff_delay(1, initial_delay=10.0, multiplier=3.0) == 30.0
+
+    @pytest.mark.parametrize("attempt", [-1, 1.5, True])
+    def test_rejects_invalid_attempt(self, attempt: Any) -> None:
+        with pytest.raises(ValueError, match="attempt must be a non-negative integer"):
+            calculate_backoff_delay(attempt)
+
+
+class TestWithRateLimitRetry:
+    @pytest.mark.asyncio
+    async def test_returns_success_without_retry(self) -> None:
+        success = GenerationStatus(task_id="task_123", status="pending")
+        generate_fn = AsyncMock(return_value=success)
+
+        result = await with_rate_limit_retry(generate_fn, max_retries=3)
+
+        assert result == success
+        assert generate_fn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retries_rate_limited_status_then_returns_success(self) -> None:
+        rate_limited = _rate_limited_status()
+        success = GenerationStatus(task_id="task_123", status="pending")
+        generate_fn = AsyncMock(side_effect=[rate_limited, success])
+        events: list[RateLimitRetryEvent] = []
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await with_rate_limit_retry(
+                generate_fn,
+                max_retries=3,
+                on_retry=events.append,
+            )
+
+        assert result == success
+        assert generate_fn.call_count == 2
+        mock_sleep.assert_awaited_once_with(60.0)
+        assert events == [
+            RateLimitRetryEvent(
+                result=rate_limited,
+                next_attempt_number=2,
+                total_attempts=4,
+                retry_number=1,
+                max_retries=3,
+                delay=60.0,
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_exhausts_retry_budget_and_returns_last_rate_limited_status(self) -> None:
+        rate_limited = _rate_limited_status()
+        generate_fn = AsyncMock(return_value=rate_limited)
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await with_rate_limit_retry(generate_fn, max_retries=2)
+
+        assert result == rate_limited
+        assert generate_fn.call_count == 3
+        assert [call.args[0] for call in mock_sleep.await_args_list] == [60.0, 120.0]
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_non_rate_limit_failure(self) -> None:
+        failed = GenerationStatus(task_id="", status="failed", error="Bad request")
+        generate_fn = AsyncMock(return_value=failed)
+
+        result = await with_rate_limit_retry(generate_fn, max_retries=3)
+
+        assert result == failed
+        assert generate_fn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_supports_async_retry_callback_and_custom_sleep(self) -> None:
+        rate_limited = _rate_limited_status()
+        success = GenerationStatus(task_id="task_123", status="pending")
+        generate_fn = AsyncMock(side_effect=[rate_limited, success])
+        on_retry = AsyncMock()
+        sleep = AsyncMock()
+
+        result = await with_rate_limit_retry(
+            generate_fn,
+            max_retries=1,
+            initial_delay=2.0,
+            sleep=sleep,
+            on_retry=on_retry,
+        )
+
+        assert result == success
+        sleep.assert_awaited_once_with(2.0)
+        on_retry.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_validates_retry_parameters(self) -> None:
+        generate_fn = AsyncMock()
+
+        with pytest.raises(ValueError, match="max_retries"):
+            await with_rate_limit_retry(generate_fn, max_retries=-1)
+        with pytest.raises(ValueError, match="initial_delay"):
+            await with_rate_limit_retry(generate_fn, max_retries=0, initial_delay=-1.0)
+        with pytest.raises(ValueError, match="max_delay"):
+            await with_rate_limit_retry(generate_fn, max_retries=0, max_delay=-1.0)
+        with pytest.raises(ValueError, match="multiplier"):
+            await with_rate_limit_retry(generate_fn, max_retries=0, multiplier=0.0)

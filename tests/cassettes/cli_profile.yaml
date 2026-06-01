@@ -1,0 +1,14 @@
+# VCR cassette for `notebooklm profile` CLI integration tests (T8.D8).
+#
+# The profile command group (list / create / switch / rename / delete) is a
+# local-only profile manager — every subcommand operates on
+# ``$NOTEBOOKLM_HOME/profiles/`` and ``$NOTEBOOKLM_HOME/config.json`` and
+# makes NO HTTP requests. This cassette is therefore intentionally empty:
+# the matched tests exist to guard that ``notebooklm profile`` never starts
+# emitting HTTP traffic in a future refactor (VCR in record_mode='none'
+# raises on any unmatched request). If a network call is ever added to a
+# ``profile`` subcommand, the cli_vcr test will fail loudly with a
+# CannotOverwriteExistingCassetteException and force the author to
+# re-record this cassette intentionally.
+interactions: []
+version: 1

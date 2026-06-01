@@ -1,0 +1,626 @@
+"""Unit tests for notebook operations."""
+
+import asyncio
+import logging
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from notebooklm._notebooks import NotebooksAPI, build_create_notebook_params
+from notebooklm._source.listing import SourceLister
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
+from notebooklm.exceptions import (
+    NetworkError,
+    NotebookLimitError,
+    NotebookNotFoundError,
+    RPCError,
+)
+from notebooklm.rpc import RPCMethod
+from notebooklm.types import AccountLimits, Notebook, NotebookMetadata, Source, SourceType
+
+
+def _make_core(rpc_call: AsyncMock | None = None):
+    """Return a fake collaborator core with a pre-wired ``rpc_call``.
+
+    ADR-007 substrate: built via :func:`make_fake_core` so the resulting
+    bag-of-attributes satisfies the capability Protocols without re-
+    introducing the forbidden post-construction AsyncMock attribute-
+    assignment pattern. Callers that need to control the dispatch
+    behaviour pass a pre-built ``rpc_call`` here.
+    """
+    from _fixtures.fake_core import make_fake_core
+
+    return make_fake_core(rpc_call=rpc_call if rpc_call is not None else AsyncMock())
+
+
+def _make_api(rpc_call: AsyncMock | None = None) -> NotebooksAPI:
+    core = _make_core(rpc_call)
+    return NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+
+
+def _source_entry(
+    source_id: str,
+    *,
+    title: str = "Source",
+    metadata: list[Any] | None = None,
+) -> list[Any]:
+    return [
+        [source_id],
+        title,
+        metadata or [None, 11, [1704067200, 0], None, 5],
+        [None, 2],
+    ]
+
+
+def _owned_notebooks(count: int) -> list[Notebook]:
+    return [Notebook(id=f"owned_{i}", title=f"Owned {i}", is_owner=True) for i in range(count)]
+
+
+def _shared_notebooks(count: int) -> list[Notebook]:
+    return [Notebook(id=f"shared_{i}", title=f"Shared {i}", is_owner=False) for i in range(count)]
+
+
+def _create_invalid_argument_error(
+    *, method_id: str = RPCMethod.CREATE_NOTEBOOK.value, rpc_code: int = 3
+) -> RPCError:
+    return RPCError(
+        "RPC CCqFvf returned null result with status code 3 (Invalid argument).",
+        method_id=method_id,
+        rpc_code=rpc_code,
+    )
+
+
+def test_build_create_notebook_params_matches_live_payload() -> None:
+    assert build_create_notebook_params("Daily News") == ["Daily News", None, None, [2], [1]]
+
+
+def test_direct_notebooks_api_construction_remains_supported() -> None:
+    core = _make_core()
+    api = NotebooksAPI(core.rpc_executor)
+
+    assert hasattr(api, "_sources")
+    assert isinstance(api._sources, SourceLister)
+
+
+@pytest.mark.asyncio
+async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> None:
+    core = _make_core()
+    core.rpc_executor.rpc_call.return_value = [
+        [
+            "Architecture",
+            [_source_entry("src_1", title="Design Paper", metadata=[None, 11, None, None, 3])],
+            "nb_123",
+        ]
+    ]
+    api = NotebooksAPI(core.rpc_executor)
+
+    metadata = await api.get_metadata("nb_123")
+
+    assert metadata.notebook == Notebook(id="nb_123", title="Architecture", sources_count=1)
+    assert len(metadata.sources) == 1
+    assert metadata.sources[0].kind == SourceType.PDF
+    assert metadata.sources[0].title == "Design Paper"
+    assert core.rpc_executor.rpc_call.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_direct_notebooks_api_metadata_lister_uses_late_bound_rpc_executor_call() -> None:
+    core = _make_core()
+    api = NotebooksAPI(core.rpc_executor)
+    replacement_rpc = AsyncMock(
+        return_value=[
+            [
+                "Late Bound",
+                [_source_entry("src_1", title="Design Paper", metadata=[None, 11, None, None, 3])],
+                "nb_123",
+            ]
+        ]
+    )
+    core.rpc_executor.rpc_call = replacement_rpc
+
+    metadata = await api.get_metadata("nb_123")
+
+    assert metadata.title == "Late Bound"
+    assert metadata.sources[0].kind == SourceType.PDF
+    assert replacement_rpc.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_client_wires_sources_api_into_notebooks_as_structural_lister() -> None:
+    auth = AuthTokens(
+        cookies={"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts", "HSID": "test_hsid"},
+        csrf_token="test_csrf",
+        session_id="test_session",
+    )
+    client = NotebookLMClient(auth)
+    client.notebooks.get = AsyncMock(
+        return_value=Notebook(id="nb_123", title="Client", sources_count=1)
+    )
+    client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="Paper", _type_code=3)])
+
+    metadata = await client.notebooks.get_metadata("nb_123")
+
+    assert metadata.notebook.title == "Client"
+    assert metadata.sources[0].kind == SourceType.PDF
+    client.sources.list.assert_awaited_once_with("nb_123")
+
+
+@pytest.mark.asyncio
+async def test_get_metadata_uses_injected_source_lister_and_builds_summaries() -> None:
+    core = _make_core()
+    source_lister = MagicMock()
+    source_lister.list = AsyncMock(
+        return_value=[
+            Source(
+                id="src_1",
+                title="Architecture Notes",
+                url="https://example.com/notes",
+                _type_code=5,  # SourceType.WEB_PAGE
+            )
+        ]
+    )
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Architecture", sources_count=1))
+
+    metadata = await api.get_metadata("nb_123")
+
+    assert isinstance(metadata, NotebookMetadata)
+    assert metadata.notebook == Notebook(id="nb_123", title="Architecture", sources_count=1)
+    assert len(metadata.sources) == 1
+    assert metadata.sources[0].kind == SourceType.WEB_PAGE
+    assert metadata.sources[0].title == "Architecture Notes"
+    assert metadata.sources[0].url == "https://example.com/notes"
+    api.get.assert_awaited_once_with("nb_123")
+    source_lister.list.assert_awaited_once_with("nb_123")
+
+
+@pytest.mark.asyncio
+async def test_get_metadata_fetches_notebook_and_sources_concurrently() -> None:
+    core = _make_core()
+    source_lister = MagicMock()
+    get_started = asyncio.Event()
+    list_started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def get_notebook(notebook_id: str) -> Notebook:
+        assert notebook_id == "nb_123"
+        get_started.set()
+        await list_started.wait()
+        await release.wait()
+        return Notebook(id="nb_123", title="Concurrent", sources_count=1)
+
+    async def list_sources(notebook_id: str) -> list[Source]:
+        assert notebook_id == "nb_123"
+        list_started.set()
+        await get_started.wait()
+        await release.wait()
+        return [Source(id="src_1", title="Paper", _type_code=3)]  # SourceType.PDF
+
+    source_lister.list = AsyncMock(side_effect=list_sources)
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api.get = AsyncMock(side_effect=get_notebook)
+
+    metadata_task = asyncio.create_task(api.get_metadata("nb_123"))
+    await asyncio.wait_for(get_started.wait(), timeout=1)
+    await asyncio.wait_for(list_started.wait(), timeout=1)
+    assert not metadata_task.done()
+
+    release.set()
+    metadata = await metadata_task
+
+    assert metadata.notebook.title == "Concurrent"
+    assert metadata.sources[0].kind == SourceType.PDF
+
+
+@pytest.mark.asyncio
+async def test_get_metadata_warns_when_notebook_reports_sources_but_listing_is_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    core = _make_core()
+    source_lister = MagicMock()
+    source_lister.list = AsyncMock(return_value=[])
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Sparse", sources_count=2))
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
+        metadata = await api.get_metadata("nb_123")
+
+    assert metadata.sources == []
+    assert "Notebook nb_123 reports 2 sources but listing returned empty" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_metadata_does_not_warn_when_empty_notebook_listing_is_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    core = _make_core()
+    source_lister = MagicMock()
+    source_lister.list = AsyncMock(return_value=[])
+    api = NotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Empty", sources_count=0))
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
+        metadata = await api.get_metadata("nb_123")
+
+    assert metadata.sources == []
+    assert caplog.records == []
+
+
+@pytest.mark.asyncio
+async def test_share_sends_exact_share_artifact_payload_and_returns_deep_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
+    api = _make_api()
+
+    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+        result = await api.share("nb_123", public=True, artifact_id="art_456")
+
+    assert result == {
+        "public": True,
+        "url": "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456",
+        "artifact_id": "art_456",
+    }
+    api._rpc.rpc_call.assert_awaited_once_with(
+        RPCMethod.SHARE_ARTIFACT,
+        [[1], "nb_123", "art_456"],
+        source_path="/notebook/nb_123",
+        allow_null=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_share_private_sends_disable_payload_and_returns_no_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
+    api = _make_api()
+
+    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+        result = await api.share("nb_123", public=False)
+
+    assert result == {"public": False, "url": None, "artifact_id": None}
+    api._rpc.rpc_call.assert_awaited_once_with(
+        RPCMethod.SHARE_ARTIFACT,
+        [[0], "nb_123"],
+        source_path="/notebook/nb_123",
+        allow_null=True,
+    )
+
+
+def test_get_share_url_remains_sync_url_formatter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
+    api = _make_api()
+
+    url = api.get_share_url("nb_123", artifact_id="art_456")
+
+    assert isinstance(url, str)
+    assert url == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+
+
+def _set_account_limit(api: NotebooksAPI, limit: int | None) -> AsyncMock:
+    mock = AsyncMock(return_value=AccountLimits(notebook_limit=limit))
+    api._get_account_limits = mock  # type: ignore[method-assign]
+    return mock
+
+
+class TestCreateNotebookQuotaDetection:
+    @pytest.mark.asyncio
+    async def test_create_uses_canonical_payload(self):
+        # ``create`` now snapshots the notebook list as a baseline
+        # before issuing CREATE_NOTEBOOK so the probe-then-retry wrapper
+        # can detect a server-side commit on a transient transport
+        # failure. Stub ``list`` so the canonical-payload assertion only
+        # observes the CREATE_NOTEBOOK call.
+        api = _make_api()
+        api.list = AsyncMock(return_value=[])  # baseline empty
+        api._rpc.rpc_call.return_value = [
+            "Daily News",
+            None,
+            "new_notebook_id",
+            None,
+            None,
+            [None, False, None, None, None, [1704067200, 0]],
+        ]
+
+        notebook = await api.create("Daily News")
+
+        assert notebook.id == "new_notebook_id"
+        api._rpc.rpc_call.assert_awaited_once_with(
+            RPCMethod.CREATE_NOTEBOOK,
+            build_create_notebook_params("Daily News"),
+            disable_internal_retries=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_argument_near_paid_limit_raises_limit_error(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        account_limits = _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(499))
+
+        with pytest.raises(NotebookLimitError) as exc_info:
+            await api.create("Daily News")
+
+        assert exc_info.value.current_count == 499
+        assert exc_info.value.limit == 500
+        assert exc_info.value.original_error is original
+        assert "499/500" in str(exc_info.value)
+        account_limits.assert_awaited_once()
+        # ``create`` calls ``list`` twice on an RPC failure path:
+        # once for the baseline snapshot, once for the quota check.
+        assert api.list.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_argument_at_paid_limit_raises_limit_error(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(NotebookLimitError) as exc_info:
+            await api.create("At Paid Limit")
+
+        assert exc_info.value.current_count == 500
+        assert exc_info.value.limit == 500
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_argument_near_free_limit_raises_limit_error(self):
+        api = _make_api(rpc_call=AsyncMock(side_effect=_create_invalid_argument_error()))
+        _set_account_limit(api, 100)
+        api.list = AsyncMock(return_value=_owned_notebooks(100))
+
+        with pytest.raises(NotebookLimitError) as exc_info:
+            await api.create("Free Limit")
+
+        assert exc_info.value.current_count == 100
+        assert exc_info.value.limit == 100
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_argument_uses_account_limit_not_free_boundary(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(100))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Paid Account At Free Boundary")
+
+        assert exc_info.value is original
+
+    @pytest.mark.asyncio
+    async def test_create_invalid_argument_away_from_server_limit_preserves_rpc_error(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(250))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Probably Bad Payload")
+
+        assert exc_info.value is original
+
+    @pytest.mark.asyncio
+    async def test_non_quota_rpc_code_preserves_rpc_error_without_listing(self):
+        original = _create_invalid_argument_error(rpc_code=13)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
+            return_value=AccountLimits(notebook_limit=500)
+        )
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Internal Failure")
+
+        assert exc_info.value is original
+        api._get_account_limits.assert_not_awaited()
+        # baseline list runs once before CREATE_NOTEBOOK; no
+        # quota-check list because the RPC code (13) is not the
+        # quota-exhausted code (3).
+        assert api.list.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_non_create_method_preserves_rpc_error_without_listing(self):
+        original = _create_invalid_argument_error(method_id=RPCMethod.GET_NOTEBOOK.value)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
+            return_value=AccountLimits(notebook_limit=500)
+        )
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Unexpected Method")
+
+        assert exc_info.value is original
+        api._get_account_limits.assert_not_awaited()
+        # baseline list runs once before CREATE_NOTEBOOK; no
+        # quota-check list because the failing method isn't CREATE_NOTEBOOK.
+        assert api.list.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_shared_notebooks_do_not_trigger_owned_quota_error(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(20) + _shared_notebooks(479))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Shared Notebooks Should Not Count")
+
+        assert exc_info.value is original
+
+    @pytest.mark.asyncio
+    async def test_account_limit_failure_preserves_original_create_error_without_listing(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
+            side_effect=NetworkError("settings failed")
+        )
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Settings Fails")
+
+        assert exc_info.value is original
+        # only the baseline list runs; the quota-check list is
+        # skipped because account-limit lookup itself failed.
+        assert api.list.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_account_limit_rpc_error_preserves_original_create_error_without_listing(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        api._get_account_limits = AsyncMock(  # type: ignore[method-assign]
+            side_effect=RPCError("settings failed")
+        )
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Settings RPC Fails")
+
+        assert exc_info.value is original
+        # only the baseline list runs.
+        assert api.list.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_account_limit_preserves_original_create_error_without_listing(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, None)
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("No Limit")
+
+        assert exc_info.value is original
+        # only the baseline list runs.
+        assert api.list.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_list_failure_preserves_original_create_error(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(side_effect=NetworkError("list failed"))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("List Fails")
+
+        assert exc_info.value is original
+
+    @pytest.mark.asyncio
+    async def test_list_parse_bug_preserves_original_create_error(self):
+        original = _create_invalid_argument_error()
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(side_effect=ValueError("bad notebook data"))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("List Parse Fails")
+
+        assert exc_info.value is original
+
+    @pytest.mark.asyncio
+    async def test_get_account_limits_uses_user_settings_rpc(self):
+        api = _make_api(rpc_call=AsyncMock(return_value=[[None, [6, 500, 300, 500000, 2]]]))
+
+        limits = await api._get_account_limits()
+
+        assert limits == AccountLimits(
+            notebook_limit=500,
+            source_limit=300,
+            raw_limits=(6, 500, 300, 500000, 2),
+        )
+        api._rpc.rpc_call.assert_awaited_once_with(
+            RPCMethod.GET_USER_SETTINGS,
+            [None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            source_path="/",
+        )
+
+
+class TestGetNotebookFailsClosed:
+    """``NotebooksAPI.get`` raises ``NotebookNotFoundError`` on degenerate responses.
+
+    The NotebookLM backend returns a *parseable but empty* payload for unknown
+    notebook IDs rather than a typed error. Pre-fix, ``get()`` happily returned
+    ``Notebook(id="", title="")`` and the CLI ``use`` command persisted that as
+    saved state. The post-fix contract: detect the degenerate shape and raise.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_returns_notebook_on_full_response(self):
+        # Realistic shape: [[title, ?, id, ?, ?, [None, False, ...]], ...]
+        api = _make_api(
+            rpc_call=AsyncMock(
+                return_value=[["My Notebook", None, "nb_real_123", None, None, [None, False]]]
+            )
+        )
+
+        notebook = await api.get("nb_real_123")
+
+        assert notebook.id == "nb_real_123"
+        assert notebook.title == "My Notebook"
+
+    @pytest.mark.asyncio
+    async def test_get_raises_on_empty_outer_list(self):
+        """Server returned ``[]`` — no notebook at all."""
+        api = _make_api(rpc_call=AsyncMock(return_value=[]))
+
+        with pytest.raises(NotebookNotFoundError) as exc_info:
+            await api.get("nb_missing")
+
+        assert exc_info.value.notebook_id == "nb_missing"
+        assert exc_info.value.method_id == RPCMethod.GET_NOTEBOOK.value
+
+    @pytest.mark.asyncio
+    async def test_get_raises_on_none_response(self):
+        api = _make_api(rpc_call=AsyncMock(return_value=None))
+
+        with pytest.raises(NotebookNotFoundError):
+            await api.get("nb_missing")
+
+    @pytest.mark.asyncio
+    async def test_get_raises_on_degenerate_empty_inner(self):
+        """``[[]]`` — outer wrapper present but inner notebook payload empty."""
+        api = _make_api(rpc_call=AsyncMock(return_value=[[]]))
+
+        with pytest.raises(NotebookNotFoundError) as exc_info:
+            await api.get("nb_typo")
+
+        assert "nb_typo" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_raises_when_id_and_title_both_blank(self):
+        """Both id and title parsed to empty string → treat as not found."""
+        # Same shape as the happy path but with empty strings in both fields.
+        api = _make_api(
+            rpc_call=AsyncMock(return_value=[["", None, "", None, None, [None, False]]])
+        )
+
+        with pytest.raises(NotebookNotFoundError):
+            await api.get("nb_typo")
+
+    @pytest.mark.asyncio
+    async def test_get_succeeds_when_title_present_but_id_blank(self):
+        """Defensive: a present title alone is enough — not a degenerate payload.
+
+        We only treat the response as "not found" when BOTH id and title are
+        blank, so a parser-quirk that strips the id but keeps the title still
+        returns a Notebook rather than raising.
+        """
+        api = _make_api(
+            rpc_call=AsyncMock(return_value=[["Title Only", None, "", None, None, [None, False]]])
+        )
+
+        notebook = await api.get("nb_partial")
+
+        assert notebook.title == "Title Only"
+
+    def test_notebook_not_found_error_is_rpc_error(self):
+        """``NotebookNotFoundError`` must be catchable as ``RPCError``."""
+        assert issubclass(NotebookNotFoundError, RPCError)
+        err = NotebookNotFoundError("nb_x", method_id="rwIQyf")
+        assert err.notebook_id == "nb_x"
+        assert err.method_id == "rwIQyf"

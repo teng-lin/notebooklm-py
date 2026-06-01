@@ -1,0 +1,45 @@
+{
+  "method_name": "CREATE_NOTE",
+  "method_id": "CYK0Xb",
+  "description": "Create a free-form note attached to a notebook (production shape [notebook_id, '', [1], None, title]).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      "",
+      [
+        1
+      ],
+      null,
+      "Scrubbed Note Title"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "CYK0Xb",
+          "[\"SCRUBBED_NB_001\",\"\",[1],null,\"Scrubbed Note Title\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "CYK0Xb",
+          "[\"SCRUBBED_NOTE_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_NOTE_001"
+    ]
+  }
+}

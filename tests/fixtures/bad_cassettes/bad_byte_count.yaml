@@ -1,0 +1,25 @@
+# Synthetic-bad fixture for I9 regression: chunked-response byte-count prefix
+# lies about the size of the JSON payload that follows. Production decoder
+# tolerates this (logs a warning) but downstream byte-precise diff tooling
+# silently misaligns. A scrubber that mutates payload length without
+# re-deriving the prefix produces this defect.
+#
+# When the cassette-shape lint is reintroduced for this class of defect, the
+# lint MUST fail on this fixture (assertion C: chunked byte-count prefix must
+# equal the UTF-8 byte length of the following JSON line).
+#
+# The prefix says 9999 bytes but the payload is far shorter.
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22wXbhsf%22%2C%22%5B%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF
+    headers:
+      Content-Type: [application/x-www-form-urlencoded]
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2Fnotebook%2Fvcr_test_notebook_id_sentinel_32ch&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ")]}'\n\n9999\n[[\"wrb.fr\",\"wXbhsf\",\"[[]]\",null,null,null,1]]\n"
+    headers:
+      Content-Type: [application/json; charset=utf-8]
+    status: {code: 200, message: OK}
+version: 1

@@ -1,0 +1,49 @@
+{
+  "method_name": "ADD_SOURCE_FILE",
+  "method_id": "o4cbdc",
+  "description": "Register an already-uploaded file as a notebook source.",
+  "request": {
+    "params": [
+      [
+        [
+          [
+            "scrubbed/upload/handle"
+          ]
+        ],
+        "scrubbed-file.pdf"
+      ],
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "o4cbdc",
+          "[[[[\"scrubbed/upload/handle\"]],\"scrubbed-file.pdf\"],\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "o4cbdc",
+          "[[\"SCRUBBED_SRC_NEW_002\"]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        "SCRUBBED_SRC_NEW_002"
+      ]
+    ]
+  }
+}

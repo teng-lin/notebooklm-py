@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from notebooklm._artifact import downloads as artifact_downloads
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm.auth import AuthTokens
 from notebooklm.types import (
     ArtifactDownloadError,
     ArtifactNotFoundError,
@@ -17,28 +17,104 @@ from notebooklm.types import (
 
 
 @pytest.fixture
-def auth_tokens():
-    return AuthTokens(
-        cookies={"SID": "test"},
-        csrf_token="csrf",
-        session_id="session",
-    )
-
-
-@pytest.fixture
 def mock_artifacts_api():
-    """Create an ArtifactsAPI with mocked core and notes API."""
-    mock_core = MagicMock()
-    mock_core.rpc_call = AsyncMock()
-    mock_core.get_source_ids = AsyncMock(return_value=[])
-    mock_notes = MagicMock()
-    mock_notes.list_mind_maps = AsyncMock(return_value=[])
-    # Mock create to return a Note-like object with an id
-    mock_note = MagicMock()
-    mock_note.id = "created_note_123"
-    mock_notes.create = AsyncMock(return_value=mock_note)
-    api = ArtifactsAPI(mock_core, notes_api=mock_notes)
+    """Create an ArtifactsAPI with mocked core.
+
+    After Phase 5 (refactor-history.md Migration Plan steps 6-7), ``ArtifactsAPI``
+    takes ``mind_maps: NoteBackedMindMapService`` and
+    ``note_service: NoteService`` instead of the single
+    ``mind_map_service`` parameter. Mind-map persistence goes through
+    ``note_service.create_note``; the download path consumes
+    ``mind_maps.list_mind_maps`` / ``mind_maps.extract_content``. Tests
+    that exercise mind-map creation drive responses through
+    ``mock_core.rpc_executor.rpc_call`` (via ``side_effect``) since both new
+    services delegate down to that single RPC seam.
+    """
+    from _fixtures.fake_core import make_fake_core
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
+
+    mock_core = make_fake_core(
+        rpc_call=AsyncMock(),
+        get_source_ids=AsyncMock(return_value=[]),
+    )
+    mock_notebooks = MagicMock()
+    mock_notebooks.get_source_ids = AsyncMock(return_value=[])
+    # Use real NoteService + NoteBackedMindMapService so the wire RPC
+    # surface stays consistent with production behavior. Tests that
+    # need to override list_mind_maps continue to patch it via
+    # ``patch.object(api._mind_maps, "list_mind_maps", ...)``.
+    note_service = NoteService(mock_core)
+    mind_maps = NoteBackedMindMapService(note_service)
+    api = ArtifactsAPI(
+        rpc=mock_core,
+        drain=mock_core,
+        lifecycle=mock_core,
+        notebooks=mock_notebooks,
+        mind_maps=mind_maps,
+        note_service=note_service,
+    )
     return api, mock_core
+
+
+class TestDownloadInteractiveArtifact:
+    """Test shared quiz/flashcard download parsing behavior."""
+
+    @pytest.mark.asyncio
+    async def test_get_artifact_content_null_result_returns_none(self):
+        """Null GET_INTERACTIVE_HTML is a missing-content result, not schema drift."""
+        runtime = MagicMock(rpc_call=AsyncMock(return_value=None))
+        service = artifact_downloads.ArtifactDownloadService(
+            rpc=runtime,
+            listing=MagicMock(),
+            mind_maps=MagicMock(),
+        )
+
+        result = await service._get_artifact_content("nb_123", "quiz_001")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_extract_app_data_value_error_propagates(self, monkeypatch, tmp_path):
+        """Bare ValueError from helper internals is not converted to parse drift."""
+        artifact = MagicMock(
+            id="quiz_001",
+            title="My Quiz",
+            is_completed=True,
+            created_at=None,
+        )
+        service = artifact_downloads.ArtifactDownloadService(
+            rpc=MagicMock(),
+            listing=MagicMock(),
+            mind_maps=MagicMock(),
+        )
+        monkeypatch.setattr(service, "_list_artifacts", AsyncMock(return_value=[artifact]))
+        monkeypatch.setattr(
+            service,
+            "_get_artifact_content",
+            AsyncMock(
+                return_value='<html><body data-app-data="{&quot;quiz&quot;:[]}"></body></html>'
+            ),
+        )
+        format_content = MagicMock(return_value="unused")
+        monkeypatch.setattr(artifact_downloads, "_format_interactive_content", format_content)
+
+        monkeypatch.setattr(
+            artifact_downloads,
+            "_extract_app_data",
+            MagicMock(side_effect=ValueError("implementation bug")),
+        )
+
+        with pytest.raises(ValueError, match="implementation bug"):
+            await service.download_interactive_artifact(
+                "nb_123",
+                str(tmp_path / "quiz.json"),
+                None,
+                "json",
+                "quiz",
+            )
+
+        format_content.assert_not_called()
 
 
 class TestDownloadAudio:
@@ -49,7 +125,7 @@ class TestDownloadAudio:
         """Test successful audio download."""
         api, mock_core = mock_artifacts_api
         # Mock artifact list response - type 1 (audio), status 3 (completed)
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 [
                     "audio_001",  # id
@@ -76,7 +152,7 @@ class TestDownloadAudio:
             output_path = os.path.join(tmpdir, "audio.mp4")
 
             with patch.object(
-                api, "_download_url", new_callable=AsyncMock, return_value=output_path
+                api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
             ):
                 result = await api.download_audio("nb_123", output_path)
 
@@ -86,7 +162,7 @@ class TestDownloadAudio:
     async def test_download_audio_no_audio_found(self, mock_artifacts_api):
         """Test error when no audio artifact exists."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [[]]  # Empty list
+        mock_core.rpc_executor.rpc_call.return_value = [[]]  # Empty list
 
         with pytest.raises(ArtifactNotReadyError):
             await api.download_audio("nb_123", "/tmp/audio.mp4")
@@ -95,7 +171,9 @@ class TestDownloadAudio:
     async def test_download_audio_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific audio ID not found."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [[["other_id", "Audio", 1, None, 3, None, [None] * 6]]]
+        mock_core.rpc_executor.rpc_call.return_value = [
+            [["other_id", "Audio", 1, None, 3, None, [None] * 6]]
+        ]
 
         with pytest.raises(ArtifactNotReadyError):
             await api.download_audio("nb_123", "/tmp/audio.mp4", artifact_id="audio_001")
@@ -104,7 +182,7 @@ class TestDownloadAudio:
     async def test_download_audio_invalid_metadata(self, mock_artifacts_api):
         """Test error on invalid metadata structure."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["audio_001", "Audio", 1, None, 3, None, "not_a_list"]  # metadata should be list
             ]
@@ -126,7 +204,7 @@ class TestDownloadVideo:
             output_path = os.path.join(tmpdir, "video.mp4")
 
             # Patch _list_raw to return video artifact data
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Type 3 (video), status 3 (completed), metadata at index 8
                 mock_list.return_value = [
                     [
@@ -143,7 +221,7 @@ class TestDownloadVideo:
                 ]
 
                 with patch.object(
-                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
+                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
                 ):
                     result = await api.download_video("nb_123", output_path)
 
@@ -154,7 +232,7 @@ class TestDownloadVideo:
         """Test error when no video artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ArtifactNotReadyError):
@@ -165,7 +243,7 @@ class TestDownloadVideo:
         """Test error when specific video ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = [["other_id", "Video", 3, None, 3, None, None, None, []]]
 
             with pytest.raises(ArtifactNotReadyError):
@@ -184,7 +262,7 @@ class TestDownloadInfographic:
             output_path = os.path.join(tmpdir, "infographic.png")
 
             # Patch _list_raw to return infographic data
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Type 7 (infographic), status 3, metadata with nested URL structure
                 mock_list.return_value = [
                     [
@@ -202,7 +280,7 @@ class TestDownloadInfographic:
                 ]
 
                 with patch.object(
-                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
+                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
                 ):
                     result = await api.download_infographic("nb_123", output_path)
 
@@ -213,7 +291,7 @@ class TestDownloadInfographic:
         """Test error when no infographic artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ArtifactNotReadyError):
@@ -229,7 +307,7 @@ class TestDownloadInfographic:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "infographic.png")
 
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Artifact with two URL-bearing metadata entries at different indices
                 mock_list.return_value = [
                     [
@@ -248,7 +326,7 @@ class TestDownloadInfographic:
                 ]
 
                 with patch.object(
-                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
+                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
                 ) as mock_dl:
                     result = await api.download_infographic("nb_123", output_path)
 
@@ -269,7 +347,7 @@ class TestDownloadSlideDeck:
 
             # Patch _list_raw to return slide deck artifact data
             # Structure: artifact[16] = [config, title, slides_list, pdf_url]
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Create artifact with 17+ elements, type 8 (slide deck), status 3
                 artifact = ["slide_001", "Slide Deck Title", 8, None, 3]
                 # Pad to index 16
@@ -286,7 +364,7 @@ class TestDownloadSlideDeck:
                 mock_list.return_value = [artifact]
 
                 with patch.object(
-                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
+                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
                 ):
                     result = await api.download_slide_deck("nb_123", output_path)
 
@@ -297,7 +375,7 @@ class TestDownloadSlideDeck:
         """Test error when no slide deck artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ArtifactNotReadyError):
@@ -308,7 +386,7 @@ class TestDownloadSlideDeck:
         """Test error when specific slide deck ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             # Need at least 17 elements for valid structure
             artifact = ["other_id", "Slides", 8, None, 3]
             artifact.extend([None] * 11)
@@ -323,7 +401,7 @@ class TestDownloadSlideDeck:
         """Test error on invalid metadata structure."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             # Create artifact with invalid metadata (less than 4 elements)
             artifact = ["slide_001", "Slides", 8, None, 3]
             artifact.extend([None] * 11)
@@ -343,21 +421,35 @@ class TestMindMapGeneration:
         api, mock_core = mock_artifacts_api
         # Mock get_source_ids for source ID fetching
         mock_core.get_source_ids.return_value = ["src_001"]
-        # Mock the actual mind map generation RPC call
-        mock_core.rpc_call.return_value = [
-            [
-                '{"nodes": [{"id": "1", "text": "Root"}]}',  # JSON string
-                None,
-                ["note_123"],  # note info (not used anymore, note is created explicitly)
-            ]
-        ]
+
+        # ArtifactsAPI.generate_mind_map now drives the full
+        # GENERATE_MIND_MAP -> CREATE_NOTE -> UPDATE_NOTE flow itself via
+        # the shared ``_mind_map`` primitives. The mock RPC needs to react
+        # to each method name so the created note ID surfaces correctly.
+        async def fake_rpc(method, params, **_):
+            name = getattr(method, "name", str(method))
+            if name == "GENERATE_MIND_MAP":
+                return [
+                    [
+                        '{"nodes": [{"id": "1", "text": "Root"}]}',
+                        None,
+                        ["note_123"],
+                    ]
+                ]
+            if name == "CREATE_NOTE":
+                return [["created_note_123"]]
+            if name == "UPDATE_NOTE":
+                return None
+            return None
+
+        mock_core.rpc_executor.rpc_call.side_effect = fake_rpc
 
         result = await api.generate_mind_map("nb_123")
 
         assert result is not None
-        assert "mind_map" in result
-        # note_id is now from the explicitly created note
-        assert result["note_id"] == "created_note_123"
+        assert result.mind_map is not None
+        # note_id is from the explicit CREATE_NOTE call.
+        assert result.note_id == "created_note_123"
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_with_dict(self, mock_artifacts_api):
@@ -365,21 +457,31 @@ class TestMindMapGeneration:
         api, mock_core = mock_artifacts_api
         # Mock get_source_ids for source ID fetching
         mock_core.get_source_ids.return_value = ["src_001"]
-        # Mock the actual mind map generation RPC call
-        mock_core.rpc_call.return_value = [
-            [
-                {"nodes": [{"id": "1"}]},  # Already a dict
-                None,
-                ["note_456"],  # note info (not used anymore)
-            ]
-        ]
+
+        async def fake_rpc(method, params, **_):
+            name = getattr(method, "name", str(method))
+            if name == "GENERATE_MIND_MAP":
+                return [
+                    [
+                        {"nodes": [{"id": "1"}]},  # Already a dict
+                        None,
+                        ["note_456"],  # note info (not used anymore)
+                    ]
+                ]
+            if name == "CREATE_NOTE":
+                return [["created_note_123"]]
+            if name == "UPDATE_NOTE":
+                return None
+            return None
+
+        mock_core.rpc_executor.rpc_call.side_effect = fake_rpc
 
         result = await api.generate_mind_map("nb_123")
 
         assert result is not None
-        assert result["mind_map"]["nodes"][0]["id"] == "1"
-        # note_id is now from the explicitly created note
-        assert result["note_id"] == "created_note_123"
+        assert result.mind_map["nodes"][0]["id"] == "1"
+        # note_id is from the explicit CREATE_NOTE call.
+        assert result.note_id == "created_note_123"
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_empty_result(self, mock_artifacts_api):
@@ -387,13 +489,13 @@ class TestMindMapGeneration:
         api, mock_core = mock_artifacts_api
         # Mock get_source_ids for source ID fetching
         mock_core.get_source_ids.return_value = ["src_001"]
-        # Mock the actual mind map generation with empty response
-        mock_core.rpc_call.return_value = None
+        # GENERATE_MIND_MAP returns null/empty — no note should be created.
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await api.generate_mind_map("nb_123")
 
-        assert result["mind_map"] is None
-        assert result["note_id"] is None
+        assert result.mind_map is None
+        assert result.note_id is None
 
 
 class TestDownloadUrl:
@@ -430,7 +532,9 @@ class TestDownloadUrl:
             mock_cookies = MagicMock()
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-                patch("notebooklm._artifacts.load_httpx_cookies", return_value=mock_cookies),
+                patch(
+                    "notebooklm._artifact.downloads.load_httpx_cookies", return_value=mock_cookies
+                ),
             ):
                 result = await api._download_url(
                     "https://storage.googleapis.com/file.mp4", output_path
@@ -471,7 +575,9 @@ class TestDownloadUrl:
             mock_cookies = MagicMock()
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-                patch("notebooklm._artifacts.load_httpx_cookies", return_value=mock_cookies),
+                patch(
+                    "notebooklm._artifact.downloads.load_httpx_cookies", return_value=mock_cookies
+                ),
                 pytest.raises(ArtifactDownloadError, match="0 bytes"),
             ):
                 await api._download_url("https://storage.googleapis.com/file.mp4", output_path)
@@ -492,7 +598,7 @@ class TestDownloadReport:
             output_path = os.path.join(tmpdir, "report.md")
 
             # Patch _list_raw to return report artifact data
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Type 2 (report), status 3 (completed), markdown at index 7 (wrapped in list)
                 mock_list.return_value = [
                     [
@@ -520,7 +626,7 @@ class TestDownloadReport:
         """Test error when no report artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ArtifactNotReadyError):
@@ -531,7 +637,7 @@ class TestDownloadReport:
         """Test error when specific report ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = [["other_id", "Report", 2, None, 3, None, None, ["content"]]]
 
             with pytest.raises(ArtifactNotReadyError):
@@ -545,7 +651,7 @@ class TestDownloadReport:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "report.md")
 
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Type 2 (report), status 3 (completed), markdown as direct string
                 mock_list.return_value = [
                     [
@@ -580,21 +686,27 @@ class TestDownloadMindMap:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "mindmap.json")
 
-            # Mock mind maps via notes API
+            # After Phase 5, ``ArtifactsAPI.download_mind_map`` reads mind
+            # maps via the injected ``NoteBackedMindMapService``. Patch
+            # the service instance directly so the simulated response
+            # reaches the download path.
             json_content = '{"name": "Root", "children": [{"name": "Child1"}]}'
-            api._notes.list_mind_maps = AsyncMock(
-                return_value=[
-                    [
-                        "mindmap_001",  # mm[0] = id
-                        [None, json_content],  # mm[1][1] = JSON string
-                        None,
-                        None,
-                        "Mind Map Title",  # mm[4] = title
+            with patch.object(
+                api._mind_maps,
+                "list_mind_maps",
+                new=AsyncMock(
+                    return_value=[
+                        [
+                            "mindmap_001",  # mm[0] = id
+                            [None, json_content],  # mm[1][1] = JSON string
+                            None,
+                            None,
+                            "Mind Map Title",  # mm[4] = title
+                        ]
                     ]
-                ]
-            )
-
-            result = await api.download_mind_map("nb_123", output_path)
+                ),
+            ):
+                result = await api.download_mind_map("nb_123", output_path)
 
             assert result == output_path
             # Verify JSON was written correctly
@@ -609,20 +721,30 @@ class TestDownloadMindMap:
     async def test_download_mind_map_no_mind_map_found(self, mock_artifacts_api):
         """Test error when no mind map exists."""
         api, mock_core = mock_artifacts_api
-        api._notes.list_mind_maps = AsyncMock(return_value=[])
 
-        with pytest.raises(ArtifactNotReadyError):
+        with (
+            patch.object(
+                api._mind_maps,
+                "list_mind_maps",
+                new=AsyncMock(return_value=[]),
+            ),
+            pytest.raises(ArtifactNotReadyError),
+        ):
             await api.download_mind_map("nb_123", "/tmp/mindmap.json")
 
     @pytest.mark.asyncio
     async def test_download_mind_map_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific mind map ID not found."""
         api, mock_core = mock_artifacts_api
-        api._notes.list_mind_maps = AsyncMock(
-            return_value=[["other_id", [None, "{}"], None, None, "Other"]]
-        )
 
-        with pytest.raises(ArtifactNotFoundError):
+        with (
+            patch.object(
+                api._mind_maps,
+                "list_mind_maps",
+                new=AsyncMock(return_value=[["other_id", [None, "{}"], None, None, "Other"]]),
+            ),
+            pytest.raises(ArtifactNotFoundError),
+        ):
             await api.download_mind_map("nb_123", "/tmp/mindmap.json", artifact_id="mindmap_001")
 
 
@@ -638,7 +760,7 @@ class TestDownloadDataTable:
             output_path = os.path.join(tmpdir, "data.csv")
 
             # Patch _list_raw to return data table artifact
-            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Create the complex nested structure for data table
                 # artifact[18] contains the rich-text structure
                 artifact = ["table_001", "Data Table Title", 9, None, 3]
@@ -690,7 +812,7 @@ class TestDownloadDataTable:
         """Test error when no data table artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ArtifactNotReadyError):
@@ -701,7 +823,7 @@ class TestDownloadDataTable:
         """Test error when specific data table ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             # Need at least 19 elements for valid structure
             artifact = ["other_id", "Table", 9, None, 3]
             artifact.extend([None] * 14)  # Pad to 19 elements
@@ -715,7 +837,7 @@ class TestDownloadDataTable:
         """Test error when data table has invalid structure resulting in empty headers."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
             artifact = ["table_001", "Data Table", 9, None, 3]
             artifact.extend([None] * 13)  # Pad to index 18
 
@@ -729,3 +851,75 @@ class TestDownloadDataTable:
 
             with pytest.raises(ArtifactParseError):
                 await api.download_data_table("nb_123", "/tmp/data.csv")
+
+
+class TestStoragePathEncapsulation:
+    """Regression guard for issue #838.
+
+    ``ArtifactDownloadService`` must read the storage path it was
+    constructed with, not via a sibling reach-in to
+    ``ArtifactsAPI._storage_path``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_download_url_uses_constructor_storage_path(self, tmp_path):
+        from notebooklm._artifact.downloads import ArtifactDownloadService
+
+        sentinel = tmp_path / "sentinel_storage.json"
+        # MagicMock collaborators are inert — the service must read the
+        # ``storage_path`` it was constructed with, not via any
+        # collaborator reach-through.
+        runtime = MagicMock()
+        listing = MagicMock()
+        mind_maps = MagicMock()
+        service = ArtifactDownloadService(
+            rpc=runtime,
+            listing=listing,
+            mind_maps=mind_maps,
+            storage_path=sentinel,
+        )
+
+        captured: list[object] = []
+
+        class _StopAfterCapture(Exception):
+            pass
+
+        def recording(path):
+            captured.append(path)
+            raise _StopAfterCapture
+
+        with (
+            patch("notebooklm._artifact.downloads.load_httpx_cookies", new=recording),
+            pytest.raises(_StopAfterCapture),
+        ):
+            await service.download_url(
+                "https://storage.googleapis.com/x.bin", str(tmp_path / "out.bin")
+            )
+
+        assert captured == [sentinel]
+
+    @pytest.mark.asyncio
+    async def test_download_urls_batch_uses_constructor_storage_path(self, tmp_path):
+        from notebooklm._artifact.downloads import ArtifactDownloadService
+
+        sentinel = tmp_path / "sentinel_storage.json"
+        runtime = MagicMock()
+        listing = MagicMock()
+        mind_maps = MagicMock()
+        service = ArtifactDownloadService(
+            rpc=runtime,
+            listing=listing,
+            mind_maps=mind_maps,
+            storage_path=sentinel,
+        )
+
+        captured: list[object] = []
+
+        def recording(path):
+            captured.append(path)
+            return {}
+
+        with patch("notebooklm._artifact.downloads.load_httpx_cookies", new=recording):
+            await service.download_urls_batch([])
+
+        assert captured == [sentinel]

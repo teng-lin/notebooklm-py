@@ -3,13 +3,24 @@ name: Publish to TestPyPI
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    name: Build and publish to TestPyPI
+  build-and-test:
+    name: Build wheel and run release smoke
     runs-on: ubuntu-latest
+    # Smoke install pulls `[browser,dev,markdown]` extras (pytest, playwright,
+    # mypy, ruff, markdownify, transitive deps). A compromised dep here is a
+    # supply-chain concern but cannot mint a Trusted Publishing OIDC token,
+    # because this job is not granted `id-token: write`. The publish job
+    # below carries that scope and runs nothing except the trusted PyPA
+    # action. See issue #820 for the threat model.
     permissions:
-      id-token: write
       contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
     - uses: actions/checkout@v6
@@ -29,22 +40,88 @@ jobs:
     - name: Install build tools
       run: |
         python -m pip install --upgrade pip
-        pip install build
+        python -m pip install build==1.5.0
 
     - name: Build package
       run: python -m build
 
+    - name: Upload distribution artifacts
+      # Capture pristine wheel + sdist BEFORE any third-party code (smoke
+      # install, playwright, pytest) runs against `dist/`. If we uploaded
+      # after the smoke install, a compromised dev/test dep could mutate
+      # `dist/` post-build, and the publish job would upload tampered bytes
+      # — attested with the project's trusted OIDC identity. Uploading here
+      # snapshots the build output before any attacker-controlled code has
+      # touched the runner. Smoke install/test below still runs against
+      # `dist/` for behavior validation but can no longer influence what
+      # the publish job receives.
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # @ v7
+      with:
+        name: notebooklm-py-dist
+        path: dist/
+        if-no-files-found: error
+        # One-day retention is intentional: publish consumes this artifact
+        # immediately. See issue #829 for the recovery trade-off.
+        retention-days: 1
+
+    - name: Install built wheel + canonical contributor extras in a clean venv
+      # Canonical contributor extras (`[browser,dev,markdown]`, equivalent to
+      # `[all]`) match the install path documented in `docs/installation.md`,
+      # so the release smoke exercises the same surface area users will see.
+      # Plain `[dev]` skipped playwright + markdownify, masking packaging bugs
+      # in `[browser]`/`[markdown]` until users hit them post-release.
+      run: |
+        python -m venv smoke-venv
+        WHEEL=$(ls dist/notebooklm_py-*.whl)
+        smoke-venv/bin/pip install "${WHEEL}[browser,dev,markdown]"
+        smoke-venv/bin/python -c "import notebooklm; print(notebooklm.__version__)"
+
+    - name: Install Playwright browser for smoke
+      # `[browser]` only installs the playwright Python package; the chromium
+      # binary + Linux system libs are needed for the unit-test smoke
+      # (tests/unit/test_windows_compatibility.py drives sync_playwright()).
+      run: |
+        smoke-venv/bin/playwright install chromium
+        smoke-venv/bin/playwright install-deps chromium
+
+    - name: Run unit tests against wheel
+      run: smoke-venv/bin/pytest tests/unit -q --no-cov -x
+
+  publish:
+    name: Publish to TestPyPI
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: testpypi
+    # Minimum-scope publish job: only the trusted PyPA action runs here. No
+    # `actions/checkout`, no Python install, no third-party dependencies in
+    # the runner environment — so the OIDC token request that `id-token:
+    # write` enables has no co-tenant code that could exfiltrate it.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Download distribution artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
+      with:
+        name: notebooklm-py-dist
+        path: dist/
+
     - name: Upload to TestPyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # @ v1.14.0
       with:
         repository-url: https://test.pypi.org/legacy/
+        # PEP 740 attestations: pypa/gh-action-pypi-publish generates an
+        # in-toto attestation for the uploaded artifacts and publishes it
+        # via PyPI's Trusted Publishing flow (OIDC, no API token).
+        attestations: true
 
     - name: Summary
       run: |
         echo "## Published to TestPyPI" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Version:** ${{ needs.build-and-test.outputs.version }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Package:** https://test.pypi.org/project/notebooklm-py/${{ steps.version.outputs.version }}/" >> $GITHUB_STEP_SUMMARY
+        echo "**Package:** https://test.pypi.org/project/notebooklm-py/${{ needs.build-and-test.outputs.version }}/" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Next Step:** Run the **Verify Package** workflow with source=testpypi" >> $GITHUB_STEP_SUMMARY

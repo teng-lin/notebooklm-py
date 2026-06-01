@@ -137,6 +137,49 @@ class TestMigrateToProfiles:
         # Original removed
         assert not (tmp_path / "storage_state.json").exists()
 
+    def test_overwrites_stale_profile_when_legacy_is_newer(self, tmp_path):
+        """Fresh login data at legacy root overwrites a stale profile copy.
+
+        Regression for the scenario where a previous migration left a profile
+        copy in place, and a subsequent `login` wrote fresh cookies to the
+        legacy root path. The migration must prefer the newer source.
+        """
+        default_dir = tmp_path / "profiles" / "default"
+        default_dir.mkdir(parents=True)
+        stale_profile = default_dir / "storage_state.json"
+        stale_profile.write_text('{"cookies":["stale"]}')
+        os.utime(stale_profile, (1000, 1000))
+
+        fresh_legacy = tmp_path / "storage_state.json"
+        fresh_legacy.write_text('{"cookies":["fresh"]}')
+        os.utime(fresh_legacy, (2000, 2000))
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        # Profile copy now holds the fresh data, legacy file is gone
+        assert json.loads(stale_profile.read_text()) == {"cookies": ["fresh"]}
+        assert not fresh_legacy.exists()
+
+    def test_keeps_newer_profile_when_legacy_is_older(self, tmp_path):
+        """An up-to-date profile copy is preserved over an older legacy file."""
+        default_dir = tmp_path / "profiles" / "default"
+        default_dir.mkdir(parents=True)
+        fresh_profile = default_dir / "storage_state.json"
+        fresh_profile.write_text('{"cookies":["fresh"]}')
+        os.utime(fresh_profile, (2000, 2000))
+
+        stale_legacy = tmp_path / "storage_state.json"
+        stale_legacy.write_text('{"cookies":["stale"]}')
+        os.utime(stale_legacy, (1000, 1000))
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        # Profile copy is preserved, legacy file is cleaned up
+        assert json.loads(fresh_profile.read_text()) == {"cookies": ["fresh"]}
+        assert not stale_legacy.exists()
+
 
 class TestEnsureProfilesDir:
     def test_creates_on_first_run(self, tmp_path):
@@ -193,7 +236,7 @@ class TestExplicitAuthBypassesProfileSetup:
             ["status", "--paths"],
             env={
                 "NOTEBOOKLM_HOME": str(ro_home),
-                "NOTEBOOKLM_AUTH_JSON": '{"cookies": [{"name": "SID", "value": "x", "domain": ".google.com"}]}',
+                "NOTEBOOKLM_AUTH_JSON": '{"cookies": [{"name": "SID", "value": "x", "domain": ".google.com"}, {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"}]}',
             },
         )
         assert result.exit_code != 1 or "PermissionError" not in str(result.exception or "")

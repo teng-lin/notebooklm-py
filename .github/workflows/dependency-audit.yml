@@ -1,0 +1,52 @@
+# Runs pip-audit against the locked environment so a CVE landing in a
+# transitive dep surfaces in CI rather than at next user install. Any
+# unresolved advisory fails the job (a hard merge gate on PRs, a red main
+# build on push/schedule).
+name: dependency-audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/dependency-audit.yml"
+  schedule:
+    # Nightly at 06:00 UTC so transitive CVEs surface even when no PR
+    # touches the manifest.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync locked env (browser + dev + markdown)
+        run: uv sync --frozen --extra browser --extra dev --extra markdown
+
+      - name: Install pip-audit into the locked env
+        # Pin pip-audit on the current major (2.x) so two consecutive nightly
+        # runs use the same advisory-DB query logic — without this, a silent
+        # bump to 3.x could change strictness without an accompanying PR.
+        run: uv pip install 'pip-audit>=2.7.0,<3'
+
+      - name: pip-audit (locked env)
+        # Hard merge gate: any unresolved advisory fails the job. If a
+        # transient advisory genuinely needs to be ignored, pin the fix in
+        # uv.lock or use pip-audit's --ignore-vuln for a tracked exception.
+        # Audit the exported lock graph instead of the installed environment so
+        # unreleased local package versions do not fail strict collection.
+        run: |
+          set -o pipefail
+          uv export --frozen --extra browser --extra dev --extra markdown --format requirements-txt --no-emit-project \
+            | uv run pip-audit --strict --require-hashes --disable-pip -r /dev/stdin

@@ -1357,9 +1357,7 @@ interactions:
         fill=\"#249A41\"></path><path d=\"M33.49,34.77C37.49,31.12,40,25.85,40,20c0-5.86-2.52-11.13-6.54-14.79l-1.37,1.46C35.72,9.97,38,14.72,38,20c0,5.25-2.26,9.98-5.85,13.27L33.49,34.77z\"
         fill=\"#3174F1\"></path><path d=\"M20,2c4.65,0,8.89,1.77,12.09,4.67l1.37-1.46C29.91,1.97,25.19,0,20,0l0,0C12.21,0,5.46,4.46,2.16,10.96L3.88,12C6.83,6.08,12.95,2,20,2\"
         fill=\"#E92D18\"></path></svg></div><span class=\"gb_be\"><img class=\"gb_Q
-        gbii\" src=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s32-c-mo\"
-        srcset=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s32-c-mo
-        1x, https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s64-c-mo
+        gbii\" src=\"SCRUBBED_AVATAR_URL\" srcset=\"SCRUBBED_AVATAR_URL 1x, SCRUBBED_AVATAR_URL
         2x \" alt=\"\" aria-hidden=\"true\" data-noaft=\"\"></span><div class=\"gb_R
         gb_S\" aria-hidden=\"true\"><svg class=\"gb_La\" height=\"14\" viewBox=\"0
         0 14 14\" width=\"14\" xmlns=\"http://www.w3.org/2000/svg\"><circle class=\"gb_Ma\"
@@ -1367,9 +1365,7 @@ interactions:
         2H8V8H6V2Z\"></path></svg></div></a></div><div class=\"gb_Ab gb_ma gb_4 gb_Bb\"
         aria-label=\"Account Information\" aria-hidden=\"true\"><div class=\"gb_Kb\"><div
         class=\"gb_Lb\"><img class=\"gb_nb gbip gb_Pb gb_Sb\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==\"
-        data-src=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s83-c-mo\"
-        data-srcset=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s83-c-mo
-        1x, https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s192-c-mo
+        data-src=\"SCRUBBED_AVATAR_URL\" data-srcset=\"SCRUBBED_AVATAR_URL 1x, SCRUBBED_AVATAR_URL
         2x \" title=\"Profile\" alt=\"\" aria-hidden=\"true\"><div class=\"gb_Hc\"><svg
         height=\"88\" width=\"88\" focusable=\"false\" version=\"1.1\" viewbox=\"0
         0 108 108\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"
@@ -1395,11 +1391,11 @@ interactions:
         gb_ec\"><div class=\"gb_Cf gb_Ic gb_S\"><div class=\"gb_Jc\"></div></div><div
         class=\"gb_zf gb_gc gb_S\" aria-hidden=\"true\"><a class=\"gb_fc gb_pc\" aria-hidden=\"true\"
         href=\"/?authuser=0\" target=\"_blank\"><img class=\"gb_rc gb_Pb\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==\"
-        data-src=\"https://lh3.googleusercontent.com/ogw/AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s48-c-mo\"
-        alt=\"\" aria-hidden=\"true\"><div class=\"gb_ic\"><div><div class=\"gb_wc\">Default</div></div><div
-        class=\"gb_tc\">SCRUBBED_NAME</div><div class=\"gb_vc\">SCRUBBED_EMAIL@example.com</div></div></a></div><div
-        class=\"gb_8b\" aria-hidden=\"true\"><svg class=\"gb_9b\" focusable=\"false\"
-        height=\"20\" viewbox=\"0 0 20 20\" width=\"20\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\"
+        data-src=\"SCRUBBED_AVATAR_URL\" alt=\"\" aria-hidden=\"true\"><div class=\"gb_ic\"><div><div
+        class=\"gb_wc\">Default</div></div><div class=\"gb_tc\">SCRUBBED_NAME</div><div
+        class=\"gb_vc\">SCRUBBED_EMAIL@example.com</div></div></a></div><div class=\"gb_8b\"
+        aria-hidden=\"true\"><svg class=\"gb_9b\" focusable=\"false\" height=\"20\"
+        viewbox=\"0 0 20 20\" width=\"20\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\"
         xmlns:xlink=\"http://www.w3.org/1999/xlink\"><path d=\"M0 0h20v20H0V0z\" fill=\"none\"></path><path
         d=\"M6.18 7L10 10.82 13.82 7 15 8.17l-5 5-5-5z\"></path></svg></div><a class=\"gb_yc
         gb_S gb_jc\" href=\"https://myaccount.google.com/brandaccounts?authuser=0&amp;continue=https://notebooklm.google.com/&amp;service=/%3Fauthuser%3D%24authuser%26pageId%3D%24pageId\"
@@ -1599,7 +1595,7 @@ interactions:
       string: ")]}'\n\n888\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"TypeScript Fundamentals:
         A Handbook of Type Systems and Rules\\\",[[[\\\"fdfc8ac4-3237-4f2a-8a79-3e24297a7040\\\"],\\\"Programming
         TypeScript Making your JavaScript applications scale (Boris Cherny) (Z-Library).pdf\\\",[null,87289,[1767921640,565022000],[\\\"baf1f9cc-7c04-4655-939b-09849052184e\\\",[1767921648,468111000]],3,null,1],[null,2]],[[\\\"ddd31154-74a0-484a-a24c-aff796acae2f\\\"],\\\"typescript-book.pdf\\\",[null,22183,[1767921620,707149000],[\\\"78e4b577-2a9a-4492-a854-735d65782d18\\\",[1767921622,324942000]],3,null,1],[null,2]]],\\\"c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e\\\",\\\"\U0001F4D8\\\",null,[1,false,true,null,null,[1768963937,237838000],1,false,[1767921609,87622000],null,null,null,false,true,1,false],null,[[1,\\\"You
-        are a helpful science tutor\\\"],[1]],null,[true,true,true],[6,500,300,500000]]]\",null,null,null,\"generic\"],[\"di\",175],[\"af.httprm\",174,\"-5817936199443368044\",11]]\n25\n[[\"e\",4,null,null,926]]\n"
+        are a helpful science tutor\\\"],[1]],null,[true,true,true],[6,500,300,500000]]]\",null,null,null,\"generic\"],[\"di\",175],[\"af.httprm\",174,\"-5817936199443368044\",11]]\n23\n[[\"e\",4,null,null,926]]\n"
     headers:
       Accept-CH:
       - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,

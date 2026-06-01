@@ -1,0 +1,667 @@
+"""Chat and conversation CLI commands.
+
+Commands:
+    ask        Ask a notebook a question
+    configure  Configure chat persona and response settings
+    history    Get conversation history or clear local cache
+"""
+
+import logging
+from typing import Any
+
+import click
+from rich.table import Table
+
+from ..client import NotebookLMClient
+from ..types import ChatMode
+from .auth_runtime import with_client
+from .context import get_current_conversation, get_current_notebook, set_current_conversation
+from .error_handler import _output_error, exit_with_code
+from .input import resolve_prompt
+from .options import _complete_sources, json_option, notebook_option, prompt_file_option
+from .rendering import (
+    cli_print,
+    console,
+    emit_status,
+    json_output_response,
+)
+from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
+
+logger = logging.getLogger(__name__)
+
+
+def _determine_conversation_id(
+    *,
+    explicit_conversation_id: str | None,
+    explicit_notebook_id: str | None,
+    resolved_notebook_id: str,
+    json_output: bool,
+) -> str | None:
+    """Determine which conversation ID to use for the ask command.
+
+    Returns None if no cached conversation exists, otherwise returns
+    the conversation ID to continue.
+    """
+    if explicit_conversation_id:
+        return explicit_conversation_id
+
+    # Check if user switched notebooks via --notebook flag
+    cached_notebook = get_current_notebook()
+    if explicit_notebook_id and cached_notebook and resolved_notebook_id != cached_notebook:
+        if not json_output:
+            cli_print("[dim]Different notebook specified, starting new conversation...[/dim]")
+        return None
+
+    return get_current_conversation()
+
+
+async def _get_latest_conversation_from_server(
+    client, notebook_id: str, json_output: bool
+) -> str | None:
+    """Fetch the most recent conversation ID from the server.
+
+    Returns None if unavailable or empty.
+    """
+    history_unavailable = False
+    try:
+        conv_id = await client.chat.get_conversation_id(notebook_id)
+        if conv_id:
+            if not json_output:
+                cli_print(f"[dim]Continuing conversation {conv_id[:8]}...[/dim]")
+            return conv_id
+    except Exception as e:
+        logger.debug(
+            "Failed to fetch last conversation (%s): %s",
+            type(e).__name__,
+            e,
+        )
+        history_unavailable = True
+    # Emit the fallback status *outside* the ``except`` handler: it is a
+    # status line (so it must honor root ``--quiet`` via ``cli_print``), not
+    # an error diagnostic, and emitting it inside the handler would trip the
+    # error-path heuristic in ``tests/unit/cli/test_quiet_enforcement.py``.
+    if history_unavailable and not json_output:
+        cli_print("[dim]Starting new conversation (history unavailable)[/dim]")
+    return None
+
+
+def _history_json_payload(
+    notebook_id: str,
+    conversation_id: str | None,
+    qa_pairs: list[tuple[str, str]],
+) -> dict[str, Any]:
+    """Build the shared JSON envelope for ``history --json`` modes.
+
+    Same shape whether or not ``--save`` is set; the save branch merges a
+    ``note`` field on top of this base envelope.
+    """
+    return {
+        "notebook_id": notebook_id,
+        "conversation_id": conversation_id,
+        "count": len(qa_pairs),
+        "qa_pairs": [
+            {"turn": i, "question": q, "answer": a} for i, (q, a) in enumerate(qa_pairs, 1)
+        ],
+    }
+
+
+def register_chat_commands(cli):
+    """Register chat commands on the main CLI group."""
+
+    @cli.command("ask")
+    @click.argument("question", default="", required=False)
+    @prompt_file_option
+    @notebook_option
+    @click.option("--conversation-id", "-c", default=None, help="Continue a specific conversation")
+    @click.option(
+        "--new",
+        "new_conversation",
+        is_flag=True,
+        help=(
+            "Start a fresh conversation. DESTRUCTIVE: this deletes the "
+            "notebook's current server-side conversation (turns are not "
+            "recoverable) before asking. Prompts for confirmation unless "
+            "``--yes`` is passed."
+        ),
+    )
+    @click.option(
+        "--yes",
+        "-y",
+        "assume_yes",
+        is_flag=True,
+        help=(
+            "Skip the ``--new`` destructive-delete confirmation prompt. "
+            "``--json`` implies ``--yes`` so scripted callers never hang."
+        ),
+    )
+    @click.option(
+        "--source",
+        "-s",
+        "source_ids",
+        multiple=True,
+        help="Limit to specific source IDs (can be repeated)",
+        shell_complete=_complete_sources,
+    )
+    @click.option(
+        "--json", "json_output", is_flag=True, help="Output as JSON (includes references)"
+    )
+    @click.option(
+        "--save-as-note",
+        is_flag=True,
+        help=(
+            "Save response as a note. When the answer has citations, the saved "
+            "note preserves interactive [N] hover-anchor links (matching the "
+            "NotebookLM web UI's 'Save to note' behavior); otherwise falls "
+            "back to a plain-text note."
+        ),
+    )
+    # ``-t`` consistently means "note title" across `note create`, `chat history`,
+    # and here, so the short flag carries the same meaning everywhere it appears.
+    @click.option(
+        "-t",
+        "--note-title",
+        "note_title",
+        default=None,
+        help="Note title (use with --save-as-note)",
+    )
+    # ``--request-timeout`` is the self-documenting canonical name: this is the
+    # per-request HTTP socket timeout, NOT the poll/wait budget that other
+    # commands spell ``--timeout``. ``--timeout`` stays as a back-compat alias.
+    @click.option(
+        "--request-timeout",
+        "--timeout",
+        "timeout",
+        default=None,
+        type=click.IntRange(min=1),
+        help=(
+            "HTTP request timeout in seconds (default: 30, from the library). "
+            "Increase for long or complex prompts. (--timeout is a back-compat alias.)"
+        ),
+    )
+    @with_client
+    def ask_cmd(
+        ctx,
+        question,
+        prompt_file,
+        notebook_id,
+        conversation_id,
+        new_conversation,
+        assume_yes,
+        source_ids,
+        json_output,
+        save_as_note,
+        note_title,
+        timeout,
+        client_auth,
+    ):
+        """Ask a notebook a question.
+
+        By default, continues the last conversation. Use --new to start fresh.
+        The answer includes inline citations like [1], [2] that reference sources.
+        Use --json to get structured output with source IDs for each reference.
+
+        \b
+        Example:
+          notebooklm ask "what are the main themes?"
+          notebooklm ask -c <id> "continue this one"
+          notebooklm ask --new "ignore last conversation, start fresh"
+          notebooklm ask -s src_001 -s src_002 "question about specific sources"
+          notebooklm ask "explain X" --json             # Get answer with source references
+          notebooklm ask "explain X" --save-as-note     # Save response as a note
+        """
+        if new_conversation and conversation_id:
+            # Per ADR-015 §2: under --json this mutual-exclusion conflict
+            # must emit the typed JSON envelope and exit 1 (VALIDATION_ERROR),
+            # not ride Click's parse-time UsageError path (exit 2, usage
+            # text on stderr, no JSON on stdout). Under text mode we
+            # preserve the existing Click UX so interactive users still
+            # get the ``Usage: ... / Error: ...`` formatting.
+            mutual_exclusion_message = (
+                "--new and --conversation-id are mutually exclusive: "
+                "--new starts a fresh conversation while --conversation-id resumes a specific one."
+            )
+            if json_output:
+                _output_error(
+                    mutual_exclusion_message,
+                    "VALIDATION_ERROR",
+                    json_output,
+                    1,
+                )
+            raise click.UsageError(  # cli-input-validation: --new and --conversation-id are mutually exclusive
+                mutual_exclusion_message
+            )
+        question = resolve_prompt(question, prompt_file, "question", required=True)
+        nb_id = require_notebook(notebook_id)
+
+        client_kwargs: dict = {}
+        if timeout is not None:
+            client_kwargs["timeout"] = float(timeout)
+
+        async def _run():
+            async with NotebookLMClient(client_auth, **client_kwargs) as client:
+                nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+                if new_conversation:
+                    # Dropping ``conversation_id`` alone extends the most-recent
+                    # conversation (see ChatAPI.ask Note). Deleting it first
+                    # leaves the next ask nothing to attach to. No prior
+                    # conversation is fine — skip both the prompt and the
+                    # delete; ``ask`` then creates the notebook's first one.
+                    last_conv_id = await client.chat.get_conversation_id(nb_id_resolved)
+                    if last_conv_id:
+                        # ``--json`` implies ``--yes`` so scripted callers don't
+                        # hang on stdin (which would also clobber JSON stdout
+                        # purity). See cli/artifact.py:artifact_delete for the
+                        # same pattern.
+                        if (
+                            not assume_yes
+                            and not json_output
+                            and not click.confirm(
+                                f"This will permanently delete conversation "
+                                f"{last_conv_id[:8]}... and all its turns. Continue?",
+                                default=False,
+                            )
+                        ):
+                            # Exit 1 (BaseException-bypassing ``SystemExit``)
+                            # so scripts can distinguish "user said no" from
+                            # "ask succeeded" — the intended ``ask`` did not
+                            # run. ``click.exceptions.Exit`` and ``ctx.exit``
+                            # both raise ``RuntimeError`` subclasses that the
+                            # ``handle_errors`` catch-all (error_handler.py)
+                            # would remap to exit 2.
+                            console.print("[yellow]Aborted — no conversation deleted.[/yellow]")
+                            exit_with_code(1)
+                        await client.chat.delete_conversation(nb_id_resolved, last_conv_id)
+                    effective_conv_id: str | None = None
+                else:
+                    effective_conv_id = _determine_conversation_id(
+                        explicit_conversation_id=conversation_id,
+                        explicit_notebook_id=notebook_id,
+                        resolved_notebook_id=nb_id_resolved,
+                        json_output=json_output,
+                    )
+
+                resumed_from_server = False
+                if not new_conversation and not effective_conv_id:
+                    # If no conversation ID yet, try to get the most recent one from server
+                    effective_conv_id = await _get_latest_conversation_from_server(
+                        client, nb_id_resolved, json_output
+                    )
+                    if effective_conv_id:
+                        resumed_from_server = True
+
+                sources = await resolve_source_ids(
+                    client, nb_id_resolved, source_ids, json_output=json_output
+                )
+                result = await client.chat.ask(
+                    nb_id_resolved,
+                    question,
+                    source_ids=sources,
+                    conversation_id=effective_conv_id,
+                )
+
+                if result.conversation_id:
+                    set_current_conversation(result.conversation_id)
+
+                # Text-mode: original interactive layout (Answer first,
+                # save-as-note status after). In JSON mode:
+                # save-as-note runs first into a stderr-routed status path
+                # and its outcome is merged into the JSON envelope, which
+                # is emitted LAST as the terminal stdout output.
+                if not json_output:
+                    console.print("[bold cyan]Answer:[/bold cyan]")
+                    console.print(result.answer)
+                    if result.is_follow_up and resumed_from_server:
+                        console.print(
+                            f"\n[dim]Resumed conversation: {result.conversation_id}[/dim]"
+                        )
+                    elif result.is_follow_up:
+                        console.print(
+                            f"\n[dim]Conversation: {result.conversation_id} "
+                            f"(turn {result.turn_number or '?'})[/dim]"
+                        )
+                    else:
+                        console.print(f"\n[dim]New conversation: {result.conversation_id}[/dim]")
+
+                note_save_result: dict[str, str] | None = None
+                note_save_error: str | None = None
+
+                if save_as_note:
+                    if not result.answer:
+                        emit_status(
+                            "[yellow]Warning: No answer to save as note[/yellow]",
+                            json_output=json_output,
+                        )
+                        note_save_error = "No answer to save as note"
+                    else:
+                        try:
+                            title = (
+                                note_title or f"Chat: {question[:50].strip().replace(chr(10), ' ')}"
+                            )
+                            if result.references:
+                                # Citation-rich path: server stores [N] markers
+                                # as hover-anchored references (issue #660).
+                                # ``client.chat.save_answer_as_note`` is the
+                                # canonical home for this primitive.
+                                note = await client.chat.save_answer_as_note(
+                                    nb_id_resolved, result, title=title
+                                )
+                            else:
+                                # No citations to preserve -- fall back to the
+                                # plain-text path so the save still succeeds.
+                                emit_status(
+                                    "[dim]No citations in answer; saving as plain-text note.[/dim]",
+                                    json_output=json_output,
+                                )
+                                note = await client.notes.create(
+                                    nb_id_resolved, title, result.answer
+                                )
+                            note_save_result = {"id": note.id, "title": note.title}
+                            emit_status(
+                                f"\n[dim]Saved as note: {note.title} ({note.id[:8]}...)[/dim]",
+                                json_output=json_output,
+                            )
+                        except Exception as e:
+                            note_save_error = str(e)
+                            # Note-save is a secondary `--save-as-note` action;
+                            # emit_status keeps the warning non-fatal so the chat
+                            # response payload still prints. output_error would
+                            # SystemExit(1) and abort that payload. Revisit when
+                            # save-as-note gains a structured non-fatal error channel.
+                            emit_status(  # quiet-ok: non-fatal warning for a secondary --save-as-note action
+                                f"[yellow]Warning: Failed to save note: {e}[/yellow]",
+                                json_output=json_output,
+                            )
+
+                if json_output:
+                    from dataclasses import asdict
+
+                    data = asdict(result)
+                    # Exclude raw_response from CLI output for brevity.
+                    del data["raw_response"]
+                    if save_as_note:
+                        # Merge note-save outcome into the envelope so the
+                        # caller can observe success/failure from stdout
+                        # alone without parsing stderr text.
+                        if note_save_result is not None:
+                            data["note"] = note_save_result
+                        if note_save_error is not None:
+                            data["note_save_error"] = note_save_error
+                    json_output_response(data)
+
+        return _run()
+
+    @cli.command("configure")
+    @notebook_option
+    @click.option(
+        "--mode",
+        "chat_mode",
+        type=click.Choice(["default", "learning-guide", "concise", "detailed"]),
+        default=None,
+        help="Predefined chat mode",
+    )
+    @click.option("--persona", default=None, help="Custom persona prompt (up to 10,000 chars)")
+    @click.option(
+        "--response-length",
+        type=click.Choice(["default", "longer", "shorter"]),
+        default=None,
+        help="Response verbosity",
+    )
+    @json_option
+    @with_client
+    def configure_cmd(
+        ctx, notebook_id, chat_mode, persona, response_length, json_output, client_auth
+    ):
+        """Configure chat persona and response settings.
+
+        \b
+        Modes:
+          default        General purpose (default behavior)
+          learning-guide Educational focus with learning-oriented responses
+          concise        Brief, to-the-point responses
+          detailed       Verbose, comprehensive responses
+
+        \b
+        Examples:
+          notebooklm configure --mode learning-guide
+          notebooklm configure --persona "Act as a chemistry tutor"
+          notebooklm configure --mode detailed --response-length longer
+          notebooklm configure --mode concise --json   # Machine-readable output
+        """
+        nb_id = require_notebook(notebook_id)
+
+        async def _run():
+            from ..types import ChatGoal, ChatResponseLength
+
+            async with NotebookLMClient(client_auth) as client:
+                nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+                if chat_mode:
+                    mode_map = {
+                        "default": ChatMode.DEFAULT,
+                        "learning-guide": ChatMode.LEARNING_GUIDE,
+                        "concise": ChatMode.CONCISE,
+                        "detailed": ChatMode.DETAILED,
+                    }
+                    await client.chat.set_mode(nb_id_resolved, mode_map[chat_mode])
+                    if json_output:
+                        json_output_response(
+                            {
+                                "notebook_id": nb_id_resolved,
+                                "mode": chat_mode,
+                                "configured": True,
+                            }
+                        )
+                        return
+                    console.print(f"[green]Chat mode set to: {chat_mode}[/green]")
+                    return
+
+                goal = ChatGoal.CUSTOM if persona else None
+                length = None
+                if response_length:
+                    length_map = {
+                        "default": ChatResponseLength.DEFAULT,
+                        "longer": ChatResponseLength.LONGER,
+                        "shorter": ChatResponseLength.SHORTER,
+                    }
+                    length = length_map[response_length]
+
+                await client.chat.configure(
+                    nb_id_resolved, goal=goal, response_length=length, custom_prompt=persona
+                )
+
+                if json_output:
+                    json_output_response(
+                        {
+                            "notebook_id": nb_id_resolved,
+                            "mode": None,
+                            # Lowercase enum name (e.g. "custom") for a stable,
+                            # human-readable JSON contract. The underlying RPC
+                            # integer is an implementation detail.
+                            "goal": goal.name.lower() if goal else None,
+                            "persona": persona,
+                            "response_length": response_length,
+                            "configured": True,
+                        }
+                    )
+                    return
+
+                parts = []
+                if persona:
+                    parts.append(
+                        f'persona: "{persona[:50]}..."'
+                        if len(persona) > 50
+                        else f'persona: "{persona}"'
+                    )
+                if response_length:
+                    parts.append(f"response length: {response_length}")
+                result = (
+                    f"Chat configured: {', '.join(parts)}"
+                    if parts
+                    else "Chat configured (no changes)"
+                )
+                console.print(f"[green]{result}[/green]")
+
+        return _run()
+
+    @cli.command("history")
+    @notebook_option
+    @click.option("--limit", "-l", default=100, help="Maximum number of Q&A turns to show")
+    @click.option("--clear", "clear_cache", is_flag=True, help="Clear local conversation cache")
+    @click.option("--save", "save_as_note", is_flag=True, help="Save history as a note")
+    @click.option("-t", "--note-title", "note_title", default=None, help="Note title (with --save)")
+    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    @click.option("--show-all", is_flag=True, help="Show full Q&A content instead of preview")
+    @click.option(
+        "--no-truncate",
+        "no_truncate",
+        is_flag=True,
+        default=False,
+        help="Disable the 50-char preview cap on Question/Answer columns in the table view.",
+    )
+    @with_client
+    def history_cmd(
+        ctx,
+        notebook_id,
+        limit,
+        clear_cache,
+        save_as_note,
+        note_title,
+        json_output,
+        show_all,
+        no_truncate,
+        client_auth,
+    ):
+        """Get conversation history or save it as a note.
+
+        Shows all Q&A turns from the most recent conversation.
+
+        \b
+        Example:
+          notebooklm history                      # Show Q&A history
+          notebooklm history -n nb123             # Show history for specific notebook
+          notebooklm history --clear              # Clear local cache
+          notebooklm history --save               # Save history as a note
+          notebooklm history --save --note-title "Summary"  # Save with custom title
+          notebooklm history --json               # Machine-readable JSON output
+          notebooklm history --show-all           # Full Q&A content
+          notebooklm history --no-truncate        # Full Q&A content in the table view
+        """
+
+        async def _run():
+            async with NotebookLMClient(client_auth) as client:
+                if clear_cache:
+                    # Capture pre-clear conversation count so the JSON
+                    # envelope can report what was dropped. Done BEFORE the
+                    # clear call because ``clear_cache`` returns only a bool.
+                    pre_clear_count = client.chat.cache_size()
+                    cleared = client.chat.clear_cache()
+                    if json_output:
+                        # In JSON mode, stdout must be a single JSON
+                        # document; no Rich/text output.
+                        json_output_response(
+                            {
+                                "cleared": bool(cleared),
+                                "count": pre_clear_count if cleared else 0,
+                            }
+                        )
+                        return
+                    if cleared:
+                        console.print("[green]Local conversation cache cleared[/green]")
+                    else:
+                        console.print("[yellow]No cache to clear[/yellow]")
+                    return
+
+                nb_id = require_notebook(notebook_id)
+                nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+                conv_id = await client.chat.get_conversation_id(nb_id_resolved)
+                qa_pairs = await client.chat.get_history(
+                    nb_id_resolved, limit=limit, conversation_id=conv_id
+                )
+
+                if save_as_note:
+                    if not qa_pairs:
+                        _output_error(
+                            "Error: No conversation history found for this notebook.",
+                            "NOT_FOUND",
+                            json_output,
+                            1,
+                        )
+                    content = _format_history(qa_pairs)
+                    title = note_title or "Chat History"
+                    note = await client.notes.create(nb_id_resolved, title, content)
+                    if json_output:
+                        # In JSON mode, emit a single JSON envelope that
+                        # carries both the history payload and the
+                        # note-save outcome. Status text routes to stderr.
+                        emit_status(
+                            f"[green]Saved as note: {note.title} ({note.id[:8]}...)[/green]",
+                            json_output=json_output,
+                        )
+                        json_output_response(
+                            {
+                                **_history_json_payload(nb_id_resolved, conv_id, qa_pairs),
+                                "note": {"id": note.id, "title": note.title},
+                            }
+                        )
+                        return
+                    console.print(f"[green]Saved as note: {note.title} ({note.id[:8]}...)[/green]")
+                    return
+
+                if json_output:
+                    json_output_response(_history_json_payload(nb_id_resolved, conv_id, qa_pairs))
+                    return
+
+                if not qa_pairs:
+                    console.print("[yellow]No conversation history[/yellow]")
+                    return
+
+                console.print("[bold cyan]Conversation History:[/bold cyan]")
+
+                if show_all:
+                    if conv_id:
+                        console.print(f"\n[bold]── {conv_id} ──[/bold]")
+                    for i, (question, answer) in enumerate(qa_pairs, 1):
+                        console.print(f"[bold]#{i} Q:[/bold] {question}")
+                        console.print(f"   A: {answer}\n")
+                    return
+
+                if conv_id:
+                    console.print(f"\n[dim]── {conv_id} ──[/dim]")
+                table = Table()
+                table.add_column("#", style="dim", width=4)
+                # ``--no-truncate`` lifts both the column-level
+                # ``max_width=50`` constraint and the ``[:50]`` cell slice so
+                # the table view can render long Q/A turns in full. Default
+                # behavior is unchanged — the 50-char preview is preserved
+                # to match the existing UX when the flag is not passed.
+                if no_truncate:
+                    table.add_column("Question", style="white", overflow="fold")
+                    table.add_column("Answer", style="dim", overflow="fold")
+                    for i, (question, answer) in enumerate(qa_pairs, 1):
+                        table.add_row(str(i), question, answer)
+                else:
+                    table.add_column("Question", style="white", max_width=50)
+                    table.add_column("Answer preview", style="dim", max_width=50)
+                    for i, (question, answer) in enumerate(qa_pairs, 1):
+                        table.add_row(str(i), question[:50], answer[:50])
+                console.print(table)
+                console.print("\n[dim]Use 'notebooklm history --save' to save as a note.[/dim]")
+
+        return _run()
+
+
+def _format_single_qa(question: str, answer: str) -> str:
+    """Format one Q&A pair as note content."""
+    parts = []
+    if question:
+        parts.append(f"**Q:** {question}")
+    if answer:
+        parts.append(f"**A:** {answer}")
+    return "\n\n".join(parts)
+
+
+def _format_history(qa_pairs: list[tuple[str, str]]) -> str:
+    """Format Q&A history as note content."""
+    turns = []
+    for i, (question, answer) in enumerate(qa_pairs, 1):
+        turns.append(f"### Turn {i}\n\n{_format_single_qa(question, answer)}")
+    return "\n\n---\n\n".join(turns)

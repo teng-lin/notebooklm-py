@@ -154,3 +154,30 @@ class TestContainsGoogleAuthRedirect:
         <a href="https://google.com">Google</a>
         """
         assert contains_google_auth_redirect(html) is False
+
+
+class TestUrlParsingExceptionPaths:
+    """Cover the defensive ``except`` branches in the URL parsers.
+
+    ``urlparse(...).hostname`` raises ``ValueError`` for malformed inputs
+    such as an unterminated IPv6 literal. Both validators must swallow that
+    and report a non-match rather than propagating the exception.
+    """
+
+    # ``http://[::1`` has an unterminated IPv6 host; ``.hostname`` raises
+    # ``ValueError: Invalid IPv6 URL`` in CPython's urllib.
+    MALFORMED_IPV6 = "http://[::1"
+
+    def test_is_youtube_url_swallows_parse_error(self):
+        assert is_youtube_url(self.MALFORMED_IPV6) is False
+
+    def test_is_google_auth_redirect_swallows_parse_error(self):
+        assert is_google_auth_redirect(self.MALFORMED_IPV6) is False
+
+    def test_contains_google_auth_redirect_swallows_parse_error(self):
+        # The malformed URL is extracted by the regex (it stops at the
+        # space, leaving the unterminated ``http://[::1``), then routed
+        # through ``is_google_auth_redirect`` where the ValueError is
+        # swallowed.
+        text = f"redirecting to {self.MALFORMED_IPV6} signin"
+        assert contains_google_auth_redirect(text) is False

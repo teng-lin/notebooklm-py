@@ -10,7 +10,11 @@ from .types import RPCMethod
 logger = logging.getLogger(__name__)
 
 
-def encode_rpc_request(method: RPCMethod, params: list[Any]) -> list:
+def encode_rpc_request(
+    method: RPCMethod,
+    params: list[Any],
+    rpc_id_override: str | None = None,
+) -> list:
     """
     Encode an RPC request into batchexecute format.
 
@@ -20,19 +24,53 @@ def encode_rpc_request(method: RPCMethod, params: list[Any]) -> list:
     Args:
         method: The RPC method ID enum
         params: Parameters for the RPC call
+        rpc_id_override: Optional resolved RPC id string. When provided, this
+            value is embedded in the request body instead of ``method.value``.
+            Callers must pass the SAME string to the URL builder so the
+            ``rpcids=`` query param and the ``f.req`` body stay in sync —
+            mismatched IDs reach the wire as malformed requests. Used by
+            ``NotebookLMClient`` to thread ``NOTEBOOKLM_RPC_OVERRIDES`` through.
 
     Returns:
         Triple-nested array structure for batchexecute
     """
+    rpc_id = rpc_id_override if rpc_id_override is not None else method.value
     # JSON-encode params without spaces (compact format matching Chrome)
     params_json = json.dumps(params, separators=(",", ":"))
-    logger.debug("Encoding RPC: method=%s, param_count=%d", method.value, len(params))
+    logger.debug("Encoding RPC: method=%s, param_count=%d", rpc_id, len(params))
 
     # Build inner request: [rpc_id, json_params, null, "generic"]
-    inner = [method.value, params_json, None, "generic"]
+    inner = [rpc_id, params_json, None, "generic"]
 
     # Triple-nest the request
     return [[inner]]
+
+
+def nest_source_ids(ids: list[str] | None, depth: int) -> list:
+    """Wrap each source ID in ``depth`` inner lists, then collect.
+
+    The outer list is always present; ``depth`` is the number of inner
+    wrapping levels per ID.
+
+    - depth=1: ``[[id1], [id2]]``
+    - depth=2: ``[[[id1]], [[id2]]]``
+    - depth=3: ``[[[[id1]]], [[[id2]]]]``
+
+    Args:
+        ids: Source IDs, or ``None`` (treated as empty).
+        depth: Inner wrap levels per ID. Must be ``>= 1``.
+
+    Returns:
+        Empty list when ``ids`` is ``None`` or empty.
+    """
+    if depth < 1:
+        raise ValueError(f"depth must be >= 1, got {depth}")
+    if not ids:
+        return []
+    result: list = list(ids)
+    for _ in range(depth):
+        result = [[item] for item in result]
+    return result
 
 
 def build_request_body(
@@ -68,37 +106,3 @@ def build_request_body(
     body = "&".join(body_parts) + "&"
     logger.debug("Built request body: size=%d bytes", len(body))
     return body
-
-
-def build_url_params(
-    rpc_method: RPCMethod,
-    source_path: str = "/",
-    session_id: str | None = None,
-    bl: str | None = None,
-) -> dict[str, str]:
-    """
-    Build URL query parameters for batchexecute request.
-
-    Args:
-        rpc_method: RPC method being called
-        source_path: Source path context (e.g., /notebook/{id})
-        session_id: Session ID (FdrFJe value)
-        bl: Build label (changes periodically, optional)
-
-    Returns:
-        Dict of query parameters
-    """
-    params = {
-        "rpcids": rpc_method.value,
-        "source-path": source_path,
-        "hl": "en",
-        "rt": "c",  # Chunked response mode
-    }
-
-    if session_id:
-        params["f.sid"] = session_id
-
-    if bl:
-        params["bl"] = bl
-
-    return params

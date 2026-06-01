@@ -1,0 +1,24 @@
+# Regression fixture for I7.
+#
+# The old ``tests/check_cassettes_clean.sh`` defined the cookie-value capture
+# as ``[^S"][^"]*`` — i.e. "any character except the letter S, followed by any
+# non-quote run".  That heuristic rejected the canonical ``SCRUBBED`` sentinel
+# but ALSO silently accepted any real cookie value whose first character
+# happened to be ``S`` (~1/62 chance for a base64-encoded session token).
+#
+# The new Python guard uses an explicit placeholder allowlist
+# (``tests/cassette_patterns.py:SCRUB_PLACEHOLDERS``) instead of a "starts
+# with S" heuristic, so this fixture (which embeds a real-looking SID value
+# that starts with ``S``) trips the guard.
+#
+# Used by ``tests/unit/test_cassette_sanitizer.py::test_python_guard_catches_sid_starting_with_s``.
+interactions:
+  - request:
+      headers:
+        Cookie: ["SID=Sx7K9pQ2_realsessiontoken; Path=/"]
+      method: GET
+      uri: https://notebooklm.google.com/
+    response:
+      body: {string: '{}'}
+      headers: {}
+      status: {code: 200, message: OK}

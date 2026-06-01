@@ -19,7 +19,7 @@ from notebooklm import ChatGoal, ChatMode, ChatResponseLength, NotebookLMClient
 async def main():
     """Demonstrate chat and conversation features."""
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # Create a notebook with some content
         print("Setting up notebook with sources...")
         notebook = await client.notebooks.create("Python Learning")

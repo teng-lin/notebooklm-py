@@ -1,0 +1,49 @@
+{
+  "method_name": "GET_SOURCE",
+  "method_id": "hizoJc",
+  "description": "Fetch a single source's content / metadata (production shape [[source_id], [2], [2]]).",
+  "request": {
+    "params": [
+      [
+        "SCRUBBED_SRC_001"
+      ],
+      [
+        2
+      ],
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "hizoJc",
+          "[[\"SCRUBBED_SRC_001\"],[2],[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "hizoJc",
+          "[\"SCRUBBED_SRC_001\",\"Scrubbed Source Title\",\"Scrubbed source content.\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "SCRUBBED_SRC_001",
+      "Scrubbed Source Title",
+      "Scrubbed source content."
+    ]
+  }
+}

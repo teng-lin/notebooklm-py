@@ -1,0 +1,52 @@
+<!doctype html>
+<!--
+  Sanitized fixture of a NotebookLM homepage response.
+
+  Captured from a real authenticated session, then scrubbed: every sensitive
+  token, account email, and identifier has been replaced with a SCRUBBED_*
+  sentinel. The structural shape (key ordering, surrounding chrome, escape
+  forms) mirrors what notebooklm.google.com actually emits as of 2025-Q4.
+
+  Token regex tests use this fixture to verify that ``extract_wiz_field``
+  locates the canonical fields embedded in real ``WIZ_global_data`` JSON.
+
+  DO NOT add real tokens here — substitute SCRUBBED_* sentinels.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NotebookLM</title>
+  <link rel="icon" href="/favicon.ico">
+  <script nonce="SCRUBBED_NONCE">
+    (function(){
+      window.WIZ_global_data = {
+        "SNlM0e": "SCRUBBED_CSRF_AF1_QpN-abc123_def456",
+        "FdrFJe": "1234567890123456",
+        "oM1Kwf": "user@example.com",
+        "qwAQke": "NotebookLM",
+        "S06Grb": "user@example.com",
+        "w2btAe": "{\"1\":\"123456789\",\"2\":\"user@example.com\",\"13\":1}",
+        "zChJod": "%.@.",
+        "MT7f6d": 0,
+        "PVlQOd": [],
+        "QrtxK": "",
+        "Yllh3e": "%.@.1747142400000,2147483647,2147483647]",
+        "fPDxwd": [null, null, null, [null, null, null, null, null, null, [3,7,7]]],
+        "qddgxc": ["en", "US", "America/Los_Angeles"]
+      };
+    })();
+  </script>
+</head>
+<body>
+  <c-wiz jsrenderer="abc" data-p="%.@.">
+    <div id="app-root">
+      <h1>Welcome back</h1>
+    </div>
+  </c-wiz>
+  <script>
+    // Initialization tail — the real page emits hundreds of these blocks.
+    AF_initDataCallback({key: 'ds:0', isError: false, hash: '1', data: []});
+  </script>
+</body>
+</html>

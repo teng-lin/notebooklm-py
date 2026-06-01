@@ -1,0 +1,27 @@
+# Synthetic-bad fixture for C3 regression: stale chat-ask f.req shape.
+#
+# The real chat-ask RPC (rpcids=otS69) wraps its params in a 2-element outer
+# list `[null, "<inner-json-string>"]` whose inner JSON carries 9 params.
+# Old (stale) cassettes captured a flat 5-element shape; replay against the
+# new 9-param shape decoder produces silent miscompares.
+#
+# When the cassette-shape lint is reintroduced for this class of defect, the
+# lint MUST fail on this fixture (assertion: rpcids=otS69 requires the
+# `[null, str]` outer shape with >=9 inner params).
+#
+# URL-decoded body:
+#   f.req=["NB_ID","CONV_ID","QUERY",null,"NONCE"]
+interactions:
+- request:
+    body: f.req=%5B%22NB_ID%22%2C%22CONV_ID%22%2C%22QUERY%22%2Cnull%2C%22NONCE%22%5D&at=SCRUBBED_CSRF
+    headers:
+      Content-Type: [application/x-www-form-urlencoded]
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=otS69&source-path=%2Fnotebook%2Fvcr_test_notebook_id_sentinel_32ch&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ")]}'\n\n52\n[[\"wrb.fr\",\"otS69\",\"[\\\"RESULT\\\"]\",null,null,null,1]]\n"
+    headers:
+      Content-Type: [application/json; charset=utf-8]
+    status: {code: 200, message: OK}
+version: 1

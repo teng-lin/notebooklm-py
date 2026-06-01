@@ -20,7 +20,13 @@ _check_python_version()
 del _check_python_version
 
 # Configure logging (must run before other imports that create loggers)
-from ._logging import configure_logging
+from ._logging import (
+    configure_logging,
+    correlation_id,
+    get_request_id,
+    reset_request_id,
+    set_request_id,
+)
 
 configure_logging()
 
@@ -51,26 +57,42 @@ from .exceptions import (
     # Domain: Artifacts
     ArtifactDownloadError,
     ArtifactError,
+    ArtifactFeatureUnavailableError,
+    ArtifactInProgressTimeoutError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
     # RPC Protocol
     AuthError,
+    AuthExtractionError,
     # Domain: Chat
     ChatError,
+    ChatResponseParseError,
     ClientError,
     # Validation/Config
     ConfigurationError,
     DecodingError,
     # Network
     NetworkError,
+    # Idempotency
+    NonIdempotentRetryError,
     # Domain: Notebooks
     NotebookError,
+    NotebookLimitError,
     # Base
     NotebookLMError,
     NotebookNotFoundError,
+    # Cross-domain umbrellas
+    NotFoundError,
     RateLimitError,
+    # Domain: Research
+    ResearchError,
+    ResearchTaskMismatchError,
+    ResearchTimeoutError,
     RPCError,
+    RPCResponseTooLargeError,
     RPCTimeoutError,
     ServerError,
     # Domain: Sources
@@ -81,10 +103,14 @@ from .exceptions import (
     SourceTimeoutError,
     UnknownRPCMethodError,
     ValidationError,
+    # Cross-domain umbrellas (wait/poll timeouts)
+    WaitTimeoutError,
 )
 
 # Public API: Types and dataclasses
 from .types import (
+    AccountLimits,
+    AccountTier,
     Artifact,
     ArtifactType,
     AskResult,
@@ -94,6 +120,9 @@ from .types import (
     ChatMode,
     ChatReference,
     ChatResponseLength,
+    CitedSourceSelection,
+    ClientMetricsSnapshot,
+    ConnectionLimits,
     ConversationTurn,
     DriveMimeType,
     ExportType,
@@ -101,6 +130,9 @@ from .types import (
     InfographicDetail,
     InfographicOrientation,
     InfographicStyle,
+    MindMap,
+    MindMapKind,
+    MindMapResult,
     Note,
     Notebook,
     NotebookDescription,
@@ -109,6 +141,11 @@ from .types import (
     QuizQuantity,
     ReportFormat,
     ReportSuggestion,
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
+    RpcTelemetryEvent,
     ShareAccess,
     SharedUser,
     SharePermission,
@@ -118,6 +155,7 @@ from .types import (
     SlideDeckLength,
     Source,
     SourceFulltext,
+    SourceGuide,
     SourceStatus,
     SourceSummary,
     SourceType,
@@ -129,49 +167,81 @@ from .types import (
     VideoStyle,
 )
 
+# Public API: Utility helpers
+from .utils import resolve_chat_reference_passage
+
 __all__ = [
     "__version__",
     # Client (main entry point)
     "NotebookLMClient",
     # Auth
     "AuthTokens",
+    # Observability
+    "correlation_id",
+    "get_request_id",
+    "set_request_id",
+    "reset_request_id",
     # Types
+    "AccountLimits",
+    "AccountTier",
+    "ConnectionLimits",
+    "ClientMetricsSnapshot",
+    "RpcTelemetryEvent",
     "Notebook",
     "NotebookDescription",
     "NotebookMetadata",
     "SuggestedTopic",
     "Source",
     "SourceFulltext",
+    "SourceGuide",
     "SourceSummary",
     "Artifact",
     "GenerationStatus",
     "ReportSuggestion",
+    "MindMap",
+    "MindMapKind",
+    "MindMapResult",
     "Note",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
     "ChatMode",
+    "CitedSourceSelection",
+    "ResearchStatus",
+    "ResearchSource",
+    "ResearchTask",
+    "ResearchStart",
     "SharedUser",
     "ShareStatus",
+    # Utility helpers
+    "resolve_chat_reference_passage",
     # Base Exceptions
     "NotebookLMError",
     "ValidationError",
     "ConfigurationError",
+    # Cross-domain umbrellas
+    "NotFoundError",
     # RPC/Network Exceptions
     "RPCError",
     "DecodingError",
     "UnknownRPCMethodError",
     "AuthError",
+    "AuthExtractionError",
     "NetworkError",
     "RPCTimeoutError",
+    "RPCResponseTooLargeError",
     "RateLimitError",
     "ServerError",
     "ClientError",
+    # Idempotency
+    "NonIdempotentRetryError",
     # Domain Exceptions: Notebooks
     "NotebookError",
     "NotebookNotFoundError",
+    "NotebookLimitError",
     # Domain Exceptions: Chat
     "ChatError",
+    "ChatResponseParseError",
     # Domain Exceptions: Sources
     "SourceError",
     "SourceAddError",
@@ -180,10 +250,20 @@ __all__ = [
     "SourceNotFoundError",
     # Domain Exceptions: Artifacts
     "ArtifactError",
+    "ArtifactFeatureUnavailableError",
     "ArtifactNotFoundError",
     "ArtifactNotReadyError",
     "ArtifactParseError",
     "ArtifactDownloadError",
+    "ArtifactTimeoutError",
+    "ArtifactPendingTimeoutError",
+    "ArtifactInProgressTimeoutError",
+    # Domain Exceptions: Research
+    "ResearchError",
+    "ResearchTimeoutError",
+    "ResearchTaskMismatchError",
+    # Cross-domain umbrella: wait/poll timeouts
+    "WaitTimeoutError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)
@@ -210,42 +290,4 @@ __all__ = [
     "ShareAccess",
     "ShareViewLevel",
     "SharePermission",
-    # Deprecated (will be removed in v0.4.0)
-    "StudioContentType",
 ]
-
-
-def __getattr__(name: str):
-    """Emit deprecation warnings for deprecated module-level names.
-
-    This allows us to provide backward-compatible imports with warnings.
-    Uses globals() caching to avoid duplicate warnings on repeated access.
-    """
-    import warnings
-
-    if name == "DEFAULT_STORAGE_PATH":
-        from .paths import get_storage_path
-
-        warnings.warn(
-            "DEFAULT_STORAGE_PATH is deprecated, use notebooklm.paths.get_storage_path() instead. "
-            "Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        val = get_storage_path()
-        globals()[name] = val
-        return val
-
-    if name == "StudioContentType":
-        from .rpc.types import ArtifactTypeCode
-
-        warnings.warn(
-            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.4.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Cache to prevent duplicate warnings on repeated access
-        globals()[name] = ArtifactTypeCode
-        return ArtifactTypeCode
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

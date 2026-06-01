@@ -8,8 +8,9 @@ This script demonstrates:
 4. Generate a podcast from the research
 
 Prerequisites:
-    pip install "notebooklm-py[browser]"
+    pip install "notebooklm-py[browser]" && playwright install chromium
     notebooklm login
+    # Full install guide: https://github.com/teng-lin/notebooklm-py/blob/main/docs/installation.md
 
 Usage:
     python research-to-podcast.py "Your research topic"
@@ -24,7 +25,7 @@ from notebooklm import NotebookLMClient
 async def main(topic: str):
     print(f"=== Research to Podcast: {topic} ===\n")
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # 1. Create a notebook
         print("Creating notebook...")
         nb = await client.notebooks.create(f"Research: {topic}")
@@ -36,29 +37,34 @@ async def main(topic: str):
         task_id = research.get("task_id") if research else None
         print(f"  Task ID: {task_id}\n")
 
-        # 3. Poll for completion
+        # 3. Wait for completion
         print("Waiting for research to complete...")
-        max_polls = 30
-        for i in range(max_polls):
-            status = await client.research.poll(nb.id)
-            state = status.get("status", "unknown")
-            print(f"  Poll {i + 1}/{max_polls}: {state}")
-
-            if state == "completed":
-                sources = status.get("sources", [])
-                print(f"  Found {len(sources)} sources!\n")
-                break
-
-            await asyncio.sleep(10)
-        else:
+        try:
+            status = await client.research.wait_for_completion(
+                nb.id,
+                task_id=task_id,
+                timeout=300,
+                interval=10,
+            )
+        except TimeoutError:
             print("  Research timed out\n")
             return
 
+        if status.get("status") != "completed":
+            print(f"  Research ended with status: {status.get('status', 'unknown')}\n")
+            return
+
+        task_id = status.get("task_id") or task_id
+        sources = status.get("sources", [])
+        print(f"  Found {len(sources)} sources!\n")
+
         # 4. Import discovered sources
-        if sources:
+        if sources and task_id:
             print("Importing sources...")
             await client.research.import_sources(nb.id, task_id, sources[:10])  # Limit to 10
             print(f"  Imported {min(len(sources), 10)} sources\n")
+        elif sources:
+            print("  Skipping import: research completed without a task ID\n")
 
         # 5. Generate podcast
         print("Generating podcast...")

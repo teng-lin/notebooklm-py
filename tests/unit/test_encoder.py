@@ -2,7 +2,10 @@
 
 import json
 
-from notebooklm.rpc.encoder import build_request_body, build_url_params, encode_rpc_request
+import pytest
+
+from notebooklm._notebooks import build_create_notebook_params
+from notebooklm.rpc.encoder import build_request_body, encode_rpc_request, nest_source_ids
 from notebooklm.rpc.types import RPCMethod
 
 
@@ -28,13 +31,13 @@ class TestEncodeRPCRequest:
 
     def test_encode_create_notebook(self):
         """Test encoding create notebook request."""
-        params = ["Test Notebook", None, None, [2], [1]]
+        params = build_create_notebook_params("Test Notebook")
         result = encode_rpc_request(RPCMethod.CREATE_NOTEBOOK, params)
 
         inner = result[0][0]
         assert inner[0] == RPCMethod.CREATE_NOTEBOOK.value
         decoded_params = json.loads(inner[1])
-        assert decoded_params[0] == "Test Notebook"
+        assert decoded_params == ["Test Notebook", None, None, [2], [1]]
 
     def test_encode_with_nested_params(self):
         """Test encoding with deeply nested parameters."""
@@ -118,75 +121,45 @@ class TestBuildRequestBody:
         assert "at=token" in body
 
 
-class TestBuildUrlParams:
-    def test_basic_params(self):
-        """Test basic URL params with only method."""
-        result = build_url_params(RPCMethod.LIST_NOTEBOOKS)
+class TestNestSourceIds:
+    """`nest_source_ids` helper."""
 
-        assert result["rpcids"] == RPCMethod.LIST_NOTEBOOKS.value
-        assert result["source-path"] == "/"
-        assert result["hl"] == "en"
-        assert result["rt"] == "c"
-        assert "f.sid" not in result
-        assert "bl" not in result
+    def test_empty_returns_empty(self):
+        assert nest_source_ids([], 1) == []
+        assert nest_source_ids([], 5) == []
+        assert nest_source_ids(None, 1) == []
+        assert nest_source_ids(None, 2) == []
 
-    def test_with_source_path(self):
-        """Test URL params with custom source path."""
-        result = build_url_params(RPCMethod.GET_NOTEBOOK, source_path="/notebook/abc123")
+    def test_depth_1(self):
+        """depth=1 → [[sid] for sid in ids]"""
+        assert nest_source_ids(["a"], 1) == [["a"]]
+        assert nest_source_ids(["a", "b"], 1) == [["a"], ["b"]]
 
-        assert result["rpcids"] == RPCMethod.GET_NOTEBOOK.value
-        assert result["source-path"] == "/notebook/abc123"
+    def test_depth_2(self):
+        """depth=2 → [[[sid]] for sid in ids]"""
+        assert nest_source_ids(["a"], 2) == [[["a"]]]
+        assert nest_source_ids(["a", "b"], 2) == [[["a"]], [["b"]]]
 
-    def test_with_session_id(self):
-        """Test URL params with session ID."""
-        result = build_url_params(RPCMethod.LIST_NOTEBOOKS, session_id="session_12345")
+    def test_depth_3(self):
+        """depth=3 → [[[[sid]]] for sid in ids]"""
+        assert nest_source_ids(["a"], 3) == [[[["a"]]]]
 
-        assert result["f.sid"] == "session_12345"
+    def test_invalid_depth_raises(self):
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids(["a"], 0)
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids(["a"], -1)
 
-    def test_with_build_label(self):
-        """Test URL params with build label."""
-        result = build_url_params(
-            RPCMethod.LIST_NOTEBOOKS, bl="boq_labs-tailwind-frontend_20250101"
-        )
+    def test_invalid_depth_raises_even_for_empty_input(self):
+        """Depth validation runs before empty short-circuit — contract is uniform."""
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids([], 0)
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids(None, 0)
 
-        assert result["bl"] == "boq_labs-tailwind-frontend_20250101"
-
-    def test_all_optional_params(self):
-        """Test URL params with all optional parameters."""
-        result = build_url_params(
-            RPCMethod.CREATE_NOTEBOOK,
-            source_path="/notebook/xyz789",
-            session_id="sess_abc",
-            bl="build_label_123",
-        )
-
-        assert result["rpcids"] == RPCMethod.CREATE_NOTEBOOK.value
-        assert result["source-path"] == "/notebook/xyz789"
-        assert result["hl"] == "en"
-        assert result["rt"] == "c"
-        assert result["f.sid"] == "sess_abc"
-        assert result["bl"] == "build_label_123"
-
-    def test_empty_session_id_not_included(self):
-        """Test that empty session_id is not included."""
-        result = build_url_params(RPCMethod.LIST_NOTEBOOKS, session_id=None)
-
-        assert "f.sid" not in result
-
-    def test_empty_bl_not_included(self):
-        """Test that empty bl is not included."""
-        result = build_url_params(RPCMethod.LIST_NOTEBOOKS, bl=None)
-
-        assert "bl" not in result
-
-    def test_various_rpc_methods(self):
-        """Test URL params for different RPC methods."""
-        methods = [
-            (RPCMethod.DELETE_NOTEBOOK, RPCMethod.DELETE_NOTEBOOK.value),
-            (RPCMethod.ADD_SOURCE, RPCMethod.ADD_SOURCE.value),
-            (RPCMethod.SUMMARIZE, "VfAZjd"),
-        ]
-
-        for method, expected_id in methods:
-            result = build_url_params(method)
-            assert result["rpcids"] == expected_id
+    def test_input_not_mutated(self):
+        """The helper must not mutate its input list."""
+        ids = ["a", "b", "c"]
+        original = list(ids)
+        nest_source_ids(ids, 2)
+        assert ids == original

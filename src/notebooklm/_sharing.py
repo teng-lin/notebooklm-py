@@ -2,7 +2,7 @@
 
 import logging
 
-from ._core import ClientCore
+from ._runtime.contracts import RpcCaller
 from .rpc import RPCMethod
 from .rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from .types import ShareStatus
@@ -34,13 +34,13 @@ class SharingAPI:
             )
     """
 
-    def __init__(self, core: ClientCore):
+    def __init__(self, rpc: RpcCaller):
         """Initialize the sharing API.
 
         Args:
-            core: The core client infrastructure.
+            rpc: RPC dispatch surface (typically the shared client session).
         """
-        self._core = core
+        self._rpc = rpc
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Get current sharing configuration.
@@ -53,7 +53,7 @@ class SharingAPI:
         """
         logger.debug("Getting share status for notebook: %s", notebook_id)
         params = [notebook_id, [2]]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_SHARE_STATUS,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -87,7 +87,7 @@ class SharingAPI:
             None,
             [2],
         ]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.SHARE_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -119,7 +119,7 @@ class SharingAPI:
             notebook_id,
             [[None, None, None, None, None, None, None, None, [[level.value]]]],
         ]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.RENAME_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -188,7 +188,7 @@ class SharingAPI:
             None,
             [2],
         ]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.SHARE_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -242,7 +242,7 @@ class SharingAPI:
             None,
             [2],
         ]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.SHARE_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",

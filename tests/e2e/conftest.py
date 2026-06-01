@@ -1,12 +1,13 @@
 """E2E test fixtures and configuration."""
 
+import hashlib
 import logging
 import os
+import sys
 import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-import httpx
 import pytest
 
 # Load .env file if python-dotenv is available
@@ -18,13 +19,123 @@ except ImportError:
     pass  # python-dotenv not installed, rely on shell environment
 
 from notebooklm import NotebookLMClient
-from notebooklm.auth import (
-    AuthTokens,
-    extract_csrf_from_html,
-    extract_session_id_from_html,
-    load_auth_from_storage,
+from notebooklm.auth import AuthTokens, load_auth_from_storage
+from notebooklm.exceptions import ChatError
+from notebooklm.paths import get_profile_dir
+
+# Substrings in ChatError / skip messages that mark a server-side rate-limit
+# or quota rejection rather than a client bug. Covers both the explicit
+# UserDisplayableError message and the HTTP-status-wrapped 429 path in
+# _chat/api.py:156, plus the generation skip phrase in assert_generation_started.
+_RATE_LIMIT_PHRASES = (
+    "rate limit",
+    "rate limited",
+    "rejected by the api",
+    "429",
+    "too many requests",
 )
-from notebooklm.paths import get_home_dir
+
+
+def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
+    """Wrap ``client.chat.ask`` so rate-limit ``ChatError``s become skips.
+
+    Non-rate-limit ``ChatError``s (HTTP, auth, parse) still raise so real
+    defects stay visible.
+    """
+    original_ask = client.chat.ask
+
+    async def _ask_with_skip(*args, **kwargs):
+        try:
+            return await original_ask(*args, **kwargs)
+        except ChatError as e:
+            if any(phrase in str(e).lower() for phrase in _RATE_LIMIT_PHRASES):
+                pytest.skip(str(e))
+            raise
+
+    client.chat.ask = _ask_with_skip
+
+
+def _emit_auth_route_diagnostic(auth_tokens: AuthTokens) -> None:
+    """Emit non-secret auth-routing context for CI debugging."""
+    source = (
+        "NOTEBOOKLM_AUTH_JSON"
+        if auth_tokens.storage_path is None and os.environ.get("NOTEBOOKLM_AUTH_JSON")
+        else "storage_state"
+    )
+    email_hash = "none"
+    if auth_tokens.account_email:
+        email_hash = hashlib.sha256(auth_tokens.account_email.lower().encode()).hexdigest()[:12]
+    message = (
+        "E2E auth route: "
+        f"source={source} "
+        f"storage_path={'none' if auth_tokens.storage_path is None else 'file'} "
+        f"authuser={auth_tokens.authuser} "
+        f"account_email_hash={email_hash}"
+    )
+    if os.environ.get("GITHUB_ACTIONS"):
+        print(f"::notice::{message}")
+    else:
+        logging.info(message)
+
+
+# =============================================================================
+# --profile flag plumbing
+# =============================================================================
+# `--profile NAME` selects the NotebookLM profile for the test session by
+# setting ``NOTEBOOKLM_PROFILE``. The flag is applied in two places:
+#
+# 1. At module import (via ``_argv_profile``) so the module-level
+#    ``requires_auth = pytest.mark.skipif(not has_auth(), ...)`` below resolves
+#    auth under the selected profile. ``pytest_configure`` runs *after*
+#    conftest import, which is too late for that marker. The early peek only
+#    sees ``sys.argv`` — flags injected via ``addopts`` in ``pytest.ini`` /
+#    ``pyproject.toml`` are not visible until ``pytest_configure``.
+# 2. In ``pytest_configure``, as a backstop for invocations that mutate
+#    sys.argv after conftest is imported (e.g. ``pytest.main(args=...)``)
+#    and to pick up ``--profile`` from ``addopts``.
+#
+# ``pytest_unconfigure`` restores the prior env var so the mutation does not
+# leak across the rest of the pytest process (matters for IDE/in-process runs).
+
+# Records prior NOTEBOOKLM_PROFILE state on first mutation; ``None`` means we
+# never mutated. ``(was_set, value)`` lets unconfigure restore an existing
+# value or pop the var entirely.
+_PROFILE_PRIOR: tuple[bool, str | None] | None = None
+
+
+def _argv_profile(argv: list[str] | None = None) -> str | None:
+    """Extract ``--profile NAME`` or ``--profile=NAME`` from argv.
+
+    Iterates from the end so the *last* occurrence wins (matching argparse
+    semantics for ``action="store"``), and rejects values that look like
+    another flag (``--profile --verbose`` should not consume ``--verbose``
+    as the profile name).
+    """
+    args = sys.argv if argv is None else argv
+    for i in range(len(args) - 1, -1, -1):
+        arg = args[i]
+        if arg.startswith("--profile="):
+            return arg.split("=", 1)[1]
+        if arg == "--profile" and i + 1 < len(args):
+            value = args[i + 1]
+            if not value.startswith("-"):
+                return value
+    return None
+
+
+def _apply_profile(profile: str) -> None:
+    """Set ``NOTEBOOKLM_PROFILE``; record prior state for ``pytest_unconfigure``."""
+    global _PROFILE_PRIOR
+    if _PROFILE_PRIOR is None:
+        _PROFILE_PRIOR = (
+            "NOTEBOOKLM_PROFILE" in os.environ,
+            os.environ.get("NOTEBOOKLM_PROFILE"),
+        )
+    os.environ["NOTEBOOKLM_PROFILE"] = profile
+
+
+if _early := _argv_profile():
+    _apply_profile(_early)
 
 # =============================================================================
 # Constants
@@ -41,6 +152,16 @@ GENERATION_TEST_DELAY = 15.0
 
 # Delay between chat tests (seconds) to avoid API rate limits from rapid ask() calls
 CHAT_TEST_DELAY = 5.0
+E2E_TEST_DIR = Path(__file__).resolve().parent
+
+
+def _is_path_under(path: Path, directory: Path) -> bool:
+    """Return True when path resolves under directory."""
+    try:
+        path.resolve().relative_to(directory.resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def assert_generation_started(result, artifact_type: str = "Artifact") -> None:
@@ -88,13 +209,91 @@ requires_auth = pytest.mark.skipif(
 
 
 def pytest_addoption(parser):
-    """Add --include-variants option for e2e tests."""
+    """Add E2E test command-line options."""
     parser.addoption(
         "--include-variants",
         action="store_true",
         default=False,
         help="Include variant tests (skipped by default to save API quota)",
     )
+    parser.addoption(
+        "--profile",
+        action="store",
+        default=None,
+        metavar="NAME",
+        help="NotebookLM profile to use for E2E tests (overrides NOTEBOOKLM_PROFILE env var)",
+    )
+
+
+def pytest_configure(config):
+    """Re-apply --profile after CLI parsing (backstop for the import-time peek).
+
+    Precedence: --profile flag > NOTEBOOKLM_PROFILE env var > config default.
+    """
+    profile = config.getoption("--profile")
+    if profile:
+        _apply_profile(profile)
+
+
+def pytest_unconfigure(config):
+    """Restore the original ``NOTEBOOKLM_PROFILE`` if we mutated it."""
+    global _PROFILE_PRIOR
+    if _PROFILE_PRIOR is None:
+        return
+    was_set, prev = _PROFILE_PRIOR
+    _PROFILE_PRIOR = None
+    if was_set and prev is not None:
+        os.environ["NOTEBOOKLM_PROFILE"] = prev
+    else:
+        os.environ.pop("NOTEBOOKLM_PROFILE", None)
+
+
+def pytest_itemcollected(item):
+    """Mark every item under tests/e2e as E2E before marker deselection."""
+    if _is_path_under(Path(item.path), E2E_TEST_DIR):
+        item.add_marker(pytest.mark.e2e)
+
+
+def _skip_reason(report) -> str:
+    longrepr = report.longrepr
+    if isinstance(longrepr, tuple) and len(longrepr) >= 3:
+        return str(longrepr[2])
+    return str(longrepr) if longrepr else ""
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Surface chat rate-limit skips so they're visible despite green CI.
+
+    Without this, the L1 skip-fixture (_install_chat_rate_limit_skip) makes
+    Google-side throttling invisible — the job stays green but coverage
+    silently degrades. Emit a pytest summary section plus, on GitHub Actions,
+    a warning annotation and step-summary entry.
+    """
+    nodeids = [
+        report.nodeid
+        for report in terminalreporter.stats.get("skipped", [])
+        if any(phrase in _skip_reason(report).lower() for phrase in _RATE_LIMIT_PHRASES)
+    ]
+    if not nodeids:
+        return
+
+    terminalreporter.write_sep("=", f"rate-limit skips ({len(nodeids)})", yellow=True)
+    for nodeid in nodeids:
+        terminalreporter.write_line(f"  {nodeid}")
+
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        try:
+            with open(summary_path, "a", encoding="utf-8") as f:
+                f.write(f"\n### Rate-limit skips: {len(nodeids)}\n\n")
+                for nodeid in nodeids:
+                    f.write(f"- `{nodeid}`\n")
+        except OSError:
+            pass
+
+    if os.environ.get("GITHUB_ACTIONS"):
+        joined = ", ".join(nodeids)
+        print(f"::warning::{len(nodeids)} test(s) skipped due to rate-limit: {joined}")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -144,35 +343,19 @@ def pytest_runtest_teardown(item, nextitem):
 
 
 @pytest.fixture(scope="session")
-def auth_cookies() -> dict[str, str]:
-    """Load auth cookies from storage (session-scoped)."""
-    return load_auth_from_storage()
-
-
-@pytest.fixture(scope="session")
-def auth_tokens(auth_cookies) -> AuthTokens:
-    """Fetch auth tokens synchronously (session-scoped)."""
+def auth_tokens() -> AuthTokens:
+    """Load domain-preserving auth tokens from storage (session-scoped)."""
     import asyncio
 
-    async def _fetch_tokens():
-        cookie_header = "; ".join(f"{k}={v}" for k, v in auth_cookies.items())
-        async with httpx.AsyncClient() as http:
-            resp = await http.get(
-                "https://notebooklm.google.com/",
-                headers={"Cookie": cookie_header},
-                follow_redirects=True,
-            )
-            resp.raise_for_status()
-            csrf = extract_csrf_from_html(resp.text)
-            session_id = extract_session_id_from_html(resp.text)
-        return AuthTokens(cookies=auth_cookies, csrf_token=csrf, session_id=session_id)
-
-    return asyncio.run(_fetch_tokens())
+    tokens = asyncio.run(AuthTokens.from_storage())
+    _emit_auth_route_diagnostic(tokens)
+    return tokens
 
 
 @pytest.fixture
 async def client(auth_tokens) -> AsyncGenerator[NotebookLMClient, None]:
-    async with NotebookLMClient(auth_tokens) as c:
+    async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as c:
+        _install_chat_rate_limit_skip(c)
         yield c
 
 
@@ -217,7 +400,7 @@ async def cleanup_notebooks(created_notebooks, auth_tokens):
     """Cleanup created notebooks after test."""
     yield
     if created_notebooks:
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as client:
             for nb_id in created_notebooks:
                 try:
                     await client.notebooks.delete(nb_id)
@@ -272,8 +455,8 @@ _generation_cleanup_done = False
 
 
 def _get_generation_notebook_id_path() -> Path:
-    """Get the path to the generation notebook ID file."""
-    return get_home_dir() / GENERATION_NOTEBOOK_ID_FILE
+    """Get the path to the generation notebook ID file (per active profile)."""
+    return get_profile_dir() / GENERATION_NOTEBOOK_ID_FILE
 
 
 def _load_stored_generation_notebook_id() -> str | None:
@@ -416,7 +599,8 @@ async def generation_notebook_id(client):
 
     This fixture uses a hybrid approach:
     1. Check NOTEBOOKLM_GENERATION_NOTEBOOK_ID env var
-    2. If not set, check for stored ID in NOTEBOOKLM_HOME/generation_notebook_id
+    2. If not set, check for a stored ID in the active profile cache
+       (~/.notebooklm/profiles/<name>/generation_notebook_id)
     3. If not found, auto-create a notebook and store its ID
 
     All notebook IDs (env var or stored) are verified to exist before use.
@@ -490,8 +674,8 @@ _multi_source_cleanup_done = False
 
 
 def _get_multi_source_notebook_id_path() -> Path:
-    """Get the path to the multi-source notebook ID file."""
-    return get_home_dir() / MULTI_SOURCE_NOTEBOOK_ID_FILE
+    """Get the path to the multi-source notebook ID file (per active profile)."""
+    return get_profile_dir() / MULTI_SOURCE_NOTEBOOK_ID_FILE
 
 
 def _load_stored_multi_source_notebook_id() -> str | None:
@@ -620,7 +804,8 @@ async def multi_source_notebook_id(client):
 
     This fixture uses a hybrid approach similar to generation_notebook_id:
     1. Check NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID env var
-    2. If not set, check for stored ID
+    2. If not set, check for a stored ID in the active profile cache
+       (~/.notebooklm/profiles/<name>/multi_source_notebook_id)
     3. If not found, auto-create a notebook with 3 sources
 
     All IDs are verified to exist before use.

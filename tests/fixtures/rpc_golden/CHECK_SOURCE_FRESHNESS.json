@@ -1,0 +1,45 @@
+{
+  "method_name": "CHECK_SOURCE_FRESHNESS",
+  "method_id": "yR9Yof",
+  "description": "Check whether a URL-backed source has updated upstream (production shape [None, [source_id], [2]]).",
+  "request": {
+    "params": [
+      null,
+      [
+        "SCRUBBED_SRC_001"
+      ],
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "yR9Yof",
+          "[null,[\"SCRUBBED_SRC_001\"],[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "yR9Yof",
+          "[false]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      false
+    ]
+  }
+}

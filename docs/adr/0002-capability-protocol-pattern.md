@@ -1,0 +1,82 @@
+# ADR-002: Capability Protocol pattern (`SessionCapabilities` fat union)
+
+> **Current state (2026-05-29).** This ADR is **Superseded** and documents a
+> pre-cutover pattern for historical context only. Since it was written, the
+> concrete `Session` facade class, `_session.py`, and `_core.py` have all been
+> **deleted**, and `_session_contracts.py` was renamed to `_runtime_contracts.py`
+> (see [ADR-014](0014-feature-local-runtime-adapters.md) and
+> [`docs/architecture.md`](../architecture.md) for the live shape). The
+> feature-local composite Protocols `ChatRuntime` and `ArtifactsRuntime`
+> referenced in the Status line below were also **retired** — feature APIs now
+> take their narrow collaborators by keyword-only constructor argument. Read
+> in-body references to `Session`, `_core.py`, `_session_contracts.py`,
+> `ChatRuntime`, `ArtifactsRuntime`, and exact `file.py:NNN` line numbers as
+> historical — they do not point at live code.
+
+## Status
+
+Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol have been deleted; sub-clients now consume the Session facade directly, typed against shared capability Protocols in `_session_contracts.py` and feature-local runtimes (`ChatRuntime` in `_chat.py:90`, `ArtifactsRuntime` in `_artifacts.py:154`). The broader composable-capabilities arc continued in [ADR-013](0013-composable-session-capabilities.md) (#866), which finalized the per-feature Protocol model.
+
+This ADR documents the pre-cutover pattern for historical context. The "Decision" section below describes the state prior to D2 cutover; the "Alternatives considered" section describes the replacement now adopted.
+
+## Context
+
+`NotebookLMClient` exposes eight namespaced feature APIs (`notebooks`, `sources`, `artifacts`, `chat`, `research`, `notes`, `settings`, `sharing`). Each feature API is implemented in its own module (`_notebooks.py`, `_sources.py`, etc.) and needs structured access to `Session` collaborators (RPC dispatch, auth routing, request-id allocation, polling registry, transport bookkeeping, upload concurrency, etc.).
+
+Two non-negotiable forces shaped the original design:
+
+- **Sub-clients must not import `Session` directly.** Doing so would create a circular dependency (`Session` imports sub-clients to expose them on `NotebookLMClient.notebooks` etc.; sub-clients importing `Session` would close the loop). Mypy enforces the boundary via `TYPE_CHECKING` gates today.
+- **Sub-clients should be typeable.** When a sub-client calls `executor.rpc_call(...)`, mypy needs to verify the signature; passing `Any` defeats the type system at exactly the place where method-ID drift would otherwise break silently.
+
+The codebase resolved both forces with a *capability Protocol* pattern. Ten narrow `Protocol` classes describe individual collaborator surfaces:
+
+```text
+CoreRPCProvider · SourceListProvider · CoreReqIdProvider
+ChatStreamingProvider · PollRegistryProvider · AuthRouteProvider
+CookieJarProvider · TransportOperationProvider
+UploadConcurrencyProvider · LoopAffinityProvider
+```
+
+Each Protocol describes the smallest collaborator surface the audit could identify at the time of extraction. A concrete adapter class `SessionCapabilities` then multi-inherits *all ten* Protocols and forwards every method to an underlying `Session` instance (`src/notebooklm/_capabilities.py:149-160`). Sub-clients accept a `SessionCapabilities` parameter in their constructors and rely on it for every collaborator interaction.
+
+An internal architecture audit (disease D2) classified the result as a *fat-union god-interface wearing a Protocol mask*. The Protocols are narrow individually, but every sub-client takes the union, so the *effective* contract sub-clients depend on is the full ten-Protocol surface. The hoped-for narrowing never materialized because the adapter pre-merges them.
+
+## Decision
+
+For the current arc (tier-10 baseline), the pattern is:
+
+1. Define narrow capability `Protocol` classes in `src/notebooklm/_capabilities.py`, one per collaborator surface.
+2. Define a single concrete adapter `SessionCapabilities` that multi-inherits every Protocol and forwards to `Session`.
+3. Sub-client constructors accept a `SessionCapabilities` instance, not a `Session` instance.
+4. `NotebookLMClient` constructs one `SessionCapabilities` adapter at open time and threads it into every sub-client.
+
+The pattern is *Accepted* today because:
+
+- It provides a single import path for sub-clients (`from ._capabilities import SessionCapabilities`), avoiding the "every sub-client lists its own Protocol grab-bag" boilerplate.
+- It guarantees that every Protocol has at least one structural implementer (`Session`, through the adapter), so mypy verifies the contract end-to-end.
+- It survived the tier-7 thread-safety arc and the tier-8 RPC/VCR arc without churn, which means the surface is empirically stable.
+
+## Consequences
+
+**Wanted:**
+
+- A single, mypy-verified seam between sub-clients and `Session`.
+- The capability Protocols document the collaborator graph in one place, which is useful for greenfield comparison (`docs/architecture-evolution.md`).
+
+**Unwanted (and the reason for the sunset clause):**
+
+- Every sub-client depends on the *union*, not the subset it actually needs. `NotebooksAPI` and `SettingsAPI` do not need `UploadConcurrencyProvider` or `ChatStreamingProvider`; today they advertise both anyway.
+- `Session` cannot shrink below ~1,300 lines while the union pins it. Every method named in any Protocol must remain on `Session` (or on the adapter, which delegates to `Session`).
+- The property-bridge zoo in `_core.py:450-774` exists partly because the union forces `Session` to expose attributes that have been physically relocated into seams — see ADR-001.
+- The adapter has begun to leak private internals. `_capabilities.py:230` forwards `_core._begin_transport_post`, an underscore-prefixed method. The narrow-protocol contract has already started to bend into private territory.
+- `ChatStreamingProvider`'s docstring openly self-describes as transitional: *"Chat-aware error mapping still lives on `Session.query_post` until that is extracted into a chat-owned transport."* The fat union is documented as not-yet-done work.
+
+The audit's recommendation is to *type each sub-client on its actual capability subset* and delete the `SessionCapabilities` adapter. `Session` will structurally satisfy each narrow Protocol; no runtime adapter is needed because structural sub-typing is enough. That work is sequenced as the D2 cutover (Wave 3 of the architecture-disease-remediation arc).
+
+## Alternatives considered
+
+- **Per-sub-client narrow `Protocol` class — chosen replacement for the D2 cutover.** Each sub-client declares its own `Protocol` listing only the collaborator surfaces it actually uses. `Session` is not modified; structural sub-typing means `Session` automatically satisfies each per-sub-client `Protocol`. Effect: `NotebooksAPI` depends on `CoreRPC + AuthRoute` only; the type checker enforces narrowing. Cost: each sub-client owns one extra type definition; ~8 new Protocol classes overall. Was not chosen at the time of the original extraction because the team prioritised "one import path for sub-clients" over "minimum coupling per sub-client"; the audit re-prioritises after observing the long-term coupling cost.
+- **Constructor injection of individual collaborator dataclasses.** Rejected. Would force every sub-client constructor to take 4–7 typed parameters, and every test to construct that many fakes. The Protocol pattern is strictly more ergonomic and only the *unioned shape* is wrong, not the structural-typing approach.
+- **Type sub-clients on `Session` directly.** Rejected. Creates the circular-import problem and defeats the layering. The Protocol pattern is the canonical Python answer to "type me on something I cannot import."
+- **`typing.Protocol` with `runtime_checkable=True` + `isinstance` guards instead of an adapter class.** Rejected. `isinstance` checks against `runtime_checkable` Protocols are slow and not actually safer (they do not inspect method signatures). The cost without benefit was clear at the time.
+- **Delete `SessionCapabilities` outright in this ADR.** Rejected. Removal must be paired with the per-sub-client Protocol introduction; deleting it first would force every sub-client to type its `core` parameter as `Any` during the migration window, which loses the type-safety benefit the pattern was designed to deliver. The D2 cutover sequences the swap atomically.

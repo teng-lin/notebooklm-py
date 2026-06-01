@@ -1,0 +1,37 @@
+{
+  "method_name": "REMOVE_RECENTLY_VIEWED",
+  "method_id": "fejl7e",
+  "description": "Remove a notebook from the 'recently viewed' list (no-op result; live API returns [13] at index 5 with null result_data).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "fejl7e",
+          "[\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "fejl7e",
+          null,
+          null,
+          null,
+          [13],
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

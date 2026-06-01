@@ -1,0 +1,46 @@
+{
+  "method_name": "GET_CONVERSATION_TURNS",
+  "method_id": "khqZz",
+  "description": "Fetch Q&A turns for a conversation (representative shape; trailing list is a wire-observed slot).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      "SCRUBBED_CONV_001",
+      []
+    ],
+    "expected_f_req": [
+      [
+        [
+          "khqZz",
+          "[\"SCRUBBED_NB_001\",\"SCRUBBED_CONV_001\",[]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "khqZz",
+          "[[[\"Scrubbed user question.\",\"Scrubbed assistant answer.\"]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "Scrubbed user question.",
+          "Scrubbed assistant answer."
+        ]
+      ]
+    ]
+  }
+}

@@ -1,6 +1,8 @@
 """Unit tests for types module dataclasses and parsing."""
 
+import pickle
 import warnings
+from unittest.mock import patch
 
 import pytest
 
@@ -20,7 +22,237 @@ from notebooklm.types import (
     SourceFulltext,
     SourceType,
     UnknownTypeWarning,
+    _is_valid_artifact_url,
 )
+
+
+class TestArtifactUrlValidation:
+    """Test the canonical artifact URL validation helper."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("https://example.com/audio.mp3", True),
+            ("http://example.com/video.mp4", True),
+            ("example.com/audio.mp3", False),
+            ("ftp://example.com/file.mp3", False),
+            ("", False),
+            (None, False),
+            (123, False),
+            (["https://example.com"], False),
+        ],
+    )
+    def test_url_validation(self, value, expected):
+        assert _is_valid_artifact_url(value) is expected
+
+
+class TestTimestampParsing:
+    def test_datetime_from_timestamp_valid_value(self):
+        """Timestamp helper should preserve valid epoch-second values."""
+        from notebooklm.types import _datetime_from_timestamp
+
+        ts = 1704067200
+        parsed = _datetime_from_timestamp(ts)
+
+        assert parsed is not None
+        assert parsed.timestamp() == ts
+
+    def test_datetime_from_timestamp_oserror(self):
+        """Platform-specific timestamp errors should normalize to None."""
+        from notebooklm.types import _datetime_from_timestamp
+
+        with patch("notebooklm._types.common.datetime") as mock_datetime:
+            mock_datetime.fromtimestamp.side_effect = OSError("timestamp out of range")
+            parsed = _datetime_from_timestamp(1704067200)
+
+        assert parsed is None
+
+    @pytest.mark.parametrize("value", ["bad", None, float("inf"), float("-inf")])
+    def test_datetime_from_timestamp_invalid_value(self, value):
+        """Invalid or out-of-range timestamp values should normalize to None."""
+        from notebooklm.types import _datetime_from_timestamp
+
+        assert _datetime_from_timestamp(value) is None
+
+
+_PUBLIC_MOVABLE_CLASSES = [
+    "AccountLimits",
+    "AccountTier",
+    "Artifact",
+    "ArtifactType",
+    "AskResult",
+    "ChatMode",
+    "ChatReference",
+    "CitedSourceSelection",
+    "ClientMetricsSnapshot",
+    "ConnectionLimits",
+    "ConversationTurn",
+    "GenerationStatus",
+    "MindMap",
+    "MindMapKind",
+    "Note",
+    "Notebook",
+    "NotebookDescription",
+    "NotebookMetadata",
+    "ReportSuggestion",
+    "RpcTelemetryEvent",
+    "SharedUser",
+    "ShareStatus",
+    "Source",
+    "SourceFulltext",
+    "SourceSummary",
+    "SourceType",
+    "SuggestedTopic",
+]
+
+
+@pytest.mark.parametrize("name", _PUBLIC_MOVABLE_CLASSES)
+def test_public_movable_types_keep_notebooklm_types_module(name):
+    """Moved public dataclasses/enums must preserve inspection and pickle identity."""
+    import notebooklm.types as public_types
+
+    assert getattr(public_types, name).__module__ == "notebooklm.types"
+
+
+def test_artifact_note_chat_and_sharing_types_are_facade_reexports():
+    """T13.3 domain types live in private modules while notebooklm.types stays public."""
+    import notebooklm.types as public_types
+    from notebooklm._types import artifacts, chat, notes, sharing
+
+    assert public_types.Artifact is artifacts.Artifact
+    assert public_types.ArtifactType is artifacts.ArtifactType
+    assert public_types.GenerationStatus is artifacts.GenerationStatus
+    assert public_types.ReportSuggestion is artifacts.ReportSuggestion
+    assert public_types.Note is notes.Note
+    assert public_types.ConversationTurn is chat.ConversationTurn
+    assert public_types.ChatReference is chat.ChatReference
+    assert public_types.AskResult is chat.AskResult
+    assert public_types.ChatMode is chat.ChatMode
+    assert public_types.SharedUser is sharing.SharedUser
+    assert public_types.ShareStatus is sharing.ShareStatus
+
+
+def test_artifact_private_helper_seams_are_facade_reexports():
+    """Artifact helper functions and warning state remain live notebooklm.types aliases."""
+    import notebooklm.types as public_types
+    from notebooklm._types import artifacts
+
+    assert public_types._warned_artifact_types is artifacts._warned_artifact_types
+    assert public_types._is_valid_artifact_url is artifacts._is_valid_artifact_url
+    assert public_types._extract_artifact_url is artifacts._extract_artifact_url
+    assert public_types._extract_audio_artifact_url is artifacts._extract_audio_artifact_url
+    assert public_types._extract_video_artifact_url is artifacts._extract_video_artifact_url
+    assert public_types._extract_infographic_artifact_url is (
+        artifacts._extract_infographic_artifact_url
+    )
+    assert public_types._extract_slide_deck_artifact_url is (
+        artifacts._extract_slide_deck_artifact_url
+    )
+
+
+def test_representative_public_dataclasses_pickle_round_trip():
+    """Representative public dataclasses/enums keep pickle compatibility through T13 moves."""
+    from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
+    from notebooklm.types import (
+        AccountLimits,
+        AccountTier,
+        Artifact,
+        AskResult,
+        ChatReference,
+        CitedSourceSelection,
+        ClientMetricsSnapshot,
+        ConnectionLimits,
+        ConversationTurn,
+        GenerationStatus,
+        Note,
+        Notebook,
+        NotebookDescription,
+        NotebookMetadata,
+        ReportSuggestion,
+        RpcTelemetryEvent,
+        ShareAccess,
+        SharedUser,
+        SharePermission,
+        ShareStatus,
+        ShareViewLevel,
+        Source,
+        SourceFulltext,
+        SourceStatus,
+        SourceSummary,
+        SourceType,
+        SuggestedTopic,
+    )
+
+    source_summary = SourceSummary(kind=SourceType.PDF, title="doc.pdf")
+    notebook = Notebook(id="nb_1", title="Notebook")
+    chat_reference = ChatReference(source_id="src_1", citation_number=1, cited_text="quoted")
+    shared_user = SharedUser(email="reader@example.com", permission=SharePermission.VIEWER)
+    instances = [
+        AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",)),
+        AccountTier(tier="plus", plan_name="Plus"),
+        Artifact(
+            id="artifact_1",
+            title="Audio",
+            _artifact_type=ArtifactTypeCode.AUDIO.value,
+            status=ArtifactStatus.COMPLETED,
+            url="https://example.com/audio.mp3",
+        ),
+        AskResult(
+            answer="Answer",
+            conversation_id="conversation_1",
+            turn_number=1,
+            is_follow_up=False,
+            references=[chat_reference],
+            raw_response="raw",
+        ),
+        CitedSourceSelection(
+            sources=[{"url": "https://example.com"}],
+            cited_url_count=1,
+            matched_url_source_count=1,
+        ),
+        ClientMetricsSnapshot(rpc_calls_started=2, rpc_calls_succeeded=1),
+        ConnectionLimits(max_connections=10, max_keepalive_connections=5),
+        ConversationTurn(query="Question", answer="Answer", turn_number=1),
+        GenerationStatus(task_id="task_1", status="completed", url="https://example.com/file"),
+        Note(id="note_1", notebook_id="nb_1", title="Note", content="Body"),
+        NotebookDescription(
+            summary="Summary",
+            suggested_topics=[SuggestedTopic(question="Q?", prompt="Ask Q")],
+        ),
+        NotebookMetadata(notebook=notebook, sources=[source_summary]),
+        ReportSuggestion(title="Briefing", description="Desc", prompt="Prompt"),
+        RpcTelemetryEvent(method="GET_NOTEBOOK", status="success", elapsed_seconds=0.01),
+        ShareStatus(
+            notebook_id="nb_1",
+            is_public=True,
+            access=ShareAccess.ANYONE_WITH_LINK,
+            view_level=ShareViewLevel.FULL_NOTEBOOK,
+            shared_users=[shared_user],
+            share_url="https://notebooklm.google.com/notebook/nb_1",
+        ),
+        Source(
+            id="src_1",
+            title="Source",
+            url="https://example.com",
+            _type_code=2,
+            status=SourceStatus.READY.value,
+        ),
+        source_summary,
+        SourceFulltext(
+            source_id="src_1",
+            title="Source",
+            content="Full indexed text",
+            _type_code=2,
+            url="https://example.com",
+            char_count=17,
+        ),
+    ]
+
+    for instance in instances:
+        assert pickle.loads(pickle.dumps(instance)) == instance
+
+    for enum_member in [SourceType.PDF, ArtifactType.AUDIO, ChatMode.DEFAULT]:
+        assert pickle.loads(pickle.dumps(enum_member)) is enum_member
 
 
 class TestNotebook:
@@ -31,7 +263,22 @@ class TestNotebook:
 
         assert notebook.id == "nb_123"
         assert notebook.title == "My Notebook"
+        assert notebook.sources_count == 0
         assert notebook.is_owner is True
+
+    def test_from_api_response_counts_sources(self):
+        """Test parsing notebook source count from embedded source entries."""
+        data = ["My Notebook", [["src_1"], ["src_2"], ["src_3"]], "nb_123", "📓"]
+        notebook = Notebook.from_api_response(data)
+
+        assert notebook.sources_count == 3
+
+    def test_from_api_response_none_sources_count_defaults_to_zero(self):
+        """Test parsing notebook source count when source entries are absent."""
+        data = ["My Notebook", None, "nb_123", "📓"]
+        notebook = Notebook.from_api_response(data)
+
+        assert notebook.sources_count == 0
 
     def test_from_api_response_with_timestamp(self):
         """Test parsing notebook with timestamp."""
@@ -95,6 +342,22 @@ class TestNotebook:
 
         assert notebook.created_at is None
 
+    def test_from_api_response_out_of_range_timestamp(self):
+        """Platform timestamp range errors should not escape notebook parsing."""
+        data = [
+            "Notebook",
+            [],
+            "nb_123",
+            "📓",
+            None,
+            [None, None, None, None, None, [1704067200, 0]],
+        ]
+
+        data[5][5][0] = float("inf")
+        notebook = Notebook.from_api_response(data)
+
+        assert notebook.created_at is None
+
     def test_from_api_response_non_string_title(self):
         """Test parsing when title is not a string."""
         data = [123, [], "nb_123", "📓"]
@@ -127,6 +390,36 @@ class TestSource:
         assert source.id == "src_456"
         assert source.title == "Nested Source"
         assert source.url == "https://example.com"
+
+    def test_from_api_response_nested_format_with_timestamp(self):
+        """Source.from_api_response should preserve creation timestamps when present."""
+        ts = 1704067200
+        data = [
+            [
+                ["src_ts"],
+                "Timestamped Source",
+                [None, None, [ts, 0], None, 5, None, None, ["https://example.com"]],
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.created_at is not None
+        assert source.created_at.timestamp() == ts
+
+    def test_from_api_response_nested_format_out_of_range_timestamp(self):
+        """Source timestamp range errors should produce None rather than raising."""
+        data = [
+            [
+                ["src_ts"],
+                "Timestamped Source",
+                [None, None, [1704067200, 0], None, 5, None, None, ["https://example.com"]],
+            ]
+        ]
+
+        data[0][2][2][0] = float("inf")
+        source = Source.from_api_response(data)
+
+        assert source.created_at is None
 
     def test_from_api_response_deeply_nested(self):
         """Test parsing deeply nested format."""
@@ -342,6 +635,185 @@ class TestSource:
         with pytest.raises(ValueError, match="Invalid source data"):
             Source.from_api_response(None)
 
+    def test_from_api_response_carries_status(self):
+        """``from_api_response`` decodes ``status`` from the row's status block.
+
+        Previously the classmethod never set ``status``, so it silently
+        fell back to ``SourceStatus.READY`` even when the wire carried a
+        PROCESSING/ERROR status block. After unifying on the single
+        ``SourceRow``-based construction it now reads the same status the
+        listing path does.
+        """
+        from notebooklm.rpc.types import SourceStatus
+
+        data = [
+            [
+                ["src_proc"],
+                "Processing Source",
+                [None, None, [1704067200, 0], None, 5, None, None, ["https://example.com"]],
+                [None, SourceStatus.PROCESSING],
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.status == SourceStatus.PROCESSING
+        assert source.is_processing is True
+        assert source.is_ready is False
+
+    def test_from_api_response_deeply_nested_carries_status(self):
+        """The deeply-nested dispatch path also decodes the status block.
+
+        ``from_unknown_shape`` unwraps the extra outer list and funnels
+        the entry through the same ``from_row`` construction, so the
+        decoded status must survive on the deeply-nested shape too.
+        """
+        from notebooklm.rpc.types import SourceStatus
+
+        entry = [
+            ["src_deep_err"],
+            "Deep Errored Source",
+            [None, None, None, None, 3, None, None, ["https://example.com"]],
+            [None, SourceStatus.ERROR],
+        ]
+        source = Source.from_api_response([[entry]])
+
+        assert source.id == "src_deep_err"
+        assert source.status == SourceStatus.ERROR
+        assert source.is_error is True
+
+    def test_from_api_response_status_defaults_ready_without_block(self):
+        """A row without a status block keeps the historical READY default."""
+        from notebooklm.rpc.types import SourceStatus
+
+        # Medium-nested entry with no status block at index 3.
+        data = [[["src_no_status"], "No Status", [None, None, None, None, 5]]]
+        source = Source.from_api_response(data)
+
+        assert source.status == SourceStatus.READY
+
+        # Flat shape also defaults to READY.
+        flat = Source.from_api_response(["src_flat", "Flat"])
+        assert flat.status == SourceStatus.READY
+
+    def test_from_api_response_matches_listing_path(self):
+        """``from_api_response`` and the ``GET_NOTEBOOK`` listing path produce
+        identical ``Source`` instances from the same entry — the two parsers
+        are now a single source of truth (issue #1205, part 1/5).
+        """
+        from notebooklm._row_adapters.sources import SourceRow
+        from notebooklm.rpc import RPCMethod
+        from notebooklm.rpc.types import SourceStatus
+
+        # An entry exactly as ``SourceLister._parse_source`` receives it.
+        entry = [
+            ["src_match"],
+            "Matching Source",
+            [None, 11, [1704067200, 0], None, 5, None, None, ["https://example.com"]],
+            [None, SourceStatus.PROCESSING],
+        ]
+
+        # Listing path: ``SourceLister._parse_source`` wraps the entry with
+        # ``SourceRow.from_entry`` and funnels it through ``Source.from_row``.
+        listing_source = Source.from_row(
+            SourceRow.from_entry(entry, method_id=RPCMethod.GET_NOTEBOOK.value)
+        )
+
+        # Public classmethod path: the same entry wrapped in the medium-
+        # nested envelope that ``ADD_SOURCE``/rename responses carry.
+        api_source = Source.from_api_response([entry])
+
+        assert api_source == listing_source
+        assert api_source.status == listing_source.status == SourceStatus.PROCESSING
+        assert api_source.url == listing_source.url == "https://example.com"
+        assert api_source.created_at == listing_source.created_at
+        # type code lives at metadata[4] (== 5 → WEB_PAGE) for both paths.
+        assert api_source.kind == listing_source.kind == SourceType.WEB_PAGE
+
+    def test_from_api_response_forwards_method_id_to_row(self):
+        """``method_id`` threads through to the constructed ``SourceRow`` so
+        drift diagnostics name the originating RPC (issue #1242).
+
+        The ADD_SOURCE / rename construction paths pass the real method id;
+        without forwarding it the row defaults to ``GET_NOTEBOOK`` and any
+        ``safe_index`` drift log is mis-tagged.
+        """
+        from notebooklm._row_adapters.sources import SourceRow
+        from notebooklm.rpc import RPCMethod
+
+        captured: dict[str, str | None] = {}
+        real_from_unknown_shape = SourceRow.from_unknown_shape
+
+        def _spy(data, *, method_id=None):
+            captured["method_id"] = method_id
+            return real_from_unknown_shape(data, method_id=method_id)
+
+        entry = [["src_add"], "Added Source", [None, 5, [1704067200, 0]]]
+        with patch.object(SourceRow, "from_unknown_shape", staticmethod(_spy)):
+            Source.from_api_response([entry], method_id=RPCMethod.ADD_SOURCE.value)
+
+        assert captured["method_id"] == RPCMethod.ADD_SOURCE.value
+
+    def test_from_api_response_default_method_id_is_get_notebook(self):
+        """Without an explicit ``method_id`` the row falls back to the
+        historical ``GET_NOTEBOOK`` default — preserving prior behavior for
+        callers that do not pass it (issue #1242 backward-compat)."""
+        from notebooklm._row_adapters.sources import SourceRow
+        from notebooklm.rpc import RPCMethod
+
+        entry = [["src_default"], "Default", [None, 5, [1704067200, 0]]]
+        row = SourceRow.from_unknown_shape([entry])
+
+        assert row.method_id == RPCMethod.GET_NOTEBOOK.value
+
+    def test_from_api_response_drift_tags_real_method_id(self, monkeypatch):
+        """A ``safe_index`` drift on an ADD_SOURCE-built row surfaces an
+        ``UnknownRPCMethodError`` tagged with ADD_SOURCE, not the default
+        ``GET_NOTEBOOK`` (issue #1242).
+
+        ``SourceRow.created_at_raw`` is the adapter's only ``safe_index``
+        call site; force it to drift so we can assert the tagged method id
+        flows from ``from_api_response``'s ``method_id`` argument.
+        """
+        from notebooklm._row_adapters import sources as _row_adapters_sources
+        from notebooklm.exceptions import UnknownRPCMethodError
+        from notebooklm.rpc import RPCMethod
+
+        def _drift(data, *path, method_id, source):
+            raise UnknownRPCMethodError(
+                "forced drift",
+                method_id=method_id,
+                path=tuple(path),
+                source=source,
+            )
+
+        monkeypatch.setattr(_row_adapters_sources, "safe_index", _drift)
+
+        # metadata[2] is a non-empty list so created_at_raw reaches safe_index.
+        entry = [["src_drift"], "Drift", [None, 5, [1704067200, 0]]]
+        row = _row_adapters_sources.SourceRow.from_unknown_shape(
+            [entry], method_id=RPCMethod.ADD_SOURCE.value
+        )
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            _ = row.created_at_raw
+
+        assert exc_info.value.method_id == RPCMethod.ADD_SOURCE.value
+
+    def test_from_api_response_accepts_unused_notebook_id(self):
+        """``notebook_id`` is retained for call-site symmetry / forward-compat
+        but does not influence the parsed source (issue #1241).
+
+        It is kept (not dropped) because ``Source.from_api_response`` is
+        tracked public surface; ``scripts/audit_public_api_compat.py`` flags
+        removing the parameter as a backward-incompatible signature change.
+        """
+        data = [[["src_nb"], "With Notebook Id", [None, 5, [1704067200, 0]]]]
+
+        without_id = Source.from_api_response(data)
+        with_id = Source.from_api_response(data, "nb_ignored")
+        with_keyword = Source.from_api_response(data, notebook_id="nb_ignored")
+
+        assert without_id == with_id == with_keyword
+
 
 class TestSourceTypeCompatMapping:
     """Tests for the _SOURCE_TYPE_COMPAT_MAP backward-compatible mapping."""
@@ -446,6 +918,207 @@ class TestArtifact:
         assert artifact.created_at is not None
         assert artifact.created_at.timestamp() == ts
 
+    def test_from_api_response_out_of_range_timestamp(self):
+        """Artifact timestamp range errors should produce None rather than raising."""
+        data = [
+            "art_123",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            [float("inf")],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.created_at is None
+
+    def test_from_mind_map_out_of_range_timestamp(self):
+        """Mind map timestamp range errors should produce None rather than raising."""
+        data = [
+            "mind_map_123",
+            [
+                "mind_map_123",
+                "{}",
+                [1, "user_id", [float("inf"), 0]],
+                None,
+                "Mind Map",
+            ],
+        ]
+        artifact = Artifact.from_mind_map(data)
+
+        assert artifact is not None
+        assert artifact.created_at is None
+
+    def test_from_api_response_audio_url(self):
+        """Completed audio artifacts expose their download URL."""
+        data = [
+            "art_audio",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            [None, None, None, None, None, [["https://audio.example/file.mp4", None, "audio/mp4"]]],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://audio.example/file.mp4"
+
+    def test_from_api_response_video_url_prefers_mp4_quality(self):
+        """Video artifacts expose the preferred MP4 download URL."""
+        data = [
+            "art_video",
+            "Video",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [
+                [
+                    ["https://video.example/low.webm", 1, "video/webm"],
+                    ["https://video.example/high.mp4", 4, "video/mp4"],
+                ]
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://video.example/high.mp4"
+
+    def test_from_api_response_video_url_returns_last_mp4_when_no_quality_4(self):
+        """When no quality-4 MP4 is present, the last MP4 wins (documents the
+        implicit ordering used by both the extractor and download_video)."""
+        data = [
+            "art_video",
+            "Video",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [
+                [
+                    ["https://video.example/first.mp4", 2, "video/mp4"],
+                    ["https://video.example/middle.webm", 1, "video/webm"],
+                    ["https://video.example/last.mp4", 3, "video/mp4"],
+                ]
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://video.example/last.mp4"
+
+    def test_from_api_response_video_url_falls_back_to_first_non_mp4(self):
+        """With no MP4 in any variant, the first valid URL is returned."""
+        data = [
+            "art_video",
+            "Video",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [
+                [
+                    ["https://video.example/a.webm", 1, "video/webm"],
+                    ["https://video.example/b.webm", 2, "video/webm"],
+                ]
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://video.example/a.webm"
+
+    def test_from_api_response_audio_url_finds_mp4_at_non_zero_position(self):
+        """Audio extractor must find an audio/mp4 entry even when it is not the
+        first item in the media list — regression against the legacy
+        first-item-only check."""
+        data = [
+            "art_audio",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                [
+                    ["https://audio.example/preview.bin", None, "application/octet-stream"],
+                    ["https://audio.example/file.mp4", None, "audio/mp4"],
+                ],
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://audio.example/file.mp4"
+
+    def test_from_api_response_audio_url_falls_back_to_first_url_when_no_mp4(self):
+        """If no audio/mp4 entry exists, the first valid URL is returned."""
+        data = [
+            "art_audio",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                [
+                    ["https://audio.example/a.ogg", None, "audio/ogg"],
+                    ["https://audio.example/b.wav", None, "audio/wav"],
+                ],
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://audio.example/a.ogg"
+
+    def test_from_api_response_infographic_url(self):
+        """Infographic artifacts expose their image URL."""
+        data = [
+            "art_info",
+            "Infographic",
+            7,
+            None,
+            3,
+            [None, None, [["ignored", ["https://image.example/info.png"]]]],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://image.example/info.png"
+
+    def test_from_api_response_slide_deck_url(self):
+        """Slide deck artifacts expose the PDF URL."""
+        data = (
+            ["art_slides", "Slides", 8, None, 3]
+            + [None] * 11
+            + [[None, None, None, "https://slides.example/deck.pdf"]]
+        )
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://slides.example/deck.pdf"
+
     def test_from_api_response_with_variant(self):
         """Test parsing artifact with variant code (quiz/flashcards)."""
         data = ["art_quiz", "Quiz", 4, None, 3, None, None, None, None, [None, [2]]]
@@ -543,6 +1216,78 @@ class TestArtifact:
         artifact = Artifact.from_api_response(["id", "Audio", 1, None, 3])
 
         assert artifact.report_subtype is None
+
+
+class TestExtractArtifactUrlMalformedShapes:
+    """Defensive coverage for the URL extractor helpers — every malformed-shape
+    branch must return ``None`` instead of raising, so callers (Artifact.url,
+    GenerationStatus.url, _is_media_ready, download_audio/video/infographic)
+    can rely on the helper as a single source of truth."""
+
+    def test_extract_artifact_url_unknown_type_returns_none(self):
+        from notebooklm.types import _extract_artifact_url
+
+        assert _extract_artifact_url(["any", "data"], None) is None
+        assert _extract_artifact_url(["any", "data"], 99) is None
+
+    def test_extract_artifact_url_none_type_ignores_row_type_code(self):
+        from notebooklm.rpc import ArtifactTypeCode
+        from notebooklm.types import _extract_artifact_url
+
+        audio_row = [
+            "artifact_id",
+            "Audio",
+            ArtifactTypeCode.AUDIO.value,
+            None,
+            3,
+            None,
+            [None, None, None, None, None, [["https://example.com/audio.mp4", None, "audio/mp4"]]],
+        ]
+
+        assert _extract_artifact_url(audio_row, None) is None
+        assert (
+            _extract_artifact_url(audio_row, ArtifactTypeCode.AUDIO.value)
+            == "https://example.com/audio.mp4"
+        )
+
+    def test_extract_audio_handles_short_or_non_list_data(self):
+        from notebooklm.types import _extract_audio_artifact_url
+
+        assert _extract_audio_artifact_url([1, 2, 3]) is None  # too short
+        assert _extract_audio_artifact_url([0] * 6 + ["not_a_list"]) is None  # data[6] not list
+        assert _extract_audio_artifact_url([0] * 6 + [[1, 2, 3]]) is None  # data[6] too short
+        assert _extract_audio_artifact_url([0] * 6 + [[0] * 5 + ["not_a_list"]]) is None
+        assert _extract_audio_artifact_url([0] * 6 + [[0] * 5 + [[]]]) is None  # empty media list
+
+    def test_extract_video_handles_short_or_non_list_data(self):
+        from notebooklm.types import _extract_video_artifact_url
+
+        assert _extract_video_artifact_url([1, 2, 3]) is None  # too short
+        assert _extract_video_artifact_url([0] * 8 + ["not_a_list"]) is None
+        assert _extract_video_artifact_url([0] * 8 + [[]]) is None  # empty data[8]
+        assert _extract_video_artifact_url([0] * 8 + [["not_a_list"]]) is None
+        assert _extract_video_artifact_url([0] * 8 + [[[None, None, "video/mp4"]]]) is None
+
+    def test_extract_infographic_handles_malformed_data(self):
+        from notebooklm.types import _extract_infographic_artifact_url
+
+        assert _extract_infographic_artifact_url([]) is None
+        assert _extract_infographic_artifact_url(["not_a_list"]) is None
+        assert _extract_infographic_artifact_url([[1]]) is None  # item too short
+        assert _extract_infographic_artifact_url([[1, 2, "not_a_list"]]) is None
+        assert _extract_infographic_artifact_url([[1, 2, []]]) is None  # empty content
+        assert _extract_infographic_artifact_url([[1, 2, [["only_one"]]]]) is None
+
+    def test_extract_slide_deck_handles_short_or_non_string_data(self):
+        from notebooklm.types import _extract_slide_deck_artifact_url
+
+        assert _extract_slide_deck_artifact_url([1, 2, 3]) is None  # too short
+        assert _extract_slide_deck_artifact_url([0] * 16 + ["not_a_list"]) is None
+        assert _extract_slide_deck_artifact_url([0] * 16 + [[1, 2, 3]]) is None  # too short
+        assert _extract_slide_deck_artifact_url([0] * 16 + [[None, None, None, 12345]]) is None
+        assert (
+            _extract_slide_deck_artifact_url([0] * 16 + [[None, None, None, "ftp://bad"]]) is None
+        )
 
 
 class TestArtifactKindProperty:
@@ -770,6 +1515,13 @@ class TestNote:
         assert note.created_at is not None
         assert note.created_at.timestamp() == ts
 
+    def test_from_api_response_out_of_range_timestamp(self):
+        """Note timestamp range errors should produce None rather than raising."""
+        data = ["note_123", "Title", "Content", [float("inf")]]
+        note = Note.from_api_response(data, "nb_123")
+
+        assert note.created_at is None
+
     def test_from_api_response_empty(self):
         """Test parsing with minimal data."""
         data = []
@@ -873,6 +1625,51 @@ class TestChatReference:
         assert ref.citation_number == 1
         assert ref.start_char == 100
         assert ref.end_char == 200
+
+    def test_paired_offset_invariant_source_pair_half_populated(self):
+        """start_char set without end_char (or vice versa) must raise."""
+        with pytest.raises(ValueError, match="start_char/end_char"):
+            ChatReference(source_id="x", start_char=5)
+        with pytest.raises(ValueError, match="start_char/end_char"):
+            ChatReference(source_id="x", end_char=5)
+
+    def test_paired_offset_invariant_answer_pair_half_populated(self):
+        """answer_start_char without answer_end_char (or vice versa) must raise."""
+        with pytest.raises(ValueError, match="answer_start_char"):
+            ChatReference(source_id="x", answer_start_char=5)
+        with pytest.raises(ValueError, match="answer_start_char"):
+            ChatReference(source_id="x", answer_end_char=5)
+
+    def test_paired_offset_invariant_inverted_source_range(self):
+        """start_char > end_char must raise."""
+        with pytest.raises(ValueError, match="> end_char"):
+            ChatReference(source_id="x", start_char=10, end_char=5)
+
+    def test_paired_offset_invariant_inverted_answer_range(self):
+        """answer_start_char > answer_end_char must raise."""
+        with pytest.raises(ValueError, match="> answer_end_char"):
+            ChatReference(source_id="x", answer_start_char=10, answer_end_char=5)
+
+    def test_paired_offset_invariant_valid_constructions(self):
+        """All-None pairs, both pairs populated, and zero-width ranges all accepted."""
+        # All None pairs.
+        ChatReference(source_id="x")
+        # Source pair populated.
+        ChatReference(source_id="x", start_char=5, end_char=10)
+        # Answer pair populated.
+        ChatReference(source_id="x", answer_start_char=0, answer_end_char=3)
+        # Both pairs populated.
+        ChatReference(
+            source_id="x",
+            start_char=5,
+            end_char=10,
+            answer_start_char=0,
+            answer_end_char=3,
+        )
+        # Zero-width ranges (start == end) are valid: many citations are
+        # structural anchors that resolve to single-position ranges.
+        ChatReference(source_id="x", start_char=5, end_char=5)
+        ChatReference(source_id="x", answer_start_char=0, answer_end_char=0)
 
 
 class TestSourceFulltext:

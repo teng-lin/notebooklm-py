@@ -1,0 +1,48 @@
+{
+  "method_name": "UPDATE_NOTE",
+  "method_id": "cYAfTb",
+  "description": "Update a note's content and title (production shape [notebook_id, note_id, [[[content, title, [], 0]]]]).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      "SCRUBBED_NOTE_001",
+      [
+        [
+          [
+            "Scrubbed updated body.",
+            "Scrubbed Updated Title",
+            [],
+            0
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "cYAfTb",
+          "[\"SCRUBBED_NB_001\",\"SCRUBBED_NOTE_001\",[[[\"Scrubbed updated body.\",\"Scrubbed Updated Title\",[],0]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "cYAfTb",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

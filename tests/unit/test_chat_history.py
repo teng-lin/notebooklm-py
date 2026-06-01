@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._chat import ChatAPI
+from notebooklm.exceptions import UnknownRPCMethodError
 
 
 class TestParseTurnsToQaPairs:
@@ -125,15 +126,21 @@ class TestParseTurnsToQaPairs:
         assert result == [("Question?", "")]
 
     def test_answer_with_index_error(self):
-        """Answer turn with broken structure yields empty answer string."""
+        """Answer turn with broken structure raises under strict decoding.
+
+        Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
+        soft-mode opt-out was retired in v0.7.0), so a non-descendable inner
+        shape raises ``UnknownRPCMethodError`` rather than degrading to an
+        empty answer.
+        """
         turns_data = [
             [
                 [None, None, 1, "Question?"],
                 [None, None, 2, None, []],  # empty nested list
             ]
         ]
-        result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
-        assert result == [("Question?", "")]
+        with pytest.raises(UnknownRPCMethodError):
+            ChatAPI._parse_turns_to_qa_pairs(turns_data)
 
     def test_answer_with_none_text(self):
         """Answer turn where text is None yields 'None' (str conversion)."""
@@ -186,28 +193,28 @@ class TestFormatHelpers:
     """Tests for CLI formatting helpers."""
 
     def test_format_single_qa_both_present(self):
-        from notebooklm.cli.chat import _format_single_qa
+        from notebooklm.cli.chat_cmd import _format_single_qa
 
         result = _format_single_qa("What is AI?", "AI is artificial intelligence.")
         assert "**Q:** What is AI?" in result
         assert "**A:** AI is artificial intelligence." in result
 
     def test_format_single_qa_question_only(self):
-        from notebooklm.cli.chat import _format_single_qa
+        from notebooklm.cli.chat_cmd import _format_single_qa
 
         result = _format_single_qa("What is AI?", "")
         assert "**Q:** What is AI?" in result
         assert "**A:**" not in result
 
     def test_format_single_qa_answer_only(self):
-        from notebooklm.cli.chat import _format_single_qa
+        from notebooklm.cli.chat_cmd import _format_single_qa
 
         result = _format_single_qa("", "The answer.")
         assert "**Q:**" not in result
         assert "**A:** The answer." in result
 
     def test_format_single_qa_both_empty(self):
-        from notebooklm.cli.chat import _format_single_qa
+        from notebooklm.cli.chat_cmd import _format_single_qa
 
         result = _format_single_qa("", "")
         assert result == ""
@@ -217,7 +224,7 @@ class TestDetermineConversationId:
     """Tests for _determine_conversation_id CLI helper."""
 
     def test_explicit_conversation_id_used(self):
-        from notebooklm.cli.chat import _determine_conversation_id
+        from notebooklm.cli.chat_cmd import _determine_conversation_id
 
         result = _determine_conversation_id(
             explicit_conversation_id="conv_explicit",
@@ -228,9 +235,9 @@ class TestDetermineConversationId:
         assert result == "conv_explicit"
 
     def test_different_notebook_starts_new(self):
-        from notebooklm.cli.chat import _determine_conversation_id
+        from notebooklm.cli.chat_cmd import _determine_conversation_id
 
-        with patch("notebooklm.cli.chat.get_current_notebook", return_value="nb_old"):
+        with patch("notebooklm.cli.chat_cmd.get_current_notebook", return_value="nb_old"):
             result = _determine_conversation_id(
                 explicit_conversation_id=None,
                 explicit_notebook_id="nb_new",
@@ -240,11 +247,11 @@ class TestDetermineConversationId:
         assert result is None
 
     def test_same_notebook_continues_cached(self):
-        from notebooklm.cli.chat import _determine_conversation_id
+        from notebooklm.cli.chat_cmd import _determine_conversation_id
 
         with (
-            patch("notebooklm.cli.chat.get_current_notebook", return_value="nb_123"),
-            patch("notebooklm.cli.chat.get_current_conversation", return_value="conv_cached"),
+            patch("notebooklm.cli.chat_cmd.get_current_notebook", return_value="nb_123"),
+            patch("notebooklm.cli.chat_cmd.get_current_conversation", return_value="conv_cached"),
         ):
             result = _determine_conversation_id(
                 explicit_conversation_id=None,
@@ -255,9 +262,9 @@ class TestDetermineConversationId:
         assert result == "conv_cached"
 
     def test_no_explicit_notebook_uses_cached(self):
-        from notebooklm.cli.chat import _determine_conversation_id
+        from notebooklm.cli.chat_cmd import _determine_conversation_id
 
-        with patch("notebooklm.cli.chat.get_current_conversation", return_value="conv_cached"):
+        with patch("notebooklm.cli.chat_cmd.get_current_conversation", return_value="conv_cached"):
             result = _determine_conversation_id(
                 explicit_conversation_id=None,
                 explicit_notebook_id=None,
@@ -272,7 +279,7 @@ class TestGetLatestConversationFromServer:
 
     @pytest.mark.asyncio
     async def test_returns_conversation_id(self):
-        from notebooklm.cli.chat import _get_latest_conversation_from_server
+        from notebooklm.cli.chat_cmd import _get_latest_conversation_from_server
 
         client = MagicMock()
         client.chat.get_conversation_id = AsyncMock(return_value="conv_from_server")
@@ -282,7 +289,7 @@ class TestGetLatestConversationFromServer:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_conversations(self):
-        from notebooklm.cli.chat import _get_latest_conversation_from_server
+        from notebooklm.cli.chat_cmd import _get_latest_conversation_from_server
 
         client = MagicMock()
         client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -292,7 +299,7 @@ class TestGetLatestConversationFromServer:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_exception(self):
-        from notebooklm.cli.chat import _get_latest_conversation_from_server
+        from notebooklm.cli.chat_cmd import _get_latest_conversation_from_server
 
         client = MagicMock()
         client.chat.get_conversation_id = AsyncMock(side_effect=RuntimeError("Network error"))

@@ -23,7 +23,7 @@ from notebooklm import NotebookLMClient, ReportFormat
 async def main():
     """Demonstrate notes and mind map functionality."""
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # Create a notebook for our examples
         print("Creating notebook...")
         notebook = await client.notebooks.create("Study Notes Demo")
@@ -107,6 +107,11 @@ async def main():
 
         print("\n--- Getting Specific Note ---")
 
+        # NOTE: get() returns the note, or None if it's missing. Returning None
+        # on a miss is DEPRECATED — in v0.8.0 it will raise NoteNotFoundError
+        # instead (issue #1247). To future-proof, prefer wrapping the call in
+        # ``try/except NoteNotFoundError`` rather than the ``if retrieved:``
+        # None-check shown here. See docs/deprecations.md.
         retrieved = await client.notes.get(notebook.id, note1.id)
         if retrieved:
             print(f"Title: {retrieved.title}")

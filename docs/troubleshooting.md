@@ -1,7 +1,7 @@
 # Troubleshooting
 
 **Status:** Active
-**Last Updated:** 2026-04-01
+**Last Updated:** 2026-05-14
 
 Common issues, known limitations, and workarounds for `notebooklm-py`.
 
@@ -35,6 +35,61 @@ The client **automatically refreshes** CSRF tokens when authentication errors ar
 
 This means most "CSRF token expired" errors resolve automatically.
 
+#### Cookie freshness for long-running / unattended use
+
+Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) on its own cadence; the on-disk `Expires` field is **not** a reliable predictor of server-side validity. The library handles freshness in five layers, ordered cheapest to heaviest:
+
+1. **Per-call rotation poke** (default ON) — every `fetch_tokens` makes a best-effort POST to `accounts.google.com/RotateCookies`. Disable with `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`.
+2. **Periodic background poke** — pass `keepalive=<seconds>` to `NotebookLMClient` for clients held open for hours.
+3. **External recovery script** — `NOTEBOOKLM_REFRESH_CMD` runs when auth has fully expired, then retries once.
+4. **Manual re-login** — `notebooklm login`.
+5. **External scheduler** — `notebooklm auth refresh` driven by cron / launchd / systemd / Task Scheduler / k8s CronJob, for idle profiles with no Python process running. Recommended cadence: 15–20 minutes.
+
+Most users only need layer 1 — it's on by default and requires no configuration. For the full strategy (trade-offs between layers, including Python kwargs like `keepalive_min_interval` and environment variables like `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`, and ready-to-paste launchd / systemd / cron / Task Scheduler / k8s CronJob recipes), see **[docs/auth-cookie-lifecycle.md#tldr](auth-cookie-lifecycle.md#tldr)** for a quick orientation, then [§4 The architecture](auth-cookie-lifecycle.md#4--the-architecture) for the per-layer deep dive.
+
+#### macOS: `--browser-cookies` prompts for your password
+
+On macOS, Chrome (and Edge / Brave / Opera) encrypts its cookies file with a key stored in the **macOS Keychain** under the entry `Chrome Safe Storage`. By default that entry's ACL only allows `Google Chrome.app` itself to read the key without prompting; any other process — Python, Terminal, cron, an editor — gets a "wants to use the *Chrome Safe Storage* key" dialog. This is how macOS Keychain protects local data and applies to every cookie-extraction tool (`rookiepy`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`.
+
+Workarounds, ordered by hassle:
+
+1. **Click "Always Allow" in the prompt.** Adds the calling Python interpreter to the Keychain entry's ACL so subsequent runs of *that exact binary* should stop prompting. Caveat: rebuilding your venv (e.g. `uv venv` again) usually changes the interpreter path and you'll be re-prompted once for the new path.
+
+2. **Use Touch ID instead of typing the password.** macOS Sonoma+ accepts Touch ID for Keychain dialogs — see *System Settings → Touch ID & Password*.
+
+3. **Pre-unlock the login keychain in your shell** (best for cron jobs after one initial interactive run):
+   ```bash
+   security unlock-keychain ~/Library/Keychains/login.keychain-db
+   ```
+   Prompts once for your login password, then any process in the same login session can read entries you've already approved without re-prompting until the keychain auto-locks.
+
+4. **Use Firefox as the cookie source.** Firefox stores cookies in a plain SQLite DB (no Keychain), so `notebooklm login --browser-cookies firefox` runs with **no prompt at all** — provided you're logged into Google in Firefox.
+   ```bash
+   notebooklm login --browser-cookies firefox
+   ```
+   This is the simplest answer for unattended macOS use.
+
+   **Firefox Multi-Account Containers note.** If your Google session
+   lives inside a container, unscoped `--browser-cookies firefox` will
+   merge cookies from every container into one jar (see issues
+   [#366](https://github.com/teng-lin/notebooklm-py/issues/366) /
+   [#367](https://github.com/teng-lin/notebooklm-py/issues/367)) and
+   produce an inconsistent session. Use the explicit container syntax:
+   ```bash
+   notebooklm login --browser-cookies 'firefox::Work'    # named container
+   notebooklm login --browser-cookies 'firefox::none'    # no-container default
+   ```
+   When a container is in use, the unscoped form also emits a yellow
+   warning pointing at this syntax.
+
+5. **Truly headless servers.** `--browser-cookies` is not the right tool — there's no live browser to extract from. Either re-extract on a workstation and ship `storage_state.json` to the server, or accept that human interaction is needed when cookies finally expire.
+
+Quick diagnostic:
+```bash
+security find-generic-password -s 'Chrome Safe Storage' -a 'Chrome' -w >/dev/null && echo OK || echo "ACL or lock issue"
+```
+Prints `OK` without prompting → keychain is unlocked and your user has access; the prompt you saw is the per-binary ACL re-asking for a new caller (your Python). Click *Always Allow* once and that binary is permanently approved. If it prompts → run `security unlock-keychain` first.
+
 #### "Unauthorized" or redirect to login page
 
 **Cause:** Session cookies expired (happens every few weeks).
@@ -46,25 +101,31 @@ This means most "CSRF token expired" errors resolve automatically.
 notebooklm login
 ```
 
-#### "CSRF token missing" or "SNlM0e not found"
+#### "Failed to extract CSRF token (SNlM0e)" / "CSRF token not found in HTML"
 
-**Cause:** CSRF token expired or couldn't be extracted.
+**Cause:** The CSRF token (`SNlM0e`) couldn't be extracted from the NotebookLM page response. The exact wording depends on which code path raised it:
 
-**Note:** This error should rarely occur now due to automatic retry. If you see it, it likely means the automatic refresh also failed.
+- `Failed to extract CSRF token (SNlM0e). Page structure may have changed or authentication expired. Preview: '...'` — raised by `refresh_auth()` when the WIZ_global_data extraction fails ([`client.py`](../src/notebooklm/client.py)).
+- `CSRF token not found in HTML. Final URL: <url> This may indicate the page structure has changed.` — raised by the lower-level extractor when no auth redirect was detected ([`auth.py`](../src/notebooklm/auth.py)).
+- `Failed to extract 'SNlM0e' from NotebookLM HTML response. This usually means Google changed the page structure. Preview: '...'` — raised as `AuthExtractionError` directly (rare; usually wrapped by one of the messages above) ([`exceptions.py`](../src/notebooklm/exceptions.py)).
+
+A related auth-redirect message — `Authentication expired. Run 'notebooklm login' to re-authenticate.` (or `Authentication expired or invalid. ...`) — surfaces the same root cause when the page redirected to Google's login flow.
+
+**Note:** These errors should rarely surface, since the client automatically retries with a fresh CSRF token on auth failures (see *Automatic Token Refresh* above). When one does reach you, the automatic refresh also failed.
 
 **Solution (if auto-refresh fails):**
 ```python
-# In Python - manual refresh
+# In Python — manual refresh
 await client.refresh_auth()
 ```
-Or re-run `notebooklm login` if session cookies are also expired.
+Or re-run `notebooklm login` if session cookies are also expired. If the failure persists across re-login, the page structure has likely changed — file an issue and include the `Preview:` snippet from the error.
 
 #### Browser opens but login fails
 
 **Cause:** Google detecting automation and blocking login.
 
 **Solution:**
-1. Delete the browser profile: `rm -rf ~/.notebooklm/browser_profile/`
+1. Delete the browser profile: `rm -rf ~/.notebooklm/profiles/<profile>/browser_profile/` (or `~/.notebooklm/profiles/default/browser_profile/` for the default profile)
 2. Run `notebooklm login` again
 3. Complete any CAPTCHA or security challenges Google presents
 4. Ensure you're using a real mouse/keyboard (not pasting credentials via script)
@@ -97,6 +158,79 @@ If the IDs don't match, the method ID has changed. Report the new ID in a GitHub
 - Try with fewer sources selected
 - Reduce generation frequency
 
+#### RPC method ID rotated by Google — self-patch with `NOTEBOOKLM_RPC_OVERRIDES`
+
+Google rotates undocumented batchexecute method IDs without warning. When
+this happens, `notebooklm-py` raises `UnknownRPCMethodError` with the new ID
+the server now uses (see the previous section's diagnosis recipe). Rather
+than waiting for a release, you can patch the mapping for your process with
+the `NOTEBOOKLM_RPC_OVERRIDES` environment variable.
+
+**Format:** JSON object mapping `RPCMethod` member names (the Python enum
+member name, not the obfuscated value) to the override RPC ID:
+
+```bash
+export NOTEBOOKLM_RPC_OVERRIDES='{"LIST_NOTEBOOKS": "newId123", "CREATE_NOTEBOOK": "newId456"}'
+notebooklm list
+```
+
+Or in Python:
+
+```python
+import os
+os.environ["NOTEBOOKLM_RPC_OVERRIDES"] = '{"LIST_NOTEBOOKS": "newId123"}'
+
+from notebooklm import NotebookLMClient
+# Subsequent client calls send the override IDs on the wire.
+```
+
+**Behavior:**
+
+- The override is applied at BOTH the URL `rpcids=` query parameter AND the
+  request body `f.req` payload, so the wire format stays consistent.
+- The override is gated on the configured base host being a known Google
+  NotebookLM endpoint (`notebooklm.google.com` or
+  `notebooklm.cloud.google.com`). Overrides do NOT apply to non-Google
+  hosts, so this env var cannot be weaponised to leak custom RPC IDs to a
+  hostile endpoint.
+- Method names not listed in the override map continue to use the canonical
+  IDs from `notebooklm.rpc.types.RPCMethod`.
+- Malformed input (invalid JSON, top-level array, etc.) is logged at
+  `WARNING` and treated as no overrides.
+- The first time a distinct override set is applied in a process, the
+  mapping is logged at `INFO` so you can confirm the config you intended is
+  live.
+
+**Discovering the new ID:** see the `NOTEBOOKLM_DEBUG_RPC=1` recipe above —
+the `Found RPC IDs in response: [...]` line tells you what the server is
+now returning. Cross-reference against the call site that failed.
+
+Please also report the rotated IDs in a GitHub issue so the canonical
+mapping in `src/notebooklm/rpc/types.py` can be updated for everyone.
+
+#### How to get the full response preview from an RPCError
+
+`RPCError.raw_response` is truncated to **80 chars + `"..."`** by default so
+error messages stay readable in logs and CLI output. When you need the
+full body to diagnose schema drift or a malformed response, opt in:
+
+```bash
+NOTEBOOKLM_DEBUG=1 notebooklm <your-command>
+```
+
+Or in Python, set the env var before instantiating the client:
+
+```python
+import os
+os.environ["NOTEBOOKLM_DEBUG"] = "1"
+
+from notebooklm import NotebookLMClient
+# Subsequent RPCError instances will carry the full untruncated body.
+```
+
+The value must be exactly `"1"` — `"0"`, `"true"`, etc. are treated as
+unset (still truncated).
+
 #### "RPCError: [3]" or "UserDisplayableError"
 
 **Cause:** Google API returned an error, typically:
@@ -123,6 +257,27 @@ notebooklm generate audio --wait
 notebooklm artifact poll <task_id>
 ```
 
+#### Audio/Video task times out as pending or in progress
+
+**Cause:** NotebookLM accepted the generation task, but the upstream media queue
+did not reach a terminal state before your wait budget. For media artifacts, the
+SDK also keeps polling if NotebookLM marks the row completed before the media
+URL is populated.
+
+**Solution:**
+- Increase the wait budget with `--timeout` or the Python
+  `wait_for_completion(..., timeout=...)` argument.
+- For `generate <kind> --wait`, the built-in media defaults are 1200s for
+  audio, 1800s for standard video, and 3600s for cinematic video; pass a
+  larger `--timeout` if your account's media queue is slower.
+- `artifact wait` is intentionally generic and still defaults to 300s; when
+  waiting manually on a media task ID, pass the matching media timeout.
+- Catch `ArtifactPendingTimeoutError` to retry queued tasks separately from
+  `ArtifactInProgressTimeoutError`, which means the task started but did not
+  finish before the timeout.
+- Log `exc.status_history` and `exc.status_transitions` for upstream queueing
+  diagnostics instead of parsing the exception message.
+
 #### Mind map or data table "generates" but doesn't appear
 
 **Cause:** Generation may silently fail without error.
@@ -132,6 +287,24 @@ notebooklm artifact poll <task_id>
 - Try regenerating with different/fewer sources
 
 ### File Upload Issues
+
+#### HTML/XHTML files are rejected before upload
+
+**Cause:** NotebookLM's file-upload endpoint rejects HTML-family uploads, even
+though the web UI may accept pasted rich text.
+
+**Solution:** Convert saved web pages to text, Markdown, or PDF before adding
+them with your preferred extractor:
+
+```bash
+notebooklm source add ./article.txt
+```
+
+You can also pipe extracted text through stdin:
+
+```bash
+python extract_article_text.py ./article.html | notebooklm source add - --type text --title "Article"
+```
 
 #### Text/Markdown files upload but return None
 
@@ -239,28 +412,76 @@ Google enforces strict rate limits on the batchexecute endpoint.
 **CLI:** Use `--retry` for automatic exponential backoff:
 ```bash
 notebooklm generate audio --retry 3   # Retry up to 3 times on rate limit
-notebooklm generate video --retry 5   # Works with all generate commands
+notebooklm generate video --retry 5   # Works with most generate commands
 ```
+
+*Note: `generate mind-map` is synchronous and does not accept the `--retry` option. All other `generate` subcommands support `--retry`.*
 
 **Python:**
 ```python
 import asyncio
+from notebooklm import RPCError
+from notebooklm.artifacts import with_rate_limit_retry
 
 # Add delays between intensive operations
 for url in urls:
     await client.sources.add_url(nb_id, url)
     await asyncio.sleep(2)  # 2 second delay
 
-# Use exponential backoff on failures
-async def retry_with_backoff(coro, max_retries=3):
-    for attempt in range(max_retries):
+# Use the shared generation retry policy when starting artifacts
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_audio(nb_id),
+    max_retries=3,
+)
+
+# For non-artifact RPC calls, retry by passing a fresh callable each attempt
+async def retry_rpc_call(make_call, max_retries=3):
+    for attempt in range(max_retries + 1):
         try:
-            return await coro
+            return await make_call()
         except RPCError:
-            wait = 2 ** attempt  # 1, 2, 4 seconds
-            await asyncio.sleep(wait)
-    raise Exception("Max retries exceeded")
+            if attempt >= max_retries:
+                raise
+            await asyncio.sleep(2**attempt)
+
+notebook = await retry_rpc_call(lambda: client.notebooks.create("Research Notes"))
 ```
+
+### Starting a brand-new conversation (resolves the older issue #659 workaround)
+
+`client.chat.ask(notebook_id, question)` with `conversation_id=None`
+attaches the question to the user's **current** conversation on the
+notebook — by design. The SDK still fetches the server-recorded
+conversation_id via `hPTbtc` after the ask and returns it on
+`AskResult.conversation_id`, so follow-ups using that id work
+correctly.
+
+To force a brand-new server-side conversation, delete the existing
+one first — this mirrors the web UI's "Delete history" button:
+
+```python
+last_conv_id = await client.chat.get_conversation_id(nb_id)
+if last_conv_id:
+    await client.chat.delete_conversation(nb_id, last_conv_id)
+result = await client.chat.ask(nb_id, "Start fresh")
+```
+
+Or via the CLI (prompts for confirmation; `-y` skips):
+
+```bash
+notebooklm ask --new -y "Start fresh"
+```
+
+**This is destructive: deleted turns are not recoverable.** The CLI
+shows the conversation's short id in the prompt and defaults to "No".
+`--json` implies `--yes` so scripted callers don't hang on stdin.
+
+**History:** Before the SDK gained `delete_conversation` it had no way
+to honor the "fresh conversation" intent — both the SDK and the CLI's
+`--new` flag would silently extend the most-recent conversation, so
+users worked around it by creating a new notebook for each thread.
+The `J7Gthc` RPC was reverse-engineered from the web UI's "Delete
+history" button and removes the need for that workaround.
 
 ### Quota Restrictions
 
@@ -316,7 +537,7 @@ playwright install-deps chromium
 
 This is an environment-specific Playwright install failure that has been observed with some newer Playwright builds on Linux. `notebooklm-py` only needs a working browser install for `notebooklm login`; the workaround is to install a known-good Playwright version in a clean virtual environment.
 
-**Workaround:**
+**Workaround** (intentionally uses `pip` rather than the canonical `uv sync --frozen` flow from [installation.md#e-contributor](installation.md#e-contributor) — this workaround needs to *override* the `playwright>=1.40.0` constraint to a specific older version, which `uv sync --frozen` would refuse):
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -330,6 +551,7 @@ pip install -e ".[all]"
 - `python -m playwright ...` ensures you use the Playwright module from the active virtual environment
 - installing the browser before `pip install -e ".[all]"` avoids picking up an older broken global `playwright` executable
 - if you already have another `playwright` on your system, verify with `which playwright` after activation
+- using `pip` here (not `uv sync --frozen`) is deliberate: this workaround needs to override the project's resolved `playwright` version with a specific older release, which the locked `uv` flow would block
 
 If you need a non-editable install from Git instead of a local checkout, replace the last step with:
 ```bash
@@ -400,14 +622,15 @@ Windows systems with non-English locales (Chinese cp950, Japanese cp932, etc.) m
 
 ### Logging Configuration
 
-`notebooklm-py` provides structured logging to help debug issues.
+`notebooklm-py` provides structured logging to help debug issues. The variables below are the logging-relevant subset; for the full environment-variable reference (storage, profile, network, decoder strictness, RPC overrides, etc.) and precedence rules, see [docs/configuration.md#environment-variables](configuration.md#environment-variables).
 
-**Environment Variables:**
+**Environment Variables (logging-specific):**
 
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `NOTEBOOKLM_LOG_LEVEL` | `WARNING` | Set to `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 | `NOTEBOOKLM_DEBUG_RPC` | (unset) | Legacy: Set to `1` to enable `DEBUG` level |
+| `NOTEBOOKLM_DEBUG` | (unset) | Set to `1` to preserve the full raw RPC response body on `RPCError.raw_response` (default: truncated to 80 chars + `"..."`) |
 
 **When to use each level:**
 

@@ -1,0 +1,22 @@
+# Synthetic-bad fixture for C4 regression: leaked display-name JSON literal
+# in a WRB response payload. The escaped form `\"Real Name\"` appears inside
+# a JSON string that the WRB envelope carries as a literal — the scrubber must
+# strip it before the cassette is committed.
+#
+# When the cassette-shape lint is reintroduced for this class of defect, the
+# lint MUST fail on this fixture (assertion D: no escaped display-name JSON
+# literals of the form `\"Capitalized Two Words\"`).
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22RGP97b%22%2C%22%5B%5C%22vcr_test_notebook_id_sentinel_32ch%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF
+    headers:
+      Content-Type: [application/x-www-form-urlencoded]
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=RGP97b&source-path=%2Fnotebook%2Fvcr_test_notebook_id_sentinel_32ch&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ")]}'\n\n80\n[[\"wrb.fr\",\"RGP97b\",\"[[\\\"some_id\\\",\\\"\\\\\\\"Real Name\\\\\\\"\\\",1]]\",null,null,null,1]]\n"
+    headers:
+      Content-Type: [application/json; charset=utf-8]
+    status: {code: 200, message: OK}
+version: 1

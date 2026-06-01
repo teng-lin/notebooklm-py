@@ -1,24 +1,43 @@
 """Unit tests for NotesAPI private helpers and edge cases."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
+from notebooklm._mind_map import NoteBackedMindMapService
+from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
+from notebooklm.exceptions import RPCError
 
 
 @pytest.fixture
 def mock_core():
-    """Create a mocked ClientCore for NotesAPI."""
-    core = MagicMock()
-    core.rpc_call = AsyncMock()
-    return core
+    """Create a mocked Session for NotesAPI.
+
+    ``NoteService`` and ``NoteBackedMindMapService`` are wired against
+    this same mock, so a ``mock_core.rpc_executor.rpc_call`` stub drives both the
+    note-row primitives and the mind-map facade — the same surface
+    NotesAPI used to exercise via the legacy ``_mind_map`` module-level helpers.
+    """
+    from _fixtures.fake_core import make_fake_core
+
+    return make_fake_core(rpc_call=AsyncMock())
 
 
 @pytest.fixture
 def notes_api(mock_core):
-    """Create NotesAPI with mocked core."""
-    return NotesAPI(mock_core)
+    """Create NotesAPI with mocked core + real note/mind-map services.
+
+    The services are real instances backed by ``mock_core`` so the
+    fixture exercises the production wiring rather than a fully-mocked
+    collaborator surface.
+    """
+    note_service = NoteService(mock_core)
+    mind_maps = NoteBackedMindMapService(note_service)
+    return NotesAPI(
+        notes=note_service,
+        mind_maps=mind_maps,
+    )
 
 
 # =============================================================================
@@ -262,7 +281,7 @@ class TestGetAllNotesAndMindMaps:
     @pytest.mark.asyncio
     async def test_get_all_notes_valid_response(self, notes_api, mock_core):
         """Test with valid response structure."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["note_1", "Content 1"],
                 ["note_2", "Content 2"],
@@ -278,7 +297,7 @@ class TestGetAllNotesAndMindMaps:
     @pytest.mark.asyncio
     async def test_get_all_notes_null_response(self, notes_api, mock_core):
         """Test with null response."""
-        mock_core.rpc_call.return_value = None
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await notes_api._get_all_notes_and_mind_maps("nb_123")
 
@@ -287,7 +306,7 @@ class TestGetAllNotesAndMindMaps:
     @pytest.mark.asyncio
     async def test_get_all_notes_empty_list_response(self, notes_api, mock_core):
         """Test with empty list response."""
-        mock_core.rpc_call.return_value = []
+        mock_core.rpc_executor.rpc_call.return_value = []
 
         result = await notes_api._get_all_notes_and_mind_maps("nb_123")
 
@@ -296,7 +315,7 @@ class TestGetAllNotesAndMindMaps:
     @pytest.mark.asyncio
     async def test_get_all_notes_first_element_not_list(self, notes_api, mock_core):
         """Test when first element is not a list."""
-        mock_core.rpc_call.return_value = ["not_a_list"]
+        mock_core.rpc_executor.rpc_call.return_value = ["not_a_list"]
 
         result = await notes_api._get_all_notes_and_mind_maps("nb_123")
 
@@ -305,7 +324,7 @@ class TestGetAllNotesAndMindMaps:
     @pytest.mark.asyncio
     async def test_get_all_notes_filters_invalid_items(self, notes_api, mock_core):
         """Test that invalid items are filtered out."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["valid_note", "Content"],
                 "not_a_list",
@@ -324,7 +343,7 @@ class TestGetAllNotesAndMindMaps:
     @pytest.mark.asyncio
     async def test_get_all_notes_empty_inner_list(self, notes_api, mock_core):
         """Test with empty inner notes list."""
-        mock_core.rpc_call.return_value = [[]]
+        mock_core.rpc_executor.rpc_call.return_value = [[]]
 
         result = await notes_api._get_all_notes_and_mind_maps("nb_123")
 
@@ -342,7 +361,7 @@ class TestListNotes:
     @pytest.mark.asyncio
     async def test_list_detects_mind_map_with_children_key(self, notes_api, mock_core):
         """Test that items with 'children' key are detected as mind maps."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["note_1", '{"children": []}'],
                 ["note_2", "Regular content"],
@@ -357,7 +376,7 @@ class TestListNotes:
     @pytest.mark.asyncio
     async def test_list_detects_mind_map_with_nodes_key(self, notes_api, mock_core):
         """Test that items with 'nodes' key are detected as mind maps."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["note_1", '{"nodes": []}'],
                 ["note_2", "Regular content"],
@@ -372,7 +391,7 @@ class TestListNotes:
     @pytest.mark.asyncio
     async def test_list_nested_format_mind_map_detection(self, notes_api, mock_core):
         """Test mind map detection in nested format."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["mm_1", ["mm_1", '{"children": [], "title": "Mind Map"}', None, None, "MM"]],
                 ["note_1", ["note_1", "Just text", None, None, "Note"]],
@@ -387,7 +406,7 @@ class TestListNotes:
     @pytest.mark.asyncio
     async def test_list_returns_empty_for_null_content(self, notes_api, mock_core):
         """Test that notes with null content are still included."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["note_1", None],
             ]
@@ -409,17 +428,20 @@ class TestGetNote:
 
     @pytest.mark.asyncio
     async def test_get_returns_none_for_empty_list(self, notes_api, mock_core):
-        """Test get() returns None when notes list is empty."""
-        mock_core.rpc_call.return_value = [[]]
+        """Test get() returns None (with deprecation) when notes list is empty."""
+        mock_core.rpc_executor.rpc_call.return_value = [[]]
 
-        result = await notes_api.get("nb_123", "note_1")
+        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
+        # (flips to raising NoteNotFoundError in v0.8.0, issue #1247).
+        with pytest.warns(DeprecationWarning, match="NoteNotFoundError"):
+            result = await notes_api.get("nb_123", "note_1")
 
         assert result is None
 
     @pytest.mark.asyncio
     async def test_get_matches_first_element(self, notes_api, mock_core):
         """Test that get() matches on item[0]."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["note_1", "Content 1"],
                 ["note_2", "Content 2"],
@@ -444,7 +466,7 @@ class TestCreateNote:
     @pytest.mark.asyncio
     async def test_create_with_nested_result(self, notes_api, mock_core):
         """Test create() with nested result [[note_id]]."""
-        mock_core.rpc_call.side_effect = [
+        mock_core.rpc_executor.rpc_call.side_effect = [
             [["new_note_123"]],  # CREATE_NOTE response
             None,  # UPDATE_NOTE response
         ]
@@ -458,7 +480,7 @@ class TestCreateNote:
     @pytest.mark.asyncio
     async def test_create_with_flat_result(self, notes_api, mock_core):
         """Test create() with flat result [note_id] (string at index 0)."""
-        mock_core.rpc_call.side_effect = [
+        mock_core.rpc_executor.rpc_call.side_effect = [
             ["new_note_456"],  # CREATE_NOTE response
             None,  # UPDATE_NOTE response
         ]
@@ -468,29 +490,30 @@ class TestCreateNote:
         assert result.id == "new_note_456"
 
     @pytest.mark.asyncio
-    async def test_create_with_null_result(self, notes_api, mock_core):
-        """Test create() when RPC returns None."""
-        mock_core.rpc_call.return_value = None
+    async def test_create_raises_when_null_result(self, notes_api, mock_core):
+        """create() must raise when RPC returns None (issue #1162).
 
-        result = await notes_api.create("nb_123", "Title", "Content")
+        A ``None`` payload carries no note id, so finalizing the note is
+        impossible. Returning ``Note(id="")`` would be a success-shaped
+        lie; the create-contract requires surfacing the failure instead.
+        """
+        mock_core.rpc_executor.rpc_call.return_value = None
 
-        assert result.id == ""
-        assert result.title == "Title"
-        assert result.content == "Content"
+        with pytest.raises(RPCError, match="no usable note id"):
+            await notes_api.create("nb_123", "Title", "Content")
 
     @pytest.mark.asyncio
-    async def test_create_with_empty_result(self, notes_api, mock_core):
-        """Test create() when RPC returns empty list."""
-        mock_core.rpc_call.return_value = []
+    async def test_create_raises_when_empty_result(self, notes_api, mock_core):
+        """create() must raise when RPC returns an empty list (issue #1162)."""
+        mock_core.rpc_executor.rpc_call.return_value = []
 
-        result = await notes_api.create("nb_123", "Title", "Content")
-
-        assert result.id == ""
+        with pytest.raises(RPCError, match="no usable note id"):
+            await notes_api.create("nb_123", "Title", "Content")
 
     @pytest.mark.asyncio
     async def test_create_calls_update_after_create(self, notes_api, mock_core):
         """Test that create() calls update() to set title."""
-        mock_core.rpc_call.side_effect = [
+        mock_core.rpc_executor.rpc_call.side_effect = [
             [["note_id"]],
             None,
         ]
@@ -498,17 +521,24 @@ class TestCreateNote:
         await notes_api.create("nb_123", "My Title", "My Content")
 
         # Should have 2 RPC calls: CREATE_NOTE then UPDATE_NOTE
-        assert mock_core.rpc_call.call_count == 2
+        assert mock_core.rpc_executor.rpc_call.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_create_skips_update_when_no_id(self, notes_api, mock_core):
-        """Test that create() skips update when no note_id returned."""
-        mock_core.rpc_call.return_value = None
+    async def test_create_does_not_update_when_no_id(self, notes_api, mock_core):
+        """create() must bail before UPDATE_NOTE when no id is returned.
 
-        await notes_api.create("nb_123", "Title", "Content")
+        It now raises (issue #1162) rather than silently returning an
+        empty-id note, but the invariant that the finalize UPDATE_NOTE is
+        never attempted without a note id still holds — only the single
+        CREATE_NOTE RPC is issued before the error surfaces.
+        """
+        mock_core.rpc_executor.rpc_call.return_value = None
 
-        # Should only have 1 RPC call (CREATE_NOTE)
-        assert mock_core.rpc_call.call_count == 1
+        with pytest.raises(RPCError, match="no usable note id"):
+            await notes_api.create("nb_123", "Title", "Content")
+
+        # Should only have 1 RPC call (CREATE_NOTE); no UPDATE_NOTE finalize.
+        assert mock_core.rpc_executor.rpc_call.call_count == 1
 
 
 # =============================================================================
@@ -522,12 +552,12 @@ class TestUpdateNote:
     @pytest.mark.asyncio
     async def test_update_calls_rpc_with_correct_params(self, notes_api, mock_core):
         """Test that update() passes correct parameters."""
-        mock_core.rpc_call.return_value = None
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         await notes_api.update("nb_123", "note_456", "New content", "New title")
 
-        mock_core.rpc_call.assert_called_once()
-        call_args = mock_core.rpc_call.call_args
+        mock_core.rpc_executor.rpc_call.assert_called_once()
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args[0][1]
 
         assert params[0] == "nb_123"
@@ -544,22 +574,22 @@ class TestDeleteNote:
     """Tests for delete() method."""
 
     @pytest.mark.asyncio
-    async def test_delete_returns_true(self, notes_api, mock_core):
-        """Test that delete() always returns True."""
-        mock_core.rpc_call.return_value = None
+    async def test_delete_returns_none(self, notes_api, mock_core):
+        """Test that delete() returns None (v0.7.0, issue #1211)."""
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await notes_api.delete("nb_123", "note_456")
 
-        assert result is True
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_delete_calls_rpc_with_correct_params(self, notes_api, mock_core):
         """Test that delete() passes correct parameters."""
-        mock_core.rpc_call.return_value = None
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         await notes_api.delete("nb_123", "note_456")
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args[0][1]
 
         assert params[0] == "nb_123"
@@ -578,7 +608,7 @@ class TestListMindMaps:
     @pytest.mark.asyncio
     async def test_list_mind_maps_filters_regular_notes(self, notes_api, mock_core):
         """Test that list_mind_maps() excludes regular notes."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["note_1", "Regular note"],
                 ["mm_1", '{"children": []}'],
@@ -593,7 +623,7 @@ class TestListMindMaps:
     @pytest.mark.asyncio
     async def test_list_mind_maps_returns_raw_data(self, notes_api, mock_core):
         """Test that list_mind_maps() returns raw items, not Note objects."""
-        mock_core.rpc_call.return_value = [
+        mock_core.rpc_executor.rpc_call.return_value = [
             [
                 ["mm_1", '{"children": []}'],
             ]
@@ -614,22 +644,22 @@ class TestDeleteMindMap:
     """Tests for delete_mind_map() method."""
 
     @pytest.mark.asyncio
-    async def test_delete_mind_map_returns_true(self, notes_api, mock_core):
-        """Test that delete_mind_map() always returns True."""
-        mock_core.rpc_call.return_value = None
+    async def test_delete_mind_map_returns_none(self, notes_api, mock_core):
+        """Test that delete_mind_map() returns None (v0.7.0, issue #1211)."""
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         result = await notes_api.delete_mind_map("nb_123", "mm_456")
 
-        assert result is True
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_delete_mind_map_uses_same_rpc_as_delete(self, notes_api, mock_core):
         """Test that delete_mind_map() uses DELETE_NOTE RPC."""
-        mock_core.rpc_call.return_value = None
+        mock_core.rpc_executor.rpc_call.return_value = None
 
         await notes_api.delete_mind_map("nb_123", "mm_456")
 
-        call_args = mock_core.rpc_call.call_args
+        call_args = mock_core.rpc_executor.rpc_call.call_args
         params = call_args[0][1]
 
         assert params[0] == "nb_123"

@@ -1,0 +1,12 @@
+# VCR cassette for `notebooklm doctor` CLI integration tests (T8.D8).
+#
+# The doctor command is a local-only diagnostic — it reads filesystem state
+# (profile dir, storage_state.json, config.json) and makes NO HTTP requests.
+# This cassette is therefore intentionally empty: the matched test exists to
+# guard that `notebooklm doctor` never starts emitting HTTP traffic in a
+# future refactor (VCR in record_mode='none' raises on any unmatched
+# request). If a network call is ever added to `doctor`, the cli_vcr test
+# will fail loudly with a CannotOverwriteExistingCassetteException and force
+# the author to re-record this cassette intentionally.
+interactions: []
+version: 1

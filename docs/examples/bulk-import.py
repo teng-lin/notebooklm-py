@@ -8,8 +8,9 @@ This script demonstrates:
 4. Report import status
 
 Prerequisites:
-    pip install "notebooklm-py[browser]"
+    pip install "notebooklm-py[browser]" && playwright install chromium
     notebooklm login
+    # Full install guide: https://github.com/teng-lin/notebooklm-py/blob/main/docs/installation.md
 
 Usage:
     python bulk-import.py
@@ -45,7 +46,7 @@ SOURCES = {
 async def main():
     print("=== Bulk Import Example ===\n")
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # 1. Create a notebook
         print("Creating notebook...")
         nb = await client.notebooks.create("Bulk Import Demo")

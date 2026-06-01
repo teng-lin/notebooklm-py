@@ -15,6 +15,18 @@ Command structure:
   notebooklm note <command>           # Note operations
   notebooklm research <command>       # Research status/wait
 
+Architecture:
+    - This module is the entry-point assembler invoked via the ``notebooklm``
+      console script (see ``[project.scripts]`` in ``pyproject.toml``).
+    - It imports command groups from the ``notebooklm.cli`` package and
+      registers them on the top-level Click group ``notebooklm``.
+    - The ``cli/`` package contains the actual command implementations
+      (one module per command group: ``session``, ``notebook``, ``source``,
+      ``artifact``, ``generate``, ``download``, ``chat``, ``note``,
+      ``doctor``, ``profile``, ``agent``).
+    - Editing CLI behavior: change ``cli/<group>.py``. Editing CLI surface
+      (adding a new top-level command): import + register here.
+
 LLM-friendly design:
   # Set context once, then use simple commands
   notebooklm use nb123
@@ -37,22 +49,44 @@ import os
 from pathlib import Path
 
 # =============================================================================
-# WINDOWS COMPATIBILITY FIXES (issue #75, #79, #80)
+# WINDOWS COMPATIBILITY FIXES (issue #75, #79, #80, #318)
 # Must be applied before any async code runs
 # =============================================================================
 
-if sys.platform == "win32":
+
+def _reconfigure_output_stream(stream) -> None:
+    """Use UTF-8 with replacement for active Windows text streams."""
+    if stream is None:
+        return
+    reconfigure = getattr(stream, "reconfigure", None)
+    if not callable(reconfigure):
+        return
+    try:
+        reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, TypeError, ValueError):
+        # best-effort: stdout.reconfigure unavailable on this platform.
+        pass
+
+
+def _configure_windows_runtime() -> None:
+    """Apply Windows runtime fixes before Click and Rich command modules load."""
+    if sys.platform != "win32":
+        return
+
     # Fix #79: Windows asyncio ProactorEventLoop can hang indefinitely at IOCP layer
     # (GetQueuedCompletionStatus) in certain environments like Sandboxie.
     # SelectorEventLoop avoids this issue.
-    import asyncio
-
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # Fix #80: Non-English Windows systems (cp950, cp932, etc.) can fail with
-    # UnicodeEncodeError when outputting Unicode characters like checkmarks.
-    # Setting PYTHONUTF8 ensures consistent UTF-8 encoding.
+    # Fix #80/#318: changing PYTHONUTF8 after startup does not update the already
+    # created stdout/stderr TextIOWrappers. Reconfigure the live streams so Rich's
+    # legacy Windows renderer can write emoji and other Unicode output safely.
     os.environ.setdefault("PYTHONUTF8", "1")
+    _reconfigure_output_stream(sys.stdout)
+    _reconfigure_output_stream(sys.stderr)
+
+
+_configure_windows_runtime()
 
 import click
 
@@ -79,7 +113,13 @@ from .cli import (
 )
 from .cli.grouped import SectionedGroup
 
-# Import helpers needed for backward compatibility with tests
+# Public surface (ADR-012). ``main`` is the ``[project.scripts]`` entry
+# point and ``src/notebooklm/__main__.py`` shim; ``cli`` is the root
+# ``click.Group`` imported by tests to drive ``CliRunner`` invocations.
+# The underscore-prefixed helpers in this module (``_reconfigure_output_stream``,
+# ``_configure_windows_runtime``) stay importable for tests but are not part
+# of the documented public API.
+__all__ = ["cli", "main"]
 
 
 # =============================================================================
@@ -107,8 +147,17 @@ from .cli.grouped import SectionedGroup
     count=True,
     help="Increase verbosity (-v for INFO, -vv for DEBUG)",
 )
+@click.option(
+    "--quiet",
+    is_flag=True,
+    default=False,
+    help=(
+        "Suppress status output and INFO/WARN log records (only errors survive). "
+        "Mutually exclusive with -v/-vv."
+    ),
+)
 @click.pass_context
-def cli(ctx, storage, profile, verbose):
+def cli(ctx, storage, profile, verbose, quiet):
     """NotebookLM CLI.
 
     \b
@@ -121,9 +170,25 @@ def cli(ctx, storage, profile, verbose):
     \b
     Tip: Use partial notebook IDs (e.g., 'notebooklm use abc' matches 'abc123...')
     """
-    # Configure logging based on verbosity: -v for INFO, -vv+ for DEBUG
-    if verbose >= 2:
+    # ``--quiet`` and ``-v/-vv`` resolve to incompatible log-level intents
+    # (ERROR vs INFO/DEBUG). Honoring either silently would surprise the
+    # other caller; reject the conflict explicitly so the user can drop one
+    # flag.
+    if quiet and verbose:
+        raise click.UsageError("--quiet and -v are mutually exclusive.")
+
+    # Configure logging based on verbosity: -v for INFO, -vv+ for DEBUG.
+    # ``--quiet`` raises the floor to ERROR so cron / CI logs stay clean
+    # while still surfacing real failures.
+    if quiet:
+        logging.getLogger("notebooklm").setLevel(logging.ERROR)
+    elif verbose >= 2:
         logging.getLogger("notebooklm").setLevel(logging.DEBUG)
+        # DEBUG logging on httpx/urllib3 emits full URLs and headers — install
+        # redaction so credentials don't leak via third-party loggers.
+        from .log import install_redaction
+
+        install_redaction("httpx", "urllib3")
     elif verbose == 1:
         logging.getLogger("notebooklm").setLevel(logging.INFO)
 
@@ -134,9 +199,13 @@ def cli(ctx, storage, profile, verbose):
     set_active_profile(profile)
 
     # Only set up profiles dir when not using an explicit auth source.
-    # --storage and NOTEBOOKLM_AUTH_JSON bypass the profile system entirely
-    # and must not require a writable NOTEBOOKLM_HOME.
-    if not storage and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+    # ``--storage`` and the env-var auth fast path bypass the profile system
+    # entirely and must not require a writable NOTEBOOKLM_HOME. The env-var
+    # check goes through :mod:`cli.services.auth_source` so the precedence
+    # logic stays in one place.
+    from .cli.services.auth_source import has_env_auth_json
+
+    if not storage and not has_env_auth_json():
         try:
             from .migration import ensure_profiles_dir
 
@@ -148,8 +217,14 @@ def cli(ctx, storage, profile, verbose):
             raise _click.ClickException(str(e)) from None
 
     ctx.ensure_object(dict)
-    ctx.obj["storage_path"] = Path(storage) if storage else None
+    # Canonicalize once at the boundary: ``--storage ~/foo.json`` and
+    # ``--storage /Users/x/foo.json`` must map to the same sibling-context
+    # namespace (see :class:`notebooklm.cli.services.auth_source.AuthSource`).
+    ctx.obj["storage_path"] = Path(storage).expanduser().resolve() if storage else None
     ctx.obj["profile"] = profile
+    # Mirror the root quiet flag for call sites that already read ctx.obj.
+    # ``cli.runtime.is_quiet(ctx)`` remains the canonical reader.
+    ctx.obj["quiet"] = bool(quiet)
 
 
 # =============================================================================
@@ -177,22 +252,58 @@ cli.add_command(profile)
 
 
 # =============================================================================
+# SHELL COMPLETION
+# =============================================================================
+
+
+@cli.command("completion")
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
+def completion_cmd(shell: str) -> None:
+    """Print the shell completion script for SHELL.
+
+    Pipe the output into a file your shell sources at startup. Click handles
+    the ``_NOTEBOOKLM_COMPLETE`` env-var protocol automatically once the
+    script is sourced; only the script needs to be installed.
+
+    \b
+    Install (one-time):
+      # bash (~/.bashrc)
+      notebooklm completion bash > ~/.notebooklm-complete.bash
+      echo 'source ~/.notebooklm-complete.bash' >> ~/.bashrc
+
+      # zsh (anywhere on $fpath)
+      notebooklm completion zsh > ~/.zfunc/_notebooklm
+
+      # fish
+      notebooklm completion fish > ~/.config/fish/completions/notebooklm.fish
+
+    Then ``notebooklm <cmd> -n <TAB>`` lists notebook IDs from the active
+    profile (best-effort — no suggestions when not authenticated).
+    """
+    # Click ships shell-specific completion classes that emit the script
+    # body. We just print whatever ``source()`` returns and let the user
+    # redirect it themselves; auto-installing into shell configs would be
+    # too magical and would hide the install path from users who care.
+    from click.shell_completion import BashComplete, FishComplete, ZshComplete
+
+    cls_map = {"bash": BashComplete, "zsh": ZshComplete, "fish": FishComplete}
+    completer_cls = cls_map[shell]
+    completer = completer_cls(cli, {}, "notebooklm", "_NOTEBOOKLM_COMPLETE")
+    click.echo(completer.source())
+
+
+# ``completion`` is a one-time install command (like ``login``) so it lives
+# in the Session section. The binning is declared in
+# ``cli/grouped.py::SectionedGroup.command_sections`` so the no-orphans
+# guardrail in ``tests/unit/cli/test_grouped.py`` finds it.
+
+
+# =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
 
 def main():
-    # Windows-specific fixes
-    if sys.platform == "win32":
-        # Force UTF-8 encoding for Unicode output on non-English Windows systems
-        # Prevents UnicodeEncodeError when displaying Unicode characters (✓, ✗, box drawing)
-        # on systems with legacy encodings (cp950, cp932, cp936, etc.)
-        os.environ.setdefault("PYTHONUTF8", "1")
-
-        # Fix asyncio hanging issue - use WindowsSelectorEventLoopPolicy instead of
-        # default ProactorEventLoop to avoid IOCP blocking on network operations
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
     cli()
 
 

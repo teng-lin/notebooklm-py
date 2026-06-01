@@ -4,8 +4,6 @@ on:
   schedule:
     # Main branch: 6 AM UTC (10 PM PST / 1 AM EST)
     - cron: '0 6 * * *'
-    # Develop branch: 11 AM UTC (3 AM PST / 6 AM EST) - 5 hours later
-    - cron: '0 11 * * *'
   workflow_dispatch:
     inputs:
       test_filter:
@@ -16,6 +14,9 @@ on:
         description: 'Override branch to test (leave empty to test the branch you triggered from)'
         required: false
         default: ''
+
+permissions:
+  contents: read
 
 jobs:
   # Determine which branch to test
@@ -28,42 +29,75 @@ jobs:
     steps:
       - name: Resolve target branch
         id: resolve
+        # Route every workflow_dispatch input + GitHub-context value through
+        # the env block so crafted values (e.g. ``"; rm -rf / ; #``) reach
+        # the shell as literal strings, not as inlined script. ``GITHUB_OUTPUT``
+        # is set automatically by the runner.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CUSTOM_BRANCH: ${{ inputs.custom_branch }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            # Scheduled: determine from cron expression
-            if [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
-              echo "branch=main" >> $GITHUB_OUTPUT
-            else
-              echo "branch=develop" >> $GITHUB_OUTPUT
-            fi
-            echo "is_standard=true" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            # Scheduled runs test main only. Release branches are manual.
+            TARGET="main"
           else
             # Manual: use custom_branch if set, otherwise use triggering branch
-            CUSTOM="${{ inputs.custom_branch }}"
-            if [ -n "$CUSTOM" ]; then
-              TARGET="$CUSTOM"
+            if [ -n "$CUSTOM_BRANCH" ]; then
+              TARGET="$CUSTOM_BRANCH"
             else
-              TARGET="${{ github.ref_name }}"
-            fi
-            echo "branch=$TARGET" >> $GITHUB_OUTPUT
-            # Check if it's main or develop
-            if [ "$TARGET" = "main" ] || [ "$TARGET" = "develop" ]; then
-              echo "is_standard=true" >> $GITHUB_OUTPUT
-            else
-              echo "is_standard=false" >> $GITHUB_OUTPUT
+              TARGET="$REF_NAME"
             fi
           fi
-          echo "Resolved branch: $(cat $GITHUB_OUTPUT | grep branch= | cut -d= -f2)"
+          echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
+          # Check if it's main or a release branch
+          case "$TARGET" in
+            main|release/*)
+              echo "is_standard=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "is_standard=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+          echo "Resolved branch: $TARGET"
 
   # Run E2E tests on the resolved branch
   e2e:
     name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}/${{ matrix.os }})
     needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
     runs-on: ${{ matrix.os }}
+    # Secret-bearing job. Two-layer gating:
+    #
+    # 1. ``needs.resolve-branch.outputs.is_standard`` — set by the upstream
+    #    ``resolve-branch`` job. Only ``main`` and ``release/*`` branches
+    #    (or scheduled cron triggers, which resolve to one of those) flip
+    #    this to ``true``; any other branch keeps it ``false`` and the
+    #    job-level ``if:`` above skips this whole job (no secret values
+    #    land in the runner env). The step-level ``if:`` guards on the
+    #    secret-bearing steps below are belt-and-suspenders so the gate
+    #    stays visible if the job-level guard is ever loosened.
+    # 2. ``environment: protected-readonly`` (unconditional). The secrets
+    #    this job consumes (``NOTEBOOKLM_AUTH_JSON`` and friends) live only
+    #    in that environment, so the binding has to be unconditional —
+    #    issue #1009 surfaced the scheduled cron failing when the previous
+    #    conditional (``workflow_dispatch``-only) form fell back to
+    #    repo-level secrets that no longer exist. Add a ``required
+    #    reviewers`` rule on the environment if you want to block
+    #    workflow_dispatch behind manual approval; scheduled runs would
+    #    then queue too, so today this env carries no protection rules.
+    # See docs/development.md → "Workflow secret gates".
+    environment: protected-readonly
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    env:
+      # Pin Playwright's browser install dir to a single workspace-relative
+      # path on every OS — see test.yml for the rationale (sidesteps the
+      # actions/cache@v5 Windows dual-path restore flake).
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
     concurrency:
       group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}
@@ -80,48 +114,135 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[all]"
+      # `uv sync --frozen` uses `uv.lock` for deterministic dep resolution
+      # (same as the contributor workflow in docs/installation.md). Extras
+      # cover the full E2E surface: `browser` = playwright, `dev` = pytest +
+      # plugins, `markdown` = markdownify (used by source-conversion tests).
+      run: uv sync --frozen --extra browser --extra dev --extra markdown
 
     - name: Get Playwright version
       id: playwright-version
       shell: bash
+      # `uv pip show` / bare `pip show` after activation can resolve outside
+      # `.venv` when uv has not seeded pip into the project venv, yielding an
+      # empty version that collapses the browser cache key to
+      # `playwright-${{ matrix.os }}--ws`. `importlib.metadata` reads
+      # `.venv`'s actual installed dist-info via the active interpreter, so
+      # the version is always correct.
       run: |
-        echo "version=$(pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        VERSION=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
       uses: actions/cache@v5
       with:
-        path: |
-          ~/.cache/ms-playwright
-          ~/AppData/Local/ms-playwright
-        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}
+        path: ${{ github.workspace }}/.playwright-browsers
+        # ``-ws`` suffix invalidates archives keyed to the prior dual-path
+        # stanza so first restores after this change land on the new path.
+        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}-ws
 
     - name: Install Playwright browsers
-      run: playwright install chromium
+      run: uv run playwright install chromium
 
     - name: Install Playwright system dependencies (Linux)
       if: runner.os == 'Linux'
-      run: playwright install-deps
+      run: uv run playwright install-deps chromium
+
+    # Fail-fast preflight. Without this, an empty NOTEBOOKLM_AUTH_JSON
+    # (env-binding misconfig, missing repo-level fallback, etc.) lets the
+    # E2E suite proceed; pytest then skips every auth-requiring test
+    # silently and the job lands green with 0 tests run (issue #1009).
+    - name: Verify auth secret is present
+      if: needs.resolve-branch.outputs.is_standard == 'true'
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+          exit 1
+        fi
+        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
+          exit 1
+        fi
 
     - name: Run E2E tests
+      id: e2e
+      # Hard gate: only standard branches (main/release/*, or scheduled cron
+      # runs which resolve to one of those) expose credentials. Any other
+      # branch — including ad-hoc workflow_dispatch on a feature branch —
+      # gets ``is_standard == 'false'`` from resolve-branch and skips here
+      # outright. The job-level ``environment:`` adds the maintainer approval
+      # layer for workflow_dispatch runs that DO resolve as standard.
+      if: needs.resolve-branch.outputs.is_standard == 'true'
+      # Don't fail the job here — the retry step below gets a 10-min cool-down
+      # shot at any failures, and its exit code is what marks the job red.
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        # Route every workflow_dispatch input + upstream needs.* value through
+        # the env block so crafted values (e.g. ``"; echo PWN``) reach pytest
+        # as literal strings, not as inlined shell. ``TARGET_BRANCH`` is
+        # derived from ``inputs.custom_branch`` upstream; ``TEST_FILTER`` is
+        # the direct workflow_dispatch input (empty for scheduled runs).
+        TEST_FILTER: ${{ inputs.test_filter }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+        MATRIX_OS: ${{ matrix.os }}
+      shell: bash
+      run: |
+        echo "Testing branch: $TARGET_BRANCH"
+        # --reruns 1 catches sub-minute network blips; longer chat-throttle
+        # recovery is handled by the cool-down retry step below.
+        if [ -n "$TEST_FILTER" ]; then
+          # Run specific test(s) when filter provided.
+          # ``--`` separator forces $TEST_FILTER to be parsed as positional
+          # file/path args, never as pytest options (e.g. a crafted ``--co``
+          # or ``-k "expr"`` value cannot inject pytest flags).
+          uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
+        elif [ "$MATRIX_OS" = "ubuntu-latest" ]; then
+          # Linux: run all E2E tests except variants
+          uv run pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
+        else
+          # Windows: run only read-only tests (safer, avoids write operations)
+          uv run pytest tests/e2e -m "readonly and not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
+        fi
+
+    - name: Retry failed E2E tests after 10-min cool-down
+      # Tests still throttled after the cool-down become skips via the
+      # _install_chat_rate_limit_skip fixture in tests/e2e/conftest.py.
+      # Same ``is_standard`` hard gate as the primary E2E step above — the
+      # retry must never expose secrets on a non-standard branch even if a
+      # previous step somehow ran (e.g. re-run with edited workflow inputs).
+      if: |
+        needs.resolve-branch.outputs.is_standard == 'true'
+        && steps.e2e.outcome == 'failure'
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       shell: bash
       run: |
-        echo "Testing branch: ${{ needs.resolve-branch.outputs.branch }}"
-        TEST_FILTER="${{ inputs.test_filter }}"
-        if [ -n "$TEST_FILTER" ]; then
-          # Run specific test(s) when filter provided
-          pytest "$TEST_FILTER" -s -v --tb=short --reruns 2 --reruns-delay 30
-        elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          # Linux: run all E2E tests except variants
-          pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 2 --reruns-delay 30
-        else
-          # Windows: run only read-only tests (safer, avoids write operations)
-          pytest tests/e2e -m "readonly and not variants" -s -v --tb=short --reruns 2 --reruns-delay 30
+        # Missing lastfailed after a failed e2e step means pytest crashed
+        # before writing the cache (import error, OOM, etc.) — that's a real
+        # failure, not a recoverable rate-limit, so fail the job rather than
+        # silently going green.
+        if [ ! -f .pytest_cache/v/cache/lastfailed ]; then
+          echo "::error::No lastfailed cache from previous step; pytest likely crashed before running tests."
+          exit 1
         fi
+        echo "Initial E2E run failed. Sleeping 600s before retrying failed tests."
+        sleep 600
+        # Pin ``tests/e2e`` so pyproject's ``addopts = --ignore=tests/e2e``
+        # doesn't drop every lastfailed entry; otherwise pytest's default
+        # ``--last-failed-no-failures=all`` would expand to the full non-e2e
+        # suite under NOTEBOOKLM_AUTH_JSON. ``=none`` makes a missing cache
+        # fail fast instead.
+        uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short

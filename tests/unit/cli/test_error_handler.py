@@ -1,18 +1,28 @@
 """Tests for centralized CLI error handling."""
 
 import json
+from pathlib import Path
 
 import pytest
 
-from notebooklm.cli.error_handler import handle_errors
+import notebooklm.cli._encoding as encoding_module
+from notebooklm.cli.error_handler import (
+    _output_error,
+    emit_cancelled_and_exit,
+    exit_with_code,
+    handle_errors,
+)
 from notebooklm.exceptions import (
+    ArtifactPendingTimeoutError,
     AuthError,
     ConfigurationError,
     NetworkError,
+    NotebookLimitError,
     RateLimitError,
     RPCError,
     ValidationError,
 )
+from notebooklm.types import GenerationStatus
 
 
 class TestHandleErrorsExitCodes:
@@ -53,6 +63,13 @@ class TestHandleErrorsExitCodes:
         with pytest.raises(SystemExit) as exc_info, handle_errors():
             raise RuntimeError("Unexpected bug")
         assert exc_info.value.code == 2
+
+    def test_exit_with_code_is_canonical_raw_exit_path(self):
+        """Callers that already emitted output can still exit through error_handler."""
+        with pytest.raises(SystemExit) as exc_info:
+            exit_with_code(75)
+
+        assert exc_info.value.code == 75
 
 
 class TestHandleErrorsJsonOutput:
@@ -113,6 +130,61 @@ class TestHandleErrorsJsonOutput:
         assert data["error"] is True
         assert "method_id" not in data
 
+    def test_notebook_limit_error_json_includes_quota_context(self, capsys):
+        """NotebookLimitError should produce a specific JSON error code."""
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise NotebookLimitError(499, limit=500)
+
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert data["error"] is True
+        assert data["code"] == "NOTEBOOK_LIMIT"
+        assert data["current_count"] == 499
+        assert data["limit"] == 500
+        assert "known_limits" not in data
+        assert "method_id" not in data
+        assert "rpc_code" not in data
+
+    def test_artifact_timeout_json_includes_poll_context(self, capsys):
+        """ArtifactTimeoutError should be a user error with structured context."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors(json_output=True):
+            raise ArtifactPendingTimeoutError(
+                "nb_123",
+                "task_123",
+                600.0,
+                last_status="pending",
+                status_history=("pending",),
+                status_transitions=(
+                    GenerationStatus(
+                        "task_123",
+                        "pending",
+                        metadata={"raw_status": "completed", "media_ready": False},
+                    ),
+                ),
+            )
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert data["error"] is True
+        assert data["code"] == "ARTIFACT_TIMEOUT"
+        assert data["notebook_id"] == "nb_123"
+        assert data["task_id"] == "task_123"
+        assert data["timeout_seconds"] == 600.0
+        assert data["last_status"] == "pending"
+        assert data["status_history"] == ["pending"]
+        assert data["status_transitions"] == [
+            {
+                "task_id": "task_123",
+                "status": "pending",
+                "url": None,
+                "error": None,
+                "error_code": None,
+                "metadata": {"raw_status": "completed", "media_ready": False},
+            }
+        ]
+        assert data["stalled_phase"] == "pending"
+
     def test_unexpected_error_json_format(self, capsys):
         """Unexpected errors should produce UNEXPECTED_ERROR code."""
         with pytest.raises(SystemExit), handle_errors(json_output=True):
@@ -123,6 +195,38 @@ class TestHandleErrorsJsonOutput:
         assert data["error"] is True
         assert data["code"] == "UNEXPECTED_ERROR"
         assert "Something broke" in data["message"]
+
+    def test_error_handler_json_output_preserves_unicode(self, capsys):
+        """CJK / emoji in error messages should be emitted as real UTF-8."""
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise ValidationError("笔记本未找到 🔍")
+
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert "笔记本未找到 🔍" in data["message"]
+        # Raw output must contain real CJK/emoji, not escaped sequences.
+        assert "笔记本未找到" in output
+        assert "🔍" in output
+        assert "\\u" not in output
+
+    def test_output_error_serializes_path_in_extra(self, capsys):
+        """_output_error must not crash on non-primitive extras like pathlib.Path."""
+        with pytest.raises(SystemExit) as exc_info:
+            _output_error(
+                "Bad path",
+                "PATH_ERROR",
+                json_output=True,
+                exit_code=1,
+                extra={"path": Path("tmp_test_path")},
+            )
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert data["error"] is True
+        assert data["code"] == "PATH_ERROR"
+        assert data["message"] == "Bad path"
+        assert data["path"] == str(Path("tmp_test_path"))
 
 
 class TestHandleErrorsTextOutput:
@@ -146,6 +250,32 @@ class TestHandleErrorsTextOutput:
         assert "Network error" in output
         assert "internet connection" in output
 
+    def test_notebook_limit_error_text_includes_quota_context(self, capsys):
+        """NotebookLimitError should show notebook count in text mode."""
+        with pytest.raises(SystemExit), handle_errors(json_output=False):
+            raise NotebookLimitError(499, limit=500)
+
+        output = capsys.readouterr().err
+        assert "notebook limit" in output.lower()
+        assert "499/500" in output
+
+    def test_artifact_timeout_text_includes_poll_context(self, capsys):
+        """ArtifactTimeoutError should remain a user error in text mode."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors(json_output=False):
+            raise ArtifactPendingTimeoutError(
+                "nb_123",
+                "task_123",
+                600.0,
+                last_status="pending",
+                status_history=("pending",),
+            )
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().err
+        assert "Artifact timeout" in output
+        assert "task_123" in output
+        assert "last status: pending" in output
+
     def test_unexpected_error_shows_bug_report_hint(self, capsys):
         """Unexpected errors should show bug report hint."""
         with pytest.raises(SystemExit), handle_errors(json_output=False):
@@ -166,6 +296,36 @@ class TestHandleErrorsTextOutput:
         # Hint text should not be in the JSON structure
         assert "login" not in json.dumps(data).lower()
 
+    def test_text_output_falls_back_when_stream_cannot_encode(self, monkeypatch):
+        """Error reporting should not mask the original error with UnicodeEncodeError."""
+
+        class DummyStderr:
+            encoding = "cp950"
+
+        calls = []
+
+        def flaky_echo(message=None, **kwargs):
+            err = kwargs.get("err", False)
+            if not calls:
+                calls.append((message, err))
+                raise UnicodeEncodeError(
+                    "cp950",
+                    str(message),
+                    0,
+                    1,
+                    "illegal multibyte sequence",
+                )
+            calls.append((message, err))
+
+        monkeypatch.setattr(encoding_module.click, "echo", flaky_echo)
+        monkeypatch.setattr(encoding_module.sys, "stderr", DummyStderr())
+
+        with pytest.raises(SystemExit), handle_errors(json_output=False):
+            raise RuntimeError("bad 🌐")
+
+        assert calls[0] == ("Unexpected error: bad 🌐", True)
+        assert calls[1] == ("Unexpected error: bad ?", True)
+
 
 class TestHandleErrorsKeyboardInterrupt:
     """Test keyboard interrupt handling."""
@@ -185,3 +345,77 @@ class TestHandleErrorsKeyboardInterrupt:
         data = json.loads(output)
         assert data["error"] is True
         assert data["code"] == "CANCELLED"
+
+
+class TestEmitCancelledAndExit:
+    """Tests for the SIGINT-with-resume-hint helper.
+
+    ``emit_cancelled_and_exit`` is the canonical exit point for Ctrl-C during
+    a long-running ``--wait`` poll. The helper enforces the required user-
+    visible phrasing: ``Cancelled. Resume with: <resume_hint>`` and exit 130.
+    """
+
+    def test_emit_cancelled_with_hint_writes_to_stderr_and_exits_130(self, capsys):
+        """Text mode: prints the canonical resume line on stderr, exits 130."""
+        with pytest.raises(SystemExit) as exc_info:
+            emit_cancelled_and_exit("notebooklm artifact poll task_abc")
+
+        assert exc_info.value.code == 130
+        captured = capsys.readouterr()
+        # Specification: SIGINT under --wait emits exactly this resume line.
+        # Used as a literal so a future cosmetic tweak can't silently drift
+        # the user-facing string.
+        assert "Cancelled. Resume with: notebooklm artifact poll task_abc" in captured.err
+        assert captured.out == "", "resume hint must NOT leak onto stdout in text mode"
+
+    def test_emit_cancelled_without_hint_falls_back_to_plain_cancelled(self, capsys):
+        """No hint: emits the bare ``Cancelled.`` line (matches generic handler)."""
+        with pytest.raises(SystemExit) as exc_info:
+            emit_cancelled_and_exit(None)
+
+        assert exc_info.value.code == 130
+        captured = capsys.readouterr()
+        assert "Cancelled." in captured.err
+        assert "Resume with" not in captured.err
+
+    def test_emit_cancelled_json_envelope_includes_resume_hint(self, capsys):
+        """JSON mode: structured envelope with code=CANCELLED + resume_hint, exit 130."""
+        with pytest.raises(SystemExit) as exc_info:
+            emit_cancelled_and_exit(
+                "notebooklm artifact poll task_xyz",
+                json_output=True,
+            )
+
+        assert exc_info.value.code == 130
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error"] is True
+        assert data["code"] == "CANCELLED"
+        assert data["resume_hint"] == "notebooklm artifact poll task_xyz"
+        assert "message" in data
+
+    def test_emit_cancelled_json_omits_resume_hint_when_none(self, capsys):
+        """JSON mode without a hint: envelope still parses but no resume_hint key."""
+        with pytest.raises(SystemExit) as exc_info:
+            emit_cancelled_and_exit(None, json_output=True)
+
+        assert exc_info.value.code == 130
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error"] is True
+        assert data["code"] == "CANCELLED"
+        assert "resume_hint" not in data
+
+    def test_emit_cancelled_json_extra_merged_into_envelope(self, capsys):
+        """JSON mode: ``extra`` dict is merged so callers can attach a task_id."""
+        with pytest.raises(SystemExit):
+            emit_cancelled_and_exit(
+                "notebooklm artifact poll task_abc",
+                json_output=True,
+                extra={"task_id": "task_abc"},
+            )
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["task_id"] == "task_abc"
+        assert data["resume_hint"] == "notebooklm artifact poll task_abc"

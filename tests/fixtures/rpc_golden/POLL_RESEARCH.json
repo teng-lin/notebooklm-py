@@ -1,0 +1,83 @@
+{
+  "method_name": "POLL_RESEARCH",
+  "method_id": "e3bVqc",
+  "description": "Poll for research-task results (returns one or more tasks with sources).",
+  "request": {
+    "params": [
+      null,
+      null,
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "e3bVqc",
+          "[null,null,\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "e3bVqc",
+          "[[[\"SCRUBBED_RESEARCH_001\",[null,[\"Scrubbed research prompt.\"],null,[[[\"https://scrubbed.example.com/research/page-1\",\"Scrubbed Research Source Title\",\"Scrubbed snippet.\",1]],\"Scrubbed research summary.\"],2]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "SCRUBBED_RESEARCH_001",
+          [
+            null,
+            [
+              "Scrubbed research prompt."
+            ],
+            null,
+            [
+              [
+                [
+                  "https://scrubbed.example.com/research/page-1",
+                  "Scrubbed Research Source Title",
+                  "Scrubbed snippet.",
+                  1
+                ]
+              ],
+              "Scrubbed research summary."
+            ],
+            2
+          ]
+        ]
+      ]
+    ]
+  },
+  "mapper": "notebooklm._research_task_parser:parse_research_task_models",
+  "mapper_expected": [
+    {
+      "task_id": "SCRUBBED_RESEARCH_001",
+      "status": "completed",
+      "query": "Scrubbed research prompt.",
+      "sources": [
+        {
+          "url": "https://scrubbed.example.com/research/page-1",
+          "title": "Scrubbed Research Source Title",
+          "result_type": 1,
+          "research_task_id": "SCRUBBED_RESEARCH_001"
+        }
+      ],
+      "summary": "Scrubbed research summary.",
+      "report": "",
+      "tasks": []
+    }
+  ]
+}

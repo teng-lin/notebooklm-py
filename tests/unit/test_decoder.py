@@ -1,18 +1,25 @@
 """Unit tests for RPC response decoder."""
 
 import json
+import logging
 
 import pytest
 
+from notebooklm.exceptions import DecodingError
 from notebooklm.rpc.decoder import (
     AuthError,
     ClientError,
     RateLimitError,
     RPCError,
+    RPCErrorCode,
+    UnknownRPCMethodError,
+    byte_count_mismatch_total,
     collect_rpc_ids,
     decode_response,
     extract_rpc_result,
+    get_error_message_for_code,
     parse_chunked_response,
+    reset_byte_count_mismatch_total,
     strip_anti_xssi,
 )
 from notebooklm.rpc.types import RPCMethod
@@ -45,6 +52,11 @@ class TestStripAntiXSSI:
 
 
 class TestParseChunkedResponse:
+    @staticmethod
+    def _chunk_record(data):
+        chunk_json = json.dumps(data)
+        return f"{len(chunk_json.encode('utf-8'))}\n{chunk_json}"
+
     def test_parses_single_chunk(self):
         """Test parsing response with single chunk."""
         chunk_data = ["chunk", "data"]
@@ -93,7 +105,8 @@ class TestParseChunkedResponse:
 
     def test_ignores_malformed_chunks(self):
         """Test malformed chunks are ignored when below 10% threshold."""
-        # Add 10 valid chunks and 1 malformed = 9% error rate (below 10% threshold)
+        # Add 10 valid payload records and 1 malformed payload record, keeping
+        # the payload error rate below the 10% threshold.
         valid_chunks = [json.dumps([f"valid{i}"]) for i in range(10)]
         valid_parts = "\n".join([f"{len(c)}\n{c}" for c in valid_chunks])
         response = f"{valid_parts}\n99\nnot-json\n"
@@ -103,6 +116,201 @@ class TestParseChunkedResponse:
         assert len(chunks) == 10
         assert chunks[0] == ["valid0"]
         assert chunks[9] == ["valid9"]
+
+    def test_logs_debug_but_parses_mismatched_byte_count_with_valid_json(self, caplog):
+        """Mismatched byte counts are tolerated when the payload is valid JSON.
+
+        The mismatch is logged at DEBUG (not WARNING) because Google's
+        batchexecute declares a count in a different unit than UTF-8 bytes, so
+        every multi-chunk live response would otherwise flood CI logs.
+        """
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
+        payload = json.dumps(["wrong-size"])
+        response = f"{valid_parts}\n{len(payload) + 1}\n{payload}\n"
+
+        with caplog.at_level(logging.DEBUG, logger="notebooklm.rpc.decoder"):
+            chunks = parse_chunked_response(response)
+
+        assert chunks == [[f"valid{i}"] for i in range(10)] + [["wrong-size"]]
+        mismatch_records = [
+            r
+            for r in caplog.records
+            if r.name == "notebooklm.rpc.decoder" and "declares" in r.message
+        ]
+        assert len(mismatch_records) == 1
+        assert mismatch_records[0].levelno == logging.DEBUG
+        assert "payload is" in mismatch_records[0].message
+
+    def test_byte_count_mismatch_bumps_counter_and_warns_first_time(self, caplog):
+        """A byte-count mismatch is a drift signal: counter + one WARNING.
+
+        The tolerant parse is unchanged (valid JSON payloads are still
+        returned), but each mismatch increments the process-wide counter and
+        the first mismatch of the process emits a rate-limited WARNING so a
+        real framing-unit change rises above the per-chunk DEBUG noise.
+        """
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["wrong-size"])
+            response = f"{len(payload) + 1}\n{payload}\n"
+
+            assert byte_count_mismatch_total() == 0
+            with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+                chunks = parse_chunked_response(response)
+
+            # Tolerant parse preserved: valid JSON still returned.
+            assert chunks == [["wrong-size"]]
+            assert byte_count_mismatch_total() == 1
+
+            warnings = [
+                r
+                for r in caplog.records
+                if r.name == "notebooklm.rpc.decoder"
+                and r.levelno == logging.WARNING
+                and "Byte-count mismatch" in r.message
+            ]
+            assert len(warnings) == 1
+            assert "framing unit changed" in warnings[0].message
+        finally:
+            reset_byte_count_mismatch_total()
+
+    def test_byte_count_mismatch_warning_is_rate_limited(self, caplog):
+        """Repeated mismatches keep counting but do not flood WARNING logs."""
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["wrong-size"])
+            record = f"{len(payload) + 1}\n{payload}"
+            # 50 mismatching records well under the WARN interval (500).
+            response = "\n".join(record for _ in range(50)) + "\n"
+
+            with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+                chunks = parse_chunked_response(response)
+
+            assert chunks == [["wrong-size"]] * 50
+            assert byte_count_mismatch_total() == 50
+            warnings = [
+                r
+                for r in caplog.records
+                if r.name == "notebooklm.rpc.decoder"
+                and r.levelno == logging.WARNING
+                and "Byte-count mismatch" in r.message
+            ]
+            # Only the first mismatch of the process warns; the rest are
+            # counted silently (still DEBUG-logged).
+            assert len(warnings) == 1
+        finally:
+            reset_byte_count_mismatch_total()
+
+    def test_matching_byte_count_does_not_bump_counter(self):
+        """A correct byte count is not a mismatch and must not bump the counter."""
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["right-size"])
+            response = f"{len(payload.encode('utf-8'))}\n{payload}\n"
+
+            chunks = parse_chunked_response(response)
+
+            assert chunks == [["right-size"]]
+            assert byte_count_mismatch_total() == 0
+        finally:
+            reset_byte_count_mismatch_total()
+
+    def test_concurrent_mismatches_do_not_lose_increments(self):
+        """The counter is lock-guarded, so concurrent parses must not race.
+
+        ``x += 1`` on a module global is a non-atomic read-modify-write in
+        CPython, so without the lock concurrent ``parse_chunked_response``
+        calls (worker threads / multiple per-thread clients) could lose
+        increments. Drive many threads at one mismatch each and assert the
+        total equals the number of parses exactly.
+        """
+        import threading
+
+        reset_byte_count_mismatch_total()
+        try:
+            payload = json.dumps(["wrong-size"])
+            response = f"{len(payload) + 1}\n{payload}\n"
+            threads = 16
+            per_thread = 50
+            barrier = threading.Barrier(threads)
+
+            def worker() -> None:
+                barrier.wait()
+                for _ in range(per_thread):
+                    parse_chunked_response(response)
+
+            workers = [threading.Thread(target=worker) for _ in range(threads)]
+            for t in workers:
+                t.start()
+            for t in workers:
+                t.join()
+
+            assert byte_count_mismatch_total() == threads * per_thread
+        finally:
+            reset_byte_count_mismatch_total()
+
+    def test_skips_byte_count_without_payload_below_threshold(self, caplog):
+        """A trailing byte-count line without a payload is malformed and skipped."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
+        response = f"{valid_parts}\n42\n"
+
+        chunks = parse_chunked_response(response)
+
+        assert chunks == [[f"valid{i}"] for i in range(10)]
+        assert "without payload" in caplog.text
+
+    def test_trailing_byte_count_above_framing_threshold_raises(self):
+        """A framing-only response fails strict decoding."""
+        with pytest.raises(RPCError, match="1 of 1 framing records"):
+            parse_chunked_response("42\n")
+
+    def test_skips_payload_split_across_lines_below_threshold(self):
+        """A payload split across lines is treated as truncated malformed input."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(20))
+        payload = json.dumps(["split"])
+        first_part, second_part = payload[:4], payload[4:]
+        response = f"{valid_parts}\n{len(payload)}\n{first_part}\n{second_part}\n"
+
+        chunks = parse_chunked_response(response)
+
+        assert chunks == [[f"valid{i}"] for i in range(20)]
+
+    def test_skips_extra_non_json_lines_before_and_after_valid_chunk(self):
+        """Standalone non-JSON lines are skipped while valid chunks are preserved."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(20))
+        response = f"noise-before\n{valid_parts}\nnoise-after\n"
+
+        chunks = parse_chunked_response(response)
+
+        assert chunks == [[f"valid{i}"] for i in range(20)]
+
+    def test_payload_error_rate_exactly_ten_percent_is_tolerated(self):
+        """The payload threshold is exclusive: exactly 10% does not raise."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(9))
+        response = f"{valid_parts}\n99\nnot-json\n"
+
+        chunks = parse_chunked_response(response)
+
+        assert chunks == [[f"valid{i}"] for i in range(9)]
+
+    def test_byte_count_frames_do_not_dilute_malformed_payload_rate(self):
+        """The parser raises when payload errors exceed 10%, excluding byte-count frames."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(8))
+        response = f"{valid_parts}\n99\nnot-json\n"
+
+        with pytest.raises(RPCError) as exc_info:
+            parse_chunked_response(response)
+
+        assert "1 of 9 payload records malformed" in str(exc_info.value)
+        assert "18 response records" not in str(exc_info.value)
+
+    def test_mixed_payload_and_framing_errors_preserve_strict_threshold(self):
+        """Separate payload/framing rates must not loosen mixed malformed streams."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
+        response = f"{valid_parts}\n99\nnot-json\n42\n"
+
+        with pytest.raises(RPCError, match="2 of 12 response records"):
+            parse_chunked_response(response)
 
 
 class TestExtractRPCResult:
@@ -146,6 +354,51 @@ class TestExtractRPCResult:
         result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result == "plain string result"
 
+    def test_prefers_last_non_null_frame_for_same_id(self):
+        """rt=c emits a null placeholder then the populated frame; the last wins.
+
+        Multiple ``wrb.fr`` frames for one RPC ID are legal in streamed
+        ``rt=c`` mode. The decoder must skip past an earlier null placeholder
+        and return the final populated payload instead of the first match.
+        """
+        placeholder = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
+        final = [
+            "wrb.fr",
+            RPCMethod.LIST_NOTEBOOKS.value,
+            json.dumps([["final-notebook"]]),
+            None,
+            None,
+            None,
+        ]
+        # Frames may arrive in separate chunks or grouped — cover both.
+        chunks = [[placeholder], [final]]
+
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+        assert result == [["final-notebook"]]
+
+    def test_does_not_downgrade_populated_frame_to_later_null(self):
+        """A trailing null frame must not clobber an earlier populated result."""
+        final = [
+            "wrb.fr",
+            RPCMethod.LIST_NOTEBOOKS.value,
+            json.dumps([["real-data"]]),
+            None,
+            None,
+            None,
+        ]
+        trailing_null = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
+        chunks = [[final], [trailing_null]]
+
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+        assert result == [["real-data"]]
+
+    def test_single_null_frame_still_returns_none(self):
+        """A lone null frame returns None exactly as before (first==last)."""
+        chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]]
+
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+        assert result is None
+
     def test_raises_on_error_chunk(self):
         """Test raises RPCError for error chunks."""
         chunks = [
@@ -153,6 +406,15 @@ class TestExtractRPCResult:
         ]
 
         with pytest.raises(RPCError, match="Some error message"):
+            extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
+
+    def test_error_frame_after_null_placeholder_still_raises(self):
+        """An 'er' frame following a null placeholder is terminal and raises."""
+        placeholder = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
+        error = ["er", RPCMethod.LIST_NOTEBOOKS.value, "Terminal failure", None, None]
+        chunks = [[placeholder], [error]]
+
+        with pytest.raises(RPCError, match="Terminal failure"):
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_handles_numeric_error_code(self):
@@ -205,6 +467,7 @@ class TestExtractRPCResult:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert exc_info.value.rpc_code == "USER_DISPLAYABLE_ERROR"
+        assert "Upstream status code 8 (Resource exhausted)" in str(exc_info.value)
 
     def test_null_result_without_error_info_returns_none(self):
         """Test null result without UserDisplayableError returns None normally."""
@@ -621,6 +884,20 @@ class TestNullResultStatusCodeEnrichment:
             result = decode_response(self._build_raw([code]), self.RPC_ID, allow_null=True)
             assert result is None, f"allow_null=True leaked for code {code}"
 
+    def test_enriched_messages_surface_found_ids(self):
+        """found_ids must appear in the message text, not just the attribute.
+
+        The base RPCError.__str__ does not append found_ids, so embedding it in
+        the message keeps the strongest drift/debug signal visible in plain logs
+        and tracebacks across all three null-result enrichment branches.
+        """
+        for error_info in ([5], [13], [99]):
+            with pytest.raises(RPCError) as exc_info:
+                decode_response(self._build_raw(error_info), self.RPC_ID)
+            message = str(exc_info.value)
+            assert "Found IDs:" in message
+            assert self.RPC_ID in message
+
     def test_boolean_error_info_is_not_treated_as_status_code(self):
         """[true] must not be accepted as code 1 — bool is a subclass of int.
 
@@ -654,3 +931,448 @@ class TestAuthError:
         error = AuthError("Token expired", method_id="abc123")
         assert str(error) == "Token expired"
         assert error.method_id == "abc123"
+
+
+class TestUnknownRPCMethodErrorRouting:
+    """The 'requested rpc_id missing but other IDs found' branch routes to
+    ``UnknownRPCMethodError`` (a ``DecodingError`` subclass), not plain
+    ``RPCError``. Other null-result branches must keep raising ``RPCError``.
+    """
+
+    def _build_raw_missing(self) -> tuple[str, str, list[str]]:
+        """Build a response where requested ID is missing but another is present."""
+        requested = "OldMethodId"
+        actual = "NewMethodId"
+        inner = json.dumps([])
+        chunk = json.dumps(["wrb.fr", actual, inner, None, None])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+        return raw, requested, [actual]
+
+    def test_missing_id_raises_unknown_rpc_method_error(self):
+        raw, requested, found = self._build_raw_missing()
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            decode_response(raw, requested)
+        err = exc_info.value
+        assert err.method_id == requested
+        assert err.found_ids == found
+        # raw_response must match the legacy RPCError preview semantics.
+        assert err.raw_response is not None
+        assert isinstance(err.raw_response, str)
+        # Message text unchanged.
+        assert "may have changed" in str(err)
+        assert requested in str(err)
+
+    def test_unknown_method_error_catchable_as_rpc_error(self):
+        raw, requested, _ = self._build_raw_missing()
+        with pytest.raises(RPCError):
+            decode_response(raw, requested)
+
+    def test_unknown_method_error_catchable_as_decoding_error(self):
+        raw, requested, _ = self._build_raw_missing()
+        with pytest.raises(DecodingError):
+            decode_response(raw, requested)
+
+    def test_unknown_method_error_catchable_as_specific_type(self):
+        raw, requested, _ = self._build_raw_missing()
+        with pytest.raises(UnknownRPCMethodError):
+            decode_response(raw, requested)
+
+    def test_status_code_branch_still_plain_rpc_error(self):
+        """Negative test: status-code [13] branch must NOT reroute."""
+        rpc_id = RPCMethod.GET_NOTEBOOK.value
+        chunk = json.dumps(["wrb.fr", rpc_id, None, None, None, [13], "generic"])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw, rpc_id)
+        # Must be plain RPCError (or ClientError for 5/7), but NEVER UnknownRPCMethodError.
+        assert not isinstance(exc_info.value, UnknownRPCMethodError)
+
+    def test_null_result_branch_still_plain_rpc_error(self):
+        """Negative test: null-result-no-status branch must NOT reroute."""
+        rpc_id = RPCMethod.GET_NOTEBOOK.value
+        chunk = json.dumps(["wrb.fr", rpc_id, None, None, None, None])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw, rpc_id)
+        assert not isinstance(exc_info.value, UnknownRPCMethodError)
+
+    def test_no_rpc_data_branch_still_plain_rpc_error(self):
+        """Negative test: empty-chunks branch must NOT reroute."""
+        raw = ")]}'\n"
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw, "AnyId")
+        assert not isinstance(exc_info.value, UnknownRPCMethodError)
+
+    def test_preserves_byte_for_byte_payload_of_legacy_branch(self):
+        """raw_response, method_id, and found_ids match legacy RPCError shape."""
+        raw, requested, found = self._build_raw_missing()
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            decode_response(raw, requested)
+        err = exc_info.value
+        # Same fields legacy RPCError populated.
+        assert err.method_id == requested
+        assert err.found_ids == found
+        assert err.raw_response is not None
+        # raw_response preview cap (80 chars + "..." = 83) preserved by the
+        # base RPCError contract (NOTEBOOKLM_DEBUG=1 opts into full body).
+        assert len(err.raw_response) <= 83
+
+
+class TestAllowNullDoesNotMaskDrift:
+    """Issue #1158: ``allow_null=True`` must not swallow method-ID drift or
+    anti-bot/redirect walls as a benign ``None``.
+
+    ``allow_null`` only sanctions a ``wrb.fr`` frame that genuinely carried a
+    null payload (the requested ``rpc_id`` *is* present). An *absent* RPC ID
+    (drift) or a body with no RPC frames at all (anti-bot wall) is categorically
+    different and must still raise, even for opt-in callers.
+    """
+
+    def test_allow_null_still_raises_on_method_id_drift(self):
+        """Requested ID missing but another ID present → UnknownRPCMethodError,
+        even with allow_null=True."""
+        requested = "OldMethodId"
+        actual = "NewMethodId"
+        inner = json.dumps([])
+        chunk = json.dumps(["wrb.fr", actual, inner, None, None])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            decode_response(raw, requested, allow_null=True)
+        err = exc_info.value
+        assert err.method_id == requested
+        assert err.found_ids == [actual]
+        assert "may have changed" in str(err)
+
+    def test_allow_null_still_raises_when_no_rpc_data(self):
+        """Empty/anti-bot body with no RPC frames → RPCError, even with
+        allow_null=True."""
+        raw = ")]}'\n"
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw, "AnyId", allow_null=True)
+        assert "response contained no RPC data" in str(exc_info.value)
+        assert not isinstance(exc_info.value, UnknownRPCMethodError)
+
+    def test_allow_null_still_raises_on_non_rpc_json_body(self):
+        """A parseable but non-RPC JSON body (e.g. a redirect/error page) yields
+        no found_ids → RPCError, even with allow_null=True."""
+        chunk = json.dumps({"redirect": "https://accounts.google.com/"})
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw, RPCMethod.CREATE_ARTIFACT.value, allow_null=True)
+        assert "response contained no RPC data" in str(exc_info.value)
+        assert not isinstance(exc_info.value, UnknownRPCMethodError)
+
+    def test_allow_null_returns_none_for_present_but_null_frame(self):
+        """Regression guard: when the requested ID IS present with a null
+        payload, allow_null=True still returns None (the legitimate use case)."""
+        rpc_id = RPCMethod.CREATE_ARTIFACT.value
+        chunk = json.dumps(["wrb.fr", rpc_id, None, None, None])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+        result = decode_response(raw, rpc_id, allow_null=True)
+        assert result is None
+
+
+class TestMalformedChunkResilience:
+    """safe_index hot-path traversal must tolerate malformed chunks.
+
+    None of these inputs should raise; the decoder API surface (collect_rpc_ids,
+    extract_rpc_result) length-guards each chunk *before* invoking
+    ``safe_index``, so structurally-empty/short chunks are skipped rather than
+    triggering a strict-decode ``UnknownRPCMethodError``.
+    """
+
+    RPC_ID = RPCMethod.LIST_NOTEBOOKS.value
+
+    def test_collect_rpc_ids_handles_empty_chunk(self):
+        """Empty list chunk is skipped without indexing into it."""
+        assert collect_rpc_ids([[]]) == []
+
+    def test_collect_rpc_ids_handles_non_list_chunk(self):
+        """Non-list chunks (str / int / dict / None) are skipped silently."""
+        assert collect_rpc_ids(["nope", 123, None, {"k": "v"}]) == []
+
+    def test_collect_rpc_ids_handles_short_item(self):
+        """Items shorter than 2 elements are skipped before indexing item[1]."""
+        chunks: list = [["wrb.fr"]]  # missing rpc_id at index 1
+        assert collect_rpc_ids(chunks) == []
+
+    def test_collect_rpc_ids_handles_non_list_inner_item(self):
+        """Non-list items inside a nested chunk are skipped."""
+        chunks: list = [["string-item", 42, None]]
+        # First element is a string, so items becomes [chunk] (the outer list),
+        # which has len=3 and item[0]="string-item" doesn't match tags. No raise.
+        assert collect_rpc_ids(chunks) == []
+
+    def test_collect_rpc_ids_handles_deeply_nested_malformed(self):
+        """Deeply nested malformed structures do not crash the traversal."""
+        chunks: list = [[[None]], [[1, 2]], [[]], [[[]]], [["wrb.fr"]]]
+        # None of these have a (tag, rpc_id) pair with a valid string rpc_id.
+        assert collect_rpc_ids(chunks) == []
+
+    def test_extract_rpc_result_handles_empty_chunk(self):
+        """Empty chunks are skipped in extract_rpc_result."""
+        assert extract_rpc_result([[]], self.RPC_ID) is None
+
+    def test_extract_rpc_result_handles_non_list_chunk(self):
+        """Non-list chunks are skipped in extract_rpc_result."""
+        assert extract_rpc_result(["nope", 123, None], self.RPC_ID) is None
+
+    def test_extract_rpc_result_handles_missing_index_5(self):
+        """wrb.fr items with len < 6 don't trigger UserDisplayableError lookup."""
+        # Item has exactly 3 elements: tag, rpc_id, null result. No index 5.
+        chunks: list = [["wrb.fr", self.RPC_ID, None]]
+        # Should return None (the null result) without raising IndexError.
+        assert extract_rpc_result(chunks, self.RPC_ID) is None
+
+    def test_extract_rpc_result_handles_short_item(self):
+        """Items with len < 3 are skipped before any indexing."""
+        # Items shorter than 3 elements should be skipped — no IndexError.
+        chunks: list = [["wrb.fr", self.RPC_ID]]
+        assert extract_rpc_result(chunks, self.RPC_ID) is None
+
+    def test_extract_rpc_result_handles_deeply_nested_malformed(self):
+        """Pathological nesting must not raise in extract_rpc_result."""
+        chunks: list = [
+            [],
+            [[]],
+            [None, None, None],
+            [["wrb.fr"]],
+            [["wrb.fr", self.RPC_ID]],  # len < 3 — skipped
+        ]
+        assert extract_rpc_result(chunks, self.RPC_ID) is None
+
+    def test_decode_response_handles_malformed_chunk_for_status_lookup(self):
+        """_find_wrb_status (via decode_response) must not crash on malformed.
+
+        When decode_response hits the "null result data, look up status"
+        branch, the chunk list it scans may include malformed entries. None
+        of these should raise.
+        """
+        # First a malformed chunk, then the legitimate null-result entry that
+        # decode_response will report on. Use GET_NOTEBOOK to trigger the
+        # status-lookup branch.
+        rpc_id = RPCMethod.GET_NOTEBOOK.value
+        good = json.dumps(["wrb.fr", rpc_id, None, None, None, None])
+        bad_short = json.dumps(["wrb.fr"])  # malformed, len < 6
+        bad_empty = json.dumps([])
+        body = (
+            f"{len(bad_short)}\n{bad_short}\n{len(bad_empty)}\n{bad_empty}\n{len(good)}\n{good}\n"
+        )
+        raw = f")]}}'\n{body}"
+        # decode_response will still raise RPCError for the null result, but
+        # the malformed-chunk traversal must not raise IndexError on its way
+        # there.
+        with pytest.raises(RPCError, match="returned null result data"):
+            decode_response(raw, rpc_id)
+
+
+class TestGetErrorMessageForCode:
+    """Parametrized coverage for ``get_error_message_for_code``.
+
+    Covers every known code in ``_ERROR_CODE_MESSAGES``, the ``None``
+    sentinel, the 4xx/5xx fallback ranges, and out-of-range codes.
+    """
+
+    @pytest.mark.parametrize(
+        ("code", "expected_substring", "expected_retryable"),
+        [
+            pytest.param(
+                RPCErrorCode.INVALID_REQUEST,
+                "Invalid request parameters",
+                False,
+                id="invalid_request_400",
+            ),
+            pytest.param(
+                RPCErrorCode.UNAUTHORIZED,
+                "Authentication required",
+                False,
+                id="unauthorized_401",
+            ),
+            pytest.param(
+                RPCErrorCode.FORBIDDEN,
+                "Insufficient permissions",
+                False,
+                id="forbidden_403",
+            ),
+            pytest.param(
+                RPCErrorCode.NOT_FOUND,
+                "Requested resource not found",
+                False,
+                id="not_found_404",
+            ),
+            pytest.param(
+                RPCErrorCode.RATE_LIMITED,
+                "rate limit exceeded",
+                True,
+                id="rate_limited_429",
+            ),
+            pytest.param(
+                RPCErrorCode.SERVER_ERROR,
+                "Server error occurred",
+                True,
+                id="server_error_500",
+            ),
+        ],
+    )
+    def test_error_code_known_returns_mapped_message(
+        self, code: int, expected_substring: str, expected_retryable: bool
+    ) -> None:
+        """Every known mapped code returns its tailored message + retry flag."""
+        message, is_retryable = get_error_message_for_code(int(code))
+        assert expected_substring in message
+        assert is_retryable is expected_retryable
+
+    def test_error_code_400_invalid_request(self) -> None:
+        """400 maps to the INVALID_REQUEST table entry, not the 4xx fallback."""
+        message, is_retryable = get_error_message_for_code(400)
+        assert message == "Invalid request parameters. Check your input and try again."
+        assert is_retryable is False
+
+    def test_error_code_401_unauthorized(self) -> None:
+        message, is_retryable = get_error_message_for_code(401)
+        assert "notebooklm login" in message
+        assert is_retryable is False
+
+    def test_error_code_403_forbidden(self) -> None:
+        message, is_retryable = get_error_message_for_code(403)
+        assert message == "Insufficient permissions for this operation."
+        assert is_retryable is False
+
+    def test_error_code_404_not_found(self) -> None:
+        message, is_retryable = get_error_message_for_code(404)
+        assert message == "Requested resource not found."
+        assert is_retryable is False
+
+    def test_error_code_429_rate_limit(self) -> None:
+        message, is_retryable = get_error_message_for_code(429)
+        assert "rate limit" in message.lower()
+        assert is_retryable is True
+
+    def test_error_code_500_server_error(self) -> None:
+        message, is_retryable = get_error_message_for_code(500)
+        assert "Server error" in message
+        assert is_retryable is True
+
+    def test_error_code_none_returns_generic_unknown(self) -> None:
+        """``None`` sentinel returns the generic non-retryable message."""
+        message, is_retryable = get_error_message_for_code(None)
+        assert message == "Unknown error occurred."
+        assert is_retryable is False
+
+    @pytest.mark.parametrize(
+        ("code", "expected_message", "expected_retryable"),
+        [
+            pytest.param(
+                402,
+                "Client error 402. Check your request parameters.",
+                False,
+                id="unmapped_4xx_402",
+            ),
+            pytest.param(
+                418,
+                "Client error 418. Check your request parameters.",
+                False,
+                id="unmapped_4xx_418_teapot",
+            ),
+            pytest.param(
+                422,
+                "Client error 422. Check your request parameters.",
+                False,
+                id="unmapped_4xx_422",
+            ),
+            pytest.param(
+                499,
+                "Client error 499. Check your request parameters.",
+                False,
+                id="unmapped_4xx_499_upper_edge",
+            ),
+        ],
+    )
+    def test_error_code_unmapped_4xx_generic_client_error(
+        self, code: int, expected_message: str, expected_retryable: bool
+    ) -> None:
+        """Unknown 400-499 codes get the generic client-error fallback."""
+        message, is_retryable = get_error_message_for_code(code)
+        assert message == expected_message
+        assert is_retryable is expected_retryable
+
+    @pytest.mark.parametrize(
+        ("code", "expected_message", "expected_retryable"),
+        [
+            pytest.param(
+                501,
+                "Server error 501. This is usually temporary - try again later.",
+                True,
+                id="unmapped_5xx_501",
+            ),
+            pytest.param(
+                502,
+                "Server error 502. This is usually temporary - try again later.",
+                True,
+                id="unmapped_5xx_502_bad_gateway",
+            ),
+            pytest.param(
+                503,
+                "Server error 503. This is usually temporary - try again later.",
+                True,
+                id="unmapped_5xx_503",
+            ),
+            pytest.param(
+                599,
+                "Server error 599. This is usually temporary - try again later.",
+                True,
+                id="unmapped_5xx_599_upper_edge",
+            ),
+        ],
+    )
+    def test_error_code_unmapped_5xx_generic_server_error(
+        self, code: int, expected_message: str, expected_retryable: bool
+    ) -> None:
+        """Unknown 500-599 codes get the generic retryable server-error fallback."""
+        message, is_retryable = get_error_message_for_code(code)
+        assert message == expected_message
+        assert is_retryable is expected_retryable
+
+    @pytest.mark.parametrize(
+        ("code", "expected_message"),
+        [
+            pytest.param(0, "Error code: 0", id="zero_edge_case"),
+            pytest.param(1, "Error code: 1", id="positive_below_4xx_grpc_cancelled"),
+            pytest.param(13, "Error code: 13", id="grpc_internal_13"),
+            pytest.param(200, "Error code: 200", id="success_range_200"),
+            pytest.param(399, "Error code: 399", id="just_below_4xx_399"),
+            pytest.param(600, "Error code: 600", id="just_above_5xx_600"),
+            pytest.param(999, "Error code: 999", id="three_digit_999"),
+            pytest.param(123456, "Error code: 123456", id="very_large_code"),
+            pytest.param(-1, "Error code: -1", id="negative_code"),
+        ],
+    )
+    def test_error_code_out_of_range_generic_fallback(
+        self, code: int, expected_message: str
+    ) -> None:
+        """Codes outside 400-599 get the bare ``Error code: <n>`` fallback (non-retryable)."""
+        message, is_retryable = get_error_message_for_code(code)
+        assert message == expected_message
+        assert is_retryable is False
+
+    def test_returns_tuple_of_str_and_bool(self) -> None:
+        """Return contract: always ``tuple[str, bool]`` regardless of input."""
+        for code in (None, 0, 400, 429, 500, 502, 999, -1):
+            message, is_retryable = get_error_message_for_code(code)
+            assert isinstance(message, str)
+            assert isinstance(is_retryable, bool)
+
+    def test_every_rpc_error_code_enum_value_covered_or_fallback(self) -> None:
+        """Each ``RPCErrorCode`` enum value resolves to a non-empty message.
+
+        Belt-and-suspenders: future additions to ``RPCErrorCode`` either land
+        in ``_ERROR_CODE_MESSAGES`` or fall through to the range-based
+        fallback. Either way ``get_error_message_for_code`` must produce a
+        non-empty human-readable message.
+        """
+        for code in RPCErrorCode:
+            message, is_retryable = get_error_message_for_code(int(code))
+            assert isinstance(message, str) and message
+            assert isinstance(is_retryable, bool)

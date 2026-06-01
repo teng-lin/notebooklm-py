@@ -1,0 +1,43 @@
+{
+  "method_name": "REFRESH_SOURCE",
+  "method_id": "FLmJqe",
+  "description": "Refresh a URL-backed source (production shape [None, [source_id], [2]]).",
+  "request": {
+    "params": [
+      null,
+      [
+        "SCRUBBED_SRC_001"
+      ],
+      [
+        2
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "FLmJqe",
+          "[null,[\"SCRUBBED_SRC_001\"],[2]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "FLmJqe",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

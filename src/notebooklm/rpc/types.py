@@ -1,11 +1,50 @@
 """RPC types and constants for NotebookLM API."""
 
 from enum import Enum
+from typing import Final
 
-# NotebookLM API endpoints
-BATCHEXECUTE_URL = "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
-QUERY_URL = "https://notebooklm.google.com/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
-UPLOAD_URL = "https://notebooklm.google.com/upload/_/"
+from .._env import DEFAULT_BASE_URL, get_base_url
+from .overrides import (
+    _load_rpc_overrides as _load_rpc_overrides,
+)
+from .overrides import (
+    _logged_override_hashes as _logged_override_hashes,
+)
+from .overrides import (
+    _parse_rpc_overrides as _parse_rpc_overrides,
+)
+from .overrides import (
+    resolve_rpc_id as resolve_rpc_id,
+)
+
+# URL path for the streamed-chat endpoint. Not a batchexecute RPC ID — kept
+# as a module-level constant rather than an ``RPCMethod`` member so the enum
+# only contains real RPC IDs that ``scripts/check_rpc_health.py`` can probe.
+_QUERY_ENDPOINT_PATH: Final[str] = (
+    "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1."
+    "LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
+)
+
+# Backward-compatible default-host endpoint constants. Runtime code should use
+# the lazy get_* helpers below so NOTEBOOKLM_BASE_URL is honored after import.
+BATCHEXECUTE_URL = f"{DEFAULT_BASE_URL}/_/LabsTailwindUi/data/batchexecute"
+QUERY_URL = f"{DEFAULT_BASE_URL}{_QUERY_ENDPOINT_PATH}"
+UPLOAD_URL = f"{DEFAULT_BASE_URL}/upload/_/"
+
+
+def get_batchexecute_url() -> str:
+    """Return the NotebookLM batchexecute endpoint for the configured host."""
+    return f"{get_base_url()}/_/LabsTailwindUi/data/batchexecute"
+
+
+def get_query_url() -> str:
+    """Return the NotebookLM streamed chat endpoint for the configured host."""
+    return f"{get_base_url()}{_QUERY_ENDPOINT_PATH}"
+
+
+def get_upload_url() -> str:
+    """Return the NotebookLM upload endpoint for the configured host."""
+    return f"{get_base_url()}/upload/_/"
 
 
 class RPCMethod(str, Enum):
@@ -30,15 +69,11 @@ class RPCMethod(str, Enum):
     REFRESH_SOURCE = "FLmJqe"
     CHECK_SOURCE_FRESHNESS = "yR9Yof"
     UPDATE_SOURCE = "b7Wfje"
-    DISCOVER_SOURCES = "qXyaNe"
 
     # Summary and query
     SUMMARIZE = "VfAZjd"
     GET_SOURCE_GUIDE = "tr032e"
     GET_SUGGESTED_REPORTS = "ciyUvf"  # AI-suggested report formats
-
-    # Query endpoint (not a batchexecute RPC ID)
-    QUERY_ENDPOINT = "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
 
     # Artifact operations
     CREATE_ARTIFACT = "R7cb6c"  # Generate any artifact (audio, video, report, quiz, etc.)
@@ -47,7 +82,7 @@ class RPCMethod(str, Enum):
     RENAME_ARTIFACT = "rc3d8d"
     EXPORT_ARTIFACT = "Krh3pd"
     SHARE_ARTIFACT = "RGP97b"
-    GET_INTERACTIVE_HTML = "v9rmvd"  # Fetch quiz/flashcard HTML content
+    GET_INTERACTIVE_HTML = "v9rmvd"  # Fetch quiz/flashcard HTML content (also serves interactive mind map data at [0][9][3])
     REVISE_SLIDE = "KmcKPe"  # Revise individual slide with prompt
 
     # Research
@@ -66,6 +101,7 @@ class RPCMethod(str, Enum):
     # Conversation
     GET_LAST_CONVERSATION_ID = "hPTbtc"  # Returns only the most recent conversation ID
     GET_CONVERSATION_TURNS = "khqZz"  # Returns full Q&A turns for a conversation
+    DELETE_CONVERSATION = "J7Gthc"  # Delete a conversation (web UI's "Delete history" action)
 
     # Sharing operations (notebook-level)
     SHARE_NOTEBOOK = "QDyure"  # Set notebook visibility (restricted/anyone with link)
@@ -78,6 +114,7 @@ class RPCMethod(str, Enum):
     # User settings
     GET_USER_SETTINGS = "ZwVcOc"  # Get user settings including output language
     SET_USER_SETTINGS = "hT54vc"  # Set user settings (e.g., output language)
+    GET_USER_TIER = "ozz5Z"  # Get NotebookLM subscription tier from homepage context
 
 
 class ArtifactTypeCode(int, Enum):
@@ -95,7 +132,7 @@ class ArtifactTypeCode(int, Enum):
         2  # Includes: Briefing Doc, Study Guide, Blog Post, White Paper, Research Proposal, etc.
     )
     VIDEO = 3
-    QUIZ = 4  # Also used for flashcards
+    QUIZ = 4  # Also used for flashcards and interactive mind maps (variant 4)
     QUIZ_FLASHCARD = 4  # Alias for backward compatibility
     MIND_MAP = 5
     # Note: Type 6 appears unused in current API
@@ -104,8 +141,13 @@ class ArtifactTypeCode(int, Enum):
     DATA_TABLE = 9
 
 
-# Deprecated alias for backward compatibility
-StudioContentType = ArtifactTypeCode
+# Variant codes at artifact_data[9][1][0], distinguishing sub-kinds within the
+# type-4 (QUIZ) family. The interactive mind map is a studio artifact
+# (type 4 / variant 4) created via CREATE_ARTIFACT, distinct from the
+# note-backed mind map (surfaced with the synthetic type code 5).
+FLASHCARDS_VARIANT: Final[int] = 1
+QUIZ_VARIANT: Final[int] = 2
+INTERACTIVE_MIND_MAP_VARIANT: Final[int] = 4
 
 
 class ArtifactStatus(int, Enum):

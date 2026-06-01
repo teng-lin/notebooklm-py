@@ -1,0 +1,89 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22wXbhsf%22%2C%22%5Bnull%2C1%2Cnull%2C%5B2%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=INVALID_CSRF_FOR_TEST&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '118'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - SID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
+  response:
+    body:
+      string: ")]}'\n\n59\n[[\"wrb.fr\",\"wXbhsf\",\"[\\\"INVALID_CREDENTIALS\\\"]\",null,null]]\n"
+    headers:
+      Content-Type:
+      - application/json+protobuf; charset=UTF-8
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: ''
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Cookie:
+      - SID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: GET
+    uri: https://notebooklm.google.com/
+  response:
+    body:
+      string: "<!doctype html><html lang=\"en\"><head><title>Google NotebookLM</title></head><body><script
+        data-id=\"_gd\">window.WIZ_global_data = {\"SNlM0e\":\"SCRUBBED_CSRF\",\"FdrFJe\":\"SCRUBBED_SESSION\"};</script></body></html>"
+    headers:
+      Content-Type:
+      - text/html; charset=utf-8
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5B%5B%5B%22wXbhsf%22%2C%22%5Bnull%2C1%2Cnull%2C%5B2%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '108'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - SID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2F&f.sid=SCRUBBED_SESSION&hl=en&rt=c
+  response:
+    body:
+      string: ")]}'\n\n38\n[[\"wrb.fr\",\"wXbhsf\",\"[[]]\",null,null]]\n"
+    headers:
+      Content-Type:
+      - application/json+protobuf; charset=UTF-8
+    status:
+      code: 200
+      message: OK
+version: 1

@@ -5,9 +5,23 @@ This script makes minimal API calls to exercise RPC methods and verify
 that the method IDs in rpc/types.py still match what the API returns.
 
 Exit codes:
-    0 - All RPC methods OK (or transient errors only)
+    0 - All RPC methods OK (or only transient errors: rate-limits / ReadTimeouts)
     1 - One or more RPC methods have mismatched IDs
     2 - Authentication or infrastructure failure (not an RPC problem)
+    3 - One or more RPC methods returned a non-transient ERROR
+        (timeouts, parse failures, unexpected HTTP errors)
+
+Priority order when multiple statuses are present:
+    MISMATCH (1) > AUTH (2) > non-transient ERROR (3) > OK (0)
+
+Transient errors that still exit 0 are limited to rate-limit signals
+(HTTP 429, gRPC ``RESOURCE_EXHAUSTED``, and the decoder's user-displayable
+``API rate limit`` / quota messages raised as ``RateLimitError``) plus
+``httpx.ReadTimeout`` against Google's RPC endpoints — those are almost
+always server-side slowness, not an RPC contract change, and they
+consistently pass on retry (see #1004). Everything else (parse failures,
+unexpected HTTP status codes, schema mismatches) is still treated as a
+real failure so the nightly canary can flag silent breakage.
 
 Environment variables:
     NOTEBOOKLM_AUTH_JSON - Playwright storage state JSON (required)
@@ -30,19 +44,30 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
 
-from notebooklm.auth import AuthTokens, fetch_tokens, load_auth_from_storage
+from notebooklm._env import get_default_language
+from notebooklm._logging import scrub_secrets
+from notebooklm._notebooks import build_create_notebook_params
+from notebooklm.auth import (
+    AuthTokens,
+    fetch_tokens,
+    get_account_email_for_storage,
+    get_authuser_for_storage,
+    load_auth_from_storage,
+)
+from notebooklm.paths import get_storage_path
 from notebooklm.rpc import (
-    BATCHEXECUTE_URL,
     RPCError,
     RPCMethod,
     build_request_body,
     encode_rpc_request,
+    get_batchexecute_url,
 )
 from notebooklm.rpc.decoder import (
     collect_rpc_ids,
@@ -108,16 +133,13 @@ FULL_MODE_ONLY_METHODS = {
     RPCMethod.DELETE_SOURCE,
     RPCMethod.DELETE_ARTIFACT,  # Main RPC for artifact deletion
     RPCMethod.DELETE_NOTEBOOK,
+    RPCMethod.DELETE_CONVERSATION,  # Destructive; needs a real conversation to delete
 }
 
 # Methods always skipped (even in full mode)
 ALWAYS_SKIP_METHODS = {
-    # Not a batchexecute RPC
-    RPCMethod.QUERY_ENDPOINT,
     # Takes too long
     RPCMethod.START_DEEP_RESEARCH,
-    # Not fully rolled out by Google - fails with any IDs
-    RPCMethod.DISCOVER_SOURCES,
 }
 
 
@@ -199,6 +221,13 @@ def load_auth() -> dict[str, str]:
     return cookies
 
 
+def resolve_storage_path() -> Path | None:
+    """Return the file-based auth path, or None when NOTEBOOKLM_AUTH_JSON is used."""
+    if "NOTEBOOKLM_AUTH_JSON" in os.environ:
+        return None
+    return get_storage_path()
+
+
 async def make_rpc_request(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -218,14 +247,22 @@ async def make_rpc_request(
     Returns:
         Tuple of (response text or None, error message or None)
     """
-    url = f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path={quote(source_path, safe='')}"
+    query_params = {
+        "rpcids": method.value,
+        "source-path": source_path,
+        "f.sid": auth.session_id,
+        "hl": get_default_language(),
+        "rt": "c",
+    }
+    if auth.account_email or auth.authuser:
+        query_params["authuser"] = auth.account_route
+    url = f"{get_batchexecute_url()}?{urlencode(query_params)}"
     rpc_request = encode_rpc_request(method, params)
     body = build_request_body(rpc_request, auth.csrf_token)
 
-    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": cookie_header,
+        "Cookie": auth.cookie_header,
     }
 
     try:
@@ -235,7 +272,9 @@ async def make_rpc_request(
     except httpx.HTTPStatusError as e:
         return None, f"HTTP {e.response.status_code}"
     except httpx.RequestError as e:
-        return None, str(e)
+        # ``httpx.ReadTimeout`` can stringify to ``""``; fall back to the
+        # class name so callers don't mislabel it as an empty response (#864).
+        return None, str(e) or type(e).__name__
 
 
 async def make_rpc_call(
@@ -258,7 +297,7 @@ async def make_rpc_call(
         Tuple of (list of RPC IDs found in response, error message or None)
     """
     response_text, error = await make_rpc_request(client, auth, method, params, source_path)
-    if error:
+    if error is not None:
         return [], error
     if response_text is None:
         return [], "Empty response from server"
@@ -309,7 +348,7 @@ async def test_rpc_method(
         status=CheckStatus.ERROR,
         expected_id=expected_id,
         found_ids=found_ids,
-        error=error or "RPC ID not found in response",
+        error=error if error is not None else "RPC ID not found in response",
     )
 
 
@@ -337,7 +376,7 @@ async def test_rpc_method_with_data(
     expected_id = method.value
 
     response_text, error = await make_rpc_request(client, auth, method, params, source_path)
-    if error:
+    if error is not None:
         return CheckResult(
             method=method,
             status=CheckStatus.ERROR,
@@ -415,6 +454,19 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         # Use "en" as safe language code
         return [[[None, [[None, None, None, None, ["en"]]]]]]
 
+    # GET_USER_TIER: read subscription tier from homepage context (no notebook required)
+    # Params mirror build_get_user_tier_params() in src/notebooklm/_settings.py.
+    if method == RPCMethod.GET_USER_TIER:
+        return [
+            [
+                [
+                    [None, "1", 627],
+                    [None, None, None, None, None, None, None, None, None, [None, None, 2]],
+                    1,
+                ]
+            ]
+        ]
+
     # Methods that require a notebook ID
     if not notebook_id:
         return None
@@ -428,15 +480,22 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     ):
         return [notebook_id]
 
-    # GET_SUGGESTED_REPORTS has special params: [[2], notebook_id]
+    # GET_SUGGESTED_REPORTS has special params: [[2], notebook_id].
+    # Suggestions only exist once a notebook has indexed sources, so the
+    # freshly-created temp notebook used in --full mode returns an empty
+    # body and trips the empty-response guard. When a stable read-only
+    # notebook is available, route this method there instead so the
+    # canary keeps drift-checking the RPC ID.
     if method == RPCMethod.GET_SUGGESTED_REPORTS:
-        return [[2], notebook_id]
+        stable_id = (
+            os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+            or os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
+            or notebook_id
+        )
+        return [[2], stable_id]
 
-    # Methods that take [[notebook_id]] as the only param
-    if method in (
-        RPCMethod.GET_NOTES_AND_MIND_MAPS,
-        RPCMethod.DISCOVER_SOURCES,
-    ):
+    # Methods that take [[notebook_id]] as the only param.
+    if method == RPCMethod.GET_NOTES_AND_MIND_MAPS:
         return [[notebook_id]]
 
     # GET_LAST_CONVERSATION_ID: returns most recent conversation ID
@@ -576,7 +635,7 @@ async def check_method(
     # Make the call
     found_ids, error = await make_rpc_call(client, auth, method, params)
 
-    if error:
+    if error is not None:
         # Check if error response still contains our expected ID
         if expected_id in found_ids:
             return CheckResult(
@@ -620,8 +679,12 @@ async def setup_temp_resources(
     temp = TempResources()
 
     # Test CREATE_NOTEBOOK - extract notebook_id from response[0]
+    title = f"RPC-Health-Check-{uuid4().hex[:8]}"
     result, data = await test_rpc_method_with_data(
-        client, auth, RPCMethod.CREATE_NOTEBOOK, [f"RPC-Health-Check-{uuid4().hex[:8]}"]
+        client,
+        auth,
+        RPCMethod.CREATE_NOTEBOOK,
+        build_create_notebook_params(title),
     )
     results.append(result)
     print(format_check_with_success(result, "temp notebook created"))
@@ -672,7 +735,15 @@ async def setup_temp_resources(
     if result.status == CheckStatus.OK:
         temp.source_id = extract_id(data, 0, 0)
         if not temp.source_id:
-            print(f"  WARNING: ADD_SOURCE ID extraction failed. Response: {repr(data)[:200]}")
+            # Decoded response may carry residual credential-shaped substrings
+            # (cookies/CSRF tokens echoed in error payloads, etc.). Scrub the
+            # FULL repr before slicing — slicing first risks chopping a
+            # secret-shaped substring (e.g. ``cookie: SID=ab|cd``) at the
+            # 200-char boundary, leaving the prefix outside the scrub
+            # patterns. Scrub-then-truncate keeps the redaction intact even
+            # if the bytes after position 200 carried the matching anchor.
+            preview = scrub_secrets(repr(data))[:200]
+            print(f"  WARNING: ADD_SOURCE ID extraction failed. Response: {preview}")
 
     # Test ADD_SOURCE_FILE - registers file source intent (no actual upload needed)
     # Params format: [[[filename]], notebook_id, [2], [1, None, ...]]
@@ -766,9 +837,12 @@ async def setup_temp_resources(
             # Artifact ID is at response[0][0]
             temp.artifact_id = extract_id(data, 0, 0)
             if not temp.artifact_id:
-                print(
-                    f"  WARNING: CREATE_ARTIFACT ID extraction failed. Response: {repr(data)[:200]}"
-                )
+                # Same scrub-then-truncate ordering as the ADD_SOURCE
+                # failure site upstream — slicing first risks chopping a
+                # cookie / CSRF token at the 200-char boundary and
+                # missing the scrub-pattern anchor.
+                preview = scrub_secrets(repr(data))[:200]
+                print(f"  WARNING: CREATE_ARTIFACT ID extraction failed. Response: {preview}")
 
         # Poll for artifact completion
         if temp.artifact_id:
@@ -883,6 +957,7 @@ async def cleanup_temp_resources(
 
 async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     """Run health check on all RPC methods."""
+    storage_path = resolve_storage_path()
     cookies = load_auth()
 
     notebook_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID") or os.environ.get(
@@ -897,14 +972,26 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
 
     print("Fetching auth tokens...")
     try:
-        csrf_token, session_id = await fetch_tokens(cookies)
+        csrf_token, session_id = await fetch_tokens(cookies, storage_path=storage_path)
     except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {scrub_secrets(e)}", file=sys.stderr)
         sys.exit(2)
     except httpx.HTTPError as e:
-        print(f"ERROR: Network error while fetching auth tokens: {e}", file=sys.stderr)
+        # ``httpx`` exception strings can echo full request URLs including
+        # ``f.sid=<session_id>`` query params, so scrub before logging.
+        print(
+            f"ERROR: Network error while fetching auth tokens: {scrub_secrets(e)}",
+            file=sys.stderr,
+        )
         sys.exit(2)
-    auth = AuthTokens(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    auth = AuthTokens(
+        cookies=cookies,
+        csrf_token=csrf_token,
+        session_id=session_id,
+        storage_path=storage_path,
+        authuser=get_authuser_for_storage(storage_path),
+        account_email=get_account_email_for_storage(storage_path),
+    )
     print(f"Auth OK (CSRF token length: {len(auth.csrf_token)})")
     print()
 
@@ -930,7 +1017,12 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
                 status_icon = STATUS_ICONS[result.status]
                 line = f"{status_icon:8} {method.name} ({result.expected_id})"
                 if result.error and result.status != CheckStatus.OK:
-                    line += f" - {result.error}"
+                    # Per-method live print of the error string runs BEFORE
+                    # the summary scrub at the end of the script and BEFORE
+                    # the workflow-level scrub on health-report.txt. Scrub
+                    # at the live site too so the Actions log doesn't carry
+                    # an unredacted copy in the streamed output.
+                    line += f" - {scrub_secrets(result.error)}"
                 print(line)
 
                 if i < total and result.status != CheckStatus.SKIPPED:
@@ -945,6 +1037,89 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     return results
 
 
+# Substrings that mark an ERROR as a transient signal. Keep this list
+# narrow on purpose: broadening it would mask real RPC drift.
+#
+# Currently classified as transient:
+#   * ``HTTP 429`` and gRPC ``RESOURCE_EXHAUSTED`` — explicit rate-limit
+#     signals from the backend.
+#   * ``API rate limit`` — catches the decoder's user-displayable messages
+#     raised as ``RateLimitError`` ("API rate limit exceeded..." and
+#     "API rate limit or quota exceeded..."). These reach the canary via
+#     the ``except RPCError`` parse-error branch in
+#     ``test_rpc_method_with_data`` and were previously misclassified.
+#   * ``ReadTimeout`` — ``httpx.ReadTimeout`` against Google's RPC
+#     endpoints is almost always server-side slowness, not an RPC
+#     contract change. It consistently passes on retry (see #1004 and
+#     prior occurrences on 2026-05-20). Only the ``httpx.ReadTimeout``
+#     class name is treated as transient — ``ConnectTimeout`` /
+#     ``WriteTimeout`` / ``PoolTimeout`` stay non-transient because they
+#     point at client- or network-side problems worth surfacing.
+#
+# Everything else (other timeouts, parse failures, unexpected HTTP
+# status codes, schema mismatches) is still treated as a real failure
+# so the nightly canary can flag silent breakage.
+TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
+    "HTTP 429",
+    "RESOURCE_EXHAUSTED",
+    "API rate limit",
+    "ReadTimeout",
+)
+
+
+def is_transient_error(error_message: str | None) -> bool:
+    """Return True if an ERROR result is a transient signal.
+
+    Transient signals (filtered out of the auto-open path):
+      * Rate-limit responses (HTTP 429, gRPC ``RESOURCE_EXHAUSTED``,
+        decoder ``RateLimitError`` messages).
+      * ``httpx.ReadTimeout`` against Google's RPC endpoints — these
+        are server-side flakes that pass on retry (issue #1004).
+
+    Anything else — other timeouts, parse failures, unexpected HTTP
+    status codes — is treated as a real failure that warrants
+    investigation.
+    """
+    if not error_message:
+        return False
+    return any(marker in error_message for marker in TRANSIENT_ERROR_MARKERS)
+
+
+def partition_errors(
+    results: list[CheckResult],
+) -> tuple[list[CheckResult], list[CheckResult]]:
+    """Split ERROR results into (non-transient, transient) lists."""
+    non_transient: list[CheckResult] = []
+    transient: list[CheckResult] = []
+    for r in results:
+        if r.status != CheckStatus.ERROR:
+            continue
+        if is_transient_error(r.error):
+            transient.append(r)
+        else:
+            non_transient.append(r)
+    return non_transient, transient
+
+
+def compute_exit_code(
+    counts: Counter[CheckStatus],
+    non_transient_errors: list[CheckResult],
+) -> int:
+    """Compute the script exit code from result counts.
+
+    Priority order (highest wins):
+        1. MISMATCH  -> 1
+        2. AUTH      -> 2 (signaled by the caller via sys.exit, never reached here)
+        3. non-transient ERROR -> 3
+        4. OK        -> 0
+    """
+    if counts[CheckStatus.MISMATCH] > 0:
+        return 1
+    if non_transient_errors:
+        return 3
+    return 0
+
+
 def print_summary(results: list[CheckResult]) -> int:
     """Print summary and return exit code."""
     print()
@@ -956,10 +1131,17 @@ def print_summary(results: list[CheckResult]) -> int:
     total = len(results)
     tested = total - counts[CheckStatus.SKIPPED]
 
+    non_transient_errors, transient_errors = partition_errors(results)
+    non_transient_count = len(non_transient_errors)
+    transient_count = len(transient_errors)
+
     print(f"TESTED:   {tested}/{total} methods")
     print(f"OK:       {counts[CheckStatus.OK]}/{tested}")
     print(f"MISMATCH: {counts[CheckStatus.MISMATCH]}/{tested}")
-    print(f"ERROR:    {counts[CheckStatus.ERROR]}/{tested}")
+    print(
+        f"ERROR:    {counts[CheckStatus.ERROR]}/{tested} "
+        f"(non-transient: {non_transient_count}, transient: {transient_count})"
+    )
 
     # Print details for mismatches
     mismatches = [r for r in results if r.status == CheckStatus.MISMATCH]
@@ -974,26 +1156,40 @@ def print_summary(results: list[CheckResult]) -> int:
             print(f"    Action:   Update RPCMethod.{r.method.name} in src/notebooklm/rpc/types.py")
             print()
 
-    # Print details for errors
-    errors = [r for r in results if r.status == CheckStatus.ERROR]
-    if errors:
+    # Print details for errors, split into non-transient (real failures)
+    # and transient (rate-limit) buckets so the cron output is actionable.
+    if non_transient_errors or transient_errors:
         print()
         print("ERROR DETAILS:")
         print("-" * 40)
-        for r in errors:
-            print(f"  {r.method.name} ({r.expected_id}): {r.error}")
+        for r in non_transient_errors:
+            # ``r.error`` is a free-form error string produced by the RPC
+            # call paths; if the upstream library ever quotes a request
+            # URL or cookie jar in its message, the workflow's later
+            # file scrub catches it but the live Actions log would not.
+            # Belt-and-braces: scrub at the print site too.
+            print(f"  [non-transient] {r.method.name} ({r.expected_id}): {scrub_secrets(r.error)}")
+        for r in transient_errors:
+            print(f"  [transient]     {r.method.name} ({r.expected_id}): {scrub_secrets(r.error)}")
         print()
 
-    # Return exit code
-    # Only fail on MISMATCH (RPC ID changed) - this is what we care about
-    # ERROR could be transient (rate limiting, network issues) - don't fail on these
-    if counts[CheckStatus.MISMATCH] > 0:
+    # Return exit code.
+    # Priority: MISMATCH (1) > non-transient ERROR (3) > OK (0).
+    # AUTH (2) is signaled earlier via sys.exit(2) and never reaches here.
+    exit_code = compute_exit_code(counts, non_transient_errors)
+
+    if exit_code == 1:
         print("RESULT: FAIL - RPC ID mismatches detected")
         return 1
-    if counts[CheckStatus.ERROR] > 0:
-        print("RESULT: WARN - Some methods had errors (may be transient)")
-        print("       Review ERROR DETAILS above for potential issues")
-        return 0  # Don't fail - could be rate limiting or network issues
+    if exit_code == 3:
+        affected = ", ".join(r.method.name for r in non_transient_errors)
+        print(f"RESULT: FAIL - non-transient ERROR detected in methods: {affected}")
+        print("       These are real failures (not rate-limit transients).")
+        return 3
+    if transient_errors:
+        print("RESULT: PASS - Only transient errors observed (rate-limits / ReadTimeouts)")
+        print("       Review ERROR DETAILS above for affected methods.")
+        return 0
     print("RESULT: PASS - All tested RPC methods OK")
     return 0
 

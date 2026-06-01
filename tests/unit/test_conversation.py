@@ -6,31 +6,21 @@ import re
 import pytest
 
 from notebooklm import AskResult, NotebookLMClient
-from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError
-
-
-@pytest.fixture
-def auth_tokens():
-    return AuthTokens(
-        cookies={"SID": "test"},
-        csrf_token="test_csrf",
-        session_id="test_session",
-    )
 
 
 class TestAsk:
     @pytest.mark.asyncio
-    async def test_ask_new_conversation(self, auth_tokens, httpx_mock):
+    async def test_ask_new_conversation(self, auth_tokens, httpx_mock, mock_get_conversation_id):
         import re
 
-        # Mock ask response (streaming chunks)
+        # Mock the chat-ask streamed response.
         inner_json = json.dumps(
             [
                 [
                     "This is the answer. It is now long enough to be valid.",
                     None,
-                    None,
+                    ["stream-id-not-conv", 12345],
                     None,
                     [1],
                 ]
@@ -45,6 +35,10 @@ class TestAsk:
             content=response_body.encode(),
             method="POST",
         )
+        # New conversations now require a hPTbtc round-trip post-ask
+        # (issue #659): the SDK fetches the real conversation_id from
+        # there because the streamed response only contains a stream id.
+        mock_get_conversation_id(conv_id="real-conv-id")
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -57,15 +51,17 @@ class TestAsk:
         assert result.answer == "This is the answer. It is now long enough to be valid."
         assert result.is_follow_up is False
         assert result.turn_number == 1
+        assert result.conversation_id == "real-conv-id"
 
     @pytest.mark.asyncio
     async def test_ask_follow_up(self, auth_tokens, httpx_mock):
+        _TEST_CONV_ID = "a1b2c3d4-0000-0000-0000-000000000002"
         inner_json = json.dumps(
             [
                 [
                     "Follow-up answer. This also needs to be longer than twenty characters.",
                     None,
-                    None,
+                    [_TEST_CONV_ID, 12345],
                     None,
                     [1],
                 ]
@@ -76,12 +72,9 @@ class TestAsk:
 
         httpx_mock.add_response(content=response_body.encode(), method="POST")
 
-        _TEST_CONV_ID = "a1b2c3d4-0000-0000-0000-000000000002"
         async with NotebookLMClient(auth_tokens) as client:
-            # Seed cache via core client
-            client._core._conversation_cache[_TEST_CONV_ID] = [
-                {"query": "Q1", "answer": "A1", "turn_number": 1}
-            ]
+            # Seed cache via the public helper (cache moved off Session).
+            client.chat._cache.cache_conversation_turn(_TEST_CONV_ID, "Q1", "A1", 1)
 
             result = await client.chat.ask(
                 notebook_id="nb_123",
@@ -135,15 +128,26 @@ class TestAsk:
                 await client.chat.ask("nb_123", "What is this?", source_ids=["test_source"])
 
     @pytest.mark.asyncio
-    async def test_ask_returns_server_conversation_id(self, auth_tokens, httpx_mock):
-        """ask() uses the conversation_id from the server response, not a local UUID."""
-        server_conv_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    async def test_ask_returns_hptbtc_conversation_id_not_stream_id(
+        self, auth_tokens, httpx_mock, mock_get_conversation_id
+    ):
+        """``AskResult.conversation_id`` is the hPTbtc-fetched real id, NOT
+        the stream id at ``first[2][0]`` in the chat response (issue #659).
+
+        Prior to the fix, the SDK extracted ``first[2][0]`` from the
+        streaming response and treated it as the conversation_id. Live API
+        tests proved that field is a per-stream/per-query id that returns
+        0 turns when queried via ``khqZz``. The real id only comes from
+        ``hPTbtc`` after the ask.
+        """
+        stream_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        real_conv_id = "11111111-2222-3333-4444-555555555555"
         inner_json = json.dumps(
             [
                 [
                     "Server answer text that is long enough to be valid.",
                     None,
-                    [server_conv_id, "hash123"],
+                    [stream_id, "hash123"],
                     None,
                     [1],
                 ]
@@ -156,8 +160,10 @@ class TestAsk:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id(conv_id=real_conv_id)
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask("nb_123", "What is this?", source_ids=["test_source"])
 
-        assert result.conversation_id == server_conv_id
+        assert result.conversation_id == real_conv_id
+        assert result.conversation_id != stream_id

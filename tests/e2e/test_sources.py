@@ -88,8 +88,11 @@ class TestSourceRetrieval:
 
     @pytest.mark.asyncio
     async def test_get_source_not_found(self, client, read_only_notebook_id):
-        """Test getting a non-existent source returns None."""
-        source = await client.sources.get(read_only_notebook_id, "nonexistent_source_id")
+        """Test getting a non-existent source returns None (with deprecation)."""
+        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
+        # (flips to raising SourceNotFoundError in v0.8.0, issue #1247).
+        with pytest.warns(DeprecationWarning, match="SourceNotFoundError"):
+            source = await client.sources.get(read_only_notebook_id, "nonexistent_source_id")
         assert source is None
 
     @pytest.mark.asyncio
@@ -125,9 +128,9 @@ class TestSourceMutations:
         )
         assert source.id is not None
 
-        # Delete it
+        # Delete it (v0.7.0: returns None, idempotent — issue #1211)
         deleted = await client.sources.delete(temp_notebook.id, source.id)
-        assert deleted is True
+        assert deleted is None
 
         # Verify it's gone
         sources = await client.sources.list(temp_notebook.id)
