@@ -840,7 +840,7 @@ async def notebooklm_troubleshoot(
     elif any(k in error_lower for k in ["x.com", "twitter"]) or (
         operation == "adding URL source" and "privacy" in error_lower
     ):
-        diagnosis = "X.com (Twitter) anti-scraping protection detected."
+        diagnosis = "The website, likely X.com (Twitter), has anti-bot/anti-scraping protection enabled."
         action_steps = [
             "Pre-fetch the content using the 'bird' CLI: 'bird read <URL> > source.md'.",
             "Then add the local markdown file instead of the URL.",

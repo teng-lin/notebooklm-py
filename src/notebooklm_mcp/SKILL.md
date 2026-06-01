@@ -1,3 +1,15 @@
+---
+name: NotebookLM MCP Server
+description: MCP server for Google NotebookLM, enabling AI agents to interact with NotebookLM capabilities via the Model Context Protocol.
+keywords:
+  - notebooklm
+  - mcp
+  - google
+  - research
+  - productivity
+risk_level: unknown
+---
+
 # Skill: NotebookLM MCP Server
 
 Expose Google NotebookLM capabilities to MCP-compatible AI systems (Claude Desktop, Cursor, Copilot, etc.) via the Model Context Protocol.
@@ -19,7 +31,7 @@ source .venv/bin/activate  # macOS/Linux
 ### 2. Install with exhaustive dependencies
 Install the package with the `[all]` extra to ensure all media downloaders and cookie extractors are available.
 ```bash
-pip install git+https://github.com/djmahe4/notebooklm-py.git ".[all]"
+pip install notebooklm-py[all]
 ```
 
 ### 3. Initialize Playwright & Chromium
@@ -55,12 +67,26 @@ Media generation (audio/video) can take several minutes.
 - If a timeout occurs, the tool returns a JSON object with the `task_id`.
 - **Action:** AI agents should capture this `task_id` and use it later to poll status if the immediate generation timed out.
 
+### Action Tools
+
+- `notebooklm_create_notebook` - Creates a new notebook.
+- `notebooklm_delete_notebook` - Deletes a notebook.
+- `notebooklm_delete_source` - Deletes a source from a notebook.
+- `notebooklm_add_source_url` - Adds a source URL to a notebook.
+- `notebooklm_add_source_text` - Adds a source text to a notebook.
+- `notebooklm_ask_chat` - Asks a question to the model.
+
+### Other Tools
+- `notebooklm_generate_quiz` - Generates a quiz from the given sources.
+- `notebooklm_generate_mind_map` - Generates a mind map from the given sources.
+
 ### Error Diagnosis
 If a tool call fails, always use the `notebooklm_troubleshoot` tool first.
 - Pass the raw `error_message` and the `operation` name.
 - It will provide specific advice for X.com scraping, auth expiry, and quota limits.
 
 ## Troubleshooting Common Scenarios
+Use the `notebooklm_troubleshoot` tool to diagnose and resolve issues.
 
 | Scenario | Recommendation |
 |----------|----------------|
