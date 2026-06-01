@@ -1,6 +1,6 @@
 """Meta-lint enforcing the test-monkeypatch policy from ADR-007.
 
-This test scans every ``.py`` file under ``tests/`` for the three
+This test scans every ``.py`` file under ``tests/`` for the four
 forbidden patterns documented in
 ``docs/adr/0007-test-monkeypatch-policy.md`` and fails if any file *not*
 on the shrinking allowlist contains a match.
@@ -30,6 +30,20 @@ Forbidden patterns
    .. code-block:: python
 
        target.rpc_call = AsyncMock(return_value=None)
+
+4. **``unittest.mock`` string-target patches into private internals** —
+   ``mock.patch("notebooklm._private…")`` / ``patch("notebooklm._private…")``
+   / ``patch.object(notebooklm._private…, ...)``. Same import-string failure
+   mode as (1), but routed through ``unittest.mock`` instead of
+   ``monkeypatch`` — the channel where the growth happened and which the lint
+   previously missed entirely (issue #1325). Scoped to private
+   ``notebooklm._*`` paths: those are the implementation internals the policy
+   forbids reaching into, and they silently no-op when the attribute relocates.
+
+   .. code-block:: python
+
+       mock.patch("notebooklm._research.ResearchAPI._poll", fake)
+       patch("notebooklm._artifact_downloads.httpx", fake)
 
 Allowlist
 ---------
@@ -126,16 +140,46 @@ _PATTERN_ASYNCMOCK_ASSIGN = re.compile(
     r"(?<![\w.])[\w.]+\.(?:rpc_call|transport_post|_perform_authed_post|next_reqid|save_cookies)\s*=\s*(?:[\w]+\.)*AsyncMock"
 )
 
+# (d) ``mock.patch("notebooklm._private…")`` / ``patch("notebooklm._private…")``
+#     — ``unittest.mock`` string-target patch into a *private* internal path.
+#
+# The ``(?<![\w.])(?:[\w]+\.)*`` prefix anchors ``patch`` at a word boundary
+# and allows an optional dotted module qualifier, so the bare ``patch(`` (from
+# ``from unittest.mock import patch``), ``mock.patch(``, and
+# ``unittest.mock.patch(`` forms all match, while ``monkeypatch(`` / ``dispatch(``
+# (where ``patch`` is preceded by a word char) and ``patch.object(`` (no ``(``
+# immediately after ``patch``) do not. Scoped to ``notebooklm\._`` so only
+# *private* targets are flagged — patches at public facades are out of scope for
+# this rule (issue #1325).
+_PATTERN_MOCK_PATCH_PRIVATE = re.compile(r"(?<![\w.])(?:[\w]+\.)*patch\(\s*[\"']notebooklm\._")
+
+# (e) ``patch.object(notebooklm._private…, "attr", …)`` — the object-target
+#     ``unittest.mock`` form aimed at a private module reference. No occurrences
+#     exist today; the rule guards against regressions on this second
+#     ``unittest.mock`` shape.
+_PATTERN_MOCK_PATCH_OBJECT_PRIVATE = re.compile(
+    r"(?<![\w.])(?:[\w]+\.)*patch\.object\(\s*[\w.]*notebooklm\._"
+)
+
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("string-target monkeypatch (forbidden by ADR-007)", _PATTERN_STRING_TARGET),
     ("object-attribute monkeypatch (forbidden by ADR-007)", _PATTERN_OBJECT_ATTR),
     ("AsyncMock attribute assignment (forbidden by ADR-007)", _PATTERN_ASYNCMOCK_ASSIGN),
+    ("mock.patch string-target into private (forbidden by ADR-007)", _PATTERN_MOCK_PATCH_PRIVATE),
+    ("patch.object into private module (forbidden by ADR-007)", _PATTERN_MOCK_PATCH_OBJECT_PRIVATE),
 )
 
 
 # ---------------------------------------------------------------------------
 # File-level allowlist — baked at PR-start (2026-05-18). Shrinks across
 # D1 PR-2 and D1 PR-3; target end state is an empty set.
+#
+# A second batch (issue #1325) was added when the lint was extended to also
+# catch ``mock.patch("notebooklm._private…")`` / ``patch.object`` string targets
+# into private internals — a previously-unpoliced channel. Those entries are
+# grouped under the "issue #1325" header below and shrink toward zero on the
+# same terms: a file whose offenders are migrated to seams must be removed from
+# the allowlist (a stale entry fails the lint).
 # ---------------------------------------------------------------------------
 
 _ALLOWLIST: frozenset[str] = frozenset(
@@ -211,6 +255,59 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # module-level mapping used during request encoding — module-level data
         # seam, not a core attribute.
         "tests/unit/test_rpc_overrides.py",
+        # -------------------------------------------------------------------
+        # issue #1325: pre-existing `mock.patch("notebooklm._private…")`
+        # string-target offenders, surfaced when the lint's coverage was
+        # extended to the `unittest.mock` channel. These reach into private
+        # `notebooklm._*` modules and must migrate to constructor seams /
+        # public hooks; this list shrinks toward zero.
+        # (`tests/integration/concurrency/test_download_blocks_loop.py` also
+        # matches this rule but is already allowlisted above.)
+        # -------------------------------------------------------------------
+        # reason: patches `notebooklm._runtime_init` construction internals to
+        # assert httpx connection-pool tuning — runtime seam below the
+        # core-injection surface.
+        "tests/integration/concurrency/test_pool_tuning.py",
+        # reason: patches `notebooklm._sources` internals to assert upload
+        # timeout config — service seam, not a core attribute.
+        "tests/integration/concurrency/test_upload_timeout_config.py",
+        # reason: patches `notebooklm._artifact_downloads` download-coordinator
+        # internals (httpx-level) for the artifacts integration cassette.
+        "tests/integration/test_artifacts_integration.py",
+        # reason: patches `notebooklm._sources` source-addition internals for
+        # the sources integration cassette.
+        "tests/integration/test_sources_integration.py",
+        # reason: patches `notebooklm._artifact_downloads` download-coordinator
+        # internals to exercise the asynchronous download path.
+        "tests/unit/test_artifact_downloads.py",
+        # reason: patches `notebooklm._artifact_downloads` internals for artifact
+        # coverage edge cases.
+        "tests/unit/test_artifacts_coverage.py",
+        # reason: patches `notebooklm._artifact_downloads` internals to assert
+        # download-result shaping.
+        "tests/unit/test_download_result.py",
+        # reason: patches `notebooklm._artifact_downloads` internals to assert
+        # download-URL resolution.
+        "tests/unit/test_download_url.py",
+        # reason: patches `notebooklm._deadline` retry/backoff timing internals
+        # to assert rate-limit retry behaviour.
+        "tests/unit/test_rate_limit_retry.py",
+        # reason: patches `notebooklm._research` research-flow internals to
+        # exercise import-with-verification — the largest single concentration
+        # of private-target patches (issue #1325).
+        "tests/unit/test_research_import_with_verification.py",
+        # reason: patches `notebooklm._sources` poll-coordinator internals
+        # for the source polling service.
+        "tests/unit/test_source_polling_service.py",
+        # reason: patches `notebooklm._sources` internals to assert source
+        # status transitions.
+        "tests/unit/test_source_status.py",
+        # reason: patches `notebooklm._source_upload` internals for upload
+        # coverage edge cases.
+        "tests/unit/test_source_upload_coverage.py",
+        # reason: patches `notebooklm._types` dataclass internals exercised
+        # through the public types surface.
+        "tests/unit/test_types.py",
     }
 )
 

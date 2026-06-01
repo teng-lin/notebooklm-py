@@ -2,9 +2,11 @@
 
 ## Status
 
-Accepted.
+Accepted (migration in progress — allowlist non-empty).
 
-This ADR ships in the `arch-d1-fixtures-scaffolding` PR (D1 PR-1). It defines the *forbidden* test patterns going forward; the migration of the ~273 existing offenders is scheduled across D1 PR-2 (`arch-d1-auth-side`) and D1 PR-3 (`arch-d1-cli-side`), at which point the meta-lint's file-level allowlist shrinks to empty.
+This ADR shipped in the `arch-d1-fixtures-scaffolding` PR (D1 PR-1). It defines the *forbidden* test patterns going forward; the migration of the existing offenders to constructor seams is still in progress, so the meta-lint's file-level allowlist is **not yet empty**. The allowlist shrinks toward zero as offenders migrate.
+
+**Coverage update (issue #1325):** the original meta-lint policed only the three `monkeypatch.setattr` / direct-`AsyncMock`-assignment forms below and was blind to the `unittest.mock` channel — `mock.patch("notebooklm._private…")` / `patch("notebooklm._private…")` / `patch.object(notebooklm._private…, ...)` — which is where most of the recent growth happened. As of #1325 the lint also flags those string-target patches into *private* `notebooklm._*` paths (forbidden pattern 4 below), and the file-level allowlist gained the pre-existing offenders so the policy now covers both mocking channels. Because that allowlist is non-empty, this ADR is re-statused from "Accepted" to "Accepted (migration in progress — allowlist non-empty)"; the earlier text overstated completion by claiming the list shrinks to empty.
 
 ## Context
 
@@ -50,6 +52,7 @@ The following patterns are **forbidden** in new test code and enforced by `tests
 1. **String-target monkeypatches into the `notebooklm` namespace** — `monkeypatch.setattr("notebooklm.X.Y", ...)`. These rely on import-string resolution and silently no-op when storage relocates.
 2. **Object-attribute monkeypatches via the `notebooklm` module** — `monkeypatch.setattr(notebooklm.X, "attr", ...)`. Same failure mode; written slightly differently.
 3. **Direct AsyncMock attribute assignment to the transport/RPC surface** — `target.rpc_call = AsyncMock(...)`, `target._perform_authed_post = AsyncMock(...)`, `target._begin_transport_post = AsyncMock(...)`, `target._finish_transport_post = AsyncMock(...)`, `target.query_post = AsyncMock(...)`, including chained variants like `self._client._target.rpc_call = AsyncMock(...)`. These mutate a constructed instance instead of injecting a fake at construction.
+4. **`unittest.mock` string-target patches into private internals** (added in #1325) — `mock.patch("notebooklm._private…")` / `patch("notebooklm._private…")` / `patch.object(notebooklm._private…, ...)`. Same import-string failure mode as (1), routed through `unittest.mock` instead of `monkeypatch`. Scoped to *private* `notebooklm._*` paths — the implementation internals the policy forbids reaching into; patches at public facades are out of scope for this rule.
 
 `tests/_fixtures/fake_core.py` provides `make_fake_core(**overrides) -> FakeSession`. `FakeSession` is a `types.SimpleNamespace`-shaped plain class whose default fields cover every attribute the narrow Protocols in `src/notebooklm/_capabilities.py` require (`rpc_call`, `_perform_authed_post`, `_begin_transport_post`, `_finish_transport_post`, `next_reqid`, `authuser`, `account_email`, `authuser_query`, `authuser_header`, `live_cookies`, `get_upload_semaphore`, `record_upload_queue_wait`, `bound_loop`, plus the private `_route_url`/`_next_reqid` aliases tests use today). Defaults are benign `AsyncMock`s for the async surface and `MagicMock`s for the sync surface; tests override only the slice they exercise via keyword arguments.
 
@@ -57,7 +60,7 @@ The choice of `types.SimpleNamespace`-shaped attribute storage (rather than `Mag
 
 `tests/_fixtures/conftest.py` exposes exactly two thin pytest fixtures — `fake_core` (default factory call) and `make_fake_core` (the factory itself, for tests that need per-call overrides). The deliberately small fixture surface avoids the failure mode `/grill-me` Q11 flagged: a "full fixture menu" creates one parameterless pytest fixture per per-test override combination, which scales O(N tests × M overrides) and quickly becomes worse than the monkeypatch pattern it replaces.
 
-The meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) runs in `pytest` (no skip markers), scans each test file as a single string (so multi-line `monkeypatch.setattr(\n  "notebooklm.X", …)` forms are caught — `\s` already matches newlines in Python's `re` engine), and reports each violation with `(file, line, matched pattern)` for actionable failure messages. Its file-level allowlist starts at 49 files (the union of audit-flagged offenders at PR-start) and is expected to shrink to zero by D1 PR-3.
+The meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) runs in `pytest` (no skip markers), scans each test file as a single string (so multi-line `monkeypatch.setattr(\n  "notebooklm.X", …)` forms are caught — `\s` already matches newlines in Python's `re` engine), and reports each violation with `(file, line, matched pattern)` for actionable failure messages. Its file-level allowlist started at 49 files (the union of audit-flagged offenders at PR-start) and is driven toward zero as offenders migrate. **It is currently non-empty:** issue #1325 added a second batch of pre-existing offenders when the lint's coverage was extended to the `unittest.mock` channel (forbidden pattern 4) — files that patch private `notebooklm._*` paths via `mock.patch` / `patch` string targets, concentrated in `notebooklm._research`, `notebooklm._artifact_downloads`, and `notebooklm._sources`. That batch is grouped under an "issue #1325" header in the allowlist and shrinks on the same terms as the rest: a file whose offenders migrate to seams must be removed from the allowlist, and a stale entry (a file with no remaining offenders) fails the lint so the list cannot rot.
 
 ## Consequences
 
