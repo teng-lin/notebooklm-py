@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._source_add import SourceAddService
+from notebooklm._source.add import SourceAddService
 from notebooklm._sources import SourcesAPI
 from notebooklm.cli.services import source_add as cli_source_add
 from notebooklm.exceptions import NetworkError, NonIdempotentRetryError, SourceAddError

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from notebooklm._artifact_polling import ArtifactPollingService
+from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
 from notebooklm._polling_registry import PollRegistry
 from notebooklm.exceptions import ArtifactPendingTimeoutError

@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from .._row_adapters_artifacts import ArtifactRow
+from .._row_adapters.artifacts import ArtifactRow
 from ..rpc.types import (
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
@@ -183,7 +183,7 @@ class Artifact:
 
         Position knowledge for ``id`` / ``title`` / ``type`` / ``status``
         / ``variant`` / ``timestamp`` lives in
-        :class:`notebooklm._row_adapters_artifacts.ArtifactRow`. This factory wraps
+        :class:`notebooklm._row_adapters.artifacts.ArtifactRow`. This factory wraps
         the raw row in an adapter and reads through its typed properties,
         so any wire-shape change touches the adapter constants only.
 

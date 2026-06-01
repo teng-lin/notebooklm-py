@@ -1,4 +1,4 @@
-"""Unit tests for module-level helpers in ``notebooklm._artifact_formatters``.
+"""Unit tests for module-level helpers in ``notebooklm._artifact.formatters``.
 
 Focuses on ``_extract_data_table_rows`` — the named extractor that replaces
 the raw ``raw_data[0][0][0][0][4][2]`` deep-index chain in
@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from notebooklm._artifact_formatters import (
+from notebooklm._artifact.formatters import (
     _extract_data_table_rows,
     _parse_data_table,
 )

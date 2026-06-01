@@ -15,7 +15,7 @@ from _fixtures.chain import (
     chain_calls_through_to_terminal,
     make_request,
 )
-from notebooklm._middleware import (
+from notebooklm._middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,

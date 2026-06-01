@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from notebooklm._source_polling import SourcePoller
+from notebooklm._source.polling import SourcePoller
 from notebooklm._sources import SourcesAPI
 from notebooklm.types import (
     Source,

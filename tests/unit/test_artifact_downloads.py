@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from notebooklm import _artifact_downloads as artifact_downloads
+from notebooklm._artifact import downloads as artifact_downloads
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import (
     ArtifactDownloadError,
@@ -533,7 +533,7 @@ class TestDownloadUrl:
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
                 patch(
-                    "notebooklm._artifact_downloads.load_httpx_cookies", return_value=mock_cookies
+                    "notebooklm._artifact.downloads.load_httpx_cookies", return_value=mock_cookies
                 ),
             ):
                 result = await api._download_url(
@@ -576,7 +576,7 @@ class TestDownloadUrl:
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
                 patch(
-                    "notebooklm._artifact_downloads.load_httpx_cookies", return_value=mock_cookies
+                    "notebooklm._artifact.downloads.load_httpx_cookies", return_value=mock_cookies
                 ),
                 pytest.raises(ArtifactDownloadError, match="0 bytes"),
             ):
@@ -863,7 +863,7 @@ class TestStoragePathEncapsulation:
 
     @pytest.mark.asyncio
     async def test_download_url_uses_constructor_storage_path(self, tmp_path):
-        from notebooklm._artifact_downloads import ArtifactDownloadService
+        from notebooklm._artifact.downloads import ArtifactDownloadService
 
         sentinel = tmp_path / "sentinel_storage.json"
         # MagicMock collaborators are inert — the service must read the
@@ -889,7 +889,7 @@ class TestStoragePathEncapsulation:
             raise _StopAfterCapture
 
         with (
-            patch("notebooklm._artifact_downloads.load_httpx_cookies", new=recording),
+            patch("notebooklm._artifact.downloads.load_httpx_cookies", new=recording),
             pytest.raises(_StopAfterCapture),
         ):
             await service.download_url(
@@ -900,7 +900,7 @@ class TestStoragePathEncapsulation:
 
     @pytest.mark.asyncio
     async def test_download_urls_batch_uses_constructor_storage_path(self, tmp_path):
-        from notebooklm._artifact_downloads import ArtifactDownloadService
+        from notebooklm._artifact.downloads import ArtifactDownloadService
 
         sentinel = tmp_path / "sentinel_storage.json"
         runtime = MagicMock()
@@ -919,7 +919,7 @@ class TestStoragePathEncapsulation:
             captured.append(path)
             return {}
 
-        with patch("notebooklm._artifact_downloads.load_httpx_cookies", new=recording):
+        with patch("notebooklm._artifact.downloads.load_httpx_cookies", new=recording):
             await service.download_urls_batch([])
 
         assert captured == [sentinel]

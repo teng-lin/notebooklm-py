@@ -16,8 +16,8 @@ import logging
 import reprlib
 from typing import TYPE_CHECKING, Any
 
-from ._artifact_payloads import build_interactive_mind_map_artifact_params
-from ._row_adapters_notes import NoteRow
+from ._artifact.payloads import build_interactive_mind_map_artifact_params
+from ._row_adapters.notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
 from .exceptions import ArtifactError, UnknownRPCMethodError
 from .rpc import RPCMethod, safe_index
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from ._artifacts import ArtifactsAPI
     from ._mind_map import NoteBackedMindMapService
     from ._notebooks import NotebooksAPI
-    from ._runtime_contracts import RpcCaller
+    from ._runtime.contracts import RpcCaller
 
 logger = logging.getLogger(__name__)
 

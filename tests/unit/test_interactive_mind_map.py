@@ -15,7 +15,7 @@ import warnings
 
 import pytest
 
-from notebooklm._artifact_listing import _matches_artifact_type
+from notebooklm._artifact.listing import _matches_artifact_type
 from notebooklm._types.artifacts import _map_artifact_kind, _warned_artifact_types
 from notebooklm._types.common import UnknownTypeWarning
 from notebooklm.rpc.types import INTERACTIVE_MIND_MAP_VARIANT
@@ -94,8 +94,8 @@ def test_list_unknown_excludes_interactive_but_keeps_genuine_unknown():
 
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-from notebooklm._artifact_downloads import ArtifactDownloadService  # noqa: E402
-from notebooklm._runtime_contracts import RpcCaller  # noqa: E402
+from notebooklm._artifact.downloads import ArtifactDownloadService  # noqa: E402
+from notebooklm._runtime.contracts import RpcCaller  # noqa: E402
 from notebooklm.rpc.types import RPCMethod  # noqa: E402
 from notebooklm.types import ArtifactNotReadyError  # noqa: E402
 

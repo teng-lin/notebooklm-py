@@ -18,7 +18,7 @@ from notebooklm import (
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -65,7 +65,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     # ``_perform_authed_post`` itself would bypass the chain entirely
     # and silence the counters this test exists to assert. Mocking above
     # the chain would do the same.
-    from notebooklm._middleware import RpcResponse
+    from notebooklm._middleware.core import RpcResponse
 
     async def fake_terminal(request: object) -> RpcResponse:
         # Read the correlation id INSIDE the chain so the assertion
@@ -79,7 +79,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     core._composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
     # Rebuild the chain so it wraps the new terminal (the original chain
     # was built in the composition root against the original bound method).
-    from notebooklm._middleware import build_chain
+    from notebooklm._middleware.core import build_chain
 
     core._composed.chain_host._authed_post_chain = build_chain(
         core._composed.middlewares, fake_terminal

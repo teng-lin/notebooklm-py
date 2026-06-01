@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`notebooklm._runtime_auth`.
+"""Unit tests for :mod:`notebooklm._runtime.auth`.
 
 Covers the load-bearing behaviors of :class:`AuthRefreshCoordinator` directly,
 in addition to the existing ``Session``-shaped tests in
@@ -44,7 +44,7 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._kernel import Kernel
-from notebooklm._runtime_auth import AuthRefreshCoordinator
+from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 
 # Tight enough to fail fast if a regression hangs the suite, generous enough

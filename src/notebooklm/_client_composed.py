@@ -7,17 +7,17 @@ from contextlib import AbstractAsyncContextManager, nullcontext
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from ._loop_affinity import assert_bound_loop
-from ._runtime_config import DEFAULT_MAX_CONCURRENT_RPCS
+from ._runtime.config import DEFAULT_MAX_CONCURRENT_RPCS
 
 _T = TypeVar("_T")
 
 if TYPE_CHECKING:
-    from ._middleware import Middleware
-    from ._middleware_chain import MiddlewareChainBuilder
-    from ._middleware_chain_host import MiddlewareChainHost
+    from ._middleware.chain import MiddlewareChainBuilder
+    from ._middleware.chain_host import MiddlewareChainHost
+    from ._middleware.core import Middleware
     from ._rpc_executor import RpcExecutor
-    from ._runtime_init import RuntimeCollaborators, WiredMiddleware
-    from ._runtime_transport import RuntimeTransport
+    from ._runtime.init import RuntimeCollaborators, WiredMiddleware
+    from ._runtime.transport import RuntimeTransport
 
 
 class ClientComposed:

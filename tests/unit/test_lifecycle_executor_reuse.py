@@ -9,7 +9,7 @@ executor against the new ``httpx.AsyncClient``.
 
 PR 2 deleted both that null line and the lazy factory itself — the
 executor is bound exactly once by the composition root
-(:func:`notebooklm._runtime_init.compose_client_internals`) via
+(:func:`notebooklm._runtime.init.compose_client_internals`) via
 :class:`notebooklm._client_composed.ClientComposed`, and the same instance
 survives any ``close()`` → ``open()`` cycle. This is safe because the executor's
 transport collaborator (:class:`Kernel`) rebuilds its

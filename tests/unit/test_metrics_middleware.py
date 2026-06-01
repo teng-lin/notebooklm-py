@@ -37,13 +37,13 @@ import pytest
 from _fixtures.chain import make_request
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
-from notebooklm._middleware import (
+from notebooklm._middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,
     build_chain,
 )
-from notebooklm._middleware_metrics import MetricsMiddleware
+from notebooklm._middleware.metrics import MetricsMiddleware
 from notebooklm._types.common import RpcTelemetryEvent
 
 

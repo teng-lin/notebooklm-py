@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._source_listing import SourceLister
+from notebooklm._source.listing import SourceLister
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus

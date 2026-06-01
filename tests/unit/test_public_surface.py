@@ -192,12 +192,23 @@ def _collect_external_imports_by_module() -> dict[str, frozenset[str]]:
     adding a second audited module does not double the unit-suite cost.
     """
     imports_by_module: dict[str, set[str]] = {}
+    src_root = _REPO_ROOT / "src"
     for root in _SCAN_ROOTS:
         for path in (_REPO_ROOT / root).rglob("*.py"):
             try:
                 tree = ast.parse(path.read_text())
             except (SyntaxError, UnicodeDecodeError):
                 continue
+            # Package parts of the file, rooted at ``notebooklm`` when the file
+            # lives under ``src/`` (so relative imports can be resolved to their
+            # true target). Files outside ``src/`` (tests/docs) only use absolute
+            # ``notebooklm.<module>`` imports for this audit.
+            file_pkg_parts: list[str] | None = None
+            try:
+                rel = path.resolve().relative_to(src_root.resolve())
+                file_pkg_parts = list(rel.parts[:-1])  # drop filename
+            except ValueError:
+                file_pkg_parts = None
             for node in ast.walk(tree):
                 if not isinstance(node, ast.ImportFrom):
                     continue
@@ -205,11 +216,19 @@ def _collect_external_imports_by_module() -> dict[str, frozenset[str]]:
                 module_basename: str | None = None
                 if module.startswith("notebooklm.") and module.count(".") == 1:
                     module_basename = module.rsplit(".", 1)[1]
-                # Relative matching covers `from .auth import X` / `from ..auth`.
-                # The scan roots do not contain same-named non-notebooklm packages,
-                # so the module basename is sufficient for this audit.
-                elif node.level > 0 and module:
-                    module_basename = module
+                # Relative imports (``from .auth import X`` / ``from ..auth``):
+                # resolve against the importing file's package so a same-named
+                # SIBLING module (e.g. ``_runtime/auth.py``) is NOT misattributed
+                # to the top-level ``notebooklm.auth`` facade.
+                elif node.level > 0 and module and file_pkg_parts is not None:
+                    pops = node.level - 1
+                    if pops <= len(file_pkg_parts):
+                        base = file_pkg_parts[: len(file_pkg_parts) - pops]
+                        target = [*base, *module.split(".")]
+                        # Only attribute to ``notebooklm.<basename>`` when the
+                        # import resolves to a TOP-LEVEL notebooklm module.
+                        if len(target) == 2 and target[0] == "notebooklm":
+                            module_basename = target[1]
                 if module_basename is None:
                     continue
                 for alias in node.names:

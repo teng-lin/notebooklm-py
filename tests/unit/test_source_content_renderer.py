@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._source_content import SourceContentRenderer
+from notebooklm._source.content import SourceContentRenderer
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import SourceNotFoundError
 

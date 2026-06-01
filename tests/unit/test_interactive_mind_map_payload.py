@@ -6,7 +6,7 @@ The expected shape is verified live against the captured GUI request (#1256):
 
 from __future__ import annotations
 
-from notebooklm._artifact_payloads import build_interactive_mind_map_artifact_params
+from notebooklm._artifact.payloads import build_interactive_mind_map_artifact_params
 
 
 def test_single_source_exact_shape():

@@ -67,7 +67,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 
 # mock-based loop-blocking detection tests; no HTTP, no cassette.

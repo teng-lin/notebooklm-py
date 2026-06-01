@@ -3,7 +3,7 @@
 NotebookLM recovers from an auth failure at **two** distinct layers, and
 issue #1205 flagged that they were implemented as divergent copies:
 
-* **HTTP-status layer** — :class:`notebooklm._middleware_auth_refresh.AuthRefreshMiddleware`
+* **HTTP-status layer** — :class:`notebooklm._middleware.auth_refresh.AuthRefreshMiddleware`
   catches a raw ``httpx.HTTPStatusError`` 400/401/403 from ``Kernel.post``,
   refreshes, rebuilds the request envelope, and re-invokes the chain leaf
   once.

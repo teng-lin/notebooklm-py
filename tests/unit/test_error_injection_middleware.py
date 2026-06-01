@@ -48,8 +48,8 @@ import pytest
 from _fixtures.chain import make_request
 from cassette_patterns import build_synthetic_error_response
 from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
-from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
-from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
+from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
+from notebooklm._middleware.error_injection import ErrorInjectionMiddleware
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 
 
@@ -275,7 +275,7 @@ async def test_retry_outside_error_injection_retries_synthetic_429(
     returned response and Retry never saw it. With the exception-raising
     fix, Retry catches and retries N times before re-raising.
     """
-    from notebooklm._middleware_retry import RetryMiddleware
+    from notebooklm._middleware.retry import RetryMiddleware
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "429")
     slept: list[float] = []
@@ -307,7 +307,7 @@ async def test_retry_outside_error_injection_retries_synthetic_5xx(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """End-to-end: chain ``[Retry, ErrorInjection]`` retries synthetic 5xx too."""
-    from notebooklm._middleware_retry import RetryMiddleware
+    from notebooklm._middleware.retry import RetryMiddleware
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "5xx")
     slept: list[float] = []
@@ -360,8 +360,8 @@ async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_
     ADR-009 §"Retry semantics" means refresh runs exactly once and the
     second 400 propagates without recursion.
     """
-    from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
-    from notebooklm._runtime_helpers import is_auth_error as auth_error_predicate
+    from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
+    from notebooklm._runtime.helpers import is_auth_error as auth_error_predicate
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
@@ -405,8 +405,8 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
     chain returns 200 cleanly. This pins the full refresh-then-retry
     success path, not just the propagation path.
     """
-    from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
-    from notebooklm._runtime_helpers import is_auth_error as auth_error_predicate
+    from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
+    from notebooklm._runtime.helpers import is_auth_error as auth_error_predicate
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
@@ -534,7 +534,7 @@ async def test_activation_flip_between_calls_is_observed(
 
 def test_middleware_satisfies_protocol() -> None:
     """``ErrorInjectionMiddleware`` instance is assignable to ``Middleware``."""
-    from notebooklm._middleware import Middleware
+    from notebooklm._middleware.core import Middleware
 
     middleware: Middleware = ErrorInjectionMiddleware()
     assert callable(middleware)

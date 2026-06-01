@@ -1,4 +1,4 @@
-"""Targeted coverage tests for ``notebooklm._source_upload``.
+"""Targeted coverage tests for ``notebooklm._source.upload``.
 
 These tests exercise the error handlers, edge-case branches, and
 streaming/finalize paths in the upload pipeline that the existing
@@ -19,7 +19,7 @@ from urllib.parse import SplitResult, urlsplit
 import httpx
 import pytest
 
-from notebooklm._source_upload import (
+from notebooklm._source.upload import (
     SourceUploadPipeline,
     _build_invalid_argument_source_limit_hint,
     _coerce_source_id_candidate,
@@ -74,7 +74,7 @@ def test_redact_upload_url_returns_placeholder_when_scheme_missing() -> None:
 def test_redact_upload_url_value_error_returns_placeholder() -> None:
     """A urlsplit ValueError is swallowed into the redacted placeholder."""
     with patch(
-        "notebooklm._source_upload.urlsplit",
+        "notebooklm._source.upload.urlsplit",
         side_effect=ValueError("bad url"),
     ):
         assert _redact_upload_url("https://example.com/x") == "[REDACTED_UPLOAD_URL]"
@@ -89,7 +89,7 @@ def test_validate_resumable_upload_url_value_error_wrapped() -> None:
     # ADR-007 forbids string-target ``monkeypatch.setattr`` on notebooklm
     # internals; use ``unittest.mock.patch`` instead.
     with (
-        patch("notebooklm._source_upload.urlsplit", _boom),
+        patch("notebooklm._source.upload.urlsplit", _boom),
         pytest.raises(ValidationError, match="Upload URL is not valid"),
     ):
         _validate_resumable_upload_url("https://example.com/?upload_id=x")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
-UPLOAD_MODULE = PROJECT_ROOT / "src" / "notebooklm" / "_source_upload.py"
+UPLOAD_MODULE = PROJECT_ROOT / "src" / "notebooklm" / "_source" / "upload.py"
 RETIRED_RPC_CALLABLE_NAMES = frozenset({"RpcCall", "ShareRpc"})
 
 
@@ -51,8 +51,8 @@ def test_rpc_callable_guard_helpers_cover_unpacked_assignments_and_import_aliase
         "\n".join(
             [
                 "RpcCall, [ShareRpc] = callbacks",
-                "from notebooklm._source_upload import RpcCallback as Callback",
-                "import notebooklm._source_upload as RpcCallback",
+                "from notebooklm._source.upload import RpcCallback as Callback",
+                "import notebooklm._source.upload as RpcCallback",
             ]
         )
     )

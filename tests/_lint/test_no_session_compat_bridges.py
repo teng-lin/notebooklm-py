@@ -102,8 +102,8 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
     {
         "src/notebooklm/_session.py",
         "src/notebooklm/_kernel.py",
-        "src/notebooklm/_runtime_lifecycle.py",
-        "src/notebooklm/_runtime_auth.py",
+        "src/notebooklm/_runtime/lifecycle.py",
+        "src/notebooklm/_runtime/auth.py",
         "src/notebooklm/_client_metrics.py",
         "src/notebooklm/_transport_drain.py",
         "src/notebooklm/_cookie_persistence.py",
@@ -113,14 +113,14 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
         "src/notebooklm/_request_types.py",
         "src/notebooklm/_streaming_post.py",
         "src/notebooklm/_transport_errors.py",
-        "src/notebooklm/_middleware_auth_refresh.py",
-        "src/notebooklm/_middleware_chain.py",
-        "src/notebooklm/_middleware_drain.py",
-        "src/notebooklm/_middleware_error_injection.py",
-        "src/notebooklm/_middleware_metrics.py",
-        "src/notebooklm/_middleware_retry.py",
-        "src/notebooklm/_middleware_semaphore.py",
-        "src/notebooklm/_middleware_tracing.py",
+        "src/notebooklm/_middleware/auth_refresh.py",
+        "src/notebooklm/_middleware/chain.py",
+        "src/notebooklm/_middleware/drain.py",
+        "src/notebooklm/_middleware/error_injection.py",
+        "src/notebooklm/_middleware/metrics.py",
+        "src/notebooklm/_middleware/retry.py",
+        "src/notebooklm/_middleware/semaphore.py",
+        "src/notebooklm/_middleware/tracing.py",
     }
 )
 
@@ -305,12 +305,12 @@ def test_linter_dynamic_access_known_negatives(source: str) -> None:
 
 
 def test_is_carve_out_for_runtime_lifecycle() -> None:
-    """Sanity: the canonical lifecycle filename is ``_runtime_lifecycle.py``."""
-    assert is_carve_out("src/notebooklm/_runtime_lifecycle.py"), (
-        "_runtime_lifecycle.py must be in CARVE_OUT_MODULES."
+    """Sanity: the canonical lifecycle filename is ``_runtime/lifecycle.py``."""
+    assert is_carve_out("src/notebooklm/_runtime/lifecycle.py"), (
+        "_runtime/lifecycle.py must be in CARVE_OUT_MODULES."
     )
     assert not is_carve_out("src/notebooklm/_lifecycle.py"), (
-        "There is no _lifecycle.py — the canonical name is _runtime_lifecycle.py. "
+        "There is no _lifecycle.py — the canonical name is _runtime/lifecycle.py. "
         "If the carve-out lists the wrong name, fix it."
     )
 

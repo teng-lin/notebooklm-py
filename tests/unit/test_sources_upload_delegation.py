@@ -1,7 +1,7 @@
 """Regression guard for the source-upload single-source-of-truth invariant.
 
 Issue #1326 consolidated all resumable-upload / streaming / file-registration
-logic into :class:`notebooklm._source_upload.SourceUploadPipeline`. The public
+logic into :class:`notebooklm._source.upload.SourceUploadPipeline`. The public
 ``SourcesAPI`` surface keeps only *thin delegators* that forward verbatim to the
 pipeline; it must never re-grow a parallel implementation of the Scotty upload
 protocol.
@@ -32,7 +32,7 @@ import pytest
 
 import notebooklm._sources as sources_module
 from _fixtures.fake_core import make_fake_core
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 
 

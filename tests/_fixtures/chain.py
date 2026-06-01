@@ -8,7 +8,7 @@ Three helpers live here:
 
 - :class:`FakeChainTerminal` — programmable terminal stub matching the
   ``NextCall`` shape: ``RpcRequest -> RpcResponse``.
-- :func:`make_request` — factory for :class:`notebooklm._middleware.RpcRequest`
+- :func:`make_request` — factory for :class:`notebooklm._middleware.core.RpcRequest`
   instances with benign defaults. Tests override only the fields they care
   about via keyword arguments.
 - :func:`chain_calls_through_to_terminal` — assertion helper that builds a
@@ -24,7 +24,7 @@ from typing import Any
 
 import httpx
 
-from notebooklm._middleware import (
+from notebooklm._middleware.core import (
     Middleware,
     RpcRequest,
     RpcResponse,

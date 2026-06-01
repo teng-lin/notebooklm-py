@@ -4,7 +4,7 @@ import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._env import get_base_host, get_base_url
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient

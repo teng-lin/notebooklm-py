@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm._source_upload import (
+from notebooklm._source.upload import (
     SourceUploadPipeline,
     _extract_register_file_source_id,
     _redact_upload_url,

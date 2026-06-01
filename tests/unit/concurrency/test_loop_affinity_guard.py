@@ -35,10 +35,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from notebooklm._artifact_polling import ArtifactPollingService
+from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._loop_affinity import assert_bound_loop
 from notebooklm._reqid_counter import ReqidCounter
-from notebooklm._runtime_auth import AuthRefreshCoordinator
+from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm._transport_drain import TransportDrainTracker
 
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ def test_add_file_guards_against_cross_loop_call(monkeypatch: pytest.MonkeyPatch
     the lifecycle (``LoopGuard``) collaborator directly via its
     ``lifecycle`` constructor slot.
     """
-    from notebooklm._source_upload import SourceUploadPipeline
+    from notebooklm._source.upload import SourceUploadPipeline
 
     lifecycle = MagicMock()
     lifecycle.assert_bound_loop = MagicMock(

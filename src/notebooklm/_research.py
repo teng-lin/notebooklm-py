@@ -19,7 +19,7 @@ from . import research as _research_pub
 from ._deprecation import deprecated_kwarg
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import parse_research_task_models
-from ._runtime_contracts import RpcCaller
+from ._runtime.contracts import RpcCaller
 from ._types.research import (
     ResearchSource,
     ResearchSourceInput,

@@ -11,16 +11,16 @@ import httpx
 from notebooklm._chat import ChatAPI
 from notebooklm._client_composed import ClientComposed
 from notebooklm._client_seams import resolve_client_seams
-from notebooklm._runtime_config import (
+from notebooklm._runtime.config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from notebooklm._runtime_init import compose_client_internals
-from notebooklm._runtime_lifecycle import CookieRotator, CookieSaver
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._runtime.init import compose_client_internals
+from notebooklm._runtime.lifecycle import CookieRotator, CookieSaver
+from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.types import RpcTelemetryEvent

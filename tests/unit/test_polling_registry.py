@@ -3,7 +3,7 @@
 The live owner of artifact-polling state is
 :class:`notebooklm._artifacts.ArtifactsAPI`, which constructs a
 :class:`PollRegistry` directly and threads it into
-:class:`notebooklm._artifact_polling.ArtifactPollingService`.
+:class:`notebooklm._artifact.polling.ArtifactPollingService`.
 """
 
 from __future__ import annotations

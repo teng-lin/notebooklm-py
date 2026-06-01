@@ -47,9 +47,9 @@ from .rpc import (
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
     from ._kernel import Kernel
-    from ._runtime_auth import AuthRefreshCoordinator
-    from ._runtime_contracts import RpcCaller
-    from ._runtime_transport import RuntimeTransport
+    from ._runtime.auth import AuthRefreshCoordinator
+    from ._runtime.contracts import RpcCaller
+    from ._runtime.transport import RuntimeTransport
 
 logger = logging.getLogger(__name__)
 

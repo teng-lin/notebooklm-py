@@ -32,9 +32,9 @@ import json
 
 import pytest
 
-from notebooklm._row_adapters_artifacts import ArtifactRow
-from notebooklm._row_adapters_notes import NoteRow
-from notebooklm._row_adapters_sources import SourceRow, SourceRowShape
+from notebooklm._row_adapters.artifacts import ArtifactRow
+from notebooklm._row_adapters.notes import NoteRow
+from notebooklm._row_adapters.sources import SourceRow, SourceRowShape
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode, SourceStatus
 
@@ -1302,7 +1302,7 @@ class TestSourceRowId:
         """``[None, True, [None]]`` — drive inner element is ``None``.
 
         Both :attr:`id` and :attr:`has_id` must return falsy values so
-        :class:`notebooklm._source_listing.SourceLister` skips the row
+        :class:`notebooklm._source.listing.SourceLister` skips the row
         (matching legacy ``_extract_source_id`` which returned ``None``
         from ``raw_id[2][0] is None``).
         """

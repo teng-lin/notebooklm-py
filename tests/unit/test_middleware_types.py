@@ -24,7 +24,7 @@ import dataclasses
 import httpx
 import pytest
 
-from notebooklm._middleware import (
+from notebooklm._middleware.core import (
     Middleware,
     NextCall,
     RpcRequest,

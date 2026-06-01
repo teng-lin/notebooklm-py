@@ -17,14 +17,12 @@ from typing import TYPE_CHECKING, Any
 # path in this module talks to the injected ``NoteBackedMindMapService`` /
 # ``NoteService`` instances; the bare module re-export is for monkeypatch
 # convenience only.
-from . import (
-    _artifact_formatters,
-    _artifact_polling,
-    _mind_map,  # noqa: F401 — re-exported as facade attribute
-)
-from ._artifact_downloads import ArtifactDownloadService, DownloadResult
-from ._artifact_listing import ArtifactListingService
-from ._artifact_payloads import (
+from . import _mind_map  # noqa: F401 — re-exported as facade attribute
+from ._artifact import formatters as _artifact_formatters
+from ._artifact import polling as _artifact_polling
+from ._artifact.downloads import ArtifactDownloadService, DownloadResult
+from ._artifact.listing import ArtifactListingService
+from ._artifact.payloads import (
     build_audio_artifact_params,
     build_cinematic_video_artifact_params,
     build_data_table_artifact_params,
@@ -44,7 +42,7 @@ from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._runtime_contracts import RpcCaller
+from ._runtime.contracts import RpcCaller
 from ._types.research import MindMapResult
 from .exceptions import (
     ArtifactFeatureUnavailableError,
@@ -53,7 +51,7 @@ from .exceptions import (
 )
 
 if TYPE_CHECKING:
-    from ._runtime_lifecycle import ClientLifecycle
+    from ._runtime.lifecycle import ClientLifecycle
     from ._transport_drain import TransportDrainTracker
 from .rpc import (
     ArtifactTypeCode,

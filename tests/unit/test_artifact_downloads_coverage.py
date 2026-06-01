@@ -24,8 +24,8 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import httpx
 import pytest
 
-from notebooklm import _artifact_downloads as artifact_downloads
-from notebooklm._artifact_downloads import (
+from notebooklm._artifact import downloads as artifact_downloads
+from notebooklm._artifact.downloads import (
     ArtifactDownloadService,
     _await_writer_exit,
     _download_display_host,

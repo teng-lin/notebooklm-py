@@ -48,17 +48,17 @@ from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
-from ._runtime_config import (
+from ._runtime.config import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from ._runtime_init import compose_client_internals
-from ._runtime_lifecycle import CookieRotator, CookieSaver
+from ._runtime.init import compose_client_internals
+from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
-from ._source_upload import SourceUploadPipeline
+from ._source.upload import SourceUploadPipeline
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
@@ -570,7 +570,7 @@ class NotebookLMClient:
         (e.g. ``artifacts.polls``) run BEFORE the drain wait, not just in
         the shielded lifecycle close below. In-flight artifact polls wrap
         themselves in ``TransportDrainTracker.operation_scope`` (see
-        :meth:`notebooklm._artifact_polling.ArtifactPollingService._run_poll_loop_in_scope`),
+        :meth:`notebooklm._artifact.polling.ArtifactPollingService._run_poll_loop_in_scope`),
         which increments the same in-flight counter ``drain()`` waits on.
         Without firing the cancel hooks first, ``drain()`` would block on a
         poll that the cancel hook is supposed to short-circuit — up to the

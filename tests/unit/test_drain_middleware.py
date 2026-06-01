@@ -34,13 +34,13 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the
 # canonical import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._middleware import (
+from notebooklm._middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,
     build_chain,
 )
-from notebooklm._middleware_drain import DrainMiddleware
+from notebooklm._middleware.drain import DrainMiddleware
 from notebooklm._transport_drain import TransportDrainTracker
 
 

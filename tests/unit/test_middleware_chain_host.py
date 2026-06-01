@@ -38,7 +38,7 @@ import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
 from conftest import install_post_as_stream
-from notebooklm._middleware import RpcRequest, RpcResponse
+from notebooklm._middleware.core import RpcRequest, RpcResponse
 from notebooklm._request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -133,7 +133,7 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
         # ADR-007 object-target form. ``asyncio`` is a singleton module
         # so patching ``asyncio.sleep`` directly is functionally
         # identical to the string-target form
-        # ``notebooklm._runtime_helpers.asyncio.sleep`` — both resolve to the
+        # ``notebooklm._runtime.helpers.asyncio.sleep`` — both resolve to the
         # same callable on the same module object — while staying out
         # of the forbidden-monkeypatch allowlist.
         monkeypatch.setattr(asyncio, "sleep", fake_sleep)

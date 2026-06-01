@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from _fixtures.fake_core import FakeSession, make_fake_core
-from notebooklm._chat_notes import save_chat_answer_as_note
+from notebooklm._chat.notes import save_chat_answer_as_note
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ChatReference
 

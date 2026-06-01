@@ -217,7 +217,7 @@ def test_stream_parser_debug_guarded_by_isenabledfor(caplog):
     """_chat_wire.py — non-JSON chunk debug log is guarded before it fires."""
 
     # Direct: ensure the module has a guarded debug call (structural check).
-    src = (SRC_ROOT / "_chat_wire.py").read_text(encoding="utf-8")
+    src = (SRC_ROOT / "_chat" / "wire.py").read_text(encoding="utf-8")
     assert "logger.isEnabledFor(logging.DEBUG)" in src
     assert "Stream parser" in src
 

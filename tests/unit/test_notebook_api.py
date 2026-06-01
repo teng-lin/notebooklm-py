@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._notebooks import NotebooksAPI, build_create_notebook_params
-from notebooklm._source_listing import SourceLister
+from notebooklm._source.listing import SourceLister
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import (

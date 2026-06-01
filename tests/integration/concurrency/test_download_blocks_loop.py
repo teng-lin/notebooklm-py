@@ -203,7 +203,7 @@ async def test_download_mind_map_runs_write_off_loop_thread(
     ``Path.write_text`` would silently miss the production ``json.dump``
     path.
     """
-    import notebooklm._artifact_downloads as artifact_downloads
+    import notebooklm._artifact.downloads as artifact_downloads
 
     api, _ = mock_artifacts_api
     output_path = tmp_path / "mindmap.json"
@@ -280,7 +280,7 @@ async def test_concurrent_downloads_both_offload_writes(
     thread. A regression on either path leaves its capture matching the
     loop thread and fails the assertion.
     """
-    import notebooklm._artifact_downloads as artifact_downloads
+    import notebooklm._artifact.downloads as artifact_downloads
 
     api, _ = mock_artifacts_api
     report_path = tmp_path / "report.md"
@@ -379,7 +379,7 @@ async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
         return {}
 
     with patch(
-        "notebooklm._artifact_downloads.load_httpx_cookies",
+        "notebooklm._artifact.downloads.load_httpx_cookies",
         new=recording_load_httpx_cookies,
     ):
         result = await api._download_urls_batch([])
@@ -433,7 +433,7 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
 
     with (
         patch(
-            "notebooklm._artifact_downloads.load_httpx_cookies",
+            "notebooklm._artifact.downloads.load_httpx_cookies",
             new=recording_load_httpx_cookies,
         ),
         pytest.raises(ArtifactDownloadError),
@@ -571,8 +571,8 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
 
     with (
         patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-        patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value=MagicMock()),
-        patch("notebooklm._artifact_downloads.threading.Thread", new=_RecordingThread),
+        patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value=MagicMock()),
+        patch("notebooklm._artifact.downloads.threading.Thread", new=_RecordingThread),
         patch.object(builtins, "open", new=_patched_open),
     ):
         result = await api._download_url(
@@ -719,7 +719,7 @@ async def test_download_url_writer_failure_does_not_deadlock_producer(
 
     with (
         patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-        patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value=MagicMock()),
+        patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value=MagicMock()),
         patch.object(builtins, "open", new=_patched_open),
     ):
         download_coro = api._download_url(

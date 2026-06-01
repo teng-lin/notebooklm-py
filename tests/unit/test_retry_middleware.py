@@ -40,8 +40,8 @@ import pytest
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
-from notebooklm._middleware_retry import RetryMiddleware
+from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
+from notebooklm._middleware.retry import RetryMiddleware
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 
 
@@ -703,7 +703,7 @@ async def test_429_and_5xx_budgets_are_independent() -> None:
 
 def test_middleware_satisfies_protocol() -> None:
     """``RetryMiddleware`` instance is assignable to ``Middleware``."""
-    from notebooklm._middleware import Middleware
+    from notebooklm._middleware.core import Middleware
 
     middleware: Middleware = RetryMiddleware(rate_limit_max_retries=3, server_error_max_retries=3)
     assert callable(middleware)

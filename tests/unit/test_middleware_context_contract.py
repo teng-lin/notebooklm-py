@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from notebooklm._middleware_context import (
+from notebooklm._middleware.context import (
     ALLOWED_RPC_CONTEXT_KEYS,
     RPC_CONTEXT_AUTH_REFRESHED,
     RPC_CONTEXT_AUTH_SNAPSHOT,
@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # are intentionally absent; after the transport/middleware extraction they
 # should not read or write request context directly.
 PRODUCTION_CONTEXT_FILES = [
-    *sorted((ROOT / "src/notebooklm").glob("_middleware*.py")),
-    ROOT / "src/notebooklm/_runtime_transport.py",
+    *sorted((ROOT / "src/notebooklm/_middleware").glob("*.py")),
+    ROOT / "src/notebooklm/_runtime/transport.py",
 ]
 
 
@@ -168,11 +168,11 @@ async def call(request):
     context.update(ad_hoc=True, **{})
 """
     )
-    visitor = _ContextLiteralVisitor(ROOT / "src/notebooklm/_middleware.py")
+    visitor = _ContextLiteralVisitor(ROOT / "src/notebooklm/_middleware/core.py")
 
     visitor.visit(tree)
 
-    assert visitor.violations == ["src/notebooklm/_middleware.py:4: 'ad_hoc'"]
+    assert visitor.violations == ["src/notebooklm/_middleware/core.py:4: 'ad_hoc'"]
 
 
 def test_production_context_literal_keys_stay_in_allowed_vocabulary() -> None:

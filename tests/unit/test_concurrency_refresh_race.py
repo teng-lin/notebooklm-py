@@ -69,10 +69,10 @@ import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from _helpers.client_factory import build_client_shell_for_tests
-from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._runtime_auth import AuthRefreshCoordinator
-from notebooklm._runtime_transport import RuntimeTransport
+from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 

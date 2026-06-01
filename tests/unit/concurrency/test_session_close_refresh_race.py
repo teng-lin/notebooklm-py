@@ -51,8 +51,8 @@ import pytest
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._runtime_auth import AuthRefreshCoordinator
-from notebooklm._runtime_lifecycle import ClientLifecycle
+from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._runtime.lifecycle import ClientLifecycle
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits

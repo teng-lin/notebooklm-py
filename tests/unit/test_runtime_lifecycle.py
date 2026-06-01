@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`notebooklm._runtime_lifecycle`.
+"""Unit tests for :mod:`notebooklm._runtime.lifecycle`.
 
 Covers the load-bearing behaviors of :class:`ClientLifecycle` directly, in
 addition to the existing ``Session``-shaped tests in
@@ -23,7 +23,7 @@ Specifically pinned here:
   surface keeps working).
 * The httpx ``AsyncClient`` **always uses httpx's default transport** —
   Tier-12 PR 12.6 lifted synthetic-error injection into the chain
-  (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`)
+  (:class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`)
   and PR 12.9 deleted the legacy ``_SyntheticErrorTransport`` class.
   The lifecycle constructs a plain transport regardless of
   ``NOTEBOOKLM_VCR_RECORD_ERRORS``.
@@ -52,8 +52,8 @@ import httpx
 import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
-from notebooklm._runtime_helpers import _resolve_keepalive_interval
-from notebooklm._runtime_lifecycle import (
+from notebooklm._runtime.helpers import _resolve_keepalive_interval
+from notebooklm._runtime.lifecycle import (
     ClientLifecycle,
     _default_cookie_rotator,
     _default_cookie_saver,

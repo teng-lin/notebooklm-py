@@ -2,7 +2,7 @@
 
 This module provides a single entry point — :func:`make_fake_core` — that
 returns a ``FakeSession`` instance shaped to satisfy the **shared
-capability Protocols** in :mod:`notebooklm._runtime_contracts`
+capability Protocols** in :mod:`notebooklm._runtime.contracts`
 (``RpcCaller``, ``LoopGuard``, ``Kernel``) plus the single-consumer
 Protocols inlined into their owning feature modules in issue #1327
 (``AuthMetadata`` in ``_source_upload``, ``OperationScopeProvider`` in

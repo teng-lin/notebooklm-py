@@ -47,18 +47,18 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
 }
 
 _ARTIFACT_SERVICE_MODULES = [
-    "_artifact_formatters.py",
-    "_artifact_listing.py",
-    "_artifact_downloads.py",
-    "_artifact_polling.py",
+    "_artifact/formatters.py",
+    "_artifact/listing.py",
+    "_artifact/downloads.py",
+    "_artifact/polling.py",
 ]
 
 _SOURCE_SERVICE_MODULES = [
-    "_source_listing.py",
-    "_source_polling.py",
-    "_source_add.py",
-    "_source_upload.py",
-    "_source_content.py",
+    "_source/listing.py",
+    "_source/polling.py",
+    "_source/add.py",
+    "_source/upload.py",
+    "_source/content.py",
 ]
 
 _NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
@@ -338,7 +338,7 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 #     service module no longer exists, so there is no separate helper to
 #     guard for facade reach-in.
 _REACH_IN_MIGRATED_MODULES: list[str] = [
-    "_artifact_downloads.py",
+    "_artifact/downloads.py",
 ]
 
 
@@ -574,7 +574,7 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
 
     Stage B1 PR 2 of the post-refactoring plan moved the composition
     root out of ``Session.__init__`` into
-    ``notebooklm._runtime_init.compose_client_internals``. The seams live
+    ``notebooklm._runtime.init.compose_client_internals``. The seams live
     on the helper (and on the canonical test builder
     ``build_client_shell_for_tests``), NOT on ``NotebookLMClient.__init__``
     (which preserves the production surface).
@@ -588,7 +588,7 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
     """
     import inspect
 
-    from notebooklm._runtime_init import compose_client_internals
+    from notebooklm._runtime.init import compose_client_internals
 
     sig = inspect.signature(compose_client_internals)
     for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):
@@ -826,7 +826,8 @@ def test_artifact_service_modules_do_not_runtime_import_facades_or_core() -> Non
 def test_source_service_modules_import_cleanly() -> None:
     """Source service skeletons must be import-safe before behavior moves."""
     for module_name in _SOURCE_SERVICE_MODULES:
-        importlib.import_module(f"notebooklm.{module_name.removesuffix('.py')}")
+        dotted = module_name.removesuffix(".py").replace("/", ".")
+        importlib.import_module(f"notebooklm.{dotted}")
 
 
 def test_source_service_modules_do_not_runtime_import_facades_or_core() -> None:
@@ -888,7 +889,7 @@ def test_notebook_composition_services_import_cleanly(module_name: str) -> None:
 
 def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
     """Downstream notebook-metadata work depends on the finalized lister name."""
-    from notebooklm._source_listing import SourceLister
+    from notebooklm._source.listing import SourceLister
     from notebooklm._sources import SourcesAPI
 
     core = MagicMock()
@@ -907,13 +908,13 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     rather than resolving through ``notebooklm._artifacts`` at runtime or in
     type-checking-only imports.
     """
-    import notebooklm._artifact_downloads as artifact_downloads
-    import notebooklm._artifact_formatters as artifact_formatters
+    import notebooklm._artifact.downloads as artifact_downloads
+    import notebooklm._artifact.formatters as artifact_formatters
     import notebooklm._artifacts as artifacts
     import notebooklm._mind_map as mind_map
     import notebooklm.auth as auth
 
-    tree = ast.parse((SRC_ROOT / "_artifact_downloads.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC_ROOT / "_artifact" / "downloads.py").read_text(encoding="utf-8"))
     artifact_facade_imports: list[str] = []
     artifact_facade_modules = {"_artifacts", "notebooklm._artifacts"}
     for node in ast.walk(tree):

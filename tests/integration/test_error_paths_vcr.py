@@ -32,7 +32,7 @@ a real-world error shape (e.g. a quota-exhaustion 429 with a real
 Recording note (maintainers)
 ----------------------------
 As of Tier-12 PR 12.6, synthetic-error substitution lives in
-:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`
+:class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`
 at the chain layer — well above the ``httpx`` transport. VCR's record
 hook patches ``httpcore.AsyncConnectionPool.handle_async_request`` (below
 httpx), so the chain short-circuit happens before VCR ever sees the

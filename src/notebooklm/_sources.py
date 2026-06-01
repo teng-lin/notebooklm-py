@@ -11,17 +11,17 @@ from urllib.parse import urlparse
 
 import httpx
 
-from . import _source_upload
 from ._deprecation import warn_get_returns_none
-from ._runtime_config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ._runtime_contracts import RpcCaller
+from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
-from ._source_add import SourceAddService
-from ._source_content import SourceContentRenderer
-from ._source_listing import SourceLister
-from ._source_polling import SourcePoller
-from ._source_upload import SourceUploadPipeline
-from ._source_upload_payloads import build_rename_source_params
+from ._source import upload as _source_upload
+from ._source.add import SourceAddService
+from ._source.content import SourceContentRenderer
+from ._source.listing import SourceLister
+from ._source.polling import SourcePoller
+from ._source.upload import SourceUploadPipeline
+from ._source.upload_payloads import build_rename_source_params
 from ._types.research import SourceGuide
 from ._url_utils import is_youtube_url
 from .exceptions import SourceNotFoundError

@@ -15,7 +15,7 @@ from .common import (
 )
 
 if TYPE_CHECKING:
-    from .._row_adapters_sources import SourceRow
+    from .._row_adapters.sources import SourceRow
 
 
 class SourceType(str, Enum):
@@ -177,7 +177,7 @@ class Source:
         This is the **single** construction site for a :class:`Source`
         from a parsed source row. Both :meth:`from_api_response` (the
         public classmethod used by ``ADD_SOURCE`` / rename paths) and
-        :meth:`notebooklm._source_listing.SourceLister._parse_source`
+        :meth:`notebooklm._source.listing.SourceLister._parse_source`
         (the ``GET_NOTEBOOK`` list/get/poll path) funnel through here so
         every code path produces identical :class:`Source` instances —
         including the decoded :attr:`status`.
@@ -214,13 +214,13 @@ class Source:
 
         Multi-shape dispatch (the three wire shapes — deeply nested,
         medium nested, flat) is centralised in
-        :meth:`notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`;
+        :meth:`notebooklm._row_adapters.sources.SourceRow.from_unknown_shape`;
         position knowledge for the entry layout lives on
         :class:`SourceRow` itself. This method only normalizes the wire
         shape into a :class:`SourceRow` and defers to :meth:`from_row` —
         the single construction site shared with the
         ``GET_NOTEBOOK`` list/get/poll path
-        (:meth:`notebooklm._source_listing.SourceLister._parse_source`) —
+        (:meth:`notebooklm._source.listing.SourceLister._parse_source`) —
         so all paths produce identical :class:`Source` instances,
         including the decoded :attr:`status`. ``status`` earlier silently
         fell back to the ``SourceStatus.READY`` default here while the
@@ -229,7 +229,7 @@ class Source:
         Args:
             data: Raw decoded source payload (one of the three wire
                 shapes handled by
-                :meth:`~notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`).
+                :meth:`~notebooklm._row_adapters.sources.SourceRow.from_unknown_shape`).
             notebook_id: Accepted for call-site symmetry and forward
                 compatibility but currently unused — the parsed source
                 wire shape carries no notebook reference, so this value
@@ -244,14 +244,14 @@ class Source:
                 ``RPCMethod.UPDATE_SOURCE.value``) used only to tag
                 ``safe_index`` drift diagnostics with the real method.
                 Defaults to ``None``, which lets
-                :meth:`~notebooklm._row_adapters_sources.SourceRow.from_unknown_shape`
+                :meth:`~notebooklm._row_adapters.sources.SourceRow.from_unknown_shape`
                 fall back to its ``GET_NOTEBOOK`` default — preserving
                 the historical behavior for callers that do not pass it.
         """
         # Keep the row-adapter dependency local so importing the source
         # dataclass package does not pull source-row parsing helpers into
         # the top-level public type facade.
-        from .._row_adapters_sources import SourceRow
+        from .._row_adapters.sources import SourceRow
 
         return cls.from_row(SourceRow.from_unknown_shape(data, method_id=method_id))
 

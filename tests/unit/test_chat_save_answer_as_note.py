@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._chat import ChatAPI
-from notebooklm._runtime_contracts import RpcCaller
+from notebooklm._runtime.contracts import RpcCaller
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, ChatReference
 

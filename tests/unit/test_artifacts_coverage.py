@@ -77,7 +77,7 @@ class TestDownloadUrlsBatch:
         mock_response.raise_for_status = MagicMock()
 
         with (
-            patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value={}),
+            patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -118,7 +118,7 @@ class TestDownloadUrlsBatch:
         mock_response.raise_for_status = MagicMock()
 
         with (
-            patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value={}),
+            patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -151,7 +151,7 @@ class TestDownloadUrlsBatch:
         success_response.raise_for_status = MagicMock()
 
         with (
-            patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value={}),
+            patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()

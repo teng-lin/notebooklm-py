@@ -555,7 +555,7 @@ async def test_error_injection_middleware_present_when_env_var_set_in_session(mo
     ``ErrorInjectionMiddleware`` into the chain so each chain invocation
     short-circuits with the synthetic shape."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
-    from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
+    from notebooklm._middleware.error_injection import ErrorInjectionMiddleware
     from notebooklm.auth import AuthTokens
 
     auth = AuthTokens(cookies={"SID": "t"}, csrf_token="c", session_id="s")

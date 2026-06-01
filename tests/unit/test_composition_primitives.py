@@ -4,8 +4,8 @@ Covers the helpers introduced by Stage B1 PR 1 and made live by Stage B1
 PR 2 of the post-refactoring plan
 (``docs/post-refactoring-plan-2026-05-27.md``):
 
-- :class:`notebooklm._runtime_init.ClientInternals` dataclass
-- :func:`notebooklm._runtime_init.compose_client_internals`
+- :class:`notebooklm._runtime.init.ClientInternals` dataclass
+- :func:`notebooklm._runtime.init.compose_client_internals`
 - ``ClientComposed.bind_*`` write-once setters
 - ``ClientComposed`` required-property guards
 
@@ -30,7 +30,7 @@ import pytest
 from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._client_composed import ClientComposed
 from notebooklm._client_seams import ClientSeams
-from notebooklm._runtime_init import (
+from notebooklm._runtime.init import (
     ClientInternals,
     compose_client_internals,
 )
@@ -293,7 +293,7 @@ def test_client_composed_chain_metadata_binder_raises_on_double_bind() -> None:
 
     # Build a sentinel ``WiredMiddleware`` carrying the existing values so
     # the rejection comes from the write-once guard, not a missing field.
-    from notebooklm._runtime_init import WiredMiddleware
+    from notebooklm._runtime.init import WiredMiddleware
 
     wired = WiredMiddleware(
         chain_builder=holder.chain_builder,

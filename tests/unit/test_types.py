@@ -700,7 +700,7 @@ class TestSource:
         identical ``Source`` instances from the same entry — the two parsers
         are now a single source of truth (issue #1205, part 1/5).
         """
-        from notebooklm._row_adapters_sources import SourceRow
+        from notebooklm._row_adapters.sources import SourceRow
         from notebooklm.rpc import RPCMethod
         from notebooklm.rpc.types import SourceStatus
 
@@ -737,7 +737,7 @@ class TestSource:
         without forwarding it the row defaults to ``GET_NOTEBOOK`` and any
         ``safe_index`` drift log is mis-tagged.
         """
-        from notebooklm._row_adapters_sources import SourceRow
+        from notebooklm._row_adapters.sources import SourceRow
         from notebooklm.rpc import RPCMethod
 
         captured: dict[str, str | None] = {}
@@ -757,7 +757,7 @@ class TestSource:
         """Without an explicit ``method_id`` the row falls back to the
         historical ``GET_NOTEBOOK`` default — preserving prior behavior for
         callers that do not pass it (issue #1242 backward-compat)."""
-        from notebooklm._row_adapters_sources import SourceRow
+        from notebooklm._row_adapters.sources import SourceRow
         from notebooklm.rpc import RPCMethod
 
         entry = [["src_default"], "Default", [None, 5, [1704067200, 0]]]
@@ -774,7 +774,7 @@ class TestSource:
         call site; force it to drift so we can assert the tagged method id
         flows from ``from_api_response``'s ``method_id`` argument.
         """
-        from notebooklm import _row_adapters_sources
+        from notebooklm._row_adapters import sources as _row_adapters_sources
         from notebooklm.exceptions import UnknownRPCMethodError
         from notebooklm.rpc import RPCMethod
 

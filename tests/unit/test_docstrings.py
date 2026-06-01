@@ -40,7 +40,7 @@ DOCSTRING_TARGETS = [
     "src/notebooklm/_notebooks.py",
     "src/notebooklm/_sources.py",
     "src/notebooklm/_artifacts.py",
-    "src/notebooklm/_chat.py",
+    "src/notebooklm/_chat/api.py",
     "src/notebooklm/_research.py",
     "src/notebooklm/_notes.py",
     "src/notebooklm/_settings.py",

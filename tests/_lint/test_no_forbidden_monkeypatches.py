@@ -43,7 +43,7 @@ Forbidden patterns
    .. code-block:: python
 
        mock.patch("notebooklm._research.ResearchAPI._poll", fake)
-       patch("notebooklm._artifact_downloads.httpx", fake)
+       patch("notebooklm._artifact.downloads.httpx", fake)
 
 Allowlist
 ---------
@@ -272,29 +272,29 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # (`tests/integration/concurrency/test_download_blocks_loop.py` also
         # matches this rule but is already allowlisted above.)
         # -------------------------------------------------------------------
-        # reason: patches `notebooklm._runtime_init` construction internals to
+        # reason: patches `notebooklm._runtime.init` construction internals to
         # assert httpx connection-pool tuning — runtime seam below the
         # core-injection surface.
         "tests/integration/concurrency/test_pool_tuning.py",
         # reason: patches `notebooklm._sources` internals to assert upload
         # timeout config — service seam, not a core attribute.
         "tests/integration/concurrency/test_upload_timeout_config.py",
-        # reason: patches `notebooklm._artifact_downloads` download-coordinator
+        # reason: patches `notebooklm._artifact.downloads` download-coordinator
         # internals (httpx-level) for the artifacts integration cassette.
         "tests/integration/test_artifacts_integration.py",
         # reason: patches `notebooklm._sources` source-addition internals for
         # the sources integration cassette.
         "tests/integration/test_sources_integration.py",
-        # reason: patches `notebooklm._artifact_downloads` download-coordinator
+        # reason: patches `notebooklm._artifact.downloads` download-coordinator
         # internals to exercise the asynchronous download path.
         "tests/unit/test_artifact_downloads.py",
-        # reason: patches `notebooklm._artifact_downloads` internals for artifact
+        # reason: patches `notebooklm._artifact.downloads` internals for artifact
         # coverage edge cases.
         "tests/unit/test_artifacts_coverage.py",
-        # reason: patches `notebooklm._artifact_downloads` internals to assert
+        # reason: patches `notebooklm._artifact.downloads` internals to assert
         # download-result shaping.
         "tests/unit/test_download_result.py",
-        # reason: patches `notebooklm._artifact_downloads` internals to assert
+        # reason: patches `notebooklm._artifact.downloads` internals to assert
         # download-URL resolution.
         "tests/unit/test_download_url.py",
         # reason: patches `notebooklm._deadline` retry/backoff timing internals
@@ -310,7 +310,7 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # reason: patches `notebooklm._sources` internals to assert source
         # status transitions.
         "tests/unit/test_source_status.py",
-        # reason: patches `notebooklm._source_upload` internals for upload
+        # reason: patches `notebooklm._source.upload` internals for upload
         # coverage edge cases.
         "tests/unit/test_source_upload_coverage.py",
         # reason: patches `notebooklm._types` dataclass internals exercised

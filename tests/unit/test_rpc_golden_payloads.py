@@ -32,7 +32,7 @@ from typing import Any, cast
 
 import pytest
 
-from notebooklm._artifact_payloads import (
+from notebooklm._artifact.payloads import (
     build_audio_artifact_params,
     build_cinematic_video_artifact_params,
     build_data_table_artifact_params,
@@ -46,7 +46,7 @@ from notebooklm._artifact_payloads import (
     build_suggest_reports_params,
     build_video_artifact_params,
 )
-from notebooklm._source_upload_payloads import (
+from notebooklm._source.upload_payloads import (
     build_register_file_source_params,
     build_rename_source_params,
     build_resumable_upload_start_request,

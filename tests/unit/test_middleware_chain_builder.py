@@ -5,13 +5,13 @@ from __future__ import annotations
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
-from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
-from notebooklm._middleware_drain import DrainMiddleware
-from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
-from notebooklm._middleware_metrics import MetricsMiddleware
-from notebooklm._middleware_retry import RetryMiddleware
-from notebooklm._middleware_semaphore import SemaphoreMiddleware
-from notebooklm._middleware_tracing import TracingMiddleware
+from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
+from notebooklm._middleware.drain import DrainMiddleware
+from notebooklm._middleware.error_injection import ErrorInjectionMiddleware
+from notebooklm._middleware.metrics import MetricsMiddleware
+from notebooklm._middleware.retry import RetryMiddleware
+from notebooklm._middleware.semaphore import SemaphoreMiddleware
+from notebooklm._middleware.tracing import TracingMiddleware
 
 
 def _builder_kwargs():
@@ -36,7 +36,7 @@ def _builder_kwargs():
 
 
 def test_builder_returns_adr_009_order():
-    from notebooklm._middleware_chain import MiddlewareChainBuilder
+    from notebooklm._middleware.chain import MiddlewareChainBuilder
 
     chain = MiddlewareChainBuilder(**_builder_kwargs()).build()
 

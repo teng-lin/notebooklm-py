@@ -1,4 +1,4 @@
-"""Unit tests for :class:`notebooklm._middleware_tracing.TracingMiddleware`.
+"""Unit tests for :class:`notebooklm._middleware.tracing.TracingMiddleware`.
 
 PR 12.3 of the Tier-12/13 greenfield migration lands ``TracingMiddleware``
 as the innermost middleware in the chain (ADR-009 §"Chain ordering"). The
@@ -51,13 +51,13 @@ from _fixtures.chain import (
     chain_calls_through_to_terminal,
     make_request,
 )
-from notebooklm._middleware import (
+from notebooklm._middleware.core import (
     Middleware,
     RpcRequest,
     RpcResponse,
     build_chain,
 )
-from notebooklm._middleware_tracing import TracingMiddleware
+from notebooklm._middleware.tracing import TracingMiddleware
 
 _TRACE_LOGGER = "notebooklm.middleware.tracing"
 

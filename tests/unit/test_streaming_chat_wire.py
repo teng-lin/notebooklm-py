@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
 
-from notebooklm._chat_wire import (
+from notebooklm._chat.wire import (
     StreamingChatParseResult,
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -285,7 +285,7 @@ def test_xssi_prefix_strip_matches_shared_helper_on_real_wire_format() -> None:
 
 def test_chat_parser_uses_shared_strip_anti_xssi(monkeypatch) -> None:
     """``parse_streaming_chat_response`` calls the shared ``strip_anti_xssi``."""
-    import notebooklm._chat_wire as chat_wire
+    import notebooklm._chat.wire as chat_wire
 
     seen: list[str] = []
     real_strip = chat_wire.strip_anti_xssi
@@ -548,7 +548,7 @@ def test_chat_wire_static_import_guard() -> None:
         "notebooklm._core",
         "notebooklm.rpc.overrides",
     }
-    tree = ast.parse((SRC_ROOT / "_chat_wire.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC_ROOT / "_chat" / "wire.py").read_text(encoding="utf-8"))
 
     imports: set[str] = set()
     for node in ast.walk(tree):
@@ -575,7 +575,7 @@ def test_chat_wire_runtime_import_does_not_request_forbidden_modules(monkeypatch
         "notebooklm._core",
         "notebooklm.rpc.overrides",
     }
-    sys.modules.pop("notebooklm._chat_wire", None)
+    sys.modules.pop("notebooklm._chat.wire", None)
     real_import = builtins.__import__
 
     def guarded_import(
@@ -600,28 +600,28 @@ def test_chat_wire_runtime_import_does_not_request_forbidden_modules(monkeypatch
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
-    module = importlib.import_module("notebooklm._chat_wire")
-    assert module.__name__ == "notebooklm._chat_wire"
+    module = importlib.import_module("notebooklm._chat.wire")
+    assert module.__name__ == "notebooklm._chat.wire"
 
 
 def test_chat_wire_and_chat_smoke_import_order() -> None:
-    for name in ("notebooklm._chat", "notebooklm._chat_wire"):
+    for name in ("notebooklm._chat", "notebooklm._chat.wire"):
         sys.modules.pop(name, None)
-    protocol = importlib.import_module("notebooklm._chat_wire")
+    protocol = importlib.import_module("notebooklm._chat.wire")
     chat = importlib.import_module("notebooklm._chat")
-    assert protocol.__name__ == "notebooklm._chat_wire"
+    assert protocol.__name__ == "notebooklm._chat.wire"
     assert chat.__name__ == "notebooklm._chat"
 
-    for name in ("notebooklm._chat", "notebooklm._chat_wire"):
+    for name in ("notebooklm._chat", "notebooklm._chat.wire"):
         sys.modules.pop(name, None)
     chat = importlib.import_module("notebooklm._chat")
-    protocol = importlib.import_module("notebooklm._chat_wire")
+    protocol = importlib.import_module("notebooklm._chat.wire")
     assert chat.__name__ == "notebooklm._chat"
-    assert protocol.__name__ == "notebooklm._chat_wire"
+    assert protocol.__name__ == "notebooklm._chat.wire"
 
 
 def test_chat_module_keeps_only_delegating_stream_parser_wrappers() -> None:
-    tree = ast.parse((SRC_ROOT / "_chat.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC_ROOT / "_chat" / "api.py").read_text(encoding="utf-8"))
     wrapper_names = {
         "_parse_ask_response_with_references",
         "_extract_answer_and_refs_from_chunk",

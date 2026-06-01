@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError, RPCError, ValidationError
 from notebooklm.rpc import RPCMethod
