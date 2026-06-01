@@ -5,9 +5,13 @@
 > concrete `Session` facade class, `_session.py`, and `_core.py` have all been
 > **deleted**, and `_session_contracts.py` was renamed to `_runtime_contracts.py`
 > (see [ADR-014](0014-feature-local-runtime-adapters.md) and
-> [`docs/architecture.md`](../architecture.md) for the live shape). Read in-body
-> references to `Session`, `_core.py`, `_session_contracts.py`, and exact
-> `file.py:NNN` line numbers as historical — they do not point at live code.
+> [`docs/architecture.md`](../architecture.md) for the live shape). The
+> feature-local composite Protocols `ChatRuntime` and `ArtifactsRuntime`
+> referenced in the Status line below were also **retired** — feature APIs now
+> take their narrow collaborators by keyword-only constructor argument. Read
+> in-body references to `Session`, `_core.py`, `_session_contracts.py`,
+> `ChatRuntime`, `ArtifactsRuntime`, and exact `file.py:NNN` line numbers as
+> historical — they do not point at live code.
 
 ## Status
 
