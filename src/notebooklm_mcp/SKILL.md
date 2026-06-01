@@ -17,7 +17,7 @@ Expose Google NotebookLM capabilities to MCP-compatible AI systems (Claude Deskt
 ## Purpose
 This skill provides a standard Model Context Protocol (MCP) server for interacting with NotebookLM. It enables AI agents to list/create/delete notebooks, add sources, ask questions, and generate specialized artifacts (audio, video, quizzes, mind maps) within a managed environment.
 
-## Deployment & Setup
+## Deployment & Setup (Skip if the server is already running in the background)
 To ensure persistent connectivity and avoid authentication failures, follow these environment isolation rules:
 
 ### 1. Create a dedicated virtual environment
@@ -31,7 +31,7 @@ source .venv/bin/activate  # macOS/Linux
 ### 2. Install with exhaustive dependencies
 Install the package with the `[all]` extra to ensure all media downloaders and cookie extractors are available.
 ```bash
-pip install notebooklm-py[all]
+pip install "notebooklm-py[all]"
 ```
 
 ### 3. Initialize Playwright & Chromium
@@ -56,6 +56,37 @@ python -m notebooklm_mcp --transport stdio
 python -m notebooklm_mcp --transport sse --host 127.0.0.1 --port 8000
 ```
 
+## Available Capabilities
+
+### Tools
+
+| Tool Name | Description |
+|-----------|-------------|
+| `notebooklm_list_notebooks` | List all available notebooks. |
+| `notebooklm_create_notebook` | Create a new notebook with a title. |
+| `notebooklm_delete_notebook` | Permanently delete a notebook by ID. |
+| `notebooklm_add_source_url` | Add a web URL or YouTube video as a source. |
+| `notebooklm_add_source_text` | Add plain text as a source with a title. |
+| `notebooklm_delete_source` | Permanently delete a source from a notebook. |
+| `notebooklm_ask_chat` | Ask a question to a notebook (uses all sources). |
+| `notebooklm_generate_audio_podcast` | Generate and download an Audio Overview (MP3). |
+| `notebooklm_generate_quiz` | Generate a quiz and return as JSON. |
+| `notebooklm_generate_mind_map` | Generate a hierarchical mind map as JSON. |
+| `notebooklm_troubleshoot` | Diagnose error messages and get recovery steps. |
+
+### Resources
+
+| Resource URI Pattern | Description |
+|----------------------|-------------|
+| `notebook://{notebook_id}/metadata` | Notebook title and full list of source IDs/metadata. |
+| `notebook://{notebook_id}/sources/{source_id}` | The full indexed text content of a specific source. |
+
+### Prompts
+
+| Prompt Name | Description |
+|-------------|-------------|
+| `notebooklm_deep_research` | Orchestrates a multi-step research workflow across several URLs. |
+
 ## Tool Usage & Best Practices
 
 ### Resource Identifiers
@@ -66,19 +97,6 @@ Media generation (audio/video) can take several minutes.
 - Tools like `notebooklm_generate_audio_podcast` return a `task_id`.
 - If a timeout occurs, the tool returns a JSON object with the `task_id`.
 - **Action:** AI agents should capture this `task_id` and use it later to poll status if the immediate generation timed out.
-
-### Action Tools
-
-- `notebooklm_create_notebook` - Creates a new notebook.
-- `notebooklm_delete_notebook` - Deletes a notebook.
-- `notebooklm_delete_source` - Deletes a source from a notebook.
-- `notebooklm_add_source_url` - Adds a source URL to a notebook.
-- `notebooklm_add_source_text` - Adds a source text to a notebook.
-- `notebooklm_ask_chat` - Asks a question to the model.
-
-### Other Tools
-- `notebooklm_generate_quiz` - Generates a quiz from the given sources.
-- `notebooklm_generate_mind_map` - Generates a mind map from the given sources.
 
 ### Error Diagnosis
 If a tool call fails, always use the `notebooklm_troubleshoot` tool first.

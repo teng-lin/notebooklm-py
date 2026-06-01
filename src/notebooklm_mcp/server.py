@@ -469,7 +469,37 @@ async def notebooklm_add_source_text(notebook_id: str, title: str, text: str) ->
 
 
 # ---------------------------------------------------------------------------
-# TOOL 6 – Chat / ask
+# TOOL 6 – Delete source
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="notebooklm_delete_source",
+    description="Permanently delete a source from a NotebookLM notebook by its ID.",
+)
+async def notebooklm_delete_source(notebook_id: str, source_id: str) -> str:
+    """Delete a source.
+
+    Args:
+        notebook_id: The notebook ID containing the source.
+        source_id: The unique source ID (e.g. from notebook_metadata).
+    """
+    if not notebook_id or not notebook_id.strip():
+        return "ERROR: 'notebook_id' must not be empty"
+    if not source_id or not source_id.strip():
+        return "ERROR: 'source_id' must not be empty"
+    try:
+        client = await get_client()
+        await client.sources.delete(notebook_id.strip(), source_id.strip())
+        return json.dumps(
+            {"deleted": True, "notebook_id": notebook_id.strip(), "source_id": source_id.strip()}
+        )
+    except Exception as exc:
+        return _handle_exception(exc, f"deleting source '{source_id}' from notebook '{notebook_id}'")
+
+
+# ---------------------------------------------------------------------------
+# TOOL 7 – Chat / ask
 # ---------------------------------------------------------------------------
 
 
@@ -500,7 +530,7 @@ async def notebooklm_ask_chat(notebook_id: str, query: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL 7 – Generate audio podcast (HIGH PRIORITY)
+# TOOL 8 – Generate audio podcast (HIGH PRIORITY)
 # ---------------------------------------------------------------------------
 
 
@@ -616,7 +646,7 @@ async def notebooklm_generate_audio_podcast(
 
 
 # ---------------------------------------------------------------------------
-# TOOL 8 – Generate quiz
+# TOOL 9 – Generate quiz
 # ---------------------------------------------------------------------------
 
 
@@ -708,7 +738,7 @@ async def notebooklm_generate_quiz(
 
 
 # ---------------------------------------------------------------------------
-# TOOL 9 – Generate mind map
+# TOOL 10 – Generate mind map
 # ---------------------------------------------------------------------------
 
 
@@ -760,7 +790,7 @@ async def notebooklm_generate_mind_map(
 
 
 # ---------------------------------------------------------------------------
-# TOOL 10 – Troubleshooting
+# TOOL 11 – Troubleshooting
 # ---------------------------------------------------------------------------
 
 

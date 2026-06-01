@@ -94,6 +94,7 @@ def mock_client():
     client.sources.list = AsyncMock(return_value=[_fake_source()])
     client.sources.add_url = AsyncMock(return_value=_fake_source(src_id="src_url"))
     client.sources.add_text = AsyncMock(return_value=_fake_source(src_id="src_txt"))
+    client.sources.delete = AsyncMock(return_value=None)
     client.sources.get_fulltext = AsyncMock(return_value=_fake_fulltext())
 
     # Chat API
@@ -304,6 +305,36 @@ class TestAddSourceText:
         from notebooklm_mcp.server import notebooklm_add_source_text
 
         result = await notebooklm_add_source_text(notebook_id="nb_001", title="T", text="body")
+        assert result.startswith("ERROR:")
+
+
+# ---------------------------------------------------------------------------
+# Tests: notebooklm_delete_source
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteSource:
+    async def test_deletes_and_returns_confirmation(self, patched_get_client):
+        from notebooklm_mcp.server import notebooklm_delete_source
+
+        result = await notebooklm_delete_source(notebook_id="nb_001", source_id="src_001")
+        data = json.loads(result)
+        assert data["deleted"] is True
+        assert data["notebook_id"] == "nb_001"
+        assert data["source_id"] == "src_001"
+        patched_get_client.sources.delete.assert_awaited_once_with("nb_001", "src_001")
+
+    async def test_empty_ids_returns_error(self, patched_get_client):
+        from notebooklm_mcp.server import notebooklm_delete_source
+
+        assert (await notebooklm_delete_source("", "src_1")).startswith("ERROR:")
+        assert (await notebooklm_delete_source("nb_1", "")).startswith("ERROR:")
+
+    async def test_api_exception_returns_error_string(self, patched_get_client):
+        patched_get_client.sources.delete = AsyncMock(side_effect=Exception("not found"))
+        from notebooklm_mcp.server import notebooklm_delete_source
+
+        result = await notebooklm_delete_source(notebook_id="nb_001", source_id="src_001")
         assert result.startswith("ERROR:")
 
 

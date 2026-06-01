@@ -154,6 +154,15 @@ Ingests plain text into a notebook as a source. Waits for processing.
 | `title` | string | ✅ | Source display name |
 | `text` | string | ✅ | Text body |
 
+### `notebooklm_delete_source`
+
+Permanently deletes a source from a notebook.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `notebook_id` | string | ✅ | Target notebook ID |
+| `source_id` | string | ✅ | Source ID |
+
 ### `notebooklm_ask_chat`
 
 Asks a question to a notebook and returns the AI answer.
