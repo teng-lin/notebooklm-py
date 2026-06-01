@@ -5,7 +5,7 @@
 > contract — remains in force. However, several *names* it cites have changed
 > since it was written, and some of the feature-local composites it proposed
 > were later retired. In particular: the contracts module
-> `_runtime_contracts.py` was **renamed to `_runtime_contracts.py`**; the
+> `_session_contracts.py` was **renamed to `_runtime_contracts.py`**; the
 > concrete `Session` facade was **deleted**; and the feature-local composite
 > Protocols `ChatRuntime`, `ArtifactsRuntime`, and `UploadRuntime` (Decision
 > §3) were **retired** in favour of feature constructors taking their narrow
