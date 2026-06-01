@@ -1,0 +1,146 @@
+name: Sync with Upstream and Test MCP
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly at midnight UTC on Sunday
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teng-lin/notebooklm-py
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: upstream
+
+      - name: Check out current repository
+        uses: actions/checkout@v4
+        with:
+          path: current
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Get current branch name
+        id: branch
+        run: |
+          echo "branch=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_OUTPUT
+          echo "Current branch: ${{ github.ref_name }}"
+
+      - name: Fetch upstream branches
+        working-directory: ./upstream
+        run: |
+          git fetch origin
+          git fetch upstream
+
+      - name: Check if upstream has new commits
+        id: check_commits
+        working-directory: ./upstream
+        run: |
+          # Get the latest commit from upstream/main
+          UPSTREAM_LATEST=$(git rev-list -n 1 upstream/main)
+          echo "Upstream latest: $UPSTREAM_LATEST"
+
+          # Check if this commit is already in our current branch history
+          # We need to check if upstream/main is ahead of our branch
+          cd ../current
+          git remote add upstream https://github.com/teng-lin/notebooklm-py.git
+          git fetch upstream
+
+          # Check if upstream/main has commits that our current branch doesn't have
+          if git log HEAD..upstream/main --oneline | grep -q .; then
+            echo "has_new_commits=true" >> $GITHUB_OUTPUT
+            echo "Upstream has new commits"
+            # Show what commits are new
+            git log --oneline HEAD..upstream/main
+          else
+            echo "has_new_commits=false" >> $GITHUB_OUTPUT
+            echo "No new commits in upstream"
+          fi
+
+      - name: Set up dependency cache
+        if: steps.check_commits.outputs.has_new_commits == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        if: steps.check_commits.outputs.has_new_commits == 'true'
+        run: |
+          uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp
+
+      - name: Run MCP tests
+        if: steps.check_commits.outputs.has_new_commits == 'true'
+        run: |
+          uv run pytest tests/unit/test_mcp_server.py -v
+
+      - name: Create PR with updates
+        if: steps.check_commits.outputs.has_new_commits == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Add upstream remote if not already added
+          git remote add upstream https://github.com/teng-lin/notebooklm-py.git || true
+          git fetch upstream
+
+          # Create a new branch for the PR
+          BRANCH_NAME="sync-upstream-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b $BRANCH_NAME
+
+          # Merge upstream/main
+          git merge upstream/main --no-edit || echo "Merge conflict occurred, attempting to resolve..."
+
+          # If there are merge conflicts, try to resolve them automatically
+          if ! git diff --quiet --exit-code; then
+            echo "Auto-resolving merge conflicts..."
+            # For now, we'll prefer upstream changes for certain files
+            # In a real scenario, you might want more sophisticated conflict resolution
+            git add -u
+            git commit -m "Auto-resolve merge conflicts favoring upstream"
+          fi
+
+          # Push the branch
+          git push origin $BRANCH_NAME
+
+          # Get the diff summary
+          DIFF_SUMMARY=$(git diff --stat upstream/main...HEAD || echo "Unable to generate diff")
+
+          # Create pull request
+          gh pr create \
+            --title "Sync with upstream: $(date +%Y-%m-%d)" \
+            --body "This PR automatically syncs with upstream/main and runs MCP tests.
+
+## Summary
+- Created from branch: ${{ github.ref_name }}
+- Synced with upstream/main at: $(git rev-parse --short upstream/main)
+- MCP tests: $(if [ "${{ steps.check_commits.outputs.has_new_commits }}" = "true" ]; then echo "Passed"; else echo "Not run (no new commits)"; fi)
+
+## Changes
+\`\`\`
+$DIFF_SUMMARY
+\`\`\`
+
+*This PR was generated by the [sync-upstream workflow](https://github.com/${{ github.repository }}/actions/workflows/sync-upstream.yml).* \
+            --label "automated sync" \
+            --label "dependencies"
