@@ -6,7 +6,8 @@ import asyncio
 import builtins
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from contextlib import AbstractAsyncContextManager
+from typing import Any, Protocol
 
 from ._artifact_listing import find_artifact_row_by_id
 from ._backoff import compute_backoff_delay
@@ -14,7 +15,7 @@ from ._callbacks import maybe_await_callback
 from ._deadline import Monotonic, RuntimeDeadline, Sleep
 from ._polling_registry import PollRegistry
 from ._row_adapters_artifacts import ArtifactRow
-from ._runtime_contracts import LoopGuard, OperationScopeProvider
+from ._runtime_contracts import LoopGuard
 from .exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from .rpc import (
     ArtifactStatus,
@@ -38,6 +39,17 @@ MediaReadyCallback = Callable[[builtins.list[Any], int], bool]
 ArtifactTypeNameCallback = Callable[[int], str]
 ArtifactErrorCallback = Callable[[builtins.list[Any]], str | None]
 StatusChangeCallback = Callable[[GenerationStatus], object]
+
+
+class OperationScopeProvider(Protocol):
+    """``operation_scope`` async-context-manager surface for feature APIs.
+
+    Inlined from ``_runtime_contracts`` in issue #1327: artifact polling
+    is the only consumer, so this single-consumer Protocol lives local to
+    its owner per the ADR-013 ≥2-feature promotion bar.
+    """
+
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]: ...
 
 
 class ArtifactPollingService:

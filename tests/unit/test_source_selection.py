@@ -149,9 +149,10 @@ def mock_core():
     core = SimpleNamespace(
         rpc_executor=SimpleNamespace(rpc_call=rpc_call),
         # ``rpc_call`` mirrors ``rpc_executor.rpc_call`` so the SimpleNamespace
-        # also satisfies the composite ``ArtifactsRuntime`` Protocol
-        # (``RpcCaller`` + ``AsyncWorkRuntime`` + ``DrainHookRegistration``)
-        # when threaded into ``ArtifactsAPI`` as the runtime adapter.
+        # also satisfies the composite ``ArtifactsRuntime`` shape
+        # (``RpcCaller`` + ``LoopGuard`` + ``OperationScopeProvider`` +
+        # ``DrainHookRegistration``) when threaded into ``ArtifactsAPI`` as
+        # the runtime adapter.
         rpc_call=rpc_call,
         auth=auth,
         next_reqid=AsyncMock(return_value=100000),

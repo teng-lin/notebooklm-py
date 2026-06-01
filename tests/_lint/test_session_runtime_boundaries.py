@@ -133,10 +133,12 @@ MOVED_SESSION_SYMBOL_NAMES: frozenset[str] = frozenset(
     # Only symbols that used to be reachable through the deleted session module
     # aliases belong here. Moves between other modules, such as default sleep
     # resolution moving onto `ClientSeams`, are outside this guard's scope.
+    # ``resolve_seam_defaults`` was deleted in issue #1327 (redundant
+    # alongside ``resolve_client_seams``); dropped from this set since the
+    # symbol no longer exists to be reached through any alias.
     {
         "compose_session_internals",
         "ComposedSession",
-        "resolve_seam_defaults",
         "_default_decode_response",
         "_default_is_auth_error",
     }

@@ -5,10 +5,14 @@ PR 2 of the post-refactoring plan
 (``docs/post-refactoring-plan-2026-05-27.md``):
 
 - :class:`notebooklm._runtime_init.ClientInternals` dataclass
-- :func:`notebooklm._runtime_init.resolve_seam_defaults`
 - :func:`notebooklm._runtime_init.compose_client_internals`
 - ``ClientComposed.bind_*`` write-once setters
 - ``ClientComposed`` required-property guards
+
+The redundant ``resolve_seam_defaults`` resolver was removed in issue
+#1327 — ``compose_client_internals`` resolves seams directly via
+``resolve_client_seams`` + ``_resolve_async_client_factory``, so the
+parallel dict-shaped resolver had no production caller.
 
 Session-elimination Phase 3 leaves ``NotebookLMClient`` as both composition
 root and public surface; all composition runtime state belongs to
@@ -21,7 +25,6 @@ import asyncio
 import logging
 from typing import Any
 
-import httpx
 import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
@@ -30,7 +33,6 @@ from notebooklm._client_seams import ClientSeams
 from notebooklm._runtime_init import (
     ClientInternals,
     compose_client_internals,
-    resolve_seam_defaults,
 )
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -48,71 +50,6 @@ def _make_auth() -> AuthTokens:
         csrf_token="csrf",
         session_id="sid",
     )
-
-
-# ---------------------------------------------------------------------------
-# resolve_seam_defaults
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_seam_defaults_returns_module_bindings_when_none() -> None:
-    """All four seams default to the canonical module bindings."""
-    resolved = resolve_seam_defaults(
-        sleep=None,
-        async_client_factory=None,
-        is_auth_error=None,
-        decode_response=None,
-    )
-
-    # ``sleep`` resolves to ``asyncio.sleep`` via the client seam defaults.
-    assert resolved["sleep"] is asyncio.sleep
-
-    # ``async_client_factory`` resolves to :class:`httpx.AsyncClient`.
-    assert resolved["async_client_factory"] is httpx.AsyncClient
-
-    # ``is_auth_error`` resolves to :func:`notebooklm._runtime_helpers.is_auth_error`
-    # via the lazy import inside :func:`_default_is_auth_error`.
-    from notebooklm._runtime_helpers import is_auth_error as canonical_is_auth_error
-
-    assert resolved["is_auth_error"] is canonical_is_auth_error
-
-    # ``decode_response`` resolves to :func:`notebooklm.rpc.decode_response`
-    # via the lazy import inside :func:`_default_decode_response`.
-    from notebooklm.rpc import decode_response as canonical_decode_response
-
-    assert resolved["decode_response"] is canonical_decode_response
-
-
-def test_resolve_seam_defaults_passes_through_explicit_callables() -> None:
-    """Explicit callables override the module-binding defaults."""
-
-    async def fake_sleep(_d: float) -> None:
-        """Sentinel callable — identity-checked, never invoked."""
-        return None
-
-    def fake_factory(*_a: Any, **_kw: Any) -> Any:  # pragma: no cover - identity check
-        """Sentinel callable — identity-checked, never invoked."""
-        raise AssertionError
-
-    def fake_is_auth_error(_exc: Exception) -> bool:  # pragma: no cover
-        """Sentinel callable — identity-checked, never invoked."""
-        return False
-
-    def fake_decode(*_a: Any, **_kw: Any) -> Any:  # pragma: no cover
-        """Sentinel callable — identity-checked, never invoked."""
-        return None
-
-    resolved = resolve_seam_defaults(
-        sleep=fake_sleep,
-        async_client_factory=fake_factory,
-        is_auth_error=fake_is_auth_error,
-        decode_response=fake_decode,
-    )
-
-    assert resolved["sleep"] is fake_sleep
-    assert resolved["async_client_factory"] is fake_factory
-    assert resolved["is_auth_error"] is fake_is_auth_error
-    assert resolved["decode_response"] is fake_decode
 
 
 # ---------------------------------------------------------------------------

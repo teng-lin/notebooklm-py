@@ -142,27 +142,6 @@ def _resolve_async_client_factory(
     return httpx.AsyncClient
 
 
-def resolve_seam_defaults(
-    *,
-    sleep: Callable[[float], Awaitable[Any]] | None,
-    async_client_factory: Callable[..., httpx.AsyncClient] | None,
-    is_auth_error: Callable[[Exception], bool] | None,
-    decode_response: Callable[..., Any] | None,
-) -> dict[str, Callable[..., Any]]:
-    """Resolve legacy seam-default shape while keeping ``ClientSeams`` separate."""
-    seams = resolve_client_seams(
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        decode_response=decode_response,
-    )
-    return {
-        "sleep": seams.sleep,
-        "async_client_factory": _resolve_async_client_factory(async_client_factory),
-        "is_auth_error": seams.is_auth_error,
-        "decode_response": seams.decode_response,
-    }
-
-
 def validate_constructor_args(
     *,
     timeout: float,
@@ -623,7 +602,6 @@ __all__ = [
     "build_collaborators",
     "build_runtime_transport",
     "compose_client_internals",
-    "resolve_seam_defaults",
     "validate_constructor_args",
     "wire_middleware_chain",
 ]

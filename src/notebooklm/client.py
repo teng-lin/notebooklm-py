@@ -298,6 +298,14 @@ class NotebookLMClient:
         # ``is_auth_error`` / ``async_client_factory``) live on
         # ``compose_client_internals`` and the client-shell test helper
         # only.
+        #
+        # TEST-ONLY injection points: production passes ``None`` for all
+        # three runtime seams here (and never supplies an
+        # ``async_client_factory``), so they always resolve to the
+        # canonical module bindings. The non-``None`` paths exist solely
+        # for deterministic test injection — see ``_client_seams`` module
+        # docstring. Do not promote any of them to a public kwarg without
+        # a production caller that varies them.
         self._seams = resolve_client_seams(
             decode_response=None,
             sleep=None,

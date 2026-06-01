@@ -2,47 +2,33 @@
 ``notebooklm._runtime_contracts``.
 
 Phase 7 (refactor-history.md §Migration Plan step 10) replaced the broad
-``Session`` Protocol with four shared capability Protocols
-(``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
-``AsyncWorkRuntime``). ``AuthMetadata`` and ``Kernel`` are preserved
-as standalone Protocols for the upload pipeline. The standalone
+``Session`` Protocol with shared capability Protocols. The surviving
+shared Protocols are ``RpcCaller`` (~17 consumers), ``LoopGuard`` (2
+consumers), and the pure-transport ``Kernel``. The single-consumer
+``AuthMetadata`` / ``OperationScopeProvider`` Protocols and the unused
+``AsyncWorkRuntime`` composite were inlined into their owning feature
+modules / deleted in issue #1327 — see ``test_source_upload`` for the
+upload pipeline's local ``AuthMetadata`` and ``test_artifact_polling``
+for the local ``OperationScopeProvider``. The standalone
 ``DrainHookRegistration`` Protocol previously kept here was deleted in
-the same step — the canonical ``DrainHookRegistration`` is now local
-to ``_artifacts.py`` since artifact polling is its only consumer.
+Phase 7 — the canonical ``DrainHookRegistration`` is now local to
+``_artifacts.py`` since artifact polling is its only consumer.
 """
 
 from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
-from contextlib import AbstractAsyncContextManager
-from types import TracebackType
 from typing import Any
 
 import httpx
 
 from notebooklm._runtime_contracts import (
-    AsyncWorkRuntime,
-    AuthMetadata,
     Kernel,
     LoopGuard,
-    OperationScopeProvider,
     RpcCaller,
 )
 from notebooklm.rpc.types import RPCMethod
-
-
-class _NoopOperationScope:
-    async def __aenter__(self) -> None:
-        return None
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None:
-        return False
 
 
 class _RpcCallerImpl:
@@ -62,29 +48,6 @@ class _RpcCallerImpl:
 
 class _LoopGuardImpl:
     def assert_bound_loop(self) -> None:
-        return None
-
-
-class _OperationScopeProviderImpl:
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
-        return _NoopOperationScope()
-
-
-class _AsyncWorkRuntimeImpl:
-    def assert_bound_loop(self) -> None:
-        return None
-
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
-        return _NoopOperationScope()
-
-
-class _AuthMetadataImpl:
-    @property
-    def authuser(self) -> int:
-        return 0
-
-    @property
-    def account_email(self) -> str | None:
         return None
 
 
@@ -114,10 +77,6 @@ def _public_contract_members(protocol: type[Any]) -> set[str]:
 # ----------------------------------------------------------------------
 
 
-def test_auth_metadata_protocol_has_exactly_two_members() -> None:
-    assert _public_contract_members(AuthMetadata) == {"authuser", "account_email"}
-
-
 def test_kernel_protocol_has_exactly_three_members() -> None:
     assert _public_contract_members(Kernel) == {"post", "cookies", "aclose"}
 
@@ -128,23 +87,6 @@ def test_rpc_caller_protocol_has_exactly_one_member() -> None:
 
 def test_loop_guard_protocol_has_exactly_one_member() -> None:
     assert _public_contract_members(LoopGuard) == {"assert_bound_loop"}
-
-
-def test_operation_scope_provider_protocol_has_exactly_one_member() -> None:
-    assert _public_contract_members(OperationScopeProvider) == {"operation_scope"}
-
-
-def test_async_work_runtime_protocol_extends_loop_guard_and_operation_scope_provider() -> None:
-    # ``AsyncWorkRuntime`` inherits both members through Protocol composition.
-    # The union of inherited public members across its MRO must match.
-    mro_members: set[str] = set()
-    for parent in AsyncWorkRuntime.__mro__:
-        mro_members.update(name for name in parent.__dict__ if not name.startswith("_"))
-    assert {"assert_bound_loop", "operation_scope"} <= mro_members
-    assert AsyncWorkRuntime.__mro__[1:3] in (
-        (LoopGuard, OperationScopeProvider),
-        (OperationScopeProvider, LoopGuard),
-    )
 
 
 # ----------------------------------------------------------------------
@@ -173,14 +115,6 @@ def test_rpc_caller_signature_matches_legacy_session_rpc_call() -> None:
     assert sig.parameters["operation_variant"].default is None
 
 
-def test_auth_metadata_protocol_signatures_are_pinned() -> None:
-    authuser = inspect.signature(AuthMetadata.authuser.fget)
-    assert authuser.return_annotation == "int"
-
-    account_email = inspect.signature(AuthMetadata.account_email.fget)
-    assert account_email.return_annotation == "str | None"
-
-
 def test_kernel_protocol_signatures_are_pinned() -> None:
     post = inspect.signature(Kernel.post)
     assert list(post.parameters) == ["self", "url", "headers", "body"]
@@ -202,29 +136,16 @@ def test_loop_guard_signature_is_pinned() -> None:
     assert sig.return_annotation == "None"
 
 
-def test_operation_scope_provider_signature_is_pinned() -> None:
-    sig = inspect.signature(OperationScopeProvider.operation_scope)
-    assert list(sig.parameters) == ["self", "label"]
-    assert sig.parameters["label"].annotation == "str"
-    assert sig.return_annotation == "AbstractAsyncContextManager[None]"
-
-
 # ----------------------------------------------------------------------
 # Structural conformance — mypy verifies these assignments
 # ----------------------------------------------------------------------
 
 
 def test_structural_implementations_satisfy_protocols() -> None:
-    auth: AuthMetadata = _AuthMetadataImpl()
     kernel: Kernel = _KernelImpl()
     rpc: RpcCaller = _RpcCallerImpl()
     loop_guard: LoopGuard = _LoopGuardImpl()
-    op_scope: OperationScopeProvider = _OperationScopeProviderImpl()
-    async_work: AsyncWorkRuntime = _AsyncWorkRuntimeImpl()
 
-    assert auth is not None
     assert kernel is not None
     assert rpc is not None
     assert loop_guard is not None
-    assert op_scope is not None
-    assert async_work is not None

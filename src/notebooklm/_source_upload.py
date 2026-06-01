@@ -24,7 +24,6 @@ from ._runtime_config import (
     normalize_max_concurrent_uploads,
 )
 from ._runtime_contracts import (
-    AuthMetadata,
     Kernel,
     RpcCaller,
 )
@@ -60,6 +59,22 @@ _SOURCE_NAME_FIELD_NAMES = frozenset(
     {"SOURCE_NAME", "source_name", "sourceName", "filename", "fileName", "name", "title"}
 )
 _SOURCE_ID_ENVELOPE_MAX_DEPTH = 8
+
+
+class AuthMetadata(Protocol):
+    """Selected-account routing metadata required by upload flows.
+
+    Inlined from ``_runtime_contracts`` in issue #1327: the upload
+    pipeline is the only consumer, so this single-consumer Protocol lives
+    local to its owner per the ADR-013 ≥2-feature promotion bar.
+    ``AuthTokens`` structurally satisfies it.
+    """
+
+    @property
+    def authuser(self) -> int: ...
+
+    @property
+    def account_email(self) -> str | None: ...
 
 
 class RpcCallback(Protocol):

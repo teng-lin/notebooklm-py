@@ -3,8 +3,10 @@
 This module provides a single entry point — :func:`make_fake_core` — that
 returns a ``FakeSession`` instance shaped to satisfy the **shared
 capability Protocols** in :mod:`notebooklm._runtime_contracts`
-(``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
-``AsyncWorkRuntime``, ``AuthMetadata``, ``Kernel``). Feature APIs that
+(``RpcCaller``, ``LoopGuard``, ``Kernel``) plus the single-consumer
+Protocols inlined into their owning feature modules in issue #1327
+(``AuthMetadata`` in ``_source_upload``, ``OperationScopeProvider`` in
+``_artifact_polling``). Feature APIs that
 need more than one capability take their direct collaborators by
 keyword-only constructor argument (``ChatAPI`` in ``_chat.py``,
 ``ArtifactsAPI`` in ``_artifacts.py``, ``SourceUploadPipeline`` in
@@ -149,8 +151,9 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # bag-of-attributes.
         "rpc_call": rpc_call_mock,
         "rpc_executor": SimpleNamespace(rpc_call=rpc_call_mock),
-        # AsyncWorkRuntime (LoopGuard + OperationScopeProvider) — used by
-        # ArtifactsAPI polling and SourceUploadPipeline.
+        # LoopGuard + OperationScopeProvider (the latter inlined into
+        # ``_artifact_polling`` in #1327) — used by ArtifactsAPI polling
+        # and SourceUploadPipeline.
         "assert_bound_loop": MagicMock(return_value=None),
         "operation_scope": MagicMock(side_effect=_operation_scope),
         # DrainHookRegistration (local in ``_artifacts.py``) — close-time

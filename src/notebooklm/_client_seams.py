@@ -3,6 +3,19 @@
 The callable seams in this module are intentionally separate from construction
 seams such as ``async_client_factory``. ``ClientSeams`` owns only callables that
 runtime closures may re-read after construction.
+
+**TEST-ONLY injection points.** The three ``ClientSeams`` callables
+(``decode_response`` / ``sleep`` / ``is_auth_error``) — along with the
+construction-only ``async_client_factory`` resolved in ``_runtime_init`` —
+are never varied in production: ``NotebookLMClient.__init__`` hardcodes
+all four to ``None`` (``resolve_client_seams(decode_response=None,
+sleep=None, is_auth_error=None)``), so they always resolve to the
+canonical module bindings (:func:`_default_decode_response` /
+:func:`_default_sleep` / :func:`_default_is_auth_error` /
+:class:`httpx.AsyncClient`). The non-``None`` paths exist solely so tests
+can inject deterministic substitutes via ``compose_client_internals`` or
+the client-shell test helper. Do not wire a public ``NotebookLMClient``
+kwarg to any of them without a production caller that varies them.
 """
 
 from __future__ import annotations
