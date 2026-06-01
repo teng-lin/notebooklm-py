@@ -1,6 +1,6 @@
 """Unit tests for :class:`ErrorInjectionMiddleware` (Tier-12 PR 12.6 / PR 12.7).
 
-Pins the contract documented in ``src/notebooklm/_middleware_error_injection.py``
+Pins the contract documented in ``src/notebooklm/_middleware/error_injection.py``
 and ADR-009 §"Chain ordering":
 
 - **Pass-through when env var is unset.** The middleware delegates straight

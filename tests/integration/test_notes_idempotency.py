@@ -125,7 +125,7 @@ def test_create_note_plain_variant_classified_non_idempotent() -> None:
 def test_create_note_saved_from_chat_variant_classified_non_idempotent() -> None:
     """The ``"saved_from_chat"`` variant is NON_IDEMPOTENT_NO_RETRY.
 
-    Used by ``_chat_notes.save_chat_answer_as_note`` (issue #660). The
+    Used by ``_chat.notes.save_chat_answer_as_note`` (issue #660). The
     7-element params carry rich content; title-based probes break under
     server-side smart-title generation, and chat-answer fingerprints are
     not unique enough for safe dedupe.

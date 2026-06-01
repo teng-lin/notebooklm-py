@@ -448,9 +448,9 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
 # Private helpers that are no longer imported by first-party code but
 # must remain exportable through ``notebooklm.types`` for downstream
 # compatibility. ``_extract_source_created_at`` moved here when the
-# row-adapter migration (see ``_row_adapters_sources.SourceRow.created_at``)
+# row-adapter migration (see ``_row_adapters.sources.SourceRow.created_at``)
 # replaced its sole first-party consumer
-# (``_source_listing._parse_source``).
+# (``_source.listing._parse_source``).
 _TYPES_PRIVATE_EXTERNAL_COMPAT_SEAMS: list[str] = [
     "_extract_source_created_at",
 ]
@@ -1248,8 +1248,8 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
 # ---------------------------------------------------------------------------
 # Tier-10 PR-A re-export identity pins for ``notebooklm._core`` were deleted
 # in Phase 4 (v0.5.0) when the ``_core.py`` compatibility shim was removed.
-# The seam split into ``_runtime_config``, ``_error_injection``, and
-# ``_runtime_helpers`` is now the canonical surface — tests import directly
+# The seam split into ``_runtime.config``, ``_error_injection``, and
+# ``_runtime.helpers`` is now the canonical surface — tests import directly
 # from those modules (see ``tests/conftest.py``, ``tests/unit/test_vcr_config.py``,
 # ``tests/unit/test_runtime_lifecycle.py``).
 # ---------------------------------------------------------------------------

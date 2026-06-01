@@ -31,7 +31,7 @@ Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` an
   :class:`notebooklm._client_metrics.ClientMetrics` so this class is unit-
   testable in isolation; the runtime-init helper wires it up to
   ``ClientMetrics.record_lock_wait`` at construction (see
-  ``_runtime_init.build_collaborators``).
+  ``_runtime.init.build_collaborators``).
 """
 
 from __future__ import annotations

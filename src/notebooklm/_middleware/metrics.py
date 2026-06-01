@@ -115,7 +115,7 @@ class MetricsMiddleware:
                         elapsed_seconds=elapsed,
                         request_id=get_request_id(),
                         # ``__qualname__`` matches the
-                        # idiom used by ``TracingMiddleware._middleware_tracing.py``
+                        # idiom used by ``TracingMiddleware`` (``_middleware/tracing.py``)
                         # so nested exception classes are distinguishable
                         # in metrics + traces alike.
                         error_type=type(exc).__qualname__,

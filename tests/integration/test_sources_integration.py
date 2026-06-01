@@ -28,7 +28,7 @@ def _add_register_file_source_baseline_mock(httpx_mock: HTTPXMock, build_rpc_res
     """Register an empty GET_NOTEBOOK baseline response for ``add_file`` paths.
 
     The ``register_file_source`` wrapper captures a baseline of source IDs
-    before the create attempt (see ``_source_upload.py:register_file_source``
+    before the create attempt (see ``_source/upload.py:register_file_source``
     for the rationale — pre-existing same-named sources must NOT match a
     retry probe). For tests that exercise ``add_file`` with a single
     ``ADD_SOURCE_FILE`` batchexecute mock, this helper adds the baseline

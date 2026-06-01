@@ -112,7 +112,7 @@ def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None
 # * ``oauth2.googleapis.com`` — the token-exchange endpoint family.
 # * ``oauth2.googleusercontent.com`` — observed grant-code return path in
 #   some OAuth flows. (The wider ``.googleusercontent.com`` family is also
-#   tagged trusted in ``_artifact_downloads.py`` for a related reason; we
+#   tagged trusted in ``_artifact/downloads.py`` for a related reason; we
 #   scope this list to the ``oauth2`` subdomain because the broader family
 #   carries non-auth payload URLs.)
 #

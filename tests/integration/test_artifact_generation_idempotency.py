@@ -1,7 +1,7 @@
 """Idempotency tests for CREATE_ARTIFACT and GENERATE_MIND_MAP (P0-3).
 
 These RPCs are mutating writes whose params carry no caller-supplied client
-token (see the ``generate_*`` methods and the ``_artifact_payloads.build_*``
+token (see the ``generate_*`` methods and the ``_artifact.payloads.build_*``
 helpers in ``_artifacts.py`` for the CREATE_ARTIFACT / GENERATE_MIND_MAP
 param shapes). Every positional slot is structural — type code, source ids,
 language, config block — and the response is what surfaces a server-allocated

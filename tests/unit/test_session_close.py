@@ -211,7 +211,7 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
 
     async def cancel_polls() -> None:
         # Snapshot once before cancelling, matching the production
-        # ``ArtifactPollingService.drain`` pattern (``_artifact_polling.py``).
+        # ``ArtifactPollingService.drain`` pattern (``_artifact/polling.py``).
         poll_tasks = registry.active_tasks()
         for poll_task in poll_tasks:
             poll_task.cancel()

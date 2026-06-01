@@ -1,6 +1,6 @@
 """Unit tests for :class:`AuthRefreshMiddleware` (Tier-12 PR 12.8).
 
-Pins the contract documented in ``src/notebooklm/_middleware_auth_refresh.py``
+Pins the contract documented in ``src/notebooklm/_middleware/auth_refresh.py``
 and ADR-009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call``; result returned.
