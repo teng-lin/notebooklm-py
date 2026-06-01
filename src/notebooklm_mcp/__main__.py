@@ -15,7 +15,7 @@ logger = logging.getLogger("notebooklm_mcp")
 
 def main() -> None:
     """Run the NotebookLM MCP server.
-    
+
     By default, runs SSE transport on localhost:8000.
     Use --host and --port to customize the binding address.
     """
@@ -37,10 +37,10 @@ def main() -> None:
         default="sse",
         help="Transport type to use (default: sse)"
     )
-    
+
     args = parser.parse_args()
-    
-    from notebooklm_mcp.server import _shutdown_client, mcp, _reset_client_for_testing
+
+    from notebooklm_mcp.server import _shutdown_client, mcp
 
     async def _run() -> None:
         try:

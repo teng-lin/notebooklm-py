@@ -7,7 +7,6 @@ MCP-compatible AI systems via tools, resources, and prompts.
 import asyncio
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,7 +20,6 @@ from notebooklm.exceptions import (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
-    ArtifactPendingTimeoutError,
     ArtifactTimeoutError,
     AuthError,
     AuthExtractionError,

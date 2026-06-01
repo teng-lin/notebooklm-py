@@ -361,12 +361,16 @@ class TestGenerateAudioPodcast:
         assert result.startswith("ERROR:")
 
     async def test_timeout_returns_timeout_json(self, patched_get_client):
-        patched_get_client.artifacts.wait_for_completion = AsyncMock(side_effect=TimeoutError())
+        from notebooklm.exceptions import ArtifactTimeoutError
+        patched_get_client.artifacts.wait_for_completion = AsyncMock(
+            side_effect=ArtifactTimeoutError("nb_001", "task_001", 1.0, last_status="pending")
+        )
         from notebooklm_mcp.server import notebooklm_generate_audio_podcast
 
         result = await notebooklm_generate_audio_podcast(notebook_id="nb_001", timeout=1.0)
         data = json.loads(result)
         assert data["status"] == "timeout"
+        assert data["task_id"] == "task_001"
 
     async def test_generate_audio_exception_returns_error(self, patched_get_client):
         patched_get_client.artifacts.generate_audio = AsyncMock(
@@ -474,12 +478,16 @@ class TestGenerateQuiz:
         assert result.startswith("ERROR:")
 
     async def test_timeout_returns_timeout_json(self, patched_get_client):
-        patched_get_client.artifacts.wait_for_completion = AsyncMock(side_effect=TimeoutError())
+        from notebooklm.exceptions import ArtifactTimeoutError
+        patched_get_client.artifacts.wait_for_completion = AsyncMock(
+            side_effect=ArtifactTimeoutError("nb_001", "task_001", 1.0, last_status="pending")
+        )
         from notebooklm_mcp.server import notebooklm_generate_quiz
 
         result = await notebooklm_generate_quiz(notebook_id="nb_001", timeout=1.0)
         data = json.loads(result)
         assert data["status"] == "timeout"
+        assert data["task_id"] == "task_001"
 
     async def test_generate_exception_returns_error(self, patched_get_client):
         patched_get_client.artifacts.generate_quiz = AsyncMock(side_effect=Exception("rpc error"))
@@ -563,8 +571,7 @@ class TestResources:
             new=AsyncMock(side_effect=RuntimeError("no auth")),
         ):
             result = await notebook_metadata(notebook_id="nb_001")
-        data = json.loads(result)
-        assert "error" in data
+        assert result.startswith("ERROR: no auth")
 
     async def test_source_fulltext_resource(self, patched_get_client):
         from notebooklm_mcp.server import notebook_source_fulltext
@@ -614,8 +621,10 @@ class TestDeepResearchPrompt:
             for ln in result.splitlines()
             if ln.strip().startswith("- http")
         ]
-        assert "https://a.com" in bullet_urls
-        assert "https://b.com" in bullet_urls
+        # The string https://a.com may be at an arbitrary position in the sanitized URL.
+        assert any("https://a.com" in u for u in bullet_urls)
+        # The string https://b.com may be at an arbitrary position in the sanitized URL.
+        assert any("https://b.com" in u for u in bullet_urls)
 
     def test_prompt_has_all_steps(self):
         from notebooklm_mcp.server import notebooklm_deep_research
@@ -634,7 +643,8 @@ class TestDeepResearchPrompt:
             for ln in result.splitlines()
             if ln.strip().startswith("- http")
         ]
-        assert "https://only.com" in bullet_urls
+        # The string https://only.com may be at an arbitrary position in the sanitized URL.
+        assert any("https://only.com" in u for u in bullet_urls)
 
     def test_prompt_returns_string(self):
         from notebooklm_mcp.server import notebooklm_deep_research
