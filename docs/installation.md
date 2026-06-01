@@ -283,13 +283,12 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 | `cookies` | `rookiepy>=0.1.0` | `notebooklm login --browser-cookies <browser>`, `notebooklm auth inspect`. | `pip install "notebooklm-py[cookies]"` | `uv add "notebooklm-py[cookies]"` |
 | `markdown` | `markdownify>=0.14.1` | `notebooklm source fulltext -f markdown`. | `pip install "notebooklm-py[markdown]"` | `uv add "notebooklm-py[markdown]"` |
 | `dev` | pytest stack, mypy, ruff (`==0.15.13` exact pin), pre-commit (`>=4.5.1`), vcrpy | Contributor tooling only. Not sufficient for this repo's default `uv run pytest`; add `browser` too because some unit tests import Playwright. | `pip install "notebooklm-py[dev]"` | `uv add "notebooklm-py[dev]"` (in your project) — but contributors *to this repo* use the [Persona E](#e-contributor) `uv sync` flow instead |
+| `mcp` | `notebooklm-mcp` CLI and MCP server dependencies | For MCP server functionality. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` (in your project) |
 | `all` | Resolves to `browser` + `dev` + `markdown` (**not `cookies`**) | Contributors who do not need `rookiepy`. | `pip install "notebooklm-py[all]"` | `uv add "notebooklm-py[all]"` (in your project) — see [All vs All-Extras](#all-vs-all-extras) |
 
 > **Note on `uv` columns:** the `uv (in your project)` column is for users adding `notebooklm-py` as a dependency in **their own** project (requires a `pyproject.toml` in that project). Contributors working inside *this* repo use the Persona E flow (`uv sync --frozen --extra ...`), governed by this repo's `uv.lock`. Do not run `uv sync` outside a project — it errors with `No pyproject.toml found`.
 
 ---
-
-| `mcp` | `notebooklm-mcp` CLI and MCP server dependencies | For MCP server functionality. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` (in your project) |
 ## Post-install steps
 
 ### `playwright install chromium` — when required, when auto-installed

@@ -67,7 +67,7 @@ mcp = [
 ]
 # `all` deliberately excludes `cookies` — rookiepy has install issues on Python 3.13+
 # (see CHANGELOG [0.4.1]). Opt in explicitly via `pip install "notebooklm-py[cookies]"`.
-all = ["notebooklm-py[browser,dev,markdown]"]
+all = ["notebooklm-py[browser,dev,markdown,mcp]"]
 
 [project.scripts]
 notebooklm = "notebooklm.notebooklm_cli:main"
