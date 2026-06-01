@@ -1,6 +1,6 @@
 """Unit tests for :class:`DrainMiddleware` (Tier-12 PR 12.5).
 
-Pins the contract documented in ``src/notebooklm/_middleware_drain.py``
+Pins the contract documented in ``src/notebooklm/_middleware/drain.py``
 and ADR-009 §"Chain ordering":
 
 - Pass-through identity: the middleware brackets ``next_call`` but does

@@ -8,7 +8,7 @@ protocol.
 
 These tests pin three things:
 
-1. ``SourcesAPI._uploader`` is built from ``_source_upload.py`` — the upload
+1. ``SourcesAPI._uploader`` is built from ``_source/upload.py`` — the upload
    implementation collaborator.
 2. Every ``SourcesAPI`` upload entry point (``add_file`` and the private
    ``_register_file_source`` / ``_start_resumable_upload`` /
@@ -280,7 +280,7 @@ def test_sources_module_holds_no_scotty_implementation() -> None:
 
     The Scotty upload protocol (resumable start request, x-goog-upload-* headers,
     streaming finalize, shielded background finalize) lives only in
-    ``_source_upload.py``. ``_sources.py`` should reference none of those
+    ``_source/upload.py``. ``_sources.py`` should reference none of those
     implementation tokens in executable code — it only delegates. Docstrings are
     excluded because the delegators legitimately *document* the contract they
     forward to.

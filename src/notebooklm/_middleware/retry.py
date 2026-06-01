@@ -37,7 +37,7 @@ Behavior:
 - **Same exception types on exhaustion** —
   :class:`TransportRateLimited` /
   :class:`TransportServerError` re-raised verbatim so
-  ``_chat_transport.chat_aware_authed_post`` (which catches both) sees
+  ``_chat.transport.chat_aware_authed_post`` (which catches both) sees
   the same shape it always did.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
@@ -125,7 +125,7 @@ class RetryMiddleware:
         # form.
         self._rate_limit_max = rate_limit_max_retries
         self._server_error_max = server_error_max_retries
-        # Late-binding rationale lives on ``_runtime_helpers.resolve_sleep``;
+        # Late-binding rationale lives on ``_runtime.helpers.resolve_sleep``;
         # see that helper for why we resolve at call time instead of capturing
         # the callable at construction.
         self._retry_timeout = retry_timeout

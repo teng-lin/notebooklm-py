@@ -47,7 +47,7 @@ from .core import NextCall, RpcRequest, RpcResponse
 # duration from this middleware up to ``RuntimeTransport.perform_authed_post``
 # (which forwards it to ``ClientMetrics.record_rpc_queue_wait``). Kept as a
 # compatibility alias for older internal imports; new code should use the
-# centralized ``RPC_CONTEXT_*`` vocabulary from ``_middleware_context``.
+# centralized ``RPC_CONTEXT_*`` vocabulary from ``_middleware.context``.
 RPC_QUEUE_WAIT_CONTEXT_KEY = RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 
 

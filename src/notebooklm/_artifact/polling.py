@@ -44,7 +44,7 @@ StatusChangeCallback = Callable[[GenerationStatus], object]
 class OperationScopeProvider(Protocol):
     """``operation_scope`` async-context-manager surface for feature APIs.
 
-    Inlined from ``_runtime_contracts`` in issue #1327: artifact polling
+    Inlined from ``_runtime.contracts`` in issue #1327: artifact polling
     is the only consumer, so this single-consumer Protocol lives local to
     its owner per the ADR-013 ≥2-feature promotion bar.
     """

@@ -46,7 +46,7 @@ refreshes, and the once-per-call contract holds because
 ``AuthRefreshMiddleware`` only retries ONCE per ``next_call`` invocation.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
-``src/notebooklm/_runtime_auth.py`` for :class:`AuthRefreshCoordinator`
+``src/notebooklm/_runtime/auth.py`` for :class:`AuthRefreshCoordinator`
 (coalesced refresh + auth-snapshot lock).
 """
 
@@ -119,7 +119,7 @@ class AuthRefreshMiddleware:
       ``snapshot_provider``
       preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
-      resolved at call time via :func:`_runtime_helpers.resolve_sleep` —
+      resolved at call time via :func:`_runtime.helpers.resolve_sleep` —
       the same shared helper :class:`RetryMiddleware` uses).
     - ``logger``: structured logger for the "auth error detected" /
       "refresh successful" / "refresh failed" info / warning lines.
@@ -147,7 +147,7 @@ class AuthRefreshMiddleware:
         self._refresh_callback_enabled = refresh_callback_enabled
         self._refresh_retry_delay = refresh_retry_delay
         self._snapshot_provider = snapshot_provider
-        # Late-binding rationale lives on ``_runtime_helpers.resolve_sleep``.
+        # Late-binding rationale lives on ``_runtime.helpers.resolve_sleep``.
         self._sleep = sleep
         self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
         self._metrics = metrics

@@ -8,7 +8,7 @@ Per ADR-009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
 Test-only path. Production behavior is unchanged when no builder is wired
 into the middleware — the constructor's default ``builder=None`` makes
 ``__call__`` a pass-through even if ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set.
-Production code paths (``MiddlewareChainBuilder`` in ``_middleware_chain.py``)
+Production code paths (``MiddlewareChainBuilder`` in ``_middleware/chain.py``)
 construct ``ErrorInjectionMiddleware()`` with no builder, so the substitution
 path can never fire from a production install. Tests that want the
 substitution to fire construct the middleware directly with an explicit

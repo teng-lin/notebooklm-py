@@ -1,6 +1,6 @@
 """Unit tests for the saved-from-chat CREATE_NOTE encoder (issue #660).
 
-These tests exercise ``_chat_notes.build_save_chat_as_note_params`` and
+These tests exercise ``_chat.notes.build_save_chat_as_note_params`` and
 pin its output against the wire-captured payload at
 ``tests/unit/fixtures/save_chat_as_note_create_note_request.json``.
 
@@ -10,7 +10,7 @@ produces the same payload Google's web UI sends when its "Save to note"
 button is clicked. Drift from that payload risks the server silently
 dropping citation anchors and reverting the note to plain text.
 
-The encoder moved from ``_mind_map.py`` to ``_chat_notes.py`` in
+The encoder moved from ``_mind_map.py`` to ``_chat/notes.py`` in
 Phase 6 (refactor-history.md Step 8, ADR-013); the test imports were updated
 accordingly.
 """

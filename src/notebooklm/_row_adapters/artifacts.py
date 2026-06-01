@@ -469,7 +469,7 @@ class ArtifactRow:
         Note:
             This is a *raw* type-code match. The QUIZ vs FLASHCARDS
             variant distinction lives one layer up in
-            ``_artifact_listing._matches_artifact_type`` because it
+            ``_artifact.listing._matches_artifact_type`` because it
             operates on :class:`Artifact` objects (which know variant
             mapping), not raw rows. Keep that separation intentional —
             the adapter exposes the variant via :attr:`variant` if

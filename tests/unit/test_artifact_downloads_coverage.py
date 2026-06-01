@@ -1,4 +1,4 @@
-"""Coverage-focused tests for ``_artifact_downloads`` error/edge branches.
+"""Coverage-focused tests for ``_artifact.downloads`` error/edge branches.
 
 These tests target branches not exercised by ``test_artifact_downloads.py`` /
 ``test_download_url.py``: module-level helpers, ``UnknownRPCMethodError`` /

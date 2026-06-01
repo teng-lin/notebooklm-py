@@ -4,8 +4,8 @@ The free helper :func:`notebooklm._loop_affinity.assert_bound_loop` is the
 new shared chokepoint that every async entry point on the seam helpers
 (``_transport_drain.TransportDrainTracker.drain``,
 ``_reqid_counter.ReqidCounter.next_reqid``,
-``_runtime_auth.AuthRefreshCoordinator.await_refresh``,
-``_artifact_polling.ArtifactPollingService.wait_for_completion``,
+``_runtime.auth.AuthRefreshCoordinator.await_refresh``,
+``_artifact.polling.ArtifactPollingService.wait_for_completion``,
 ``_chat.ChatAPI.ask``) now consults so a cross-loop call surfaces an
 actionable ``RuntimeError`` at the call site rather than hanging on a
 lock bound to a dead loop.

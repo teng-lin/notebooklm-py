@@ -1,6 +1,6 @@
 """Unit tests for the Tier-12 middleware-chain type scaffolding.
 
-Exercises the shapes defined in ``src/notebooklm/_middleware.py`` and the
+Exercises the shapes defined in ``src/notebooklm/_middleware/core.py`` and the
 public-ish aliases in ``src/notebooklm/_request_types.py``:
 
 - ``RpcRequest`` / ``RpcResponse`` dataclass round-trip (construction,

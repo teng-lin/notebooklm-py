@@ -1,4 +1,4 @@
-"""Unit tests for the ``_chat_notes`` module (Phase 6, ADR-013).
+"""Unit tests for the ``_chat.notes`` module (Phase 6, ADR-013).
 
 The encoder is tested separately in
 ``tests/unit/test_save_chat_as_note_encoder.py``. The tests here pin

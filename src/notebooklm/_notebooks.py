@@ -253,7 +253,7 @@ class NotebooksAPI:
                 # and stringifies non-string ids. The legacy code here
                 # additionally required ``isinstance(sid, str)``; that
                 # check was inconsistent with the sibling
-                # ``_source_listing._extract_source_id`` path (which
+                # ``_source.listing._extract_source_id`` path (which
                 # accepts any non-None id via ``str(src_id)`` at the
                 # ``Source(id=...)`` boundary). Unifying both call sites
                 # through ``SourceRow.id`` aligns behavior — integer-ids

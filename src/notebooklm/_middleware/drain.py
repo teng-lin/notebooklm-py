@@ -13,7 +13,7 @@ so the middleware reads it via ``RPC_CONTEXT_LOG_LABEL`` and falls back
 to a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
 Drain admission is owned by the chain rather than by the logical RPC
-wrapper or ``_chat_transport.send_authed_post`` (the chat-streaming
+wrapper or ``_chat.transport.send_authed_post`` (the chat-streaming
 entry); those two call sites carry no explicit bookkeeping calls.
 
 Drain admission semantics:
@@ -25,8 +25,8 @@ Drain admission semantics:
   whose token was admitted before drain started) STILL pass through
   because ``TransportDrainTracker`` looks at ``asyncio.current_task()``'s
   depth, not the chain seam.
-- Source-upload and artifact-polling paths (``_source_upload.py``,
-  ``_artifact_polling.py``) keep their explicit ``_begin_transport_post`` /
+- Source-upload and artifact-polling paths (``_source/upload.py``,
+  ``_artifact/polling.py``) keep their explicit ``_begin_transport_post`` /
   ``_finish_transport_post`` calls — they bracket logical operations that
   span multiple chain invocations (the upload spans an authed-POST per
   chunk, the poll spans multiple GET attempts), so the chain seam is the
@@ -90,7 +90,7 @@ class DrainMiddleware:
         the tracker is in draining mode and the current task has no
         prior operation depth. The exception propagates out of the
         chain unchanged; the RPC dispatch path and
-        ``_chat_transport.send_authed_post`` both let drain admission errors
+        ``_chat.transport.send_authed_post`` both let drain admission errors
         propagate without catching.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")

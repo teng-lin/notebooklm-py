@@ -91,7 +91,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     """``RuntimeTransport.perform_authed_post`` flows through the chain.
 
     Covers direct callers of ``RuntimeTransport.perform_authed_post``:
-    the chat path in ``_chat_transport.py:64`` and any first-party
+    the chat path in ``_chat/transport.py:64`` and any first-party
     caller via ``client._composed.transport.perform_authed_post``.
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")

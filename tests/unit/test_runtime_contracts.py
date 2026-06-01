@@ -8,8 +8,8 @@ consumers), and the pure-transport ``Kernel``. The single-consumer
 ``AuthMetadata`` / ``OperationScopeProvider`` Protocols and the unused
 ``AsyncWorkRuntime`` composite were inlined into their owning feature
 modules / deleted in issue #1327 — ``AuthMetadata`` now lives in
-``_source_upload`` (used by ``SourceUploadPipeline``) and
-``OperationScopeProvider`` in ``_artifact_polling`` (used by
+``_source.upload`` (used by ``SourceUploadPipeline``) and
+``OperationScopeProvider`` in ``_artifact.polling`` (used by
 ``ArtifactPollingService``); mypy enforces their structural conformance
 at the consuming call sites. The standalone
 ``DrainHookRegistration`` Protocol previously kept here was deleted in

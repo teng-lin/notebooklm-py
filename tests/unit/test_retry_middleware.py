@@ -13,7 +13,7 @@ ADR-009 §"Chain ordering":
   the first failure propagates without retry.
 - **Exhaustion**: after the budget is spent, the last exception re-raises
   unchanged so callers
-  (``_chat_transport.chat_aware_authed_post``) see the same shape they
+  (``_chat.transport.chat_aware_authed_post``) see the same shape they
   always did.
 - **Metrics**: ``rpc_rate_limit_retries`` / ``rpc_server_error_retries``
   increment per retry (NOT for the original failed attempt — same

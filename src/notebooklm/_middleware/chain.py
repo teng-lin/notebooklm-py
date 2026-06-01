@@ -22,7 +22,7 @@ refresh-then-retry.
 
 The terminal reads ``RpcRequest.url`` / ``headers`` / ``body`` and
 delegates to ``Kernel.post``. Middlewares and the terminal read/write the
-centralized ``RPC_CONTEXT_*`` keys from ``_middleware_context``; the
+centralized ``RPC_CONTEXT_*`` keys from ``_middleware.context``; the
 allowed vocabulary is mirrored in ADR-009 §"Per-request behavior".
 
 The order is pinned at two levels:

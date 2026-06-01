@@ -142,7 +142,7 @@ async def test_snapshot_and_refresh_locks_are_distinct() -> None:
 
     Mixing them would re-introduce the reentrancy ambiguity that the
     separate snapshot-side serialization was added to avoid — see the
-    module docstring for ``_runtime_auth.py``.
+    module docstring for ``_runtime/auth.py``.
     """
     coord = AuthRefreshCoordinator()
     refresh_lock = coord.get_refresh_lock()
