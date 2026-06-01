@@ -6,9 +6,11 @@ moved *into* this package as :mod:`._chat.api` to resolve the package/module nam
 collision; its public names are re-exported here so existing references such as
 ``from notebooklm._chat import ChatAPI`` keep resolving unchanged.
 
-Import order note: the helper submodules (``notes``/``wire``/``transport``) are imported
-before ``api`` to keep the dependency direction one-way (``api`` -> helpers) and avoid any
-package-init import cycle.
+No package-init import cycle exists: the dependency direction is strictly one-way
+(``api`` imports ``notes``/``wire``/``transport``; none of the helpers import ``api`` or
+this package ``__init__``). Importing ``api`` therefore pulls in the helpers it needs
+regardless of the order of the aggregating ``from . import ...`` line below, which ruff's
+import sorter keeps alphabetised.
 """
 
 from . import api, notes, transport, wire
