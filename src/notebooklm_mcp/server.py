@@ -10,9 +10,49 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.fastmcp import FastMCP
+
+from notebooklm.exceptions import (
+    ArtifactDownloadError,
+    ArtifactFeatureUnavailableError,
+    ArtifactInProgressTimeoutError,
+    ArtifactNotFoundError,
+    ArtifactNotReadyError,
+    ArtifactParseError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
+    AuthError,
+    AuthExtractionError,
+    ChatResponseParseError,
+    ClientError,
+    ConfigurationError,
+    DecodingError,
+    IdempotencyVariantError,
+    NetworkError,
+    NonIdempotentRetryError,
+    NotebookLimitError,
+    NotebookNotFoundError,
+    NotFoundError,
+    RateLimitError,
+    ResearchTaskMismatchError,
+    ResearchTimeoutError,
+    RPCError,
+    RPCResponseTooLargeError,
+    RPCTimeoutError,
+    ServerError,
+    SourceAddError,
+    SourceNotFoundError,
+    SourceProcessingError,
+    SourceTimeoutError,
+    UnknownRPCMethodError,
+    ValidationError,
+    WaitTimeoutError,
+)
+
+if TYPE_CHECKING:
+    from notebooklm import NotebookLMClient
 
 # ---------------------------------------------------------------------------
 # FastMCP server instance
@@ -117,6 +157,173 @@ def _source_to_dict(src) -> dict:
     }
 
 
+def _handle_exception(exc: Exception, operation: str) -> str:
+    """Format an exception into a structured error string for MCP tools.
+
+    Args:
+        exc: The caught exception.
+        operation: Human-readable name of the operation that failed.
+    """
+    if isinstance(exc, AuthError):
+        return (
+            f"ERROR: Authentication failed during {operation}. "
+            "Your Google session cookies may have expired. "
+            "Run 'notebooklm login' in your terminal to re-authenticate."
+        )
+
+    if isinstance(exc, AuthExtractionError):
+        return (
+            f"ERROR: Failed to extract authentication tokens during {operation}. "
+            "Google may have changed their page structure. Try 'notebooklm login' again, "
+            "and if it persists, check for 'notebooklm-py' updates."
+        )
+
+    if isinstance(exc, RateLimitError):
+        retry_after = getattr(exc, "retry_after", None)
+        msg = f"ERROR: Rate limit exceeded during {operation}."
+        if retry_after:
+            msg += f" Please wait {retry_after} seconds before retrying."
+        else:
+            msg += " Please wait a few minutes and try again."
+        return msg
+
+    if isinstance(exc, ArtifactFeatureUnavailableError):
+        return (
+            f"ERROR: Feature unavailable during {operation}. "
+            f"NotebookLM reports that {exc.artifact_type} generation is gated or disabled for this account."
+        )
+
+    if isinstance(exc, NotebookNotFoundError):
+        return f"ERROR: Notebook not found: {exc.notebook_id}. Verify the ID and try again."
+
+    if isinstance(exc, SourceNotFoundError):
+        return f"ERROR: Source not found: {exc.source_id}. Verify the ID and try again."
+
+    if isinstance(exc, ArtifactNotFoundError):
+        return f"ERROR: Artifact not found: {exc.artifact_id}. Verify the ID and try again."
+
+    if isinstance(exc, NotFoundError):
+        return f"ERROR: Resource not found during {operation}. {exc}"
+
+    if isinstance(exc, ArtifactTimeoutError):
+        phase = "pending"
+        if isinstance(exc, ArtifactInProgressTimeoutError):
+            phase = "in-progress"
+        return json.dumps(
+            {
+                "status": "timeout",
+                "operation": operation,
+                "task_id": exc.task_id,
+                "notebook_id": exc.notebook_id,
+                "timeout_seconds": exc.timeout_seconds,
+                "last_status": exc.last_status,
+                "stalled_phase": phase,
+                "status_history": exc.status_history,
+                "message": (
+                    f"Generation timed out during {phase} phase after {exc.timeout_seconds}s. "
+                    "The task may still be processing upstream. "
+                    "You can poll for status later using its task_id."
+                ),
+            },
+            indent=2,
+        )
+
+    if isinstance(exc, SourceTimeoutError):
+        return (
+            f"ERROR: Timed out waiting for source {exc.source_id} to become ready "
+            f"after {exc.timeout}s (last status: {exc.last_status})."
+        )
+
+    if isinstance(exc, ResearchTimeoutError):
+        return (
+            f"ERROR: Research task {exc.task_id} in notebook {exc.notebook_id} "
+            f"timed out after {exc.timeout}s (last status: {exc.last_status})."
+        )
+
+    if isinstance(exc, WaitTimeoutError):
+        return f"ERROR: Operation '{operation}' timed out. {exc}"
+
+    if isinstance(exc, (RuntimeError, TimeoutError)):
+        return f"ERROR: {exc}"
+
+    if isinstance(exc, ChatResponseParseError):
+        return f"ERROR: Failed to parse chat response during {operation}. This may indicate an API change."
+
+    if isinstance(exc, ArtifactDownloadError):
+        return f"ERROR: Failed to download {exc.artifact_type} artifact {exc.artifact_id or ''}: {exc}"
+
+    if isinstance(exc, ArtifactParseError):
+        return f"ERROR: Failed to parse {exc.artifact_type} artifact data: {exc}"
+
+    if isinstance(exc, ArtifactNotReadyError):
+        return f"ERROR: Artifact {exc.artifact_id or ''} is not ready (status: {exc.status})."
+
+    if isinstance(exc, ResearchTaskMismatchError):
+        return f"ERROR: Research task mismatch during {operation}. {exc}"
+
+    if isinstance(exc, SourceProcessingError):
+        return (
+            f"ERROR: Source {exc.source_id} failed to process. "
+            f"Status code: {exc.status}. Ensure the content is valid and accessible."
+        )
+
+    if isinstance(exc, SourceAddError):
+        msg = f"ERROR: Failed to add source {exc.url} during {operation}."
+        if exc.cause:
+            msg += f" Cause: {exc.cause}"
+        return msg
+
+    if isinstance(exc, NotebookLimitError):
+        limit_info = f" (Count: {exc.current_count}/{exc.limit})" if exc.limit else f" (Count: {exc.current_count})"
+        return f"ERROR: Notebook limit reached{limit_info}. Delete old notebooks and try again."
+
+    if isinstance(exc, NonIdempotentRetryError):
+        return f"ERROR: Cannot guarantee single-write semantics for {operation} on retry. {exc}"
+
+    if isinstance(exc, IdempotencyVariantError):
+        return f"ERROR: Unknown operation variant during {operation}. {exc}"
+
+    if isinstance(exc, ValidationError):
+        return f"ERROR: Validation failed during {operation}. {exc}"
+
+    if isinstance(exc, ConfigurationError):
+        return f"ERROR: Configuration error during {operation}. {exc}"
+
+    if isinstance(exc, (ServerError, ClientError)):
+        return f"ERROR: HTTP {exc.status_code} error during {operation} – {exc}"
+
+    if isinstance(exc, RPCTimeoutError):
+        return f"ERROR: RPC request timed out during {operation} after {exc.timeout_seconds}s."
+
+    if isinstance(exc, RPCResponseTooLargeError):
+        return f"ERROR: RPC response too large during {operation} ({exc.bytes_read} bytes exceeds {exc.limit_bytes} byte limit)."
+
+    if isinstance(exc, NetworkError):
+        return (
+            f"ERROR: Network failure during {operation}. "
+            f"Check your internet connection and try again. Original error: {exc.original_error}"
+        )
+
+    if isinstance(exc, UnknownRPCMethodError):
+        msg = f"ERROR: Unknown RPC method encountered during {operation}."
+        if exc.method_id:
+            msg += f" (Method ID: {exc.method_id})"
+        msg += " This may indicate an API change by Google. Check for 'notebooklm-py' updates."
+        return msg
+
+    if isinstance(exc, DecodingError):
+        return f"ERROR: Failed to decode RPC response during {operation}. This may indicate an API change."
+
+    if isinstance(exc, RPCError):
+        msg = f"ERROR: RPC failure during {operation} – {exc}."
+        if exc.method_id:
+            msg += f" (Method: {exc.method_id})"
+        return msg
+
+    # Fallback for unexpected errors
+    return f"ERROR: Unexpected error during {operation} – {type(exc).__name__}: {exc}"
+
+
 # ---------------------------------------------------------------------------
 # TOOL 1 – List notebooks
 # ---------------------------------------------------------------------------
@@ -133,10 +340,8 @@ async def notebooklm_list_notebooks() -> str:
         notebooks = await client.notebooks.list()
         result = [_notebook_to_dict(nb) for nb in notebooks]
         return json.dumps(result, indent=2)
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: Failed to list notebooks – {exc}"
+        return _handle_exception(exc, "listing notebooks")
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +365,8 @@ async def notebooklm_create_notebook(title: str) -> str:
         client = await get_client()
         nb = await client.notebooks.create(title.strip())
         return json.dumps(_notebook_to_dict(nb), indent=2)
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: Failed to create notebook – {exc}"
+        return _handle_exception(exc, "creating notebook")
 
 
 # ---------------------------------------------------------------------------
@@ -187,10 +390,8 @@ async def notebooklm_delete_notebook(notebook_id: str) -> str:
         client = await get_client()
         await client.notebooks.delete(notebook_id.strip())
         return json.dumps({"deleted": True, "notebook_id": notebook_id.strip()})
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: Failed to delete notebook '{notebook_id}' – {exc}"
+        return _handle_exception(exc, f"deleting notebook '{notebook_id}'")
 
 
 # ---------------------------------------------------------------------------
@@ -220,10 +421,8 @@ async def notebooklm_add_source_url(notebook_id: str, url: str) -> str:
         client = await get_client()
         source = await client.sources.add_url(notebook_id.strip(), url.strip(), wait=True)
         return json.dumps(_source_to_dict(source), indent=2)
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: Failed to add URL source – {exc}"
+        return _handle_exception(exc, "adding URL source")
 
 
 # ---------------------------------------------------------------------------
@@ -261,10 +460,8 @@ async def notebooklm_add_source_text(notebook_id: str, title: str, text: str) ->
             wait=True,
         )
         return json.dumps(_source_to_dict(source), indent=2)
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: Failed to add text source – {exc}"
+        return _handle_exception(exc, "adding text source")
 
 
 # ---------------------------------------------------------------------------
@@ -294,10 +491,8 @@ async def notebooklm_ask_chat(notebook_id: str, query: str) -> str:
         client = await get_client()
         result = await client.chat.ask(notebook_id.strip(), query.strip())
         return result.answer
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: Failed to get answer – {exc}"
+        return _handle_exception(exc, "getting answer")
 
 
 # ---------------------------------------------------------------------------
@@ -342,8 +537,8 @@ async def notebooklm_generate_audio_podcast(
 
     try:
         client = await get_client()
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
+    except Exception as exc:
+        return _handle_exception(exc, "connecting to NotebookLM")
 
     # Step 1: Kick off generation
     try:
@@ -353,7 +548,7 @@ async def notebooklm_generate_audio_podcast(
             instructions=instructions or None,
         )
     except Exception as exc:
-        return f"ERROR: Failed to start audio generation – {exc}"
+        return _handle_exception(exc, "starting audio generation")
 
     # Step 2: Poll until complete
     try:
@@ -362,19 +557,8 @@ async def notebooklm_generate_audio_podcast(
             status.task_id,
             timeout=timeout,
         )
-    except TimeoutError:
-        return json.dumps(
-            {
-                "status": "timeout",
-                "task_id": status.task_id,
-                "message": (
-                    f"Audio generation did not complete within {timeout}s. "
-                    "It may still be processing. Re-run with a longer timeout."
-                ),
-            }
-        )
     except Exception as exc:
-        return f"ERROR: Generation polling failed – {exc}"
+        return _handle_exception(exc, "polling audio generation")
 
     if not final_status.is_complete:
         return json.dumps(
@@ -458,8 +642,8 @@ async def notebooklm_generate_quiz(
 
     try:
         client = await get_client()
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
+    except Exception as exc:
+        return _handle_exception(exc, "connecting to NotebookLM")
 
     # Step 1: Generate
     try:
@@ -468,7 +652,7 @@ async def notebooklm_generate_quiz(
             instructions=instructions or None,
         )
     except Exception as exc:
-        return f"ERROR: Failed to start quiz generation – {exc}"
+        return _handle_exception(exc, "starting quiz generation")
 
     # Step 2: Poll
     try:
@@ -477,16 +661,8 @@ async def notebooklm_generate_quiz(
             status.task_id,
             timeout=timeout,
         )
-    except TimeoutError:
-        return json.dumps(
-            {
-                "status": "timeout",
-                "task_id": status.task_id,
-                "message": f"Quiz generation did not complete within {timeout}s.",
-            }
-        )
     except Exception as exc:
-        return f"ERROR: Quiz polling failed – {exc}"
+        return _handle_exception(exc, "polling quiz generation")
 
     if not final_status.is_complete:
         return json.dumps({"status": final_status.status, "task_id": status.task_id})
@@ -559,8 +735,8 @@ async def notebooklm_generate_mind_map(
 
     try:
         client = await get_client()
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
+    except Exception as exc:
+        return _handle_exception(exc, "connecting to NotebookLM")
 
     try:
         result = await client.artifacts.generate_mind_map(
@@ -577,7 +753,143 @@ async def notebooklm_generate_mind_map(
             indent=2,
         )
     except Exception as exc:
-        return f"ERROR: Failed to generate mind map – {exc}"
+        return _handle_exception(exc, "generating mind map")
+
+
+# ---------------------------------------------------------------------------
+# TOOL 10 – Troubleshooting
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="notebooklm_troubleshoot",
+    description=(
+        "Analyze a NotebookLM error message and provide diagnostic advice. "
+        "Helps determine if an error is due to auth expiry, rate limits, "
+        "API changes, or platform-specific issues (like X.com/Twitter scraping)."
+    ),
+)
+async def notebooklm_troubleshoot(
+    error_message: str,
+    operation: str | None = None,
+    notebook_id: str | None = None,
+    source_id: str | None = None,
+) -> str:
+    """Diagnose a NotebookLM error and return actionable advice.
+
+    Args:
+        error_message: The raw error message or exception string.
+        operation: (Optional) The tool or action that was being performed.
+        notebook_id: (Optional) The notebook ID involved.
+        source_id: (Optional) The source ID involved.
+    """
+    error_lower = error_message.lower()
+    diagnosis = "Unknown error"
+    action_steps = ["Check the error message for details."]
+    debug_hint = None
+
+    # 1. Authentication issues
+    if any(k in error_lower for k in ["unauthorized", "csrf", "snlm0e", "fdrfje", "login", "authentication failed"]):
+        diagnosis = "Authentication expired or session cookies invalid."
+        action_steps = [
+            "Run 'notebooklm login' in your local terminal to refresh cookies.",
+            "If using --browser-cookies, ensure you are logged into Google in that browser.",
+        ]
+        debug_hint = "Run 'notebooklm auth check --test' to verify connectivity."
+
+    # 2. Rate limiting
+    elif any(k in error_lower for k in ["rate limit", "r7cb6c", "[3]", "429"]):
+        diagnosis = "Google NotebookLM rate limit or quota exceeded."
+        action_steps = [
+            "Wait 5-10 minutes and retry the operation.",
+            "If using the CLI, try adding the --retry flag (e.g. --retry 3).",
+            "Reduce the frequency of intensive operations like audio generation.",
+        ]
+        debug_hint = "Check 'notebooklm --help' for retry options on specific commands."
+
+    # 3. RPC method drift
+    elif "rpc id" in error_lower or "unknownrpc" in error_lower:
+        diagnosis = "RPC method mapping may have drifted or changed upstream."
+        action_steps = [
+            "Wait a few minutes and retry (sometimes transient).",
+            "Check for 'notebooklm-py' library updates: 'pip install -U notebooklm-py'.",
+        ]
+        debug_hint = "Try setting 'NOTEBOOKLM_DEBUG_RPC=1' to see the new RPC IDs returned by the server."
+
+    # 4. X.com / Twitter issues
+    elif any(k in error_lower for k in ["x.com", "twitter"]) or (
+        operation == "adding URL source" and "privacy" in error_lower
+    ):
+        diagnosis = "X.com (Twitter) anti-scraping protection detected."
+        action_steps = [
+            "Pre-fetch the content using the 'bird' CLI: 'bird read <URL> > source.md'.",
+            "Then add the local markdown file instead of the URL.",
+            "Alternatively, copy the text manually and use 'notebooklm source add-text'.",
+        ]
+
+    # 5. File upload issues
+    elif "html" in error_lower and "add" in (operation or "").lower():
+        diagnosis = "NotebookLM rejects direct HTML file uploads."
+        action_steps = [
+            "Convert the HTML file to plain text or Markdown first.",
+            "Use 'notebooklm source add' with the converted file.",
+        ]
+
+    # 6. Artifact generation issues
+    elif (operation and "generate" in operation.lower()) or "artifact" in error_lower:
+        if "timeout" in error_lower:
+            diagnosis = "Generation task timed out before completion."
+            action_steps = [
+                "The task may still be running. Use 'notebooklm artifact list' to check progress.",
+                "Retry with a higher --timeout value (e.g., 600 for audio).",
+            ]
+        elif "none" in error_lower or "unavailable" in error_lower:
+            diagnosis = "Generation feature is unavailable or returned no result."
+            action_steps = [
+                "This account may have reached its generation quota for today.",
+                "Wait 24 hours or try a different notebook.",
+                "Ensure you have at least one source in the notebook.",
+            ]
+
+    # 7. Resource not found
+    elif "not found" in error_lower:
+        diagnosis = "The requested resource (notebook, source, or artifact) does not exist."
+        action_steps = [
+            "Verify the ID is correct using 'notebooklm_list_notebooks' or 'notebook_metadata'.",
+            "Ensure you are working in the correct profile/account.",
+            "The resource may have been deleted by another process.",
+        ]
+
+    # 8. Notebook limits
+    elif "notebook limit reached" in error_lower:
+        diagnosis = "The account has reached the maximum number of notebooks allowed by Google."
+        action_steps = [
+            "Delete old or unused notebooks using 'notebooklm_delete_notebook'.",
+            "Note that NotebookLM currently has a limit (often around 100 notebooks).",
+        ]
+
+    # 9. Network issues
+    elif "network" in error_lower or "connection" in error_lower:
+        diagnosis = "Network connectivity issue."
+        action_steps = [
+            "Check your internet connection.",
+            "Verify that you can access https://notebooklm.google.com in a browser.",
+            "If you are behind a proxy or VPN, ensure it allows traffic to Google domains.",
+        ]
+
+    result = {
+        "diagnosis": diagnosis,
+        "action_steps": action_steps,
+        "context": {
+            "operation": operation,
+            "notebook_id": notebook_id,
+            "source_id": source_id,
+        },
+    }
+    if debug_hint:
+        result["debug_hint"] = debug_hint
+
+    return json.dumps(result, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -609,10 +921,8 @@ async def notebook_metadata(notebook_id: str) -> str:
             "sources": [_source_to_dict(s) for s in sources],
         }
         return json.dumps(payload, indent=2)
-    except RuntimeError as exc:
-        return json.dumps({"error": str(exc)})
     except Exception as exc:
-        return json.dumps({"error": str(exc)})
+        return _handle_exception(exc, "fetching metadata")
 
 
 # ---------------------------------------------------------------------------
@@ -640,10 +950,8 @@ async def notebook_source_fulltext(notebook_id: str, source_id: str) -> str:
         client = await get_client()
         fulltext = await client.sources.get_fulltext(notebook_id, source_id)
         return fulltext.content or ""
-    except RuntimeError as exc:
-        return f"ERROR: {exc}"
     except Exception as exc:
-        return f"ERROR: {exc}"
+        return _handle_exception(exc, "fetching source full text")
 
 
 # ---------------------------------------------------------------------------
