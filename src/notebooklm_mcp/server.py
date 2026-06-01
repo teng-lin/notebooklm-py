@@ -412,12 +412,14 @@ async def notebooklm_generate_audio_podcast(
         )
 
     # Step 3: Download the MP3
+    temp_file_to_cleanup = None
     if download_path:
         out_path = str(Path(download_path).expanduser().resolve())
     else:
         suffix = ".mp4"  # NotebookLM delivers audio as .mp4 container
         fd, out_path = tempfile.mkstemp(prefix="notebooklm_podcast_", suffix=suffix)
         os.close(fd)
+        temp_file_to_cleanup = out_path
 
     try:
         saved_path = await client.artifacts.download_audio(notebook_id, out_path)
@@ -444,6 +446,13 @@ async def notebooklm_generate_audio_podcast(
                 ),
             }
         )
+    finally:
+        # Clean up temporary file if we created one and the download failed
+        if temp_file_to_cleanup:
+            try:
+                Path(temp_file_to_cleanup).unlink(missing_ok=True)
+            except Exception as cleanup_exc:  # noqa: BLE001
+                logger.debug("Failed to remove temp audio file %s: %s", temp_file_to_cleanup, cleanup_exc)
 
 
 # ---------------------------------------------------------------------------

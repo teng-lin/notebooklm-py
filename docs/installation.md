@@ -289,6 +289,7 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 
 ---
 
+| `mcp` | `notebooklm-mcp` CLI and MCP server dependencies | For MCP server functionality. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` (in your project) |
 ## Post-install steps
 
 ### `playwright install chromium` — when required, when auto-installed

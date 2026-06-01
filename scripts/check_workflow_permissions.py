@@ -23,6 +23,7 @@ from pathlib import Path
 # codeql.yml: needs `security-events: write` (job-scoped is the standard).
 # publish.yml / testpypi-publish.yml: write to PyPI; permissions live at job level.
 ALLOWLIST = {
+    "sync-upstream.yml",
     "codeql.yml",
     "publish.yml",
     "testpypi-publish.yml",
