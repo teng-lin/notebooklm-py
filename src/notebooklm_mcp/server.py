@@ -248,7 +248,9 @@ def _handle_exception(exc: Exception, operation: str) -> str:
         return f"ERROR: Failed to parse chat response during {operation}. This may indicate an API change."
 
     if isinstance(exc, ArtifactDownloadError):
-        return f"ERROR: Failed to download {exc.artifact_type} artifact {exc.artifact_id or ''}: {exc}"
+        return (
+            f"ERROR: Failed to download {exc.artifact_type} artifact {exc.artifact_id or ''}: {exc}"
+        )
 
     if isinstance(exc, ArtifactParseError):
         return f"ERROR: Failed to parse {exc.artifact_type} artifact data: {exc}"
@@ -272,7 +274,11 @@ def _handle_exception(exc: Exception, operation: str) -> str:
         return msg
 
     if isinstance(exc, NotebookLimitError):
-        limit_info = f" (Count: {exc.current_count}/{exc.limit})" if exc.limit else f" (Count: {exc.current_count})"
+        limit_info = (
+            f" (Count: {exc.current_count}/{exc.limit})"
+            if exc.limit
+            else f" (Count: {exc.current_count})"
+        )
         return f"ERROR: Notebook limit reached{limit_info}. Delete old notebooks and try again."
 
     if isinstance(exc, NonIdempotentRetryError):
@@ -709,8 +715,7 @@ async def notebooklm_generate_quiz(
 @mcp.tool(
     name="notebooklm_generate_mind_map",
     description=(
-        "Generate a hierarchical mind map for a NotebookLM notebook "
-        "and return the JSON structure."
+        "Generate a hierarchical mind map for a NotebookLM notebook and return the JSON structure."
     ),
 )
 async def notebooklm_generate_mind_map(
@@ -787,7 +792,10 @@ async def notebooklm_troubleshoot(
     debug_hint = None
 
     # 1. Authentication issues
-    if any(k in error_lower for k in ["unauthorized", "csrf", "snlm0e", "fdrfje", "login", "authentication failed"]):
+    if any(
+        k in error_lower
+        for k in ["unauthorized", "csrf", "snlm0e", "fdrfje", "login", "authentication failed"]
+    ):
         diagnosis = "Authentication expired or session cookies invalid."
         action_steps = [
             "Run 'notebooklm auth check --test' to diagnose the specific auth issue.",
@@ -795,7 +803,9 @@ async def notebooklm_troubleshoot(
             "If using --browser-cookies on macOS and getting prompts, try 'Always Allow' or using Firefox.",
             "If using Firefox Multi-Account Containers, use the 'firefox::ContainerName' syntax.",
         ]
-        debug_hint = "If re-login fails, try deleting the browser profile in ~/.notebooklm/profiles/."
+        debug_hint = (
+            "If re-login fails, try deleting the browser profile in ~/.notebooklm/profiles/."
+        )
 
     # 2. Rate limiting
     elif any(k in error_lower for k in ["rate limit", "r7cb6c", "[3]", "429"]):
@@ -806,17 +816,25 @@ async def notebooklm_troubleshoot(
             "Reduce the frequency of intensive operations like audio generation.",
             "Check if you have reached the daily quota for Audio/Video overviews.",
         ]
-        debug_hint = "Intensive operations like deep research or media generation have tighter quotas."
+        debug_hint = (
+            "Intensive operations like deep research or media generation have tighter quotas."
+        )
 
     # 3. RPC method drift or failures
-    elif "rpc id" in error_lower or "unknownrpc" in error_lower or "no result found for rpc id" in error_lower:
+    elif (
+        "rpc id" in error_lower
+        or "unknownrpc" in error_lower
+        or "no result found for rpc id" in error_lower
+    ):
         diagnosis = "RPC method mapping may have drifted or changed upstream."
         action_steps = [
             "Wait a few minutes and retry (sometimes transient).",
             "Check for 'notebooklm-py' library updates: 'pip install -U notebooklm-py'.",
             "Report the new RPC ID to the maintainers if it persists.",
         ]
-        debug_hint = "Try 'NOTEBOOKLM_DEBUG_RPC=1' to see the actual RPC IDs returned by the server."
+        debug_hint = (
+            "Try 'NOTEBOOKLM_DEBUG_RPC=1' to see the actual RPC IDs returned by the server."
+        )
 
     # 4. X.com / Twitter issues
     elif any(k in error_lower for k in ["x.com", "twitter"]) or (

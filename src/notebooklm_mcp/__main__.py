@@ -21,21 +21,16 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description="Run the NotebookLM MCP server")
     parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Host to bind the MCP server to (default: 127.0.0.1)"
+        "--host", default="127.0.0.1", help="Host to bind the MCP server to (default: 127.0.0.1)"
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port to bind the MCP server to (default: 8000)"
+        "--port", type=int, default=8000, help="Port to bind the MCP server to (default: 8000)"
     )
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse"],
         default="sse",
-        help="Transport type to use (default: sse)"
+        help="Transport type to use (default: sse)",
     )
 
     args = parser.parse_args()

@@ -363,6 +363,7 @@ class TestGenerateAudioPodcast:
 
     async def test_timeout_returns_timeout_json(self, patched_get_client):
         from notebooklm.exceptions import ArtifactTimeoutError
+
         patched_get_client.artifacts.wait_for_completion = AsyncMock(
             side_effect=ArtifactTimeoutError("nb_001", "task_001", 1.0, last_status="pending")
         )
@@ -437,8 +438,10 @@ class TestGenerateAudioPodcast:
 
         # Mock tempfile.mkstemp to track the temp file path
         temp_file_path = "/tmp/notebooklm_podcast_temp.mp4"
-        with patch("tempfile.mkstemp", return_value=(10, temp_file_path)) as mock_mkstemp, \
-                patch("pathlib.Path.unlink") as mock_unlink:
+        with (
+            patch("tempfile.mkstemp", return_value=(10, temp_file_path)) as mock_mkstemp,
+            patch("pathlib.Path.unlink") as mock_unlink,
+        ):
             result = await notebooklm_generate_audio_podcast(notebook_id="nb_001")
 
             # Verify mkstemp was called
@@ -480,6 +483,7 @@ class TestGenerateQuiz:
 
     async def test_timeout_returns_timeout_json(self, patched_get_client):
         from notebooklm.exceptions import ArtifactTimeoutError
+
         patched_get_client.artifacts.wait_for_completion = AsyncMock(
             side_effect=ArtifactTimeoutError("nb_001", "task_001", 1.0, last_status="pending")
         )
@@ -646,6 +650,7 @@ class TestDeepResearchPrompt:
         # The string https://only.com may be at an arbitrary position in the sanitized URL.
         parsed_urls = [urlparse(u) for u in bullet_urls]
         assert any(p.scheme == "https" and p.hostname == "only.com" for p in parsed_urls)
+
     def test_prompt_returns_string(self):
         from notebooklm_mcp.server import notebooklm_deep_research
 
