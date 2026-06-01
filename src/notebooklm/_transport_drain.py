@@ -250,7 +250,7 @@ class TransportDrainTracker:
         Wraps :meth:`begin_transport_post` / :meth:`finish_transport_post`
         so feature code can write ``async with tracker.operation_scope("upload"):``
         without managing the token by hand. Satisfies the
-        ``_artifact_polling.OperationScopeProvider`` Protocol directly
+        ``_artifact.polling.OperationScopeProvider`` Protocol directly
         (inlined into that module in issue #1327).
         """
         token = await self.begin_transport_post(label)

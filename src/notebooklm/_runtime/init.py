@@ -448,7 +448,7 @@ def wire_middleware_chain(
     """
     # ADR-009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in
-    # ``_middleware_chain.py`` module docstring.
+    # ``_middleware/chain.py`` module docstring.
     chain_builder = MiddlewareChainBuilder(
         drain_tracker=collaborators.drain_tracker,
         metrics=collaborators.metrics,

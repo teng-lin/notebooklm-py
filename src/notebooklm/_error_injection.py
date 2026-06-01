@@ -11,7 +11,7 @@ response so the client's exception-mapping branches (429 →
 end-to-end.
 
 **The env var is a no-op without an injected builder.** Production code
-(``MiddlewareChainBuilder`` in ``_middleware_chain.py``) instantiates
+(``MiddlewareChainBuilder`` in ``_middleware/chain.py``) instantiates
 ``ErrorInjectionMiddleware()`` with no builder argument, so a leaked
 ``NOTEBOOKLM_VCR_RECORD_ERRORS`` env var on a user install cannot trigger
 any synthetic substitution — the middleware passes through. Tests that

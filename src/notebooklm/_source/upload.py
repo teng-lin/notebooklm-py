@@ -64,7 +64,7 @@ _SOURCE_ID_ENVELOPE_MAX_DEPTH = 8
 class AuthMetadata(Protocol):
     """Selected-account routing metadata required by upload flows.
 
-    Inlined from ``_runtime_contracts`` in issue #1327: the upload
+    Inlined from ``_runtime.contracts`` in issue #1327: the upload
     pipeline is the only consumer, so this single-consumer Protocol lives
     local to its owner per the ADR-013 ≥2-feature promotion bar.
     ``AuthTokens`` structurally satisfies it.

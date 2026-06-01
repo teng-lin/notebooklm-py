@@ -131,7 +131,7 @@ class ArtifactsAPI:
                 ``NotebookLMClient`` (no implicit fallback).
             mind_maps: Note-backed mind-map facade. Owns the
                 ``list_mind_maps`` / ``extract_content`` paths consumed
-                by ``_artifact_downloads.download_mind_map``. Renamed
+                by ``_artifact.downloads.download_mind_map``. Renamed
                 from ``mind_map_service`` to reflect the
                 concrete adapter type (:class:`NoteBackedMindMapService`).
             note_service: Backend note-row primitives. Owns the

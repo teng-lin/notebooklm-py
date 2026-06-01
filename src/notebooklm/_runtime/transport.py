@@ -25,7 +25,7 @@ retry-delay directly — the retry/backoff budget for the refresh path
 is owned by ``AuthRefreshMiddleware`` and by
 ``RpcExecutor.try_refresh_and_retry``, both of which read
 ``chain_host._refresh_retry_delay`` live through provider lambdas wired
-in ``_runtime_init.wire_middleware_chain``. Integration tests that
+in ``_runtime.init.wire_middleware_chain``. Integration tests that
 assign ``client._composed.chain_host._refresh_retry_delay = 0`` keep
 steering the live delay.
 
@@ -246,8 +246,8 @@ class RuntimeTransport:
         """Authed POST entry point — routes through the middleware chain.
 
         Shared transport surface used by ``RpcExecutor._execute_once``
-        (``_rpc_executor.py``) and ``_chat_transport``
-        (``_chat_transport.py``); keep the same keyword-only signature.
+        (``_rpc_executor.py``) and ``_chat.transport``
+        (``_chat/transport.py``); keep the same keyword-only signature.
 
         ``RpcRequest.url`` / ``headers`` / ``body`` are populated through
         :func:`materialize_rpc_request` before the chain sees the

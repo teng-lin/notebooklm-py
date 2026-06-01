@@ -474,7 +474,7 @@ IDEMPOTENCY_REGISTRY.register(
 #     ``(CREATE_NOTE, None)`` default mirrors the same policy so callers
 #     that omit ``operation_variant`` still get NON_IDEMPOTENT_NO_RETRY.
 #   * ``"saved_from_chat"`` — 7-element params from
-#     ``_chat_notes.save_chat_answer_as_note`` (issue #660). Used by
+#     ``_chat.notes.save_chat_answer_as_note`` (issue #660). Used by
 #     ``ChatAPI.save_answer_as_note``.
 # Both variants share the policy; explicit registration documents the
 # two distinct param shapes for future-classification work.
@@ -511,7 +511,7 @@ IDEMPOTENCY_REGISTRY._seed_defaults()
 # lists shaped like ``[[2], notebook_id, [None, None, type_code,
 # source_ids_triple, ..., config]]`` for every artifact variant (audio,
 # video, report, quiz, etc.; see the ``generate_*`` methods and the
-# ``_artifact_payloads.build_*`` helpers in ``_artifacts.py``). Every
+# ``_artifact.payloads.build_*`` helpers in ``_artifacts.py``). Every
 # position is structural — there is no caller-supplied client-token slot.
 # The server allocates the artifact_id in the response
 # (``ArtifactsAPI._parse_generation_result`` reads ``result[0][0]`` — see
@@ -540,7 +540,7 @@ IDEMPOTENCY_REGISTRY.register(
 # Params are ``[source_ids_nested, None, None, None, None,
 # ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
 # [2, None, [1]]]`` (see ``ArtifactsAPI.generate_mind_map`` in
-# ``_artifacts.py`` and ``_artifact_payloads.build_mind_map_params``).
+# ``_artifacts.py`` and ``_artifact.payloads.build_mind_map_params``).
 # Every slot is structural (sources, content config, language, mode
 # triple). The response carries the mind-map JSON directly
 # (``generate_mind_map`` reads ``result[0][0]``) — there is no task_id to
@@ -685,7 +685,7 @@ IDEMPOTENCY_REGISTRY.register(
 #
 # These entries force-disable blind transport retries via
 # ``resolve_effective_disable_internal_retries``. The per-API call sites in
-# ``_source_add.py`` / ``_source_upload.py`` own the executable probe loop for
+# ``_source/add.py`` / ``_source/upload.py`` own the executable probe loop for
 # the URL, Drive, and file variants.
 
 _RAW_ADD_SOURCE_NOT_IDEMPOTENT_NOTE = (
