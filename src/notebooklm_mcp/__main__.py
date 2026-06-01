@@ -5,6 +5,11 @@ import asyncio
 import logging
 import sys
 
+# Configure logging to stderr only (stdout reserved for MCP/stdio protocol)
+_handler = logging.StreamHandler(sys.stderr)
+_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[_handler])
+
 logger = logging.getLogger("notebooklm_mcp")
 
 
@@ -35,7 +40,7 @@ def main() -> None:
     
     args = parser.parse_args()
     
-    from notebooklm_mcp.server import _shutdown_client, mcp
+    from notebooklm_mcp.server import _shutdown_client, mcp, _reset_client_for_testing
 
     async def _run() -> None:
         try:

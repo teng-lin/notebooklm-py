@@ -752,6 +752,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "markdownify" },
+    { name = "mcp" },
     { name = "mypy" },
     { name = "packaging" },
     { name = "playwright" },
@@ -815,7 +816,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.27.2" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0,<3" },
-    { name = "notebooklm-py", extras = ["browser", "dev", "markdown"], marker = "extra == 'all'" },
+    { name = "notebooklm-py", extras = ["browser", "dev", "markdown", "mcp"], marker = "extra == 'all'" },
     { name = "packaging", marker = "extra == 'dev'", specifier = ">=23.0,<27" },
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.40.0,<2" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1,<5" },

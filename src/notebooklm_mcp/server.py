@@ -2,13 +2,10 @@
 
 Wraps the notebooklm-py client and exposes NotebookLM capabilities to
 MCP-compatible AI systems via tools, resources, and prompts.
-
-Logging goes to stderr only so it never interferes with the MCP/stdio protocol.
 """
 
 import asyncio
 import json
-import logging
 import os
 import sys
 import tempfile
@@ -16,15 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-
-# ---------------------------------------------------------------------------
-# Logging: stderr ONLY – stdout is reserved for the MCP protocol
-# ---------------------------------------------------------------------------
-_handler = logging.StreamHandler(sys.stderr)
-_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-logging.basicConfig(level=logging.INFO, handlers=[_handler])
-
-logger = logging.getLogger("notebooklm_mcp")
 
 # ---------------------------------------------------------------------------
 # FastMCP server instance
@@ -45,7 +33,7 @@ _client_instance: Any = None
 _client_lock = asyncio.Lock()
 
 
-async def get_client():
+async def get_client() -> "NotebookLMClient":
     """Return the shared NotebookLMClient, creating it on first call.
 
     Raises:
@@ -70,7 +58,6 @@ async def get_client():
             client = await NotebookLMClient.from_storage()
             await client.__aenter__()
             _client_instance = client
-            logger.info("NotebookLM client initialised successfully")
             return _client_instance
         except FileNotFoundError as exc:
             raise RuntimeError(
@@ -78,7 +65,6 @@ async def get_client():
                 "Run 'notebooklm login' to authenticate, then restart the MCP server."
             ) from exc
         except Exception as exc:
-            logger.error("Failed to initialise NotebookLM client: %s", exc)
             raise RuntimeError(
                 f"Failed to connect to NotebookLM ({exc}). "
                 "Check your authentication by running 'notebooklm login'."
@@ -91,9 +77,8 @@ async def _shutdown_client() -> None:
     if _client_instance is not None:
         try:
             await _client_instance.__aexit__(None, None, None)
-            logger.info("NotebookLM client closed")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Error closing NotebookLM client: %s", exc)
+        except Exception:  # noqa: BLE001
+            pass
         finally:
             _client_instance = None
 
@@ -151,7 +136,6 @@ async def notebooklm_list_notebooks() -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebooklm_list_notebooks failed: %s", exc)
         return f"ERROR: Failed to list notebooks – {exc}"
 
 
@@ -179,7 +163,6 @@ async def notebooklm_create_notebook(title: str) -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebooklm_create_notebook failed: %s", exc)
         return f"ERROR: Failed to create notebook – {exc}"
 
 
@@ -207,7 +190,6 @@ async def notebooklm_delete_notebook(notebook_id: str) -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebooklm_delete_notebook failed: %s", exc)
         return f"ERROR: Failed to delete notebook '{notebook_id}' – {exc}"
 
 
@@ -241,7 +223,6 @@ async def notebooklm_add_source_url(notebook_id: str, url: str) -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebooklm_add_source_url failed: %s", exc)
         return f"ERROR: Failed to add URL source – {exc}"
 
 
@@ -283,7 +264,6 @@ async def notebooklm_add_source_text(notebook_id: str, title: str, text: str) ->
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebooklm_add_source_text failed: %s", exc)
         return f"ERROR: Failed to add text source – {exc}"
 
 
@@ -317,7 +297,6 @@ async def notebooklm_ask_chat(notebook_id: str, query: str) -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebooklm_ask_chat failed: %s", exc)
         return f"ERROR: Failed to get answer – {exc}"
 
 
@@ -373,11 +352,7 @@ async def notebooklm_generate_audio_podcast(
             language=language,
             instructions=instructions or None,
         )
-        logger.info(
-            "Audio generation started for notebook %s, task_id=%s", notebook_id, status.task_id
-        )
     except Exception as exc:
-        logger.error("generate_audio failed: %s", exc)
         return f"ERROR: Failed to start audio generation – {exc}"
 
     # Step 2: Poll until complete
@@ -399,7 +374,6 @@ async def notebooklm_generate_audio_podcast(
             }
         )
     except Exception as exc:
-        logger.error("wait_for_completion failed: %s", exc)
         return f"ERROR: Generation polling failed – {exc}"
 
     if not final_status.is_complete:
@@ -416,14 +390,13 @@ async def notebooklm_generate_audio_podcast(
     if download_path:
         out_path = str(Path(download_path).expanduser().resolve())
     else:
-        suffix = ".mp4"  # NotebookLM delivers audio as .mp4 container
+        suffix = ".mp3"  # NotebookLM delivers audio as .mp3 container
         fd, out_path = tempfile.mkstemp(prefix="notebooklm_podcast_", suffix=suffix)
         os.close(fd)
         temp_file_to_cleanup = out_path
 
     try:
         saved_path = await client.artifacts.download_audio(notebook_id, out_path)
-        logger.info("Audio podcast saved to %s", saved_path)
         return json.dumps(
             {
                 "status": "complete",
@@ -434,7 +407,6 @@ async def notebooklm_generate_audio_podcast(
             indent=2,
         )
     except Exception as exc:
-        logger.error("download_audio failed: %s", exc)
         return json.dumps(
             {
                 "status": "complete_but_download_failed",
@@ -451,8 +423,8 @@ async def notebooklm_generate_audio_podcast(
         if temp_file_to_cleanup:
             try:
                 Path(temp_file_to_cleanup).unlink(missing_ok=True)
-            except Exception as cleanup_exc:  # noqa: BLE001
-                logger.debug("Failed to remove temp audio file %s: %s", temp_file_to_cleanup, cleanup_exc)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -495,11 +467,7 @@ async def notebooklm_generate_quiz(
             notebook_id,
             instructions=instructions or None,
         )
-        logger.info(
-            "Quiz generation started for notebook %s, task_id=%s", notebook_id, status.task_id
-        )
     except Exception as exc:
-        logger.error("generate_quiz failed: %s", exc)
         return f"ERROR: Failed to start quiz generation – {exc}"
 
     # Step 2: Poll
@@ -518,7 +486,6 @@ async def notebooklm_generate_quiz(
             }
         )
     except Exception as exc:
-        logger.error("wait_for_completion (quiz) failed: %s", exc)
         return f"ERROR: Quiz polling failed – {exc}"
 
     if not final_status.is_complete:
@@ -533,11 +500,19 @@ async def notebooklm_generate_quiz(
         raw = quiz_path.read_text(encoding="utf-8")
         try:
             quiz_data = json.loads(raw)
+            # Always return a consistent structure
+            return json.dumps({"status": "complete", "quiz": quiz_data}, indent=2)
         except json.JSONDecodeError:
-            quiz_data = raw
-        return json.dumps({"status": "complete", "quiz": quiz_data}, indent=2)
+            # If not valid JSON, wrap in a consistent error structure
+            return json.dumps(
+                {
+                    "status": "complete_but_download_failed",
+                    "task_id": status.task_id,
+                    "error": "Quiz data is not valid JSON",
+                    "raw_content": raw,
+                }
+            )
     except Exception as exc:
-        logger.error("download_quiz failed: %s", exc)
         return json.dumps(
             {
                 "status": "complete_but_download_failed",
@@ -548,8 +523,8 @@ async def notebooklm_generate_quiz(
     finally:
         try:
             Path(tmp_path).unlink(missing_ok=True)
-        except Exception as cleanup_exc:  # noqa: BLE001
-            logger.debug("Failed to remove temp quiz file %s: %s", tmp_path, cleanup_exc)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +577,6 @@ async def notebooklm_generate_mind_map(
             indent=2,
         )
     except Exception as exc:
-        logger.error("generate_mind_map failed: %s", exc)
         return f"ERROR: Failed to generate mind map – {exc}"
 
 
@@ -638,7 +612,6 @@ async def notebook_metadata(notebook_id: str) -> str:
     except RuntimeError as exc:
         return json.dumps({"error": str(exc)})
     except Exception as exc:
-        logger.error("notebook_metadata resource failed for %s: %s", notebook_id, exc)
         return json.dumps({"error": str(exc)})
 
 
@@ -670,7 +643,6 @@ async def notebook_source_fulltext(notebook_id: str, source_id: str) -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     except Exception as exc:
-        logger.error("notebook_source_fulltext failed for %s/%s: %s", notebook_id, source_id, exc)
         return f"ERROR: {exc}"
 
 

@@ -432,21 +432,20 @@ class TestGenerateAudioPodcast:
 
         # Mock tempfile.mkstemp to track the temp file path
         temp_file_path = "/tmp/notebooklm_podcast_temp.mp4"
-        with patch("tempfile.mkstemp", return_value=(10, temp_file_path)) as mock_mkstemp:
-            # Mock Path.unlink to track if it's called
-            with patch("pathlib.Path.unlink") as mock_unlink:
-                result = await notebooklm_generate_audio_podcast(notebook_id="nb_001")
+        with patch("tempfile.mkstemp", return_value=(10, temp_file_path)) as mock_mkstemp, \
+                patch("pathlib.Path.unlink") as mock_unlink:
+            result = await notebooklm_generate_audio_podcast(notebook_id="nb_001")
 
-                # Verify mkstemp was called
-                mock_mkstemp.assert_called_once_with(prefix="notebooklm_podcast_", suffix=".mp4")
+            # Verify mkstemp was called
+            mock_mkstemp.assert_called_once_with(prefix="notebooklm_podcast_", suffix=".mp3")
 
-                # Verify the function succeeded
-                data = json.loads(result)
-                assert data["status"] == "complete"
-                assert data["file_path"] == saved_path
+            # Verify the function succeeded
+            data = json.loads(result)
+            assert data["status"] == "complete"
+            assert data["file_path"] == saved_path
 
-                # Verify the temp file was cleaned up (unlink called)
-                mock_unlink.assert_called_once_with(missing_ok=True)
+            # Verify the temp file was cleaned up (unlink called)
+            mock_unlink.assert_called_once_with(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
