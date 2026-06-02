@@ -27,6 +27,7 @@ is a signature smell this catches with no backend.
 from __future__ import annotations
 
 import inspect
+import sys
 import types
 import typing
 from collections.abc import Callable
@@ -92,10 +93,28 @@ def _resolve_return(fn: Callable[..., object]) -> object:
 
     ``inspect.signature(...).return_annotation`` yields a *string* under
     ``from __future__ import annotations`` (as several API modules use), so the
-    annotation is resolved through ``typing.get_type_hints`` to a real type.
+    annotation is resolved to a real type.
+
+    Only the *return* annotation is resolved — not the whole signature. A bare
+    ``typing.get_type_hints(fn)`` would evaluate every parameter annotation too,
+    so a future ``get``/``delete`` parameter typed with a ``TYPE_CHECKING``-only
+    import would raise ``NameError`` here even though this walk only cares about
+    the return type.
     """
-    hints = typing.get_type_hints(fn)
-    return hints.get("return", inspect.Signature.empty)
+    raw = fn.__annotations__.get("return", inspect.Signature.empty)
+    if not isinstance(raw, str):
+        # Already a real object: either ``empty``, or a non-PEP-563 module where
+        # ``-> None`` is the literal ``None`` singleton. Normalise ``None`` to
+        # ``type(None)`` to match ``typing.get_type_hints`` (so ``_is_none``'s
+        # identity check holds regardless of the defining module's PEP 563 use).
+        return type(None) if raw is None else raw
+
+    # Resolve the string against the defining module's namespace, evaluating
+    # only this one annotation (a stand-in callable carrying just ``return``).
+    stub: Callable[..., object] = lambda: None  # noqa: E731 - throwaway resolver
+    stub.__annotations__ = {"return": raw}
+    globalns = getattr(sys.modules.get(fn.__module__, None), "__dict__", {})
+    return typing.get_type_hints(stub, globalns=globalns)["return"]
 
 
 def _require_return(namespace: str, method: str) -> object:
@@ -122,10 +141,9 @@ def _is_optional(annotation: object) -> bool:
 
 def _is_none(annotation: object) -> bool:
     """Return ``True`` when ``annotation`` denotes ``None`` (``NoneType``)."""
-    # ``typing.get_type_hints`` normalises a ``-> None`` annotation to
-    # ``type(None)``, so the identity check is correct as long as the annotation
-    # comes through ``_resolve_return``. (A raw ``inspect.signature`` would yield
-    # the ``None`` *singleton* instead, for which this would need ``is None``.)
+    # ``_resolve_return`` normalises a ``-> None`` annotation to ``type(None)``
+    # (the ``None`` *singleton* that a non-PEP-563 module yields is mapped over),
+    # so this identity check is correct for annotations from that helper.
     return annotation is type(None)
 
 
