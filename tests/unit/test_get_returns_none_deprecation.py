@@ -247,6 +247,19 @@ class TestPublicGetDoesNotWarnOnHit:
         assert result is not None
         assert result.id == "note_1"
 
+    @pytest.mark.asyncio
+    async def test_mind_maps_get_hit_is_silent(self, mind_maps_api):
+        # Completes the cohort: a mind_maps hit is silent too (only the miss
+        # path is deprecated). All four namespaces are now covered both on the
+        # warns-on-miss side (parametrised above) and on the silent-on-hit side.
+        found = MagicMock()
+        found.id = "mm_1"
+        mind_maps_api.list = AsyncMock(return_value=[found])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            result = await mind_maps_api.get("nb_1", "mm_1")
+        assert result is found
+
 
 # ---------------------------------------------------------------------------
 # The private _get_or_none() never warns (internal optional-lookup path)
