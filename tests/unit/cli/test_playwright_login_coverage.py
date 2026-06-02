@@ -311,21 +311,23 @@ def test_prepare_login_paths_explicit_storage(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playwright_login.sys, "platform", "linux")
     browser_profile = tmp_path / "profile"
 
-    with patch.object(
-        playwright_login,
-        "_resolve_paths_helper",
-        side_effect=lambda name, default: (
-            (lambda: browser_profile)
-            if name == "get_browser_profile_dir"
-            else (lambda profile=None: tmp_path / "ignored")
-        ),
-    ):
-        storage_path, returned_profile = prepare_login_paths(
-            profile=None, storage=str(tmp_path / "explicit.json"), fresh=False
-        )
+    # Patch the real consumer bindings the code resolves through, not the
+    # transitional ``_resolve_paths_helper`` precedence shim. ``prepare_login_paths``
+    # looks both names up on this module, so patching them here bites the call.
+    fake_browser_profile_dir = MagicMock(return_value=browser_profile)
+    fake_storage_path = MagicMock(return_value=tmp_path / "ignored")
+    monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
+    monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
+
+    storage_path, returned_profile = prepare_login_paths(
+        profile=None, storage=str(tmp_path / "explicit.json"), fresh=False
+    )
 
     assert storage_path == Path(str(tmp_path / "explicit.json"))
     assert returned_profile == browser_profile
+    # Explicit ``--storage`` short-circuits the path resolver entirely.
+    fake_storage_path.assert_not_called()
+    fake_browser_profile_dir.assert_called_once_with()
 
 
 def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
@@ -334,23 +336,19 @@ def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
     browser_profile = tmp_path / "profile"
     profile_storage = tmp_path / "work" / "storage.json"
 
-    def fake_resolve(name, default):
-        if name == "get_browser_profile_dir":
-            return lambda: browser_profile
+    # Patch the real consumer bindings the code resolves through directly.
+    fake_browser_profile_dir = MagicMock(return_value=browser_profile)
+    fake_storage_path = MagicMock(return_value=profile_storage)
+    monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
+    monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
 
-        def _get_storage_path(profile=None):
-            assert profile == "work"
-            return profile_storage
-
-        return _get_storage_path
-
-    with patch.object(playwright_login, "_resolve_paths_helper", side_effect=fake_resolve):
-        storage_path, returned_profile = prepare_login_paths(
-            profile="work", storage=None, fresh=False
-        )
+    storage_path, returned_profile = prepare_login_paths(profile="work", storage=None, fresh=False)
 
     assert storage_path == profile_storage
     assert returned_profile == browser_profile
+    # The profile branch forwards the profile name to the storage resolver.
+    fake_storage_path.assert_called_once_with(profile="work")
+    fake_browser_profile_dir.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------
@@ -529,20 +527,21 @@ def test_prepare_login_paths_win32_skips_mode(tmp_path, monkeypatch) -> None:
     browser_profile = tmp_path / "profile"
     storage_target = tmp_path / "win" / "storage.json"
 
-    def fake_resolve(name, default):
-        if name == "get_browser_profile_dir":
-            return lambda: browser_profile
-        return lambda profile=None: storage_target
+    # Patch the real consumer bindings the code resolves through directly.
+    fake_browser_profile_dir = MagicMock(return_value=browser_profile)
+    fake_storage_path = MagicMock(return_value=storage_target)
+    monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
+    monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
 
-    with patch.object(playwright_login, "_resolve_paths_helper", side_effect=fake_resolve):
-        storage_path, returned_profile = prepare_login_paths(
-            profile=None, storage=None, fresh=False
-        )
+    storage_path, returned_profile = prepare_login_paths(profile=None, storage=None, fresh=False)
 
     assert storage_path == storage_target
     assert returned_profile == browser_profile
     assert storage_target.parent.is_dir()
     assert browser_profile.is_dir()
+    # No profile, no explicit storage -> the resolver is called with no args.
+    fake_storage_path.assert_called_once_with()
+    fake_browser_profile_dir.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------

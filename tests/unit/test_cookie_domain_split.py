@@ -35,11 +35,11 @@ from notebooklm.auth import (
     _is_allowed_cookie_domain,
     convert_rookiepy_cookies_to_storage_state,
 )
-from notebooklm.cli.session_cmd import (
+from notebooklm.cli.services.login import (
     _build_google_cookie_domains,
-    _parse_include_domains,
     _resolve_optional_cookie_domains,
 )
+from notebooklm.cli.session_cmd import _parse_include_domains
 from notebooklm.notebooklm_cli import cli
 
 

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import notebooklm.cli.services.playwright_login as _pl
 from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
 
@@ -58,7 +59,9 @@ class TestLoginUrlValidation:
     def test_url_matches_default_base_host(self, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
 
-        from notebooklm.cli.session_cmd import _url_matches_base_host
+        from notebooklm.cli.services.playwright_login import (
+            url_matches_base_host as _url_matches_base_host,
+        )
 
         assert _url_matches_base_host("https://notebooklm.google.com/notebook/abc")
         assert not _url_matches_base_host(
@@ -68,7 +71,9 @@ class TestLoginUrlValidation:
     def test_url_matches_enterprise_base_host(self, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
 
-        from notebooklm.cli.session_cmd import _url_matches_base_host
+        from notebooklm.cli.services.playwright_login import (
+            url_matches_base_host as _url_matches_base_host,
+        )
 
         assert _url_matches_base_host("https://notebooklm.cloud.google.com/notebook/abc")
         assert not _url_matches_base_host("https://notebooklm.google.com/notebook/abc")
@@ -76,7 +81,9 @@ class TestLoginUrlValidation:
     def test_connection_error_help_uses_enterprise_base_host(self, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
 
-        from notebooklm.cli.session_cmd import _connection_error_help
+        from notebooklm.cli.services.playwright_login import (
+            connection_error_help as _connection_error_help,
+        )
 
         blocked_host = (
             _connection_error_help().split("Firewall or VPN blocking ", 1)[1].split("\n", 1)[0]
@@ -187,8 +194,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed") as mock_ensure,
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -243,8 +251,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
         ):
@@ -280,8 +289,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -487,7 +497,7 @@ class TestLoginCommand:
 
         mock_page.goto.side_effect = goto_side_effect
 
-        with patch("notebooklm.cli.session_cmd.time.sleep"):
+        with patch("notebooklm.cli.services.playwright_login.time.sleep"):
             result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 0
@@ -515,7 +525,7 @@ class TestLoginCommand:
 
         mock_page.goto.side_effect = goto_side_effect
 
-        with patch("notebooklm.cli.session_cmd.time.sleep"):
+        with patch("notebooklm.cli.services.playwright_login.time.sleep"):
             result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 0
@@ -534,7 +544,7 @@ class TestLoginCommand:
 
         mock_page.goto.side_effect = goto_side_effect
 
-        with patch("notebooklm.cli.session_cmd.time.sleep"):
+        with patch("notebooklm.cli.services.playwright_login.time.sleep"):
             result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 1
@@ -559,7 +569,7 @@ class TestLoginCommand:
 
         mock_page.goto.side_effect = goto_side_effect
 
-        with patch("notebooklm.cli.session_cmd.time.sleep"):
+        with patch("notebooklm.cli.services.playwright_login.time.sleep"):
             result = runner.invoke(cli, ["login"])
 
         assert result.exit_code != 0
@@ -582,7 +592,7 @@ class TestLoginCommand:
 
         mock_page.goto.side_effect = goto_side_effect
 
-        with patch("notebooklm.cli.session_cmd.time.sleep"):
+        with patch("notebooklm.cli.services.playwright_login.time.sleep"):
             result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 1
@@ -608,8 +618,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -644,8 +655,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -681,8 +693,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -795,8 +808,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -841,8 +855,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -909,8 +924,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1048,8 +1064,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1093,8 +1110,9 @@ class TestLoginCommand:
 
         with (
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "s.json"),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd.shutil.rmtree", side_effect=OSError("locked")),
@@ -1114,8 +1132,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1143,7 +1162,7 @@ class TestLoginCommand:
             )
             mock_launch.return_value = mock_context
 
-            with patch("notebooklm.cli.session_cmd.time.sleep"):
+            with patch("notebooklm.cli.services.playwright_login.time.sleep"):
                 result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 0
@@ -1166,8 +1185,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1221,8 +1241,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1275,8 +1296,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1299,7 +1321,7 @@ class TestLoginCommand:
             )
             mock_launch.return_value = mock_context
 
-            with patch("notebooklm.cli.session_cmd.time.sleep"):
+            with patch("notebooklm.cli.services.playwright_login.time.sleep"):
                 result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 1
@@ -1321,8 +1343,9 @@ class TestLoginCommand:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
@@ -1398,8 +1421,9 @@ class TestLoginNoTraceback:
             patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
-            patch(
-                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+            patch.object(
+                _pl,
+                "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),

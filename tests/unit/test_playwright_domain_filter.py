@@ -38,7 +38,9 @@ def _filter() -> Any:
     The helper does not exist yet in red phase; pytest's collection still
     succeeds because the import is deferred to call time.
     """
-    from notebooklm.cli.session_cmd import _filter_storage_state_cookies_by_domain_policy
+    from notebooklm.cli.services.playwright_login import (
+        filter_storage_state_cookies_by_domain_policy as _filter_storage_state_cookies_by_domain_policy,
+    )
 
     return _filter_storage_state_cookies_by_domain_policy
 

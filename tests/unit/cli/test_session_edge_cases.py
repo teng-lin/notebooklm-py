@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, patch
 import click
 import pytest
 
+import notebooklm.cli.services.playwright_login as _pl
 from notebooklm.notebooklm_cli import cli
 
 from .conftest import create_mock_client, patch_main_cli_client
@@ -133,13 +134,23 @@ class TestLoginWindowsPermissions:
         form because it silently no-ops when the target relocates. Now uses
         ``patch(...)`` context managers which raise ``AttributeError`` if
         the target is missing, surfacing relocations immediately.
+
+        #1367 Phase A: ``get_storage_path`` / ``get_browser_profile_dir`` are
+        the service-path (login) bindings, so the patch target is the
+        consumer module ``services.playwright_login`` whose
+        ``prepare_login_paths`` resolves both names. The login command
+        (``session_cmd.login`` -> ``_prepare_login_paths`` ->
+        ``playwright_login.prepare_login_paths``) looks these up via the
+        ``_resolve_paths_helper`` precedence chain, whose level-1 lookup is
+        the ``playwright_login`` module object, so this bites both while the
+        ``session_cmd`` bridge is live and after it is removed.
         """
         storage_path = tmp_path / "home" / "storage_state.json"
         browser_profile = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session_cmd.get_storage_path", lambda: storage_path),
-            patch("notebooklm.cli.session_cmd.get_browser_profile_dir", lambda: browser_profile),
+            patch.object(_pl, "get_storage_path", lambda: storage_path),
+            patch.object(_pl, "get_browser_profile_dir", lambda: browser_profile),
         ):
             self.storage_parent = storage_path.parent
             self.browser_profile = browser_profile

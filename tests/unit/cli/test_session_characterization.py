@@ -61,25 +61,36 @@ def char_runner() -> CliRunner:
 
 
 @pytest.fixture
-def char_context_file(tmp_path):
+def char_context_file(tmp_path, monkeypatch):
     """Provide a temporary context file path with full ``get_context_path`` patching.
 
     Patches every binding of ``get_context_path`` the CLI surface uses,
-    including the new P3.T3 service-layer site
+    including the P3.T3 service-layer consumer
     ``cli.services.session_context.get_context_path`` so ``read_status``
     reads from the test tmp file rather than the real
     ``~/.notebooklm/context.json``.
+
+    The ``session_context`` binding is patched in object form
+    (``monkeypatch.setattr(_session_context, ...)``) because that module is
+    the real consumer ``read_status`` / ``verify_and_set_notebook`` look the
+    symbol up in; the old ``notebooklm.cli.session_cmd.get_context_path``
+    string-patch was a dead pure-surface re-export (#1367) — nothing in
+    ``session_cmd``'s body resolves ``get_context_path`` anymore, so that
+    patch never bit. Removing it and repointing onto the live consumer keeps
+    the ``status`` snapshots load-bearing (verified disable->red).
     """
+    import notebooklm.cli.services.session_context as _session_context
+
     context_file = tmp_path / "context.json"
+
+    def _return_context_file(*_args, **_kwargs):
+        return context_file
+
+    monkeypatch.setattr(_session_context, "get_context_path", _return_context_file)
     with (
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.session_cmd.get_context_path", return_value=context_file),
-        patch(
-            "notebooklm.cli.services.session_context.get_context_path",
-            return_value=context_file,
-        ),
     ):
         yield context_file
 
