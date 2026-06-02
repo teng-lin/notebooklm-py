@@ -1,0 +1,235 @@
+"""Static-shape conformance for the public return/error contract (ADR-0019).
+
+This is the Tier-1 enforcement floor from ADR-0019: a parametrised
+*static-shape* conformance check over the whole public client surface. It walks
+``inspect.signature(...)`` return annotations (resolved through
+``typing.get_type_hints`` so PEP 563 string annotations are honoured) across
+every public namespace and asserts the return-shape rules the contract fixes:
+
+* every namespace exposing ``get_or_none`` returns an ``Optional`` type;
+* every ``delete`` returns ``None``;
+* no public ``get_or_none`` is annotated non-``Optional``;
+* every public ``get`` is either non-``Optional`` (the target end state) **or**
+  carried in the reason-tagged :data:`GET_OPTIONAL_EXEMPTIONS` allowlist below.
+
+The allowlist exists because flipping ``get()`` to raise ``*NotFoundError`` (and
+drop its ``| None``) is deferred to issue #1247; this test passes against today's
+surface and the allowlist must *shrink* — never grow — as that flip lands.
+
+This walk is deliberately independent of ``scripts/audit_public_api_compat.py``:
+that comparator ignores return types, and its collector under-covers
+``mind_maps``. Namespaces are enumerated explicitly here (including
+``mind_maps``) so the divergence that originally occurred
+(``mind_maps.get() -> MindMap | None``, added without the deprecation warning)
+is a signature smell this catches with no backend.
+"""
+
+from __future__ import annotations
+
+import inspect
+import types
+import typing
+from collections.abc import Callable
+
+import pytest
+
+# Every public client namespace, enumerated explicitly (ADR-0019 Tier-1 requires
+# the walk cover the whole surface, including ``mind_maps`` which the
+# ``audit_public_api_compat`` collector under-covers). Imported from the private
+# implementation modules rather than constructing a live ``NotebookLMClient`` so
+# the walk needs no auth, event loop, or network.
+from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._chat.api import ChatAPI
+from notebooklm._mind_maps_api import MindMapsAPI
+from notebooklm._notebooks import NotebooksAPI
+from notebooklm._notes import NotesAPI
+from notebooklm._research import ResearchAPI
+from notebooklm._settings import SettingsAPI
+from notebooklm._sharing import SharingAPI
+from notebooklm._sources import SourcesAPI
+
+# Attribute name on ``NotebookLMClient`` -> the API class that backs it. Keyed by
+# the public attribute so a failure names the surface a caller actually touches.
+NAMESPACES: dict[str, type] = {
+    "notebooks": NotebooksAPI,
+    "sources": SourcesAPI,
+    "artifacts": ArtifactsAPI,
+    "notes": NotesAPI,
+    "mind_maps": MindMapsAPI,
+    "chat": ChatAPI,
+    "research": ResearchAPI,
+    "sharing": SharingAPI,
+    "settings": SettingsAPI,
+}
+
+# The five namespaces that expose the resource-lookup surface (``get`` /
+# ``get_or_none`` / ``delete``). ``chat``/``research``/``sharing``/``settings``
+# are intentionally absent — they expose none of the three. Pinned so a rename or
+# removal that makes a method silently undiscoverable fails loudly rather than
+# shrinking the parametrisation to a still-green subset.
+LOOKUP_NAMESPACES = frozenset({"notebooks", "sources", "artifacts", "notes", "mind_maps"})
+
+# Public ``get()`` methods still annotated ``X | None`` because the flip to
+# raising ``*NotFoundError`` (and dropping ``| None``) is deferred to #1247.
+# Reason-tagged so every gap is visible; this set must SHRINK as #1247 lands and
+# must never gain an entry. (``notebooks.get`` already returns the non-Optional
+# ``Notebook`` and is intentionally absent.)
+GET_OPTIONAL_EXEMPTIONS: dict[str, str] = {
+    "sources": "get() still returns Source | None; flip to raise deferred to #1247",
+    "artifacts": "get() still returns Artifact | None; flip to raise deferred to #1247",
+    "notes": "get() still returns Note | None; flip to raise deferred to #1247",
+    "mind_maps": "get() still returns MindMap | None; flip to raise deferred to #1247",
+}
+
+
+def _method(namespace: str, name: str) -> Callable[..., object]:
+    """Return the unbound ``name`` method of ``namespace``'s backing API class."""
+    return getattr(NAMESPACES[namespace], name)
+
+
+def _resolve_return(fn: Callable[..., object]) -> object:
+    """Resolve a callable's return annotation, honouring PEP 563 strings.
+
+    ``inspect.signature(...).return_annotation`` yields a *string* under
+    ``from __future__ import annotations`` (as several API modules use), so the
+    annotation is resolved through ``typing.get_type_hints`` to a real type.
+    """
+    hints = typing.get_type_hints(fn)
+    return hints.get("return", inspect.Signature.empty)
+
+
+def _is_optional(annotation: object) -> bool:
+    """Return ``True`` when ``annotation`` is ``Optional[...]`` (a union with ``None``)."""
+    if typing.get_origin(annotation) in (typing.Union, types.UnionType):
+        return type(None) in typing.get_args(annotation)
+    return False
+
+
+def _is_none(annotation: object) -> bool:
+    """Return ``True`` when ``annotation`` denotes ``None`` (``NoneType``)."""
+    return annotation is type(None)
+
+
+def _has_varargs(fn: Callable[..., object]) -> bool:
+    """Return ``True`` when ``fn`` declares ``*args`` / ``*ids`` positional varargs."""
+    return any(
+        param.kind is inspect.Parameter.VAR_POSITIONAL
+        for param in inspect.signature(fn).parameters.values()
+    )
+
+
+# Namespaces that actually expose each method, computed once. These power the
+# parametrisations; ``test_lookup_surface_is_pinned`` asserts each set equals
+# ``LOOKUP_NAMESPACES`` so a silently-shrunk set can never pass unnoticed.
+_GET_OR_NONE_NAMESPACES = sorted(n for n, c in NAMESPACES.items() if hasattr(c, "get_or_none"))
+_GET_NAMESPACES = sorted(n for n, c in NAMESPACES.items() if hasattr(c, "get"))
+_DELETE_NAMESPACES = sorted(n for n, c in NAMESPACES.items() if hasattr(c, "delete"))
+
+
+@pytest.mark.parametrize(
+    ("method_name", "discovered"),
+    [
+        ("get", _GET_NAMESPACES),
+        ("get_or_none", _GET_OR_NONE_NAMESPACES),
+        ("delete", _DELETE_NAMESPACES),
+    ],
+)
+def test_lookup_surface_is_pinned(method_name: str, discovered: list[str]) -> None:
+    """The exact set of namespaces exposing each lookup method is pinned.
+
+    Guards against a namespace silently dropping out of the walk (e.g. a rename
+    that makes ``hasattr(cls, method)`` go quietly false), which would otherwise
+    shrink the parametrisation to a still-green subset.
+    """
+    assert set(discovered) == LOOKUP_NAMESPACES, (
+        f"namespaces exposing {method_name!r} = {sorted(discovered)}, "
+        f"expected {sorted(LOOKUP_NAMESPACES)}"
+    )
+
+
+@pytest.mark.parametrize("namespace", _GET_OR_NONE_NAMESPACES)
+def test_get_or_none_returns_optional(namespace: str) -> None:
+    """Every namespace exposing ``get_or_none`` annotates it ``Optional`` (ADR-0019)."""
+    annotation = _resolve_return(_method(namespace, "get_or_none"))
+    assert _is_optional(annotation), (
+        f"{namespace}.get_or_none must return Optional[...]; got {annotation!r}"
+    )
+
+
+@pytest.mark.parametrize("namespace", _DELETE_NAMESPACES)
+def test_delete_returns_none(namespace: str) -> None:
+    """Every public ``delete`` is an idempotent no-payload command -> ``None`` (ADR-0019)."""
+    annotation = _resolve_return(_method(namespace, "delete"))
+    assert _is_none(annotation), f"{namespace}.delete must return None; got {annotation!r}"
+
+
+@pytest.mark.parametrize("namespace", _GET_NAMESPACES)
+def test_get_is_non_optional_or_exempt(namespace: str) -> None:
+    """Public ``get`` is non-``Optional`` unless reason-tagged in the #1247 allowlist.
+
+    The ``get()``-raises flip (which drops ``| None``) is deferred to #1247, so a
+    still-Optional ``get`` is tolerated *only* while it carries an exemption. The
+    allowlist must shrink as #1247 lands; this asserts every Optional ``get`` is
+    accounted for and that no exemption is stale.
+    """
+    annotation = _resolve_return(_method(namespace, "get"))
+    assert annotation is not inspect.Signature.empty, (
+        f"{namespace}.get has no return annotation; a public lookup must be "
+        "explicitly typed (an un-annotated get cannot be contract-checked)."
+    )
+    if _is_optional(annotation):
+        assert namespace in GET_OPTIONAL_EXEMPTIONS, (
+            f"{namespace}.get is Optional but not in GET_OPTIONAL_EXEMPTIONS; "
+            "add a reason-tagged exemption or make it non-Optional (#1247)."
+        )
+    else:
+        assert namespace not in GET_OPTIONAL_EXEMPTIONS, (
+            f"{namespace}.get is now non-Optional; remove its stale "
+            "GET_OPTIONAL_EXEMPTIONS entry (#1247 progress)."
+        )
+
+
+def test_get_optional_exemptions_are_live() -> None:
+    """Every exemption names a real Optional ``get`` (no stale allowlist entries)."""
+    for namespace, reason in GET_OPTIONAL_EXEMPTIONS.items():
+        assert namespace in NAMESPACES, f"unknown namespace in exemptions: {namespace}"
+        assert reason.strip(), f"{namespace} exemption must carry a non-empty reason"
+        annotation = _resolve_return(_method(namespace, "get"))
+        assert _is_optional(annotation), (
+            f"GET_OPTIONAL_EXEMPTIONS lists {namespace}.get as Optional, but it is "
+            f"now {annotation!r}; remove the stale exemption (#1247)."
+        )
+
+
+def test_mind_maps_delete_exposes_kind_parameter() -> None:
+    """``mind_maps.delete`` keeps its kind-dispatch parameter (ADR-0019 Tier-2).
+
+    ``mind_maps.delete(..., kind=...)`` is irreducibly per-namespace (it is
+    kind-dispatched), so the generic ``ResourceAPI[T]`` base was rejected and
+    ``delete`` stays per-namespace. This pins the ``kind`` parameter and its
+    optional-keyword shape (``kind=None`` enables the omitted-kind auto-detect
+    path) so a future consolidation cannot erase or harden it.
+    """
+    params = inspect.signature(MindMapsAPI.delete).parameters
+    assert "kind" in params, "mind_maps.delete must keep its `kind` dispatch parameter"
+    kind = params["kind"]
+    assert kind.kind is inspect.Parameter.KEYWORD_ONLY, "`kind` must stay keyword-only"
+    assert kind.default is None, "`kind` must default to None (omitted-kind auto-detect)"
+
+
+@pytest.mark.parametrize("method_name", ["get", "get_or_none", "delete"])
+def test_lookup_methods_have_no_varargs(method_name: str) -> None:
+    """No public lookup/delete method uses a ``*args``/``*ids`` varargs signature.
+
+    A ``*ids`` base would erase the per-namespace public signatures (the
+    namespaces differ in arity); ADR-0019 Tier-2 rejected that base for exactly
+    this reason. This asserts the explicit, typed signatures are preserved.
+    """
+    for namespace, cls in NAMESPACES.items():
+        fn = getattr(cls, method_name, None)
+        if fn is None:
+            continue
+        assert not _has_varargs(fn), (
+            f"{namespace}.{method_name} must not use *args/*ids varargs; "
+            "keep an explicit, per-namespace typed signature (ADR-0019 Tier-2)."
+        )
