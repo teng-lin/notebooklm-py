@@ -446,7 +446,7 @@ class TestSourceGet:
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
             )
-            mock_client.sources._get_or_none = AsyncMock(
+            mock_client.sources.get_or_none = AsyncMock(
                 return_value=Source(
                     id="src_123",
                     title="Test Source",
@@ -471,7 +471,7 @@ class TestSourceGet:
             mock_client = create_mock_client()
             # Mock sources.list to return empty (no match for resolve_source_id)
             mock_client.sources.list = AsyncMock(return_value=[])
-            mock_client.sources._get_or_none = AsyncMock(return_value=None)
+            mock_client.sources.get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -511,7 +511,7 @@ class TestSourceGet:
             mock_client = create_mock_client()
             # list() must NOT be called on this path; assert below.
             mock_client.sources.list = AsyncMock(return_value=[])
-            mock_client.sources._get_or_none = AsyncMock(return_value=None)
+            mock_client.sources.get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -530,7 +530,7 @@ class TestSourceGet:
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[])
-            mock_client.sources._get_or_none = AsyncMock(return_value=None)
+            mock_client.sources.get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -557,7 +557,7 @@ class TestSourceGet:
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_resolved", title="Doomed")]
             )
-            mock_client.sources._get_or_none = AsyncMock(return_value=None)
+            mock_client.sources.get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -576,7 +576,7 @@ class TestSourceGet:
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_resolved", title="Doomed")]
             )
-            mock_client.sources._get_or_none = AsyncMock(return_value=None)
+            mock_client.sources.get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with patch(
@@ -2664,7 +2664,7 @@ class TestSourceJsonOutput:
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="My Source")]
             )
-            mock_client.sources._get_or_none = AsyncMock(
+            mock_client.sources.get_or_none = AsyncMock(
                 return_value=Source(
                     id="src_123",
                     title="My Source",
@@ -2698,7 +2698,7 @@ class TestSourceJsonOutput:
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_resolved", title="Existing")]
             )
-            mock_client.sources._get_or_none = AsyncMock(return_value=None)
+            mock_client.sources.get_or_none = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             with self._patch_fetch_tokens():
