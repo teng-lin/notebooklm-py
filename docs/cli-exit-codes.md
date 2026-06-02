@@ -54,19 +54,34 @@ mapping in `error_handler.py`:
 | `NotebookLMError` (other) | `NOTEBOOKLM_ERROR` | `1` |
 | `KeyboardInterrupt`     | `CANCELLED`         | `130` |
 | Anything else (`Exception`) | `UNEXPECTED_ERROR` | `2` |
-| Parse-time `click.UsageError` / `click.BadParameter` (Click's parser, before command body runs) | — | re-raised; Click exits `2` |
-| Parse-time `click.ClickException` (other subclasses raised by Click's parser) | — | re-raised; Click exits `1` |
+| Parse-time `click.UsageError` / `click.BadParameter` (Click's parser, before command body runs) | `VALIDATION_ERROR` under `--json`; — in text mode | `2` (under `--json`: typed JSON envelope on stdout, **exit code preserved**; text mode: Click's `Usage:/Error:` on stderr) |
+| Parse-time `click.ClickException` (other subclasses raised by Click's parser) | `VALIDATION_ERROR` under `--json`; — in text mode | `1` (same: JSON envelope under `--json` with the code preserved; native text otherwise) |
 | Post-parse `ClickException` raised from a command body or service module | `VALIDATION_ERROR` (or another standard code, per the raise site) | `1` (typed JSON envelope under `--json`; see ADR-015) |
 
-`click.ClickException` raised by **Click's own parser** is intentionally
-re-raised so Click can render its own `Usage: ... / Error: ...` message.
-This is the *parse-time* path: argv parsing decides the command body
-should not run at all (unknown flag, type-validation failure, missing
-required argument), so `handle_errors(...)` is not yet on the stack and
-no JSON envelope is emitted. The exit code is whatever Click's own
-`exit_code` class attribute provides — `2` for `UsageError` (and
-`BadParameter`, which subclasses it), `1` for the base `ClickException`
-and other non-usage subclasses.
+`click.ClickException` raised by **Click's own parser** is the *parse-time*
+path: argv parsing decides the command body should not run at all (unknown
+flag, type-validation failure, missing required argument), so `handle_errors(...)`
+— the per-command context manager — is never on the stack. But the **root
+group** (`SectionedGroup.main` in
+[`src/notebooklm/cli/grouped.py`](../src/notebooklm/cli/grouped.py)) sits
+*above* `handle_errors`: it runs Click's superclass in non-standalone mode and
+catches the parse-time `ClickException` itself.
+
+- **Under `--json`**, the root group emits the typed JSON error envelope on
+  stdout (`{ "error": true, "code": "VALIDATION_ERROR", "message": ... }`,
+  empty stderr), so automation that passed `--json` still gets a parseable
+  document for argv-level failures. The **exit code is preserved** from Click —
+  `2` for `UsageError` / `BadParameter`, `1` for the base `ClickException` and
+  other non-usage subclasses. (Note the envelope `code` is `VALIDATION_ERROR`
+  regardless of which Click subclass fired; only the exit code carries the
+  `2`-vs-`1` distinction.)
+- **In text mode** (no `--json`), behavior is unchanged: Click renders its own
+  `Usage: ... / Error: ...` message on stderr and exits with that same
+  `exc.exit_code` (`2` / `1`).
+
+This supersedes the original ADR-015 §1 stance that "no JSON envelope is
+emitted at parse time"; see the amendment note in
+[ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
 
 `ClickException`-subclass failures raised from inside a **command body or
 its service-layer code** are *post-parse*: argv parsing succeeded, the
@@ -111,11 +126,21 @@ succeeds) are routed through this same envelope under `--json` and exit
 the raise site). The contract decision and its enumerated raise sites
 are recorded in
 [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
-**Parse-time** `ClickException` raised by Click's own parser (before the
-command body runs) is unchanged — Click still renders its
-`Usage: ... / Error: ...` text on stderr and exits with its
-class-default code, because `handle_errors(...)` is not yet on the stack
-when the parser fires.
+
+**Parse-time `ClickException` is also covered under `--json`.**
+`ClickException` raised by Click's own parser (before the command body runs)
+is JSON-wrapped at the root group (`SectionedGroup.main`), not by the
+per-command `handle_errors(...)`: under `--json` it emits the same envelope on
+stdout with `code: "VALIDATION_ERROR"` and an **exit code preserved** from
+Click (`2` for `UsageError` / `BadParameter`, `1` for the base
+`ClickException`). In text mode it is unchanged — Click renders its
+`Usage: ... / Error: ...` text on stderr and exits with that class-default
+code. This is the more consistent behavior for JSON consumers: argv-level
+failures no longer fall back to usage prose just because they fired before the
+command body. The behavior is pinned by
+[`tests/unit/cli/test_json_validation_contract.py`](../tests/unit/cli/test_json_validation_contract.py)
+(`test_json_validation_errors_emit_json`, `test_text_validation_errors_keep_click_usage_output`)
+and amended into ADR-015 (amendment note, 2026-06-02).
 
 ## Intentional exceptions to the standard convention
 
@@ -376,7 +401,7 @@ section above.
 |------|------------------|
 | `0`  | The command succeeded as documented — the requested effect was carried out and any reported result is authoritative. |
 | `1`  | The command failed, **or** the queried target was not found. Both share exit `1` because automation typically wants the same control-flow branch (`if !` / `case 1)`); JSON mode (`--json`) distinguishes them via the typed `code` field (`NOT_FOUND` vs. `AUTH_ERROR` vs. `VALIDATION_ERROR`, etc.). |
-| `2`  | Click parser-time error — argv could not be parsed into a valid command invocation (unknown flag, type-validation failure, missing required argument). See the [parser-time row in the Exception → exit-code mapping](#exception--exit-code-mapping) for the full Click behavior; this entry exists to call out that `2` is **not** a post-parse code in the default case. Post-parse `ClickException` is contracted by [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) to route through the typed JSON envelope and exit `1`, not `2`. The same code is also raised when `handle_errors` catches an unhandled non-`NotebookLMError` exception (likely a bug — see the [Standard exit codes](#standard-exit-codes) table). |
+| `2`  | Click parser-time error — argv could not be parsed into a valid command invocation (unknown flag, type-validation failure, missing required argument). Under `--json` the root group still emits the typed JSON envelope on stdout (`code: "VALIDATION_ERROR"`) but **preserves** this exit `2`; in text mode Click renders its `Usage:/Error:` prose on stderr. See the [parser-time row in the Exception → exit-code mapping](#exception--exit-code-mapping) for the full behavior; this entry exists to call out that `2` is **not** a post-parse code in the default case. Post-parse `ClickException` is contracted by [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) to route through the typed JSON envelope and exit `1`, not `2`. The same code is also raised when `handle_errors` catches an unhandled non-`NotebookLMError` exception (likely a bug — see the [Standard exit codes](#standard-exit-codes) table). |
 
 Two commands deliberately deviate from this baseline because their primary
 use case is shell control flow:

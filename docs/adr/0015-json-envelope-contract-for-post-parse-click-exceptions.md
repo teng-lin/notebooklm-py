@@ -2,7 +2,68 @@
 
 ## Status
 
-Accepted.
+Accepted. **Amended 2026-06-02** — see the amendment note below; it supersedes
+the original "no JSON emitted at parse time" stance recorded in Decision rule 1.
+
+## Amendment note (2026-06-02): parse-time `ClickException` is JSON-wrapped under `--json`
+
+The original Decision rule 1 stated that parse-time `ClickException` is
+*unchanged* and that "no JSON envelope is emitted in this case, because
+`handle_errors` has not yet been entered when the parser fires." That premise
+was correct about `handle_errors` — the per-command context manager genuinely
+never sees parse-time errors — but the conclusion no longer holds, because the
+CLI grew a **second, higher** boundary above `handle_errors`.
+
+The root group (`SectionedGroup.main` in
+[`src/notebooklm/cli/grouped.py`](../../src/notebooklm/cli/grouped.py)) runs
+Click's superclass `main` in **non-standalone mode** specifically so it can
+catch the parse-time parser/callback `click.ClickException` that Click would
+otherwise render itself. Its docstring records the intent: catching the failure
+at "this root boundary [lets it] convert those failures once for every current
+and future subcommand option." When the raw argv contains `--json`
+(`_json_requested(args)`), the root group routes the exception through
+`_emit_json_click_error(exc)`, which calls `output_error(exc.format_message(),
+"VALIDATION_ERROR", json_output=True, exit_code=exc.exit_code)`. Concretely,
+under `--json`:
+
+- The typed JSON envelope is emitted on stdout — `{ "error": true, "code":
+  "VALIDATION_ERROR", "message": "<Click's formatted message>" }` — and nothing
+  is written to stderr.
+- **Exit codes are preserved**, not normalised. The envelope passes
+  `exit_code=exc.exit_code`, so a `UsageError` / `BadParameter` still exits `2`
+  and a base `ClickException` still exits `1`. (This differs from the
+  *post-parse* envelope path, which standardises on exit `1` per Decision rules
+  2 and 4. The parse-time wrapper changes the *channel* — JSON instead of
+  stderr — but not the exit code.)
+
+Without `--json`, behavior is exactly as the original ADR described: the root
+group calls `exc.show()` (Click's native `Usage: ... / Error: ...` text on
+stderr) and exits with `exc.exit_code` (`2` for `UsageError` / `BadParameter`,
+`1` for the base `ClickException`). The `click.Abort` path is handled the same
+way at this boundary — `CANCELLED` envelope + exit `1` under `--json`, or
+`Aborted!` on stderr + exit `1` in text mode.
+
+**Why the change.** The motivation is the same one that drove the original
+contract for post-parse errors: a JSON consumer that passes `--json` should
+never receive usage prose on stderr instead of a parseable envelope, even when
+the failure is an argv-level one (an invalid `--limit`, an unknown option, a
+missing required argument). Converting once at the root boundary gives every
+current and future subcommand a consistent envelope without per-command
+plumbing, and is strictly more useful to automation than the original
+"argv-level failures are structurally impossible to wrap" stance — which was
+true *inside Click's parser* but not at a boundary that runs the parser in
+non-standalone mode and catches what it raises.
+
+**Source of truth.** This behavior is pinned by
+[`tests/unit/cli/test_json_validation_contract.py`](../../tests/unit/cli/test_json_validation_contract.py):
+`test_json_validation_errors_emit_json` asserts the `VALIDATION_ERROR` envelope
+on stdout (empty stderr, non-zero exit) for invalid limits/intervals/retries, a
+missing argument, an unknown option, and a root-callback validation failure;
+`test_text_validation_errors_keep_click_usage_output` asserts the unchanged
+text-mode path (exit `2`, `Usage:` on stderr, empty stdout); and
+`test_json_abort_emit_json` pins the `CANCELLED` envelope. The original
+Decision rule 1 below is retained for history; treat this note and the contract
+tests as authoritative wherever they diverge.
 
 ## Context
 
@@ -99,15 +160,21 @@ corresponding standard code, and writes no usage text to stderr.
 
 Concretely:
 
-1. **Parse-time `ClickException` is unchanged.** Click's parser keeps raising
+1. **Parse-time `ClickException` is unchanged.** *(Superseded — see the
+   "Amendment note (2026-06-02)" above. The root group now JSON-wraps
+   parse-time `ClickException` under `--json`, preserving Click's exit code.
+   The text below is retained for history and remains accurate only for the
+   non-`--json` path.)* Click's parser keeps raising
    `UsageError` / `BadParameter` / `ClickException` for argv-level
    validation failures; Click keeps rendering its own
    `Usage: ... / Error: ...` text on stderr and exiting `2`
    (`UsageError` / `BadParameter`) or `1` (base `ClickException`). The
    re-raise in
    [`src/notebooklm/cli/error_handler.py`](../../src/notebooklm/cli/error_handler.py)
-   stays. No JSON envelope is emitted in this case, because `handle_errors`
-   has not yet been entered when the parser fires.
+   stays. No JSON envelope is emitted *by `handle_errors`* in this case,
+   because `handle_errors` has not yet been entered when the parser fires —
+   but the root group (`SectionedGroup.main`) sits *above* `handle_errors`
+   and does emit the envelope under `--json`; see the amendment note.
 2. **Post-parse `ClickException` flows through the typed envelope.**
    Command bodies and service-layer code that wish to signal a validation
    failure under the JSON contract MUST NOT raise
@@ -226,12 +293,20 @@ Concretely:
   short-term patch is "service calls `output_error` directly". Both
   satisfy this ADR.
 - **Have `handle_errors` catch `ClickException` and convert to the
-  envelope unconditionally.** Rejected. This would absorb parse-time
-  `ClickException` too — but `handle_errors` is entered *inside* the
-  command body, so the parse-time path never reaches it (Click renders
-  parser errors via `BaseCommand.main` before invoking the command).
-  Attempting to intercept parse-time errors would require subclassing
-  Click's command/group machinery, which is outside the scope of an
+  envelope unconditionally.** Rejected *for `handle_errors`*. This would
+  absorb parse-time `ClickException` too — but `handle_errors` is entered
+  *inside* the command body, so the parse-time path never reaches it (Click
+  renders parser errors via `BaseCommand.main` before invoking the command).
+  Intercepting parse-time errors requires subclassing Click's command/group
+  machinery, which was originally judged outside the scope of an
   error-handling contract change. The post-parse path is the only one
   `handle_errors` can address, and rule 2 already covers it via
   `output_error(...)`.
+
+  *(Update 2026-06-02: the "subclass Click's group machinery" approach was
+  subsequently adopted — but at the root group, not in `handle_errors`.
+  `SectionedGroup.main` runs Click's superclass in non-standalone mode and
+  converts the parse-time `ClickException` to the JSON envelope under
+  `--json`. This is a separate boundary from `handle_errors`, so the
+  reasoning above — that `handle_errors` itself cannot see parse-time errors
+  — still stands; see the amendment note.)*
