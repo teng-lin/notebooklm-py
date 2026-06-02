@@ -715,6 +715,9 @@ class NotebooksAPI:
             "client.sharing.add_user(), set_view_level(), get_status()). Return "
             "shape is unchanged in this release; the wrapper will be removed in "
             "a future major release.",
+            # No pinned removal version yet (re-pin tracked by #1363); the
+            # message already says "a future major release".
+            removal=None,
             stacklevel=3,
         )
         return await self._share_manager.share(notebook_id, public, artifact_id)

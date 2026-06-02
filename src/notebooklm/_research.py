@@ -305,6 +305,9 @@ class ResearchAPI:
                     f"explicitly. The None default will be removed in a "
                     f"future major release."
                 ),
+                # No pinned removal version yet (re-pin tracked by #1363); the
+                # message already says "a future major release".
+                removal=None,
                 # caller -> poll -> _select_polled_tasks -> warn_deprecated.
                 stacklevel=4,
             )

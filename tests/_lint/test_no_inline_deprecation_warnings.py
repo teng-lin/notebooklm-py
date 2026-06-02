@@ -51,6 +51,13 @@ def _is_warnings_warn(func: ast.expr) -> bool:
         # this from over-matching unrelated ``.warn`` methods).
         return func.attr == "warn"
     if isinstance(func, ast.Name):
+        # Bare ``warn(...)`` — assumes ``from warnings import warn``. This is
+        # broad in principle (a ``warn`` imported from a logging/metrics library
+        # would also match), but the ``_names_deprecation_warning`` category
+        # check downstream narrows it to ``warn(..., DeprecationWarning)`` calls
+        # specifically, so a false positive needs both a non-warnings ``warn``
+        # *and* a ``DeprecationWarning`` category argument — vanishingly rare,
+        # and the right thing to gate anyway. Tighten here if it ever bites.
         return func.id == "warn"
     return False
 
@@ -117,11 +124,14 @@ def test_lint_detects_the_offending_shape() -> None:
     """Self-check: the scanner flags a real ``warnings.warn(..., DeprecationWarning)``.
 
     Guards against the scanner silently degrading to a no-op (which would let
-    the recurrence it exists to prevent slip through). Both the positional and
-    the ``category=`` spellings must be detected.
+    the recurrence it exists to prevent slip through). Every callee form
+    (attribute vs bare name) crossed with every category form (positional vs
+    ``category=``) must be detected, and a benign category must not match.
     """
-    positional = ast.parse('warnings.warn("x", DeprecationWarning, stacklevel=2)')
-    keyword = ast.parse('warn("x", category=DeprecationWarning)')
+    attr_positional = ast.parse('warnings.warn("x", DeprecationWarning, stacklevel=2)')
+    bare_positional = ast.parse('warn("x", DeprecationWarning)')
+    attr_keyword = ast.parse('warnings.warn("x", category=DeprecationWarning)')
+    bare_keyword = ast.parse('warn("x", category=DeprecationWarning)')
     benign = ast.parse('warnings.warn("x", UserWarning)')
 
     def _hits(tree: ast.AST) -> int:
@@ -133,6 +143,8 @@ def test_lint_detects_the_offending_shape() -> None:
             and _names_deprecation_warning(node)
         )
 
-    assert _hits(positional) == 1
-    assert _hits(keyword) == 1
+    assert _hits(attr_positional) == 1
+    assert _hits(bare_positional) == 1
+    assert _hits(attr_keyword) == 1
+    assert _hits(bare_keyword) == 1
     assert _hits(benign) == 0
