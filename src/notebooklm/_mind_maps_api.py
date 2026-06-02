@@ -218,10 +218,13 @@ class MindMapsAPI:
         backings (note-backed JSON + interactive studio-artifact). Unlike
         :meth:`get` — which is slated to raise
         :class:`~notebooklm.exceptions.MindMapNotFoundError` on a miss in v0.8.0
-        (issue #1247) — this returns ``None`` for a genuine absence and emits no
-        deprecation warning. Transport, auth, and decode faults raised while
-        listing either backing are **not** swallowed; only a real "not found"
-        yields ``None``.
+        (issue #1247) — this returns ``None`` for an absence and emits no
+        deprecation warning. It scans :meth:`list`, so it reflects only what
+        ``list`` confirms: a just-created interactive map whose variant slot has
+        not yet populated is briefly excluded from ``list`` and therefore reads
+        as ``None`` until it settles (the same settling window ``list`` and
+        ``get_tree`` see). Transport, auth, and decode faults raised while
+        listing either backing are **not** swallowed.
 
         Args:
             notebook_id: The notebook ID.

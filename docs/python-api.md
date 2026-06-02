@@ -258,7 +258,7 @@ which already raises
 meanwhile with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`); see
 [`deprecations.md`](deprecations.md) and issue #1247. `client.mind_maps.get(...)`
 joined this warned deprecation in v0.7.0 (issue #1358) — it was the last
-#1247-cohort namespace without a runway; use `client.mind_maps.get_or_none(...)`
+namespace in the #1247 cohort without a runway; use `client.mind_maps.get_or_none(...)`
 for the warning-free `None`-on-miss contract. If you genuinely want
 `None`-on-miss after the flip, every namespace now offers a paired
 `get_or_none(...)` (`client.notebooks.get_or_none(nb_id)`,
