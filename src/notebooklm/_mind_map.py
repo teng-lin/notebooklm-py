@@ -22,6 +22,7 @@ from typing import Any
 
 from ._note_service import NoteRowKind, NoteService
 from ._row_adapters.notes import NoteRow
+from .exceptions import MindMapNotFoundError
 
 
 class NoteBackedMindMapService:
@@ -74,13 +75,12 @@ class NoteBackedMindMapService:
         ``RENAME_ARTIFACT`` instead; see ``MindMapsAPI``.)
 
         Raises:
-            ValueError: if no note-backed mind map with ``mind_map_id`` exists.
+            MindMapNotFoundError: if no note-backed mind map with
+                ``mind_map_id`` exists.
         """
         for row in await self.list_mind_maps(notebook_id):
             if NoteRow(row).id == mind_map_id:
                 content = self.extract_content(row) or ""
                 await self._notes.update_note(notebook_id, mind_map_id, content, new_title)
                 return
-        raise ValueError(
-            f"Note-backed mind map {mind_map_id!r} not found in notebook {notebook_id!r}"
-        )
+        raise MindMapNotFoundError(mind_map_id)

@@ -239,10 +239,11 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `ArtifactTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ArtifactError`, `NotebookLMError` |
 | `ResearchTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ResearchError`, `NotebookLMError` |
 
-`NoteNotFoundError` and `MindMapNotFoundError` (with their `NoteError` /
-`MindMapError` domain bases) are defined now but **no method raises them yet** —
-they are the prerequisite types for the note / mind-map not-found work landing
-in **v0.8.0** (issues #1291, #1346).
+`MindMapNotFoundError` is raised by the `client.mind_maps` mutation paths
+(`rename`) on a missing target (issue #1291). `NoteNotFoundError` (with its
+`NoteError` domain base) is defined now but **not raised by any method yet** —
+it is the prerequisite type for the note not-found work landing in **v0.8.0**
+(issue #1346).
 
 Use the table to pick the right level of catch. `client.sources.get(...)`,
 `client.artifacts.get(...)`, and `client.notes.get(...)` currently return
@@ -921,10 +922,15 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 >   (`403`/`5xx`/auth/transport) still raise. Use `get()` first to assert
 >   existence.
 > - **`rename()` returns the renamed object** and raises `*NotFoundError`
->   (`ValueError` for mind maps) on a missing target — detected via a
->   content/list lookup, never a transport 404. Pass **`return_object=False`**
->   to skip the hydrate re-fetch and return `None`; that opt-out **also skips
->   missing-target detection**, so a missing target does not raise under it.
+>   (`MindMapNotFoundError` for mind maps) on a missing target. Pass
+>   **`return_object=False`** to skip the hydrate re-fetch and return `None`.
+>   For `notebooks`/`sources`/`artifacts`, missing-target detection rides on
+>   that hydrate re-fetch, so `return_object=False` also skips it (a missing
+>   target does not raise under the opt-out). **Mind maps are the exception:**
+>   they detect absence via a content/list lookup *before* dispatching the
+>   rename RPC (never a transport 404), so `mind_maps.rename` raises
+>   `MindMapNotFoundError` on a missing target **even with**
+>   `return_object=False`.
 
 ### NotebooksAPI (`client.notebooks`)
 
@@ -1584,9 +1590,9 @@ Each operation dispatches to the correct backend; you work with `MindMap` /
 | `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries |
 | `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id |
 | `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll) |
-| `rename(notebook_id, mind_map_id, new_title, *, kind=None, return_object=True)` | … | `MindMap \| None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind (re-fetched; raises `ValueError` if missing). `return_object=False` returns `None`. |
-| `delete(notebook_id, mind_map_id, *, kind=None)` | … | `None` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind (idempotent when `kind` is passed; `kind=None` raises `ValueError` for an unknown id) |
-| `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree |
+| `rename(notebook_id, mind_map_id, new_title, *, kind=None, return_object=True)` | … | `MindMap \| None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind (re-fetched; raises `MindMapNotFoundError` if missing). `return_object=False` returns `None`. |
+| `delete(notebook_id, mind_map_id, *, kind=None)` | … | `None` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind (idempotent — deleting an already-absent map returns `None`, for both `kind=None` and a supplied `kind`) |
+| `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree; `None` for a missing or not-yet-populated map (derived read — does not police existence) |
 
 `MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree`. `generate(..., wait=True)` returns `tree` populated for **both** kinds (interactive maps are polled to completion, then their tree is fetched). For interactive *list* rows `tree` is `None` — fetch it with `get_tree`. When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
 

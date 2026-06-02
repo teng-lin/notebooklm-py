@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
-from notebooklm.exceptions import ArtifactError, UnknownRPCMethodError
+from notebooklm.exceptions import (
+    ArtifactError,
+    MindMapNotFoundError,
+    NotFoundError,
+    UnknownRPCMethodError,
+)
 from notebooklm.rpc.types import RPCMethod
 from notebooklm.types import Artifact, MindMapKind, MindMapResult
 
@@ -102,10 +107,24 @@ async def test_rename_returns_renamed_mind_map():
 
 @pytest.mark.asyncio
 async def test_rename_missing_raises():
-    # Auto-detect path: the id is in neither backing → ValueError.
+    # Auto-detect path: the id is in neither backing → MindMapNotFoundError.
     api, *_ = _make_api()
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(MindMapNotFoundError, match="not found") as excinfo:
         await api.rename("nb", "ghost", "X")
+    # Catchable via the cross-domain umbrella too (ADR-0019).
+    assert isinstance(excinfo.value, NotFoundError)
+    assert excinfo.value.mind_map_id == "ghost"
+
+
+@pytest.mark.asyncio
+async def test_rename_missing_raises_even_with_return_object_false():
+    # Unlike sources/artifacts (whose absence detection rides on the skipped
+    # hydrate re-fetch), mind maps detect absence via a list lookup *before*
+    # dispatching the rename, so return_object=False does NOT suppress the raise.
+    api, _, _, artifacts, _ = _make_api()
+    with pytest.raises(MindMapNotFoundError, match="not found"):
+        await api.rename("nb", "ghost", "X", return_object=False)
+    artifacts.rename.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -298,7 +317,7 @@ async def test_generate_interactive_unresolved_id_falls_back_to_placeholder():
 @pytest.mark.asyncio
 async def test_rename_interactive_bad_id_raises_not_silent_noop():
     api, _, _, artifacts, _ = _make_api(interactive=[_interactive_artifact("real_int")])
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(MindMapNotFoundError, match="not found"):
         await api.rename("nb", "ghost", "X", kind=MindMapKind.INTERACTIVE)
     artifacts.rename.assert_not_awaited()  # never dispatched the no-op RPC
 
@@ -318,11 +337,11 @@ async def test_rename_interactive_rejects_settling_type4_variant_none():
     must NOT accept a settling (or malformed) quiz/flashcard as a mind map."""
     api, _, _, artifacts, _ = _make_api(interactive=[_pending_type4_artifact("settling")])
     # Explicit-interactive rename: the strict path rejects a variant=None row.
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(MindMapNotFoundError, match="not found"):
         await api.rename("nb", "settling", "X", kind=MindMapKind.INTERACTIVE)
     artifacts.rename.assert_not_awaited()
-    # Auto-detect (kind=None) also rejects it -> ValueError, never dispatched.
-    with pytest.raises(ValueError, match="not found"):
+    # Auto-detect (kind=None) also rejects it -> MindMapNotFoundError, never dispatched.
+    with pytest.raises(MindMapNotFoundError, match="not found"):
         await api.rename("nb", "settling", "X")
     artifacts.rename.assert_not_awaited()
 
@@ -422,10 +441,10 @@ async def test_rename_auto_detect_interactive_dispatches():
 @pytest.mark.asyncio
 async def test_rename_hydrate_raises_when_target_vanishes():
     # Explicit note-backed rename whose post-rename refetch finds nothing
-    # (vanished-between-rename-and-refetch race) -> ValueError from
+    # (vanished-between-rename-and-refetch race) -> MindMapNotFoundError from
     # _hydrate_renamed rather than a stale/None object.
     api, _, mind_maps, _, _ = _make_api(note_rows=[])
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(MindMapNotFoundError, match="not found"):
         await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
     mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
 
@@ -454,10 +473,13 @@ async def test_get_tree_auto_detect_interactive_falls_through_to_rpc():
 
 
 @pytest.mark.asyncio
-async def test_get_tree_auto_detect_missing_raises():
-    api, *_ = _make_api()
-    with pytest.raises(ValueError, match="not found"):
-        await api.get_tree("nb", "ghost")
+async def test_get_tree_auto_detect_missing_returns_none():
+    # Derived read (ADR-0019): a missing parent yields the uniform-empty value
+    # (None), not a raise — get() is the existence check, not get_tree().
+    api, rpc, *_ = _make_api()
+    assert await api.get_tree("nb", "ghost") is None
+    # Auto-detect resolved the miss without falling through to GET_INTERACTIVE_HTML.
+    rpc.rpc_call.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -495,7 +517,11 @@ async def test_delete_auto_detect_interactive():
 
 
 @pytest.mark.asyncio
-async def test_delete_auto_detect_missing_raises():
-    api, *_ = _make_api()
-    with pytest.raises(ValueError, match="not found"):
-        await api.delete("nb", "ghost")
+async def test_delete_auto_detect_missing_is_idempotent():
+    # Auto-detect (kind=None) on an already-absent id is a no-op that returns
+    # None (ADR-0019 idempotent delete), matching sources/artifacts/notes —
+    # not a raise. Neither delete RPC family is dispatched.
+    api, _, mind_maps, artifacts, _ = _make_api()
+    assert await api.delete("nb", "ghost") is None
+    mind_maps.delete_mind_map.assert_not_awaited()
+    artifacts.delete.assert_not_awaited()

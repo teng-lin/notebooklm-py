@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport-level `except RPCError` call sites, and at domain-level
   `except NoteError` / `except MindMapError` call sites. These are the
   prerequisite for the mind-map not-found work (ADR-0019; issues #1291, #1346).
-  No method raises them yet — this change only adds the types.
+  `MindMapNotFoundError` is now raised by the `mind_maps` mutation paths (see
+  *Changed* below); `NoteNotFoundError` is not raised by any method yet.
 - `ResearchStatus.NOT_FOUND` — a typed lifecycle sentinel for the
   poll-observed absence of a *specific* requested research task, distinct from
   `NO_RESEARCH` ("nothing in flight"). `research.poll(notebook_id, task_id=...)`
@@ -33,6 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`WaitTimeoutError, ArtifactError`), matching `SourceTimeoutError` and
   `ResearchTimeoutError`. This is a cosmetic reorder with no behavior change:
   `isinstance`/`except` against either base is unaffected.
+- `client.mind_maps` mutation sites now raise `MindMapNotFoundError` instead of
+  a bare `ValueError` on a missing target, so callers can `except NotFoundError`
+  (or `except MindMapError`) uniformly across namespaces. `rename` (and the
+  underlying note-backed `rename_mind_map`) raise it; `MindMapNotFoundError`
+  multi-inherits `ValueError`'s sibling `NotFoundError`, **not** `ValueError`
+  itself, so existing `except ValueError` rename callers must switch to
+  `except NotFoundError` / `except MindMapNotFoundError`. `delete(kind=None)` is
+  now **idempotent** — deleting an already-absent mind map returns `None` rather
+  than raising (matching `sources`/`artifacts`/`notes` delete, and the
+  `kind`-supplied path). `get_tree` returns `None` for a missing mind map (it is
+  a derived read that does not police parent existence) — previously `kind=None`
+  raised on an unknown id. Shape-drift in the interactive payload still raises
+  `UnknownRPCMethodError` (ADR-0019; issues #1291, #1346).
 
 ## [0.7.0] - 2026-05-30
 

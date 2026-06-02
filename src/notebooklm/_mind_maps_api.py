@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from ._artifact.payloads import build_interactive_mind_map_artifact_params
 from ._row_adapters.notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
-from .exceptions import ArtifactError, UnknownRPCMethodError
+from .exceptions import ArtifactError, MindMapNotFoundError, UnknownRPCMethodError
 from .rpc import RPCMethod, safe_index
 from .types import ArtifactType
 
@@ -317,11 +317,11 @@ class MindMapsAPI:
             ``return_object=False``.
 
         Raises:
-            ValueError: if no mind map with ``mind_map_id`` exists. (Mind maps
-                have no dedicated ``*NotFoundError``; absence is detected via a
-                content/list lookup, not a transport 404. The detection is the
-                same fail-loud-on-missing policy as ``sources``/``artifacts``
-                rename — issue #1255.)
+            MindMapNotFoundError: if no mind map with ``mind_map_id`` exists.
+                Absence is detected via a content/list lookup, not a transport
+                404, but is still surfaced as a ``*NotFoundError`` so callers can
+                ``except NotFoundError`` (or ``except MindMapError``) uniformly
+                across namespaces (ADR-0019; issues #1255, #1291).
 
         .. versionchanged:: 0.7.0
             **Breaking change:** previously returned ``None`` even on success.
@@ -332,7 +332,7 @@ class MindMapsAPI:
             # Auto-detect inline so the note-backed list is fetched once rather
             # than twice (a separate ``_detect_kind`` call would re-issue
             # ``list_mind_maps``). Error precedence matches ``_detect_kind``:
-            # note-backed first, then interactive, then ``ValueError``.
+            # note-backed first, then interactive, then ``MindMapNotFoundError``.
             for row in await self._mind_maps.list_mind_maps(notebook_id):
                 if NoteRow(row).id == mind_map_id:
                     await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
@@ -345,19 +345,18 @@ class MindMapsAPI:
                     notebook_id, mind_map_id, new_title, return_object=False
                 )
                 return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
-            raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+            raise MindMapNotFoundError(mind_map_id)
         if kind == MindMapKind.NOTE_BACKED:
             await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
         else:
             # Pre-validate the id on the explicit-interactive path. Without this,
             # ``RENAME_ARTIFACT`` silently no-ops on a wrong id (the RPC returns
             # null), diverging from the ``kind=None`` path which raises
-            # ``ValueError`` for an unknown id. Fail loud instead (issue #1270;
-            # aligns with the "fail loud + return object" direction of #1255).
+            # ``MindMapNotFoundError`` for an unknown id. Fail loud instead
+            # (issue #1270; aligns with the "fail loud + return object" direction
+            # of #1255).
             if await self._find_interactive(notebook_id, mind_map_id) is None:
-                raise ValueError(
-                    f"Interactive mind map {mind_map_id!r} not found in notebook {notebook_id!r}"
-                )
+                raise MindMapNotFoundError(mind_map_id)
             await self._artifacts.rename(notebook_id, mind_map_id, new_title, return_object=False)
         return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
 
@@ -367,17 +366,18 @@ class MindMapsAPI:
         """Re-fetch the renamed map (or skip when ``return_object=False``).
 
         A ``None`` from ``get`` here means the map is absent — surface it as
-        the same ``ValueError`` the missing-target dispatch paths raise rather
-        than returning a stale/absent object. For paths that pre-validate the
-        id (auto-detect and explicit-interactive) this is a vanished-between-
-        rename-and-refetch race; for the explicit ``kind=NOTE_BACKED`` path it
-        is the primary missing-target signal. Either way, absent → raise.
+        the same ``MindMapNotFoundError`` the missing-target dispatch paths
+        raise rather than returning a stale/absent object. For paths that
+        pre-validate the id (auto-detect and explicit-interactive) this is a
+        vanished-between-rename-and-refetch race; for the explicit
+        ``kind=NOTE_BACKED`` path it is the primary missing-target signal.
+        Either way, absent → raise.
         """
         if not return_object:
             return None
         mind_map = await self.get(notebook_id, mind_map_id)
         if mind_map is None:
-            raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+            raise MindMapNotFoundError(mind_map_id)
         return mind_map
 
     async def delete(
@@ -392,18 +392,25 @@ class MindMapsAPI:
         Omitting ``kind`` triggers an extra list RPC (and possibly a second
         ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
 
+        Idempotent on a missing target: like ``sources``/``artifacts``/``notes``
+        delete, deleting an already-absent mind map is a no-op that returns
+        ``None`` (ADR-0019). When ``kind`` is omitted, ``_detect_kind`` lists to
+        pick the right RPC family and raises ``MindMapNotFoundError`` for an
+        unknown id; that already-absent signal is swallowed here.
+
         .. versionchanged:: 0.7.0
             **Breaking change:** previously returned a hardcoded ``True``;
-            now returns ``None`` (issue #1211).
-
-        .. note::
-            Unlike ``sources``/``artifacts``/``notes`` delete, this is **not**
-            idempotent on a missing target: when ``kind`` is omitted it routes
-            through ``_detect_kind``, which raises ``ValueError`` for an unknown
-            id (it must list to pick the right RPC family). Pass ``kind`` to
-            skip detection and delete idempotently.
+            now returns ``None`` (issue #1211). Auto-detect (``kind=None``) is
+            now idempotent on a missing target rather than raising (issue #1291).
         """
-        kind = kind or await self._detect_kind(notebook_id, mind_map_id)
+        if kind is None:
+            try:
+                kind = await self._detect_kind(notebook_id, mind_map_id)
+            except MindMapNotFoundError:
+                # Already absent — deletion is idempotent (ADR-0019), matching
+                # the kind-supplied path (whose delete RPCs are no-ops on a
+                # missing id) and the sibling sources/artifacts/notes deletes.
+                return None
         if kind == MindMapKind.NOTE_BACKED:
             await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
         else:
@@ -423,18 +430,25 @@ class MindMapsAPI:
 
         Omitting ``kind`` triggers an extra list RPC (and possibly a second
         ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
+
+        As a derived read (ADR-0019), this does **not** police parent existence:
+        a missing mind map and an existing-but-unpopulated (not-ready) one both
+        return ``None``. Use :meth:`get` to distinguish absence from emptiness.
+        Shape-drift in the interactive payload still raises
+        :class:`~notebooklm.exceptions.UnknownRPCMethodError` (issue #1270).
         """
         if kind is None:
             # Auto-detect inline so the note-backed list is fetched once rather
             # than twice (a separate ``_detect_kind`` call would re-issue
-            # ``list_mind_maps``). Error precedence matches ``_detect_kind``:
-            # note-backed first (return its parsed tree), then interactive
-            # (fall through to the RPC), then ``ValueError``.
+            # ``list_mind_maps``). Precedence matches ``_detect_kind``: note-backed
+            # first (return its parsed tree), then interactive (fall through to the
+            # RPC). A miss in both backings returns ``None`` rather than raising —
+            # derived reads return the uniform-empty value on a missing parent.
             for row in await self._mind_maps.list_mind_maps(notebook_id):
                 if NoteRow(row).id == mind_map_id:
                     return _parse_tree(self._mind_maps.extract_content(row))
             if await self._find_interactive(notebook_id, mind_map_id) is None:
-                raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+                return None
         elif kind == MindMapKind.NOTE_BACKED:
             for row in await self._mind_maps.list_mind_maps(notebook_id):
                 if NoteRow(row).id == mind_map_id:
@@ -454,13 +468,19 @@ class MindMapsAPI:
         return _parse_tree(tree_json)
 
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
-        """Resolve a bare id to its backing (note collection first, then studio)."""
+        """Resolve a bare id to its backing (note collection first, then studio).
+
+        The single-sourced absence detector (ADR-0019): raises
+        :class:`~notebooklm.exceptions.MindMapNotFoundError` for an unknown id,
+        which each caller interprets per its operation class — ``rename``
+        re-raises, ``delete`` swallows it to ``None``.
+        """
         for row in await self._mind_maps.list_mind_maps(notebook_id):
             if NoteRow(row).id == mind_map_id:
                 return MindMapKind.NOTE_BACKED
         if await self._find_interactive(notebook_id, mind_map_id) is not None:
             return MindMapKind.INTERACTIVE
-        raise ValueError(f"Mind map {mind_map_id!r} not found in notebook {notebook_id!r}")
+        raise MindMapNotFoundError(mind_map_id)
 
     async def _find_interactive(
         self,

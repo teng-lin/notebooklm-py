@@ -16,6 +16,7 @@ import pytest
 
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteRowKind, NoteService
+from notebooklm.exceptions import MindMapNotFoundError, NotFoundError
 
 
 @pytest.fixture
@@ -145,9 +146,12 @@ class TestRenameMindMap:
         mock_notes.extract_content = MagicMock(return_value="content")
         mock_notes.update_note = AsyncMock()
 
-        with pytest.raises(ValueError, match="ghost"):
+        with pytest.raises(MindMapNotFoundError, match="ghost") as excinfo:
             await service.rename_mind_map("nb_abc", "ghost", "New Title")
 
+        # Catchable via the cross-domain umbrella too (ADR-0019), and carries the id.
+        assert isinstance(excinfo.value, NotFoundError)
+        assert excinfo.value.mind_map_id == "ghost"
         mock_notes.update_note.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -157,7 +161,7 @@ class TestRenameMindMap:
         self._stub_list(mock_notes, [])
         mock_notes.update_note = AsyncMock()
 
-        with pytest.raises(ValueError, match="mm_1"):
+        with pytest.raises(MindMapNotFoundError, match="mm_1"):
             await service.rename_mind_map("nb_abc", "mm_1", "New Title")
 
         mock_notes.update_note.assert_not_awaited()
