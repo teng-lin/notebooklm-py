@@ -98,6 +98,21 @@ def _resolve_return(fn: Callable[..., object]) -> object:
     return hints.get("return", inspect.Signature.empty)
 
 
+def _require_return(namespace: str, method: str) -> object:
+    """Resolve a method's return annotation, failing loud if it is un-annotated.
+
+    A public lookup method with no return annotation cannot be contract-checked
+    (and a bare ``empty`` would otherwise read as "not Optional" / "not None"),
+    so this raises an actionable assertion rather than silently passing.
+    """
+    annotation = _resolve_return(_method(namespace, method))
+    assert annotation is not inspect.Signature.empty, (
+        f"{namespace}.{method} has no return annotation; a public lookup must be "
+        "explicitly typed so it can be contract-checked."
+    )
+    return annotation
+
+
 def _is_optional(annotation: object) -> bool:
     """Return ``True`` when ``annotation`` is ``Optional[...]`` (a union with ``None``)."""
     if typing.get_origin(annotation) in (typing.Union, types.UnionType):
@@ -107,6 +122,10 @@ def _is_optional(annotation: object) -> bool:
 
 def _is_none(annotation: object) -> bool:
     """Return ``True`` when ``annotation`` denotes ``None`` (``NoneType``)."""
+    # ``typing.get_type_hints`` normalises a ``-> None`` annotation to
+    # ``type(None)``, so the identity check is correct as long as the annotation
+    # comes through ``_resolve_return``. (A raw ``inspect.signature`` would yield
+    # the ``None`` *singleton* instead, for which this would need ``is None``.)
     return annotation is type(None)
 
 
@@ -141,6 +160,8 @@ def test_lookup_surface_is_pinned(method_name: str, discovered: list[str]) -> No
     that makes ``hasattr(cls, method)`` go quietly false), which would otherwise
     shrink the parametrisation to a still-green subset.
     """
+    # ADR-0019: every lookup namespace exposes all three of get/get_or_none/
+    # delete, so the three discovered sets must each equal the same constant.
     assert set(discovered) == LOOKUP_NAMESPACES, (
         f"namespaces exposing {method_name!r} = {sorted(discovered)}, "
         f"expected {sorted(LOOKUP_NAMESPACES)}"
@@ -150,7 +171,7 @@ def test_lookup_surface_is_pinned(method_name: str, discovered: list[str]) -> No
 @pytest.mark.parametrize("namespace", _GET_OR_NONE_NAMESPACES)
 def test_get_or_none_returns_optional(namespace: str) -> None:
     """Every namespace exposing ``get_or_none`` annotates it ``Optional`` (ADR-0019)."""
-    annotation = _resolve_return(_method(namespace, "get_or_none"))
+    annotation = _require_return(namespace, "get_or_none")
     assert _is_optional(annotation), (
         f"{namespace}.get_or_none must return Optional[...]; got {annotation!r}"
     )
@@ -159,7 +180,7 @@ def test_get_or_none_returns_optional(namespace: str) -> None:
 @pytest.mark.parametrize("namespace", _DELETE_NAMESPACES)
 def test_delete_returns_none(namespace: str) -> None:
     """Every public ``delete`` is an idempotent no-payload command -> ``None`` (ADR-0019)."""
-    annotation = _resolve_return(_method(namespace, "delete"))
+    annotation = _require_return(namespace, "delete")
     assert _is_none(annotation), f"{namespace}.delete must return None; got {annotation!r}"
 
 
@@ -172,11 +193,7 @@ def test_get_is_non_optional_or_exempt(namespace: str) -> None:
     allowlist must shrink as #1247 lands; this asserts every Optional ``get`` is
     accounted for and that no exemption is stale.
     """
-    annotation = _resolve_return(_method(namespace, "get"))
-    assert annotation is not inspect.Signature.empty, (
-        f"{namespace}.get has no return annotation; a public lookup must be "
-        "explicitly typed (an un-annotated get cannot be contract-checked)."
-    )
+    annotation = _require_return(namespace, "get")
     if _is_optional(annotation):
         assert namespace in GET_OPTIONAL_EXEMPTIONS, (
             f"{namespace}.get is Optional but not in GET_OPTIONAL_EXEMPTIONS; "
@@ -189,16 +206,20 @@ def test_get_is_non_optional_or_exempt(namespace: str) -> None:
         )
 
 
-def test_get_optional_exemptions_are_live() -> None:
+@pytest.mark.parametrize("namespace", sorted(GET_OPTIONAL_EXEMPTIONS))
+def test_get_optional_exemptions_are_live(namespace: str) -> None:
     """Every exemption names a real Optional ``get`` (no stale allowlist entries)."""
-    for namespace, reason in GET_OPTIONAL_EXEMPTIONS.items():
-        assert namespace in NAMESPACES, f"unknown namespace in exemptions: {namespace}"
-        assert reason.strip(), f"{namespace} exemption must carry a non-empty reason"
-        annotation = _resolve_return(_method(namespace, "get"))
-        assert _is_optional(annotation), (
-            f"GET_OPTIONAL_EXEMPTIONS lists {namespace}.get as Optional, but it is "
-            f"now {annotation!r}; remove the stale exemption (#1247)."
-        )
+    cls = NAMESPACES.get(namespace)
+    assert cls is not None, f"unknown namespace in exemptions: {namespace}"
+    assert hasattr(cls, "get"), f"{namespace} exemption names a namespace without get()"
+    assert GET_OPTIONAL_EXEMPTIONS[namespace].strip(), (
+        f"{namespace} exemption must carry a non-empty reason"
+    )
+    annotation = _resolve_return(_method(namespace, "get"))
+    assert _is_optional(annotation), (
+        f"GET_OPTIONAL_EXEMPTIONS lists {namespace}.get as Optional, but it is "
+        f"now {annotation!r}; remove the stale exemption (#1247)."
+    )
 
 
 def test_mind_maps_delete_exposes_kind_parameter() -> None:
@@ -217,19 +238,19 @@ def test_mind_maps_delete_exposes_kind_parameter() -> None:
     assert kind.default is None, "`kind` must default to None (omitted-kind auto-detect)"
 
 
+@pytest.mark.parametrize("namespace", sorted(NAMESPACES))
 @pytest.mark.parametrize("method_name", ["get", "get_or_none", "delete"])
-def test_lookup_methods_have_no_varargs(method_name: str) -> None:
+def test_lookup_methods_have_no_varargs(method_name: str, namespace: str) -> None:
     """No public lookup/delete method uses a ``*args``/``*ids`` varargs signature.
 
     A ``*ids`` base would erase the per-namespace public signatures (the
     namespaces differ in arity); ADR-0019 Tier-2 rejected that base for exactly
     this reason. This asserts the explicit, typed signatures are preserved.
     """
-    for namespace, cls in NAMESPACES.items():
-        fn = getattr(cls, method_name, None)
-        if fn is None:
-            continue
-        assert not _has_varargs(fn), (
-            f"{namespace}.{method_name} must not use *args/*ids varargs; "
-            "keep an explicit, per-namespace typed signature (ADR-0019 Tier-2)."
-        )
+    fn = getattr(NAMESPACES[namespace], method_name, None)
+    if fn is None:
+        pytest.skip(f"{namespace} does not expose {method_name}")
+    assert not _has_varargs(fn), (
+        f"{namespace}.{method_name} must not use *args/*ids varargs; "
+        "keep an explicit, per-namespace typed signature (ADR-0019 Tier-2)."
+    )
