@@ -80,6 +80,18 @@ _CATEGORY_5 = frozenset(
 # ``time``/``shutil``/``sys`` targets).
 _REMOVED_STDLIB = frozenset({"shutil", "sys", "time"})
 
+# Deliberately NOT guarded here: the ``_ORIGINAL_*`` import-time capture
+# constants (``_ORIGINAL_GET_BROWSER_PROFILE_DIR`` / ``_ORIGINAL_GET_STORAGE_PATH``
+# / ``_ORIGINAL_GET_CONTEXT_PATH`` / ``_ORIGINAL_GET_PATH_INFO``) that #1367
+# deleted. They lived inside ``services.playwright_login`` and
+# ``services.session_context`` as private helpers for ``_resolve_paths_helper``'s
+# patched-vs-default comparison — they were never re-exported on, nor attributes
+# of, ``notebooklm.cli.session_cmd`` (verified: zero ``_ORIGINAL_*`` references in
+# ``session_cmd.py`` at the pre-#1367 base). This gate guards the ``session_cmd``
+# attribute surface specifically, so a name that was never on that surface cannot
+# "reappear" there; denylisting it would assert a non-fact. (Per CodeRabbit on
+# PR #1374.)
+
 REMOVED_PATCH_SURFACE_NAMES: frozenset[str] = (
     _CATEGORY_2 | _CATEGORY_4 | _CATEGORY_5 | _REMOVED_STDLIB
 )
