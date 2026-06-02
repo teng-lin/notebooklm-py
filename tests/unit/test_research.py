@@ -1453,6 +1453,7 @@ class TestResearch:
 
         assert result.status == "not_found"
         assert result.task_id == "task_missing"
+        assert result.tasks == ()
 
     @pytest.mark.asyncio
     async def test_poll_no_task_id_empty_response_stays_no_research(
