@@ -596,6 +596,17 @@ class TestArtifactsGenerateAPI:
             result = await client.artifacts.generate_flashcards(MUTABLE_NOTEBOOK_ID)
         assert result is not None
 
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_retry_failed.yaml")
+    async def test_retry_failed(self):
+        """Retry a failed artifact in place — the same id comes back in_progress."""
+        artifact_id = "11111111-2222-3333-4444-555555555555"
+        async with vcr_client() as client:
+            result = await client.artifacts.retry_failed(MUTABLE_NOTEBOOK_ID, artifact_id)
+        assert result.task_id == artifact_id
+        assert result.status == "in_progress"
+
 
 # =============================================================================
 # Chat API

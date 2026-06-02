@@ -608,7 +608,8 @@ def artifact_retry(
     Re-runs generation for an already-failed artifact WITHOUT deleting it. The
     same ARTIFACT_ID is preserved, so `poll`/`wait` keep working against it.
     ARTIFACT_ID can be a full UUID or a unique prefix (e.g. `abc` matches
-    `abc123def...`).
+    `abc123def...`); unlike `poll`, it is resolved against `artifact list`, so
+    the artifact must already appear there (a failed artifact always does).
 
     \b
     A synchronous refusal (rate limit / quota / not-retryable) exits non-zero
@@ -666,9 +667,14 @@ def artifact_retry(
                     )
 
                 if json_output:
+                    # Once we are blocking on completion the id is an
+                    # ``artifact_id``, so the ``--wait`` payload mirrors
+                    # ``artifact wait``'s shape/keys exactly (the non-wait
+                    # kickoff above stays ``task_id``, matching ``artifact
+                    # poll`` / ``generate``).
                     json_output_response(
                         {
-                            "task_id": final.task_id,
+                            "artifact_id": final.task_id,
                             "status": final.status,
                             "url": final.url,
                             "error": final.error,
@@ -696,9 +702,10 @@ def artifact_retry(
 
             except TimeoutError:
                 if json_output:
+                    # Matches ``artifact wait``'s timeout payload key.
                     json_output_response(
                         {
-                            "task_id": status.task_id,
+                            "artifact_id": status.task_id,
                             "status": "timeout",
                             "error": f"Timed out after {timeout} seconds",
                         }

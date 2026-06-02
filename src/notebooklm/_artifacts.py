@@ -601,7 +601,10 @@ class ArtifactsAPI:
         #1342.)
 
         Args:
-            notebook_id: The notebook ID.
+            notebook_id: The notebook ID. Routing-only — it sets the
+                ``source_path`` header; the artifact is identified solely by
+                ``artifact_id`` in the RPC payload (same trait as
+                :meth:`revise_slide`).
             artifact_id: The ID of the failed artifact to retry.
 
         Returns:
@@ -620,6 +623,11 @@ class ArtifactsAPI:
         # Unlike ``_call_generate`` / ``revise_slide``, a USER_DISPLAYABLE_ERROR
         # refusal is intentionally NOT swallowed into status="failed" — it
         # propagates as RateLimitError/RPCError per ADR-0019 "async kickoff".
+        #
+        # ``allow_null=True`` lets a null decode through to the explicit
+        # ``result is None`` guard below (the golden fixture pins the
+        # normal-success row, so it records ``allow_null: false`` for that
+        # happy-path decode — the two are not in conflict).
         result = await self._rpc.rpc_call(
             RPCMethod.RETRY_ARTIFACT,
             params,

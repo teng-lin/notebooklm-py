@@ -1,0 +1,61 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22Rytqqe%22%2C%22%5B%5B2%2Cnull%2Cnull%2C%5B1%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%5D%5D%2C%5B%5B1%2C4%2C8%2C2%2C3%2C6%5D%5D%5D%2C%5C%2211111111-2222-3333-4444-555555555555%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1778848153629&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
+        __Secure-OSID=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=Rytqqe&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
+  response:
+    body:
+      string: ')]}''
+
+        308
+
+        [["wrb.fr","Rytqqe","[[\"11111111-2222-3333-4444-555555555555\",\"Retried
+        Video Overview\",3,[[[\"22222222-3333-4444-5555-666666666666\"]]],1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1]]",null,null,null,"generic"],["di",42],["af.httprm",42,"3927014500340100612",10]]
+
+        23
+
+        [["e",4,null,null,128]]
+
+        '
+    headers:
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Fri, 15 May 2026 12:29:13 GMT
+      Server:
+      - ESF
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1
