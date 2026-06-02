@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `except NoteError` / `except MindMapError` call sites. These are the
   prerequisite for the mind-map not-found work (ADR-0019; issues #1291, #1346).
   No method raises them yet — this change only adds the types.
+- `ResearchStatus.NOT_FOUND` — a typed lifecycle sentinel for the
+  poll-observed absence of a *specific* requested research task, distinct from
+  `NO_RESEARCH` ("nothing in flight"). `research.poll(notebook_id, task_id=...)`
+  now returns `ResearchTask.not_found(task_id)` (status `NOT_FOUND`, carrying
+  the requested id) when a non-empty pinned `task_id` matches no in-flight task;
+  the unfiltered `task_id=None` empty poll still returns `NO_RESEARCH`
+  unchanged. Additive and non-breaking — the poll never raises for an absent
+  task (ADR-0019 Rule 4; issues #1344, #1346).
 
 ### Changed
 

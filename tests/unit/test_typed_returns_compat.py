@@ -34,6 +34,13 @@ class TestResearchStatusEnum:
         assert ResearchStatus.COMPLETED == "completed"
         assert ResearchStatus.FAILED == "failed"
         assert ResearchStatus.NO_RESEARCH == "no_research"
+        assert ResearchStatus.NOT_FOUND == "not_found"
+
+    def test_not_found_is_distinct_from_no_research(self):
+        # The poll-observed absence of a specific task (NOT_FOUND) is a
+        # different lifecycle state from "nothing in flight" (NO_RESEARCH).
+        assert ResearchStatus.NOT_FOUND is not ResearchStatus.NO_RESEARCH
+        assert ResearchStatus.NOT_FOUND.value != ResearchStatus.NO_RESEARCH.value
 
     def test_is_a_str_subclass(self):
         assert isinstance(ResearchStatus.COMPLETED, str)
@@ -90,6 +97,24 @@ class TestTypedAttributeAccess:
         assert empty.status == ResearchStatus.NO_RESEARCH
         assert empty.tasks == ()
         assert empty.to_public_dict() == {"status": "no_research", "tasks": []}
+
+    def test_research_task_not_found_sentinel(self):
+        # The pinned-but-absent placeholder carries the requested task id and
+        # the NOT_FOUND status; its dict shape uses the per-task layout (since
+        # task_id is set), keeping it distinct from the no_research shape.
+        not_found = ResearchTask.not_found("task_missing")
+        assert not_found.status == ResearchStatus.NOT_FOUND
+        assert not_found.task_id == "task_missing"
+        assert not_found.tasks == ()
+        assert not_found.to_public_dict() == {
+            "task_id": "task_missing",
+            "status": "not_found",
+            "query": "",
+            "sources": [],
+            "summary": "",
+            "report": "",
+            "tasks": [],
+        }
 
 
 class TestDictSubscriptCompat:

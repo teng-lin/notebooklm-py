@@ -1467,9 +1467,12 @@ async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
     """
     Returns a ResearchTask for the selected research task. If task_id is None,
     selects the latest research task and emits an ambiguity warning if multiple
-    tasks are in-flight. Attributes:
+    tasks are in-flight. When task_id is supplied but no in-flight task matches,
+    returns ResearchTask.not_found(task_id) — status NOT_FOUND, a typed
+    poll-observed-absence sentinel (does not raise); the unfiltered empty poll
+    stays NO_RESEARCH. Attributes:
       - task_id:   str            — task/report identifier
-      - status:    ResearchStatus — COMPLETED | FAILED | IN_PROGRESS | NO_RESEARCH
+      - status:    ResearchStatus — COMPLETED | FAILED | IN_PROGRESS | NO_RESEARCH | NOT_FOUND
                                      (a str enum; == "completed" still holds)
       - query:     str            — original research query
       - sources:   tuple[ResearchSource, ...]

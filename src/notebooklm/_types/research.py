@@ -57,6 +57,12 @@ class ResearchStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     NO_RESEARCH = "no_research"
+    # ``NO_RESEARCH`` means "nothing in flight" (an unfiltered poll saw no
+    # tasks); ``NOT_FOUND`` is the poll-observed absence of a *specific*
+    # requested ``task_id`` (the task is not among the polled results). It is a
+    # typed lifecycle sentinel, not an error — distinct from looking up a
+    # resource that does not exist, which raises (ADR-0019 Rule 4, #1346).
+    NOT_FOUND = "not_found"
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.value
@@ -172,6 +178,17 @@ class ResearchTask(MappingCompatMixin):
         returned when no research task is in flight.
         """
         return cls(task_id="", status=ResearchStatus.NO_RESEARCH)
+
+    @classmethod
+    def not_found(cls, task_id: str) -> ResearchTask:
+        """Return the ``not_found`` placeholder for an absent pinned task.
+
+        Used when a poll explicitly requested ``task_id`` but that task is not
+        among the polled results. Distinct from :meth:`empty` (nothing in
+        flight): this carries the requested ``task_id`` and the typed
+        :attr:`ResearchStatus.NOT_FOUND` sentinel (ADR-0019 Rule 4).
+        """
+        return cls(task_id=task_id, status=ResearchStatus.NOT_FOUND)
 
     def _to_task_dict(self) -> dict[str, Any]:
         """Return the per-task dict shape (without the sibling ``tasks`` list).
