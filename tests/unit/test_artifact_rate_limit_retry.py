@@ -156,6 +156,23 @@ class TestWithRateLimitRetry:
         assert events[0].retry_number == 1
 
     @pytest.mark.asyncio
+    async def test_synthesized_event_is_rate_limited_without_rpc_code(self) -> None:
+        # A RateLimitError with no rpc_code must still produce a callback event
+        # whose result reads as rate-limited (uniform-callback contract), so we
+        # don't fall back to brittle message-substring matching.
+        success = GenerationStatus(task_id="task_123", status="in_progress")
+        generate_fn = AsyncMock(side_effect=[RateLimitError("429 from gateway"), success])
+        events: list[RateLimitRetryEvent] = []
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await with_rate_limit_retry(generate_fn, max_retries=2, on_retry=events.append)
+
+        assert result == success
+        assert len(events) == 1
+        assert events[0].result.error_code == "USER_DISPLAYABLE_ERROR"
+        assert events[0].result.is_rate_limited is True
+
+    @pytest.mark.asyncio
     async def test_reraises_rate_limit_error_when_budget_exhausted(self) -> None:
         error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
         generate_fn = AsyncMock(side_effect=error)

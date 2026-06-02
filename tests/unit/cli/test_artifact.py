@@ -1327,6 +1327,64 @@ class TestArtifactRetry:
             assert result.exit_code == 1
             assert "Artifact completed" not in result.output
 
+    def test_artifact_retry_wait_json_terminal_failure_exits_nonzero(self, runner, mock_auth):
+        """`--wait --json` with a terminal failure exits 1 with a JSON payload
+        keyed by `artifact_id` (matching `artifact wait`)."""
+        from notebooklm.types import GenerationStatus
+
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = self._client_with_failed_artifact()
+            mock_client.artifacts.retry_failed = AsyncMock(
+                return_value=GenerationStatus(task_id="art_123", status="in_progress")
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                return_value=GenerationStatus(
+                    task_id="art_123", status="failed", error="Provider error"
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "retry", "art_123", "-n", "nb_123", "--wait", "--json"]
+                )
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["status"] == "failed"
+            assert data["artifact_id"] == "art_123"
+
+    def test_artifact_retry_wait_timeout_json_output(self, runner, mock_auth):
+        """Timeout with `--wait --json` emits a structured payload (keyed by
+        `artifact_id`, matching `artifact wait`) and exits 1."""
+        from notebooklm.types import GenerationStatus
+
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = self._client_with_failed_artifact()
+            mock_client.artifacts.retry_failed = AsyncMock(
+                return_value=GenerationStatus(task_id="art_123", status="in_progress")
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                side_effect=TimeoutError("Timed out")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "retry", "art_123", "-n", "nb_123", "--wait", "--json"]
+                )
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["status"] == "timeout"
+            assert data["artifact_id"] == "art_123"
+
     def test_artifact_retry_refusal_exits_nonzero(self, runner, mock_auth):
         """A synchronous RateLimitError refusal surfaces as a CLI error, not
         a started task — verifies retry_failed's raise propagates through the

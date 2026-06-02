@@ -139,11 +139,19 @@ async def with_rate_limit_retry(
         except RateLimitError as exc:
             if attempt >= max_retries:
                 raise
+            # This branch is reached only because a ``RateLimitError`` was
+            # caught, so the synthesized status must read as rate-limited for
+            # ``on_retry`` consumers (``event.result.is_rate_limited``). Fall
+            # back to the ``USER_DISPLAYABLE_ERROR`` sentinel when the exception
+            # carries no ``rpc_code`` rather than dropping ``error_code`` to
+            # ``None`` (which would force brittle message-substring matching).
             event_result = GenerationStatus(
                 task_id="",
                 status="failed",
                 error=str(exc),
-                error_code=(str(exc.rpc_code) if exc.rpc_code is not None else None),
+                error_code=(
+                    str(exc.rpc_code) if exc.rpc_code is not None else "USER_DISPLAYABLE_ERROR"
+                ),
             )
         else:
             if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
