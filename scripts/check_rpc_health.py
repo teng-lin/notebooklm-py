@@ -51,6 +51,7 @@ from uuid import uuid4
 
 import httpx
 
+from notebooklm._artifact.payloads import build_retry_artifact_params
 from notebooklm._env import get_default_language
 from notebooklm._logging import scrub_secrets
 from notebooklm._notebooks import build_create_notebook_params
@@ -548,8 +549,6 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         # matches no real artifact, so this is a safe liveness probe (no
         # actual retry is kicked off) that still echoes the method ID in the
         # error response — same posture as REVISE_SLIDE/RENAME_ARTIFACT above.
-        from notebooklm._artifact.payloads import build_retry_artifact_params
-
         return build_retry_artifact_params("placeholder_artifact_id")
 
     # Research operations (read-only - poll/import only)
