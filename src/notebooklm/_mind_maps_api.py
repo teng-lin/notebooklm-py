@@ -178,6 +178,23 @@ class MindMapsAPI:
 
     async def get(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
         """Return the mind map with ``mind_map_id``, or ``None`` if absent."""
+        return await self.get_or_none(notebook_id, mind_map_id)
+
+    async def get_or_none(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
+        """Get a mind map by ID, returning ``None`` when it does not exist.
+
+        The sanctioned ``None``-on-miss lookup (ADR-0019), spanning both
+        backings (note-backed JSON + interactive studio-artifact). Transport,
+        auth, and decode faults raised while listing either backing are **not**
+        swallowed; only a real "not found" yields ``None``.
+
+        Args:
+            notebook_id: The notebook ID.
+            mind_map_id: The mind map ID.
+
+        Returns:
+            The :class:`~notebooklm.types.MindMap`, or ``None`` if not found.
+        """
         for mind_map in await self.list(notebook_id):
             if mind_map.id == mind_map_id:
                 return mind_map

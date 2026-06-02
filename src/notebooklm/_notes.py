@@ -108,25 +108,39 @@ class NotesAPI:
         """
         # v0.8.0: replace the warn-and-return-None below with
         # ``raise NoteNotFoundError(note_id)`` (issue #1247). Internal callers
-        # that need the silent optional-lookup must use ``_get_or_none``
+        # that need the silent optional-lookup must use ``get_or_none``
         # directly so the library never self-warns.
-        result = await self._get_or_none(notebook_id, note_id)
+        result = await self.get_or_none(notebook_id, note_id)
         if result is None:
             warn_get_returns_none("note")
         return result
 
-    async def _get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
-        """Fetch a note by ID, returning ``None`` when not found.
+    async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
+        """Get a note by ID, returning ``None`` when it does not exist.
 
-        Private optional-lookup helper holding the historical ``get`` body. It
-        never emits a deprecation warning, so internal callers can probe for a
-        note without tripping the user-facing deprecation.
+        The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
+        — which is slated to raise ``NoteNotFoundError`` on a miss in v0.8.0
+        (issue #1247) — this returns ``None`` for a genuine absence and emits no
+        deprecation warning. Transport, auth, and decode faults raised by the
+        underlying note listing are **not** swallowed; only a real "not found"
+        yields ``None``.
+
+        Args:
+            notebook_id: The notebook ID.
+            note_id: The note ID.
+
+        Returns:
+            The :class:`~notebooklm.types.Note`, or ``None`` if not found.
         """
         all_items = await self._get_all_notes_and_mind_maps(notebook_id)
         for item in all_items:
             if isinstance(item, list) and len(item) > 0 and item[0] == note_id:
                 return self._parse_note(item, notebook_id)
         return None
+
+    # Internal optional-lookup alias: kept as a stable private name so existing
+    # internal call sites and tests can probe without the public deprecation.
+    _get_or_none = get_or_none
 
     async def create(
         self,

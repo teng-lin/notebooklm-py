@@ -246,7 +246,17 @@ the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
 `NotebookNotFoundError`. Migrate any `if result is None:` check to
 `try/except <Resource>NotFoundError` before v0.8.0 (suppress the warning
 meanwhile with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`); see
-[`deprecations.md`](deprecations.md) and issue #1247. The workflows that
+[`deprecations.md`](deprecations.md) and issue #1247. If you genuinely want
+`None`-on-miss after the flip, every namespace now offers a paired
+`get_or_none(...)` (`client.notebooks.get_or_none(nb_id)`,
+`client.sources.get_or_none(nb_id, source_id)`, and likewise for `artifacts`,
+`notes`, and `mind_maps`) — the sanctioned, warning-free `None`-on-miss lookup.
+It returns `None` for a genuine absence and re-raises transport, auth, and
+decode faults rather than swallowing them. (The one documented carve-out is
+`artifacts`, which inherits `client.artifacts.list(...)`'s deliberate
+partial-availability behavior: a transport failure of the mind-map sub-fetch is
+logged and the studio artifacts that loaded are still returned — see ADR-0019
+Rule 3.) The workflows that
 *already* raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
 `client.sources.wait_until_ready(...)`. Artifact-download workflows raise
 `ArtifactNotFoundError` when a requested artifact ID is not in the listing.

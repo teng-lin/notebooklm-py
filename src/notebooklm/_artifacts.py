@@ -217,21 +217,42 @@ class ArtifactsAPI:
         # v0.8.0: replace the warn-and-return-None below with
         # ``raise ArtifactNotFoundError(artifact_id)`` (issue #1247). Internal
         # callers that need the silent optional-lookup must use
-        # ``_get_or_none`` directly so the library never self-warns.
-        result = await self._get_or_none(notebook_id, artifact_id)
+        # ``get_or_none`` directly so the library never self-warns.
+        result = await self.get_or_none(notebook_id, artifact_id)
         if result is None:
             warn_get_returns_none("artifact")
         return result
 
-    async def _get_or_none(self, notebook_id: str, artifact_id: str) -> Artifact | None:
-        """Fetch an artifact by ID, returning ``None`` when not found.
+    async def get_or_none(self, notebook_id: str, artifact_id: str) -> Artifact | None:
+        """Get an artifact by ID, returning ``None`` when it does not exist.
 
-        Private optional-lookup helper holding the historical ``get`` body. It
-        never emits a deprecation warning, so internal callers can probe for an
-        artifact without tripping the user-facing deprecation.
+        The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
+        — which is slated to raise
+        :class:`~notebooklm.exceptions.ArtifactNotFoundError` on a miss in
+        v0.8.0 (issue #1247) — this returns ``None`` for a genuine absence and
+        emits no deprecation warning. This method neither catches nor synthesizes
+        a miss itself; it lists once and id-matches, inheriting :meth:`list`'s
+        behavior unchanged. (Per ADR-0019 Rule 3, ``list`` keeps its deliberate
+        *partial-availability* policy: a transport failure of the mind-map
+        sub-fetch logs a warning and yields the studio artifacts that did load,
+        so a note-backed mind-map id can read absent while that sub-fetch is
+        down. That cross-namespace policy is decided separately and is not
+        re-litigated here.) Faults raised by the primary studio-artifact listing
+        propagate unchanged.
+
+        Args:
+            notebook_id: The notebook ID.
+            artifact_id: The artifact ID.
+
+        Returns:
+            The :class:`~notebooklm.types.Artifact`, or ``None`` if not found.
         """
         logger.debug("Getting artifact %s from notebook %s", artifact_id, notebook_id)
         return await self._listing.get(notebook_id, artifact_id, list_artifacts=self.list)
+
+    # Internal optional-lookup alias: kept as a stable private name so existing
+    # internal call sites and tests can probe without the public deprecation.
+    _get_or_none = get_or_none
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""

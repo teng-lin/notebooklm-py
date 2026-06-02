@@ -168,25 +168,38 @@ class SourcesAPI:
         # v0.8.0: replace the warn-and-return-None below with
         # ``raise SourceNotFoundError(source_id)`` (issue #1247). Internal
         # callers that need the silent optional-lookup must use
-        # ``_get_or_none`` directly so the library never self-warns.
-        result = await self._get_or_none(notebook_id, source_id)
+        # ``get_or_none`` directly so the library never self-warns.
+        result = await self.get_or_none(notebook_id, source_id)
         if result is None:
             warn_get_returns_none("source")
         return result
 
-    async def _get_or_none(self, notebook_id: str, source_id: str) -> Source | None:
-        """Fetch a source by ID, returning ``None`` when not found.
+    async def get_or_none(self, notebook_id: str, source_id: str) -> Source | None:
+        """Get a source by ID, returning ``None`` when it does not exist.
 
-        Private optional-lookup helper holding the historical ``get`` body.
-        Unlike the public :meth:`get`, this never emits a deprecation warning,
-        so internal callers (and the readiness pollers) can probe for a source
-        without tripping the user-facing deprecation.
+        The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
+        — which is slated to raise :class:`~notebooklm.exceptions.SourceNotFoundError`
+        on a miss in v0.8.0 (issue #1247) — this returns ``None`` for a genuine
+        absence and emits no deprecation warning. Transport, auth, and decode
+        faults are **not** swallowed; only a real "not found" yields ``None``.
+
+        Args:
+            notebook_id: The notebook ID.
+            source_id: The source ID.
+
+        Returns:
+            The :class:`~notebooklm.types.Source`, or ``None`` if not found.
         """
         return await self._lister.get(
             notebook_id,
             source_id,
             list_sources=self.list,
         )
+
+    # Internal optional-lookup alias: the readiness pollers and CLI service
+    # layer probe for a source without tripping the public ``get`` deprecation
+    # warning. Kept as a stable private name so those call sites need no churn.
+    _get_or_none = get_or_none
 
     async def wait_until_ready(
         self,

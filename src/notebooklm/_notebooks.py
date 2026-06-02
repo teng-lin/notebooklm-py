@@ -507,6 +507,27 @@ class NotebooksAPI:
             )
         return notebook
 
+    async def get_or_none(self, notebook_id: str) -> Notebook | None:
+        """Get notebook details, returning ``None`` when it does not exist.
+
+        The sanctioned ``None``-on-miss lookup (ADR-0019): a companion to
+        :meth:`get`, which raises :class:`~notebooklm.exceptions.NotebookNotFoundError`
+        on a miss. This catches *only* that genuine-absence signal and returns
+        ``None``; transport, auth, and decode faults — including the broader
+        :class:`~notebooklm.exceptions.RPCError` subtree
+        :class:`NotebookNotFoundError` also inherits — propagate unchanged.
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            The :class:`~notebooklm.types.Notebook`, or ``None`` if not found.
+        """
+        try:
+            return await self.get(notebook_id)
+        except NotebookNotFoundError:
+            return None
+
     async def delete(self, notebook_id: str) -> None:
         """Delete a notebook.
 
