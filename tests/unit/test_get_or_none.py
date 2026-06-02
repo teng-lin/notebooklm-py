@@ -250,13 +250,19 @@ class TestMindMapsGetOrNone:
     async def test_returns_mind_map_on_hit(self, mind_maps_api):
         found = MindMap(id="mm_1", notebook_id="nb_1", title="X", kind=MindMapKind.NOTE_BACKED)
         mind_maps_api.list = AsyncMock(return_value=[found])
-        result = await mind_maps_api.get_or_none("nb_1", "mm_1")
+        # mind_maps.get() was never in the deprecation family, so neither the hit
+        # nor the miss path may warn — pin that for symmetry with the others.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            result = await mind_maps_api.get_or_none("nb_1", "mm_1")
         assert result is found
 
     @pytest.mark.asyncio
     async def test_returns_none_on_miss(self, mind_maps_api):
         mind_maps_api.list = AsyncMock(return_value=[])
-        result = await mind_maps_api.get_or_none("nb_1", "missing")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            result = await mind_maps_api.get_or_none("nb_1", "missing")
         assert result is None
 
     @pytest.mark.asyncio
