@@ -121,10 +121,26 @@ async def test_rename_missing_raises_even_with_return_object_false():
     # Unlike sources/artifacts (whose absence detection rides on the skipped
     # hydrate re-fetch), mind maps detect absence via a list lookup *before*
     # dispatching the rename, so return_object=False does NOT suppress the raise.
+    # Auto-detect (kind=None) path.
     api, _, _, artifacts, _ = _make_api()
     with pytest.raises(MindMapNotFoundError, match="not found"):
         await api.rename("nb", "ghost", "X", return_object=False)
     artifacts.rename.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rename_explicit_kind_missing_raises_even_with_return_object_false():
+    # The pre-dispatch guarantee holds on the explicit-kind paths too: NOTE_BACKED
+    # raises from rename_mind_map and INTERACTIVE raises from the _find_interactive
+    # pre-validation, both before _hydrate_renamed is reached.
+    api, _, mind_maps, artifacts, _ = _make_api()
+    mind_maps.rename_mind_map = AsyncMock(side_effect=MindMapNotFoundError("ghost"))
+    with pytest.raises(MindMapNotFoundError, match="ghost"):
+        await api.rename("nb", "ghost", "X", kind=MindMapKind.NOTE_BACKED, return_object=False)
+
+    with pytest.raises(MindMapNotFoundError, match="not found"):
+        await api.rename("nb", "ghost", "X", kind=MindMapKind.INTERACTIVE, return_object=False)
+    artifacts.rename.assert_not_awaited()  # never dispatched the no-op RPC
 
 
 @pytest.mark.asyncio

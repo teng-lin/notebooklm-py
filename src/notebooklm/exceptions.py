@@ -1389,12 +1389,13 @@ class MindMapError(NotebookLMError):
 class MindMapNotFoundError(NotFoundError, RPCError, MindMapError):
     """Mind map not found in notebook.
 
-    Raised by ``client.mind_maps`` mutation paths on a missing target —
-    ``rename`` and ``rename_mind_map`` (issue #1291). Absence is detected via a
-    content/list lookup, not a transport 404 (mind maps share storage with notes
-    / studio artifacts). The derived read ``get_tree`` and the idempotent
-    ``delete`` interpret the same absence signal differently: ``get_tree``
-    returns ``None`` and ``delete`` is a no-op (ADR-0019).
+    Raised by ``client.mind_maps.rename`` (and the underlying internal
+    ``NoteBackedMindMapService.rename_mind_map``) on a missing target
+    (issue #1291). Absence is detected via a content/list lookup, not a
+    transport 404 (mind maps share storage with notes / studio artifacts). The
+    derived read ``get_tree`` and the idempotent ``delete`` interpret the same
+    absence signal differently: ``get_tree`` returns ``None`` and ``delete`` is
+    a no-op (ADR-0019).
 
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`MindMapError`
