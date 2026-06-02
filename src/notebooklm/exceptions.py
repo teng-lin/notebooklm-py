@@ -1338,9 +1338,9 @@ class NoteNotFoundError(NotFoundError, RPCError, NoteError):
 
     .. note::
        This type is **defined but not raised by any method yet**. It is the
-       prerequisite for the note not-found work landing in v0.8.0 (issues
-       #1291, #1346); the wording below describes the intended catchability
-       once note read/mutation paths surface a missing note this way.
+       prerequisite for the note not-found work landing in v0.8.0 (umbrella
+       #1346); the wording below describes the intended catchability once note
+       read/mutation paths surface a missing note this way.
 
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`NoteError`

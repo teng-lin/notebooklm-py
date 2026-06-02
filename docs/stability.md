@@ -97,9 +97,9 @@ NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactFeatureUnavailableError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
 ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError
 ResearchError, ResearchTimeoutError, ResearchTaskMismatchError
-# Note: the note / mind-map *NotFoundError types are defined but not raised by
-# any method yet — they are the prerequisite for the not-found work landing in
-# v0.8.0 (issues #1291, #1346).
+# Note: MindMapNotFoundError is raised by the client.mind_maps mutation paths
+# (issue #1291). NoteNotFoundError is defined but not raised by any method yet —
+# the prerequisite for the note not-found work landing in v0.8.0 (umbrella #1346).
 NoteError, NoteNotFoundError
 MindMapError, MindMapNotFoundError
 ChatError
