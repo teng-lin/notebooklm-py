@@ -323,6 +323,14 @@ class MindMapsAPI:
                 ``except NotFoundError`` (or ``except MindMapError``) uniformly
                 across namespaces (ADR-0019; issues #1255, #1291).
 
+        .. note::
+            Unlike ``notebooks``/``sources``/``artifacts`` rename — whose
+            absence detection rides on the hydrate re-fetch and is therefore
+            skipped under ``return_object=False`` — mind maps detect absence via
+            a content/list lookup *before* dispatching the rename RPC, so this
+            raises ``MindMapNotFoundError`` on a missing target **even with**
+            ``return_object=False``.
+
         .. versionchanged:: 0.7.0
             **Breaking change:** previously returned ``None`` even on success.
             Now re-fetches and returns the renamed ``MindMap`` (issue #1255).
@@ -470,10 +478,14 @@ class MindMapsAPI:
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
         """Resolve a bare id to its backing (note collection first, then studio).
 
-        The single-sourced absence detector (ADR-0019): raises
-        :class:`~notebooklm.exceptions.MindMapNotFoundError` for an unknown id,
-        which each caller interprets per its operation class — ``rename``
-        re-raises, ``delete`` swallows it to ``None``.
+        Used by ``delete(kind=None)``, which swallows a missing-id
+        :class:`~notebooklm.exceptions.MindMapNotFoundError` to ``None``. The
+        ``rename`` / ``get_tree`` auto-detect paths do **not** call this — they
+        inline the same note-first/interactive-second resolution to avoid a
+        second ``list_mind_maps`` RPC, but mirror its precedence and raise type
+        (ADR-0019: one resolution rule, interpreted per operation class —
+        mutate-existing re-raises, derived reads return the uniform-empty
+        value, idempotent delete swallows it).
         """
         for row in await self._mind_maps.list_mind_maps(notebook_id):
             if NoteRow(row).id == mind_map_id:
