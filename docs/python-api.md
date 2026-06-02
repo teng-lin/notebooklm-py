@@ -246,7 +246,11 @@ the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
 `NotebookNotFoundError`. Migrate any `if result is None:` check to
 `try/except <Resource>NotFoundError` before v0.8.0 (suppress the warning
 meanwhile with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`); see
-[`deprecations.md`](deprecations.md) and issue #1247. If you genuinely want
+[`deprecations.md`](deprecations.md) and issue #1247. `client.mind_maps.get(...)`
+also returns `None` for a missing mind map today, but it is **not** part of this
+warned deprecation (it emits no `DeprecationWarning` and the `*NotFoundError`
+flip does not cover it); use `client.mind_maps.get_or_none(...)` for the same
+explicit `None`-on-miss contract as the others. If you genuinely want
 `None`-on-miss after the flip, every namespace now offers a paired
 `get_or_none(...)` (`client.notebooks.get_or_none(nb_id)`,
 `client.sources.get_or_none(nb_id, source_id)`, and likewise for `artifacts`,
