@@ -9,6 +9,7 @@ import pytest
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
 from notebooklm.exceptions import (
     ArtifactError,
+    ArtifactFeatureUnavailableError,
     MindMapNotFoundError,
     NotFoundError,
     UnknownRPCMethodError,
@@ -219,11 +220,19 @@ async def test_generate_interactive_wait_false_skips_tree():
 
 
 @pytest.mark.asyncio
-async def test_generate_interactive_raises_when_no_artifact_id():
+async def test_generate_interactive_raises_feature_unavailable_when_no_artifact_id():
+    # ADR-0019 async-kickoff null contract (issue #1359): a null/degenerate
+    # CREATE_ARTIFACT raises ArtifactFeatureUnavailableError (no task created),
+    # matching the sibling generate_* / retry_failed null-create paths.
     api, rpc, *_ = _make_api()
     rpc.configure_mock(rpc_call=AsyncMock(return_value=None))  # CREATE_ARTIFACT yields no id
-    with pytest.raises(ArtifactError, match="no artifact id"):
+    with pytest.raises(ArtifactFeatureUnavailableError) as exc_info:
         await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE)
+    # Carries the artifact-type + the CREATE_ARTIFACT method id for diagnostics.
+    assert exc_info.value.artifact_type == "mind_map"
+    assert exc_info.value.method_id == RPCMethod.CREATE_ARTIFACT.value
+    # Non-breaking: still catchable as the broad ArtifactError (it is a subclass).
+    assert isinstance(exc_info.value, ArtifactError)
 
 
 # --- #1270 sub-fix 1: get_tree drift vs absent-leaf ---------------------------
@@ -414,18 +423,36 @@ async def test_list_excludes_non_interactive_mind_map_artifacts():
 @pytest.mark.asyncio
 async def test_get_returns_matching_mind_map():
     api, *_ = _make_api(note_rows=[["note_mm", '{"name": "NB", "children": []}']])
-    mm = await api.get("nb", "note_mm")
+    # A hit is silent — only the miss path is deprecated (#1358).
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        mm = await api.get("nb", "note_mm")
     assert mm is not None
     assert mm.id == "note_mm"
     assert mm.kind == MindMapKind.NOTE_BACKED
 
 
 @pytest.mark.asyncio
-async def test_get_returns_none_when_absent():
-    # Neither backing contains the id -> None (the v0.7.0 contract; #1247
-    # tracks the eventual flip to raise).
+async def test_get_warns_and_returns_none_when_absent():
+    # Neither backing contains the id -> None, but with a DeprecationWarning
+    # naming the v0.8.0 MindMapNotFoundError flip (#1358 runway for #1247).
     api, *_ = _make_api(note_rows=[["note_mm", "{}"]])
-    assert await api.get("nb", "ghost") is None
+    with pytest.warns(DeprecationWarning, match="MindMapNotFoundError"):
+        assert await api.get("nb", "ghost") is None
+
+
+@pytest.mark.asyncio
+async def test_get_or_none_silent_on_miss():
+    # The sanctioned None-on-miss path stays silent (#1358): no warning even
+    # though it returns None for a missing id.
+    import warnings
+
+    api, *_ = _make_api(note_rows=[["note_mm", "{}"]])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        assert await api.get_or_none("nb", "ghost") is None
 
 
 # --- rename(kind=None) auto-detect dispatch ---------------------------------
@@ -459,9 +486,16 @@ async def test_rename_hydrate_raises_when_target_vanishes():
     # Explicit note-backed rename whose post-rename refetch finds nothing
     # (vanished-between-rename-and-refetch race) -> MindMapNotFoundError from
     # _hydrate_renamed rather than a stale/None object.
+    # DeprecationWarning escalated to an error pins the #1358 self-warn fix:
+    # _hydrate_renamed must re-fetch via the silent _get_or_none, not the
+    # warning-emitting public get() (this would fail if it regressed).
+    import warnings
+
     api, _, mind_maps, _, _ = _make_api(note_rows=[])
-    with pytest.raises(MindMapNotFoundError, match="not found"):
-        await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        with pytest.raises(MindMapNotFoundError, match="not found"):
+            await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
     mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
 
 

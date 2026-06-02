@@ -164,31 +164,49 @@ def sources_api():
     return SourcesAPI(MagicMock(), uploader=MagicMock())
 
 
+@pytest.fixture
+def mind_maps_api():
+    from notebooklm._mind_maps_api import MindMapsAPI
+
+    mind_maps = MagicMock(spec=NoteBackedMindMapService)
+    mind_maps.list_mind_maps = AsyncMock(return_value=[])
+    artifacts = MagicMock()
+    artifacts.list = AsyncMock(return_value=[])
+    notebooks = MagicMock()
+    return MindMapsAPI(
+        rpc=MagicMock(),
+        mind_maps=mind_maps,
+        artifacts=artifacts,
+        notebooks=notebooks,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Each public get() warns on a miss but still returns None
 # ---------------------------------------------------------------------------
+#
+# Parametrised over every #1247-cohort namespace (sources / notes / artifacts /
+# mind_maps) so the missing-warning gap that #1358 closed for mind_maps cannot
+# silently recur for any of them: each get() must emit the deprecation warning
+# on a miss. All four lookups iterate ``self.list(...)``, so a mocked-empty
+# ``list`` forces the miss uniformly.
+
+_GET_WARN_CASES = [
+    pytest.param("sources_api", "SourceNotFoundError", id="sources"),
+    pytest.param("notes_api", "NoteNotFoundError", id="notes"),
+    pytest.param("artifacts_api", "ArtifactNotFoundError", id="artifacts"),
+    pytest.param("mind_maps_api", "MindMapNotFoundError", id="mind_maps"),
+]
 
 
 class TestPublicGetWarnsOnMiss:
     @pytest.mark.asyncio
-    async def test_notes_get_warns_and_returns_none(self, notes_api):
-        notes_api.list = AsyncMock(return_value=[])
-        with pytest.warns(DeprecationWarning, match="NoteNotFoundError"):
-            result = await notes_api.get("nb_1", "missing")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_artifacts_get_warns_and_returns_none(self, artifacts_api):
-        artifacts_api.list = AsyncMock(return_value=[])
-        with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
-            result = await artifacts_api.get("nb_1", "missing")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_sources_get_warns_and_returns_none(self, sources_api):
-        sources_api.list = AsyncMock(return_value=[])
-        with pytest.warns(DeprecationWarning, match="SourceNotFoundError"):
-            result = await sources_api.get("nb_1", "missing")
+    @pytest.mark.parametrize(("api_fixture", "exc_name"), _GET_WARN_CASES)
+    async def test_get_warns_and_returns_none(self, request, api_fixture, exc_name):
+        api = request.getfixturevalue(api_fixture)
+        api.list = AsyncMock(return_value=[])
+        with pytest.warns(DeprecationWarning, match=exc_name):
+            result = await api.get("nb_1", "missing")
         assert result is None
 
 
@@ -236,28 +254,21 @@ class TestPublicGetDoesNotWarnOnHit:
 
 
 class TestGetOrNoneNeverWarns:
+    # Parametrised over every #1247-cohort namespace: the sanctioned
+    # ``_get_or_none`` optional-lookup path (and its public ``get_or_none``
+    # alias on mind_maps) stays silent on a miss for all of them — only the
+    # public ``get()`` is deprecated.
     @pytest.mark.asyncio
-    async def test_notes_get_or_none_silent_on_miss(self, notes_api):
-        notes_api.list = AsyncMock(return_value=[])
+    @pytest.mark.parametrize(
+        "api_fixture",
+        ["sources_api", "notes_api", "artifacts_api", "mind_maps_api"],
+    )
+    async def test_get_or_none_silent_on_miss(self, request, api_fixture):
+        api = request.getfixturevalue(api_fixture)
+        api.list = AsyncMock(return_value=[])
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
-            result = await notes_api._get_or_none("nb_1", "missing")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_artifacts_get_or_none_silent_on_miss(self, artifacts_api):
-        artifacts_api.list = AsyncMock(return_value=[])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            result = await artifacts_api._get_or_none("nb_1", "missing")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_sources_get_or_none_silent_on_miss(self, sources_api):
-        sources_api.list = AsyncMock(return_value=[])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            result = await sources_api._get_or_none("nb_1", "missing")
+            result = await api._get_or_none("nb_1", "missing")
         assert result is None
 
 

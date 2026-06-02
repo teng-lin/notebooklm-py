@@ -63,6 +63,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a derived read that does not police parent existence) — previously `kind=None`
   raised on an unknown id. Shape-drift in the interactive payload still raises
   `UnknownRPCMethodError` (ADR-0019; issues #1291, #1346).
+- `client.mind_maps.generate(kind=INTERACTIVE)` now raises
+  `ArtifactFeatureUnavailableError` (instead of a bare `ArtifactError`) when the
+  `CREATE_ARTIFACT` call returns no artifact id — no generation task was
+  created. **Non-breaking for `except ArtifactError`**:
+  `ArtifactFeatureUnavailableError` is a subclass of `ArtifactError`, so that
+  catch still works. (It also multi-inherits `RPCError`, so a handler that does
+  `except RPCError` *before* `except ArtifactError` will now take the `RPCError`
+  branch — the same MRO the sibling `generate_*` / `retry_failed` null-create
+  paths already produce.) This aligns the interactive async kickoff with that
+  sibling null-create contract (ADR-0019 "async kickoff"; issue #1359).
+- Documented two pre-existing `client.mind_maps` read semantics (docs-only, no
+  behavior change): `list()` populates `MindMap.tree` only for note-backed
+  entries — interactive entries carry `tree=None` ("not fetched", not "empty";
+  call `get_tree(..., kind=INTERACTIVE)` to fetch one); and the explicit
+  `get_tree(..., kind=INTERACTIVE)` path delegates absence detection to the RPC,
+  so a missing id's value is server-dependent (returns `None` today) rather than
+  enforced client-side (issues #1355, #1359).
+
+### Deprecated
+
+- **`client.mind_maps.get()` returning `None` for a missing mind map is now
+  deprecated**, closing the runway gap that left `mind_maps` as the only
+  #1247-cohort namespace without one. It now emits a `DeprecationWarning` on a
+  miss while **still returning `None`** (behavior unchanged this release),
+  matching `sources.get()` / `artifacts.get()` / `notes.get()`. In **v0.8.0** it
+  will instead **raise** `MindMapNotFoundError`. Use `get_or_none()` for the
+  sanctioned optional lookup (it stays silent), or migrate the `None`-check to a
+  `try/except MindMapNotFoundError`. The warning fires only on a miss; suppress
+  it with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Tracking issue: #1247 (gap: #1358).
+  See [`docs/deprecations.md`](docs/deprecations.md).
 
 ## [0.7.0] - 2026-05-30
 

@@ -17,9 +17,14 @@ import reprlib
 from typing import TYPE_CHECKING, Any
 
 from ._artifact.payloads import build_interactive_mind_map_artifact_params
+from ._deprecation import warn_get_returns_none
 from ._row_adapters.notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
-from .exceptions import ArtifactError, MindMapNotFoundError, UnknownRPCMethodError
+from .exceptions import (
+    ArtifactFeatureUnavailableError,
+    MindMapNotFoundError,
+    UnknownRPCMethodError,
+)
 from .rpc import RPCMethod, safe_index
 from .types import ArtifactType
 
@@ -150,7 +155,16 @@ class MindMapsAPI:
         self._notebooks = notebooks
 
     async def list(self, notebook_id: str) -> builtins.list[MindMap]:
-        """List all mind maps in a notebook — both backings, as distinct entries."""
+        """List all mind maps in a notebook — both backings, as distinct entries.
+
+        ``MindMap.tree`` is populated only for **note-backed** entries (parsed
+        for free from the already-listed note content). **Interactive** entries
+        carry ``tree=None``: fetching each tree would cost a separate
+        ``GET_INTERACTIVE_HTML`` per map, so ``list`` leaves it unfetched. A
+        ``None`` ``tree`` on an interactive entry therefore means "not fetched",
+        not "empty" — call :meth:`get_tree` with ``kind=INTERACTIVE`` to fetch
+        an individual interactive tree.
+        """
         result: builtins.list[MindMap] = []
         for row in await self._mind_maps.list_mind_maps(notebook_id):
             note_row = NoteRow(row)
@@ -177,16 +191,37 @@ class MindMapsAPI:
         return result
 
     async def get(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
-        """Return the mind map with ``mind_map_id``, or ``None`` if absent."""
-        return await self.get_or_none(notebook_id, mind_map_id)
+        """Return the mind map with ``mind_map_id``, or ``None`` if absent.
+
+        .. deprecated:: 0.7.0
+            Returning ``None`` for a missing mind map is deprecated and emits a
+            :class:`DeprecationWarning`. In **v0.8.0** this method will raise
+            :class:`~notebooklm.exceptions.MindMapNotFoundError` instead, to
+            match ``notebooks.get`` (issue #1247). Wrap the call in
+            ``try/except MindMapNotFoundError`` to keep handling missing mind
+            maps, or use :meth:`get_or_none` for the sanctioned optional lookup.
+            Suppress the warning with ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+        """
+        # v0.8.0: replace the warn-and-return-None below with
+        # ``raise MindMapNotFoundError(mind_map_id)`` (issue #1247). Internal
+        # callers that need the silent optional-lookup must use ``_get_or_none``
+        # directly so the library never self-warns.
+        result = await self.get_or_none(notebook_id, mind_map_id)
+        if result is None:
+            warn_get_returns_none("mind_map")
+        return result
 
     async def get_or_none(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
         """Get a mind map by ID, returning ``None`` when it does not exist.
 
         The sanctioned ``None``-on-miss lookup (ADR-0019), spanning both
-        backings (note-backed JSON + interactive studio-artifact). Transport,
-        auth, and decode faults raised while listing either backing are **not**
-        swallowed; only a real "not found" yields ``None``.
+        backings (note-backed JSON + interactive studio-artifact). Unlike
+        :meth:`get` — which is slated to raise
+        :class:`~notebooklm.exceptions.MindMapNotFoundError` on a miss in v0.8.0
+        (issue #1247) — this returns ``None`` for a genuine absence and emits no
+        deprecation warning. Transport, auth, and decode faults raised while
+        listing either backing are **not** swallowed; only a real "not found"
+        yields ``None``.
 
         Args:
             notebook_id: The notebook ID.
@@ -199,6 +234,11 @@ class MindMapsAPI:
             if mind_map.id == mind_map_id:
                 return mind_map
         return None
+
+    # Private alias for internal optional-lookup callers, mirroring
+    # ``sources``/``artifacts``/``notes``: the library calls ``_get_or_none``
+    # so it never trips its own ``get()`` deprecation warning (issue #1358).
+    _get_or_none = get_or_none
 
     async def generate(
         self,
@@ -224,8 +264,13 @@ class MindMapsAPI:
         ignored when ``kind=INTERACTIVE``.
 
         Raises:
-            ArtifactError: if the interactive ``CREATE_ARTIFACT`` call returns no
-                artifact id (null or unexpected response shape).
+            ArtifactFeatureUnavailableError: if the interactive
+                ``CREATE_ARTIFACT`` call returns no artifact id (null or
+                unexpected response shape) — no generation task was created.
+                A subclass of :class:`~notebooklm.exceptions.ArtifactError`, so
+                ``except ArtifactError`` still catches it; aligns the interactive
+                async kickoff with the sibling ``generate_*`` / ``retry_failed``
+                null-create contract (ADR-0019; issue #1359).
         """
         if kind == MindMapKind.NOTE_BACKED:
             res = await self._artifacts.generate_mind_map(
@@ -256,9 +301,15 @@ class MindMapsAPI:
         )
         new_id = _new_artifact_id(create_response)
         if new_id is None:
-            raise ArtifactError(
-                "CREATE_ARTIFACT returned no artifact id for the interactive mind map "
-                f"in notebook {notebook_id!r} (null or unexpected response shape)."
+            # ADR-0019 async-kickoff null contract: a null/degenerate
+            # CREATE_ARTIFACT means no generation task was created, so raise
+            # ArtifactFeatureUnavailableError (a subclass of ArtifactError, so
+            # ``except ArtifactError`` still catches it) rather than the bare
+            # ArtifactError, matching the sibling generate_* / retry_failed
+            # null-create paths (issue #1359).
+            raise ArtifactFeatureUnavailableError(
+                ArtifactType.MIND_MAP.value,
+                method_id=RPCMethod.CREATE_ARTIFACT.value,
             )
         if wait:
             await self._artifacts.wait_for_completion(notebook_id, new_id)
@@ -383,7 +434,10 @@ class MindMapsAPI:
         """
         if not return_object:
             return None
-        mind_map = await self.get(notebook_id, mind_map_id)
+        # ``_get_or_none`` (not the public ``get``) so the internal re-fetch
+        # never trips ``get()``'s own None-on-miss deprecation warning when the
+        # map vanished between rename and re-fetch (issue #1358).
+        mind_map = await self._get_or_none(notebook_id, mind_map_id)
         if mind_map is None:
             raise MindMapNotFoundError(mind_map_id)
         return mind_map
@@ -444,6 +498,19 @@ class MindMapsAPI:
         return ``None``. Use :meth:`get` to distinguish absence from emptiness.
         Shape-drift in the interactive payload still raises
         :class:`~notebooklm.exceptions.UnknownRPCMethodError` (issue #1270).
+
+        .. note::
+            The ``kind=None`` (auto-detect) and ``kind=NOTE_BACKED`` paths
+            enforce the ``None``-on-missing contract client-side (they confirm
+            the id exists before reading). The explicit
+            ``kind=MindMapKind.INTERACTIVE`` path instead **delegates absence
+            detection to the RPC**: it does no pre-validation and passes the id
+            straight to ``GET_INTERACTIVE_HTML`` (with ``allow_null=True``), so a
+            missing id's value is server-dependent — the server returns null
+            today, which flows through to ``None``, but that is not enforced
+            client-side. Skipping the pre-validation avoids an extra
+            ``LIST_ARTIFACTS`` round-trip on the explicit-kind fast path (issue
+            #1355).
         """
         if kind is None:
             # Auto-detect inline so the note-backed list is fetched once rather

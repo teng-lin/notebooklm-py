@@ -246,19 +246,20 @@ it is the prerequisite type for the note not-found work landing in **v0.8.0**
 (issue #1346).
 
 Use the table to pick the right level of catch. `client.sources.get(...)`,
-`client.artifacts.get(...)`, and `client.notes.get(...)` currently return
+`client.artifacts.get(...)`, `client.notes.get(...)`, and
+`client.mind_maps.get(...)` currently return
 `None` for a missing entity rather than raising — **but this is deprecated.**
 They now emit a `DeprecationWarning` on a miss and, in **v0.8.0**, will raise
 the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
-`NoteNotFoundError`) to match `client.notebooks.get(...)`, which already raises
+`NoteNotFoundError` / `MindMapNotFoundError`) to match `client.notebooks.get(...)`,
+which already raises
 `NotebookNotFoundError`. Migrate any `if result is None:` check to
 `try/except <Resource>NotFoundError` before v0.8.0 (suppress the warning
 meanwhile with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`); see
 [`deprecations.md`](deprecations.md) and issue #1247. `client.mind_maps.get(...)`
-also returns `None` for a missing mind map today, but it is **not** part of this
-warned deprecation (it emits no `DeprecationWarning` and the `*NotFoundError`
-flip does not cover it); use `client.mind_maps.get_or_none(...)` for the same
-explicit `None`-on-miss contract as the others. If you genuinely want
+joined this warned deprecation in v0.7.0 (issue #1358) — it was the last
+#1247-cohort namespace without a runway; use `client.mind_maps.get_or_none(...)`
+for the warning-free `None`-on-miss contract. If you genuinely want
 `None`-on-miss after the flip, every namespace now offers a paired
 `get_or_none(...)` (`client.notebooks.get_or_none(nb_id)`,
 `client.sources.get_or_none(nb_id, source_id)`, and likewise for `artifacts`,
@@ -1624,14 +1625,15 @@ Each operation dispatches to the correct backend; you work with `MindMap` /
 
 | Method | Args | Returns | Description |
 |--------|------|---------|-------------|
-| `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries |
-| `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id |
-| `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll) |
+| `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries. `MindMap.tree` is populated for note-backed entries but `None` for interactive ones (`None` = not fetched, not empty — see below) |
+| `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id. **Deprecated** `None`-on-miss (warns in v0.7.0, raises `MindMapNotFoundError` in v0.8.0 — issues #1247/#1358); use `get_or_none()` for the warning-free optional lookup |
+| `get_or_none(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Sanctioned `None`-on-miss lookup (silent — no deprecation warning) |
+| `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll). A null `CREATE_ARTIFACT` raises `ArtifactFeatureUnavailableError` (a subclass of `ArtifactError`) |
 | `rename(notebook_id, mind_map_id, new_title, *, kind=None, return_object=True)` | … | `MindMap \| None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind (re-fetched; raises `MindMapNotFoundError` if missing). `return_object=False` returns `None`. |
 | `delete(notebook_id, mind_map_id, *, kind=None)` | … | `None` | `DELETE_NOTE` / `DELETE_ARTIFACT` by kind (idempotent — deleting an already-absent map returns `None`, for both `kind=None` and a supplied `kind`) |
-| `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree; `None` for a missing or not-yet-populated map (derived read — does not police existence) |
+| `get_tree(notebook_id, mind_map_id, *, kind=None)` | … | `dict \| None` | The `{"name","children"}` node tree; `None` for a missing or not-yet-populated map (derived read — does not police existence). The explicit `kind=INTERACTIVE` path delegates absence detection to the RPC (a missing id's value is server-dependent — `None` today) |
 
-`MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree`. `generate(..., wait=True)` returns `tree` populated for **both** kinds (interactive maps are polled to completion, then their tree is fetched). For interactive *list* rows `tree` is `None` — fetch it with `get_tree`. When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
+`MindMap` is a frozen value: `id`, `notebook_id`, `title`, `kind` (`MindMapKind.NOTE_BACKED` / `INTERACTIVE`), `created_at`, and `tree`. `generate(..., wait=True)` returns `tree` populated for **both** kinds (interactive maps are polled to completion, then their tree is fetched). `list(...)` populates `tree` only for note-backed entries (parsed for free from the listed note content); interactive entries carry `tree=None` ("not fetched", not "empty" — fetching each would cost a separate `GET_INTERACTIVE_HTML`), so call `get_tree(..., kind=INTERACTIVE)` to fetch an individual interactive tree. When `kind` is omitted from `rename`/`delete`/`get_tree`, the backing is auto-detected (one extra list call).
 
 ```python
 maps = await client.mind_maps.list(nb_id)
