@@ -48,25 +48,53 @@ SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 ALLOWED_FILE = SRC_ROOT / "_deprecation.py"
 
 
-def _is_warnings_warn(func: ast.expr) -> bool:
-    """Return ``True`` if ``func`` is a ``warnings.warn`` / ``warn`` callee.
+def _resolve_warn_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """Resolve a module's import aliases for the ``warnings`` API.
 
-    Matches both the attribute form ``warnings.warn(...)`` and the bare
-    ``warn(...)`` produced by ``from warnings import warn``.
+    Returns ``(module_aliases, warn_aliases)`` where:
+
+    * ``module_aliases`` are the names bound to the ``warnings`` *module*
+      (``import warnings`` → ``{"warnings"}``; ``import warnings as w`` →
+      ``{"w"}``). A call ``<alias>.warn(...)`` against any of these is a hit.
+    * ``warn_aliases`` are the names bound directly to ``warnings.warn``
+      (``from warnings import warn`` → ``{"warn"}``;
+      ``from warnings import warn as deprecate`` → ``{"deprecate"}``). A bare
+      call ``<alias>(...)`` against any of these is a hit.
+
+    Resolving against the file's actual imports (rather than hard-coding the
+    name ``warn``) closes the aliasing bypass: ``import warnings as w;
+    w.warn(..., DeprecationWarning)`` and ``from warnings import warn as
+    deprecate; deprecate(..., DeprecationWarning)`` are both caught.
+    """
+    module_aliases: set[str] = set()
+    warn_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "warnings":
+                    module_aliases.add(alias.asname or "warnings")
+        elif isinstance(node, ast.ImportFrom) and node.module == "warnings":
+            for alias in node.names:
+                if alias.name == "warn":
+                    warn_aliases.add(alias.asname or "warn")
+    return module_aliases, warn_aliases
+
+
+def _is_warn_call(func: ast.expr, module_aliases: set[str], warn_aliases: set[str]) -> bool:
+    """Return ``True`` if ``func`` is a ``warnings.warn`` callee for this file.
+
+    Matches the attribute form ``<module_alias>.warn(...)`` and the bare
+    ``<warn_alias>(...)`` form, using the alias sets resolved from the file's
+    imports by :func:`_resolve_warn_bindings`.
     """
     if isinstance(func, ast.Attribute):
-        # ``warnings.warn`` (or any ``<x>.warn``; the category check below keeps
-        # this from over-matching unrelated ``.warn`` methods).
-        return func.attr == "warn"
+        return (
+            func.attr == "warn"
+            and isinstance(func.value, ast.Name)
+            and (func.value.id in module_aliases)
+        )
     if isinstance(func, ast.Name):
-        # Bare ``warn(...)`` — assumes ``from warnings import warn``. This is
-        # broad in principle (a ``warn`` imported from a logging/metrics library
-        # would also match), but the ``_names_deprecation_warning`` category
-        # check downstream narrows it to ``warn(..., DeprecationWarning)`` calls
-        # specifically, so a false positive needs both a non-warnings ``warn``
-        # *and* a ``DeprecationWarning`` category argument — vanishingly rare,
-        # and the right thing to gate anyway. Tighten here if it ever bites.
-        return func.id == "warn"
+        return func.id in warn_aliases
     return False
 
 
@@ -96,11 +124,12 @@ def _names_deprecation_warning(node: ast.Call) -> bool:
 def _scan(path: Path) -> list[int]:
     """Return ``[lineno, …]`` of inline ``DeprecationWarning`` calls in ``path``."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    module_aliases, warn_aliases = _resolve_warn_bindings(tree)
     violations: list[int] = []
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
-            and _is_warnings_warn(node.func)
+            and _is_warn_call(node.func, module_aliases, warn_aliases)
             and _names_deprecation_warning(node)
         ):
             violations.append(node.lineno)
@@ -128,35 +157,57 @@ def test_no_inline_deprecation_warnings_outside_deprecation_module() -> None:
     )
 
 
+def _hits_in_source(src: str) -> int:
+    """Count scanner hits in a source snippet (drives the real scan logic).
+
+    Resolves the snippet's own import aliases via :func:`_resolve_warn_bindings`
+    and matches calls with :func:`_is_warn_call` + :func:`_names_deprecation_warning`,
+    mirroring :func:`_scan` exactly so the self-check exercises the real path.
+    """
+    tree = ast.parse(src)
+    module_aliases, warn_aliases = _resolve_warn_bindings(tree)
+    return sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_warn_call(node.func, module_aliases, warn_aliases)
+        and _names_deprecation_warning(node)
+    )
+
+
 def test_lint_detects_the_offending_shape() -> None:
     """Self-check: the scanner flags a real ``warnings.warn(..., DeprecationWarning)``.
 
     Guards against the scanner silently degrading to a no-op (which would let
     the recurrence it exists to prevent slip through). Every callee form
-    (attribute vs bare name) crossed with every category form (positional vs
-    ``category=``) must be detected, and a benign category must not match.
+    (attribute vs bare name, *including aliased imports*) crossed with every
+    category form (positional vs ``category=``) must be detected, and a benign
+    category must not match.
     """
-    attr_positional = ast.parse('warnings.warn("x", DeprecationWarning, stacklevel=2)')
-    bare_positional = ast.parse('warn("x", DeprecationWarning)')
-    attr_keyword = ast.parse('warnings.warn("x", category=DeprecationWarning)')
-    bare_keyword = ast.parse('warn("x", category=DeprecationWarning)')
+    # Attribute form, plain and aliased module import.
+    assert (
+        _hits_in_source('import warnings\nwarnings.warn("x", DeprecationWarning, stacklevel=2)')
+        == 1
+    )
+    assert _hits_in_source('import warnings as w\nw.warn("x", DeprecationWarning)') == 1
+    assert _hits_in_source('import warnings\nwarnings.warn("x", category=DeprecationWarning)') == 1
+    # Bare form, plain and aliased function import.
+    assert _hits_in_source('from warnings import warn\nwarn("x", DeprecationWarning)') == 1
+    assert _hits_in_source('from warnings import warn\nwarn("x", category=DeprecationWarning)') == 1
+    assert (
+        _hits_in_source(
+            'from warnings import warn as deprecate\ndeprecate("x", DeprecationWarning)'
+        )
+        == 1
+    )
+
+    # A bare ``warn`` NOT imported from ``warnings`` must NOT match (the alias
+    # resolution closes the previous over-broad ``func.id == "warn"`` match).
+    assert _hits_in_source('from logging import warn\nwarn("x", DeprecationWarning)') == 0
+    # An attribute ``.warn`` on something that is not the warnings module.
+    assert _hits_in_source('logger.warn("x", DeprecationWarning)') == 0
+
     # Non-deprecation categories must NOT match: ADR-0018 governs deprecations
     # only, so an inline RuntimeWarning/UserWarning is legitimately allowed.
-    benign_user = ast.parse('warnings.warn("x", UserWarning)')
-    benign_runtime = ast.parse('warnings.warn("x", RuntimeWarning, stacklevel=2)')
-
-    def _hits(tree: ast.AST) -> int:
-        return sum(
-            1
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and _is_warnings_warn(node.func)
-            and _names_deprecation_warning(node)
-        )
-
-    assert _hits(attr_positional) == 1
-    assert _hits(bare_positional) == 1
-    assert _hits(attr_keyword) == 1
-    assert _hits(bare_keyword) == 1
-    assert _hits(benign_user) == 0
-    assert _hits(benign_runtime) == 0
+    assert _hits_in_source('import warnings\nwarnings.warn("x", UserWarning)') == 0
+    assert _hits_in_source('import warnings\nwarnings.warn("x", RuntimeWarning, stacklevel=2)') == 0
