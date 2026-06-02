@@ -147,8 +147,8 @@ class TestLoginWindowsPermissions:
         browser_profile = tmp_path / "profile"
 
         with (
-            patch.object(_pl, "get_storage_path", lambda: storage_path),
-            patch.object(_pl, "get_browser_profile_dir", lambda: browser_profile),
+            patch.object(_pl, "get_storage_path", return_value=storage_path),
+            patch.object(_pl, "get_browser_profile_dir", return_value=browser_profile),
         ):
             self.storage_parent = storage_path.parent
             self.browser_profile = browser_profile
