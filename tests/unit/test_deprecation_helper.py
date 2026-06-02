@@ -8,9 +8,50 @@ from notebooklm._deprecation import (
     DEFAULT_REMOVAL,
     deprecated_kwarg,
     deprecations_quiet,
+    warn_deprecated,
 )
 
 _UNSET = object()
+
+
+class TestWarnDeprecated:
+    """The generic gated primitive (issue #1369)."""
+
+    def test_emits_deprecation_warning_with_message(self):
+        with pytest.warns(DeprecationWarning, match="old thing is deprecated") as record:
+            warn_deprecated("old thing is deprecated", removal="1.0")
+        assert len(record) == 1
+        assert "v1.0" in str(record[0].message)
+
+    def test_appends_removal_version_when_absent(self):
+        with pytest.warns(DeprecationWarning) as record:
+            warn_deprecated("Bare message with no version.", removal="0.8.0")
+        assert "v0.8.0" in str(record[0].message)
+
+    def test_does_not_duplicate_removal_when_message_already_names_it(self):
+        with pytest.warns(DeprecationWarning) as record:
+            warn_deprecated("Removed in v1.0 already.", removal="1.0")
+        msg = str(record[0].message)
+        assert msg.count("v1.0") == 1
+
+    def test_no_removal_emits_message_verbatim(self):
+        # Permanent shims (e.g. save_cookies_to_storage) name no removal target.
+        with pytest.warns(DeprecationWarning) as record:
+            warn_deprecated("Permanent shim warning with no version.", removal=None)
+        msg = str(record[0].message)
+        assert msg == "Permanent shim warning with no version."
+        assert "removed" not in msg.lower()
+
+    def test_quiet_env_suppresses_warning(self, monkeypatch):
+        monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", "1")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning would fail the test
+            warn_deprecated("should be silent", removal="1.0")
+
+    def test_quiet_env_unset_still_warns(self, monkeypatch):
+        monkeypatch.delenv("NOTEBOOKLM_QUIET_DEPRECATIONS", raising=False)
+        with pytest.warns(DeprecationWarning):
+            warn_deprecated("loud by default", removal="1.0")
 
 
 class TestDeprecatedKwarg:

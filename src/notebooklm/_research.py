@@ -9,14 +9,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import warnings
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
-from ._deprecation import deprecated_kwarg
+from ._deprecation import deprecated_kwarg, warn_deprecated
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import parse_research_task_models
 from ._runtime.contracts import RpcCaller
@@ -295,7 +294,7 @@ class ResearchAPI:
         if task_id is not None:
             return [task for task in parsed_tasks if task.task_id == task_id]
         if warn_on_ambiguous and len(parsed_tasks) > 1:
-            warnings.warn(
+            warn_deprecated(
                 (
                     f"ResearchAPI.poll(notebook_id={notebook_id!r}) returned "
                     f"{len(parsed_tasks)} in-flight tasks but no task_id "
@@ -306,8 +305,8 @@ class ResearchAPI:
                     f"explicitly. The None default will be removed in a "
                     f"future major release."
                 ),
-                DeprecationWarning,
-                stacklevel=3,
+                # caller -> poll -> _select_polled_tasks -> warn_deprecated.
+                stacklevel=4,
             )
         return parsed_tasks
 

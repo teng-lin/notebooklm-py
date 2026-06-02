@@ -14,7 +14,9 @@ the broader stability policy (semver promise, supported Python versions, the
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
 | `sources.get()` / `artifacts.get()` / `notes.get()` / `mind_maps.get()` returning `None` on a miss | `try/except SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` / `MindMapNotFoundError` (or `get_or_none()` for a warning-free `None`-on-miss) | v0.7.0 | v0.8.0 | Behavior unchanged this release (still returns `None`); a `DeprecationWarning` now fires **only on a miss**. In v0.8.0 these raise the matching `*NotFoundError`, unifying the not-found contract with `notebooks.get()` (which already raises). `SourceNotFoundError`, `ArtifactNotFoundError`, `NoteNotFoundError`, and `MindMapNotFoundError` all exist today, so the `except` clause can be written now (it is only *raised* starting in v0.8.0). `mind_maps.get()` joined this cohort in v0.7.0 — it was the last namespace without a runway ([#1358](https://github.com/teng-lin/notebooklm-py/issues/1358)). Warning emitted via `src/notebooklm/_deprecation.py::warn_get_returns_none`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS`. Flip tracked by [#1247](https://github.com/teng-lin/notebooklm-py/issues/1247) |
-| Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works; warning at `src/notebooklm/client.py:__await__` |
+| Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works. Warning emitted via `src/notebooklm/_deprecation.py::warn_deprecated`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1` ([#1369](https://github.com/teng-lin/notebooklm-py/issues/1369)) |
+| `ResearchAPI.poll(notebook_id, task_id=None)` with multiple in-flight tasks | `poll(notebook_id, task_id=<id>)` (the `task_id` from `research.start`) | v0.6.0 | future major | Ambiguous-selection guard: when more than one task is in flight and no `task_id` is supplied, `poll` keeps returning the latest task for back-compat but emits a `DeprecationWarning`. Warning emitted via `src/notebooklm/_deprecation.py::warn_deprecated`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Removal version re-pin tracked by [#1363](https://github.com/teng-lin/notebooklm-py/issues/1363) |
+| `NotebooksAPI.share()` | `client.sharing.set_public()` (paired with `add_user()` / `set_view_level()` / `get_status()`) | v0.5.0 | future major | No-behavior-change wrapper. Warning emitted via `src/notebooklm/_deprecation.py::warn_deprecated`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Removal version re-pin tracked by [#1363](https://github.com/teng-lin/notebooklm-py/issues/1363) |
 | `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` — same cadence, name now matches `SourcesAPI.wait_until_ready` / `ArtifactsAPI.wait_for_completion` | v0.7.0 | v0.8.0 | Additive: `interval` keeps its default of `5` and still works; passing a non-default value emits a `DeprecationWarning`, passing both `interval` and `initial_interval` raises `TypeError`. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py` |
 | Dict-subscript access (`result["status"]`) on `research.poll` / `research.start` / `research.wait_for_completion`, `artifacts.generate_mind_map`, and `sources.get_guide` return values | Attribute access (`result.status`, `result.sources`, `result.note_id`, `guide.summary`, …) | v0.7.0 | v0.8.0 | These methods now return typed dataclasses (`ResearchTask` / `ResearchStart` / `MindMapResult` / `SourceGuide`) with a new `ResearchStatus` str-enum, instead of `dict[str, Any]`. The dataclasses mix in `MappingCompatMixin` so the legacy dict shape keeps working for one MINOR cycle: `result["key"]` warns and returns the historical value (from `to_public_dict()`), while `result.get(...)` / `result.keys()` / `"x" in result` / `iter(result)` stay silent. In v0.8.0 the mixin is dropped and the returns become attribute-only. `ResearchStatus` is a `str` enum, so `status == "completed"` keeps working in v0.8.0. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py::MappingCompatMixin`. Tracked by [#1209](https://github.com/teng-lin/notebooklm-py/issues/1209) |
 
@@ -104,9 +106,16 @@ inference), so both are now supported parameters. The earlier
   caller actually passes the deprecated argument — or, for the
   `get()`-returns-`None` deprecation, only when the lookup misses (successful
   lookups stay silent).
-* `NOTEBOOKLM_QUIET_DEPRECATIONS=1` suppresses the `get()`-returns-`None`
-  warning for callers that have not yet migrated (see
-  `docs/configuration.md`).
+* `NOTEBOOKLM_QUIET_DEPRECATIONS=1` suppresses **every** deprecation warning
+  this project emits — including the `get()`-returns-`None` warning, the
+  renamed-keyword warnings, the dict-subscript bridge, and the one-off
+  warnings routed through `src/notebooklm/_deprecation.py::warn_deprecated`
+  (awaiting `from_storage(...)`, ambiguous `research.poll`, `NotebooksAPI.share()`,
+  and the `save_cookies_to_storage` legacy full-merge shim). All mechanics live
+  in `_deprecation.py`; ADR-018 forbids inline `warnings.warn(...,
+  DeprecationWarning)` elsewhere and a lint
+  (`tests/_lint/test_no_inline_deprecation_warnings.py`) enforces it. See
+  `docs/configuration.md`.
 * See `docs/stability.md` "Deprecation Policy" for the broader timeline
   contract (one MINOR cycle of warnings before removal during 0.x).
 

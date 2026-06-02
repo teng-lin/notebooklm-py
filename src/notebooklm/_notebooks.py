@@ -1,9 +1,9 @@
 """Notebook operations API."""
 
 import logging
-import warnings
 from typing import Any
 
+from ._deprecation import warn_deprecated
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -709,14 +709,13 @@ class NotebooksAPI:
         Returns:
             Dict with 'public' status, 'url', and 'artifact_id'.
         """
-        warnings.warn(
+        warn_deprecated(
             "NotebooksAPI.share() is deprecated; use client.sharing.set_public() "
             "for the canonical notebook-level public-sharing toggle (paired with "
             "client.sharing.add_user(), set_view_level(), get_status()). Return "
             "shape is unchanged in this release; the wrapper will be removed in "
             "a future major release.",
-            DeprecationWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
         return await self._share_manager.share(notebook_id, public, artifact_id)
 

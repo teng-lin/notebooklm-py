@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import warnings
 from collections.abc import Callable, Generator
 from pathlib import Path
 from types import TracebackType
@@ -41,6 +40,7 @@ from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
+from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
 from ._mind_map import NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
@@ -940,12 +940,12 @@ class _FromStorageContext:
         Emits ``DeprecationWarning`` (removed in v1.0). Prefer the
         ``async with NotebookLMClient.from_storage(...) as client:`` idiom.
         """
-        warnings.warn(
+        warn_deprecated(
             "Awaiting NotebookLMClient.from_storage(...) is deprecated; use "
             "`async with NotebookLMClient.from_storage(...) as client:` "
             "instead. The await form will be removed in v1.0.",
-            DeprecationWarning,
-            stacklevel=2,
+            removal="1.0",
+            stacklevel=3,
         )
         return self._build().__await__()
 

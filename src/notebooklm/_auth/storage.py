@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import sys
-import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import Any, NamedTuple, TypeAlias
 import httpx
 
 from .._atomic_io import atomic_write_json
+from .._deprecation import warn_deprecated
 from . import cookie_policy as _cookie_policy
 from . import cookies as _auth_cookies
 from .paths import _storage_state_lock_path
@@ -377,13 +377,17 @@ def save_cookies_to_storage(
         return _cookie_save_return(CookieSaveResult(True), return_result=return_result)
 
     if original_snapshot is None:
-        warnings.warn(
+        # Permanent public-API back-compat shim (no scheduled removal version;
+        # see this function's docstring): gated through warn_deprecated so the
+        # NOTEBOOKLM_QUIET_DEPRECATIONS switch silences it, but passes
+        # removal=None because there is no removal target to name.
+        warn_deprecated(
             "save_cookies_to_storage called without original_snapshot; the "
             "legacy full-merge path is vulnerable to the stale-overwrite-fresh "
             "race (docs/auth-cookie-lifecycle.md §3.4.1). Pass an original_snapshot "
             "captured via snapshot_cookie_jar() at jar-open time.",
-            DeprecationWarning,
-            stacklevel=2,
+            removal=None,
+            stacklevel=3,
         )
 
     lock_path = _storage_state_lock_path(path)

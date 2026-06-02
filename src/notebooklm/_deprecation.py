@@ -9,8 +9,15 @@ This is an implementation module. There is no public surface here; the public
 deprecation *policy* (what is deprecated, since when, removal target) is
 documented in ``docs/deprecations.md``.
 
-Two families live here:
+Four families live here:
 
+* ``warn_deprecated`` — the generic gated primitive for one-off deprecations
+  that don't fit the three specific families below (e.g. awaiting
+  ``from_storage(...)``, ``ResearchAPI.poll(task_id=None)`` ambiguity,
+  ``NotebooksAPI.share()``, the ``save_cookies_to_storage`` legacy full-merge
+  shim). It exists so ad-hoc deprecations have a gated home rather than
+  hand-rolling ``warnings.warn(...)`` and silently bypassing the suppression
+  switch (issue #1369).
 * ``warn_get_returns_none`` — marks ``<resource>.get()`` returning ``None`` on
   a miss as deprecated (issue #1247).
 * ``deprecated_kwarg`` — the keyword-alias pattern used when a public method
@@ -82,6 +89,44 @@ def deprecations_quiet() -> bool:
     leaves the warning enabled.
     """
     return _deprecations_quiet()
+
+
+def warn_deprecated(message: str, *, removal: str | None = None, stacklevel: int = 3) -> None:
+    """Emit a project ``DeprecationWarning``, honoring the suppression gate.
+
+    The generic primitive for one-off deprecations that don't fit the three
+    specific families (``warn_get_returns_none`` / ``deprecated_kwarg`` /
+    ``MappingCompatMixin``). Routing every ad-hoc warning through here keeps the
+    ``NOTEBOOKLM_QUIET_DEPRECATIONS`` gate and the ``DeprecationWarning``
+    category in one place — ADR-018 rejects inline ``warnings.warn(...)`` calls
+    scattered through feature modules precisely because they bypass this gate.
+
+    No-ops when :func:`_deprecations_quiet` is true (i.e. when
+    ``NOTEBOOKLM_QUIET_DEPRECATIONS`` is set to a truthy value); otherwise emits
+    a single :class:`DeprecationWarning` with ``message``.
+
+    Args:
+        message: The full warning text. Callers own the wording (what is
+            deprecated, what to use instead). When ``removal`` is given and the
+            message does not already name that version, a sentence naming the
+            removal version is appended so every gated warning states its
+            removal target consistently.
+        removal: Optional removal version, e.g. ``"1.0"`` or ``"0.8.0"``. Pass
+            ``None`` for deprecations that are permanent back-compat shims with
+            no scheduled removal (the message is emitted verbatim). When given,
+            the version is ensured to appear in the emitted text.
+        stacklevel: ``warnings.warn`` stacklevel. The default of ``3`` accounts
+            for ``warn_deprecated`` (1) → the deprecated method/property (2) →
+            the user's call site (3). Pass ``2`` when this helper is called
+            directly from the deprecated public surface (no intermediate frame).
+    """
+    if _deprecations_quiet():
+        return
+
+    text = message
+    if removal is not None and f"v{removal}" not in text and removal not in text:
+        text = f"{text} It will be removed in v{removal}."
+    warnings.warn(text, DeprecationWarning, stacklevel=stacklevel)
 
 
 def _not_found_error_exists(exc_name: str) -> bool:
