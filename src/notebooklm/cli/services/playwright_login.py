@@ -17,11 +17,6 @@ Public entry points
 * :func:`validate_login_flag_conflicts` — flag mutual-exclusion gate.
 * :func:`filter_storage_state_cookies_by_domain_policy` — applies the
   cookie-domain allowlist to a Playwright ``storage_state`` dict.
-
-The handler keeps the legacy ``_run_playwright_login`` / ``_prepare_login_paths``
-patch surfaces (re-exported via ``session_cmd.py``) so existing tests
-that ``patch("notebooklm.cli.session_cmd._run_playwright_login")`` keep
-working byte-for-byte.
 """
 
 from __future__ import annotations
@@ -50,47 +45,6 @@ from ...paths import get_browser_profile_dir, get_storage_path
 from ..error_handler import exit_with_code
 from ..rendering import console
 from ..runtime import run_async
-
-# Capture the original function references at module-import time so the
-# ``_resolve_paths_helper`` precedence chain can compare each lookup
-# against the never-changing original (not the live module-level
-# binding, which may itself be patched by tests).
-_ORIGINAL_GET_BROWSER_PROFILE_DIR = get_browser_profile_dir
-_ORIGINAL_GET_STORAGE_PATH = get_storage_path
-
-
-# Resolve path helpers via a test-aware precedence chain so patches at
-# ``notebooklm.cli.session_cmd.<sym>``,
-# ``notebooklm.cli.services.playwright_login.<sym>``, AND
-# ``notebooklm.paths.<sym>`` all intercept the service-layer call.
-#
-# ``default`` is the import-time function reference closed over by the
-# caller (the symbol imported at module-load time). Comparisons go
-# against ``default`` (NOT against the live ``notebooklm.paths`` attribute)
-# so a patch at the canonical source does not falsely flag a stale local
-# binding as "patched".
-#
-# Precedence:
-#   1. Service module's own binding if patched.
-#   2. ``session_cmd``'s binding if patched.
-#   3. Live ``notebooklm.paths`` value (which may itself be patched).
-def _resolve_paths_helper(name: str, default):
-    import sys as _sys
-
-    from ... import paths as _paths_module
-
-    service_mod = _sys.modules.get(__name__)
-    if service_mod is not None:
-        local = getattr(service_mod, name, default)
-        if local is not default:
-            return local
-    session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
-    if session_cmd is not None:
-        from_session = getattr(session_cmd, name, default)
-        if from_session is not default:
-            return from_session
-    return getattr(_paths_module, name, default)
-
 
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
@@ -699,21 +653,13 @@ def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -
     then creates both parent directories with platform-aware permissions.
     Returns ``(storage_path, browser_profile)``.
     """
-    # Resolve through the test-aware precedence chain so patches at
-    # ``session_cmd``, ``services.playwright_login``, or
-    # ``notebooklm.paths`` all reach this call site. The ``_ORIGINAL_*``
-    # constants captured at import time are the never-changing references.
-    _get_storage_path = _resolve_paths_helper("get_storage_path", _ORIGINAL_GET_STORAGE_PATH)
-    _get_browser_profile_dir = _resolve_paths_helper(
-        "get_browser_profile_dir", _ORIGINAL_GET_BROWSER_PROFILE_DIR
-    )
     if storage:
         storage_path = Path(storage)
     elif profile:
-        storage_path = _get_storage_path(profile=profile)
+        storage_path = get_storage_path(profile=profile)
     else:
-        storage_path = _get_storage_path()
-    browser_profile = _get_browser_profile_dir()
+        storage_path = get_storage_path()
+    browser_profile = get_browser_profile_dir()
 
     if fresh and browser_profile.exists():
         try:
@@ -803,20 +749,8 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
 
     # Pre-flight check: verify Chromium browser is installed (system Chrome
     # and Edge are checked at launch time by Playwright's channel routing).
-    # Resolve via ``session_cmd`` so legacy tests that patch
-    # ``notebooklm.cli.session_cmd._ensure_chromium_installed`` still
-    # intercept the call (the symbol is re-exported there with an
-    # underscore prefix).
     if browser == "chromium":
-        import sys as _sys
-
-        session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
-        _ensure = (
-            getattr(session_cmd, "_ensure_chromium_installed", ensure_chromium_installed)
-            if session_cmd is not None
-            else ensure_chromium_installed
-        )
-        _ensure()
+        ensure_chromium_installed()
 
     def _capture_page_html(page: Any) -> str | None:
         try:

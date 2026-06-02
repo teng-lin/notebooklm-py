@@ -54,13 +54,22 @@ def mock_auth():
 
 @pytest.fixture
 def mock_context_file(tmp_path):
-    """Provide a temporary context path; both call sites are patched."""
+    """Provide a temporary context path; every consumer call site is patched.
+
+    The ``notebooklm.cli.session_cmd.get_context_path`` re-export was retired
+    in #1367; ``read_status`` now resolves the symbol on its real consumer
+    module ``services.session_context`` (matching the canonical
+    ``mock_context_file`` fixture in ``conftest.py``).
+    """
     context_file = tmp_path / "context.json"
     with (
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.session_cmd.get_context_path", return_value=context_file),
+        patch(
+            "notebooklm.cli.services.session_context.get_context_path",
+            return_value=context_file,
+        ),
     ):
         yield context_file
 

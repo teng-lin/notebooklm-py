@@ -113,6 +113,13 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
     services_target = f"notebooklm.cli.services.login.{name}"
     session_target = f"notebooklm.cli.session_cmd.{name}"
     submodule_targets = _services_login_submodule_targets(name)
+    # The session-side patch only applies to names still re-exported by
+    # ``session_cmd`` (the retired patch-surface bridge, #1367, dropped the
+    # pure re-exports but kept every body-used name like ``get_storage_path``
+    # and ``_refresh_from_browser_cookies``). Resolve the module object so the
+    # patch can be guarded on the name still existing; a blind patch on a
+    # removed name would ``AttributeError`` at setup.
+    session_cmd = importlib.import_module("notebooklm.cli.session_cmd")
 
     # P3.T3 service modules also re-import external helpers (notably
     # ``get_storage_path`` / ``get_browser_profile_dir`` in
@@ -137,8 +144,13 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
 
     with ExitStack() as stack:
         primary = stack.enter_context(patch(services_target, **patch_kwargs))
-        # Patch session-side with the SAME mock so call counts aggregate.
-        stack.enter_context(patch(session_target, new=primary))
+        # Patch session-side with the SAME mock so call counts aggregate —
+        # but only when the name is still a ``session_cmd`` attribute. The
+        # #1367 bridge retirement removed the pure re-exports while keeping
+        # every body-used name; this guard keeps patching the retained ones
+        # and silently skips the removed ones (no per-site enumeration).
+        if hasattr(session_cmd, name):
+            stack.enter_context(patch(session_target, new=primary))
         # Fan the same mock out to every submodule binding (post-T4 split).
         # The submodules have their own copies of external helpers
         # (`get_storage_path`, `run_async`, etc.) plus their own copies of

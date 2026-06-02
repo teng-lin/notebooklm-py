@@ -1007,14 +1007,22 @@ class TestAuthLogoutCommand:
         monkeypatch.setattr(_sc, "get_browser_profile_dir", mock_browser_dir)
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.shutil.rmtree",
+            # ``execute_logout`` (in ``services.session_context``) owns the
+            # browser-profile rmtree; patch the consumer module's ``shutil``
+            # (#1367 removed the ``session_cmd`` stdlib re-export).
+            patch.object(
+                _sc.shutil,
+                "rmtree",
                 side_effect=OSError("sharing violation"),
-            ),
+            ) as mock_rmtree,
         ):
             result = runner.invoke(cli, ["auth", "logout"])
 
         mock_browser_dir.assert_called()
+        # ``assert_called`` is mandatory (plan failure-mode caveat #3): the
+        # exit-1 assertion alone would false-green on a dead wrong-namespace
+        # patch.
+        mock_rmtree.assert_called_once()
         assert result.exit_code == 1
         assert "in use" in result.output.lower() or "Cannot" in result.output
 

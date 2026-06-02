@@ -13,8 +13,9 @@ Fixtures (``runner``, ``mock_auth``, ``mock_context_file``) live in
 ``tests/unit/cli/conftest.py``, not here — pytest gives conftest fixtures
 priority over plugin fixtures, so defining them in two places makes the
 plugin copies dead. The conftest definitions cover the session-CLI use
-cases (the ``__Secure-1PSIDTS`` cookie + the
-``notebooklm.cli.session_cmd.get_context_path`` patch site).
+cases (the ``__Secure-1PSIDTS`` cookie + the consumer-module
+``get_context_path`` patch sites, e.g.
+``notebooklm.cli.services.session_context.get_context_path``).
 
 This file holds the chromium-fanout helpers (``_make_chromium_profile``,
 ``_chromium_fanout_setup``, ``_install_chromium_fanout_patches``) and the
@@ -67,10 +68,11 @@ def _account_exists(storage_path: Path) -> bool:
 # priority than plugin fixtures (plugin < root conftest < directory conftest).
 # Since ``tests/unit/cli/conftest.py`` already defines those names, the
 # plugin copies were dead. The authoritative definitions now live in
-# ``tests/unit/cli/conftest.py`` — including the
-# ``notebooklm.cli.session_cmd.get_context_path`` patch (added per D1 PR-3
-# review) and the ``__Secure-1PSIDTS`` cookie in ``mock_auth`` (required
-# by ``_validate_required_cookies``).
+# ``tests/unit/cli/conftest.py`` — including the consumer-module
+# ``get_context_path`` patches (the ``session_cmd`` re-export was retired
+# in #1367; ``read_status`` now resolves the symbol on
+# ``notebooklm.cli.services.session_context``) and the ``__Secure-1PSIDTS``
+# cookie in ``mock_auth`` (required by ``_validate_required_cookies``).
 
 
 # ---------------------------------------------------------------------------

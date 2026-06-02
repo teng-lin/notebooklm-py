@@ -213,33 +213,33 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
     "cli/services/playwright_login.py": {
         "path": SERVICES_ROOT / "playwright_login.py",
         "forbidden_imports": [
-            "playwright_login.py:50: forbidden relative import: '..error_handler'",
-            "playwright_login.py:51: forbidden relative import: '..rendering'",
-            "playwright_login.py:52: forbidden relative import: '..runtime'",
+            "playwright_login.py:45: forbidden relative import: '..error_handler'",
+            "playwright_login.py:46: forbidden relative import: '..rendering'",
+            "playwright_login.py:47: forbidden relative import: '..runtime'",
         ],
         "pattern_a_violations": [
-            ("ensure_chromium_installed", 572),
-            ("validate_login_flag_conflicts", 678),
-            ("validate_login_flag_conflicts", 683),
-            ("validate_login_flag_conflicts", 689),
-            ("validate_login_flag_conflicts", 692),
-            ("prepare_login_paths", 729),
-            ("run_playwright_login", 802),
-            ("run_playwright_login", 903),
-            ("run_playwright_login", 910),
-            ("run_playwright_login", 932),
-            ("run_playwright_login", 939),
-            ("run_playwright_login", 964),
-            ("run_playwright_login", 982),
-            ("run_playwright_login", 1025),
+            ("ensure_chromium_installed", 526),
+            ("validate_login_flag_conflicts", 632),
+            ("validate_login_flag_conflicts", 637),
+            ("validate_login_flag_conflicts", 643),
+            ("validate_login_flag_conflicts", 646),
+            ("prepare_login_paths", 675),
+            ("run_playwright_login", 748),
+            ("run_playwright_login", 837),
+            ("run_playwright_login", 844),
+            ("run_playwright_login", 866),
+            ("run_playwright_login", 873),
+            ("run_playwright_login", 898),
+            ("run_playwright_login", 916),
+            ("run_playwright_login", 959),
         ],
         "rationale": (
             "Playwright login orchestrator owns the full presentation + "
             "exit-code matrix for browser-automation failures; one of the "
             "largest migration targets in this inventory. Line numbers "
-            "shifted in commit e3871dc3 (subprocess-stderr redaction, "
-            "PR #1111) but the inventory was not updated in that PR; "
-            "refreshed here as a drive-by mechanical fix."
+            "shifted in #1367 when the ``_resolve_paths_helper`` "
+            "patch-surface bridge (and the ``_ensure_chromium_installed`` "
+            "``session_cmd`` getattr) were deleted; refreshed here."
         ),
     },
 }

@@ -191,7 +191,7 @@ class TestLoginCommand:
             reason="playwright not installed; install with: uv sync --extra browser",
         )
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed") as mock_ensure,
+            patch.object(_pl, "ensure_chromium_installed") as mock_ensure,
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
             patch.object(
@@ -248,7 +248,7 @@ class TestLoginCommand:
     ):
         """--browser msedge|chrome shows helpful error when the browser is not installed."""
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
             patch.object(
@@ -286,7 +286,7 @@ class TestLoginCommand:
         )
         storage_file = tmp_path / "storage.json"
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -615,7 +615,7 @@ class TestLoginCommand:
         storage_file = tmp_path / "storage.json"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -652,7 +652,7 @@ class TestLoginCommand:
         storage_file = tmp_path / "storage.json"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -690,7 +690,7 @@ class TestLoginCommand:
             return [Account(authuser=0, email="alice@example.com", is_default=True)]
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -766,7 +766,7 @@ class TestLoginCommand:
             )
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright", side_effect=fake_sync_playwright),
             patch(
                 "notebooklm.cli.services.playwright_login.repair_playwright_account_metadata",
@@ -805,7 +805,7 @@ class TestLoginCommand:
             ]
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -852,7 +852,7 @@ class TestLoginCommand:
             ]
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -921,7 +921,7 @@ class TestLoginCommand:
             ]
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1061,7 +1061,7 @@ class TestLoginCommand:
         )
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1115,10 +1115,17 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd.shutil.rmtree", side_effect=OSError("locked")),
+            # ``prepare_login_paths`` (in ``services.playwright_login``) owns
+            # the ``--fresh`` rmtree; patch the consumer module's ``shutil``
+            # (#1367 removed the ``session_cmd`` stdlib re-export).
+            patch.object(_pl.shutil, "rmtree", side_effect=OSError("locked")) as mock_rmtree,
         ):
             result = runner.invoke(cli, ["login", "--fresh"])
 
+        # ``assert_called`` is mandatory here (plan failure-mode caveat #3): a
+        # wrong-namespace patch would no-op, yet ``--fresh`` could still exit 1
+        # for an unrelated reason, masking the dead patch.
+        mock_rmtree.assert_called_once()
         assert result.exit_code == 1
         assert "Cannot clear browser profile" in result.output
 
@@ -1129,7 +1136,7 @@ class TestLoginCommand:
         browser_dir = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1182,7 +1189,7 @@ class TestLoginCommand:
         browser_dir = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1238,7 +1245,7 @@ class TestLoginCommand:
         browser_dir = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1293,7 +1300,7 @@ class TestLoginCommand:
         browser_dir = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1340,7 +1347,7 @@ class TestLoginCommand:
         browser_dir = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
@@ -1418,7 +1425,7 @@ class TestLoginNoTraceback:
         )
         monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         with (
-            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
             patch.object(

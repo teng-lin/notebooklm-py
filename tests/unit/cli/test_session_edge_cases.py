@@ -135,15 +135,13 @@ class TestLoginWindowsPermissions:
         ``patch(...)`` context managers which raise ``AttributeError`` if
         the target is missing, surfacing relocations immediately.
 
-        #1367 Phase A: ``get_storage_path`` / ``get_browser_profile_dir`` are
-        the service-path (login) bindings, so the patch target is the
-        consumer module ``services.playwright_login`` whose
-        ``prepare_login_paths`` resolves both names. The login command
-        (``session_cmd.login`` -> ``_prepare_login_paths`` ->
-        ``playwright_login.prepare_login_paths``) looks these up via the
-        ``_resolve_paths_helper`` precedence chain, whose level-1 lookup is
-        the ``playwright_login`` module object, so this bites both while the
-        ``session_cmd`` bridge is live and after it is removed.
+        #1367: ``get_storage_path`` / ``get_browser_profile_dir`` are the
+        service-path (login) bindings, so the patch target is the consumer
+        module ``services.playwright_login`` whose ``prepare_login_paths``
+        resolves both names directly (``session_cmd.login`` ->
+        ``_prepare_login_paths`` -> ``playwright_login.prepare_login_paths``).
+        The ``_resolve_paths_helper`` precedence shim was removed in #1367; the
+        consumer-module bindings are now the only lookup site.
         """
         storage_path = tmp_path / "home" / "storage_state.json"
         browser_profile = tmp_path / "profile"
@@ -158,9 +156,11 @@ class TestLoginWindowsPermissions:
 
     def test_windows_login_skips_mode_and_chmod(self, monkeypatch, _patch_login_deps, runner):
         """On Windows, login mkdir calls omit mode= and chmod is never called."""
-        import notebooklm.cli.session_cmd as session_mod
-
-        monkeypatch.setattr(session_mod.sys, "platform", "win32")
+        # ``prepare_login_paths`` (in ``services.playwright_login``) reads
+        # ``sys.platform`` to pick the mkdir/chmod hardening path; patch the
+        # consumer module's ``sys`` binding (#1367 removed the ``session_cmd``
+        # stdlib re-export — ``sys`` is the same singleton either way).
+        monkeypatch.setattr(_pl.sys, "platform", "win32")
 
         mkdir_calls = []
         chmod_calls = []
@@ -198,9 +198,8 @@ class TestLoginWindowsPermissions:
 
     def test_unix_login_sets_mode_and_chmod(self, monkeypatch, _patch_login_deps, runner):
         """On Unix, login mkdir calls include mode=0o700 and chmod is called."""
-        import notebooklm.cli.session_cmd as session_mod
-
-        monkeypatch.setattr(session_mod.sys, "platform", "linux")
+        # See the Windows variant above: patch the consumer module's ``sys``.
+        monkeypatch.setattr(_pl.sys, "platform", "linux")
 
         mkdir_calls = []
         chmod_calls = []

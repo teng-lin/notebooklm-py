@@ -8,12 +8,23 @@ monkey-patch them through the session module's namespace
 friends).
 
 P3.T4 splits ``cli/services/login.py`` into a package. The split MUST
-preserve every previously re-exported name so the 37+ patch sites that
+preserve every previously re-exported name so the patch sites that
 target the session module's namespace keep working byte-for-byte.
 
+#1367 retired the pure patch-surface re-exports (the names that were
+*only* re-exported for tests to patch, never called from
+``session_cmd``'s body): the six Category-4 login privates
+(``_build_google_cookie_domains``, ``_enumerate_one_jar``,
+``_login_with_browser_cookies``, ``_resolve_optional_cookie_domains``,
+``_select_account``, ``_write_extracted_cookies``) left the baseline
+because their tests now import the symbol from its real home module
+(``services.login``). The body-used privates that remain (e.g.
+``_sync_server_language_to_config``, ``_refresh_from_browser_cookies``)
+stay re-exported and stay in the baseline.
+
 This test uses a fixed golden baseline (``tests/_fixtures/
-session_reexport_baseline.txt``, captured before the split) as the
-single source of truth. For each name in the baseline the test asserts:
+session_reexport_baseline.txt``) as the single source of truth. For each
+name in the baseline the test asserts:
 
 1. **Importable**: ``getattr(session_module, name)`` returns a non-None
    object.
