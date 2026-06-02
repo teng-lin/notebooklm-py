@@ -540,8 +540,10 @@ reading `auth.py` against the lifecycle of `NotebookLMClient` /
 > value write on the same key is never clobbered. Cookies the in-process code never
 > touched are left to whatever a sibling process may have written, so the
 > stale-overwrite-fresh race below cannot fire. The
-> ``original_snapshot=None`` form remains as a public-API back-compat shim
-> but emits a ``DeprecationWarning``; every in-tree caller passes a
+> ``original_snapshot=None`` form remains as a *permanent* public-API
+> back-compat shim — not a scheduled deprecation — but emits a
+> ``RuntimeWarning`` (a runtime safety advisory about this race, not a
+> "will be removed" signal); every in-tree caller passes a
 > snapshot. See ``tests/unit/test_auth_cookie_save_race.py`` for the
 > canonical timeline test plus value-update CAS and refresh-cmd
 > re-snapshot coverage.

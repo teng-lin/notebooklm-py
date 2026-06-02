@@ -110,12 +110,18 @@ inference), so both are now supported parameters. The earlier
   this project emits — including the `get()`-returns-`None` warning, the
   renamed-keyword warnings, the dict-subscript bridge, and the one-off
   warnings routed through `src/notebooklm/_deprecation.py::warn_deprecated`
-  (awaiting `from_storage(...)`, ambiguous `research.poll`, `NotebooksAPI.share()`,
-  and the `save_cookies_to_storage` legacy full-merge shim). All mechanics live
-  in `_deprecation.py`; ADR-018 forbids inline `warnings.warn(...,
-  DeprecationWarning)` elsewhere and a lint
+  (awaiting `from_storage(...)`, ambiguous `research.poll`, `NotebooksAPI.share()`).
+  All mechanics live in `_deprecation.py`; ADR-018 forbids inline
+  `warnings.warn(..., DeprecationWarning)` elsewhere and a lint
   (`tests/_lint/test_no_inline_deprecation_warnings.py`) enforces it. See
   `docs/configuration.md`.
+* Not every inline `warnings.warn(...)` is a deprecation. The
+  `save_cookies_to_storage(original_snapshot=None)` legacy full-merge path is a
+  *permanent* public-API back-compat shim (see
+  `docs/auth-cookie-lifecycle.md` §3.4.1), not a scheduled removal, so it emits
+  a **`RuntimeWarning`** safety advisory about the stale-overwrite-fresh race —
+  outside ADR-018's scope and intentionally **not** silenced by
+  `NOTEBOOKLM_QUIET_DEPRECATIONS`.
 * See `docs/stability.md` "Deprecation Policy" for the broader timeline
   contract (one MINOR cycle of warnings before removal during 0.x).
 

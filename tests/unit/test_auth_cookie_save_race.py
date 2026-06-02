@@ -385,10 +385,12 @@ class TestSiblingWrittenCookieSurvives:
 
 class TestLegacyCallerCompatibility:
     """External callers that don't pass ``original_snapshot`` still get the
-    legacy full-merge behavior — but emit a ``DeprecationWarning`` so the
+    legacy full-merge behavior — but emit a ``RuntimeWarning`` so the
     silent legacy-fallback hazard surfaces in caller logs. The kwarg is
-    optional purely as a public-API back-compat shim; every in-tree caller
-    passes it.
+    optional purely as a *permanent* public-API back-compat shim (not a
+    scheduled deprecation); every in-tree caller passes it. The warning is a
+    runtime safety advisory about the stale-overwrite-fresh race, hence
+    ``RuntimeWarning`` rather than ``DeprecationWarning`` (#1369).
     """
 
     def test_legacy_call_writes_in_memory_value_and_warns(self, tmp_path):
@@ -399,9 +401,9 @@ class TestLegacyCallerCompatibility:
         jar.set("SID", "new", domain=".google.com", path="/")
 
         # No original_snapshot → legacy mode → in-memory wins on differing
-        # values, AND a DeprecationWarning is emitted to surface the unsafe
+        # values, AND a RuntimeWarning is emitted to surface the unsafe
         # path in caller logs.
-        with pytest.warns(DeprecationWarning, match="original_snapshot"):
+        with pytest.warns(RuntimeWarning, match="original_snapshot"):
             save_cookies_to_storage(jar, storage)
 
         assert _cookie_value(storage, "SID", ".google.com") == "new"

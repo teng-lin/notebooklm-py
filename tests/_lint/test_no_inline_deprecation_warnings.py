@@ -22,6 +22,14 @@ passes reported ADR-018 "clean"** and missed this entire class — exactly the
 kind of blind spot that human/agent review keeps missing. The durable fix is a
 gate on the right dimension (call shape), not another round of vigilance.
 
+**Scope: ``DeprecationWarning`` only.** This lint governs the *deprecation*
+category exclusively. Other warning categories — ``RuntimeWarning`` /
+``UserWarning`` etc. — are NOT deprecations and are allowed to live inline at
+their call site (ADR-0018 only governs deprecations). For example
+``_auth/storage.py``'s ``save_cookies_to_storage`` race advisory is a permanent
+back-compat shim, not a scheduled removal, so it is a ``RuntimeWarning`` emitted
+inline and this lint correctly leaves it alone.
+
 Modelled after the AST-based lints in ``tests/_lint/`` (e.g.
 ``test_no_core_imports.py`` / ``test_asyncio_loop_affinity_guard.py``).
 """
@@ -132,7 +140,10 @@ def test_lint_detects_the_offending_shape() -> None:
     bare_positional = ast.parse('warn("x", DeprecationWarning)')
     attr_keyword = ast.parse('warnings.warn("x", category=DeprecationWarning)')
     bare_keyword = ast.parse('warn("x", category=DeprecationWarning)')
-    benign = ast.parse('warnings.warn("x", UserWarning)')
+    # Non-deprecation categories must NOT match: ADR-0018 governs deprecations
+    # only, so an inline RuntimeWarning/UserWarning is legitimately allowed.
+    benign_user = ast.parse('warnings.warn("x", UserWarning)')
+    benign_runtime = ast.parse('warnings.warn("x", RuntimeWarning, stacklevel=2)')
 
     def _hits(tree: ast.AST) -> int:
         return sum(
@@ -147,4 +158,5 @@ def test_lint_detects_the_offending_shape() -> None:
     assert _hits(bare_positional) == 1
     assert _hits(attr_keyword) == 1
     assert _hits(bare_keyword) == 1
-    assert _hits(benign) == 0
+    assert _hits(benign_user) == 0
+    assert _hits(benign_runtime) == 0
