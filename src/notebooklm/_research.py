@@ -445,7 +445,7 @@ class ResearchAPI:
             matches, the return is ``ResearchTask.not_found(task_id)`` — status
             ``NOT_FOUND``, carrying the requested ``task_id``, with empty
             ``tasks``. This is the *poll-observed absence* of that specific
-            task (a typed lifecycle sentinel, not a raise; ADR-0019 Rule 4),
+            task (a typed lifecycle sentinel, not a raise; ADR-019 Rule 4),
             distinct from the unfiltered empty-poll case (``task_id`` ``None``
             or empty) which stays ``NO_RESEARCH`` ("nothing in flight").
         """
@@ -469,7 +469,7 @@ class ResearchAPI:
         # carrying the requested id. A falsy ``task_id`` (``None`` for the
         # unfiltered poll, or the degenerate empty string) is not a meaningful
         # discriminator, so it stays ``NO_RESEARCH`` ("nothing in flight") and
-        # preserves the legacy empty-poll dict shape. See ADR-0019 Rule 4
+        # preserves the legacy empty-poll dict shape. See ADR-019 Rule 4
         # (#1346).
         if task_id:
             return ResearchTask.not_found(task_id)

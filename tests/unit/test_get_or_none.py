@@ -1,6 +1,6 @@
 """Tests for the public ``get_or_none`` lookup across all five namespaces.
 
-ADR-0019 (error-and-return contract) reserves ``None``-on-miss for an explicit
+ADR-019 (error-and-return contract) reserves ``None``-on-miss for an explicit
 ``get_or_none`` while ``get`` raises on a miss (the raise-flip itself lands in
 v0.8.0, issue #1247). This module pins ``get_or_none`` for ``notebooks``,
 ``sources``, ``artifacts``, ``notes``, and ``mind_maps``: each returns the
@@ -8,7 +8,7 @@ object on a hit, ``None`` on a genuine miss, and re-raises (never swallows) a
 transport-level :class:`~notebooklm.exceptions.RPCError`.
 
 The :func:`~notebooklm._lookup.unwrap_or_raise` helper that backs the future
-``get``-raises wiring is covered directly here too (ADR-0019 Enforcement
+``get``-raises wiring is covered directly here too (ADR-019 Enforcement
 tier-2).
 """
 

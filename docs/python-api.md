@@ -268,7 +268,7 @@ It returns `None` for a genuine absence and re-raises transport, auth, and
 decode faults rather than swallowing them. (The one documented carve-out is
 `artifacts`, which inherits `client.artifacts.list(...)`'s deliberate
 partial-availability behavior: a transport failure of the mind-map sub-fetch is
-logged and the studio artifacts that loaded are still returned — see ADR-0019
+logged and the studio artifacts that loaded are still returned — see ADR-019
 Rule 3.) The workflows that
 *already* raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
 `client.sources.wait_until_ready(...)`. Artifact-download workflows raise
@@ -1121,7 +1121,7 @@ already-failed artifact **in place** — the UI "Retry" action. The artifact is
 not deleted first; the same `artifact_id` is preserved and returned as the task
 id, so `poll_status()` / `wait_for_completion()` keep working against it.
 
-It follows the ADR-0019 "async kickoff" contract: an accepted retry returns
+It follows the ADR-019 "async kickoff" contract: an accepted retry returns
 `GenerationStatus(status="in_progress")`, while a **synchronous refusal**
 (`USER_DISPLAYABLE_ERROR` — rate limit, quota, or a non-retryable artifact)
 **raises** the underlying `RateLimitError` / `RPCError` rather than returning a

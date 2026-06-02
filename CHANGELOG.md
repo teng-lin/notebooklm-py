@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Studio artifact in place (the web UI "Retry" action), via the new
   `RETRY_ARTIFACT` (`Rytqqe`) RPC. The artifact is not deleted first and the
   same `artifact_id` is preserved, so existing `poll_status()` /
-  `wait_for_completion()` flows keep working. Follows the ADR-0019 "async
+  `wait_for_completion()` flows keep working. Follows the ADR-019 "async
   kickoff" contract: an accepted retry returns
   `GenerationStatus(status="in_progress")`, while a synchronous refusal
   (`USER_DISPLAYABLE_ERROR` — rate limit / quota / not-retryable) **raises** the
@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so it is catchable via the cross-domain `NotFoundError` umbrella, at
   transport-level `except RPCError` call sites, and at domain-level
   `except NoteError` / `except MindMapError` call sites. These are the
-  prerequisite for the mind-map not-found work (ADR-0019; issues #1291, #1346).
+  prerequisite for the mind-map not-found work (ADR-019; issues #1291, #1346).
   `MindMapNotFoundError` is now raised by the `mind_maps` mutation paths (see
   *Changed* below); `NoteNotFoundError` is not raised by any method yet.
 - `ResearchStatus.NOT_FOUND` — a typed lifecycle sentinel for the
@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the requested id) when a non-empty pinned `task_id` matches no in-flight task;
   the unfiltered `task_id=None` empty poll still returns `NO_RESEARCH`
   unchanged. Additive and non-breaking — the poll never raises for an absent
-  task (ADR-0019 Rule 4; issues #1344, #1346).
+  task (ADR-019 Rule 4; issues #1344, #1346).
 
 ### Changed
 
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kind`-supplied path). `get_tree` returns `None` for a missing mind map (it is
   a derived read that does not police parent existence) — previously `kind=None`
   raised on an unknown id. Shape-drift in the interactive payload still raises
-  `UnknownRPCMethodError` (ADR-0019; issues #1291, #1346).
+  `UnknownRPCMethodError` (ADR-019; issues #1291, #1346).
 - `client.mind_maps.generate(kind=INTERACTIVE)` now raises
   `ArtifactFeatureUnavailableError` (instead of a bare `ArtifactError`) when the
   `CREATE_ARTIFACT` call returns no artifact id — no generation task was
@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `except RPCError` *before* `except ArtifactError` will now take the `RPCError`
   branch — the same MRO the sibling `generate_*` / `retry_failed` null-create
   paths already produce.) This aligns the interactive async kickoff with that
-  sibling null-create contract (ADR-0019 "async kickoff"; issue #1359).
+  sibling null-create contract (ADR-019 "async kickoff"; issue #1359).
 - Documented two pre-existing `client.mind_maps` read semantics (docs-only, no
   behavior change): `list()` populates `MindMap.tree` only for note-backed
   entries — interactive entries carry `tree=None` ("not fetched", not "empty";

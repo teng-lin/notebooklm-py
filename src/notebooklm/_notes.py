@@ -118,7 +118,7 @@ class NotesAPI:
     async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
         """Get a note by ID, returning ``None`` when it does not exist.
 
-        The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
+        The sanctioned ``None``-on-miss lookup (ADR-019): unlike :meth:`get`
         — which is slated to raise ``NoteNotFoundError`` on a miss in v0.8.0
         (issue #1247) — this returns ``None`` for a genuine absence and emits no
         deprecation warning. Transport, auth, and decode faults raised by the

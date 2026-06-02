@@ -1,4 +1,4 @@
-# ADR-0019: Error-and-return contract for the public API
+# ADR-019: Error-and-return contract for the public API
 
 ## Status
 
