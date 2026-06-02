@@ -1,7 +1,7 @@
 # CLI Exit-Code Convention
 
 **Status:** Active
-**Last Updated:** 2026-05-27
+**Last Updated:** 2026-06-02
 
 This document defines the exit-code policy for the `notebooklm` CLI. Shell
 scripts, CI pipelines, and AI-agent automations should rely on these codes for
@@ -55,7 +55,7 @@ mapping in `error_handler.py`:
 | `KeyboardInterrupt`     | `CANCELLED`         | `130` |
 | Anything else (`Exception`) | `UNEXPECTED_ERROR` | `2` |
 | Parse-time `click.UsageError` / `click.BadParameter` (Click's parser, before command body runs) | `VALIDATION_ERROR` under `--json`; — in text mode | `2` (under `--json`: typed JSON envelope on stdout, **exit code preserved**; text mode: Click's `Usage:/Error:` on stderr) |
-| Parse-time `click.ClickException` (other subclasses raised by Click's parser) | `VALIDATION_ERROR` under `--json`; — in text mode | `1` (same: JSON envelope under `--json` with the code preserved; native text otherwise) |
+| Parse-time `click.ClickException` (other subclasses raised by Click's parser) | `VALIDATION_ERROR` under `--json`; — in text mode | `1` (same: JSON envelope under `--json` with the exit code preserved; native text otherwise) |
 | Post-parse `ClickException` raised from a command body or service module | `VALIDATION_ERROR` (or another standard code, per the raise site) | `1` (typed JSON envelope under `--json`; see ADR-015) |
 
 `click.ClickException` raised by **Click's own parser** is the *parse-time*
