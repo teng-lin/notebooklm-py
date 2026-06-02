@@ -232,10 +232,17 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `NotebookNotFoundError` | `NotFoundError`, `RPCError`, `NotebookError`, `NotebookLMError` |
 | `SourceNotFoundError` | `NotFoundError`, `RPCError`, `SourceError`, `NotebookLMError` |
 | `ArtifactNotFoundError` | `NotFoundError`, `RPCError`, `ArtifactError`, `NotebookLMError` |
+| `NoteNotFoundError` | `NotFoundError`, `RPCError`, `NoteError`, `NotebookLMError` |
+| `MindMapNotFoundError` | `NotFoundError`, `RPCError`, `MindMapError`, `NotebookLMError` |
 | `ArtifactFeatureUnavailableError` | `RPCError`, `ArtifactError`, `NotebookLMError` |
 | `SourceTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `SourceError`, `NotebookLMError` |
 | `ArtifactTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ArtifactError`, `NotebookLMError` |
 | `ResearchTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ResearchError`, `NotebookLMError` |
+
+`NoteNotFoundError` and `MindMapNotFoundError` (with their `NoteError` /
+`MindMapError` domain bases) are defined now but **no method raises them yet** —
+they are the prerequisite types for the note / mind-map not-found work landing
+in **v0.8.0** (issues #1291, #1346).
 
 Use the table to pick the right level of catch. `client.sources.get(...)`,
 `client.artifacts.get(...)`, and `client.notes.get(...)` currently return

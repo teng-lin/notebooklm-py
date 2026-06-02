@@ -123,10 +123,11 @@ def warn_get_returns_none(resource: str, *, removal: str = "0.8.0") -> None:
         return
 
     exc_name = f"{resource.capitalize()}NotFoundError"
-    # SourceNotFoundError / ArtifactNotFoundError already exist and are
-    # importable today, but NoteNotFoundError is only introduced by the v0.8.0
-    # flip (#1247). Qualify the hint so a notes caller who follows the migration
-    # advice immediately doesn't hit an ImportError on a not-yet-defined class.
+    # The matching <Resource>NotFoundError for every resource that warns today
+    # (source / artifact / note) is already defined and importable, so the hint
+    # names it directly. If a future resource warns before its exception lands,
+    # qualify the hint so a caller who follows the migration advice immediately
+    # doesn't hit an ImportError on a not-yet-defined class.
     exc_hint = (
         exc_name if _not_found_error_exists(exc_name) else f"{exc_name} (added in v{removal})"
     )

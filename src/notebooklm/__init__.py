@@ -74,6 +74,9 @@ from .exceptions import (
     # Validation/Config
     ConfigurationError,
     DecodingError,
+    # Domain: Mind maps
+    MindMapError,
+    MindMapNotFoundError,
     # Network
     NetworkError,
     # Idempotency
@@ -84,6 +87,9 @@ from .exceptions import (
     # Base
     NotebookLMError,
     NotebookNotFoundError,
+    # Domain: Notes
+    NoteError,
+    NoteNotFoundError,
     # Cross-domain umbrellas
     NotFoundError,
     RateLimitError,
@@ -262,6 +268,12 @@ __all__ = [
     "ResearchError",
     "ResearchTimeoutError",
     "ResearchTaskMismatchError",
+    # Domain Exceptions: Notes
+    "NoteError",
+    "NoteNotFoundError",
+    # Domain Exceptions: Mind maps
+    "MindMapError",
+    "MindMapNotFoundError",
     # Cross-domain umbrella: wait/poll timeouts
     "WaitTimeoutError",
     # Warnings

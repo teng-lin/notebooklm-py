@@ -73,14 +73,27 @@ class TestWarnGetReturnsNone:
         assert "try/except SourceNotFoundError." in message
         assert "added in" not in message
 
-    def test_not_yet_existing_exception_is_version_qualified(self):
-        # NoteNotFoundError is only introduced by the v0.8.0 flip (#1247), so
-        # the migration hint must flag it as not-yet-available to avoid sending
-        # users to an ImportError.
+    def test_note_not_found_error_now_named_unqualified(self):
+        # NoteNotFoundError now exists (defined ahead of the v0.8.0 flip
+        # #1247), so the migration hint names it directly with no
+        # "(added in ...)" qualifier — a notes caller who follows the advice
+        # can import it today.
         with pytest.warns(DeprecationWarning) as record:
             _deprecation.warn_get_returns_none("note")
         message = str(record[0].message)
-        assert "NoteNotFoundError (added in v0.8.0)" in message
+        assert "try/except NoteNotFoundError." in message
+        assert "added in" not in message
+
+    def test_not_yet_existing_exception_is_version_qualified(self):
+        # A *NotFoundError that does not yet exist must be flagged as
+        # not-yet-available so a caller following the migration advice doesn't
+        # hit an ImportError on a not-yet-defined class. No resource ships such
+        # an exception today, so exercise the qualification branch with a
+        # synthetic resource name.
+        with pytest.warns(DeprecationWarning) as record:
+            _deprecation.warn_get_returns_none("widget")
+        message = str(record[0].message)
+        assert "WidgetNotFoundError (added in v0.8.0)" in message
 
     @pytest.mark.parametrize("truthy", ["1", "true", "TRUE", "yes", "on"])
     def test_quiet_env_var_suppresses(self, monkeypatch, truthy):

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New public exception types for the note and mind-map domains, mirroring the
+  existing `SourceError` / `SourceNotFoundError` shape: `NoteError` +
+  `NoteNotFoundError` and `MindMapError` + `MindMapNotFoundError`. Each
+  `*NotFoundError` is a triple-base `(NotFoundError, RPCError, <Domain>Error)`,
+  so it is catchable via the cross-domain `NotFoundError` umbrella, at
+  transport-level `except RPCError` call sites, and at domain-level
+  `except NoteError` / `except MindMapError` call sites. These are the
+  prerequisite for the mind-map not-found work (ADR-0019; issues #1291, #1346).
+  No method raises them yet — this change only adds the types.
+
+### Changed
+
+- `ArtifactTimeoutError` now declares its bases umbrella-first
+  (`WaitTimeoutError, ArtifactError`), matching `SourceTimeoutError` and
+  `ResearchTimeoutError`. This is a cosmetic reorder with no behavior change:
+  `isinstance`/`except` against either base is unaffected.
+
 ## [0.7.0] - 2026-05-30
 
 ### Breaking changes

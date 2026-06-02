@@ -21,11 +21,15 @@ from notebooklm.exceptions import (
     ClientError,
     ConfigurationError,
     DecodingError,
+    MindMapError,
+    MindMapNotFoundError,
     NetworkError,
     NotebookError,
     NotebookLimitError,
     NotebookLMError,
     NotebookNotFoundError,
+    NoteError,
+    NoteNotFoundError,
     NotFoundError,
     RateLimitError,
     ResearchError,
@@ -82,6 +86,10 @@ class TestExceptionHierarchy:
             ArtifactTimeoutError,
             ArtifactPendingTimeoutError,
             ArtifactInProgressTimeoutError,
+            NoteError,
+            NoteNotFoundError,
+            MindMapError,
+            MindMapNotFoundError,
         ]
         for exc_class in exceptions:
             assert issubclass(exc_class, NotebookLMError), (
@@ -146,6 +154,8 @@ class TestExceptionHierarchy:
         assert NotebookNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, NotebookError)
         assert SourceNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, SourceError)
         assert ArtifactNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, ArtifactError)
+        assert NoteNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, NoteError)
+        assert MindMapNotFoundError.__mro__[1:4] == (NotFoundError, RPCError, MindMapError)
 
     def test_not_found_errors_caught_by_except_rpc_error(self):
         """End-to-end ``try/except RPCError`` exercise — a direct regression
@@ -300,6 +310,18 @@ class TestNotFoundErrorUmbrella:
         with pytest.raises(NotFoundError):
             raise ArtifactNotFoundError("art-123", "audio")
 
+    def test_not_found_error_catches_note_not_found(self):
+        """`except NotFoundError` catches NoteNotFoundError."""
+        assert issubclass(NoteNotFoundError, NotFoundError)
+        with pytest.raises(NotFoundError):
+            raise NoteNotFoundError("note-123")
+
+    def test_not_found_error_catches_mind_map_not_found(self):
+        """`except NotFoundError` catches MindMapNotFoundError."""
+        assert issubclass(MindMapNotFoundError, NotFoundError)
+        with pytest.raises(NotFoundError):
+            raise MindMapNotFoundError("mm-123")
+
     def test_existing_catches_still_work(self):
         """Adding NotFoundError must not break existing domain catches.
 
@@ -390,6 +412,19 @@ class TestWaitTimeoutErrorUmbrella:
         assert issubclass(ResearchTimeoutError, ResearchError)
         assert issubclass(ResearchError, NotebookLMError)
 
+    def test_wait_timeouts_declare_umbrella_base_first(self):
+        """The ``*TimeoutError`` types list ``WaitTimeoutError`` before their
+        domain base, so the wait-timeout umbrella reads consistently across
+        domains. ``ArtifactTimeoutError`` was the lone outlier
+        (``(ArtifactError, WaitTimeoutError)``) and is now umbrella-first like
+        its siblings. The reorder is cosmetic — ``isinstance`` against either
+        base is unaffected (proven by ``test_umbrella_catches_source_artifact_research``
+        and ``test_domain_bases_unchanged``).
+        """
+        assert SourceTimeoutError.__bases__ == (WaitTimeoutError, SourceError)
+        assert ArtifactTimeoutError.__bases__ == (WaitTimeoutError, ArtifactError)
+        assert ResearchTimeoutError.__bases__ == (WaitTimeoutError, ResearchError)
+
     def test_umbrella_catches_source_artifact_research(self):
         """One ``except WaitTimeoutError`` clause catches all three domains."""
         caught: list[type] = []
@@ -446,6 +481,62 @@ class TestWaitTimeoutErrorUmbrella:
         assert "WaitTimeoutError" in notebooklm.__all__
         assert "ResearchError" in notebooklm.__all__
         assert "ResearchTimeoutError" in notebooklm.__all__
+
+
+class TestNoteAndMindMapNotFound:
+    """The note / mind-map not-found exceptions mirror ``SourceNotFoundError``.
+
+    Added as the prerequisite for the mind-map not-found work (#1291), these
+    are the first members of the note and mind-map domain subtrees. Each is
+    a triple-base ``(NotFoundError, RPCError, <Domain>Error)`` so it is
+    catchable via the cross-domain umbrella, at transport-level call sites,
+    and at domain-level call sites — exactly like ``SourceNotFoundError``.
+    """
+
+    def test_note_not_found_attributes_and_catchability(self):
+        err = NoteNotFoundError("note-x", method_id="abc")
+        assert err.note_id == "note-x"
+        assert err.method_id == "abc"
+        assert "note-x" in str(err)
+        # Catchable as the umbrella, the RPC layer, and the domain base.
+        assert isinstance(err, NotFoundError)
+        assert isinstance(err, RPCError)
+        assert isinstance(err, NoteError)
+
+    def test_note_not_found_raw_response_kwarg(self):
+        err = NoteNotFoundError("note-x", raw_response="payload")
+        assert err.raw_response == "payload"
+
+    def test_mind_map_not_found_attributes_and_catchability(self):
+        err = MindMapNotFoundError("mm-x", method_id="abc")
+        assert err.mind_map_id == "mm-x"
+        assert err.method_id == "abc"
+        assert "mm-x" in str(err)
+        # Catchable as the umbrella, the RPC layer, and the domain base.
+        assert isinstance(err, NotFoundError)
+        assert isinstance(err, RPCError)
+        assert isinstance(err, MindMapError)
+
+    def test_mind_map_not_found_raw_response_kwarg(self):
+        err = MindMapNotFoundError("mm-x", raw_response="payload")
+        assert err.raw_response == "payload"
+
+    def test_domain_bases_are_under_notebooklm_error(self):
+        assert issubclass(NoteError, NotebookLMError)
+        assert issubclass(MindMapError, NotebookLMError)
+        # The bare domain bases are NOT not-found / RPC types.
+        assert not issubclass(NoteError, NotFoundError)
+        assert not issubclass(MindMapError, RPCError)
+
+    def test_exported_from_package(self):
+        for name, obj in (
+            ("NoteError", NoteError),
+            ("NoteNotFoundError", NoteNotFoundError),
+            ("MindMapError", MindMapError),
+            ("MindMapNotFoundError", MindMapNotFoundError),
+        ):
+            assert getattr(notebooklm, name) is obj
+            assert name in notebooklm.__all__
 
 
 class TestRPCErrorAttributes:

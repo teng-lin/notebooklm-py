@@ -97,6 +97,11 @@ NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactFeatureUnavailableError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
 ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError
 ResearchError, ResearchTimeoutError, ResearchTaskMismatchError
+# Note: the note / mind-map *NotFoundError types are defined but not raised by
+# any method yet — they are the prerequisite for the not-found work landing in
+# v0.8.0 (issues #1291, #1346).
+NoteError, NoteNotFoundError
+MindMapError, MindMapNotFoundError
 ChatError
 
 # Enums
