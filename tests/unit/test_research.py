@@ -466,6 +466,55 @@ class TestResearch:
         assert result.task_id == "task_123"
 
     @pytest.mark.asyncio
+    async def test_wait_for_completion_never_returns_not_found_for_pinned_task(
+        self, auth_tokens, httpx_mock, build_rpc_response, monkeypatch
+    ):
+        """A pinned task absent from an early poll is transient, not NOT_FOUND.
+
+        Regression guard for the insulation guarantee: wait_for_completion
+        drives _select_polled_tasks directly (never poll), so the poll-only
+        NOT_FOUND sentinel cannot leak into the wait loop — a temporarily
+        absent pinned task keeps polling until it appears.
+        """
+
+        async def no_sleep(delay: float) -> None:  # noqa: ARG001
+            return None
+
+        monkeypatch.setattr(research_module.asyncio, "sleep", no_sleep)
+
+        absent = build_rpc_response(RPCMethod.POLL_RESEARCH, [])
+        completed = build_rpc_response(
+            RPCMethod.POLL_RESEARCH,
+            [
+                [
+                    [
+                        "task_pinned",
+                        _build_research_task_payload(
+                            "query",
+                            "https://example.com",
+                            "Result",
+                            status_code=2,
+                        ),
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=absent.encode(), method="POST")
+        httpx_mock.add_response(content=completed.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.wait_for_completion(
+                "nb_123",
+                task_id="task_pinned",
+                timeout=10,
+                initial_interval=1,
+            )
+
+        assert result.status == "completed"
+        assert result.status != ResearchStatus.NOT_FOUND
+        assert result.task_id == "task_pinned"
+
+    @pytest.mark.asyncio
     async def test_wait_for_completion_returns_failed_terminal_status(
         self, auth_tokens, httpx_mock, build_rpc_response
     ):

@@ -454,7 +454,11 @@ class ResearchAPI:
             await self._poll_task_models(notebook_id),
             notebook_id=notebook_id,
             task_id=task_id,
-            warn_on_ambiguous=True,
+            # The ambiguity warning only applies to the unfiltered (task_id is
+            # None) path; when a discriminator is pinned, _select_polled_tasks
+            # filters before the warn branch. Gating it here matches
+            # wait_for_completion and keeps the intent explicit.
+            warn_on_ambiguous=task_id is None,
         )
 
         if parsed_tasks:
@@ -512,8 +516,12 @@ class ResearchAPI:
             ``COMPLETED`` or ``FAILED`` statuses. ``NO_RESEARCH`` is returned
             immediately only when no task id is known; for a known/pinned task
             it can be a transient live-API state before the task appears in
-            ``POLL_RESEARCH``. Legacy ``result["status"]`` dict-subscript
-            access still works (with a ``DeprecationWarning``) until v0.8.0.
+            ``POLL_RESEARCH``. Unlike :meth:`poll`, this method never returns
+            ``NOT_FOUND`` — a pinned task that is temporarily absent from a poll
+            is treated as a transient replication-lag condition and keeps
+            polling until it appears, reaches a terminal state, or times out.
+            Legacy ``result["status"]`` dict-subscript access still works (with
+            a ``DeprecationWarning``) until v0.8.0.
 
         Raises:
             ResearchTimeoutError: If research does not reach a terminal status
