@@ -122,7 +122,10 @@ def warn_get_returns_none(resource: str, *, removal: str = "0.8.0") -> None:
     if _deprecations_quiet():
         return
 
-    exc_name = f"{resource.capitalize()}NotFoundError"
+    # PascalCase the resource so multi-word names map to the real class name
+    # (e.g. "mind_map" -> "MindMapNotFoundError", not "Mind_mapNotFoundError").
+    exc_stem = "".join(part.capitalize() for part in resource.split("_"))
+    exc_name = f"{exc_stem}NotFoundError"
     # The matching <Resource>NotFoundError for every resource that warns today
     # (source / artifact / note) is already defined and importable, so the hint
     # names it directly. If a future resource warns before its exception lands,

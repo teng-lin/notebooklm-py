@@ -74,7 +74,6 @@ from .exceptions import (
     # Validation/Config
     ConfigurationError,
     DecodingError,
-    # Domain: Mind maps
     MindMapError,
     MindMapNotFoundError,
     # Network
@@ -87,7 +86,6 @@ from .exceptions import (
     # Base
     NotebookLMError,
     NotebookNotFoundError,
-    # Domain: Notes
     NoteError,
     NoteNotFoundError,
     # Cross-domain umbrellas

@@ -84,6 +84,18 @@ class TestWarnGetReturnsNone:
         assert "try/except NoteNotFoundError." in message
         assert "added in" not in message
 
+    def test_snake_case_resource_maps_to_pascal_case_exception(self):
+        # A multi-word resource name must PascalCase into the real class name
+        # ("mind_map" -> "MindMapNotFoundError", not "Mind_mapNotFoundError"),
+        # so the hint names the exception that actually exists and stays
+        # unqualified.
+        with pytest.warns(DeprecationWarning) as record:
+            _deprecation.warn_get_returns_none("mind_map")
+        message = str(record[0].message)
+        assert "MindMapNotFoundError" in message
+        assert "Mind_map" not in message
+        assert "added in" not in message
+
     def test_not_yet_existing_exception_is_version_qualified(self):
         # A *NotFoundError that does not yet exist must be flagged as
         # not-yet-available so a caller following the migration advice doesn't

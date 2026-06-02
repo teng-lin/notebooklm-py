@@ -158,8 +158,9 @@ class NotFoundError(NotebookLMError):
             source = await client.sources.wait_until_ready(nb_id, src_id)
             await client.artifacts.download_audio(nb_id, dest, audio_id)
         except NotFoundError as e:
-            # Catches NotebookNotFoundError, SourceNotFoundError,
-            # and ArtifactNotFoundError uniformly.
+            # Catches NotebookNotFoundError, SourceNotFoundError, and
+            # ArtifactNotFoundError uniformly (and NoteNotFoundError /
+            # MindMapNotFoundError once their not-found paths land in v0.8.0).
             handle_missing_resource(e)
 
     The example uses methods that *raise* a ``*NotFoundError`` on missing
@@ -167,6 +168,8 @@ class NotFoundError(NotebookLMError):
     the artifact download / content paths). :meth:`SourcesAPI.get` and
     :meth:`ArtifactsAPI.get` instead return ``None`` for missing IDs — use
     them when you want a lookup that does not trigger the umbrella.
+    :class:`NoteNotFoundError` and :class:`MindMapNotFoundError` are defined
+    but not raised by any method yet (the prerequisite for the v0.8.0 work).
 
     Subclasses retain their existing type-specific bases — for example,
     :class:`SourceNotFoundError` is still a :class:`SourceError`, and
@@ -176,7 +179,7 @@ class NotFoundError(NotebookLMError):
 
     .. note::
 
-        As of v0.6.0, all three concrete subclasses also mix in
+        As of v0.6.0, every concrete ``*NotFoundError`` subclass also mixes in
         :class:`RPCError`, so ``except RPCError`` catches each of them
         uniformly. See the v0.6.0 BREAKING-CHANGE entry in CHANGELOG.md
         for migration guidance (the broad ``except RPCError`` clause now
@@ -1332,14 +1335,20 @@ class NoteError(NotebookLMError):
 class NoteNotFoundError(NotFoundError, RPCError, NoteError):
     """Note not found in notebook.
 
+    .. note::
+       This type is **defined but not raised by any method yet**. It is the
+       prerequisite for the note not-found work landing in v0.8.0 (issues
+       #1291, #1346); the wording below describes the intended catchability
+       once note read/mutation paths surface a missing note this way.
+
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`NoteError`
-    (domain base). The RPC base is what note read/mutation paths raise when the
-    server returns an empty / degenerate payload for a missing note ID, so
+    (domain base). The RPC base is what note read/mutation paths will raise when
+    the server returns an empty / degenerate payload for a missing note ID, so
     ``except RPCError`` keeps working at call sites that handle transport-level
-    failures. ``except NoteError`` continues to work at domain-level call sites
-    that don't care about the RPC layer. ``except NotFoundError`` catches it
-    alongside :class:`NotebookNotFoundError` and :class:`SourceNotFoundError`.
+    failures. ``except NoteError`` works at domain-level call sites that don't
+    care about the RPC layer. ``except NotFoundError`` catches it alongside
+    :class:`NotebookNotFoundError` and :class:`SourceNotFoundError`.
 
     Attributes:
         note_id: The ID that was not found.
@@ -1379,15 +1388,20 @@ class MindMapError(NotebookLMError):
 class MindMapNotFoundError(NotFoundError, RPCError, MindMapError):
     """Mind map not found in notebook.
 
+    .. note::
+       This type is **defined but not raised by any method yet**. It is the
+       prerequisite for the mind-map not-found work landing in v0.8.0 (issues
+       #1291, #1346); the wording below describes the intended catchability
+       once mind-map read/mutation paths surface a missing mind map this way.
+
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`MindMapError`
-    (domain base). The RPC base is what mind-map read/mutation paths raise when
-    the server returns an empty / degenerate payload for a missing mind-map ID,
-    so ``except RPCError`` keeps working at call sites that handle
-    transport-level failures. ``except MindMapError`` continues to work at
-    domain-level call sites that don't care about the RPC layer.
-    ``except NotFoundError`` catches it alongside :class:`NotebookNotFoundError`
-    and :class:`SourceNotFoundError`.
+    (domain base). The RPC base is what mind-map read/mutation paths will raise
+    when the server returns an empty / degenerate payload for a missing
+    mind-map ID, so ``except RPCError`` keeps working at call sites that handle
+    transport-level failures. ``except MindMapError`` works at domain-level call
+    sites that don't care about the RPC layer. ``except NotFoundError`` catches
+    it alongside :class:`NotebookNotFoundError` and :class:`SourceNotFoundError`.
 
     Attributes:
         mind_map_id: The ID that was not found.
