@@ -1072,6 +1072,7 @@ print(f"Keywords: {guide.keywords}")
 | `rename(notebook_id, artifact_id, new_title, *, return_object=True)` | `str, str, str` | `Artifact \| None` | Rename artifact (re-fetched; raises `ArtifactNotFoundError` if missing). `return_object=False` skips the re-fetch and returns `None`. |
 | `poll_status(notebook_id, task_id)` | `str, str` | `GenerationStatus` | Check generation status |
 | `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation. Pass `on_status_change(status)` for sync or async progress callbacks. |
+| `retry_failed(notebook_id, artifact_id)` | `str, str` | `GenerationStatus` | Retry a failed Studio artifact in place (the UI "Retry"). Same `artifact_id` preserved; accepted → `status="in_progress"`; a synchronous refusal (rate limit / quota / not-retryable) **raises** `RateLimitError`/`RPCError`. See below. |
 
 #### Type-Specific List Methods
 
@@ -1103,6 +1104,42 @@ print(f"Keywords: {guide.keywords}")
 | `generate_infographic(...)` | See below | `GenerationStatus` | Generate infographic |
 | `generate_data_table(...)` | See below | `GenerationStatus` | Generate data table |
 | `generate_mind_map(...)` | See below | `MindMapResult` | Generate a mind map and persist it as a note. Use attribute access (`result.mind_map`, `result.note_id`); legacy `result["mind_map"]` dict-subscript still works (with a `DeprecationWarning`) until v0.8.0. |
+
+#### Retrying a Failed Artifact
+
+**CLI equivalent:** `notebooklm artifact retry <artifact_id> -n <notebook_id> [--json] [--wait]`.
+
+`retry_failed(notebook_id, artifact_id)` re-runs generation for an
+already-failed artifact **in place** — the UI "Retry" action. The artifact is
+not deleted first; the same `artifact_id` is preserved and returned as the task
+id, so `poll_status()` / `wait_for_completion()` keep working against it.
+
+It follows the ADR-0019 "async kickoff" contract: an accepted retry returns
+`GenerationStatus(status="in_progress")`, while a **synchronous refusal**
+(`USER_DISPLAYABLE_ERROR` — rate limit, quota, or a non-retryable artifact)
+**raises** the underlying `RateLimitError` / `RPCError` rather than returning a
+`status="failed"` handle. (As a brand-new method it is born on the right side
+of the contract; the `generate_*` / `revise_slide` methods still swallow such
+refusals into `status="failed"` until v0.8.0.) A retry can itself fail again
+provider-side — observed by later polling as a terminal `failed` status — so
+callers decide whether to re-invoke.
+
+```python
+status = await client.artifacts.retry_failed(nb_id, failed_artifact_id)
+# status.task_id == failed_artifact_id, status.status == "in_progress"
+final = await client.artifacts.wait_for_completion(nb_id, status.task_id)
+
+# Auto-retry on a rate-limited refusal with the public helper. Because
+# retry_failed RAISES RateLimitError (rather than returning a rate-limited
+# status), with_rate_limit_retry now also catches that exception, backs off,
+# and re-raises if the budget is exhausted.
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.retry_failed(nb_id, failed_artifact_id),
+    max_retries=3,
+)
+```
 
 #### Downloading Artifacts
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from ..rpc import (
     INTERACTIVE_MIND_MAP_VARIANT,
@@ -435,6 +435,26 @@ def build_revise_slide_params(artifact_id: str, slide_index: int, prompt: str) -
         artifact_id,
         [[[slide_index, prompt]]],
     ]
+
+
+# Fixed client capability blob for ``RETRY_ARTIFACT``. Confirmed byte-identical
+# across video (UI DevTools capture), audio, and infographic retries
+# (issue #1319), so it is sent verbatim regardless of artifact type. The
+# trailing ``[[1, 4, 8, 2, 3, 6]]`` is a static artifact-type-code capability
+# list, not artifact-specific. If Google reshapes this, the RETRY_ARTIFACT call
+# fails loudly per the standard RPC policy rather than silently mis-retrying.
+_RETRY_OPTIONS: Final[list[Any]] = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],
+]
+
+
+def build_retry_artifact_params(artifact_id: str) -> list[Any]:
+    """Build ``RETRY_ARTIFACT`` params for an in-place failed-artifact retry."""
+    return [_RETRY_OPTIONS, artifact_id]
 
 
 def build_data_table_artifact_params(

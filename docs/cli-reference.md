@@ -224,6 +224,7 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 | `export <id>` | Artifact ID | `--title TEXT` (required), `--type [docs\|sheets]`, `--json` | `artifact export art123 --title "My Doc" --type sheets` |
 | `poll <task_id>` | Task ID (from `generate <type>`) | `--json` | `artifact poll task123` |
 | `wait <id>` | Artifact ID (from `artifact list`) | `--timeout` (default: 300), `--interval` (default: 2), `--json` | `artifact wait art123 --timeout 600` |
+| `retry <id>` | Artifact ID (from `artifact list`) | `--wait`, `--timeout` (default: 300), `--interval` (default: 2), `--json` | `artifact retry art123 --wait` |
 | `suggestions` | - | `--json` | `artifact suggestions` |
 
 All `artifact` subcommands also accept `-n/--notebook ID`.
@@ -236,6 +237,8 @@ All `artifact` subcommands also accept `-n/--notebook ID`.
 > - **`artifact wait <artifact_id>`** — blocks (with exponential backoff) until the artifact is `completed`, `failed`, or `--timeout` elapses. Accepts a full UUID **or a unique prefix** that resolves against `artifact list` via the standard partial-ID resolver.
 >
 > Rule of thumb: **just generated something? use `poll`.** **Found it in `artifact list`? use `wait`.** You can pass the same string to both — the kind label is about lifecycle stage, not about a different identifier format.
+
+> **`artifact retry <artifact_id>`** re-runs generation for a *failed* artifact in place (the web UI "Retry" button) — the artifact is not deleted first and the same ID is preserved. Accepts a full UUID or a unique prefix. By default it kicks off the retry and returns immediately (`Retry started: <id>`); pass `--wait` to block until the retried generation reaches a terminal state. A synchronous refusal (rate limit / quota / not-retryable) exits non-zero with a typed error rather than reporting a started task. A retry may itself fail again provider-side, in which case you can run `artifact retry` again against the same ID.
 
 ### Download Commands (`notebooklm download <type>`)
 
@@ -1031,14 +1034,14 @@ notebooklm generate report --format briefing-doc --append "Focus on AI trends, k
 notebooklm generate report --prompt-file custom_report.txt
 ```
 
-### Artifact: `list`, `get`, `rename`, `delete`, `export`, `poll`, `wait`, `suggestions`
+### Artifact: `list`, `get`, `rename`, `delete`, `export`, `poll`, `wait`, `retry`, `suggestions`
 
 Manage existing artifacts (audio, video, slide decks, quizzes, reports, etc.). Every subcommand resolves the notebook via the standard precedence (`-n/--notebook` flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
-> **Python equivalent:** [`client.artifacts.list/get/rename/delete/poll_status/wait_for_completion/suggest_reports(...)`](python-api.md#artifactsapi-clientartifacts) for management; [`export_report` / `export_data_table` / `export(...)`](python-api.md#export-methods) for export.
+> **Python equivalent:** [`client.artifacts.list/get/rename/delete/poll_status/wait_for_completion/retry_failed/suggest_reports(...)`](python-api.md#artifactsapi-clientartifacts) for management; [`export_report` / `export_data_table` / `export(...)`](python-api.md#export-methods) for export.
 
 ```bash
-notebooklm artifact <list|get|rename|delete|export|poll|wait|suggestions> [OPTIONS]
+notebooklm artifact <list|get|rename|delete|export|poll|wait|retry|suggestions> [OPTIONS]
 ```
 
 **Common options (all subcommands):**
@@ -1055,6 +1058,7 @@ notebooklm artifact <list|get|rename|delete|export|poll|wait|suggestions> [OPTIO
 | `export` | `ARTIFACT_ID` | `--title TEXT` (**required**), `--type [docs\|sheets]` (default: docs), `--json` |
 | `poll` | `TASK_ID` (from `generate <type>`) | `--json` |
 | `wait` | `ARTIFACT_ID` | `--timeout SECONDS` (default: 300), `--interval SECONDS` (default: 2), `--json` |
+| `retry` | `ARTIFACT_ID` | `--wait` (block until terminal), `--timeout SECONDS` (default: 300), `--interval SECONDS` (default: 2), `--json` |
 | `suggestions` | (none) | `--json` |
 
 **Examples:**
@@ -1080,6 +1084,9 @@ notebooklm artifact poll task_abc
 
 # Block until the artifact finishes (or 600s elapses)
 notebooklm artifact wait art123 --timeout 600 --json
+
+# Retry a failed artifact in place (UI "Retry"); --wait blocks until terminal
+notebooklm artifact retry art123 --wait
 
 # Get AI-suggested report topics for the active notebook
 notebooklm artifact suggestions --json

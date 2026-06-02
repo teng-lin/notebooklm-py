@@ -22,6 +22,7 @@
       "list",
       "poll",
       "rename",
+      "retry",
       "suggestions",
       "wait"
     ],
@@ -143,6 +144,7 @@
         "list",
         "poll",
         "rename",
+        "retry",
         "suggestions",
         "wait"
       ],
@@ -590,6 +592,115 @@
         }
       ],
       "short_help": "Rename an artifact."
+    },
+    "artifact retry": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "artifact_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Block until the retried generation finishes",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "wait",
+          "opts": [
+            "--wait"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": 300,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Maximum seconds to wait (default: 300)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "timeout",
+          "opts": [
+            "--timeout"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "integer"
+          }
+        },
+        {
+          "default": 2,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Seconds between status checks (default: 2)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "interval",
+          "opts": [
+            "--interval"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Retry a failed Studio artifact in place..."
     },
     "artifact suggestions": {
       "class": "Command",

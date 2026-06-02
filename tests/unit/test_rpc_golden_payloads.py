@@ -41,6 +41,7 @@ from notebooklm._artifact.payloads import (
     build_mind_map_params,
     build_quiz_artifact_params,
     build_report_artifact_params,
+    build_retry_artifact_params,
     build_revise_slide_params,
     build_slide_deck_artifact_params,
     build_suggest_reports_params,
@@ -751,6 +752,26 @@ def test_revise_slide_payload_builder_matches_golden_envelope() -> None:
         RPCMethod.REVISE_SLIDE,
         params,
     )
+
+
+def test_retry_artifact_payload_builder_matches_golden_envelope() -> None:
+    params = build_retry_artifact_params("artifact_payload")
+
+    # The type-agnostic retry_options literal is sent verbatim (issue #1319).
+    assert params == [
+        [
+            2,
+            None,
+            None,
+            [1, None, None, None, None, None, None, None, None, None, [1]],
+            [[1, 4, 8, 2, 3, 6]],
+        ],
+        "artifact_payload",
+    ]
+    encoded = encode_rpc_request(RPCMethod.RETRY_ARTIFACT, params)
+    assert encoded == _expected_rpc_envelope(RPCMethod.RETRY_ARTIFACT, params)
+    # The encoded envelope must carry the confirmed wire ID.
+    assert encoded[0][0][0] == "Rytqqe"
 
 
 def test_suggest_reports_payload_builder_matches_golden_envelope() -> None:

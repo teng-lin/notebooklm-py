@@ -1,0 +1,52 @@
+{
+  "method_name": "RETRY_ARTIFACT",
+  "method_id": "Rytqqe",
+  "description": "Retry a failed Studio artifact in place (UI \"Retry\" action).",
+  "request": {
+    "params": [
+      [
+        2,
+        null,
+        null,
+        [1, null, null, null, null, null, null, null, null, null, [1]],
+        [[1, 4, 8, 2, 3, 6]]
+      ],
+      "SCRUBBED_ARTIFACT_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "Rytqqe",
+          "[[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]],[[1,4,8,2,3,6]]],\"SCRUBBED_ARTIFACT_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "Rytqqe",
+          "[[\"SCRUBBED_ARTIFACT_001\",\"SCRUBBED_TITLE\",3,[[[\"SCRUBBED_SOURCE_001\"]]],1]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        "SCRUBBED_ARTIFACT_001",
+        "SCRUBBED_TITLE",
+        3,
+        [[["SCRUBBED_SOURCE_001"]]],
+        1
+      ]
+    ]
+  }
+}

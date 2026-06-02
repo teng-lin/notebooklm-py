@@ -669,6 +669,7 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
     ("artifact", "get"): _MUTATION_RATIONALE_SUCCESS,
     ("artifact", "poll"): _MUTATION_RATIONALE_SUCCESS,
     ("artifact", "rename"): _MUTATION_RATIONALE_SUCCESS,
+    ("artifact", "retry"): _MUTATION_RATIONALE_SUCCESS,
     ("artifact", "wait"): _MUTATION_RATIONALE_SUCCESS,
     # auth-flow commands (covered by dedicated test files).
     ("auth", "check"): _AUTH_RATIONALE,
@@ -745,6 +746,7 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("artifact", "get"): _MUTATION_RATIONALE_ERROR,
     ("artifact", "poll"): _MUTATION_RATIONALE_ERROR,
     ("artifact", "rename"): _MUTATION_RATIONALE_ERROR,
+    ("artifact", "retry"): _MUTATION_RATIONALE_ERROR,
     ("artifact", "suggestions"): _MUTATION_RATIONALE_ERROR,
     # auth-flow error paths (covered by dedicated test files).
     ("auth", "check"): _AUTH_RATIONALE,

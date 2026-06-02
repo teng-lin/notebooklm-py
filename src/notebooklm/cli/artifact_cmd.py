@@ -8,6 +8,7 @@ Commands:
     export      Export to Google Docs/Sheets
     poll        Poll generation status (single check)
     wait        Wait for generation to complete (blocking)
+    retry       Retry a failed artifact in place
     suggestions Get AI-suggested report topics
 """
 
@@ -50,6 +51,7 @@ def artifact():
       export       Export to Google Docs/Sheets
       poll         Poll generation status (single check)
       wait         Wait for generation to complete (blocking)
+      retry        Retry a failed artifact in place
       suggestions  Get AI-suggested report topics
 
     \b
@@ -579,6 +581,124 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
                     json_output_response(
                         {
                             "artifact_id": resolved_id,
+                            "status": "timeout",
+                            "error": f"Timed out after {timeout} seconds",
+                        }
+                    )
+                else:
+                    console.print(f"[red]✗ Timeout after {timeout}s[/red]")
+                exit_with_code(1)
+
+    return _run()
+
+
+@artifact.command("retry")
+@click.argument("artifact_id")
+@notebook_option
+@click.option("--wait", is_flag=True, help="Block until the retried generation finishes")
+@wait_polling_options(default_timeout=300, default_interval=2)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@with_client
+def artifact_retry(
+    ctx, artifact_id, notebook_id, wait, timeout, interval, json_output, client_auth
+):
+    """Retry a failed Studio artifact in place (the UI "Retry" action).
+
+    \b
+    Re-runs generation for an already-failed artifact WITHOUT deleting it. The
+    same ARTIFACT_ID is preserved, so `poll`/`wait` keep working against it.
+    ARTIFACT_ID can be a full UUID or a unique prefix (e.g. `abc` matches
+    `abc123def...`).
+
+    \b
+    A synchronous refusal (rate limit / quota / not-retryable) exits non-zero
+    with a typed error rather than reporting a started task. Pass `--wait` to
+    block until the retried generation reaches a terminal state.
+
+    \b
+    Examples:
+      # Kick off an in-place retry and return immediately:
+      notebooklm artifact retry abc123 -n nb_456
+      # Retry and block until it completes (or fails again):
+      notebooklm artifact retry abc123 -n nb_456 --wait
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_artifact_id(
+                client, nb_id_resolved, artifact_id, json_output=json_output
+            )
+
+            status = await client.artifacts.retry_failed(nb_id_resolved, resolved_id)
+
+            if not wait:
+                if json_output:
+                    json_output_response(
+                        {
+                            "task_id": status.task_id,
+                            "status": status.status,
+                            "url": status.url,
+                            "error": status.error,
+                            "error_code": status.error_code,
+                        }
+                    )
+                else:
+                    console.print(f"[green]Retry started:[/green] {status.task_id}")
+                    console.print(f"[bold]Status:[/bold] {status.status}")
+                return
+
+            try:
+                # Same transient-spinner UX as ``artifact wait``: the resume
+                # hint points back at ``artifact poll`` so Ctrl-C surfaces a
+                # resume command instead of a traceback.
+                async with status_with_elapsed(
+                    f"Waiting for retried artifact {status.task_id} to complete...",
+                    json_output=json_output,
+                    resume_hint=f"notebooklm artifact poll {status.task_id}",
+                ):
+                    final = await client.artifacts.wait_for_completion(
+                        nb_id_resolved,
+                        status.task_id,
+                        initial_interval=float(interval),
+                        timeout=float(timeout),
+                    )
+
+                if json_output:
+                    json_output_response(
+                        {
+                            "task_id": final.task_id,
+                            "status": final.status,
+                            "url": final.url,
+                            "error": final.error,
+                        }
+                    )
+                    if final.status != "completed":
+                        exit_with_code(1)
+                else:
+                    if final.status == "completed":
+                        console.print(f"[green]✓ Artifact completed:[/green] {final.task_id}")
+                        if final.url:
+                            console.print(f"[dim]URL:[/dim] {final.url}")
+                    elif final.error:
+                        console.print(f"[red]✗ Generation failed:[/red] {final.error}")
+                        exit_with_code(1)
+                    else:
+                        # Any terminal non-completed status (e.g. ``failed``
+                        # with no extractable error, or ``removed``) is a
+                        # non-success for automation — exit non-zero so a
+                        # provider-side retry failure is not reported as a
+                        # successful command. Matches the JSON branch above and
+                        # ADR-0019's "report failures as failures" posture.
+                        console.print(f"[yellow]Status:[/yellow] {final.status}")
+                        exit_with_code(1)
+
+            except TimeoutError:
+                if json_output:
+                    json_output_response(
+                        {
+                            "task_id": status.task_id,
                             "status": "timeout",
                             "error": f"Timed out after {timeout} seconds",
                         }

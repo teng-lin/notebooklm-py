@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `client.artifacts.retry_failed(notebook_id, artifact_id)` — retry a failed
+  Studio artifact in place (the web UI "Retry" action), via the new
+  `RETRY_ARTIFACT` (`Rytqqe`) RPC. The artifact is not deleted first and the
+  same `artifact_id` is preserved, so existing `poll_status()` /
+  `wait_for_completion()` flows keep working. Follows the ADR-0019 "async
+  kickoff" contract: an accepted retry returns
+  `GenerationStatus(status="in_progress")`, while a synchronous refusal
+  (`USER_DISPLAYABLE_ERROR` — rate limit / quota / not-retryable) **raises** the
+  underlying `RateLimitError` / `RPCError` rather than returning a
+  `status="failed"` handle. New `notebooklm artifact retry <artifact_id>
+  [--wait] [--json]` CLI command. Additive (issues #1319, #1346).
+- `notebooklm.artifacts.with_rate_limit_retry` now also retries when the
+  wrapped callable **raises** `RateLimitError` (backing off and re-raising once
+  the retry budget is exhausted), so it can wrap the new `retry_failed`. The
+  existing returned-rate-limited-`GenerationStatus` path (used by `generate_*`)
+  is unchanged — this is a backward-compatible addition (issue #1319).
 - New public exception types for the note and mind-map domains, mirroring the
   existing `SourceError` / `SourceNotFoundError` shape: `NoteError` +
   `NoteNotFoundError` and `MindMapError` + `MindMapNotFoundError`. Each

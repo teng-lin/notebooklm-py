@@ -24,6 +24,7 @@ from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
+    RateLimitError,
     UnknownRPCMethodError,
     ValidationError,
 )
@@ -1791,6 +1792,139 @@ class TestReviseSlide:
                     slide_index=0,
                     prompt="Fix this",
                 )
+
+
+class TestRetryFailedArtifact:
+    """Tests for ArtifactsAPI.retry_failed (RETRY_ARTIFACT, issue #1319)."""
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_accepted_returns_in_progress(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """An accepted retry returns the same artifact id as in_progress."""
+        # Captured wire shape: the artifact row at index 0 carries the same id
+        # (row[0]) and status code 1 (row[4] → PROCESSING → in_progress).
+        retry_response = build_rpc_response(
+            RPCMethod.RETRY_ARTIFACT,
+            [["artifact_456", "Video Overview", 3, [[["src_001"]]], 1]],
+        )
+        httpx_mock.add_response(content=retry_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.artifacts.retry_failed(
+                notebook_id="nb_123",
+                artifact_id="artifact_456",
+            )
+
+        assert result.task_id == "artifact_456"
+        assert result.status == "in_progress"
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_null_result_raises_feature_unavailable(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A null RPC result raises ArtifactFeatureUnavailableError."""
+        null_response = build_rpc_response(RPCMethod.RETRY_ARTIFACT, None)
+        httpx_mock.add_response(content=null_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ArtifactFeatureUnavailableError) as exc_info:
+                await client.artifacts.retry_failed(
+                    notebook_id="nb_123",
+                    artifact_id="artifact_456",
+                )
+
+        err = exc_info.value
+        assert err.artifact_type == "retry"
+        assert err.method_id == RPCMethod.RETRY_ARTIFACT.value
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_missing_id_row_raises_feature_unavailable(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A non-null row with no artifact id raises rather than soft-failing.
+
+        Born ADR-0019-correct: a missing/empty id means no generation task was
+        created, so retry_failed raises ArtifactFeatureUnavailableError instead
+        of returning the ``status="failed"`` that ``_parse_generation_result``
+        synthesizes for a falsy id.
+        """
+        # Row present but row[0] (the id) is null — not a fully-null result.
+        degenerate = build_rpc_response(RPCMethod.RETRY_ARTIFACT, [[None, "Title", 3, [], 1]])
+        httpx_mock.add_response(content=degenerate.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ArtifactFeatureUnavailableError) as exc_info:
+                await client.artifacts.retry_failed(
+                    notebook_id="nb_123",
+                    artifact_id="artifact_456",
+                )
+
+        assert exc_info.value.method_id == RPCMethod.RETRY_ARTIFACT.value
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_user_displayable_error_raises(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A synchronous USER_DISPLAYABLE_ERROR refusal RAISES (ADR-0019).
+
+        Unlike generate_* / revise_slide, retry_failed does NOT swallow the
+        refusal into status="failed" — it lets the RateLimitError propagate.
+        """
+        err = RateLimitError("Rate limit exceeded", rpc_code="USER_DISPLAYABLE_ERROR")
+        async with NotebookLMClient(auth_tokens) as client:
+            with (
+                patch.object(
+                    client.artifacts._rpc,
+                    "rpc_call",
+                    AsyncMock(side_effect=err),
+                ),
+                pytest.raises(RateLimitError) as exc_info,
+            ):
+                await client.artifacts.retry_failed(
+                    notebook_id="nb_123",
+                    artifact_id="artifact_456",
+                )
+
+        assert exc_info.value.rpc_code == "USER_DISPLAYABLE_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_retry_failed_other_rpc_error_propagates(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A non-rate-limit RPCError refusal also propagates unchanged."""
+        err = RPCError("Internal error", rpc_code="INTERNAL_ERROR")
+        async with NotebookLMClient(auth_tokens) as client:
+            with (
+                patch.object(
+                    client.artifacts._rpc,
+                    "rpc_call",
+                    AsyncMock(side_effect=err),
+                ),
+                pytest.raises(RPCError) as exc_info,
+            ):
+                await client.artifacts.retry_failed(
+                    notebook_id="nb_123",
+                    artifact_id="artifact_456",
+                )
+
+        # Not silently downgraded into a feature-unavailable error.
+        assert not isinstance(exc_info.value, ArtifactFeatureUnavailableError)
 
 
 class TestGenerateMindMapParsing:

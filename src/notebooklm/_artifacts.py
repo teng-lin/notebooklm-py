@@ -31,6 +31,7 @@ from ._artifact.payloads import (
     build_mind_map_params,
     build_quiz_artifact_params,
     build_report_artifact_params,
+    build_retry_artifact_params,
     build_revise_slide_params,
     build_slide_deck_artifact_params,
     build_suggest_reports_params,
@@ -575,6 +576,78 @@ class ArtifactsAPI:
                 method_id=RPCMethod.REVISE_SLIDE.value,
             )
         return self._parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
+
+    async def retry_failed(self, notebook_id: str, artifact_id: str) -> GenerationStatus:
+        """Retry a failed Studio artifact in place (the UI "Retry" action).
+
+        Re-runs generation for an already-failed artifact *without* deleting it
+        first. The same ``artifact_id`` is preserved and returned as the task
+        id, so existing :meth:`poll_status` / :meth:`wait_for_completion` flows
+        keep working — an accepted retry comes back as
+        ``GenerationStatus(status="in_progress")``.
+
+        A single retry may itself fail again provider-side; this is a single
+        in-place operation, so callers decide whether to re-invoke after a
+        later terminal ``failed`` status (observed by polling).
+
+        This method follows the ADR-0019 "async kickoff" contract: a
+        synchronous server refusal (``USER_DISPLAYABLE_ERROR`` — e.g. rate
+        limit, quota, or a non-retryable artifact) **raises** the underlying
+        :class:`~notebooklm.exceptions.RateLimitError` /
+        :class:`~notebooklm.exceptions.RPCError` rather than returning
+        ``status="failed"``. (As a brand-new method it is born on the right
+        side of the contract; the ``generate_*`` / :meth:`revise_slide` methods
+        still swallow refusals into ``status="failed"`` until v0.8.0, issue
+        #1342.)
+
+        Args:
+            notebook_id: The notebook ID.
+            artifact_id: The ID of the failed artifact to retry.
+
+        Returns:
+            A :class:`~notebooklm.types.GenerationStatus` whose ``task_id`` is
+            the same ``artifact_id`` and whose ``status`` is ``"in_progress"``
+            once the retry is accepted.
+
+        Raises:
+            RateLimitError: The server refused the retry with a rate-limit /
+                quota ``USER_DISPLAYABLE_ERROR``.
+            RPCError: Any other synchronous server refusal.
+            ArtifactFeatureUnavailableError: The RPC returned a null /
+                missing-id result (no generation task was created).
+        """
+        params = build_retry_artifact_params(artifact_id)
+        # Unlike ``_call_generate`` / ``revise_slide``, a USER_DISPLAYABLE_ERROR
+        # refusal is intentionally NOT swallowed into status="failed" — it
+        # propagates as RateLimitError/RPCError per ADR-0019 "async kickoff".
+        result = await self._rpc.rpc_call(
+            RPCMethod.RETRY_ARTIFACT,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+        if result is None:
+            logger.warning("RETRY_ARTIFACT returned null result for artifact %s", artifact_id)
+            raise ArtifactFeatureUnavailableError(
+                "retry",
+                method_id=RPCMethod.RETRY_ARTIFACT.value,
+            )
+        # Born ADR-0019-correct: a missing/empty artifact id means no
+        # generation task was created, so raise rather than return the
+        # synthesized ``status="failed"`` that ``_parse_generation_result``
+        # produces for a falsy id (a refusal must never masquerade as a
+        # started-then-failed task). This is stricter than ``revise_slide`` /
+        # ``generate_*``, which still soft-fail that case until v0.8.0 (#1342).
+        # A structurally-short row still raises ``UnknownRPCMethodError`` from
+        # ``safe_index`` inside ``_parse_generation_result``.
+        status = self._parse_generation_result(result, method_id=RPCMethod.RETRY_ARTIFACT.value)
+        if not status.task_id:
+            logger.warning("RETRY_ARTIFACT returned a row with no artifact id: %r", result)
+            raise ArtifactFeatureUnavailableError(
+                "retry",
+                method_id=RPCMethod.RETRY_ARTIFACT.value,
+            )
+        return status
 
     async def generate_data_table(
         self,

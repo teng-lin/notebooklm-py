@@ -35,6 +35,7 @@
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
 | `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_artifacts.py` |
+| `Rytqqe` | RETRY_ARTIFACT | Retry a failed Studio artifact in place | `_artifacts.py` |
 | `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat.py` |
 | `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat.py` |
@@ -1743,6 +1744,55 @@ await rpc_call(
 
 # Response: Export result with document URL
 ```
+
+### RPC: RETRY_ARTIFACT (Rytqqe)
+
+**Source:** `_artifacts.py::retry_failed()`
+
+Retry a failed Studio artifact in place — the equivalent of the NotebookLM web
+UI "Retry" button. The failed artifact is **not** deleted first; the same
+`artifact_id` is preserved and the artifact moves from `failed` back to
+`in_progress`, so existing `poll_status()` / `wait_for_completion()` flows keep
+working against it. Captured/validated across video, audio, and infographic
+artifacts (issue #1319).
+
+```python
+params = [
+    retry_options,  # 0: fixed client capability blob (see below)
+    artifact_id,    # 1: ID of the failed artifact to retry
+]
+
+# retry_options is a type-agnostic literal, sent verbatim regardless of
+# artifact type. The trailing [[1, 4, 8, 2, 3, 6]] is a static
+# artifact-type-code capability list, not artifact-specific.
+retry_options = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],
+]
+
+# Called with source_path:
+await rpc_call(
+    RPCMethod.RETRY_ARTIFACT,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+    allow_null=True,
+)
+```
+
+**Response:** payload index `0` is a standard artifact row (positionally
+identical to a `LIST_ARTIFACTS` row): `row[0]` is the same `artifact_id`
+(returned as the task id) and `row[4] == 1` (`PROCESSING` → `in_progress`).
+
+Contract (ADR-0019 "async kickoff"): an accepted retry returns
+`GenerationStatus(status="in_progress")`; a synchronous server refusal
+(`USER_DISPLAYABLE_ERROR` — rate limit, quota, or non-retryable artifact)
+**raises** the underlying `RateLimitError` / `RPCError`; a null / missing-id
+result raises `ArtifactFeatureUnavailableError`. A retry may still fail again
+provider-side — observed by polling as a later terminal `failed` status — so
+callers decide whether to re-invoke.
 
 ### RPC: SHARE_ARTIFACT (RGP97b)
 

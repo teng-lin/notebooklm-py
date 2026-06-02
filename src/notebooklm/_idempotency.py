@@ -827,6 +827,18 @@ IDEMPOTENCY_REGISTRY.register(
         "divergent revision"
     ),
 )
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.RETRY_ARTIFACT,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    notes=(
+        "in-place retry kicks off a fresh generation for an already-failed "
+        "artifact; the artifact_id is fixed and re-used, but the RPC has no "
+        "client-token slot and the response carries the same id whether or "
+        "not the kickoff committed, so a blind transport retry could re-launch "
+        "generation twice. Surface the first failure and let the caller decide "
+        "whether to re-invoke (issue #1319)"
+    ),
+)
 
 
 # ----------------------------------------------------------------------------

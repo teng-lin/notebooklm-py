@@ -543,6 +543,15 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         # Will fail with placeholder artifact_id but still echoes method ID in error response
         return [[2], "placeholder_artifact_id", [[[0, "RPC health check test"]]]]
 
+    if method == RPCMethod.RETRY_ARTIFACT:
+        # Params: [retry_options, artifact_id]. The placeholder artifact_id
+        # matches no real artifact, so this is a safe liveness probe (no
+        # actual retry is kicked off) that still echoes the method ID in the
+        # error response — same posture as REVISE_SLIDE/RENAME_ARTIFACT above.
+        from notebooklm._artifact.payloads import build_retry_artifact_params
+
+        return build_retry_artifact_params("placeholder_artifact_id")
+
     # Research operations (read-only - poll/import only)
     if method == RPCMethod.POLL_RESEARCH:
         return [[notebook_id], "placeholder_task_id"]

@@ -84,6 +84,7 @@ class RPCMethod(str, Enum):
     SHARE_ARTIFACT = "RGP97b"
     GET_INTERACTIVE_HTML = "v9rmvd"  # Fetch quiz/flashcard HTML content (also serves interactive mind map data at [0][9][3])
     REVISE_SLIDE = "KmcKPe"  # Revise individual slide with prompt
+    RETRY_ARTIFACT = "Rytqqe"  # Retry a failed Studio artifact in place (UI "Retry")
 
     # Research
     START_FAST_RESEARCH = "Ljjv0c"

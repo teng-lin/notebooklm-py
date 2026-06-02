@@ -11,6 +11,7 @@ from notebooklm.artifacts import (
     calculate_backoff_delay,
     with_rate_limit_retry,
 )
+from notebooklm.exceptions import RateLimitError, RPCError
 from notebooklm.types import GenerationStatus
 
 
@@ -122,6 +123,65 @@ class TestWithRateLimitRetry:
         assert result == success
         sleep.assert_awaited_once_with(2.0)
         on_retry.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_retries_raised_rate_limit_error_then_returns_success(self) -> None:
+        # The ADR-0019 "async kickoff" path (e.g. ``retry_failed``) raises
+        # RateLimitError on a synchronous refusal rather than returning a
+        # rate-limited status; the helper must back off and retry that too.
+        success = GenerationStatus(task_id="task_123", status="in_progress")
+        generate_fn = AsyncMock(
+            side_effect=[
+                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                success,
+            ]
+        )
+        events: list[RateLimitRetryEvent] = []
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await with_rate_limit_retry(
+                generate_fn,
+                max_retries=3,
+                on_retry=events.append,
+            )
+
+        assert result == success
+        assert generate_fn.call_count == 2
+        mock_sleep.assert_awaited_once_with(60.0)
+        # The callback event carries a synthesized rate-limited status so the
+        # callback shape is uniform across the returned-status and raised paths.
+        assert len(events) == 1
+        assert events[0].result.error_code == "USER_DISPLAYABLE_ERROR"
+        assert events[0].result.error == "Rate limited"
+        assert events[0].retry_number == 1
+
+    @pytest.mark.asyncio
+    async def test_reraises_rate_limit_error_when_budget_exhausted(self) -> None:
+        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitError) as exc_info,
+        ):
+            await with_rate_limit_retry(generate_fn, max_retries=2)
+
+        assert exc_info.value is error
+        assert generate_fn.call_count == 3
+        assert [call.args[0] for call in mock_sleep.await_args_list] == [60.0, 120.0]
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_non_rate_limit_exception(self) -> None:
+        # A non-RateLimitError refusal (e.g. a plain RPCError) propagates
+        # immediately without consuming the retry budget.
+        error = RPCError("Not retryable", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
+
+        with pytest.raises(RPCError) as exc_info:
+            await with_rate_limit_retry(generate_fn, max_retries=3)
+
+        assert exc_info.value is error
+        assert generate_fn.call_count == 1
 
     @pytest.mark.asyncio
     async def test_validates_retry_parameters(self) -> None:

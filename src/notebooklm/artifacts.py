@@ -13,6 +13,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from .exceptions import RateLimitError
 from .types import GenerationStatus
 
 RATE_LIMIT_RETRY_INITIAL_DELAY = 60.0
@@ -73,10 +74,23 @@ async def with_rate_limit_retry(
 ) -> GenerationStatus | None:
     """Run an artifact-generation callable with rate-limit retry.
 
-    The callable is always invoked at least once. Retries happen only when the
-    result is a ``GenerationStatus`` whose ``is_rate_limited`` property is
-    true. Successful statuses, non-rate-limit failures, and ``None`` return
-    immediately.
+    The callable is always invoked at least once. A retry is scheduled when an
+    attempt signals a rate limit in **either** of these two ways:
+
+    * it returns a ``GenerationStatus`` whose ``is_rate_limited`` property is
+      true (the legacy ``generate_*`` path, which swallows a rate-limit refusal
+      into ``status="failed"`` until v0.8.0); **or**
+    * it raises :class:`~notebooklm.exceptions.RateLimitError` (the ADR-0019
+      "async kickoff" path used by ``retry_failed``, where a synchronous
+      refusal propagates as an exception rather than a returned status).
+
+    Successful statuses, non-rate-limit failures, and ``None`` return
+    immediately. Non-``RateLimitError`` exceptions propagate unchanged.
+
+    When the retry budget is exhausted, the final outcome is surfaced the same
+    way it arrived: a returned rate-limited ``GenerationStatus`` is returned,
+    and a raised ``RateLimitError`` is re-raised. (Removing the returned-status
+    path is the v0.8.0 break — not done here.)
 
     Args:
         generate_fn: Async callable that starts an artifact-generation request.
@@ -85,14 +99,22 @@ async def with_rate_limit_retry(
         max_delay: Maximum delay cap, in seconds.
         multiplier: Exponential backoff multiplier.
         sleep: Async sleep function. Defaults to ``asyncio.sleep``.
-        on_retry: Optional callback invoked before each retry sleep.
+        on_retry: Optional callback invoked before each retry sleep. The
+            event's ``result`` is the returned rate-limited ``GenerationStatus``
+            for the returned-status path, or a synthesized
+            ``GenerationStatus(status="failed", error_code="USER_DISPLAYABLE_ERROR")``
+            standing in for the raised ``RateLimitError`` so the callback shape
+            is uniform.
 
     Returns:
-        The first non-rate-limited result, or the final rate-limited result
-        when the retry budget is exhausted.
+        The first non-rate-limited result, or the final rate-limited
+        ``GenerationStatus`` when the retry budget is exhausted on the
+        returned-status path.
 
     Raises:
         ValueError: If retry or delay parameters are invalid.
+        RateLimitError: When the retry budget is exhausted on the raised-error
+            path (the final attempt's ``RateLimitError`` is re-raised).
     """
     if max_retries < 0:
         raise ValueError("max_retries must be non-negative")
@@ -107,13 +129,28 @@ async def with_rate_limit_retry(
 
     attempt = 0
     while True:
-        result = await generate_fn()
-
-        if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
-            return result
-
-        if attempt >= max_retries:
-            return result
+        # ``event_result`` carries the rate-limited GenerationStatus passed to
+        # ``on_retry``. For the raised-error path it is synthesized from the
+        # caught exception so the callback shape stays uniform across both
+        # rate-limit signals.
+        event_result: GenerationStatus
+        try:
+            result = await generate_fn()
+        except RateLimitError as exc:
+            if attempt >= max_retries:
+                raise
+            event_result = GenerationStatus(
+                task_id="",
+                status="failed",
+                error=str(exc),
+                error_code=(str(exc.rpc_code) if exc.rpc_code is not None else None),
+            )
+        else:
+            if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
+                return result
+            if attempt >= max_retries:
+                return result
+            event_result = result
 
         delay = calculate_backoff_delay(
             attempt,
@@ -123,7 +160,7 @@ async def with_rate_limit_retry(
         )
         if on_retry is not None:
             event = RateLimitRetryEvent(
-                result=result,
+                result=event_result,
                 next_attempt_number=attempt + 2,
                 total_attempts=max_retries + 1,
                 retry_number=attempt + 1,
