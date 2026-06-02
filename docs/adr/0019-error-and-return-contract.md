@@ -1,4 +1,4 @@
-# ADR-019: Error-and-return contract for the public API
+# ADR-0019: Error-and-return contract for the public API
 
 ## Status
 
@@ -58,7 +58,7 @@ Anything else that today carries an error meaning is banned.
 | ----- | ------- | -------- |
 | Lookup one | `get` | found → object; missing → **raise `*NotFoundError`**. Public `get_or_none()` is the sole sanctioned `None`-on-miss path. |
 | List many | `list`, `list_*` | always a collection; empty → `[]`. |
-| Derived read | `get_summary`, `get_description`, `get_guide`, `get_tree`, `check_freshness` | **do not police parent existence** — missing parent → empty / not‑ready value (`""`, empty dataclass, `None` tree); shape‑drift → **raise** (`DecodingError`/`UnknownRPCMethodError`). Resource existence is `get()`'s job, not a derived read's. |
+| Derived read | `get_summary`, `get_description`, `get_guide`, `get_tree`, `check_freshness` | **do not police parent existence** — missing parent → empty / not-ready value (`""`, empty dataclass, `None` tree); shape-drift → **raise** (`DecodingError`/`UnknownRPCMethodError`). Resource existence is `get()`'s job, not a derived read's. |
 | Idempotent mutation | `delete` | success *or* already-absent → `None`; raise only on real failure. |
 | Mutate existing | `rename`, `update`, `configure` | target missing → **raise `*NotFoundError`**; no-payload success → `None`. |
 | Async kickoff | `generate_*`, `create`, `revise_slide`, `retry_failed`, `research.start`, `mind_maps.generate` | accepted → return status handle; **synchronous refusal → raise**; null/missing-id/shape-drift → raise. |
@@ -68,7 +68,7 @@ Anything else that today carries an error meaning is banned.
 
 The load-bearing line: **resource-absent / couldn't-start / timed-out → raise; started-then-reached-a-terminal-state, or a transient poll observation → data.** A synchronous refusal is *couldn't start* (raise); a polled `failed` is *started then failed* (data); a poll that doesn't yet see an accepted task is a transient *not_found* (typed status), categorically different from looking up a resource that does not exist (raise).
 
-Absence detection is single‑sourced where shared (e.g. `_detect_kind` for mind maps): the detector raises `*NotFoundError`, and each operation class *interprets* that one signal — a derived read swallows it to empty/`None`, a mutate‑existing re‑raises, an idempotent `delete` swallows it to `None`. One detector, three contracts, no per‑method re‑deciding.
+Absence detection is single-sourced where shared (e.g. `_detect_kind` for mind maps): the detector raises `*NotFoundError`, and each operation class *interprets* that one signal — a derived read swallows it to empty/`None`, a mutate-existing re-raises, an idempotent `delete` swallows it to `None`. One detector, three contracts, no per-method re-deciding.
 
 ### Exception taxonomy
 
@@ -100,7 +100,7 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
    **positional shape-drift** collapse in the hand-rolled list helpers
    (`_note_service.py:135`, `_artifact/listing.py:113`). The composite-lister
    `except RPCError`/`HTTPError` that returns *partial* studio artifacts when the
-   mind-map sub-fetch is down (`_artifact/listing.py:127-138`) is a **deliberate
+   mind-map sub-fetch is down (`_artifact/listing.py:126-138`) is a **deliberate
    partial-availability** behavior, **not** drift-collapse — it is out of scope
    for Rule 3 and decided separately (see Scope).
 4. **Lifecycle is data.** Async status handles carry `failed`/`not_found`/
@@ -112,8 +112,8 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
    *termination* guarantee for a task that never appears lives in
    `wait_for_completion`, not `poll_status`: a sustained run of `not_found`
    (`max_not_found`/`min_not_found_window`) escalates to a terminal `removed`
-   status (`_artifact/polling.py:366‑379`). `poll_status` is a stateless
-   primitive where `not_found` is inherently *lag‑or‑bogus* ambiguous by design;
+   status (`_artifact/polling.py:366-384`). `poll_status` is a stateless
+   primitive where `not_found` is inherently *lag-or-bogus* ambiguous by design;
    callers needing a terminal answer use `wait_for_completion`.
 5. **The facade owns the contract.** Per [ADR-017](0017-public-facade-private-implementation.md)
    the public facade *surface* owns the compatibility contract (logic stays
@@ -126,12 +126,14 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
 `ValueError` remains valid for **input validation**; it is banned only for
 resource absence and server failure.
 
-**Retry guidance.** Because `*NotFoundError` multi‑inherits `RPCError` (see the
-exception taxonomy), transport‑retry code must catch the *narrow* transport
+**Retry guidance.** Because `*NotFoundError` multi-inherits `RPCError` (see the
+exception taxonomy), transport-retry code must catch the *narrow* transport
 exceptions — `NetworkError`/`RPCTimeoutError`/`RateLimitError` — and never the
 broad `RPCError`, so a retry loop never silently swallows a `*NotFoundError`.
 
 ## Scope
+
+*(This `Scope` section and the `Enforcement` section below intentionally extend the standard six-section ADR template; both carry convergence-specific load — see ADR review thread.)*
 
 In scope: the operation classes above across `notebooks`, `sources`,
 `artifacts`, `chat`, `research`, `notes`, `mind_maps`, `sharing`, `settings`.
@@ -155,52 +157,52 @@ composite-lister partial-availability policy (Rule 3) is decided in its own PR.
 
 - A large v0.8.0: not-found + refusal + null + reads + mutations land together.
   Mitigated by per-wave verification and the `api-compat`/golden-fixture gates.
-- A small extra cost only on `rename`'s default path (it re‑fetches to return the
-  renamed object; `return_object=False` is the existing opt‑out that avoids it).
+- A small extra cost only on `rename`'s default path (it re-fetches to return the
+  renamed object; `return_object=False` is the existing opt-out that avoids it).
   Derived reads add **no** existence RPC — they return empty on a missing parent.
 - Callers relying on `GenerationStatus(status="failed")` for rate-limit handling
   must catch `RateLimitError`; the public `with_rate_limit_retry` helper is
   rewritten accordingly.
-- The convention must be *enforced*, not just documented, or it re‑accretes (it
+- The convention must be *enforced*, not just documented, or it re-accretes (it
   already did, in `mind_maps`). Enforcement is in scope for 0.8.0 — see below.
 
 ## Enforcement (in scope for 0.8.0)
 
-The 8‑way divergence happened because consistency was enforced only by review,
-not by types — `mind_maps` re‑diverged the moment it was added. A documented
-contract that nothing checks will re‑accrete, so 0.8.0 lands a **tiered
+The 8-way divergence happened because consistency was enforced only by review,
+not by types — `mind_maps` re-diverged the moment it was added. A documented
+contract that nothing checks will re-accrete, so 0.8.0 lands a **tiered
 enforcement floor**:
 
 - **Tier 1 — conformance test (mandatory).** A parametrised
   `test_public_api_contract.py` asserts the contract as a **static shape** check
   over the *whole* public surface via its **own** `inspect.signature().return_annotation`
   walk over all namespaces (incl. `mind_maps`, which the `audit_public_api_compat.py`
-  collector under‑covers; not its comparator, which ignores return types): every
-  namespace `get(...)` has a non‑Optional return **and** a paired
+  collector under-covers; not its comparator, which ignores return types): every
+  namespace `get(...)` has a non-Optional return **and** a paired
   `get_or_none(...)` returning Optional;
   `delete(...) -> None`; no public lookup is annotated `X | None`. Deferred
-  *behaviours* (see Scope) are carried in an explicit, reason‑tagged **exemption
+  *behaviours* (see Scope) are carried in an explicit, reason-tagged **exemption
   allowlist** (same idiom as `api-compat-allowlist.json`) so every gap is visible
   and shrinking, never silent. The divergence that occurred
   (`mind_maps.get() -> MindMap | None`) is a signature smell this catches with no
   backend.
-- **Tier 2 — single‑sourced lookup logic (mandatory, structure‑first).** A shared
-  `unwrap_or_raise(obj, exc)` helper backs each namespace's own **fully‑typed**
+- **Tier 2 — single-sourced lookup logic (mandatory, structure-first).** A shared
+  `unwrap_or_raise(obj, exc)` helper backs each namespace's own **fully-typed**
   `get`/`get_or_none` (`get()` = `unwrap_or_raise(await self._fetch_one(...),
   <Resource>NotFoundError(...))`). This is **PR #1**: the lookup *logic* is
-  single‑sourced while signatures stay per‑class. A generic `ResourceAPI[T]`
+  single-sourced while signatures stay per-class. A generic `ResourceAPI[T]`
   *base* was considered and **rejected** (momus 2/3) — a `*ids` base erases
-  public‑signature typing (the namespaces differ in arity) and `delete` is
-  irreducibly per‑namespace (`mind_maps.delete(..., kind=...)` is non‑idempotent
-  + kind‑dispatched), so `delete` stays per‑namespace.
+  public-signature typing (the namespaces differ in arity) and `delete` is
+  irreducibly per-namespace (`mind_maps.delete(..., kind=...)` is non-idempotent
+  + kind-dispatched), so `delete` stays per-namespace.
 - **Tier 3 — sealed async result types (deferred, own ADR).** Replacing the
-  stringly‑typed `GenerationStatus.status` with a sealed/discriminated result is
+  stringly-typed `GenerationStatus.status` with a sealed/discriminated result is
   the deeper fix (it would dissolve the `failed`/`not_found`/`removed` string
   juggling), but it is a larger redesign tracked separately; this ADR keeps the
-  typed‑string states.
+  typed-string states.
 
 Tier 1 + Tier 2 are required for 0.8.0; together they make this contract
-type/CI‑enforced rather than review‑enforced.
+type/CI-enforced rather than review-enforced.
 
 ## Alternatives considered
 
