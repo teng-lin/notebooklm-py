@@ -1644,7 +1644,7 @@ interactions:
         alt=\"\" height=\"24\" width=\"24\" style=\"border:none;display:none \\9\"></image></svg></a></div></div></div><div
         class=\"gb_z gb_Ad gb_Vf gb_6\"><div class=\"gb_D gb_Ab gb_Vf gb_6\"><a class=\"gb_C
         gb_5a gb_6\" aria-expanded=\"false\" aria-label=\"Google Account: SCRUBBED_NAME\"
-        href=\"https://accounts.google.com/SignOutOptions?hl=en&amp;continue=https://notebooklm.google.com/%3Fauthuser%3Dpeopleconf%40gmail.com&amp;ec=GBRAmgU\"
+        href=\"https://accounts.google.com/SignOutOptions?hl=en&amp;continue=https://notebooklm.google.com/%3Fauthuser%3DSCRUBBED_EMAIL%40example.com&amp;ec=GBRAmgU\"
         tabindex=\"0\" role=\"button\"><div class=\"gb_T\"><svg focusable=\"false\"
         height=\"40px\" version=\"1.1\" viewbox=\"0 0 40 40\" width=\"40px\" xml:space=\"preserve\"
         xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"
@@ -1694,7 +1694,7 @@ interactions:
         viewbox=\"0 0 20 20\" width=\"20\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\"
         xmlns:xlink=\"http://www.w3.org/1999/xlink\"><path d=\"M0 0h20v20H0V0z\" fill=\"none\"></path><path
         d=\"M6.18 7L10 10.82 13.82 7 15 8.17l-5 5-5-5z\"></path></svg></div><a class=\"gb_Dc
-        gb_Z gb_oc\" href=\"https://myaccount.google.com/brandaccounts?authuser=0&amp;continue=https://notebooklm.google.com/%3Fauthuser%3Dpeopleconf%40gmail.com&amp;service=/%3Fauthuser%3D%24authuser%26pageId%3D%24pageId\"
+        gb_Z gb_oc\" href=\"https://myaccount.google.com/brandaccounts?authuser=0&amp;continue=https://notebooklm.google.com/%3Fauthuser%3DSCRUBBED_EMAIL%40example.com&amp;service=/%3Fauthuser%3D%24authuser%26pageId%3D%24pageId\"
         aria-hidden=\"true\"><div class=\"gb_Ec\"><svg focusable=\"false\" height=\"20\"
         viewbox=\"0 0 24 24\" width=\"20\" xml:space=\"preserve\" xmlns=\"http://www.w3.org/2000/svg\"
         xmlns:xlink=\"http://www.w3.org/1999/xlink\"><path d=\"M19 3H5c-1.11 0-2 .9-2

@@ -38,6 +38,7 @@ TESTS_DIR = REPO_ROOT / "tests"
 # Other test modules add it to ``sys.path``; we follow the same convention.
 sys.path.insert(0, str(TESTS_DIR))
 
+from cassette_patterns import find_credential_leaks, is_clean  # noqa: E402
 from vcr_config import scrub_string  # noqa: E402
 
 GUARD_SCRIPT = TESTS_DIR / "scripts" / "check_cassettes_clean.py"
@@ -210,6 +211,62 @@ def test_authuser_email_scrubbed_for_any_domain(url: str) -> None:
     # And the canonical placeholder is present with the URL-encoded ``%40`` shape
     # so VCR's URL-match path still sees a well-formed ``authuser=`` value.
     assert "authuser=SCRUBBED_EMAIL%40example.com" in scrubbed
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # The actual leak shape from the 9 affected cassettes: the email-bearing
+        # inner URL is the *value* of a ``continue=`` redirect param, so its
+        # ``?authuser=`` got percent-encoded one extra level — ``?``→``%3F``,
+        # ``=``→``%3D``, ``@``→``%40`` (issue #1368).
+        "https://accounts.google.com/SignOutOptions?hl=en&continue="
+        "https://notebooklm.google.com/%3Fauthuser%3Dalice%40gmail.com&ec=GBRAmgU",
+        # ``brandaccounts`` redirect variant — same double-encoded inner URL.
+        "https://myaccount.google.com/brandaccounts?authuser=0&continue="
+        "https://notebooklm.google.com/%3Fauthuser%3Dalice%40gmail.com&service=/",
+        # Workspace / custom domain — shape-based detection must not narrow to
+        # the public-provider allowlist.
+        "https://notebooklm.google.com/%3Fauthuser%3Dalice%40company.com&ec=x",
+        # Plus-aliased local part (``+``→``%2B`` on the wire), multi-dot TLD.
+        "https://notebooklm.google.com/%3Fauthuser%3Dops%2Btag%40eng.corp.example.co.uk",
+    ],
+)
+def test_double_encoded_authuser_email_scrubbed_and_detected(url: str) -> None:
+    """Double-encoded ``authuser%3D…%40…`` redirect URLs are caught (#1368).
+
+    Regression gate for the leak class where the maintainer's email rode
+    double-URL-encoded inside Google account-menu ``continue=`` redirect URLs.
+    The single-encoded ``authuser=`` scrubber anchors on a literal ``=`` so it
+    never matched ``authuser%3D``, and the email detector anchored on a literal
+    ``@`` so it never matched ``%40`` — both the scrubber and the
+    ``is_clean``/``find_credential_leaks`` detectors slipped the form silently.
+
+    Asserts (a) the detectors FLAG the double-encoded form, and (b)
+    ``scrub_string`` redacts it to the canonical placeholder.
+    """
+    # (a) Detectors flag the leak on the raw double-encoded content.
+    ok, leaks = is_clean(url)
+    assert not ok, f"is_clean failed to flag double-encoded authuser leak: {url!r}"
+    assert any("alice" in leak or "ops" in leak for leak in leaks), leaks
+    assert find_credential_leaks(url), (
+        f"find_credential_leaks failed to flag double-encoded authuser leak: {url!r}"
+    )
+
+    # (b) The original email value is gone in every shape after scrubbing.
+    scrubbed = scrub_string(url)
+    assert "alice" not in scrubbed
+    assert "ops" not in scrubbed
+    assert "company.com" not in scrubbed
+    assert "corp.example" not in scrubbed
+    assert "%40gmail.com" not in scrubbed
+    # The canonical double-encoded placeholder is present so VCR's URL-match
+    # path still sees a well-formed value on replay.
+    assert "authuser%3DSCRUBBED_EMAIL%40example.com" in scrubbed
+    # And the scrubbed output passes the guard cleanly (idempotent validation).
+    ok_after, leaks_after = is_clean(scrubbed)
+    assert ok_after, f"scrubbed output still flagged: {leaks_after}"
+    assert find_credential_leaks(scrubbed) == []
 
 
 # ---------------------------------------------------------------------------

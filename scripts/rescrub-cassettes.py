@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Bulk re-scrub VCR cassettes for ``lh3.googleusercontent.com/(a|ogw)/`` avatar URLs.
+"""Bulk re-scrub VCR cassettes for shape-based leaks the recorder missed.
 
 Collapses every ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` avatar URL to
-the canonical ``SCRUBBED_AVATAR_URL`` placeholder and re-derives the chunked
-``<count>\\n<payload>\\n`` byte-count prefixes inside every recorded response
-body. Writes back only if anything changed; idempotent on a clean tree.
+the canonical ``SCRUBBED_AVATAR_URL`` placeholder, every double-encoded
+``authuser%3D<email>`` redirect param to ``authuser%3DSCRUBBED_EMAIL%40example.com``
+(issue #1368), and re-derives the chunked ``<count>\\n<payload>\\n`` byte-count
+prefixes inside every recorded response body. Writes back only if anything
+changed; idempotent on a clean tree.
 
 Why this script exists
 ----------------------
@@ -16,6 +18,12 @@ pattern landed still embed the raw avatar URLs. They are listed in
 group" header; this script is the one-off tool that walks each of those
 cassettes, re-scrubs them in place, and reports a byte-level diff so reviewers
 can verify the change set.
+
+The same one-off-re-scrub need applies to the double-encoded
+``authuser%3D<email>`` shape (issue #1368): the canonical scrubber learned this
+form only after 9 cassettes had already been recorded with the maintainer's
+email leaked inside Google account-menu ``continue=`` redirect URLs, so they
+need a re-scrub in place too.
 
 Why we DON'T call ``scrub_string`` here
 ---------------------------------------
@@ -114,9 +122,12 @@ _CASSETTE_DIR = _TESTS_DIR / "cassettes"
 # insert that directory on sys.path rather than the repo root.
 sys.path.insert(0, str(_TESTS_DIR))
 
-from cassette_patterns import recompute_chunk_prefix  # noqa: E402
+from cassette_patterns import (  # noqa: E402
+    _AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
+    recompute_chunk_prefix,
+)
 
-# The single regex/replacement pair this script applies. Mirrored verbatim
+# The avatar-URL regex/replacement pair this script applies. Mirrored verbatim
 # from ``cassette_patterns.SENSITIVE_PATTERNS`` (section 13 — see the comment
 # block above for the rationale on why we copy it instead of running the
 # whole registry). When the canonical pattern changes in
@@ -127,18 +138,34 @@ from cassette_patterns import recompute_chunk_prefix  # noqa: E402
 _AVATAR_URL_RE = re.compile(r"https?://lh3\.googleusercontent\.com/(?:a|ogw)/[A-Za-z0-9_=\-]+")
 _AVATAR_URL_REPLACEMENT = "SCRUBBED_AVATAR_URL"
 
+# Double-encoded ``authuser%3D<email>`` redirect-param shape (issue #1368). This
+# leaked into 9 cassettes recorded BEFORE the canonical scrubber learned the
+# double-encoded form, so — like the avatar URLs — the committed fixtures need a
+# one-off re-scrub. Unlike the avatar pattern (copied for historical reasons),
+# we import the canonical regex directly from ``cassette_patterns`` so there is
+# no second copy to drift. The double-encoded shape has no legitimate
+# occurrence in fixture content, so applying it here cannot clobber test data
+# (the same reason ``scrub_string`` is not safe to run wholesale — see the
+# module docstring — does not apply to this surgical, false-positive-free shape).
+_AUTHUSER_EMAIL_DOUBLE_ENCODED_RE = re.compile(_AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN)
+_AUTHUSER_EMAIL_DOUBLE_ENCODED_REPLACEMENT = "authuser%3DSCRUBBED_EMAIL%40example.com"
 
-def _scrub_avatar_urls(text: str) -> str:
-    """Replace every ``lh3...../(a|ogw)/<token>`` URL with the placeholder.
 
+def _scrub_body_text(text: str) -> str:
+    """Apply this script's surgical scrubbers to a single text body.
+
+    Replaces ``lh3...../(a|ogw)/<token>`` avatar URLs and double-encoded
+    ``authuser%3D<email>`` redirect params with their canonical placeholders.
     Isolated from the rest of the canonical registry by design — see the
     module docstring for why this script doesn't call ``scrub_string``.
     """
-    return _AVATAR_URL_RE.sub(_AVATAR_URL_REPLACEMENT, text)
+    text = _AVATAR_URL_RE.sub(_AVATAR_URL_REPLACEMENT, text)
+    text = _AUTHUSER_EMAIL_DOUBLE_ENCODED_RE.sub(_AUTHUSER_EMAIL_DOUBLE_ENCODED_REPLACEMENT, text)
+    return text
 
 
 def _rescrub_body(body: str | bytes) -> tuple[str | bytes, bool]:
-    """Apply avatar-URL scrub + recompute_chunk_prefix to a single body value.
+    """Apply this script's scrubbers + recompute_chunk_prefix to a body value.
 
     Returns ``(new_body, changed)``. The body is preserved in its original
     type (``str`` or ``bytes``) so re-emitted cassettes match what vcrpy
@@ -153,12 +180,12 @@ def _rescrub_body(body: str | bytes) -> tuple[str | bytes, bool]:
             decoded = body.decode("utf-8")
         except UnicodeDecodeError:
             return body, False
-        scrubbed = _scrub_avatar_urls(decoded)
+        scrubbed = _scrub_body_text(decoded)
         rederived = recompute_chunk_prefix(scrubbed)
         encoded = rederived.encode("utf-8")
         return encoded, encoded != body
     if isinstance(body, str):
-        scrubbed = _scrub_avatar_urls(body)
+        scrubbed = _scrub_body_text(body)
         rederived = recompute_chunk_prefix(scrubbed)
         return rederived, rederived != body
     # ``body`` is something exotic (None, dict). Leave it alone.

@@ -327,6 +327,10 @@ SCRUB_PLACEHOLDERS: frozenset[str] = frozenset(
         # agnostic URL detector would otherwise re-flag the canonical
         # placeholder as a leak (idempotency).
         "authuser=SCRUBBED_EMAIL%40example.com",
+        # Double-encoded form for ``%3Fauthuser%3D…`` redirect-param URLs
+        # (issue #1368). Same idempotency rationale as the single-encoded
+        # placeholder above.
+        "authuser%3DSCRUBBED_EMAIL%40example.com",
         # upload + Drive token placeholders.
         "SCRUBBED_UPLOAD_ID",
         "SCRUBBED_UPLOAD_URL",
@@ -388,6 +392,23 @@ DISPLAY_NAME_FALSE_POSITIVES: frozenset[str] = frozenset(
 # =============================================================================
 
 _EMAIL_PATTERN_BASE = r"[A-Za-z0-9._%+\-]+@(?:" + "|".join(EMAIL_PROVIDERS) + r")\.com"
+
+# Single-encoded ``authuser=<local>%40<provider>`` query-param shape and its
+# double-encoded ``authuser%3D<local>%40<provider>`` sibling. The double-encoded
+# form arises when the email-bearing inner URL is itself the *value* of a
+# ``continue=`` redirect param, so its ``?authuser=`` gets percent-encoded one
+# extra level (``?``→``%3F``, ``=``→``%3D``, ``@``→``%40``) — issue #1368. Both
+# anchor on the ``authuser`` separator (literal ``=`` vs encoded ``%3D``) rather
+# than on the email's domain, so Workspace / corporate addresses the
+# provider-list pattern misses are still caught. The shared email tail uses the
+# wire-form local part (``%`` is legal because ``%2B`` etc. arrive encoded)
+# followed by the encoded ``%40`` separator and a domain. Neither shape has a
+# legitimate non-secret occurrence in a cassette, so collapsing to the canonical
+# placeholder is safe and the detectors below treat a match as a leak by
+# definition.
+_AUTHUSER_EMAIL_TAIL = r"[A-Za-z0-9._%+\-]+%40[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+_AUTHUSER_EMAIL_PATTERN = r"authuser=" + _AUTHUSER_EMAIL_TAIL
+_AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN = r"authuser%3D" + _AUTHUSER_EMAIL_TAIL
 
 # Negative-lookahead alternation built from the false-positive allowlist.
 # Each entry is regex-escaped because some legitimate UI titles could in
@@ -574,9 +595,17 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # addresses the provider-list pattern misses, with no false-positive
     # risk elsewhere. The replacement keeps the ``%40`` shape so VCR
     # matchers still see a well-formed value on replay.
+    (_AUTHUSER_EMAIL_PATTERN, "authuser=SCRUBBED_EMAIL%40example.com"),
+    # Double-encoded ``authuser%3D<email>`` form (issue #1368). When the
+    # email-bearing inner URL is the *value* of a ``continue=`` redirect param
+    # (Google account-menu ``SignOutOptions`` / ``brandaccounts`` links), its
+    # ``?authuser=`` is percent-encoded one extra level, so the literal-``=``
+    # pattern above never fires. Mirrors the single-encoded rule with the
+    # canonical ``authuser%3DSCRUBBED_EMAIL%40example.com`` placeholder, which
+    # does not itself re-match (idempotent).
     (
-        r"authuser=[A-Za-z0-9._%+\-]+%40[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
-        "authuser=SCRUBBED_EMAIL%40example.com",
+        _AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
+        "authuser%3DSCRUBBED_EMAIL%40example.com",
     ),
     # Unquoted-context fallback (mailto: hrefs, raw HTML/JS chunks).
     (_EMAIL_PATTERN_BASE, "SCRUBBED_EMAIL@example.com"),
@@ -773,14 +802,18 @@ _DETECT_TOKEN_FIELDS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # Compiled detection-only pattern for emails (no replacement string baked in).
-# Two-shape detector — mirrors the two scrubber patterns in section 5 above:
+# Three-shape detector — mirrors the scrubber patterns in section 5 above:
 #   1. Literal ``@`` form on the provider allowlist (JSON, mailto: hrefs).
 #   2. URL-encoded ``authuser=<email>`` query-param form for *any* domain.
+#   3. Double-encoded ``authuser%3D<email>`` redirect-param form (issue #1368).
 _DETECT_EMAIL = re.compile(
     r"[A-Za-z0-9._%+\-]+@(?:"
     + "|".join(EMAIL_PROVIDERS)
     + r")\.com"
-    + r"|authuser=[A-Za-z0-9._%+\-]+%40[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+    + r"|"
+    + _AUTHUSER_EMAIL_PATTERN
+    + r"|"
+    + _AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN
 )
 
 # upload + Drive token detectors.
@@ -847,21 +880,35 @@ _DETECT_AUTH_TOKEN = re.compile("|".join(_AUTH_TOKEN_PATTERNS))
 # closes the ``JrWMbf`` gap.
 _DETECT_GOOGLE_API_KEY = re.compile(_GOOGLE_API_KEY_PATTERN)
 
+# Double-encoded ``authuser%3D<email>`` shape detector (issue #1368). Unlike the
+# single-encoded ``authuser=<email>`` form — which only ``is_clean`` runs,
+# because the literal-``@`` provider branch of ``_DETECT_EMAIL`` also fires on
+# legitimate placeholder content like ``alice@gmail.com`` — the double-encoded
+# ``authuser%3D…%40…`` shape has NO legitimate occurrence anywhere in the repo,
+# so it is safe to run over arbitrary fixture directories via
+# :data:`_CREDENTIAL_DETECTORS`. The negative lookahead excludes the canonical
+# ``authuser%3DSCRUBBED_EMAIL%40example.com`` placeholder so an already-scrubbed
+# cassette validates cleanly (idempotent).
+_DETECT_AUTHUSER_EMAIL_DOUBLE_ENCODED = re.compile(
+    r"authuser%3D(?!SCRUBBED_EMAIL%40example\.com)" + _AUTHUSER_EMAIL_TAIL
+)
+
 
 # Detectors with ZERO legitimate-occurrence risk anywhere in the repository:
-# raw Google auth-token shapes (``g.a000-`` / ``sidts-`` / ``ya29.``) and the
-# canonical Google API-key shape (``AIza`` + 35 chars). Unlike the cookie-value
-# / display-name / email heuristics that :func:`is_clean` also runs — which
-# intentionally fire on placeholder fixture content such as ``"Scrubbed Note
-# Title"`` or ``alice@gmail.com`` — these credential shapes never match
-# legitimate test data, so they are safe to run over arbitrary files (golden
-# JSON/HTML fixtures, docs, source) with no per-file allowlist. This is what
-# the ``--secrets-only`` mode of ``check_cassettes_clean.py`` uses to extend
-# leak detection beyond ``tests/cassettes/`` without drowning in false
-# positives.
+# raw Google auth-token shapes (``g.a000-`` / ``sidts-`` / ``ya29.``), the
+# canonical Google API-key shape (``AIza`` + 35 chars), and the double-encoded
+# ``authuser%3D<email>`` redirect-param shape (issue #1368). Unlike the
+# cookie-value / display-name / email heuristics that :func:`is_clean` also runs
+# — which intentionally fire on placeholder fixture content such as ``"Scrubbed
+# Note Title"`` or ``alice@gmail.com`` — these shapes never match legitimate
+# test data, so they are safe to run over arbitrary files (golden JSON/HTML
+# fixtures, docs, source) with no per-file allowlist. This is what the
+# ``--secrets-only`` mode of ``check_cassettes_clean.py`` uses to extend leak
+# detection beyond ``tests/cassettes/`` without drowning in false positives.
 _CREDENTIAL_DETECTORS: list[tuple[str, re.Pattern[str]]] = [
     ("auth token", _DETECT_AUTH_TOKEN),
     ("Google API key", _DETECT_GOOGLE_API_KEY),
+    ("double-encoded authuser email", _DETECT_AUTHUSER_EMAIL_DOUBLE_ENCODED),
 ]
 
 
