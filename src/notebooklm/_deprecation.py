@@ -14,10 +14,12 @@ Four families live here:
 * ``warn_deprecated`` — the generic gated primitive for one-off deprecations
   that don't fit the three specific families below (e.g. awaiting
   ``from_storage(...)``, ``ResearchAPI.poll(task_id=None)`` ambiguity,
-  ``NotebooksAPI.share()``, the ``save_cookies_to_storage`` legacy full-merge
-  shim). It exists so ad-hoc deprecations have a gated home rather than
-  hand-rolling ``warnings.warn(...)`` and silently bypassing the suppression
-  switch (issue #1369).
+  ``NotebooksAPI.share()``). It exists so ad-hoc deprecations have a gated home
+  rather than hand-rolling ``warnings.warn(...)`` and silently bypassing the
+  suppression switch (issue #1369). Note that not every inline warning is a
+  deprecation: ``save_cookies_to_storage(original_snapshot=None)`` emits a
+  permanent ``RuntimeWarning`` race advisory (not a scheduled removal), so it
+  is emitted inline and is *not* routed through here.
 * ``warn_get_returns_none`` — marks ``<resource>.get()`` returning ``None`` on
   a miss as deprecated (issue #1247).
 * ``deprecated_kwarg`` — the keyword-alias pattern used when a public method
