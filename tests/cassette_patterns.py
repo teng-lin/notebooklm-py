@@ -406,9 +406,16 @@ _EMAIL_PATTERN_BASE = r"[A-Za-z0-9._%+\-]+@(?:" + "|".join(EMAIL_PROVIDERS) + r"
 # legitimate non-secret occurrence in a cassette, so collapsing to the canonical
 # placeholder is safe and the detectors below treat a match as a leak by
 # definition.
+#
+# ``AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN`` is public (no leading underscore)
+# because ``scripts/rescrub-cassettes.py`` imports it across the module boundary
+# — matching the convention every other cross-imported name in this module
+# (``SENSITIVE_PATTERNS``, ``SCRUB_PLACEHOLDERS``, ``find_credential_leaks`` …)
+# follows. The ``_AUTHUSER_EMAIL_TAIL`` / ``_AUTHUSER_EMAIL_PATTERN`` helpers
+# stay private; they are only consumed within this module.
 _AUTHUSER_EMAIL_TAIL = r"[A-Za-z0-9._%+\-]+%40[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
 _AUTHUSER_EMAIL_PATTERN = r"authuser=" + _AUTHUSER_EMAIL_TAIL
-_AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN = r"authuser%3D" + _AUTHUSER_EMAIL_TAIL
+AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN = r"authuser%3D" + _AUTHUSER_EMAIL_TAIL
 
 # Negative-lookahead alternation built from the false-positive allowlist.
 # Each entry is regex-escaped because some legitimate UI titles could in
@@ -604,7 +611,7 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # canonical ``authuser%3DSCRUBBED_EMAIL%40example.com`` placeholder, which
     # does not itself re-match (idempotent).
     (
-        _AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
+        AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
         "authuser%3DSCRUBBED_EMAIL%40example.com",
     ),
     # Unquoted-context fallback (mailto: hrefs, raw HTML/JS chunks).
@@ -813,7 +820,7 @@ _DETECT_EMAIL = re.compile(
     + r"|"
     + _AUTHUSER_EMAIL_PATTERN
     + r"|"
-    + _AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN
+    + AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN
 )
 
 # upload + Drive token detectors.

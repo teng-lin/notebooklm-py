@@ -123,7 +123,7 @@ _CASSETTE_DIR = _TESTS_DIR / "cassettes"
 sys.path.insert(0, str(_TESTS_DIR))
 
 from cassette_patterns import (  # noqa: E402
-    _AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
+    AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
     recompute_chunk_prefix,
 )
 
@@ -147,7 +147,7 @@ _AVATAR_URL_REPLACEMENT = "SCRUBBED_AVATAR_URL"
 # occurrence in fixture content, so applying it here cannot clobber test data
 # (the same reason ``scrub_string`` is not safe to run wholesale — see the
 # module docstring — does not apply to this surgical, false-positive-free shape).
-_AUTHUSER_EMAIL_DOUBLE_ENCODED_RE = re.compile(_AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN)
+_AUTHUSER_EMAIL_DOUBLE_ENCODED_RE = re.compile(AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN)
 _AUTHUSER_EMAIL_DOUBLE_ENCODED_REPLACEMENT = "authuser%3DSCRUBBED_EMAIL%40example.com"
 
 
