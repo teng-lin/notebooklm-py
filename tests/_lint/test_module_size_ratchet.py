@@ -126,6 +126,11 @@ def _slack_offenders(
     }
 
 
+def _stale_entries(measured: dict[str, int], allowlist: dict[str, int]) -> list[str]:
+    """Allowlisted paths that no longer exist under ``src/notebooklm/`` (sorted)."""
+    return sorted(rel for rel in allowlist if rel not in measured)
+
+
 def test_no_new_modules_over_budget() -> None:
     """No un-allowlisted module may exceed :data:`MODULE_SIZE_BUDGET` lines.
 
@@ -184,8 +189,7 @@ def test_allowlist_has_no_stale_entries() -> None:
     weaken the gate (the missing path can never trip checks 1-3), so it must be
     pruned from :data:`ALLOWLISTED_CEILINGS`.
     """
-    measured = _measure_all()
-    missing = sorted(rel for rel in ALLOWLISTED_CEILINGS if rel not in measured)
+    missing = _stale_entries(_measure_all(), ALLOWLISTED_CEILINGS)
     assert missing == [], (
         "Allowlisted path(s) no longer exist under src/notebooklm/ (renamed or "
         f"deleted). Remove the stale ALLOWLISTED_CEILINGS entries: {missing}"
@@ -243,6 +247,12 @@ def test_ratchet_checks_detect_their_offending_shapes() -> None:
     assert _slack_offenders({"fat.py": 1001}, allowlist) == {}
 
     # A path in the allowlist but absent from ``measured`` is ignored by the
-    # growth/slack checks (the stale-entry check owns that case).
+    # growth/slack checks (the stale-entry check owns that case)...
     assert _grown_offenders({}, allowlist) == {}
     assert _slack_offenders({}, allowlist) == {}
+
+    # (4) Stale-entry detection: an allowlisted path absent from ``measured`` is
+    #     flagged (sorted); a path still present is not.
+    assert _stale_entries({}, allowlist) == ["fat.py"]
+    assert _stale_entries({"fat.py": 1000}, allowlist) == []
+    assert _stale_entries({"other.py": 5}, {"b.py": 1, "a.py": 1}) == ["a.py", "b.py"]
