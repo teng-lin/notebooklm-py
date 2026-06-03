@@ -6,11 +6,13 @@ import pytest
 
 from notebooklm._settings import (
     SettingsAPI,
+    _extract_language,
     build_get_user_settings_params,
     build_get_user_tier_params,
     extract_account_limits,
     extract_account_tier,
 )
+from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AccountLimits, AccountTier
 
@@ -199,3 +201,178 @@ async def test_get_account_tier_calls_user_tier_rpc():
         ],
         source_path="/",
     )
+
+
+# ---------------------------------------------------------------------------
+# Language extraction: optional-slot (None) vs envelope drift (raise).
+#
+# Wire shapes recorded against the live API (tests/cassettes/settings_*):
+#   GET_USER_SETTINGS inner: [[null,[..limits..],[true,null,null,true,["fr"]],
+#                             [[1]],[true,1,3,2]]]   -> language at [0][2][4][0]
+#   SET_USER_SETTINGS inner: [null,[..limits..],[true,null,null,true,["en"]],
+#                             [[1]],[true,1,3,2]]    -> language at [2][4][0]
+# The settings-flags block (GET [0][2] / SET [2]) is structurally mandatory;
+# the language slot ([4], then the ["code"] unwrap [0]) is routinely optional.
+# ---------------------------------------------------------------------------
+
+_GET_WIRE_PREFIX = (0, 2)
+_GET_WIRE_TAIL = (4, 0)
+_SET_WIRE_PREFIX = (2,)
+_SET_WIRE_TAIL = (4, 0)
+
+
+def _get_response(flags_block):
+    """Wrap a settings-flags block in the GET_USER_SETTINGS envelope."""
+    return [[None, [6, 500, 300, 500000], flags_block, [[1]], [True, 1, 3, 2]]]
+
+
+def _set_response(flags_block):
+    """Wrap a settings-flags block in the SET_USER_SETTINGS envelope."""
+    return [None, [6, 500, 300, 500000], flags_block, [[1]], [True, 1, 3, 2]]
+
+
+def test_extract_language_returns_code_from_get_wire_shape():
+    response = _get_response([True, None, None, True, ["fr"]])
+
+    assert (
+        _extract_language(
+            response,
+            _GET_WIRE_PREFIX,
+            _GET_WIRE_TAIL,
+            method_id="ZwVcOc",
+            source="test",
+        )
+        == "fr"
+    )
+
+
+def test_extract_language_returns_code_from_set_wire_shape():
+    response = _set_response([True, None, None, True, ["en"]])
+
+    assert (
+        _extract_language(
+            response,
+            _SET_WIRE_PREFIX,
+            _SET_WIRE_TAIL,
+            method_id="hT54vc",
+            source="test",
+        )
+        == "en"
+    )
+
+
+@pytest.mark.parametrize(
+    "flags_block",
+    [
+        [True, None, None, True, [""]],  # empty language code (user reset to default)
+        [True, None, None, True, []],  # empty language wrapper
+        [True, None, None, True],  # language slot omitted (trailing-optional absent)
+        [True],  # heavily truncated flags block
+        [],  # empty flags block
+    ],
+    ids=["empty-code", "empty-wrapper", "slot-absent", "truncated", "empty-block"],
+)
+def test_extract_language_legitimate_absent_returns_none(flags_block):
+    """A user with no language set yields ``None`` (must not raise).
+
+    The optional language slot ([4] + its [0] unwrap) lives at the tail of an
+    otherwise-intact envelope; its absence is indistinguishable from drift at
+    that exact position, so it degrades to ``None`` per the optional-language
+    contract.
+    """
+    assert (
+        _extract_language(
+            _get_response(flags_block),
+            _GET_WIRE_PREFIX,
+            _GET_WIRE_TAIL,
+            method_id="ZwVcOc",
+            source="test",
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,  # no payload at all
+        [],  # empty GET envelope (no result[0])
+        [None],  # result[0] present but result[0][2] (flags block) missing
+        [[None, [6, 500, 300, 500000]]],  # envelope truncated before flags block
+        [42],  # result[0] is a non-subscriptable scalar
+    ],
+    ids=["none", "empty", "no-flags-block", "truncated-envelope", "scalar-inner"],
+)
+def test_extract_language_envelope_drift_raises(response):
+    """Genuine drift in the mandatory settings envelope raises, not silent None.
+
+    The envelope prefix (GET ``result[0][2]``) is structurally mandatory in
+    every healthy response, so descent failure there is real schema drift and
+    surfaces as :class:`UnknownRPCMethodError` rather than degrading to ``None``.
+    """
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_language(
+            response,
+            _GET_WIRE_PREFIX,
+            _GET_WIRE_TAIL,
+            method_id="ZwVcOc",
+            source="test",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_output_language_returns_code_from_wire_shape():
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(
+        rpc_call=AsyncMock(return_value=_get_response([True, None, None, True, ["zh_Hans"]]))
+    )
+    api = SettingsAPI(core.rpc_executor)
+
+    assert await api.get_output_language() == "zh_Hans"
+
+
+@pytest.mark.asyncio
+async def test_get_output_language_absent_language_returns_none():
+    """End-to-end: a user with no language set gets ``None`` (no raise)."""
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=_get_response([True, None, None, True])))
+    api = SettingsAPI(core.rpc_executor)
+
+    assert await api.get_output_language() is None
+
+
+@pytest.mark.asyncio
+async def test_get_output_language_envelope_drift_raises():
+    """End-to-end: mandatory-envelope drift surfaces as a typed error."""
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[None]))
+    api = SettingsAPI(core.rpc_executor)
+
+    with pytest.raises(UnknownRPCMethodError):
+        await api.get_output_language()
+
+
+@pytest.mark.asyncio
+async def test_set_output_language_returns_confirmed_code():
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(
+        rpc_call=AsyncMock(return_value=_set_response([True, None, None, True, ["en"]]))
+    )
+    api = SettingsAPI(core.rpc_executor)
+
+    assert await api.set_output_language("en") == "en"
+
+
+@pytest.mark.asyncio
+async def test_set_output_language_absent_confirmation_returns_none():
+    """If the SET response omits the language slot, return ``None`` (no raise)."""
+    from _fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=_set_response([True, None, None, True])))
+    api = SettingsAPI(core.rpc_executor)
+
+    assert await api.set_output_language("en") is None

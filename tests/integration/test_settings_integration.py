@@ -15,6 +15,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -114,12 +115,22 @@ class TestSettingsAPI:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_output_language_returns_none_on_malformed_response(
+    async def test_get_output_language_returns_none_when_language_slot_absent(
         self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response
     ):
-        """Test getting output language returns None on unexpected response structure."""
-        # Malformed response - missing expected structure
-        response_data = [[None, None]]  # Missing settings element
+        """An intact envelope whose flags block omits the trailing language slot.
+
+        The mandatory envelope (``result[0][2]``) is present; only the optional
+        language slot ([4]) is absent — the legitimate "user never set a
+        language" shape. This must degrade to ``None``, not raise.
+        """
+        response_data = [
+            [
+                None,
+                [100, 50, 10],
+                [True, None, None, True],  # flags block present, language slot omitted
+            ]
+        ]
         response = build_rpc_response(RPCMethod.GET_USER_SETTINGS, response_data)
         httpx_mock.add_response(content=response.encode())
 
@@ -127,6 +138,24 @@ class TestSettingsAPI:
             result = await client.settings.get_output_language()
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_output_language_raises_on_envelope_drift(
+        self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response
+    ):
+        """Genuine drift in the mandatory settings envelope raises (ADR-011).
+
+        ``[[None, None]]`` has no flags block at ``result[0][2]`` — the
+        structurally-mandatory envelope moved, so this is real schema drift and
+        surfaces as ``UnknownRPCMethodError`` rather than a silent ``None``.
+        """
+        response_data = [[None, None]]  # Missing settings/flags element
+        response = build_rpc_response(RPCMethod.GET_USER_SETTINGS, response_data)
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(UnknownRPCMethodError):
+                await client.settings.get_output_language()
 
     @pytest.mark.asyncio
     async def test_get_account_limits(self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response):
