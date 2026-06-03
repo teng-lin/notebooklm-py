@@ -276,10 +276,25 @@ def _resolve_relative(target: str, package: str) -> str:
     remainder (if any) is appended. ``..rendering`` from
     ``notebooklm.cli.services`` → ``notebooklm.cli.rendering``; ``....rendering``
     from ``notebooklm.cli.services.login.sub`` → ``notebooklm.cli.rendering``.
+
+    Raises :class:`ValueError` for an import that reaches past the top-level
+    package (more dots than ``package`` has components) — exactly the case
+    Python itself rejects with ``ImportError: attempted relative import beyond
+    top-level package``. Such an import can never execute, so silently clamping
+    it (``rsplit`` returning a too-short list) would mis-resolve it to a wrong
+    absolute module and could mask a real reach-in; failing loudly is correct.
     """
     level = len(target) - len(target.lstrip("."))
     name = target.lstrip(".")
-    base = package.rsplit(".", level - 1)[0] if level > 1 else package
+    if level > 1:
+        bits = package.rsplit(".", level - 1)
+        if len(bits) < level:
+            raise ValueError(
+                f"attempted relative import {target!r} beyond top-level package {package!r}"
+            )
+        base = bits[0]
+    else:
+        base = package
     return f"{base}.{name}" if name else base
 
 
@@ -696,6 +711,35 @@ def test_guard_helper_allows_level_4_notebooklm_namesake_module(tmp_path):
     with ok.open("w", encoding="utf-8", newline="\n") as f:
         f.write("from __future__ import annotations\nfrom ....config import DEFAULT_ENDPOINT\n")
     assert _boundary_violations(ok, package="notebooklm.cli.services.login") == []
+
+
+def test_guard_helper_allows_level_1_intra_package_import(tmp_path):
+    """``from .rendering import X`` (level-1) must NOT trip the guard.
+
+    A single-dot import from a ``cli/services/*`` module targets a *sibling
+    inside* ``cli.services`` (``notebooklm.cli.services.rendering``), not the
+    command-layer ``notebooklm.cli.rendering``. Guards the ``level == 1``
+    branch of ``_resolve_relative`` against a regression that would resolve
+    intra-package imports up to the ``cli`` package.
+    """
+    ok = tmp_path / "fake_level1_service.py"
+    with ok.open("w", encoding="utf-8", newline="\n") as f:
+        f.write("from __future__ import annotations\nfrom .rendering import build_table\n")
+    assert _boundary_violations(ok, package="notebooklm.cli.services") == []
+
+
+def test_resolve_relative_rejects_import_beyond_top_level_package():
+    """``_resolve_relative`` raises when an import reaches past the root package.
+
+    Mirrors Python's own ``ImportError: attempted relative import beyond
+    top-level package``. Such an import can never execute, so silently
+    clamping it would mis-resolve to a wrong absolute module and could mask a
+    real reach-in; the helper must fail loudly instead. (gemini-code-assist /
+    claude review on #1401.)
+    """
+    # ``....rendering`` (level-4) from a 2-component package overruns the root.
+    with pytest.raises(ValueError, match="beyond top-level package"):
+        _resolve_relative("....rendering", "a.b")
 
 
 def test_guard_helper_allows_type_checking_imports(tmp_path):
