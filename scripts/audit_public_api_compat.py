@@ -515,7 +515,9 @@ def _return_breakage(old: dict[str, Any] | None, new: dict[str, Any] | None) -> 
     Older baselines predate return-annotation capture, so a missing
     ``return_annotation`` key is treated as "unknown" and never reported — only
     an observed value-to-value change counts as a break. An annotation appearing
-    where there was none before is additive and also ignored.
+    where there was none before is additive and also ignored. The mirror case —
+    an annotation disappearing (annotated -> unannotated) — *is* reported;
+    acknowledge it via the allowlist if intentional.
     """
     if old is None or new is None:
         return None

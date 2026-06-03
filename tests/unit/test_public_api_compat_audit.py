@@ -318,6 +318,9 @@ def test_return_breakage_ignores_unchanged_and_additive_annotations(script):
     annotated = _signature(_param("self"), return_annotation="MindMap")
     assert script._return_breakage(no_key, annotated) is None
     assert script._return_breakage(annotated, no_key) is None
+    # Key present with a null value: the function was unannotated at capture
+    # time (distinct from the missing-key/old-baseline case above), so gaining
+    # an annotation is still additive.
     none_to_value = {**no_key, "return_annotation": None}
     assert script._return_breakage(none_to_value, annotated) is None
 
