@@ -41,6 +41,7 @@ from cassette_patterns import (  # noqa: E402
     SECURE_COOKIES,
     SESSION_COOKIES,
     find_credential_leaks,
+    find_high_entropy_leaks,
     is_clean,
     scrub_string,
 )
@@ -437,6 +438,119 @@ def test_find_credential_leaks_ignores_placeholder_fixture_content() -> None:
     assert not is_clean(fixture_like)[0]
     # ... but the credential-only scanner stays silent.
     assert find_credential_leaks(fixture_like) == []
+
+
+# ---------------------------------------------------------------------------
+# Generic high-entropy / unknown-field credential scan (issue #1382)
+# ---------------------------------------------------------------------------
+#
+# The targeted detectors above are name-anchored or known-shape, making the
+# guard necessary-but-not-sufficient: a NOVEL token shape, or a known secret in
+# an un-targeted field, passes silently (the LSID / JrWMbf leaks). These tests
+# pin the field-agnostic backstop: it WOULD catch a planted novel token, yet
+# produces ZERO false positives on every committed cassette.
+
+# Synthetic novel credentials assembled at runtime so this source file carries
+# no static credential-shaped literal (which would itself trip secret scanning)
+# and so the shapes are distinct from the known g.a000-/sidts-/ya29./AIza
+# prefixes. ``random``-free deterministic mixes keep the entropy well above the
+# 4.0 bits/char floor.
+NOVEL_BASE64_TOKEN = "kJ8sLm2NpQr5TvWxYz0AbCdEfGhIjKlMnOpQrStUvWxYz12345678AbCdEf"
+NOVEL_HEX_TOKEN = "9f8e7d6c5b4a392817065fe4d3c2b1a09f8e7d6c5b4a392817065fe4d3c2b1a0"
+assert len(NOVEL_BASE64_TOKEN) >= 40
+assert len(NOVEL_HEX_TOKEN) >= 64
+
+
+def test_entropy_scan_flags_novel_base64_token_in_unknown_field() -> None:
+    """A long high-entropy base64 token in an UNKNOWN field is flagged.
+
+    This is the residual-risk shape the name-anchored detectors miss: a credential
+    family the registry does not yet know about, riding in a field that is not on
+    any allowlist. The generic entropy scan catches it by shape alone.
+    """
+    payload = f'{{"sessionBlob":"{NOVEL_BASE64_TOKEN}"}}'
+    leaks = find_high_entropy_leaks(payload)
+    assert any("high-entropy token" in leak for leak in leaks), leaks
+    # It also surfaces through both public entry points.
+    assert any("high-entropy token" in leak for leak in find_credential_leaks(payload))
+    assert not is_clean(payload)[0]
+
+
+def test_entropy_scan_flags_novel_hex_token_in_unknown_field() -> None:
+    """A long pure-hex token (64+ chars) in an unknown field is flagged.
+
+    Hex entropy caps at log2(16) == 4.0 bits/char, so the base64 entropy bar can
+    never reliably fire on it — the scan routes pure-hex tokens onto a dedicated
+    64-char length floor instead.
+    """
+    payload = f'{{"legacyToken":"{NOVEL_HEX_TOKEN}"}}'
+    assert any("high-entropy token" in leak for leak in find_high_entropy_leaks(payload))
+    assert not is_clean(payload)[0]
+
+
+def test_entropy_scan_ignores_internal_uuid() -> None:
+    """A 36-char UUID (artifact / source / conversation ID) is NOT flagged.
+
+    UUIDs are NotebookLM-internal identifiers the scrubbers deliberately
+    preserve. They fall under both the 40-char base64 length floor and the
+    explicit UUID-shape allowlist, so the scan must stay silent.
+    """
+    payload = '{"artifactId":"06f0c5bd-108f-4c8b-8911-34b2acc656de"}'
+    assert find_high_entropy_leaks(payload) == []
+    assert is_clean(payload)[0]
+
+
+def test_entropy_scan_ignores_scrub_placeholders() -> None:
+    """Canonical scrub placeholders are never flagged (idempotent validation)."""
+    for placeholder in SCRUB_PLACEHOLDERS:
+        payload = f'{{"field":"{placeholder}"}}'
+        assert find_high_entropy_leaks(payload) == [], placeholder
+
+
+def test_entropy_scan_ignores_short_token() -> None:
+    """A token below the 40-char base64 length floor is not flagged."""
+    payload = '{"x":"abcdef1234567890ABCDEF"}'  # 22 chars, high entropy
+    assert find_high_entropy_leaks(payload) == []
+
+
+def test_entropy_scan_ignores_unquoted_high_entropy_content() -> None:
+    """High-entropy content that is NOT a quoted scalar is out of scope.
+
+    The scan deliberately anchors on a quoted JSON string scalar — the shape a
+    leaked credential takes in an unknown field — so the legitimate high-entropy
+    text that pervades real cassettes (CSS class runs, base64 query blobs split
+    by ``=``/``&``, hex mind-map data) stays out of scope. This documents that
+    blind spot as a deliberate decision, not an accident.
+    """
+    # Mirrors a real cassette ``context=eJw...`` zlib-base64 query param: the
+    # token is preceded by ``context=`` and is NOT inside quotes.
+    blob = "kJ8sLm2NpQr5TvWxYz0AbCdEfGhIjKlMnOpQrStUvWxYz12345678AbCdEf"
+    assert find_high_entropy_leaks(f"context={blob}&next=1") == []
+
+
+def test_all_committed_cassettes_pass_entropy_scan() -> None:
+    """ZERO false positives: every committed cassette passes the entropy scan.
+
+    Calibration guard. The thresholds are tuned against the real corpus; if a
+    future cassette legitimately carries a quoted high-entropy scalar this test
+    fails loudly so the threshold/allowlist is revisited deliberately rather
+    than the scan silently regressing into noise.
+    """
+    cassette_dir = REPO_ROOT / "tests" / "cassettes"
+    offenders: list[str] = []
+    for cassette in sorted(cassette_dir.rglob("*.yaml")):
+        # ``examples/`` holds illustrative fixtures with hand-edited placeholder
+        # content, excluded from the real-recording guard for the same reason
+        # the checker excludes them.
+        if "examples" in cassette.parts:
+            continue
+        text = cassette.read_text(encoding="utf-8", errors="replace")
+        leaks = find_high_entropy_leaks(text)
+        if leaks:
+            offenders.append(f"{cassette.name}: {leaks[:3]}")
+    assert not offenders, "entropy scan false-positives on committed cassettes:\n" + "\n".join(
+        offenders
+    )
 
 
 # ---------------------------------------------------------------------------

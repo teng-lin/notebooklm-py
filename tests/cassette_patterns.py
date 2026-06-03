@@ -53,7 +53,20 @@ Exports
 - :data:`SENSITIVE_PATTERNS`  ordered (regex, replacement) registry
 - :func:`scrub_string`        single sanitization entry point
 - :func:`is_clean`            validator returning ``(ok, leaks)``
+- :func:`find_credential_leaks`   high-severity-shape-only subset (fixture-safe)
+- :func:`find_high_entropy_leaks` field-agnostic novel-token entropy backstop
 - :func:`recompute_chunk_prefix`  XSSI byte-count re-derivation
+
+Necessary-not-sufficient boundary (issue #1382)
+-----------------------------------------------
+The name-anchored / known-shape detectors below are NECESSARY but not
+SUFFICIENT: a novel credential prefix, or a known secret in an un-targeted
+field, passes them silently (this has bitten the guard twice — ``LSID`` and
+``JrWMbf``). :func:`find_high_entropy_leaks` is the deliberate field-agnostic
+complement that catches a long high-entropy base64/hex token in ANY quoted
+JSON scalar. See its KNOWN-SHAPE BOUNDARY block for the residual-risk decision
+this draws (it is scoped to quoted scalars on purpose; non-quoted high-entropy
+text remains GitHub-secret-scanning's job). Relates to ADR-006.
 
 Upload + Drive token coverage
 -----------------------------
@@ -112,7 +125,9 @@ which field carried it.
 
 from __future__ import annotations
 
+import math
 import re
+from collections import Counter
 
 # =============================================================================
 # Chunked-response byte-count re-derivation
@@ -919,19 +934,154 @@ _CREDENTIAL_DETECTORS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+# =============================================================================
+# Generic high-entropy / unknown-field credential scan
+# =============================================================================
+#
+# THE KNOWN-SHAPE BOUNDARY (residual-risk decision; ADR-006, issue #1382).
+# ---------------------------------------------------------------------------
+# Everything ABOVE this point is *name-anchored* (cookie names, WIZ field IDs)
+# or *known-shape* (``g.a000-`` / ``sidts-`` / ``ya29.`` / ``AIza`` prefixes).
+# That makes the guard NECESSARY-but-not-SUFFICIENT: a credential family the
+# registry does not yet know about — a NOVEL token prefix, or a known secret
+# riding in an un-targeted JSON field — passes the targeted detectors silently.
+# This is not hypothetical: the guard has missed two such shapes historically
+# (the ``LSID`` cookie whose name was off the allowlist, and the ``JrWMbf`` WIZ
+# field whose API key the name-anchored scrubbers skipped), and #1372 fixed a
+# double-encoded-email shape that leaked the maintainer's address. Each fix
+# extended the known-shape set by ONE entry — reactive, after-the-leak.
+#
+# This scanner is the deliberate, field-agnostic complement: it flags a quoted
+# JSON string scalar whose ENTIRE value is one long, high-entropy
+# base64url/hex run, regardless of the field name carrying it. It is the
+# "would have caught it generically" backstop the targeted detectors lack.
+#
+# Why it is SCOPED to a *quoted scalar value* rather than scanning every token:
+# committed cassettes are dense with legitimate high-entropy text — minified
+# CSS class names, ``fonts.gstatic.com`` / ``googleusercontent.com`` URLs,
+# 1.5 KB hex mind-map blobs, and 600-char ``context=eJw…`` zlib-base64 query
+# params. A raw per-token entropy scan would drown in thousands of those false
+# positives. But NONE of that legitimate content appears as a *clean quoted
+# JSON scalar* (``"field":"<one-pure-token>"``) — which is exactly the shape a
+# leaked credential takes when it rides in an unknown field. Anchoring on that
+# shape is what makes ZERO false positives across every committed cassette
+# achievable while still catching a planted novel token. This residual-risk
+# property is therefore a DECISION, not an accident: anything that is NOT a
+# quoted high-entropy scalar (a credential split across structural punctuation,
+# a token in a non-JSON encoding) remains the backstop's blind spot, covered by
+# GitHub secret-scanning and the name-anchored detectors above.
+#
+# Thresholds (calibrated against every committed cassette — see the unit tests
+# ``test_entropy_scan_*`` and ``test_all_committed_cassettes_pass_entropy_scan``):
+#
+#   * base64url / mixed-alphabet tokens: length >= 40 AND Shannon entropy
+#     >= 4.0 bits/char. A 40+ char run drawn from a ~64-symbol alphabet with
+#     >=4.0 entropy is a random secret by construction; legitimate quoted
+#     scalars in cassettes (UUIDs, opaque IDs) never reach both bars at once.
+#   * pure-hex tokens (``[0-9a-fA-F]`` only): a separate length floor of 64,
+#     because a 16-symbol alphabet CAPS Shannon entropy at log2(16) = 4.0
+#     bits/char — a hex secret can never reliably clear the 4.0 bar, so length
+#     alone gates it. 64 hex chars = 256 bits, comfortably above any incidental
+#     hex literal (a 32-hex MD5 or a 36-char UUID stays well under the floor).
+#
+# Allowlist (known-benign long tokens that must NOT be flagged):
+#
+#   * the canonical ``SCRUB_PLACEHOLDERS`` sentinels (idempotent validation);
+#   * the canonical UUID shape (``8-4-4-4-12`` hex-with-dashes) — these are
+#     NotebookLM-internal artifact / source / conversation IDs that the
+#     surrounding scrubbers deliberately preserve. The base64 length+entropy
+#     gate already excludes them (36 chars < 40, dashes depress entropy), but
+#     the explicit shape skip documents the intent and guards against a future
+#     threshold change re-flagging them.
+_ENTROPY_MIN_LEN_BASE64 = 40
+_ENTROPY_MIN_BITS = 4.0
+_ENTROPY_MIN_LEN_HEX = 64
+
+# A quoted JSON string scalar whose entire content is a single base64url / hex
+# token. ``\A``/``\Z`` inside the captured group are unnecessary because the
+# surrounding quotes already anchor the run to the FULL value — a token split
+# by any non-``[A-Za-z0-9_\-+/=]`` byte simply won't match.
+_DETECT_QUOTED_TOKEN = re.compile(r'"([A-Za-z0-9_\-+/=]+)"')
+
+# Canonical UUID shape (``8-4-4-4-12``). Internal NotebookLM IDs, never secrets.
+_UUID_SHAPE = re.compile(
+    r"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
+)
+
+# Pure-hex run (no base64-only symbols). Used to route a token onto the hex
+# length floor instead of the entropy bar (hex entropy caps at 4.0).
+_HEX_ONLY = re.compile(r"\A[0-9a-fA-F]+\Z")
+
+
+def _shannon_entropy(token: str) -> float:
+    """Shannon entropy of ``token`` in bits per character.
+
+    A measure of per-character randomness: a token drawn uniformly from an
+    ``N``-symbol alphabet approaches ``log2(N)`` bits/char, while repetitive or
+    small-alphabet content scores lower. Returns ``0.0`` for the empty string.
+    """
+    if not token:
+        return 0.0
+    length = len(token)
+    return -sum((count / length) * math.log2(count / length) for count in Counter(token).values())
+
+
+def _is_high_entropy_token(token: str) -> bool:
+    """Return ``True`` if ``token`` looks like a novel high-entropy credential.
+
+    See the KNOWN-SHAPE BOUNDARY block above for the full rationale and the
+    threshold calibration. In brief: a pure base64url/hex run that is long
+    AND random enough that no legitimate quoted-scalar cassette value reaches
+    both bars, with the placeholder + UUID allowlist applied first.
+    """
+    if token in SCRUB_PLACEHOLDERS:
+        return False
+    if _UUID_SHAPE.match(token):
+        return False
+    if _HEX_ONLY.match(token):
+        # Hex entropy caps at log2(16) == 4.0 bits/char, so length alone gates
+        # a hex secret; the entropy bar below would never reliably fire on it.
+        return len(token) >= _ENTROPY_MIN_LEN_HEX
+    if len(token) < _ENTROPY_MIN_LEN_BASE64:
+        return False
+    return _shannon_entropy(token) >= _ENTROPY_MIN_BITS
+
+
+def find_high_entropy_leaks(text: str) -> list[str]:
+    """Flag quoted high-entropy base64/hex scalars in ANY field (issue #1382).
+
+    The field-agnostic complement to the name-anchored / known-shape detectors:
+    catches a novel credential shape — or a known secret riding in an
+    un-targeted JSON field — that the targeted scrubbers miss. Scoped to a
+    *quoted JSON string scalar* so it never fires on the legitimate high-entropy
+    text (CSS, URLs, compressed-query blobs) that pervades real cassettes. See
+    the KNOWN-SHAPE BOUNDARY block above for the boundary this deliberately
+    draws. Each returned string is a human-readable ``"Leak (...): '...'"``.
+    """
+    leaks: list[str] = []
+    for match in _DETECT_QUOTED_TOKEN.finditer(text):
+        token = match.group(1)
+        if _is_high_entropy_token(token):
+            leaks.append(f"Leak (high-entropy token): {token!r}")
+    return leaks
+
+
 def find_credential_leaks(text: str) -> list[str]:
     """Return high-severity credential leaks (auth tokens + Google API keys).
 
     A focused subset of :func:`is_clean` that runs ONLY the credential-shape
-    detectors in :data:`_CREDENTIAL_DETECTORS`. These shapes have no legitimate
-    occurrence anywhere in the repo, so unlike :func:`is_clean` this is safe to
-    point at fixture directories full of intentional placeholder content. Each
-    returned string is a human-readable ``"Leak (...): '...'"`` description.
+    detectors in :data:`_CREDENTIAL_DETECTORS` PLUS the field-agnostic
+    high-entropy scan (:func:`find_high_entropy_leaks`). These shapes have no
+    legitimate occurrence anywhere in the repo, so unlike :func:`is_clean` this
+    is safe to point at fixture directories full of intentional placeholder
+    content. Each returned string is a human-readable ``"Leak (...): '...'"``
+    description.
     """
     leaks: list[str] = []
     for label, regex in _CREDENTIAL_DETECTORS:
         for match in regex.finditer(text):
             leaks.append(f"Leak ({label}): {match.group(0)!r}")
+    leaks.extend(find_high_entropy_leaks(text))
     return leaks
 
 
@@ -1052,6 +1202,15 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
     # ``JrWMbf`` gap the name-anchored field detectors missed.
     for match in _DETECT_GOOGLE_API_KEY.finditer(text):
         leaks.append(f"Leak (Google API key): {match.group(0)!r}")
+
+    # --- 10. Generic high-entropy / unknown-field credential scan ----------
+    # Field-agnostic backstop for a NOVEL credential shape — or a known secret
+    # in an un-targeted JSON field — that the name-anchored / known-shape
+    # detectors above miss (issue #1382). Scoped to a quoted high-entropy
+    # base64/hex scalar so it never fires on the legitimate high-entropy text
+    # (CSS, URLs, compressed-query blobs) that pervades real cassettes. See the
+    # KNOWN-SHAPE BOUNDARY block near :func:`find_high_entropy_leaks`.
+    leaks.extend(find_high_entropy_leaks(text))
 
     return (not leaks, leaks)
 

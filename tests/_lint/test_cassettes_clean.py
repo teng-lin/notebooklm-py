@@ -102,9 +102,9 @@ def test_guard_detects_a_known_bad_cassette() -> None:
 def test_guard_detects_credential_shapes(tmp_path: Path) -> None:
     """Positive control for the ``--secrets-only`` path, across every shape.
 
-    Covers all four credential-shape detectors (the Google API key plus the
-    ``g.a000-`` / ``sidts-`` / ``ya29.`` auth-token shapes), so a single dead
-    detector is caught. Shapes are assembled at runtime so this source file
+    Covers all four known credential-shape detectors (the Google API key plus
+    the ``g.a000-`` / ``sidts-`` / ``ya29.`` auth-token shapes), so a single
+    dead detector is caught. Shapes are assembled at runtime so this source file
     carries no static credential-shaped literal that the repo-wide secrets scan
     would flag. Asserting one reported leak *per shape* (not merely a non-zero
     exit, which a scanner crash also produces) keeps the control robust.
@@ -126,4 +126,27 @@ def test_guard_detects_credential_shapes(tmp_path: Path) -> None:
     assert len(reported) >= len(shapes), (
         f"expected >= {len(shapes)} reported leaks (one per shape), got {len(reported)} — "
         f"a shape detector may be dead or the guard crashed:\n{result.stdout}\n{result.stderr}"
+    )
+
+
+def test_guard_detects_novel_high_entropy_token(tmp_path: Path) -> None:
+    """Positive control for the generic high-entropy scan (issue #1382).
+
+    A NOVEL credential shape — one matching none of the known prefixes above —
+    riding in an unknown quoted JSON field must still be flagged by the
+    field-agnostic entropy backstop. The token is assembled at runtime (a mixed
+    base64 run, 40+ chars, high entropy) so it matches no static secret pattern
+    in this source file. Asserting the detector fires here is what proves the
+    entropy scan is live in the ``--secrets-only`` path, not merely defined.
+    """
+    novel = "kJ8sLm2NpQr5" + "TvWxYz0AbCdEf" + "GhIjKlMnOpQrSt" + "UvWxYz12345678"
+    leaky = tmp_path / "novel.json"
+    leaky.write_text(f'{{"unknownField":"{novel}"}}\n', encoding="utf-8")
+    result = _run_guard("--secrets-only", str(leaky))
+    assert result.returncode == 1, (
+        f"entropy scan missed a planted novel high-entropy token:\n{result.stdout}"
+    )
+    assert "high-entropy token" in result.stdout, (
+        f"exit 1 but no high-entropy leak reported — the entropy detector may be "
+        f"dead or the guard crashed:\n{result.stdout}\n{result.stderr}"
     )
