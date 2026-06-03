@@ -39,12 +39,16 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
     "chromium_accounts": {"cookie_jar", "rookiepy_errors", "cookie_domains", "outcomes"},
     "firefox_accounts": {
+        # _read_firefox_container_cookies returns a CookieValidationFailure
+        # (a BrowserCookieOutcome) on every extractor failure instead of
+        # console.print + exit_with_code, so the command layer renders + exits.
+        "outcomes",
+        "rookiepy_errors",
+        "cookie_domains",
         # allowed but currently unused — the firefox helpers hand raw cookies
         # back to the caller (browser_accounts) which then routes through
         # _enumerate_one_jar; this module does not import it directly.
         "cookie_jar",
-        "rookiepy_errors",
-        "cookie_domains",
     },
     "browser_accounts": {
         "chromium_accounts",
