@@ -28,10 +28,10 @@ class TestResearchStart:
 
         assert result is not None, "Research start should return a result"
         assert "task_id" in result, "Result should contain task_id"
-        assert result["task_id"] is not None, "task_id should not be None"
-        assert result["notebook_id"] == temp_notebook.id
-        assert result["query"] == "artificial intelligence basics"
-        assert result["mode"] == "fast"
+        assert result.task_id is not None, "task_id should not be None"
+        assert result.notebook_id == temp_notebook.id
+        assert result.query == "artificial intelligence basics"
+        assert result.mode == "fast"
 
     @pytest.mark.xfail(reason="Deep research frequently hits rate limits in CI")
     @pytest.mark.asyncio
@@ -46,8 +46,8 @@ class TestResearchStart:
 
         assert result is not None, "Deep research start should return a result"
         assert "task_id" in result, "Result should contain task_id"
-        assert result["task_id"] is not None, "task_id should not be None"
-        assert result["mode"] == "deep"
+        assert result.task_id is not None, "task_id should not be None"
+        assert result.mode == "deep"
 
     @pytest.mark.asyncio
     async def test_start_research_invalid_source(self, client, temp_notebook):
@@ -281,4 +281,4 @@ class TestResearchDriveSource:
             pytest.skip("Drive research returned no results - may need Drive access")
 
         assert "task_id" in result
-        assert result["mode"] == "fast"
+        assert result.mode == "fast"
