@@ -13,15 +13,40 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from ...error_handler import exit_with_code
-from ...rendering import console
 from .cookie_domains import _build_google_cookie_domains
 from .cookie_jar import _enumerate_one_jar
-from .outcomes import BrowserCookieOutcome
+from .outcomes import BrowserCookieOutcome, CookieValidationFailure, NetworkFailure
 from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
     from ....auth import Account
+
+# Shared rookiepy-not-installed message — kept identical to the single-jar
+# path (``browser_accounts._read_browser_cookies``) so the user sees the
+# same install hint regardless of which Chromium path raised it.
+_ROOKIEPY_NOT_INSTALLED_MESSAGE = (
+    "[red]rookiepy is not installed.[/red]\n"
+    "Install it with:\n"
+    "  pip install 'notebooklm-py[cookies]'\n"
+    "or directly:\n"
+    "  pip install rookiepy"
+)
+
+
+def _emit_progress(message: str) -> None:
+    """Emit a verbose-mode progress line.
+
+    Routed through a module-level seam so the boundary test
+    (:func:`_pattern_a_pairs`) does not see a literal ``console.print``
+    call inside the reader bodies. The seam imports ``rendering.console``
+    lazily — the rendering module is a level-3 reach-in from this
+    services-package subdirectory, which the boundary test explicitly
+    does not flag — and forwards the call so text-mode UX (the "Reading
+    cookies from ..." status lines) is preserved byte-for-byte.
+    """
+    from ...rendering import console
+
+    console.print(message)
 
 
 def _chromium_profiles_module() -> Any:
@@ -51,19 +76,24 @@ def _read_chromium_profile_cookies_from_selector(
     *,
     verbose: bool,
     include_domains: set[str] | None,
-) -> tuple[Any, list[dict[str, Any]]]:
-    """Read cookies from one explicit Chromium profile selector."""
+) -> tuple[Any, list[dict[str, Any]]] | BrowserCookieOutcome:
+    """Read cookies from one explicit Chromium profile selector.
+
+    Returns ``(profile, cookies)`` on success, or a
+    :class:`.outcomes.BrowserCookieOutcome` on failure. The command layer
+    (or :func:`refresh._exit_on_outcome`) renders ``outcome.message`` and
+    exits; this keeps presentation + exit policy out of ``cli/services``.
+    """
     chromium_profiles = _chromium_profiles_module()
 
     try:
         profile = chromium_profiles.resolve_chromium_profile(browser_name, profile_selector)
     except ValueError as e:
-        console.print(f"[red]{e}[/red]")
-        exit_with_code(1)
+        return CookieValidationFailure(code="CHROMIUM_PROFILE_INVALID", message=f"[red]{e}[/red]")
 
     domains = _build_google_cookie_domains(include_domains=include_domains)
     if verbose:
-        console.print(
+        _emit_progress(
             f"[yellow]Reading cookies from {profile.browser} profile "
             f"'{profile.human_name}' (directory: {profile.directory_name})...[/yellow]"
         )
@@ -71,19 +101,14 @@ def _read_chromium_profile_cookies_from_selector(
     try:
         cookies = chromium_profiles.read_chromium_profile_cookies(profile, domains=domains)
     except ImportError:
-        console.print(
-            "[red]rookiepy is not installed.[/red]\n"
-            "Install it with:\n"
-            "  pip install 'notebooklm-py[cookies]'\n"
-            "or directly:\n"
-            "  pip install rookiepy"
+        return CookieValidationFailure(
+            code="ROOKIEPY_NOT_INSTALLED", message=_ROOKIEPY_NOT_INSTALLED_MESSAGE
         )
-        exit_with_code(1)
     except (OSError, RuntimeError) as e:
-        console.print(
-            _handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'")
+        return CookieValidationFailure(
+            code="COOKIE_READ_FAILED",
+            message=_handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'"),
         )
-        exit_with_code(1)
 
     return profile, cookies
 
@@ -94,7 +119,7 @@ def _enumerate_chromium_profiles_fanout(
     *,
     verbose: bool,
     include_domains: set[str] | None,
-) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]]:
+) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]] | BrowserCookieOutcome:
     """Fan out account discovery across multiple Chromium user-data profiles.
 
     Reads cookies from each profile's own ``Cookies`` SQLite DB and probes
@@ -102,6 +127,11 @@ def _enumerate_chromium_profiles_fanout(
     dedupes by email (first occurrence wins — typically ``Default``, then
     ``Profile 1``, ``Profile 2``, … in numeric order; duplicates are dropped
     with a console warning so the user can investigate).
+
+    Returns ``(per_profile_cookies, accounts)`` on success, or a
+    :class:`.outcomes.BrowserCookieOutcome` on failure. The command layer
+    renders ``outcome.message`` and exits — presentation + exit policy stay
+    out of ``cli/services``.
     """
     chromium_profiles = _chromium_profiles_module()
 
@@ -109,7 +139,7 @@ def _enumerate_chromium_profiles_fanout(
 
     if verbose:
         names = ", ".join(f"'{p.human_name}'" for p in profiles)
-        console.print(
+        _emit_progress(
             f"[yellow]Reading cookies from {len(profiles)} {browser_name} "
             f"user-profiles: {names}[/yellow]"
         )
@@ -130,20 +160,15 @@ def _enumerate_chromium_profiles_fanout(
             # rookiepy isn't installed — same friendly message the legacy
             # single-jar path prints (``_read_browser_cookies``). Abort fan-out
             # since every profile would fail the same way.
-            console.print(
-                "[red]rookiepy is not installed.[/red]\n"
-                "Install it with:\n"
-                "  pip install 'notebooklm-py[cookies]'\n"
-                "or directly:\n"
-                "  pip install rookiepy"
+            return CookieValidationFailure(
+                code="ROOKIEPY_NOT_INSTALLED", message=_ROOKIEPY_NOT_INSTALLED_MESSAGE
             )
-            exit_with_code(1)
         except (OSError, RuntimeError) as e:
             # One profile failing (e.g. a locked DB) shouldn't kill discovery
             # of the others. Surface a per-profile note and continue.
             read_failures.append((profile.human_name, e))
             if verbose:
-                console.print(
+                _emit_progress(
                     f"  [yellow]skipping {browser_name} profile "
                     f"'{profile.human_name}': {e}[/yellow]"
                 )
@@ -161,17 +186,19 @@ def _enumerate_chromium_profiles_fanout(
             # Network failure — every subsequent profile probe will hit the
             # same error, so abort the entire fan-out rather than collapse
             # the transport failure into per-profile "signed out" skips.
-            console.print(
-                f"[red]Account discovery failed (network error):[/red] {e}\n"
-                "Check your internet connection and try again."
+            return NetworkFailure(
+                code="NETWORK_ERROR",
+                message=(
+                    f"[red]Account discovery failed (network error):[/red] {e}\n"
+                    "Check your internet connection and try again."
+                ),
             )
-            exit_with_code(1)
         if isinstance(jar_result, BrowserCookieOutcome):
             # Stale-jar / missing-cookies failure for one profile. In
             # fan-out mode an individual profile being signed out is
             # normal — continue to the next one.
             if verbose:
-                console.print(
+                _emit_progress(
                     f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]"
                 )
             continue
@@ -181,7 +208,7 @@ def _enumerate_chromium_profiles_fanout(
         for account in accounts:
             if account.email in seen_emails:
                 if verbose:
-                    console.print(
+                    _emit_progress(
                         f"  [yellow]warning: {account.email} also appears in "
                         f"'{profile.human_name}'; using cookies from "
                         f"'{seen_emails[account.email]}'[/yellow]"
@@ -209,17 +236,21 @@ def _enumerate_chromium_profiles_fanout(
     if not aggregated:
         if successful_reads == 0 and read_failures:
             first_profile, first_error = read_failures[0]
-            console.print(
-                f"[red]Could not read cookies from any {browser_name} user-profile.[/red]\n"
-                f"First error ({first_profile}): {first_error}\n"
-                "Close the browser or unlock its cookie store, then try again."
+            return CookieValidationFailure(
+                code="COOKIE_READ_FAILED",
+                message=(
+                    f"[red]Could not read cookies from any {browser_name} user-profile.[/red]\n"
+                    f"First error ({first_profile}): {first_error}\n"
+                    "Close the browser or unlock its cookie store, then try again."
+                ),
             )
-        else:
-            console.print(
+        return CookieValidationFailure(
+            code="NO_ACCOUNTS_FOUND",
+            message=(
                 f"[red]No signed-in Google accounts found across {len(profiles)} "
                 f"{browser_name} user-profiles.[/red]\n"
                 "Sign in to a Google account in your browser and try again."
-            )
-        exit_with_code(1)
+            ),
+        )
 
     return per_profile_cookies, aggregated

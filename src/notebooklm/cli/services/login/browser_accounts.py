@@ -108,22 +108,25 @@ def _enumerate_browser_accounts(
           occurrence wins; later duplicates are dropped with a warning).
 
         On failure — a :class:`.outcomes.BrowserCookieOutcome` subclass.
-        The Chromium-profile fan-out and scoped-Chromium paths still
-        ``exit_with_code`` directly on internal failures; only the legacy
-        single-jar path and the unknown-browser dispatch return outcomes
-        from this function.
+        Every path now returns an outcome on failure (the Chromium-profile
+        fan-out, the scoped-Chromium reader, the legacy single-jar path, and
+        the unknown-browser dispatch); the command layer — or
+        ``refresh._exit_on_outcome`` — renders ``outcome.message`` and exits.
     """
     chromium_profiles = _chromium_profiles_module()
 
     scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
     if scoped_chromium is not None:
         scoped_browser, profile_selector = scoped_chromium
-        profile, raw_cookies = _read_chromium_profile_cookies_from_selector(
+        scoped_result = _read_chromium_profile_cookies_from_selector(
             scoped_browser,
             profile_selector,
             verbose=verbose,
             include_domains=include_domains,
         )
+        if isinstance(scoped_result, BrowserCookieOutcome):
+            return scoped_result
+        profile, raw_cookies = scoped_result
         result = _enumerate_one_jar(
             raw_cookies,
             profile.browser,
@@ -218,12 +221,15 @@ def _read_browser_cookies(
     scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
     if scoped_chromium is not None:
         scoped_browser, profile_selector = scoped_chromium
-        _, cookies = _read_chromium_profile_cookies_from_selector(
+        scoped_result = _read_chromium_profile_cookies_from_selector(
             scoped_browser,
             profile_selector,
             verbose=verbose,
             include_domains=include_domains,
         )
+        if isinstance(scoped_result, BrowserCookieOutcome):
+            return scoped_result
+        _, cookies = scoped_result
         return cookies
 
     canonical: str | None = None

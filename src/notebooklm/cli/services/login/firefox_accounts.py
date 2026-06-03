@@ -17,10 +17,24 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from ...error_handler import exit_with_code
-from ...rendering import console
 from .cookie_domains import _build_google_cookie_domains
+from .outcomes import BrowserCookieOutcome, CookieValidationFailure
 from .rookiepy_errors import _handle_rookiepy_error
+
+
+def _emit_progress(message: str) -> None:
+    """Emit a verbose-mode progress line through a lazy ``console`` seam.
+
+    Keeps the literal ``console.print`` call out of the reader body (the
+    boundary :func:`_pattern_a_pairs` scanner only flags ``console.print``
+    co-occurring with ``exit_with_code`` in the same function) while
+    preserving the text-mode "Reading cookies from Firefox ..." status
+    lines byte-for-byte. ``rendering`` is a level-3 reach-in the boundary
+    test explicitly does not flag.
+    """
+    from ...rendering import console
+
+    console.print(message)
 
 
 def _firefox_containers_module() -> Any:
@@ -34,7 +48,7 @@ def _read_firefox_container_cookies(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | BrowserCookieOutcome:
     """Load Google cookies from a specific Firefox Multi-Account Container.
 
     Bypasses rookiepy because rookiepy 0.5.6 does not filter on
@@ -49,37 +63,40 @@ def _read_firefox_container_cookies(
             ``auth inspect --json``.
 
     Returns:
-        Rookiepy-shape cookie dicts (compatible with
+        On success — rookiepy-shape cookie dicts (compatible with
         :func:`convert_rookiepy_cookies_to_storage_state`).
 
-    Raises:
-        SystemExit: With a friendly message on any failure (no Firefox
-            installed, unknown container, locked DB, …).
+        On failure — a :class:`.outcomes.BrowserCookieOutcome` carrying the
+        friendly message (no Firefox installed, unknown container, locked
+        DB, …). The command layer (or :func:`refresh._exit_on_outcome`)
+        renders ``outcome.message`` and exits, keeping presentation + exit
+        policy out of ``cli/services``.
     """
     firefox_containers = _firefox_containers_module()
 
     profile_path = firefox_containers.find_firefox_profile_path()
     if profile_path is None:
-        console.print(
-            "[red]Could not locate a Firefox profile.[/red]\n"
-            "Looked for profiles.ini in the standard Firefox locations. "
-            "If you have Firefox installed in a non-standard location, the "
-            "container-aware extractor cannot find it. Drop the '::<container>' "
-            "suffix to fall back to rookiepy's autodetection."
+        return CookieValidationFailure(
+            code="FIREFOX_PROFILE_NOT_FOUND",
+            message=(
+                "[red]Could not locate a Firefox profile.[/red]\n"
+                "Looked for profiles.ini in the standard Firefox locations. "
+                "If you have Firefox installed in a non-standard location, the "
+                "container-aware extractor cannot find it. Drop the '::<container>' "
+                "suffix to fall back to rookiepy's autodetection."
+            ),
         )
-        exit_with_code(1)
 
     try:
         container_id = firefox_containers.resolve_container_id(profile_path, container_spec)
     except ValueError as e:
-        console.print(f"[red]{e}[/red]")
-        exit_with_code(1)
+        return CookieValidationFailure(code="FIREFOX_CONTAINER_INVALID", message=f"[red]{e}[/red]")
 
     if verbose:
         if container_id == "none":
-            console.print("[yellow]Reading cookies from Firefox (no container)...[/yellow]")
+            _emit_progress("[yellow]Reading cookies from Firefox (no container)...[/yellow]")
         else:
-            console.print(
+            _emit_progress(
                 f"[yellow]Reading cookies from Firefox container "
                 f"'{container_spec}' (userContextId={container_id})...[/yellow]"
             )
@@ -90,14 +107,16 @@ def _read_firefox_container_cookies(
             profile_path, container_id, domains=domains
         )
     except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        exit_with_code(1)
+        return CookieValidationFailure(code="FIREFOX_COOKIES_NOT_FOUND", message=f"[red]{e}[/red]")
     except (OSError, RuntimeError) as e:
-        console.print(_handle_rookiepy_error(e, "firefox"))
-        exit_with_code(1)
+        return CookieValidationFailure(
+            code="COOKIE_READ_FAILED", message=_handle_rookiepy_error(e, "firefox")
+        )
     except sqlite3.DatabaseError as e:
-        console.print(f"[red]Failed to read Firefox cookies database:[/red] {e}")
-        exit_with_code(1)
+        return CookieValidationFailure(
+            code="FIREFOX_DB_ERROR",
+            message=f"[red]Failed to read Firefox cookies database:[/red] {e}",
+        )
 
 
 def _maybe_warn_firefox_containers_in_use() -> None:
@@ -118,7 +137,7 @@ def _maybe_warn_firefox_containers_in_use() -> None:
     if profile_path is None:
         return
     if firefox_containers.has_container_cookies_in_use(profile_path):
-        console.print(
+        _emit_progress(
             "[yellow]Warning: this Firefox profile has cookies stored inside "
             "a Multi-Account Container, but '--browser-cookies firefox' "
             "merges every container into one jar. If your Google session "

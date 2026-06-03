@@ -26,14 +26,18 @@ def _describe_json_shape(value: Any) -> str:
 def _current_storage_override() -> Path | None:
     """Resolve the active ``--storage`` override from the current Click context.
 
-    Backward-compatibility shim — delegates to
-    :func:`notebooklm.cli.services.auth_source.current_storage_override`.
-    New callers should use the :class:`AuthSource` resolver directly so
-    they pick up the full precedence chain (env-var fast path etc.).
+    Reads the live Click context here (in the command layer) and passes it
+    explicitly into the :class:`AuthSource` resolver, keeping the
+    Click-context read out of ``cli/services`` per ADR-008. New callers
+    should use the :class:`AuthSource` resolver directly so they pick up the
+    full precedence chain (env-var fast path etc.).
     """
+    import click
+
     from .services.auth_source import current_storage_override
 
-    return current_storage_override()
+    ctx = click.get_current_context(silent=True)
+    return current_storage_override(ctx)
 
 
 def _resolve_context_path(context_path_fn: ContextPathFn | None = None) -> Path:

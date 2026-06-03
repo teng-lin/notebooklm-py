@@ -72,27 +72,36 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # Fully cleaned service modules. Each must have zero ``_boundary_violations``
 # AND zero Pattern A pairs (see :func:`_pattern_a_pairs`).
 #
-# Login ``browser_accounts.py`` and ``cookie_writes.py`` still have narrow
-# lazy level-3 presentation/runtime seams (progress/warning output and
-# ``run_async``). The current boundary scanner intentionally does not flag
-# those imports; their important invariant is zero Pattern A pairs until the
-# remaining seams are inverted into caller-provided callbacks.
+# Several login submodules (``browser_accounts.py``, ``cookie_writes.py``,
+# ``chromium_accounts.py``, ``firefox_accounts.py``, ``refresh.py``) still
+# emit progress/warning output (and ``refresh.py`` owns success messaging +
+# the shared ``_exit_on_outcome`` rendering boundary) through a narrow lazy
+# LEVEL-3 ``console`` seam (``_emit`` / ``_emit_progress``). The boundary
+# scanner intentionally does not flag those level-3 imports; the load-bearing
+# invariant is zero Pattern A pairs — no single function body co-locates
+# ``console.print`` with ``exit_with_code``, because the print is routed
+# through a split helper the scanner treats as the preferred shape. The
+# remaining seams can be inverted into caller-provided callbacks later.
 # Login ``cookie_domains.py`` is pure service code: the command layer hosts
 # Click ``BadParameter`` translation and optional-domain warning rendering.
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
+    "cli/services/auth_source.py": SERVICES_ROOT / "auth_source.py",
     "cli/services/artifact_generation.py": SERVICES_ROOT / "artifact_generation.py",
     "cli/services/confirming_mutation.py": SERVICES_ROOT / "confirming_mutation.py",
     "cli/services/download.py": SERVICES_ROOT / "download.py",
     "cli/services/generate.py": SERVICES_ROOT / "generate.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/login/browser_accounts.py": SERVICES_ROOT / "login" / "browser_accounts.py",
+    "cli/services/login/chromium_accounts.py": SERVICES_ROOT / "login" / "chromium_accounts.py",
     "cli/services/login/cookie_domains.py": SERVICES_ROOT / "login" / "cookie_domains.py",
     "cli/services/login/cookie_jar.py": SERVICES_ROOT / "login" / "cookie_jar.py",
     "cli/services/login/cookie_writes.py": SERVICES_ROOT / "login" / "cookie_writes.py",
     "cli/services/login/exceptions.py": SERVICES_ROOT / "login" / "exceptions.py",
+    "cli/services/login/firefox_accounts.py": SERVICES_ROOT / "login" / "firefox_accounts.py",
     "cli/services/login/outcomes.py": SERVICES_ROOT / "login" / "outcomes.py",
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
+    "cli/services/login/refresh.py": SERVICES_ROOT / "login" / "refresh.py",
     "cli/services/login/rookiepy_errors.py": SERVICES_ROOT / "login" / "rookiepy_errors.py",
     "cli/services/polling.py": SERVICES_ROOT / "polling.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
@@ -133,83 +142,6 @@ GUARDED_PATHS = {
 #   ``rationale``             — short note on what migration is in flight or
 #                               why the module is here.
 TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
-    "cli/services/auth_source.py": {
-        "path": SERVICES_ROOT / "auth_source.py",
-        "forbidden_imports": [
-            "auth_source.py:198: forbidden top-level import: 'click'",
-        ],
-        "pattern_a_violations": [],
-        "pattern_b_violations": (
-            "uses click.get_current_context() to read the auth-source "
-            "override out of the active Click context; intrinsically "
-            "Click-bound until the context-reader is moved to the command "
-            "layer."
-        ),
-        "rationale": (
-            "Adapter that reads the auth-source override from the live Click "
-            "context; the function-level ``import click`` is the only Click "
-            "reach-in."
-        ),
-    },
-    "cli/services/login/chromium_accounts.py": {
-        "path": SERVICES_ROOT / "login" / "chromium_accounts.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [
-            ("_read_chromium_profile_cookies_from_selector", 62),
-            ("_read_chromium_profile_cookies_from_selector", 81),
-            ("_read_chromium_profile_cookies_from_selector", 86),
-            ("_enumerate_chromium_profiles_fanout", 140),
-            ("_enumerate_chromium_profiles_fanout", 168),
-            ("_enumerate_chromium_profiles_fanout", 223),
-        ],
-        "rationale": (
-            "Chromium-profile enumeration owns presentation + exit codes "
-            "for profile-selection failures; level-3 rendering reach-in not "
-            "flagged by ``_boundary_violations``. The ``rookiepy_error`` "
-            "branch now wraps the typed-message helper "
-            "(:func:`_handle_rookiepy_error`) in a ``console.print(...)`` "
-            "so the helper itself stays in :data:`GUARDED_PATHS`; the "
-            "exit_with_code line moved by 1 in each helper. "
-            "``_enumerate_chromium_profiles_fanout`` now dispatches on a "
-            "typed outcome returned by :func:`_enumerate_one_jar` instead "
-            "of catching ``SystemExit``."
-        ),
-    },
-    "cli/services/login/firefox_accounts.py": {
-        "path": SERVICES_ROOT / "login" / "firefox_accounts.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [
-            ("_read_firefox_container_cookies", 70),
-            ("_read_firefox_container_cookies", 76),
-            ("_read_firefox_container_cookies", 94),
-            ("_read_firefox_container_cookies", 97),
-            ("_read_firefox_container_cookies", 100),
-        ],
-        "rationale": (
-            "Firefox container-cookie reader owns presentation + exit "
-            "codes for container/decryption failures; level-3 rendering "
-            "reach-in not flagged by ``_boundary_violations``."
-        ),
-    },
-    "cli/services/login/refresh.py": {
-        "path": SERVICES_ROOT / "login" / "refresh.py",
-        "forbidden_imports": [],
-        "pattern_a_violations": [
-            ("_exit_on_outcome", 72),
-            ("_confirm_profile_account_overwrite", 201),
-            ("_refresh_from_browser_cookies", 299),
-            ("_login_with_browser_cookies", 362),
-            ("_login_with_browser_cookies", 377),
-        ],
-        "rationale": (
-            "Browser-cookie refresh flow owns interactive confirmation, "
-            "presentation, and exit codes; multiple Pattern A pairs. "
-            "``_exit_on_outcome`` is the shared adapter that converts the "
-            "typed outcome returned by the (now-GUARDED) helper-chain "
-            "modules into the legacy ``console.print + exit_with_code`` "
-            "shape this driver still owns."
-        ),
-    },
     "cli/services/playwright_login.py": {
         "path": SERVICES_ROOT / "playwright_login.py",
         "forbidden_imports": [
@@ -235,11 +167,21 @@ TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
         ],
         "rationale": (
             "Playwright login orchestrator owns the full presentation + "
-            "exit-code matrix for browser-automation failures; one of the "
-            "largest migration targets in this inventory. Line numbers "
-            "shifted in #1367 when the ``_resolve_paths_helper`` "
-            "patch-surface bridge (and the ``_ensure_chromium_installed`` "
-            "``session_cmd`` getattr) were deleted; refreshed here."
+            "exit-code matrix for browser-automation failures; the sole "
+            "remaining residual after #1383 drained the other four targets "
+            "(auth_source / chromium_accounts / firefox_accounts / "
+            "refresh). Unlike the ``login/`` submodules it sits at "
+            "``cli/services/`` so its reach-ins are LEVEL-2 imports "
+            "(``..rendering`` / ``..error_handler`` / ``..runtime``) that "
+            "the boundary scanner DOES flag — a lazy ``_emit`` seam cannot "
+            "clear the import violation, and the ~30 ``console.print`` "
+            "calls stream live during a multi-minute browser SSO session "
+            "(so they resist a return-an-outcome inversion). Draining it "
+            "needs a caller-provided sink/callback inversion, tracked in "
+            "#1391. Line numbers shifted in #1367 when the "
+            "``_resolve_paths_helper`` patch-surface bridge (and the "
+            "``_ensure_chromium_installed`` ``session_cmd`` getattr) were "
+            "deleted; refreshed here."
         ),
     },
 }

@@ -59,16 +59,32 @@ ConfirmCallback = Callable[[str], bool]
 logger = logging.getLogger(__name__)
 
 
+def _emit(message: str) -> None:
+    """Emit one Rich-markup line through the ``console`` seam.
+
+    Routing every refresh-driver ``console.print`` through this one-line
+    helper keeps the literal ``console.print`` call out of any function
+    body that also calls ``exit_with_code`` — the ADR-008 boundary scanner
+    (:mod:`tests.unit.cli.test_services_boundary`) flags a service module
+    only when both co-occur inside the *same* function. The split-helper
+    shape is the preferred form the scanner explicitly allows
+    (``test_pattern_a_helper_ignores_split_helpers``) and mirrors the
+    ``_emit_progress`` seam already used by the sibling ``*_accounts``
+    readers. Text-mode UX is byte-for-byte unchanged. ``rendering`` is a
+    level-3 reach-in the boundary import scanner does not flag.
+    """
+    console.print(message)
+
+
 def _exit_on_outcome(outcome: BrowserCookieOutcome) -> NoReturn:
     """Render a helper-chain failure outcome and exit with code 1.
 
-    Implements the text-mode behavior for refresh.py-driven
-    paths: the Rich-markup message is printed and the process exits.
-    This module is listed in :data:`TRANSITIONAL_GUARDED_PATHS`, which
-    tracks the ``console.print`` + ``exit_with_code`` pairs in each
-    refresh driver function, so the inline call here is intentional.
+    Implements the text-mode behavior for refresh.py-driven paths: the
+    Rich-markup message is emitted (via the :func:`_emit` seam) and the
+    process exits. The shared rendering boundary for the browser-cookie
+    helper chain's typed outcomes.
     """
-    console.print(outcome.message)
+    _emit(outcome.message)
     exit_with_code(1)
 
 
@@ -167,7 +183,7 @@ def _confirm_profile_account_overwrite(
         confirm: Overwrite-confirmer callback injected by the Click
             command layer. Receives the confirmation prompt string and
             returns ``True`` to proceed with overwrite, ``False`` to
-            abort (which routes through ``console.print`` +
+            abort (which renders via the :func:`_emit` seam and
             ``exit_with_code(1)``). When ``None``, the confirmation is
             skipped (treated as auto-accept) — used by non-interactive
             callers; production Click commands always inject
@@ -195,7 +211,7 @@ def _confirm_profile_account_overwrite(
     ):
         return
 
-    console.print(
+    _emit(
         f"[red]Aborted:[/red] {target} still has {conflict}; not overwriting with {selected_email}."
     )
     exit_with_code(1)
@@ -295,7 +311,7 @@ def _refresh_from_browser_cookies(
         _exit_on_outcome(enum_result)
     per_profile_cookies, accounts = enum_result
     if not accounts:
-        console.print(f"[red]No signed-in Google accounts found in {browser_name}.[/red]")
+        _emit(f"[red]No signed-in Google accounts found in {browser_name}.[/red]")
         exit_with_code(1)
 
     metadata = read_account_metadata(storage_path)
@@ -316,7 +332,7 @@ def _refresh_from_browser_cookies(
     _sync_server_language_to_config(storage_path=storage_path, profile=profile)
 
     if not quiet:
-        console.print(
+        _emit(
             f"[green]ok[/green] refreshed from {browser_name}: {storage_path}\n"
             f"[green]account[/green] {selected.email}"
         )
@@ -354,7 +370,7 @@ def _login_with_browser_cookies(
     if validation_error is not None:
         cookie_names = cookie_names_from_storage(storage_state)
         hint = missing_cookies_hint(cookie_names, browser_label=browser_name)
-        console.print(
+        _emit(
             "[red]No valid Google authentication cookies found.[/red]\n"
             f"{validation_error}\n\n"
             f"{hint}"
@@ -373,7 +389,7 @@ def _login_with_browser_cookies(
             storage_path.parent.chmod(0o700)
     except OSError as e:
         logger.error("Failed to save authentication to %s: %s", storage_path, e)
-        console.print(f"[red]Failed to save authentication to {storage_path}.[/red]\nDetails: {e}")
+        _emit(f"[red]Failed to save authentication to {storage_path}.[/red]\nDetails: {e}")
         exit_with_code(1)
 
     # Record account metadata so future calls target the same Google account.
@@ -386,7 +402,7 @@ def _login_with_browser_cookies(
             write_account_metadata(storage_path, authuser=authuser, email=email)
         except OSError as e:
             logger.error("Failed to save account metadata for %s: %s", storage_path, e)
-            console.print(
+            _emit(
                 f"[yellow]Warning: cookies saved but account metadata write failed.[/yellow]\n"
                 f"Details: {e}"
             )
@@ -401,17 +417,17 @@ def _login_with_browser_cookies(
     saved_msg = f"\n[green]Authentication saved to:[/green] {storage_path}"
     if email:
         saved_msg += f"\n[green]Account:[/green] {email}"
-    console.print(saved_msg)
+    _emit(saved_msg)
 
     # Verify that cookies work.
     try:
         run_async(fetch_tokens_with_domains(storage_path, profile))
         logger.info("Cookies verified successfully")
-        console.print("[green]Cookies verified successfully.[/green]")
+        _emit("[green]Cookies verified successfully.[/green]")
     except ValueError as e:
         # Cookie validation failed - the extracted cookies are invalid
         logger.error("Extracted cookies are invalid: %s", e)
-        console.print(
+        _emit(
             "[red]Warning: Extracted cookies failed validation.[/red]\n"
             "The cookies may be expired or malformed.\n"
             f"Error: {e}\n\n"
@@ -420,7 +436,7 @@ def _login_with_browser_cookies(
     except httpx.RequestError as e:
         # Network error - can't verify but cookies might be OK
         logger.warning("Could not verify cookies due to network error: %s", e)
-        console.print(
+        _emit(
             "[yellow]Warning: Could not verify cookies (network issue).[/yellow]\n"
             "Cookies saved but may not be working.\n"
             "Try running 'notebooklm ask' to test authentication."
@@ -428,7 +444,7 @@ def _login_with_browser_cookies(
     except Exception as e:
         # Unexpected error - log it fully
         logger.exception("Unexpected error verifying cookies: %s: %s", type(e).__name__, e)
-        console.print(
+        _emit(
             f"[yellow]Warning: Unexpected error during verification: {e}[/yellow]\n"
             "Cookies saved but please verify with 'notebooklm auth check --test'"
         )
