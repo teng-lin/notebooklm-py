@@ -7,111 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.7.0] - 2026-06-03
 
-- `NOTEBOOKLM_FUTURE_ERRORS` opt-in preview flag — run the **v0.8.0 error
-  contract** early to test forward-compatibility before the breaking flips ship
-  (ADR-0019 / umbrella #1346). Default-off and **byte-identical** to current
-  v0.7.0 behavior; when truthy (`1`/`true`/`yes`/`on`) the three warn-runways
-  adopt their v0.8.0 raise-target: `sources.get` / `artifacts.get` /
-  `notes.get` / `mind_maps.get` raise the matching `*NotFoundError` on a miss
-  (#1247), `MappingCompatMixin` dict-subscript raises `TypeError` (#1251), and
-  the deprecated `ResearchAPI.wait_for_completion(interval=...)` alias raises
-  `TypeError` (#1254). Takes precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`
-  (a runway raises regardless of quiet). The four `get()` methods are now routed
-  through a single `_lookup.resolve_get` bridge, eliminating the hand-duplicated
-  warn-on-miss pattern. Helper: `notebooklm._deprecation.future_errors_enabled`.
-  The purely-behavioral v0.8.0 changes that lack a warn-runway (`delete()`
-  returning `None`, refusal-suppression, fail-loud listing) are not gated yet;
-  they will be folded in as their behavior is defined. Does **not** close
-  #1247/#1251/#1254 — the runways remain until the v0.8.0 flip. See
-  `docs/deprecations.md`. Additive (issue #1346).
-- `client.artifacts.retry_failed(notebook_id, artifact_id)` — retry a failed
-  Studio artifact in place (the web UI "Retry" action), via the new
-  `RETRY_ARTIFACT` (`Rytqqe`) RPC. The artifact is not deleted first and the
-  same `artifact_id` is preserved, so existing `poll_status()` /
-  `wait_for_completion()` flows keep working. Follows the ADR-019 "async
-  kickoff" contract: an accepted retry returns
-  `GenerationStatus(status="in_progress")`, while a synchronous refusal
-  (`USER_DISPLAYABLE_ERROR` — rate limit / quota / not-retryable) **raises** the
-  underlying `RateLimitError` / `RPCError` rather than returning a
-  `status="failed"` handle. New `notebooklm artifact retry <artifact_id>
-  [--wait] [--json]` CLI command. Additive (issues #1319, #1346).
-- `notebooklm.artifacts.with_rate_limit_retry` now also retries when the
-  wrapped callable **raises** `RateLimitError` (backing off and re-raising once
-  the retry budget is exhausted), so it can wrap the new `retry_failed`. The
-  existing returned-rate-limited-`GenerationStatus` path (used by `generate_*`)
-  is unchanged — this is a backward-compatible addition (issue #1319).
-- New public exception types for the note and mind-map domains, mirroring the
-  existing `SourceError` / `SourceNotFoundError` shape: `NoteError` +
-  `NoteNotFoundError` and `MindMapError` + `MindMapNotFoundError`. Each
-  `*NotFoundError` is a triple-base `(NotFoundError, RPCError, <Domain>Error)`,
-  so it is catchable via the cross-domain `NotFoundError` umbrella, at
-  transport-level `except RPCError` call sites, and at domain-level
-  `except NoteError` / `except MindMapError` call sites. These are the
-  prerequisite for the mind-map not-found work (ADR-019; issues #1291, #1346).
-  `MindMapNotFoundError` is now raised by the `mind_maps` mutation paths (see
-  *Changed* below); `NoteNotFoundError` is not raised by any method yet.
-- `ResearchStatus.NOT_FOUND` — a typed lifecycle sentinel for the
-  poll-observed absence of a *specific* requested research task, distinct from
-  `NO_RESEARCH` ("nothing in flight"). `research.poll(notebook_id, task_id=...)`
-  now returns `ResearchTask.not_found(task_id)` (status `NOT_FOUND`, carrying
-  the requested id) when a non-empty pinned `task_id` matches no in-flight task;
-  the unfiltered `task_id=None` empty poll still returns `NO_RESEARCH`
-  unchanged. Additive and non-breaking — the poll never raises for an absent
-  task (ADR-019 Rule 4; issues #1344, #1346).
+### Highlights
 
-### Changed
-
-- `ArtifactTimeoutError` now declares its bases umbrella-first
-  (`WaitTimeoutError, ArtifactError`), matching `SourceTimeoutError` and
-  `ResearchTimeoutError`. This is a cosmetic reorder with no behavior change:
-  `isinstance`/`except` against either base is unaffected.
-- `client.mind_maps` mutation sites now raise `MindMapNotFoundError` instead of
-  a bare `ValueError` on a missing target, so callers can `except NotFoundError`
-  (or `except MindMapError`) uniformly across namespaces. `rename` (and the
-  underlying note-backed `rename_mind_map`) raise it; `MindMapNotFoundError`
-  multi-inherits `ValueError`'s sibling `NotFoundError`, **not** `ValueError`
-  itself, so existing `except ValueError` rename callers must switch to
-  `except NotFoundError` / `except MindMapNotFoundError`. `delete(kind=None)` is
-  now **idempotent** — deleting an already-absent mind map returns `None` rather
-  than raising (matching `sources`/`artifacts`/`notes` delete, and the
-  `kind`-supplied path). `get_tree` returns `None` for a missing mind map (it is
-  a derived read that does not police parent existence) — previously `kind=None`
-  raised on an unknown id. Shape-drift in the interactive payload still raises
-  `UnknownRPCMethodError` (ADR-019; issues #1291, #1346).
-- `client.mind_maps.generate(kind=INTERACTIVE)` now raises
-  `ArtifactFeatureUnavailableError` (instead of a bare `ArtifactError`) when the
-  `CREATE_ARTIFACT` call returns no artifact id — no generation task was
-  created. **Non-breaking for `except ArtifactError`**:
-  `ArtifactFeatureUnavailableError` is a subclass of `ArtifactError`, so that
-  catch still works. (It also multi-inherits `RPCError`, so a handler that does
-  `except RPCError` *before* `except ArtifactError` will now take the `RPCError`
-  branch — the same MRO the sibling `generate_*` / `retry_failed` null-create
-  paths already produce.) This aligns the interactive async kickoff with that
-  sibling null-create contract (ADR-019 "async kickoff"; issue #1359).
-- Documented two pre-existing `client.mind_maps` read semantics (docs-only, no
-  behavior change): `list()` populates `MindMap.tree` only for note-backed
-  entries — interactive entries carry `tree=None` ("not fetched", not "empty";
-  call `get_tree(..., kind=INTERACTIVE)` to fetch one); and the explicit
-  `get_tree(..., kind=INTERACTIVE)` path delegates absence detection to the RPC,
-  so a missing id's value is server-dependent (returns `None` today) rather than
-  enforced client-side (issues #1355, #1359).
-
-### Deprecated
-
-- **`client.mind_maps.get()` returning `None` for a missing mind map is now
-  deprecated**, closing the runway gap that left `mind_maps` as the only
-  #1247-cohort namespace without one. It now emits a `DeprecationWarning` on a
-  miss while **still returning `None`** (behavior unchanged this release),
-  matching `sources.get()` / `artifacts.get()` / `notes.get()`. In **v0.8.0** it
-  will instead **raise** `MindMapNotFoundError`. Use `get_or_none()` for the
-  sanctioned optional lookup (it stays silent), or migrate the `None`-check to a
-  `try/except MindMapNotFoundError`. The warning fires only on a miss; suppress
-  it with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Tracking issue: #1247 (gap: #1358).
-  See [`docs/deprecations.md`](docs/deprecations.md).
-
-## [0.7.0] - 2026-05-30
+- **v0.8.0 error-contract runway.** This release lands the *additive half* of a
+  cross-SDK convergence on "absence and refusal **raise**; only success and
+  async-lifecycle state are returned." You can adopt the forward-compatible form
+  today and run on both 0.7.0 and 0.8.0 with no flag day:
+  - **Test your code against 0.8.0 today** — set `NOTEBOOKLM_FUTURE_ERRORS=1` to
+    opt your process into the v0.8.0 error contract (`get()` raises
+    `*NotFoundError` on a miss, dict-subscript on the typed returns raises, and
+    the deprecated `wait_for_completion(interval=...)` alias raises) **without
+    changing default behavior**. Run your test suite with it on to find breakage
+    before you upgrade. This is the "test-before-you-migrate" mechanism paired
+    with the [Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md) guide.
+  - **`get_or_none()`** — a new, **silent** optional lookup on
+    `sources` / `artifacts` / `notes` / `mind_maps` that returns the object or
+    `None` and never warns. It is the sanctioned replacement for the now-soft
+    `get()`-returns-`None` pattern.
+  - **`get()` now warns on a miss** (still returns `None` this release) and will
+    **raise** the typed `*NotFoundError` for its domain in v0.8.0 (#1247).
+  - **Typed `*NotFoundError` per domain** — `NoteNotFoundError` /
+    `MindMapNotFoundError` join the existing source / artifact / notebook errors,
+    all catchable via the `NotFoundError` umbrella.
+- **Breaking: `rename()` returns the renamed object; `delete()` returns `None`.**
+  `rename()` now re-fetches and returns the live object (raising `*NotFoundError`
+  on a missing target), and `delete()` returns `None` and is idempotent on an
+  already-absent target. See **Breaking changes** below before upgrading.
+- **Typed dataclass returns** for `research.poll` / `start` /
+  `wait_for_completion`, `artifacts.generate_mind_map`, and `sources.get_guide`
+  (`ResearchStatus`, `ResearchTask`, `ResearchSource`, `ResearchStart`,
+  `MindMapResult`, `SourceGuide`) — attribute access instead of untyped dicts,
+  with a backward-compatible read-only mapping bridge.
+- **Unified `client.mind_maps` surface** over both backends (note-backed +
+  interactive), plus **`client.artifacts.retry_failed()`** to retry a failed
+  Studio artifact in place (and a matching `notebooklm artifact retry` command).
 
 ### Breaking changes
 
@@ -223,6 +154,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_or_none()` — the sanctioned **silent** optional lookup, added to
+  `client.sources` / `client.artifacts` / `client.notes` / `client.mind_maps`.
+  It returns the entity (`Source` / `Artifact` / `Note` / `MindMap`) or `None`
+  for a genuine absence and **never warns**, making it the drop-in migration
+  target for the now-deprecated `get()`-returns-`None` pattern (see
+  **Deprecated** below; issue #1247). Unlike `get()`, it does **not** swallow
+  transport, auth, or decode faults — only a real "not found" yields `None`.
+  ```python
+  # Silent optional lookup (no DeprecationWarning):
+  src = await client.sources.get_or_none(nb_id, source_id)
+  if src is None:
+      ...
+  ```
+  Additive (ADR-019; issue #1247).
+- `NOTEBOOKLM_FUTURE_ERRORS` opt-in preview flag — run the **v0.8.0 error
+  contract** early to test forward-compatibility before the breaking flips ship
+  (ADR-0019 / umbrella #1346). Default-off and **byte-identical** to current
+  v0.7.0 behavior; when truthy (`1`/`true`/`yes`/`on`) the three warn-runways
+  adopt their v0.8.0 raise-target: `sources.get` / `artifacts.get` /
+  `notes.get` / `mind_maps.get` raise the matching `*NotFoundError` on a miss
+  (#1247), `MappingCompatMixin` dict-subscript raises `TypeError` (#1251), and
+  the deprecated `ResearchAPI.wait_for_completion(interval=...)` alias raises
+  `TypeError` (#1254). Takes precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`
+  (a runway raises regardless of quiet). The four `get()` methods are now routed
+  through a single `_lookup.resolve_get` bridge, eliminating the hand-duplicated
+  warn-on-miss pattern. Helper: `notebooklm._deprecation.future_errors_enabled`.
+  The purely-behavioral v0.8.0 changes that lack a warn-runway (`delete()`
+  returning `None`, refusal-suppression, fail-loud listing) are not gated yet;
+  they will be folded in as their behavior is defined. Does **not** close
+  #1247/#1251/#1254 — the runways remain until the v0.8.0 flip. See
+  `docs/deprecations.md`. Additive (issue #1346).
+- `client.artifacts.retry_failed(notebook_id, artifact_id)` — retry a failed
+  Studio artifact in place (the web UI "Retry" action), via the new
+  `RETRY_ARTIFACT` (`Rytqqe`) RPC. The artifact is not deleted first and the
+  same `artifact_id` is preserved, so existing `poll_status()` /
+  `wait_for_completion()` flows keep working. Follows the ADR-019 "async
+  kickoff" contract: an accepted retry returns
+  `GenerationStatus(status="in_progress")`, while a synchronous refusal
+  (`USER_DISPLAYABLE_ERROR` — rate limit / quota / not-retryable) **raises** the
+  underlying `RateLimitError` / `RPCError` rather than returning a
+  `status="failed"` handle. New `notebooklm artifact retry <artifact_id>
+  [--wait] [--json]` CLI command. Additive (issues #1319, #1346).
+- `notebooklm.artifacts.with_rate_limit_retry` now also retries when the
+  wrapped callable **raises** `RateLimitError` (backing off and re-raising once
+  the retry budget is exhausted), so it can wrap the new `retry_failed`. The
+  existing returned-rate-limited-`GenerationStatus` path (used by `generate_*`)
+  is unchanged — this is a backward-compatible addition (issue #1319).
+- New public exception types for the note and mind-map domains, mirroring the
+  existing `SourceError` / `SourceNotFoundError` shape: `NoteError` +
+  `NoteNotFoundError` and `MindMapError` + `MindMapNotFoundError`. Each
+  `*NotFoundError` is a triple-base `(NotFoundError, RPCError, <Domain>Error)`,
+  so it is catchable via the cross-domain `NotFoundError` umbrella, at
+  transport-level `except RPCError` call sites, and at domain-level
+  `except NoteError` / `except MindMapError` call sites. These are the
+  prerequisite for the mind-map not-found work (ADR-019; issues #1291, #1346).
+  `MindMapNotFoundError` is now raised by the `mind_maps` mutation paths (see
+  *Changed* below); `NoteNotFoundError` is not raised by any method yet.
+- `ResearchStatus.NOT_FOUND` — a typed lifecycle sentinel for the
+  poll-observed absence of a *specific* requested research task, distinct from
+  `NO_RESEARCH` ("nothing in flight"). `research.poll(notebook_id, task_id=...)`
+  now returns `ResearchTask.not_found(task_id)` (status `NOT_FOUND`, carrying
+  the requested id) when a non-empty pinned `task_id` matches no in-flight task;
+  the unfiltered `task_id=None` empty poll still returns `NO_RESEARCH`
+  unchanged. Additive and non-breaking — the poll never raises for an absent
+  task (ADR-019 Rule 4; issues #1344, #1346).
 - **Typed return values for the research / mind-map / source-guide methods.**
   `research.poll` / `research.start` / `research.wait_for_completion`,
   `artifacts.generate_mind_map`, and `sources.get_guide` now return typed
@@ -279,6 +275,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed / Deprecated
 
+- `ArtifactTimeoutError` now declares its bases umbrella-first
+  (`WaitTimeoutError, ArtifactError`), matching `SourceTimeoutError` and
+  `ResearchTimeoutError`. This is a cosmetic reorder with no behavior change:
+  `isinstance`/`except` against either base is unaffected.
+- `client.mind_maps` mutation sites now raise `MindMapNotFoundError` instead of
+  a bare `ValueError` on a missing target, so callers can `except NotFoundError`
+  (or `except MindMapError`) uniformly across namespaces. `rename` (and the
+  underlying note-backed `rename_mind_map`) raise it; `MindMapNotFoundError`
+  multi-inherits `ValueError`'s sibling `NotFoundError`, **not** `ValueError`
+  itself, so existing `except ValueError` rename callers must switch to
+  `except NotFoundError` / `except MindMapNotFoundError`. `delete(kind=None)` is
+  now **idempotent** — deleting an already-absent mind map returns `None` rather
+  than raising (matching `sources`/`artifacts`/`notes` delete, and the
+  `kind`-supplied path). `get_tree` returns `None` for a missing mind map (it is
+  a derived read that does not police parent existence) — previously `kind=None`
+  raised on an unknown id. Shape-drift in the interactive payload still raises
+  `UnknownRPCMethodError` (ADR-019; issues #1291, #1346).
+- `client.mind_maps.generate(kind=INTERACTIVE)` now raises
+  `ArtifactFeatureUnavailableError` (instead of a bare `ArtifactError`) when the
+  `CREATE_ARTIFACT` call returns no artifact id — no generation task was
+  created. **Non-breaking for `except ArtifactError`**:
+  `ArtifactFeatureUnavailableError` is a subclass of `ArtifactError`, so that
+  catch still works. (It also multi-inherits `RPCError`, so a handler that does
+  `except RPCError` *before* `except ArtifactError` will now take the `RPCError`
+  branch — the same MRO the sibling `generate_*` / `retry_failed` null-create
+  paths already produce.) This aligns the interactive async kickoff with that
+  sibling null-create contract (ADR-019 "async kickoff"; issue #1359).
+- Documented two pre-existing `client.mind_maps` read semantics (docs-only, no
+  behavior change): `list()` populates `MindMap.tree` only for note-backed
+  entries — interactive entries carry `tree=None` ("not fetched", not "empty";
+  call `get_tree(..., kind=INTERACTIVE)` to fetch one); and the explicit
+  `get_tree(..., kind=INTERACTIVE)` path delegates absence detection to the RPC,
+  so a missing id's value is server-dependent (returns `None` today) rather than
+  enforced client-side (issues #1355, #1359).
 - **`ResearchAPI.wait_for_completion(interval=...)` → `initial_interval=...`.**
   The research waiter's poll-cadence keyword is now `initial_interval`,
   matching `SourcesAPI.wait_until_ready` and
@@ -299,6 +329,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+> Every deprecation below is on a compatibility runway to **v0.8.0**. The
+> consolidated [Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md) guide is the
+> single reference for moving your code across the boundary; set
+> `NOTEBOOKLM_FUTURE_ERRORS=1` to exercise the v0.8.0 behavior in your tests
+> today.
+
+- **`client.mind_maps.get()` returning `None` for a missing mind map is now
+  deprecated**, closing the runway gap that left `mind_maps` as the only
+  #1247-cohort namespace without one. It now emits a `DeprecationWarning` on a
+  miss while **still returning `None`** (behavior unchanged this release),
+  matching `sources.get()` / `artifacts.get()` / `notes.get()`. In **v0.8.0** it
+  will instead **raise** `MindMapNotFoundError`. Use `get_or_none()` for the
+  sanctioned optional lookup (it stays silent), or migrate the `None`-check to a
+  `try/except MindMapNotFoundError`. The warning fires only on a miss; suppress
+  it with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Tracking issue: #1247 (gap: #1358).
+  See [`docs/deprecations.md`](docs/deprecations.md).
 - **`sources.get()` / `artifacts.get()` / `notes.get()` returning `None` for a
   missing entity is deprecated.** These three methods now emit a
   `DeprecationWarning` on a miss while **still returning `None`** (behavior is
