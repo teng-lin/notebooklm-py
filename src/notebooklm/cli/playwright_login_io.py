@@ -35,6 +35,7 @@ from .error_handler import exit_with_code
 from .rendering import console
 from .runtime import run_async
 from .services.playwright_login import (
+    PathError,
     PlaywrightLoginPlan,
     prepare_login_paths,
     repair_playwright_account_metadata,
@@ -117,16 +118,16 @@ def prepare_paths_or_exit(
     command handler is unchanged.
     """
     outcome = prepare_login_paths(profile, storage, fresh)
-    # Import here to keep the runtime dependency narrow; PathError/PreparedPaths
-    # are service-owned dataclasses.
-    from .services.playwright_login import PathError
-
     if isinstance(outcome, PathError):
         console.print(outcome.message)
         exit_with_code(1)
-    if outcome.fresh_cleared:
-        console.print("[yellow]Cleared cached browser session (--fresh)[/yellow]")
-    return outcome.storage_path, outcome.browser_profile
+    else:
+        # ``outcome`` is narrowed to ``PreparedPaths`` here. The ``else`` is
+        # explicit so the narrowing does not rely on every tool recognising
+        # ``exit_with_code`` as ``NoReturn``.
+        if outcome.fresh_cleared:
+            console.print("[yellow]Cleared cached browser session (--fresh)[/yellow]")
+        return outcome.storage_path, outcome.browser_profile
 
 
 def run_login(plan: PlaywrightLoginPlan) -> None:
