@@ -292,7 +292,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a derived read that does not police parent existence) — previously `kind=None`
   raised on an unknown id. Shape-drift in the interactive payload still raises
   `UnknownRPCMethodError` (ADR-019; issues #1291, #1346).
-- `client.mind_maps.generate(kind=INTERACTIVE)` now raises
+- `client.mind_maps.generate(kind=MindMapKind.INTERACTIVE)` now raises
   `ArtifactFeatureUnavailableError` (instead of a bare `ArtifactError`) when the
   `CREATE_ARTIFACT` call returns no artifact id — no generation task was
   created. **Non-breaking for `except ArtifactError`**:
@@ -305,8 +305,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented two pre-existing `client.mind_maps` read semantics (docs-only, no
   behavior change): `list()` populates `MindMap.tree` only for note-backed
   entries — interactive entries carry `tree=None` ("not fetched", not "empty";
-  call `get_tree(..., kind=INTERACTIVE)` to fetch one); and the explicit
-  `get_tree(..., kind=INTERACTIVE)` path delegates absence detection to the RPC,
+  call `get_tree(..., kind=MindMapKind.INTERACTIVE)` to fetch one); and the explicit
+  `get_tree(..., kind=MindMapKind.INTERACTIVE)` path delegates absence detection to the RPC,
   so a missing id's value is server-dependent (returns `None` today) rather than
   enforced client-side (issues #1355, #1359).
 - **`ResearchAPI.wait_for_completion(interval=...)` → `initial_interval=...`.**
