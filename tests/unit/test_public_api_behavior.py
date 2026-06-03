@@ -285,12 +285,27 @@ class TestGetMissContract:
         """
         api = _build_missing(case)
         if case.get_warns:
-            # Warn-runway: a DeprecationWarning fires AND None comes back. The
-            # ``match`` ties the warning to *this* namespace's *NotFoundError, so
-            # a wrong-resource warning (the #1358-class bug) is caught too.
-            with pytest.warns(DeprecationWarning, match=case.not_found_error.__name__):
+            # Warn-runway: a DeprecationWarning fires AND None comes back.
+            with pytest.warns(DeprecationWarning) as record:
                 result = await api.get(*case.get_args)  # type: ignore[attr-defined]
             assert result is None, f"{case.namespace}.get must return None on a miss (warn-runway)"
+            # Tie the warning to *this* namespace's resource, not just any
+            # DeprecationWarning: the message must name both ``<resource>s.get()``
+            # and the matching ``*NotFoundError``. This is what catches the exact
+            # #1358-class bug — a get() that warns, but with the wrong resource
+            # (e.g. mind_maps emitting the source warning) — which a bare
+            # ``pytest.warns(DeprecationWarning)`` would wave through.
+            assert len(record) == 1, (
+                f"{case.namespace}.get must emit exactly one DeprecationWarning on a miss"
+            )
+            message = str(record[0].message)
+            assert f"{case.resource}s.get()" in message, (
+                f"{case.namespace}.get warning must name '{case.resource}s.get()'; got: {message!r}"
+            )
+            assert case.not_found_error.__name__ in message, (
+                f"{case.namespace}.get warning must name {case.not_found_error.__name__}; "
+                f"got: {message!r}"
+            )
         else:
             # Post-flip: a miss raises the namespace's *NotFoundError, and no
             # DeprecationWarning may fire on the raising path.
