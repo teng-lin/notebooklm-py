@@ -82,6 +82,9 @@ from notebooklm.exceptions import (
 
 
 def _make_sources_api() -> SourcesAPI:
+    # No ``make_fake_core`` here: ``_arrange_list_miss`` overrides ``api.list``
+    # before any RPC path is reached, so the first positional collaborator is
+    # never called (matches how ``test_get_or_none.py`` builds its sources API).
     return SourcesAPI(MagicMock(), uploader=MagicMock())
 
 
@@ -167,7 +170,10 @@ class LookupCase:
         factory: Builds the backing API via constructor injection only.
         arrange_miss: Configures the built instance to yield a genuine miss.
         get_args: Positional args for ``get`` / ``get_or_none`` (per-arity).
-        resource: Resource name (only used to make failures self-describing).
+        resource: Singular resource name. Load-bearing in the warn-runway
+            assertion: the miss warning must name ``<resource>s.get()``, which is
+            what distinguishes a correct warning from a *wrong-resource* one
+            (the exact #1358-class bug). Also makes failures self-describing.
         not_found_error: The ``*NotFoundError`` ``get`` raises **after** the
             #1247 flip; asserted today only for already-flipped rows.
         get_warns: ``True`` while ``get`` is in the warn-runway (warns + returns
