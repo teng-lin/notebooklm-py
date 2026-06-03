@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from notebooklm import Source, SourceStatus
+from notebooklm import Source, SourceGuide, SourceStatus
 
 from .conftest import requires_auth
 
@@ -103,14 +103,14 @@ class TestSourceRetrieval:
             pytest.skip("No sources available for guide")
 
         guide = await client.sources.get_guide(read_only_notebook_id, sources[0].id)
-        # get_guide returns dict with summary and keywords
-        assert isinstance(guide, dict)
-        assert "summary" in guide
-        assert "keywords" in guide
+        # get_guide returns a SourceGuide dataclass (#1209). Use attribute access,
+        # which is forward-compatible with v0.8.0 (it removes the deprecated
+        # dict-subscript MappingCompat bridge — guide["summary"] — per #1251).
+        assert isinstance(guide, SourceGuide)
         # Verify values are actually populated (not empty due to parsing bugs)
-        assert guide["summary"], "Expected non-empty summary from source guide"
-        assert isinstance(guide["keywords"], list)
-        assert len(guide["keywords"]) > 0, "Expected non-empty keywords from source guide"
+        assert guide.summary, "Expected non-empty summary from source guide"
+        assert isinstance(guide.keywords, tuple)
+        assert len(guide.keywords) > 0, "Expected non-empty keywords from source guide"
 
 
 @requires_auth
