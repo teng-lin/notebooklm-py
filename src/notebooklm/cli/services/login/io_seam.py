@@ -20,11 +20,18 @@ import time, so:
   ``cli`` package) gets the real ``console.print`` / ``exit_with_code`` /
   ``run_async`` sink with byte-for-byte-identical behavior.
 * Service entry points call :func:`resolve_login_io` to accept an explicit
-  injected sink (preferred) or fall back to the registered default factory.
+  injected sink (preferred) or fall back to the default factory. When no sink is
+  injected and no factory has been registered yet (a sink-resolving entry point
+  reached on a path that never imported the command layer — e.g. a bare
+  ``_sync_server_language_to_config()`` call, or a library consumer that
+  imported only ``cli.services.login``), the resolver registers the
+  command-layer default lazily so it never raises and behavior stays the
+  historical default (#1393).
 
 No forbidden ``...rendering`` / ``...error_handler`` / ``...runtime`` import
 lives in this module or any of its peers — the concrete sink that *does* import
-them lives in the (unscanned) command layer.
+them lives in the (unscanned) command layer, which this module pulls in only
+lazily, on the fallback path.
 """
 
 from __future__ import annotations
@@ -74,26 +81,52 @@ def set_default_login_io_factory(factory: Callable[[], LoginIO]) -> None:
     _default_io_factory = factory
 
 
+def _ensure_default_factory_registered() -> None:
+    """Lazily trigger the command-layer default-sink registration.
+
+    Importing :mod:`notebooklm.cli.playwright_login_io` registers the concrete
+    default factory as an import side effect (it calls
+    :func:`set_default_login_io_factory`). Some login flows resolve the sink
+    without going through a driver that already forced that import (e.g. a
+    direct ``_sync_server_language_to_config()`` call, or a library consumer
+    that imported only ``cli.services.login``). Triggering the import here makes
+    :func:`resolve_login_io` robust on every path while keeping the *static*
+    dependency direction clean: this module never imports the command layer at
+    module scope, and the only thing it pulls in is the ADR-0008 sink module
+    (not a presentation / exit / runtime module). Idempotent — once registered,
+    the re-import is a no-op.
+    """
+    # ``...playwright_login_io`` is the command-layer sink module (the ADR-0008
+    # seam), not ``...rendering`` / ``...error_handler`` / ``...runtime``; the
+    # services-boundary scanner permits it. Kept lazy + local so it only fires
+    # on the fallback path. Register ``make_login_io`` explicitly rather than
+    # relying solely on the import side effect, so this self-heals even when the
+    # module was already imported (its import-time registration won't re-run).
+    from ...playwright_login_io import make_login_io
+
+    set_default_login_io_factory(make_login_io)
+
+
 def resolve_login_io(io: LoginIO | None) -> LoginIO:
-    """Return ``io`` if given, else build one from the registered default factory.
+    """Return ``io`` if given, else build one from the default factory.
 
     Service entry points call this so callers may inject a sink explicitly
-    (the preferred shape) while direct callers — and tests that exercise the
-    service through the command layer — still get the real console/exit/async
-    behavior via the factory the command layer registered.
-
-    Raises:
-        RuntimeError: when no sink was injected and no default factory has been
-            registered (i.e. the command layer was never imported). This is a
-            wiring bug, not a user-facing error.
+    (the preferred shape) while direct callers — and tests / library consumers
+    that exercise the service without injecting a sink — still get the real
+    console/exit/async behavior. When no factory has been registered yet (the
+    command layer was never imported on this path), the command-layer default
+    is registered lazily via :func:`_ensure_default_factory_registered` so the
+    resolver never raises and behavior is byte-for-byte the historical default.
     """
     if io is not None:
         return io
+    if _default_io_factory is None:
+        _ensure_default_factory_registered()
     if _default_io_factory is None:  # pragma: no cover - defensive wiring guard
         raise RuntimeError(
-            "No LoginIO sink injected and no default factory registered. "
-            "Import notebooklm.cli.playwright_login_io (the command layer "
-            "registers the default sink) or pass an explicit io= sink."
+            "No LoginIO sink injected and the command-layer default sink could "
+            "not be registered (notebooklm.cli.playwright_login_io import had no "
+            "effect). Pass an explicit io= sink."
         )
     return _default_io_factory()
 
