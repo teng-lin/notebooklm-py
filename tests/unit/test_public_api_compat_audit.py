@@ -204,6 +204,21 @@ def test_collect_manifest_captures_return_annotation(script):
     assert delete["return_annotation"] == "None"
 
 
+def test_collect_manifest_canonicalizes_pep563_return_annotation(script):
+    # ``_mind_maps_api`` uses ``from __future__ import annotations`` (PEP 563),
+    # so ``mind_maps.get -> MindMap | None`` arrives as a bare string. The
+    # collector must resolve it against the owning module's globals to the
+    # fully-qualified form, otherwise a module flipping its PEP 563 status would
+    # surface a spurious ``changed-return``.
+    manifest = script.collect_manifest(REPO_ROOT)
+    members = manifest["modules"]["notebooklm"]["exports"]["NotebookLMClient"]["members"]
+
+    assert (
+        members["mind_maps.get"]["signature"]["return_annotation"]
+        == "notebooklm.types.MindMap | None"
+    )
+
+
 def test_collect_manifest_preserves_defaulted_dataclass_fields(script):
     manifest = script.collect_manifest(REPO_ROOT)
     members = manifest["modules"]["notebooklm"]["exports"]["GenerationStatus"]["members"]

@@ -127,6 +127,7 @@ import inspect
 import json
 import pathlib
 import sys
+import typing
 import warnings
 
 ROOT = pathlib.Path(sys.argv[1]).resolve()
@@ -152,14 +153,33 @@ def discover_modules() -> list[str]:
     return sorted(modules)
 
 
-def annotation_repr(annotation):
+class _ReturnProbe:
+    # Tiny carrier so typing.get_type_hints can resolve a lone return string.
+    def __init__(self, annotation):
+        self.__annotations__ = {"return": annotation}
+
+
+def annotation_repr(annotation, obj=None):
     if annotation is inspect.Signature.empty:
         return None
     # `from __future__ import annotations` (PEP 563) yields string annotations
-    # already; non-postponed modules yield live objects. Normalize both to a
-    # stable, process-comparable text form.
+    # already; non-postponed modules yield live objects. Resolve string
+    # annotations against the owning module's globals so the captured form is
+    # canonical regardless of a module's PEP 563 status (a transition would
+    # otherwise flip e.g. 'MindMap' <-> 'notebooklm.types.MindMap' and surface a
+    # spurious changed-return). Fall back to the raw string when resolution
+    # fails (e.g. TYPE_CHECKING-only names).
     if isinstance(annotation, str):
-        return annotation
+        module_name = getattr(obj, "__module__", None)
+        module = sys.modules.get(module_name) if module_name else None
+        if module is None:
+            return annotation
+        try:
+            annotation = typing.get_type_hints(
+                _ReturnProbe(annotation), globalns=vars(module)
+            )["return"]
+        except Exception:
+            return annotation
     return inspect.formatannotation(annotation)
 
 
@@ -183,7 +203,7 @@ def signature_payload(obj):
     return {
         "text": str(sig),
         "parameters": params,
-        "return_annotation": annotation_repr(sig.return_annotation),
+        "return_annotation": annotation_repr(sig.return_annotation, obj),
     }
 
 
