@@ -248,9 +248,12 @@ class Artifact:
             # Title is at position [4]
             if len(inner) > 4 and isinstance(inner[4], str):
                 title = inner[4]
-            # Timestamp is at [2][2][0]
-            if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 2:
-                ts_data = inner[2][2]
+            # Timestamp is at [2][2][0]. Bind the ``[2]`` metadata block first so
+            # the ``[2]`` descent into it is a single-level index, not a chained
+            # ``inner[2][2]`` (an absent block legitimately leaves created_at None).
+            metadata_block = inner[2] if len(inner) > 2 and isinstance(inner[2], list) else None
+            if metadata_block is not None and len(metadata_block) > 2:
+                ts_data = metadata_block[2]
                 if isinstance(ts_data, list) and len(ts_data) > 0:
                     created_at = _datetime_from_timestamp(ts_data[0])
 

@@ -170,7 +170,6 @@ def test_representative_public_dataclasses_pickle_round_trip():
         ConnectionLimits,
         ConversationTurn,
         GenerationStatus,
-        Note,
         Notebook,
         NotebookDescription,
         NotebookMetadata,
@@ -1499,43 +1498,6 @@ class TestReportSuggestion:
 
         assert suggestion.title == ""
         assert suggestion.audience_level == 2
-
-
-class TestNote:
-    def test_from_api_response(self):
-        """Test parsing Note."""
-        data = ["note_123", "Note Title", "Note content here"]
-        note = Note.from_api_response(data, "nb_123")
-
-        assert note.id == "note_123"
-        assert note.notebook_id == "nb_123"
-        assert note.title == "Note Title"
-        assert note.content == "Note content here"
-
-    def test_from_api_response_with_timestamp(self):
-        """Test parsing Note with timestamp."""
-        ts = 1704067200
-        data = ["note_123", "Title", "Content", [ts]]
-        note = Note.from_api_response(data, "nb_123")
-
-        assert note.created_at is not None
-        assert note.created_at.timestamp() == ts
-
-    def test_from_api_response_out_of_range_timestamp(self):
-        """Note timestamp range errors should produce None rather than raising."""
-        data = ["note_123", "Title", "Content", [float("inf")]]
-        note = Note.from_api_response(data, "nb_123")
-
-        assert note.created_at is None
-
-    def test_from_api_response_empty(self):
-        """Test parsing with minimal data."""
-        data = []
-        note = Note.from_api_response(data, "nb_123")
-
-        assert note.id == ""
-        assert note.title == ""
-        assert note.content == ""
 
 
 class TestChatMode:

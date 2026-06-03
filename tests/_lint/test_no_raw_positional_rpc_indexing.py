@@ -50,30 +50,15 @@ SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
 # positional RPC payloads: the RPC protocol layer and the typed row adapters.
 SANCTIONED_PACKAGES = frozenset({"rpc", "_row_adapters"})
 
-# Baseline of feature files that currently open-code chained positional descent
-# into RPC payloads (issue #1377). The follow-up burndown (#1389) migrates each
-# behind ``_row_adapters/`` + ``safe_index`` and removes it from this list; a
-# removed file is then re-protected by the gate. Keep this list sorted; entries
-# are ``Path``-relative-to-``src/notebooklm`` in posix form.
+# Baseline of feature files that open-code chained positional descent into RPC
+# payloads (issue #1377). The burndown (#1389) migrated every baselined file
+# behind ``_row_adapters/`` + ``safe_index`` (or bound the already-guarded inner
+# list to a named local so each leaf read is a single-level index), so the list
+# is now EMPTY and the gate re-protects the whole feature tree.
 #
 # DO NOT add new entries to grow the debt -- a new offender means new code that
 # should decode through ``safe_index`` / a row adapter instead.
-ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "_artifact/listing.py",
-        "_artifacts.py",
-        "_chat/wire.py",
-        "_mind_maps_api.py",
-        "_note_service.py",
-        "_research.py",
-        "_research_task_parser.py",
-        "_source/content.py",
-        "_types/artifacts.py",
-        "_types/notebooks.py",
-        "_types/notes.py",
-        "_types/sharing.py",
-    }
-)
+ALLOWLIST: frozenset[str] = frozenset()
 
 
 def _is_int_literal(node: ast.expr) -> bool:

@@ -37,10 +37,20 @@ class SourceContentRenderer:
             if isinstance(outer, list) and len(outer) > 0:
                 inner = outer[0]
                 if isinstance(inner, list):
-                    if len(inner) > 1 and isinstance(inner[1], list) and len(inner[1]) > 0:
-                        summary = inner[1][0] if isinstance(inner[1][0], str) else ""
-                    if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
-                        keywords = inner[2][0] if isinstance(inner[2][0], list) else []
+                    # Bind the ``[1]`` summary block and ``[2]`` keywords block to
+                    # locals so each leaf read is a single-level index rather than
+                    # a chained ``inner[1][0]`` / ``inner[2][0]`` descent. Absent
+                    # blocks legitimately leave summary/keywords at their defaults.
+                    summary_block = (
+                        inner[1] if len(inner) > 1 and isinstance(inner[1], list) else []
+                    )
+                    if summary_block:
+                        summary = summary_block[0] if isinstance(summary_block[0], str) else ""
+                    keyword_block = (
+                        inner[2] if len(inner) > 2 and isinstance(inner[2], list) else []
+                    )
+                    if keyword_block:
+                        keywords = keyword_block[0] if isinstance(keyword_block[0], list) else []
 
         return SourceGuide(summary=summary, keywords=tuple(keywords))
 
@@ -81,19 +91,27 @@ class SourceContentRenderer:
         url = None
         content = ""
 
-        if isinstance(result[0], list) and len(result[0]) > 1:
-            title = result[0][1] if isinstance(result[0][1], str) else ""
+        # ``result[0]`` is the source-descriptor row; bind it so the title and
+        # metadata reads are single-level indices instead of chained
+        # ``result[0][1]`` / ``result[0][2]`` descents.
+        descriptor = result[0]
+        if isinstance(descriptor, list) and len(descriptor) > 1:
+            title = descriptor[1] if isinstance(descriptor[1], str) else ""
 
-            if len(result[0]) > 2 and isinstance(result[0][2], list):
-                metadata = result[0][2]
+            if len(descriptor) > 2 and isinstance(descriptor[2], list):
+                metadata = descriptor[2]
                 if len(metadata) > 4:
                     source_type = metadata[4]
                 url = _extract_source_url(metadata, allow_bare_http=False)
 
         if output_format == "markdown":
             html_content = None
-            if len(result) > 4 and isinstance(result[4], list) and len(result[4]) > 1:
-                candidate = result[4][1]
+            # ``result[4]`` is the HTML-rendition block; bind it so the candidate
+            # read is a single-level ``html_block[1]`` index. An absent block
+            # legitimately means "no markdown rendition" (warned + empty below).
+            html_block = result[4] if len(result) > 4 and isinstance(result[4], list) else None
+            if html_block is not None and len(html_block) > 1:
+                candidate = html_block[1]
                 if isinstance(candidate, str):
                     html_content = candidate
             if html_content is not None:
@@ -106,8 +124,12 @@ class SourceContentRenderer:
                     source_type,
                 )
         else:
-            if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
-                content_blocks = result[3][0]
+            # ``result[3]`` is the text-content block; bind it so the blocks read
+            # is a single-level ``text_block[0]`` index. An absent block
+            # legitimately means "no text content" (empty content + warning).
+            text_block = result[3] if len(result) > 3 and isinstance(result[3], list) else None
+            if text_block:
+                content_blocks = text_block[0]
                 if isinstance(content_blocks, list):
                     texts = self.extract_all_text(content_blocks)
                     content = "\n".join(texts)

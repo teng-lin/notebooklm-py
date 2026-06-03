@@ -63,6 +63,16 @@
       "reason": "v0.3-era deprecation completed in v0.5.0; replacement is SourceFulltext.kind."
     },
     {
+      "code": "removed-member",
+      "object": "notebooklm.Note.from_api_response",
+      "reason": "Dead positional parser removed (#1389). Note rows are decoded through notebooklm._row_adapters.notes.NoteRow; the classmethod had no production callers (only test_types.py exercised it). Construct Note(...) directly from NoteRow's named properties — see NotesAPI._parse_note."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.Note.from_api_response",
+      "reason": "Same break as notebooklm.Note.from_api_response above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
       "code": "changed-signature",
       "object": "notebooklm.NotebookLMClient.artifacts.generate_audio",
       "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."

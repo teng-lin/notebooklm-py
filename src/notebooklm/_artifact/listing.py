@@ -101,13 +101,16 @@ class ArtifactListingService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if (
-            isinstance(result, list)
-            and len(result) == 1
-            and isinstance(result[0], list)
-            and (not result[0] or isinstance(result[0][0], list))
-        ):
-            return result[0]
+        # LIST_ARTIFACTS returns either a wrapped single-element envelope
+        # (``[[row1, row2, ...]]``) or an already-flat list of rows. Bind the
+        # inner element once so the wrap probe reads ``inner[0]`` (single-level)
+        # instead of a chained ``result[0][0]`` descent. The wrapped case is
+        # detected by a single outer element whose first inner element is itself
+        # a list (a row); an empty inner list is also treated as wrapped.
+        if isinstance(result, list) and len(result) == 1 and isinstance(result[0], list):
+            inner = result[0]
+            if not inner or isinstance(inner[0], list):
+                return inner
         if isinstance(result, list):
             return result
         return []

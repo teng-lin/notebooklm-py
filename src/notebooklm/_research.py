@@ -713,18 +713,18 @@ class ResearchAPI:
 
         imported = []
         if result and isinstance(result, list):
-            if (
-                len(result) > 0
-                and isinstance(result[0], list)
-                and len(result[0]) > 0
-                and isinstance(result[0][0], list)
-            ):
-                result = result[0]
+            # Unwrap an ``[[src1, ...]]`` envelope via ``first[0]`` (not chained).
+            if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 0:
+                first = result[0]
+                if isinstance(first[0], list):
+                    result = first
 
             for src_data in result:
                 if isinstance(src_data, list) and len(src_data) >= 2:
+                    # Absent/non-list id envelope legitimately means "skip" (id None).
+                    id_envelope = src_data[0]
                     src_id = (
-                        src_data[0][0] if src_data[0] and isinstance(src_data[0], list) else None
+                        id_envelope[0] if id_envelope and isinstance(id_envelope, list) else None
                     )
                     if src_id:
                         imported.append({"id": src_id, "title": src_data[1]})

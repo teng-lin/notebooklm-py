@@ -157,13 +157,14 @@ class NoteService:
             return False
         if isinstance(item[0], str):
             return True
-        return (
-            item[0] is None
-            and len(item) > 1
-            and isinstance(item[1], list)
-            and len(item[1]) > 0
-            and isinstance(item[1][0], str)
-        )
+        # ``[None, [id, ...], ...]`` shape: bind the ``[1]`` nested row so the
+        # id-type check is a single-level ``nested[0]`` index instead of a
+        # chained ``item[1][0]`` descent. A non-list/empty nested row simply
+        # means "not a note row" (returns False).
+        if item[0] is not None or len(item) <= 1:
+            return False
+        nested = item[1]
+        return isinstance(nested, list) and len(nested) > 0 and isinstance(nested[0], str)
 
     def classify_row(self, row: list[Any]) -> NoteRowKind:
         """Identify what kind of row this is.
@@ -252,10 +253,15 @@ class NoteService:
 
         note_id: str | None = None
         if result and isinstance(result, list) and len(result) > 0:
-            if isinstance(result[0], list) and len(result[0]) > 0:
-                note_id = result[0][0]
-            elif isinstance(result[0], str):
-                note_id = result[0]
+            # CREATE_NOTE returns either ``[[id, ...], ...]`` (id-envelope row) or
+            # a bare ``[id, ...]``. Bind the first element so the id read is a
+            # single-level index rather than a chained ``result[0][0]`` descent;
+            # a degenerate shape leaves note_id None and raises below.
+            first = result[0]
+            if isinstance(first, list) and len(first) > 0:
+                note_id = first[0]
+            elif isinstance(first, str):
+                note_id = first
 
         if not note_id:
             # CREATE_NOTE returned a payload we cannot extract a note id

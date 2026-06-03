@@ -368,21 +368,22 @@ def _extract_chunk_with_parseable(
                 if not isinstance(text, str) or not text:
                     continue
 
-                is_answer = (
-                    len(first) > 4
-                    and isinstance(first[4], list)
-                    and len(first[4]) > 0
-                    and first[4][-1] == 1
-                )
+                # ``first[4]`` is the optional type/flags block; its trailing
+                # element being ``1`` marks an answer record. Bind it so the flag
+                # read is a single-level ``type_block[-1]`` index rather than a
+                # chained ``first[4][-1]`` descent. An absent block legitimately
+                # means "not an answer" (non-answer records carry no type block).
+                type_block = first[4] if len(first) > 4 and isinstance(first[4], list) else None
+                is_answer = type_block is not None and len(type_block) > 0 and type_block[-1] == 1
 
+                # ``first[2]`` is the optional server-conversation-id block; bind
+                # it so the id read is a single-level ``conv_block[0]`` index
+                # rather than a chained ``first[2][0]`` descent. An absent/empty
+                # block legitimately means "no server conversation id present".
                 server_conv_id: str | None = None
-                if (
-                    len(first) > 2
-                    and isinstance(first[2], list)
-                    and first[2]
-                    and isinstance(first[2][0], str)
-                ):
-                    server_conv_id = first[2][0]
+                conv_block = first[2] if len(first) > 2 and isinstance(first[2], list) else None
+                if conv_block and isinstance(conv_block[0], str):
+                    server_conv_id = conv_block[0]
 
                 refs = parse_citations(first)
                 return text, is_answer, refs, server_conv_id, parseable
@@ -484,9 +485,14 @@ def parse_single_citation(cite: Any) -> ChatReference | None:
     if source_id is None:
         return None
 
+    # ``cite[0]`` is the optional chunk-id block; bind it so the id read is a
+    # single-level ``chunk_block[0]`` index rather than a chained ``cite[0][0]``
+    # descent. An absent/empty block legitimately means "no chunk id" (the
+    # citation is kept; chunk_id stays None).
     chunk_id = None
-    if isinstance(cite[0], list) and cite[0]:
-        first_item = cite[0][0]
+    chunk_block = cite[0]
+    if isinstance(chunk_block, list) and chunk_block:
+        first_item = chunk_block[0]
         if isinstance(first_item, str):
             chunk_id = first_item
 

@@ -185,19 +185,25 @@ def _parse_source_row(
     # src[3] is the authoritative result_type when present.
     result_type = parse_result_type(src[3]) if len(src) > 3 else RESEARCH_RESULT_TYPE_WEB
     if src[0] is None and len(src) > 1:
+        # Deep-research (current) packs ``[title, report_markdown]`` at ``src[1]``.
+        # Bind it once so the title/report reads are single-level ``payload[0]`` /
+        # ``payload[1]`` indices instead of chained ``src[1][0]`` / ``src[1][1]``
+        # descents; the legitimate alternatives (bare-string title, or neither)
+        # fall through to the elif / outer branches below.
+        payload = src[1]
         if (
-            isinstance(src[1], list)
-            and len(src[1]) >= 2
-            and isinstance(src[1][0], str)
-            and isinstance(src[1][1], str)
+            isinstance(payload, list)
+            and len(payload) >= 2
+            and isinstance(payload[0], str)
+            and isinstance(payload[1], str)
         ):
-            title = src[1][0]
-            source_report = src[1][1]
+            title = payload[0]
+            source_report = payload[1]
             url = ""
             if result_type == RESEARCH_RESULT_TYPE_WEB:
                 result_type = RESEARCH_RESULT_TYPE_REPORT
-        elif isinstance(src[1], str):
-            title = src[1]
+        elif isinstance(payload, str):
+            title = payload
             url = ""
             if result_type == RESEARCH_RESULT_TYPE_WEB:
                 result_type = RESEARCH_RESULT_TYPE_REPORT
@@ -226,8 +232,12 @@ def _parse_source_row(
 def _unwrap_poll_result(result: Any) -> list[Any]:
     if not result or not isinstance(result, list):
         return []
-    if isinstance(result[0], list) and len(result[0]) > 0 and isinstance(result[0][0], list):
-        return result[0]
+    # POLL_RESEARCH returns either a wrapped envelope (``[[task1, ...]]``) or an
+    # already-flat list of tasks. Bind the first element so the wrap probe reads
+    # ``first[0]`` (single-level) instead of a chained ``result[0][0]`` descent.
+    first = result[0]
+    if isinstance(first, list) and len(first) > 0 and isinstance(first[0], list):
+        return first
     return result
 
 

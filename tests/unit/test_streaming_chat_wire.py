@@ -440,6 +440,39 @@ def test_missing_and_malformed_citation_shapes_degrade_without_raising() -> None
     assert texts == []
 
 
+def test_parse_single_citation_chunk_id_absent_keeps_citation_with_none_chunk() -> None:
+    """An absent/empty/non-list chunk-id block legitimately yields ``chunk_id=None``.
+
+    Regression guard for the #1389 ``chunk_block = cite[0]`` migration: the
+    chunk-id slot is optional, so a missing or malformed leading block must NOT
+    drop the citation — it keeps the reference and leaves ``chunk_id`` ``None``.
+    """
+    source_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    base = _citation(source_id=source_id)
+    cite_inner = base[1]
+
+    # Empty chunk-id block: present-but-empty list -> chunk_id stays None.
+    empty_block = parse_single_citation([[], cite_inner])
+    assert empty_block is not None
+    assert empty_block.source_id == source_id
+    assert empty_block.chunk_id is None
+
+    # Non-list chunk-id block: still a valid citation, chunk_id None.
+    non_list_block = parse_single_citation([None, cite_inner])
+    assert non_list_block is not None
+    assert non_list_block.chunk_id is None
+
+    # Non-string leading element inside the block -> chunk_id None.
+    non_str_leaf = parse_single_citation([[123], cite_inner])
+    assert non_str_leaf is not None
+    assert non_str_leaf.chunk_id is None
+
+    # Sanity: the well-formed block still populates chunk_id (migration intact).
+    populated = parse_single_citation(base)
+    assert populated is not None
+    assert populated.chunk_id == "chunk-1"
+
+
 def test_uuid_max_recursion_logs_under_chat_logger(caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="notebooklm._chat"):
         result = extract_uuid_from_nested([["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"]], max_depth=0)

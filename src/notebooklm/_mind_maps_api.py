@@ -126,15 +126,18 @@ def _parse_tree(content: Any) -> dict[str, Any] | None:
 
 
 def _new_artifact_id(create_response: Any) -> str | None:
-    """Pull the new artifact id out of a ``CREATE_ARTIFACT`` response (``[[id, …]]``)."""
-    if (
-        isinstance(create_response, list)
-        and create_response
-        and isinstance(create_response[0], list)
-        and create_response[0]
-        and isinstance(create_response[0][0], str)
-    ):
-        return create_response[0][0]
+    """Pull the new artifact id out of a ``CREATE_ARTIFACT`` response (``[[id, …]]``).
+
+    Returns ``None`` for a null/degenerate response (no generation task created);
+    the caller turns that into ``ArtifactFeatureUnavailableError``. Bind the inner
+    row to a local so the id read is a single-level ``inner[0]`` index rather than
+    a chained ``create_response[0][0]`` descent.
+    """
+    if not isinstance(create_response, list) or not create_response:
+        return None
+    inner = create_response[0]
+    if isinstance(inner, list) and inner and isinstance(inner[0], str):
+        return inner[0]
     return None
 
 

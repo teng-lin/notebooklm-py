@@ -71,10 +71,14 @@ class ShareStatus:
                 if isinstance(user_data, list):
                     users.append(SharedUser.from_api_response(user_data))
 
-        # Parse is_public from [1]
+        # Parse is_public from [1]. Bind the ``[is_public]`` block to a local so
+        # the flag read is a single-level index rather than a chained
+        # ``data[1][0]`` descent; an absent/empty block legitimately means
+        # "not public".
         is_public = False
-        if len(data) > 1 and isinstance(data[1], list) and data[1]:
-            is_public = bool(data[1][0])
+        public_block = data[1] if len(data) > 1 and isinstance(data[1], list) else None
+        if public_block:
+            is_public = bool(public_block[0])
 
         access = ShareAccess.ANYONE_WITH_LINK if is_public else ShareAccess.RESTRICTED
 

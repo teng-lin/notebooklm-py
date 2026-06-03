@@ -1195,19 +1195,15 @@ class ArtifactsAPI:
 
         suggestions = []
         if result and isinstance(result, list) and len(result) > 0:
-            # GET_SUGGESTED_REPORTS returns either a wrapped list of rows
-            # (``[[row1, row2, ...]]``) or an already-flat list of rows
-            # (``[row1, row2, ...]``). Only unwrap the wrapped case, detected
-            # by a single outer element whose first inner element is itself a
-            # list (a row). Unwrapping the flat case would mistake the first
-            # row's scalar fields for the suggestion rows and return nothing.
+            # GET_SUGGESTED_REPORTS returns a wrapped ``[[row1, ...]]`` envelope or an
+            # already-flat ``[row1, ...]``; only unwrap the wrapped case (single outer
+            # element whose first inner element is itself a row). Bind ``inner`` so the
+            # wrap probe is ``inner[0]`` not chained ``result[0][0]``.
             items = result
-            if (
-                len(result) == 1
-                and isinstance(result[0], list)
-                and (not result[0] or isinstance(result[0][0], list))
-            ):
-                items = result[0]
+            if len(result) == 1 and isinstance(result[0], list):
+                inner = result[0]
+                if not inner or isinstance(inner[0], list):
+                    items = inner
             for item in items:
                 if isinstance(item, list) and len(item) >= 5:
                     suggestions.append(
@@ -1233,7 +1229,11 @@ class ArtifactsAPI:
         null_result_artifact_type: str | None = None,
     ) -> GenerationStatus:
         """Make a generation RPC call with error handling."""
-        artifact_type = params[2][2] if len(params) > 2 and len(params[2]) > 2 else "unknown"
+        # Best-effort debug label via single-level ``descriptor[2]`` (not chained).
+        descriptor = params[2] if len(params) > 2 else None
+        artifact_type = (
+            descriptor[2] if isinstance(descriptor, list) and len(descriptor) > 2 else "unknown"
+        )
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         try:
             # CREATE_ARTIFACT is classified PROBE_THEN_CREATE in

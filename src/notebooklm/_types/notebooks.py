@@ -51,16 +51,21 @@ class Notebook:
         sources_count = _extract_notebook_sources_count(data)
         notebook_id = data[2] if len(data) > 2 and isinstance(data[2], str) else ""
 
+        # ``data[5]`` is the metadata block; bind it once so the timestamp and
+        # owner-flag descents read a single named local instead of re-chaining
+        # ``data[5][...]`` (the legitimately-absent block defaults below).
+        meta = data[5] if len(data) > 5 and isinstance(data[5], list) else None
+
         created_at = None
-        if len(data) > 5 and isinstance(data[5], list) and len(data[5]) > 5:
-            ts_data = data[5][5]
+        if meta is not None and len(meta) > 5:
+            ts_data = meta[5]
             if isinstance(ts_data, list) and len(ts_data) > 0:
                 created_at = _datetime_from_timestamp(ts_data[0])
 
         is_owner = True
-        if len(data) > 5 and isinstance(data[5], list) and len(data[5]) > 1:
+        if meta is not None and len(meta) > 1:
             # The API sends False in this slot for owner notebooks; truthy values mean shared.
-            is_owner = data[5][1] is False
+            is_owner = meta[1] is False
 
         return cls(
             id=notebook_id,
