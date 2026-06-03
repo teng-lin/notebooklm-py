@@ -42,9 +42,16 @@ When the flag is on, these three runways adopt their v0.8.0 behavior:
 | Deprecated keyword alias `ResearchAPI.wait_for_completion(interval=...)` | Warns, aliases to `initial_interval` | Raises `TypeError` (the deprecated keyword is gone) | [#1254](https://github.com/teng-lin/notebooklm-py/issues/1254) |
 
 The flag does **not** close those issues — the runways stay until the v0.8.0 flip
-actually ships; it only lets you preview the target behavior. `get_or_none()` and
-every silent shape-probe (`result.get(...)` / `keys()` / `in` / `iter(...)`) are
-the sanctioned post-flip paths and are **unaffected** by the flag in both modes.
+actually ships; it only lets you preview the target behavior. The flag changes
+only the *deprecated* paths in the table; the sanctioned replacements are
+**unaffected** in both modes: `get_or_none()` stays the silent `None`-on-miss
+lookup, and attribute access (`result.status`, `result.sources`, …) stays the
+warning-free read on the typed dataclasses. Note that the *other*
+`MappingCompatMixin` accessors (`result.get(...)` / `keys()` / `in` / `iter(...)`)
+stay silent **under this flag** — it gates only `__getitem__` — but they are part
+of the mixin and are removed wholesale in v0.8.0 along with subscript; the only
+post-flip read is attribute access. Use them as a temporary migration aid, not a
+target shape.
 
 **Precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`.** When `NOTEBOOKLM_FUTURE_ERRORS`
 is on, a runway **raises regardless of the quiet setting** — quiet only silences

@@ -140,11 +140,21 @@ def _make_notebooks_api() -> NotebooksAPI:
 
 
 def _arrange_list_miss(api: object) -> None:
-    """Force a miss for the four ``list``-scanning namespaces.
+    """Force a miss for the four non-``notebooks`` namespaces.
 
-    ``sources`` / ``artifacts`` / ``notes`` / ``mind_maps`` all resolve a single
-    ``get`` by scanning ``self.list(...)``, so an empty ``list`` is a uniform,
+    ``sources`` / ``artifacts`` / ``mind_maps`` resolve a single ``get`` by
+    scanning ``self.list(...)``, so stubbing ``list`` to ``[]`` is a uniform,
     backend-agnostic miss (the same lever the existing per-namespace tests pull).
+
+    ``notes`` is the exception: ``NotesAPI.get_or_none`` resolves through
+    ``_get_all_notes_and_mind_maps`` → ``fetch_note_rows``, **not** ``self.list``,
+    so the assigned ``api.list`` stub is a harmless no-op for it. The notes miss
+    comes from its factory (``_make_notes_api``) wiring a fake core whose
+    ``rpc_call`` returns a non-list ``MagicMock`` that ``fetch_note_rows``'
+    container-extraction treats as empty — so the ``get`` still misses. Keeping
+    one shared arranger across all four rows is deliberate: it stays a single
+    table lever even though one namespace reaches the empty result by a different
+    internal path.
     """
     api.list = AsyncMock(return_value=[])  # type: ignore[attr-defined]
 
@@ -278,6 +288,11 @@ def _apply_future_errors(request: pytest.FixtureRequest, monkeypatch: pytest.Mon
     *raises* (future-on, or already-flipped) or *warns* (the warn-runway under
     future-off).
     """
+    # Hermetic both ways: the future-off branch asserts a DeprecationWarning
+    # fires, so a parent process exporting NOTEBOOKLM_QUIET_DEPRECATIONS=1 would
+    # otherwise silence the warn path and fail the warn-runway rows. Clear it so
+    # the matrix is independent of the ambient environment.
+    monkeypatch.delenv("NOTEBOOKLM_QUIET_DEPRECATIONS", raising=False)
     future_on: bool = request.param
     if future_on:
         monkeypatch.setenv("NOTEBOOKLM_FUTURE_ERRORS", "1")
