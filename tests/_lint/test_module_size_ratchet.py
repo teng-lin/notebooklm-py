@@ -29,9 +29,9 @@ tracks three concrete splits):
 The ceilings below were *measured*, not estimated. To regenerate them::
 
     python -c "from pathlib import Path; src=Path('src/notebooklm'); \
-        [print(f'{len(p.read_text().splitlines()):>6}  {p.relative_to(src).as_posix()}') \
+        [print(f\"{len(p.read_text(encoding='utf-8').splitlines()):>6}  {p.relative_to(src).as_posix()}\") \
          for p in sorted(src.rglob('*.py')) \
-         if len(p.read_text().splitlines()) > 900]"
+         if len(p.read_text(encoding='utf-8').splitlines()) > 900]"
 
 Line counting uses ``str.splitlines()`` to match the diagnostic in
 ``scripts/audit_test_suite.py`` (``big_files``), so the two never disagree.
