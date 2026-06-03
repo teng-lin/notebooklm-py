@@ -25,12 +25,21 @@ For the canonical deprecation registry (with removal-version pins), see
 
 ## Test your code against 0.8.0 early
 
+> **Availability.** The **`NOTEBOOKLM_FUTURE_ERRORS`** preview flag ships as part
+> of the v0.8.0 program (a dedicated PR under umbrella
+> [#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). Once it lands
+> in a 0.7.x patch, the workflow below works on the 0.7.x line; check the
+> [CHANGELOG](../CHANGELOG.md) / [docs/configuration.md](configuration.md) for
+> the exact patch that introduces it. On a 0.7.x build without the flag, setting
+> it has no effect — fall back to the per-change `DeprecationWarning`s (the
+> ✅ rows in the [summary table](#summary-table)) to drive your migration.
+
 You don't have to wait for the 0.8.0 release to find out whether your code is
-ready. Set the **`NOTEBOOKLM_FUTURE_ERRORS=1`** preview flag and 0.7.0 will
-**raise the v0.8.0 errors today** — `get()` raises `*NotFoundError`, synchronous
-generation refusals raise instead of returning `status="failed"`, mutate-existing
-ops raise on a missing target, and the ambiguous `research.poll` selection raises
-instead of warning. Everything else stays on the 0.7.0 code path.
+ready. Set **`NOTEBOOKLM_FUTURE_ERRORS=1`** and 0.7.x will **raise the v0.8.0
+errors today** — `get()` raises `*NotFoundError`, synchronous generation refusals
+raise instead of returning `status="failed"`, mutate-existing ops raise on a
+missing target, and the ambiguous `research.poll` selection raises instead of
+warning. Everything else stays on the 0.7.x code path.
 
 ```bash
 # Run your test suite (or your app) against v0.8.0 behavior, on 0.7.0:
@@ -164,8 +173,10 @@ print(guide.summary, guide.keywords)            # guide.keywords is a tuple
 
 `ResearchStatus` is a `str` enum, so `result.status == "completed"` keeps
 working. The attributes map one-to-one onto the old keys: `ResearchTask` has
-`.task_id` / `.status` / `.query` / `.sources` / `.summary` / `.report`;
-`ResearchSource` has `.title` / `.url`; `ResearchStart` has `.task_id`;
+`.task_id` / `.status` / `.query` / `.sources` / `.summary` / `.report` /
+`.tasks` (the sibling-tasks tuple from a top-level poll, formerly
+`result["tasks"]`); `ResearchSource` has `.title` / `.url`; `ResearchStart` has
+`.task_id`;
 `MindMapResult` has `.mind_map` / `.note_id`; `SourceGuide` has `.summary` /
 `.keywords`. The types are exported from both `notebooklm` and
 `notebooklm.types`.
@@ -303,9 +314,10 @@ result = await client.research.poll(nb_id)
 
 # AFTER — pass the discriminator from start()
 started = await client.research.start(nb_id, query)
-result = await client.research.poll(nb_id, task_id=started.task_id)
-# ...and likewise:
-result = await client.research.wait_for_completion(nb_id, task_id=started.task_id)
+if started is not None:                            # start() returns ResearchStart | None
+    result = await client.research.poll(nb_id, task_id=started.task_id)
+    # ...and likewise:
+    result = await client.research.wait_for_completion(nb_id, task_id=started.task_id)
 ```
 
 **Breaks in:** v0.8.0.
