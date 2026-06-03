@@ -40,6 +40,7 @@ file is migrated it must be removed from the list (the gate then re-protects it)
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -78,13 +79,15 @@ ALLOWLIST: frozenset[str] = frozenset(
 def _is_int_literal(node: ast.expr) -> bool:
     """True for an integer-literal index, positive or negative.
 
-    Matches a bare ``ast.Constant`` int (``a[3]``) and a negated literal
-    ``ast.UnaryOp(USub, Constant(int))`` (``a[-1]``) -- a negative index is just
-    as positional as a positive one, so the gate must not be sidestepped by
-    ``payload[4][-1]``. ``bool`` subclasses ``int`` in Python; ``True``/``False``
-    indices are excluded so ``flags[True][False]`` is not treated as positional.
+    Matches a bare ``ast.Constant`` int (``a[3]``), a negated literal
+    ``ast.UnaryOp(USub, Constant(int))`` (``a[-1]``), and an explicit unary-plus
+    literal ``ast.UnaryOp(UAdd, Constant(int))`` (``a[+1]``) -- a negative or
+    explicitly-positive index is just as positional as a bare one, so the gate
+    must not be sidestepped by ``payload[4][-1]`` or ``payload[+1][0]``. ``bool``
+    subclasses ``int`` in Python; ``True``/``False`` indices are excluded so
+    ``flags[True][False]`` is not treated as positional.
     """
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
         node = node.operand
     return (
         isinstance(node, ast.Constant)
@@ -112,12 +115,21 @@ def _chained_positional_offenders(tree: ast.AST) -> list[int]:
     return sorted(lines)
 
 
-def _feature_files() -> list[Path]:
-    """All ``src/notebooklm`` Python files outside the sanctioned decoding packages."""
-    return sorted(
-        p
-        for p in SRC_ROOT.rglob("*.py")
-        if p.relative_to(SRC_ROOT).parts[0] not in SANCTIONED_PACKAGES
+@functools.cache
+def _feature_files() -> tuple[Path, ...]:
+    """All ``src/notebooklm`` Python files outside the sanctioned decoding packages.
+
+    Cached: the tree is scanned once per test session (the function takes no
+    args, so :func:`functools.cache` keys on the empty call and the result is
+    shared across the multiple tests that walk the feature tree). Returns a tuple
+    so the cached value cannot be mutated by a caller.
+    """
+    return tuple(
+        sorted(
+            p
+            for p in SRC_ROOT.rglob("*.py")
+            if p.relative_to(SRC_ROOT).parts[0] not in SANCTIONED_PACKAGES
+        )
     )
 
 
@@ -125,8 +137,16 @@ def _rel(path: Path) -> str:
     return path.relative_to(SRC_ROOT).as_posix()
 
 
+@functools.cache
 def _offending_files() -> dict[str, list[int]]:
-    """Map ``rel-path -> offending line numbers`` for every feature file that offends."""
+    """Map ``rel-path -> offending line numbers`` for every feature file that offends.
+
+    Cached: several tests call this, and each call would otherwise re-walk the
+    feature tree and re-parse every module's AST. The function takes no args, so
+    :func:`functools.cache` memoises the single whole-tree scan and the parse
+    work happens exactly once per session. (Callers treat the result as
+    read-only.)
+    """
     offenders: dict[str, list[int]] = {}
     for path in _feature_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -187,7 +207,9 @@ def test_detector_flags_chained_descent() -> None:
     """The detector flags two-and-three-deep integer-literal descent.
 
     Both positive and *negative* literal indices count -- ``payload[4][-1]`` is
-    just as positional as ``payload[4][3]`` and must not sidestep the gate.
+    just as positional as ``payload[4][3]`` and must not sidestep the gate. An
+    explicit unary-plus literal (``payload[+1][0]``) is positional too and must
+    not slip through.
     """
     tree = ast.parse(
         "\n".join(
@@ -197,11 +219,24 @@ def test_detector_flags_chained_descent() -> None:
                 "c = cite[0][0]",  # 2-deep, repeated index
                 "d = payload[4][-1]",  # negative trailing index -- still positional
                 "e = payload[-1][0]",  # negative leading index -- still positional
+                "f = payload[+1][0]",  # explicit unary-plus -- still positional
             ]
         )
     )
     # Every line contains at least one chained descent.
-    assert _chained_positional_offenders(tree) == [1, 2, 3, 4, 5]
+    assert _chained_positional_offenders(tree) == [1, 2, 3, 4, 5, 6]
+
+
+def test_detector_flags_unary_plus_index() -> None:
+    """An explicit unary-plus literal index must not bypass the gate.
+
+    ``+1`` parses to ``ast.UnaryOp(UAdd, Constant(1))`` -- a positive position
+    just like a bare ``1`` -- so ``payload[+1][0]`` is a chained positional
+    descent and must be flagged (regression guard for the coderabbit/cubic
+    bypass on PR #1390).
+    """
+    tree = ast.parse("x = payload[+1][0]\n")
+    assert _chained_positional_offenders(tree) == [1]
 
 
 def test_detector_ignores_benign_subscripts() -> None:
