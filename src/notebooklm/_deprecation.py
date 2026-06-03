@@ -45,6 +45,15 @@ message always names the removal version (so ``scripts/check_deprecation_targets
 can verify the shipping release never names *itself* as the removal target), and
 passing BOTH the old and new keyword raises :class:`TypeError` rather than
 silently preferring one.
+
+A second, orthogonal gate lives here too: ``NOTEBOOKLM_FUTURE_ERRORS``
+(:func:`future_errors_enabled`). When on, the three runways above adopt their
+v0.8.0 *target* behavior early — ``deprecated_kwarg`` and the
+:class:`MappingCompatMixin` subscript raise instead of warn (the
+``<resource>.get()`` runway is routed through ``_lookup.resolve_get``). It is an
+opt-in forward-compat preview, default-off, and takes precedence over the quiet
+gate (a runway raises regardless of quiet; quiet only silences the warn path
+that future mode replaces). See ``docs/deprecations.md``.
 """
 
 from __future__ import annotations
@@ -60,6 +69,18 @@ from typing import Any, ClassVar, TypeVar
 # get()-returns-None deprecation; it is intentionally read live (not cached) so
 # tests and callers can toggle it per call.
 _QUIET_ENV_VAR = "NOTEBOOKLM_QUIET_DEPRECATIONS"
+
+# Forward-compat preview gate. Setting ``NOTEBOOKLM_FUTURE_ERRORS`` to a truthy
+# value makes the v0.7.0 deprecation *runways* adopt their v0.8.0 *target*
+# behavior early, so callers and CI can test forward-compatibility against the
+# breaking error contract (ADR-0019, umbrella #1346) before it ships. It is
+# read live (not cached) so tests and callers can toggle it per call, exactly
+# like the quiet gate. Default-off behavior is byte-identical to current
+# v0.7.0 behavior. ``FUTURE_ERRORS`` takes precedence over
+# ``QUIET_DEPRECATIONS``: when future errors are on, the runway raises
+# regardless of the quiet gate (quiet only silences the warn path that future
+# mode replaces). See ``docs/deprecations.md``.
+_FUTURE_ERRORS_ENV_VAR = "NOTEBOOKLM_FUTURE_ERRORS"
 
 # Follow-up issue tracking the actual breaking flip in v0.8.0, where these
 # ``get()`` methods stop returning ``None`` and start raising the relevant
@@ -91,6 +112,37 @@ def deprecations_quiet() -> bool:
     leaves the warning enabled.
     """
     return _deprecations_quiet()
+
+
+def _future_errors_enabled() -> bool:
+    """Return ``True`` when the v0.8.0 error-contract preview is opted in."""
+    raw = os.environ.get(_FUTURE_ERRORS_ENV_VAR, "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def future_errors_enabled() -> bool:
+    """Public alias for :func:`_future_errors_enabled`.
+
+    ``NOTEBOOKLM_FUTURE_ERRORS=1`` (or any truthy ``1``/``true``/``yes``/``on``
+    spelling, case-insensitive) opts a process into the **v0.8.0 error contract**
+    early. When on, the v0.7.0 deprecation *runways* that still warn today adopt
+    their v0.8.0 *target* behavior instead — ``<resource>.get()`` raises the
+    matching ``*NotFoundError`` on a miss (#1247), the
+    :class:`MappingCompatMixin` dict-subscript bridge raises instead of
+    warning-and-returning (#1251), and :func:`deprecated_kwarg` raises on the
+    deprecated keyword instead of aliasing it (#1254). Any other value —
+    including unset — keeps the current (warn) behavior, so default-off is
+    byte-identical to v0.7.0.
+
+    This gate takes precedence over :func:`deprecations_quiet`: when future
+    errors are enabled the runway *raises* regardless of the quiet setting,
+    because the quiet gate only silences the warning that future mode replaces
+    with an exception. The purely-behavioral v0.8.0 changes that lack a clean
+    warn-runway (bool returns, refusal-suppression, fail-loud listing) are
+    **not** covered by this flag yet; they will be folded in as their v0.8.0
+    behavior is defined (tracked as a follow-up).
+    """
+    return _future_errors_enabled()
 
 
 def warn_deprecated(message: str, *, removal: str | None = None, stacklevel: int = 3) -> None:
@@ -157,7 +209,7 @@ def _not_found_error_exists(exc_name: str) -> bool:
     return hasattr(exceptions, exc_name)
 
 
-def warn_get_returns_none(resource: str, *, removal: str = "0.8.0") -> None:
+def warn_get_returns_none(resource: str, *, removal: str = "0.8.0", stacklevel: int = 3) -> None:
     """Warn that ``<resource>.get()`` returning ``None`` on a miss is deprecated.
 
     ``sources.get`` / ``artifacts.get`` / ``notes.get`` currently return
@@ -179,6 +231,11 @@ def warn_get_returns_none(resource: str, *, removal: str = "0.8.0") -> None:
             parameter so the message and the release-gate
             (``scripts/check_deprecation_targets.py``) share one source of
             truth.
+        stacklevel: ``warnings.warn`` stacklevel. The default of ``3`` is correct
+            when this helper is called *directly* from the public ``get()``
+            (helper → ``get()`` → user). Callers that route through an extra
+            wrapper frame — the shared ``_lookup.resolve_get`` bridge — pass
+            ``4`` so the warning still points at the user's ``get()`` call site.
     """
     if _deprecations_quiet():
         return
@@ -202,10 +259,12 @@ def warn_get_returns_none(resource: str, *, removal: str = "0.8.0") -> None:
         f"#{GET_RETURNS_NONE_FLIP_ISSUE}). To keep handling missing "
         f"{resource}s, wrap the call in try/except {exc_hint}."
     )
-    # stacklevel=3: warn_get_returns_none (1) -> the public get() (2) ->
-    # the user's call site (3). Points the warning's filename/lineno at the
-    # caller that wrote ``await client.<resource>s.get(...)``.
-    warnings.warn(message, DeprecationWarning, stacklevel=3)
+    # stacklevel=3 (default): warn_get_returns_none (1) -> the public get() (2)
+    # -> the user's call site (3). Points the warning's filename/lineno at the
+    # caller that wrote ``await client.<resource>s.get(...)``. Callers reaching
+    # this helper through ``_lookup.resolve_get`` pass stacklevel=4 to account
+    # for the extra bridge frame.
+    warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
 
 
 def deprecated_kwarg(
@@ -254,7 +313,10 @@ def deprecated_kwarg(
 
     Raises:
         TypeError: If the caller passed BOTH the deprecated and the canonical
-            keyword. They name the same concept, so two values is ambiguous.
+            keyword (they name the same concept, so two values is ambiguous);
+            or, when ``NOTEBOOKLM_FUTURE_ERRORS`` is on, if the caller passed
+            the deprecated keyword at all (previewing the v0.8.0 removal —
+            issue #1254).
     """
     new_provided = new_value is not sentinel
     old_provided = old_value is not sentinel
@@ -265,6 +327,15 @@ def deprecated_kwarg(
         )
 
     if old_provided:
+        if _future_errors_enabled():
+            # v0.8.0 preview: the deprecated keyword is removed, so passing it
+            # is a TypeError (the same shape an unknown keyword raises once the
+            # alias is gone). Precedence over the quiet gate is deliberate —
+            # quiet only silences the warning that future mode replaces.
+            raise TypeError(
+                f"{owner}() got an unexpected keyword argument {old!r}; "
+                f"use {new!r} instead (the {old!r} alias was removed in v{removal})."
+            )
         if not _deprecations_quiet():
             warnings.warn(
                 (
@@ -323,7 +394,16 @@ class MappingCompatMixin:
         raise NotImplementedError
 
     def __getitem__(self, key: str) -> Any:
-        """Deprecated dict-style read; warns and returns the legacy dict value."""
+        """Deprecated dict-style read; warns and returns the legacy dict value.
+
+        When ``NOTEBOOKLM_FUTURE_ERRORS`` is on, this previews the v0.8.0 state
+        in which the mixin is dropped and the return is an attribute-only
+        dataclass: any subscript raises :class:`TypeError` (the exact error a
+        plain dataclass raises — ``'<Type>' object is not subscriptable``),
+        regardless of the quiet gate (issue #1251).
+        """
+        if _future_errors_enabled():
+            raise TypeError(f"{type(self).__name__!r} object is not subscriptable")
         legacy = self.to_public_dict()
         if key not in legacy:
             raise KeyError(key)

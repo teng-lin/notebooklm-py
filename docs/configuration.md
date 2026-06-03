@@ -141,6 +141,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; path to the `storage_state.json` file the command must rewrite | resolved storage path |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the project's public-API `DeprecationWarning`s: the `get()`-returns-`None` warning (`sources.get` / `artifacts.get` / `notes.get` on a miss) and deprecated keyword aliases (e.g. `ResearchAPI.wait_for_completion(interval=...)`). Set to a truthy value (`1` / `true` / `yes` / `on`, case-insensitive) to silence them; see `docs/deprecations.md`. | (warnings emitted) |
+| `NOTEBOOKLM_FUTURE_ERRORS` | Opt in to the **v0.8.0 error contract** early (forward-compat preview). When truthy (`1` / `true` / `yes` / `on`), the warn-runways adopt their v0.8.0 raise-target: `*.get()` raises `*NotFoundError` on a miss, `MappingCompatMixin` dict-subscript raises `TypeError`, and the deprecated `interval=` keyword raises `TypeError`. Takes precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`. Off by default (byte-identical to v0.7.0); see `docs/deprecations.md`. | (off — warn) |
 | `NOTEBOOKLM_VCR_RECORD_ERRORS` | Synthetic-error injection mode for VCR test cassettes (`429`, `5xx`, `expired_csrf`) | - |
 
 ### Public config API vs internal resolvers
@@ -175,6 +176,7 @@ be audited from one location.
 | `NOTEBOOKLM_NOTEBOOK` | Default notebook ID when no `-n/--notebook` flag is passed. Composes with `notebooklm use <id>` so per-shell overrides do not clobber the persisted active-notebook context. | `-n/--notebook` flag → `NOTEBOOKLM_NOTEBOOK` → active context (from `notebooklm use`) → error | `cli.helpers.require_notebook` (Click also reads it natively via `cli/options.py:notebook_option`'s `envvar=`) |
 | `NOTEBOOKLM_RPC_OVERRIDES` | **JSON object** mapping `RPCMethod` enum names to RPC ID strings (e.g. `{"LIST_NOTEBOOKS": "AbC123"}`). Overrides runtime RPC IDs — community self-patch when Google rotates a method ID. Empty string / unset disables the mechanism; invalid JSON or non-object payloads emit a `WARNING` and are ignored. | Process env, evaluated per RPC resolve (cached on the raw env string). | `notebooklm.rpc.overrides._parse_rpc_overrides` |
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the project's public-API `DeprecationWarning`s. Two families are gated: (1) the `get()`-returns-`None` warning, emitted when `sources.get` / `artifacts.get` / `notes.get` are about to return `None` for a missing entity (these will raise `*NotFoundError` instead in v0.8.0); and (2) deprecated keyword aliases (e.g. `ResearchAPI.wait_for_completion(interval=...)` → `initial_interval=...`) — the keyword still works, only its warning is silenced. Set to a truthy value (`1` / `true` / `yes` / `on`) to silence them. See `docs/deprecations.md`. | (warnings emitted) | `_deprecation._deprecations_quiet` / `deprecations_quiet` |
+| `NOTEBOOKLM_FUTURE_ERRORS` | Opt in to the **v0.8.0 error contract** early so you can test forward-compatibility before the breaking flips ship (ADR-0019 / umbrella [#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). When truthy (`1` / `true` / `yes` / `on`), the warn-runways adopt their v0.8.0 raise-target: `sources.get` / `artifacts.get` / `notes.get` / `mind_maps.get` raise the matching `*NotFoundError` on a miss (#1247); `MappingCompatMixin` dict-subscript raises `TypeError` (#1251); the deprecated `interval=` alias raises `TypeError` (#1254). **Takes precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`** (a runway raises regardless of quiet). Off by default and byte-identical to v0.7.0. Run `NOTEBOOKLM_FUTURE_ERRORS=1 pytest` in CI to gate forward-compat. See `docs/deprecations.md`. | (off — warn) | `_deprecation._future_errors_enabled` / `future_errors_enabled` |
 | `NOTEBOOKLM_STRICT_DECODE` | **Retired (ignored since v0.7.0).** Strict decoding is the only mode — `safe_index` always raises `UnknownRPCMethodError` on schema drift. The former `0` warn-and-fallback opt-out was removed; setting the variable has no effect. | (ignored) | — |
 | `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
 | `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
@@ -343,6 +345,50 @@ export NOTEBOOKLM_QUIET_DEPRECATIONS=1
 > `client.sources.add_file(mime_type=...)` — `mime_type` is a supported
 > parameter and emits no warning. (It was previously a no-op that once gated a
 > since-removed `--mime-type` notice; it is now wired to the deprecations above.)
+
+### NOTEBOOKLM_FUTURE_ERRORS
+
+Opt in to the **v0.8.0 error contract** early so you can verify forward-
+compatibility before the breaking flips ship (ADR-0019 / umbrella
+[#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). Set it to a
+truthy value (`1`, `true`, `yes`, or `on`, case-insensitive); any other value
+(including unset) keeps current v0.7.0 behavior. Default-off is **byte-identical**
+to v0.7.0.
+
+When on, the three warn-runways adopt their v0.8.0 raise-target:
+
+1. **`*.get()` on a miss raises.** `client.sources.get()` /
+   `client.artifacts.get()` / `client.notes.get()` / `client.mind_maps.get()`
+   raise the matching `*NotFoundError` instead of warning-and-returning `None`
+   ([#1247](https://github.com/teng-lin/notebooklm-py/issues/1247)).
+   `get_or_none()` is unaffected — it stays the silent `None`-on-miss path.
+2. **Dict-subscript raises.** `result["key"]` on the typed research / mind-map /
+   source-guide returns (`MappingCompatMixin`) raises
+   `TypeError: '<Type>' object is not subscriptable` — the same error a plain
+   dataclass raises once the mixin is removed
+   ([#1251](https://github.com/teng-lin/notebooklm-py/issues/1251)). Attribute
+   access (`result.status`) and the silent shape-probes are unaffected.
+3. **Deprecated keyword raises.** Passing
+   `ResearchAPI.wait_for_completion(interval=...)` raises `TypeError` instead of
+   aliasing to `initial_interval=`
+   ([#1254](https://github.com/teng-lin/notebooklm-py/issues/1254)).
+
+**Precedence.** `NOTEBOOKLM_FUTURE_ERRORS` takes precedence over
+`NOTEBOOKLM_QUIET_DEPRECATIONS`: under future mode a runway **raises regardless**
+of the quiet setting (quiet only silences the *warning*, which future mode
+replaces with an exception). The helper that reads this variable is
+`notebooklm._deprecation._future_errors_enabled` (public alias
+`future_errors_enabled`).
+
+```bash
+# Gate forward-compatibility in CI: run your suite under the v0.8.0 contract.
+NOTEBOOKLM_FUTURE_ERRORS=1 pytest
+```
+
+The purely-behavioral v0.8.0 changes that lack a clean warn-runway (`delete()`
+returning `None`, refusal-suppression, fail-loud listing) are **not** gated by
+this flag yet; they will be folded in as their v0.8.0 behavior is defined. See
+[`deprecations.md`](deprecations.md) for the full table.
 
 ### Timeouts
 

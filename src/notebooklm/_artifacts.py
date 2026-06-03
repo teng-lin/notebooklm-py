@@ -37,8 +37,8 @@ from ._artifact.payloads import (
     build_suggest_reports_params,
     build_video_artifact_params,
 )
-from ._deprecation import warn_get_returns_none
 from ._env import get_default_language
+from ._lookup import resolve_get
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
@@ -212,17 +212,17 @@ class ArtifactsAPI:
             :class:`~notebooklm.exceptions.ArtifactNotFoundError` instead, to
             match ``notebooks.get`` (issue #1247). Wrap the call in
             ``try/except ArtifactNotFoundError`` to keep handling missing
-            artifacts. Suppress the warning with
-            ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+            artifacts. Suppress with ``NOTEBOOKLM_QUIET_DEPRECATIONS``, or set
+            ``NOTEBOOKLM_FUTURE_ERRORS=1`` to preview the v0.8.0 raise now.
         """
-        # v0.8.0: replace the warn-and-return-None below with
-        # ``raise ArtifactNotFoundError(artifact_id)`` (issue #1247). Internal
-        # callers that need the silent optional-lookup must use
-        # ``get_or_none`` directly so the library never self-warns.
-        result = await self.get_or_none(notebook_id, artifact_id)
-        if result is None:
-            warn_get_returns_none("artifact")
-        return result
+        # ``resolve_get`` single-sources the warn-runway/raise decision: warn +
+        # return ``None`` today, or raise under ``NOTEBOOKLM_FUTURE_ERRORS``
+        # (#1247). Internal callers needing the silent lookup use get_or_none.
+        return resolve_get(
+            await self.get_or_none(notebook_id, artifact_id),
+            not_found=ArtifactNotFoundError(artifact_id),
+            resource="artifact",
+        )
 
     async def get_or_none(self, notebook_id: str, artifact_id: str) -> Artifact | None:
         """Get an artifact by ID, returning ``None`` when it does not exist.

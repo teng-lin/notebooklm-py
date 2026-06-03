@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ._deprecation import warn_get_returns_none
+from ._lookup import resolve_get
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
@@ -160,19 +160,19 @@ class SourcesAPI:
         .. deprecated:: 0.7.0
             Returning ``None`` for a missing source is deprecated and emits a
             :class:`DeprecationWarning`. In **v0.8.0** this method will raise
-            :class:`~notebooklm.exceptions.SourceNotFoundError` instead, to
-            match ``notebooks.get`` (issue #1247). Wrap the call in
-            ``try/except SourceNotFoundError`` to keep handling missing
-            sources. Suppress the warning with ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+            :class:`~notebooklm.exceptions.SourceNotFoundError` instead, to match
+            ``notebooks.get`` (issue #1247); wrap in ``try/except
+            SourceNotFoundError`` to keep handling missing sources. Suppress with
+            ``NOTEBOOKLM_QUIET_DEPRECATIONS``, or set ``NOTEBOOKLM_FUTURE_ERRORS=1``
+            to preview the v0.8.0 raise now.
         """
-        # v0.8.0: replace the warn-and-return-None below with
-        # ``raise SourceNotFoundError(source_id)`` (issue #1247). Internal
-        # callers that need the silent optional-lookup must use
-        # ``get_or_none`` directly so the library never self-warns.
-        result = await self.get_or_none(notebook_id, source_id)
-        if result is None:
-            warn_get_returns_none("source")
-        return result
+        # ``resolve_get`` single-sources the warn-vs-raise decision (#1247);
+        # internal callers needing the silent lookup use ``get_or_none``.
+        return resolve_get(
+            await self.get_or_none(notebook_id, source_id),
+            not_found=SourceNotFoundError(source_id),
+            resource="source",
+        )
 
     async def get_or_none(self, notebook_id: str, source_id: str) -> Source | None:
         """Get a source by ID, returning ``None`` when it does not exist.

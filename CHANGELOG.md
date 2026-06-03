@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `NOTEBOOKLM_FUTURE_ERRORS` opt-in preview flag — run the **v0.8.0 error
+  contract** early to test forward-compatibility before the breaking flips ship
+  (ADR-0019 / umbrella #1346). Default-off and **byte-identical** to current
+  v0.7.0 behavior; when truthy (`1`/`true`/`yes`/`on`) the three warn-runways
+  adopt their v0.8.0 raise-target: `sources.get` / `artifacts.get` /
+  `notes.get` / `mind_maps.get` raise the matching `*NotFoundError` on a miss
+  (#1247), `MappingCompatMixin` dict-subscript raises `TypeError` (#1251), and
+  the deprecated `ResearchAPI.wait_for_completion(interval=...)` alias raises
+  `TypeError` (#1254). Takes precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`
+  (a runway raises regardless of quiet). The four `get()` methods are now routed
+  through a single `_lookup.resolve_get` bridge, eliminating the hand-duplicated
+  warn-on-miss pattern. Helper: `notebooklm._deprecation.future_errors_enabled`.
+  The purely-behavioral v0.8.0 changes that lack a warn-runway (`delete()`
+  returning `None`, refusal-suppression, fail-loud listing) are not gated yet;
+  they will be folded in as their behavior is defined. Does **not** close
+  #1247/#1251/#1254 — the runways remain until the v0.8.0 flip. See
+  `docs/deprecations.md`. Additive (issue #1346).
 - `client.artifacts.retry_failed(notebook_id, artifact_id)` — retry a failed
   Studio artifact in place (the web UI "Retry" action), via the new
   `RETRY_ARTIFACT` (`Rytqqe`) RPC. The artifact is not deleted first and the

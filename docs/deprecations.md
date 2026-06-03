@@ -20,6 +20,63 @@ the broader stability policy (semver promise, supported Python versions, the
 | `ResearchAPI.wait_for_completion(interval=...)` | `initial_interval=...` — same cadence, name now matches `SourcesAPI.wait_until_ready` / `ArtifactsAPI.wait_for_completion` | v0.7.0 | v0.8.0 | Additive: `interval` keeps its default of `5` and still works; passing a non-default value emits a `DeprecationWarning`, passing both `interval` and `initial_interval` raises `TypeError`. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py` |
 | Dict-subscript access (`result["status"]`) on `research.poll` / `research.start` / `research.wait_for_completion`, `artifacts.generate_mind_map`, and `sources.get_guide` return values | Attribute access (`result.status`, `result.sources`, `result.note_id`, `guide.summary`, …) | v0.7.0 | v0.8.0 | These methods now return typed dataclasses (`ResearchTask` / `ResearchStart` / `MindMapResult` / `SourceGuide`) with a new `ResearchStatus` str-enum, instead of `dict[str, Any]`. The dataclasses mix in `MappingCompatMixin` so the legacy dict shape keeps working for one MINOR cycle: `result["key"]` warns and returns the historical value (from `to_public_dict()`), while `result.get(...)` / `result.keys()` / `"x" in result` / `iter(result)` stay silent. In v0.8.0 the mixin is dropped and the returns become attribute-only. `ResearchStatus` is a `str` enum, so `status == "completed"` keeps working in v0.8.0. Suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. Helper: `src/notebooklm/_deprecation.py::MappingCompatMixin`. Tracked by [#1209](https://github.com/teng-lin/notebooklm-py/issues/1209) |
 
+## Preview the v0.8.0 error contract early: `NOTEBOOKLM_FUTURE_ERRORS`
+
+The deprecations in the **Scheduled for removal** table above are *warn-runways*:
+in v0.7.0 they still behave the old way and only emit a `DeprecationWarning`. In
+v0.8.0 three of them flip to a hard error (the breaking error-contract work,
+[ADR-0019](adr/0019-error-and-return-contract.md) / umbrella
+[#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). Setting
+`NOTEBOOKLM_FUTURE_ERRORS=1` (any of `1` / `true` / `yes` / `on`,
+case-insensitive) opts a process — or a CI job — into that **v0.8.0 target
+behavior today**, so you can verify your code is forward-compatible before the
+flip ships. It is **off by default**, and default-off is byte-identical to
+current v0.7.0 behavior.
+
+When the flag is on, these three runways adopt their v0.8.0 behavior:
+
+| Runway | v0.7.0 (default / flag off) | With `NOTEBOOKLM_FUTURE_ERRORS=1` | Tracked by |
+|--------|-----------------------------|-----------------------------------|------------|
+| `sources.get()` / `artifacts.get()` / `notes.get()` / `mind_maps.get()` on a miss | Warns, returns `None` | Raises the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` / `MindMapNotFoundError`) | [#1247](https://github.com/teng-lin/notebooklm-py/issues/1247) |
+| Dict-subscript `result["key"]` on the typed research / mind-map / source-guide returns (`MappingCompatMixin`) | Warns, returns the legacy dict value | Raises `TypeError: '<Type>' object is not subscriptable` (the same error a plain dataclass raises once the mixin is removed) | [#1251](https://github.com/teng-lin/notebooklm-py/issues/1251) |
+| Deprecated keyword alias `ResearchAPI.wait_for_completion(interval=...)` | Warns, aliases to `initial_interval` | Raises `TypeError` (the deprecated keyword is gone) | [#1254](https://github.com/teng-lin/notebooklm-py/issues/1254) |
+
+The flag does **not** close those issues — the runways stay until the v0.8.0 flip
+actually ships; it only lets you preview the target behavior. `get_or_none()` and
+every silent shape-probe (`result.get(...)` / `keys()` / `in` / `iter(...)`) are
+the sanctioned post-flip paths and are **unaffected** by the flag in both modes.
+
+**Precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`.** When `NOTEBOOKLM_FUTURE_ERRORS`
+is on, a runway **raises regardless of the quiet setting** — quiet only silences
+the *warning* on the warn path, which future mode replaces with an exception, so
+there is nothing left to silence. Setting both is well-defined: future mode wins.
+
+**Not yet covered.** The purely-behavioral v0.8.0 changes that lack a clean
+warn-runway — `delete()` returning `None`
+([#1290](https://github.com/teng-lin/notebooklm-py/issues/1290)),
+refusal-suppression
+([#1342](https://github.com/teng-lin/notebooklm-py/issues/1342)), and the
+fail-loud listing change
+([#1362](https://github.com/teng-lin/notebooklm-py/issues/1362)) — are **not**
+gated by this flag yet. They will be folded in as their v0.8.0 behavior is
+defined (tracked as a follow-up). The flag is implemented in
+`src/notebooklm/_deprecation.py::future_errors_enabled` and routed through
+`src/notebooklm/_lookup.py::resolve_get` for the `get()` flip.
+
+```python
+# Verify forward-compatibility in CI: run your suite with the v0.8.0 contract on.
+#   NOTEBOOKLM_FUTURE_ERRORS=1 pytest
+
+import os
+os.environ["NOTEBOOKLM_FUTURE_ERRORS"] = "1"   # before constructing the client
+
+# Now a missing-source lookup RAISES instead of returning None:
+try:
+    source = await client.sources.get(nb_id, "missing")
+except SourceNotFoundError:
+    ...   # the v0.8.0 shape — code that handles this is forward-compatible
+```
+
 ### Migration: typed research / mind-map / source-guide returns
 
 ```python
@@ -122,6 +179,11 @@ inference), so both are now supported parameters. The earlier
   a **`RuntimeWarning`** safety advisory about the stale-overwrite-fresh race —
   outside ADR-018's scope and intentionally **not** silenced by
   `NOTEBOOKLM_QUIET_DEPRECATIONS`.
+* `NOTEBOOKLM_FUTURE_ERRORS=1` is the opposite gate: instead of *silencing* a
+  warn-runway it makes the runway adopt its v0.8.0 *target* behavior (raise)
+  early, for forward-compat testing. It takes precedence over
+  `NOTEBOOKLM_QUIET_DEPRECATIONS` — a runway under future mode raises regardless
+  of quiet. See the "Preview the v0.8.0 error contract early" section above.
 * See `docs/stability.md` "Deprecation Policy" for the broader timeline
   contract (one MINOR cycle of warnings before removal during 0.x).
 

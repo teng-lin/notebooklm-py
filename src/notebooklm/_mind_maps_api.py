@@ -17,7 +17,7 @@ import reprlib
 from typing import TYPE_CHECKING, Any
 
 from ._artifact.payloads import build_interactive_mind_map_artifact_params
-from ._deprecation import warn_get_returns_none
+from ._lookup import resolve_get
 from ._row_adapters.notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
 from .exceptions import (
@@ -203,16 +203,19 @@ class MindMapsAPI:
             match ``notebooks.get`` (issue #1247). Wrap the call in
             ``try/except MindMapNotFoundError`` to keep handling missing mind
             maps, or use :meth:`get_or_none` for the sanctioned optional lookup.
-            Suppress the warning with ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+            Suppress the warning with ``NOTEBOOKLM_QUIET_DEPRECATIONS``, or set
+            ``NOTEBOOKLM_FUTURE_ERRORS=1`` to preview the v0.8.0 raise now.
         """
-        # v0.8.0: replace the warn-and-return-None below with
-        # ``raise MindMapNotFoundError(mind_map_id)`` (issue #1247). Internal
-        # callers that need the silent optional-lookup must use ``_get_or_none``
-        # directly so the library never self-warns.
-        result = await self.get_or_none(notebook_id, mind_map_id)
-        if result is None:
-            warn_get_returns_none("mind_map")
-        return result
+        # The warn-runway / raise decision is single-sourced in
+        # ``_lookup.resolve_get``: it warns and returns ``None`` today, or
+        # raises ``MindMapNotFoundError`` under ``NOTEBOOKLM_FUTURE_ERRORS``
+        # (the v0.8.0 flip, issue #1247). Internal callers that need the silent
+        # optional-lookup must use ``_get_or_none`` directly.
+        return resolve_get(
+            await self.get_or_none(notebook_id, mind_map_id),
+            not_found=MindMapNotFoundError(mind_map_id),
+            resource="mind_map",
+        )
 
     async def get_or_none(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
         """Get a mind map by ID, returning ``None`` when it does not exist.

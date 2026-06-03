@@ -18,10 +18,11 @@ import builtins
 import logging
 from typing import Any
 
-from ._deprecation import warn_get_returns_none
+from ._lookup import resolve_get
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
 from ._row_adapters.notes import NoteRow
+from .exceptions import NoteNotFoundError
 from .types import Note
 
 logger = logging.getLogger(__name__)
@@ -104,16 +105,19 @@ class NotesAPI:
             ``NoteNotFoundError`` instead, to match ``notebooks.get`` (issue
             #1247). Wrap the call in ``try/except NoteNotFoundError`` to keep
             handling missing notes. Suppress the warning with
-            ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+            ``NOTEBOOKLM_QUIET_DEPRECATIONS``, or set
+            ``NOTEBOOKLM_FUTURE_ERRORS=1`` to preview the v0.8.0 raise now.
         """
-        # v0.8.0: replace the warn-and-return-None below with
-        # ``raise NoteNotFoundError(note_id)`` (issue #1247). Internal callers
-        # that need the silent optional-lookup must use ``get_or_none``
-        # directly so the library never self-warns.
-        result = await self.get_or_none(notebook_id, note_id)
-        if result is None:
-            warn_get_returns_none("note")
-        return result
+        # The warn-runway / raise decision is single-sourced in
+        # ``_lookup.resolve_get``: it warns and returns ``None`` today, or
+        # raises ``NoteNotFoundError`` under ``NOTEBOOKLM_FUTURE_ERRORS`` (the
+        # v0.8.0 flip, issue #1247). Internal callers that need the silent
+        # optional-lookup must use ``get_or_none`` directly.
+        return resolve_get(
+            await self.get_or_none(notebook_id, note_id),
+            not_found=NoteNotFoundError(note_id),
+            resource="note",
+        )
 
     async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
         """Get a note by ID, returning ``None`` when it does not exist.
