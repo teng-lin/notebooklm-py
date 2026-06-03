@@ -20,16 +20,23 @@ would silently pass even if the refactor dropped or reordered a line, and they
 miss the two ``markup=False`` sites where Rich would otherwise eat ``[...]``
 brackets.
 
-Determinism
-===========
+Determinism (cross-OS)
+======================
 
-Every command is driven with ``COLUMNS=80`` so Rich wraps at a fixed width
-regardless of the CI runner's terminal, and every storage / browser-profile
-path is a short, synthetic, filesystem-free :func:`_fake_path` whose ``str``
-renders identically on Linux / macOS / Windows and never wraps. The one
-remaining host-dependent value — ``sys.executable`` in the Chromium
-install-failure diagnostic — is pinned to a fixed stub so that line, too, is
-byte-stable.
+The snapshots must be byte-identical on the ubuntu / macos / windows test
+matrix, so three host-dependent inputs are neutralised:
+
+* **Console width** — Rich derives its width from the (absent) terminal, and the
+  no-TTY fallback differs per OS, so a message that reflows at 80 columns on
+  Linux wraps elsewhere on Windows. The :func:`_fixed_console_width` autouse
+  fixture pins the shared console to a wide fixed width, removing all incidental
+  mid-line reflow and leaving only the **authored** newlines in the source
+  strings — which are the real render contract.
+* **Filesystem paths** — every storage / browser-profile path is a short,
+  synthetic, filesystem-free :func:`_fake_path` whose ``str`` is a fixed literal
+  (no OS-specific separator, no real I/O).
+* **Interpreter path** — ``sys.executable`` in the Chromium install-failure
+  diagnostic is pinned to a fixed stub.
 
 These tests assert **current** behaviour: they are green on ``origin/main``
 with zero ``src/`` change and must stay green across PR-2.
@@ -38,7 +45,6 @@ with zero ``src/`` change and must stay green across PR-2.
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -48,23 +54,47 @@ import pytest
 import notebooklm.cli.services.playwright_login as _pl
 from notebooklm.notebooklm_cli import cli
 
-# Fixed, synthetic paths keep the snapshots byte-stable across hosts AND across
-# the OS test matrix (ubuntu / macos / windows). They are short enough that the
-# rendered ``... <path>`` lines never wrap at the pinned 80-column width, and —
-# crucially — every snapshot interpolates these *same* ``Path`` objects, so the
-# OS-specific separator (``/`` vs ``\``) matches in both the rendered output and
-# the expected string. No real file is ever written to them: the filesystem
-# boundary (Playwright ``storage_state`` write, ``--fresh`` ``rmtree`` / ``mkdir``,
-# the auth-refresh repair's metadata read/write) is mocked in every test.
-_STORAGE = Path("/x/storage.json")
-_PROFILE = Path("/x/profile")
+# Fixed, synthetic paths keep the snapshots byte-stable across the OS test matrix
+# (ubuntu / macos / windows). They are rendered only through :func:`_fake_path`
+# (see below), whose ``str`` is the exact literal here regardless of OS, so the
+# snapshots embed ``/x/...`` verbatim everywhere. No real file is ever written:
+# the filesystem boundary (Playwright ``storage_state`` write, ``--fresh``
+# ``rmtree``, the auth-refresh repair's metadata read/write) is mocked in every
+# test.
+_STORAGE = "/x/storage.json"
+_PROFILE = "/x/profile"
 _PROFILE_NAME = "default"
 
-# Pin the Rich console width so the wrapped output is deterministic regardless of
-# any ``COLUMNS`` the CI runner exports. 80 is the current no-TTY default, so
-# this characterizes today's behaviour exactly — it just removes the dependency
-# on the ambient terminal width.
-_ENV = {"COLUMNS": "80"}
+
+@pytest.fixture(autouse=True)
+def _fixed_console_width():
+    """Pin the shared Rich console to a wide, fixed width for every test here.
+
+    Rich derives its line width from the terminal, and under ``CliRunner`` (no
+    TTY) that fallback differs across the OS matrix — on Windows it does not land
+    on the 80-column value Linux/macOS use, so messages that would reflow at 80
+    wrap at different points (a real divergence first seen on
+    ``test_all_accounts_with_storage_conflicts``). Forcing a wide fixed width
+    removes the *incidental* mid-line reflow entirely, leaving only the
+    **authored** newlines in the source strings — which are the actual render
+    contract. The single shared ``console`` instance is reused by the service,
+    ``session_cmd`` and the error paths, so pinning its size once covers every
+    render site while still writing through to ``CliRunner``'s captured stdout.
+
+    Rich's ``Console.size`` only honours the pinned dimensions when **both**
+    ``_width`` and ``_height`` are set (otherwise it falls back to terminal /
+    ``COLUMNS`` detection — exactly the OS-divergent path being avoided), so both
+    are patched. The wide 400 keeps every rendered line on one physical row even
+    after the ``- legacy_windows`` adjustment Rich applies on Windows, so nothing
+    ever reflows.
+    """
+    from notebooklm.cli import rendering
+
+    with (
+        patch.object(rendering.console, "_width", 400),
+        patch.object(rendering.console, "_height", 100),
+    ):
+        yield
 
 
 def _fake_path(text: str, *, exists: bool = False) -> MagicMock:
@@ -121,7 +151,7 @@ def _drive_login(
     patch_ensure: bool = True,
     patch_repair: bool = True,
     page_content: Any = None,
-    profile_dir: Path = _PROFILE,
+    profile_dir: str = _PROFILE,
     fresh_profile_exists: bool = False,
     rmtree_side: Any = None,
 ):
@@ -161,13 +191,13 @@ def _drive_login(
             stack.enter_context(patch.object(_pl.sys, "executable", python_executable))
         mock_pw = stack.enter_context(patch("playwright.sync_api.sync_playwright"))
         stack.enter_context(
-            patch.object(_pl, "get_storage_path", return_value=_fake_path(str(_STORAGE)))
+            patch.object(_pl, "get_storage_path", return_value=_fake_path(_STORAGE))
         )
         stack.enter_context(
             patch.object(
                 _pl,
                 "get_browser_profile_dir",
-                return_value=_fake_path(str(profile_dir), exists=fresh_profile_exists),
+                return_value=_fake_path(profile_dir, exists=fresh_profile_exists),
             )
         )
         stack.enter_context(patch("notebooklm.paths.resolve_profile", return_value=_PROFILE_NAME))
@@ -213,7 +243,7 @@ def _drive_login(
         else:
             launch.return_value = mock_context
 
-        result = runner.invoke(cli, args or ["login"], env=_ENV)
+        result = runner.invoke(cli, args or ["login"])
     return result, page
 
 
@@ -232,7 +262,7 @@ def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
     """
     from contextlib import ExitStack
 
-    storage = _fake_path(str(_STORAGE), exists=True)
+    storage = _fake_path(_STORAGE, exists=True)
     with ExitStack() as stack:
         stack.enter_context(patch.object(_pl, "get_storage_path", return_value=storage))
         stack.enter_context(
@@ -251,7 +281,7 @@ def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
         stack.enter_context(patch("notebooklm.auth.write_account_metadata"))
         stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
         stack.enter_context(patch("notebooklm.auth.extract_email_from_html", return_value=None))
-        return runner.invoke(cli, args, env=_ENV)
+        return runner.invoke(cli, args)
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +291,7 @@ def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
 
 class TestPreflightValidate:
     def test_account_requires_browser_cookies(self, runner):
-        result = runner.invoke(cli, ["login", "--account", "bob@example.com"], env=_ENV)
+        result = runner.invoke(cli, ["login", "--account", "bob@example.com"])
         assert result.exit_code == 1
         assert result.output == (
             "Error: --account, --all-accounts, and --profile-name require --browser-cookies.\n"
@@ -271,7 +301,6 @@ class TestPreflightValidate:
         result = runner.invoke(
             cli,
             ["login", "--browser-cookies", "chrome", "--all-accounts", "--account", "bob@x.com"],
-            env=_ENV,
         )
         assert result.exit_code == 1
         assert result.output == (
@@ -282,16 +311,15 @@ class TestPreflightValidate:
         result = runner.invoke(
             cli,
             ["login", "--browser-cookies", "chrome", "--all-accounts", "--storage", "/tmp/s.json"],
-            env=_ENV,
         )
         assert result.exit_code == 1
         assert result.output == (
             "Error: --all-accounts writes one profile per account and cannot be "
-            "combined with\n--storage.\n"
+            "combined with --storage.\n"
         )
 
     def test_update_requires_all_accounts(self, runner):
-        result = runner.invoke(cli, ["login", "--browser-cookies", "chrome", "--update"], env=_ENV)
+        result = runner.invoke(cli, ["login", "--browser-cookies", "chrome", "--update"])
         assert result.exit_code == 1
         assert result.output == "Error: --update only applies to --all-accounts.\n"
 
@@ -422,7 +450,7 @@ class TestEnsureChromiumInstalled:
         assert result.exit_code == 0
         assert result.output == (
             "Warning: Chromium pre-flight check failed: playwright CLI missing. "
-            "Proceeding \nanyway.\n"
+            "Proceeding anyway.\n"
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
@@ -446,7 +474,7 @@ class TestPlaywrightNotInstalled:
         chromium hint also carries the ``playwright install chromium`` line.
         """
         with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
-            result = runner.invoke(cli, ["login"], env=_ENV)
+            result = runner.invoke(cli, ["login"])
         assert result.exit_code == 1
         assert result.output == (
             "Playwright not installed. Run:\n"
@@ -456,7 +484,7 @@ class TestPlaywrightNotInstalled:
 
     def test_channel_install_hint_omits_playwright_line(self, runner):
         with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
-            result = runner.invoke(cli, ["login", "--browser", "msedge"], env=_ENV)
+            result = runner.invoke(cli, ["login", "--browser", "msedge"])
         assert result.exit_code == 1
         assert result.output == (
             'Playwright not installed. Run:\n  pip install "notebooklm-py[browser]"\n'
@@ -896,12 +924,9 @@ class TestAuthRefreshRepair:
         assert result.output == (
             "Identifying Google account...\n"
             "Warning: account metadata was not written; multiple Google accounts "
-            "were \n"
-            "discovered but the active page email was unavailable. Run notebooklm "
-            "auth \n"
-            "inspect --browser chrome -v or notebooklm login --browser-cookies "
-            "chrome \n"
-            "--account EMAIL.\n"
+            "were discovered but the active page email was unavailable. Run "
+            "notebooklm auth inspect --browser chrome -v or notebooklm login "
+            "--browser-cookies chrome --account EMAIL.\n"
             f"ok refreshed: {_STORAGE}\n"
         )
 
@@ -914,11 +939,8 @@ class TestAuthRefreshRepair:
         assert result.output == (
             "Identifying Google account...\n"
             "Warning: account metadata was not written. NotebookLM auth still "
-            "saved, but \n"
-            "multi-account routing may fall back to authuser=0. Run notebooklm auth "
-            "inspect \n"
-            "--browser chrome -v or notebooklm login --browser-cookies chrome "
-            "--account \n"
-            "EMAIL. Details: network down\n"
+            "saved, but multi-account routing may fall back to authuser=0. Run "
+            "notebooklm auth inspect --browser chrome -v or notebooklm login "
+            "--browser-cookies chrome --account EMAIL. Details: network down\n"
             f"ok refreshed: {_STORAGE}\n"
         )
