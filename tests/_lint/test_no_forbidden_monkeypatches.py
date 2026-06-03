@@ -305,11 +305,16 @@ def test_allowlist_stays_empty() -> None:
     file. Any non-empty ``_ALLOWLIST`` fails here.
     """
 
-    assert not _ALLOWLIST, (
+    # Assert the exact ``frozenset()`` sentinel, not mere falsiness: ``assert
+    # not _ALLOWLIST`` would also pass for an empty mutable ``set()``, so a
+    # future refactor that reintroduces mutability would silently weaken this
+    # guard. Pin both the immutable type and the empty value.
+    assert isinstance(_ALLOWLIST, frozenset) and len(_ALLOWLIST) == 0, (
         "The ADR-007 monkeypatch allowlist was drained to zero (issue #1376) "
-        "and must stay empty. New forbidden patterns must be migrated to "
-        "constructor injection via ``tests/_fixtures/make_fake_core(...)`` or a "
-        "locally-imported seam alias — not added back to ``_ALLOWLIST``.\n\n"
+        "and must stay an empty ``frozenset``. New forbidden patterns must be "
+        "migrated to constructor injection via "
+        "``tests/_fixtures/make_fake_core(...)`` or a locally-imported seam "
+        "alias — not added back to ``_ALLOWLIST``.\n\n"
         f"Unexpected entries ({len(_ALLOWLIST)}):\n"
         + "\n".join(f"  - {entry}" for entry in sorted(_ALLOWLIST))
     )
