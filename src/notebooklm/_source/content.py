@@ -37,17 +37,16 @@ class SourceContentRenderer:
             if isinstance(outer, list) and len(outer) > 0:
                 inner = outer[0]
                 if isinstance(inner, list):
-                    # Bind the ``[1]`` summary block and ``[2]`` keywords block to
-                    # locals so each leaf read is a single-level index rather than
-                    # a chained ``inner[1][0]`` / ``inner[2][0]`` descent. Absent
-                    # blocks legitimately leave summary/keywords at their defaults.
+                    # Bind the ``[1]`` summary and ``[2]`` keywords blocks to locals
+                    # so each leaf read is single-level (not chained ``inner[1][0]`` /
+                    # ``inner[2][0]``). Absent blocks legitimately leave the defaults.
                     summary_block = (
-                        inner[1] if len(inner) > 1 and isinstance(inner[1], list) else []
+                        inner[1] if len(inner) > 1 and isinstance(inner[1], list) else None
                     )
                     if summary_block:
                         summary = summary_block[0] if isinstance(summary_block[0], str) else ""
                     keyword_block = (
-                        inner[2] if len(inner) > 2 and isinstance(inner[2], list) else []
+                        inner[2] if len(inner) > 2 and isinstance(inner[2], list) else None
                     )
                     if keyword_block:
                         keywords = keyword_block[0] if isinstance(keyword_block[0], list) else []
