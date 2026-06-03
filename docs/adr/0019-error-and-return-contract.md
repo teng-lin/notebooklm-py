@@ -5,8 +5,8 @@
 Accepted. The library-wide error-and-return contract is ratified; this ADR
 records the decision ahead of the work. The v0.8.0 implementation is tracked
 separately under umbrella #1346, with the additive half landed and the breaking
-flips still pending. Ratifies the already-committed v0.8.0 work (#1247, #1254,
-#1251) as instances of one contract.
+flips still pending. Ratifies the already-committed v0.8.0 work
+(#1247, #1254, #1251) as instances of one contract.
 
 **Status update (v0.7.0):** the additive, non-breaking half of the enforcement
 floor has landed. The Tier-1 *static* conformance gate
@@ -19,11 +19,11 @@ miss path to assert today's warn-contract (`get()` warns + returns `None`;
 `get_or_none()` is silent), so a correctly-annotated `get()` that forgets to
 warn — the exact historical `mind_maps` bug — is now caught at runtime, not just
 by signature. Tier-2's single-sourced `unwrap_or_raise` helper (`_lookup.py`)
-also landed. Still **pending** are the v0.8.0 *breaking* flips this ADR queues:
-#1247 (`get()` → raise `*NotFoundError`, dropping `| None`) and #1251
-(`MappingCompat` removal). The "Enforcement (in scope for 0.8.0)" section below
-describes that pending breaking work; the static + behavioural gates that guard
-it are already green.
+also landed. Still **pending** are the v0.8.0 *breaking* flips this ADR
+queues: issue #1247 (`get()` → raise `*NotFoundError`, dropping `| None`)
+and issue #1251 (`MappingCompat` removal). The "Enforcement (in scope for
+0.8.0)" section below describes that pending breaking work; the static +
+behavioural gates that guard it are already green.
 
 ## Context
 
