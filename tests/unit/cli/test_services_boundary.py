@@ -547,7 +547,9 @@ def test_guard_helper_detects_level_3_relative_import(tmp_path):
     tightened check so a regression to level-2-only is caught.
     """
     bad = tmp_path / "fake_level3_service.py"
-    bad.write_text("from __future__ import annotations\nfrom ...rendering import console\n")
+    # Pin LF + UTF-8 so the fixture is byte-stable across the OS test matrix.
+    with bad.open("w", encoding="utf-8", newline="\n") as f:
+        f.write("from __future__ import annotations\nfrom ...rendering import console\n")
     violations = _boundary_violations(bad)
     assert any("rendering" in v for v in violations), violations
 
@@ -560,10 +562,12 @@ def test_guard_helper_allows_level_4_relative_import(tmp_path):
     so the check must stay scoped to levels 2-3.
     """
     ok = tmp_path / "fake_level4_service.py"
-    ok.write_text(
-        "from __future__ import annotations\n"
-        "from ....rendering import console  # notebooklm.rendering — not cli.rendering\n"
-    )
+    # Pin LF + UTF-8 so the fixture is byte-stable across the OS test matrix.
+    with ok.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(
+            "from __future__ import annotations\n"
+            "from ....rendering import console  # notebooklm.rendering — not cli.rendering\n"
+        )
     assert _boundary_violations(ok) == []
 
 
