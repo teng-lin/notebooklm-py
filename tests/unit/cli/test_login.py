@@ -755,7 +755,7 @@ class TestLoginCommand:
         def fake_sync_playwright():
             return FakeSyncPlaywright()
 
-        def fake_repair(storage_path, *, page_html=None, quiet=False):
+        def fake_repair(storage_path, io, *, page_html=None, quiet=False):
             repair_calls.append(
                 {
                     "storage_path": storage_path,
@@ -764,6 +764,8 @@ class TestLoginCommand:
                     "context_active": context_active,
                 }
             )
+
+        from notebooklm.cli.playwright_login_io import make_login_io
 
         with (
             patch.object(_pl, "ensure_chromium_installed"),
@@ -778,7 +780,8 @@ class TestLoginCommand:
                     browser="chromium",
                     browser_profile=browser_dir,
                     storage_path=storage_file,
-                )
+                ),
+                make_login_io(),
             )
 
         assert repair_calls == [
@@ -1032,7 +1035,7 @@ class TestLoginCommand:
             patch(
                 "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
-            patch("notebooklm.cli.session_cmd._repair_playwright_account_metadata") as mock_repair,
+            patch("notebooklm.cli.session_cmd.repair_after_refresh") as mock_repair,
         ):
             mock_fetch.return_value = ("csrf_ok", "session_ok")
             result = runner.invoke(cli, ["auth", "refresh"])

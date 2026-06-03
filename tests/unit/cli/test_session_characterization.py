@@ -146,7 +146,7 @@ class TestLoginCharacterization:
             patch("notebooklm.cli.session_cmd._run_playwright_login") as mock_run,
             patch("notebooklm.cli.session_cmd._sync_server_language_to_config") as mock_sync,
             patch(
-                "notebooklm.cli.session_cmd._prepare_login_paths",
+                "notebooklm.cli.session_cmd.prepare_paths_or_exit",
                 return_value=(
                     tmp_path / "storage_state.json",
                     tmp_path / "browser_profile",

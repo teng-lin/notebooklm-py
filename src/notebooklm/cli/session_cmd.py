@@ -41,6 +41,12 @@ from ..paths import get_storage_path
 from .auth_runtime import handle_auth_error, run_client_workflow
 from .context import clear_context, set_current_notebook
 from .error_handler import _output_error, exit_with_code, handle_errors
+from .playwright_login_io import (
+    prepare_paths_or_exit,
+    repair_after_refresh,
+    run_login,
+    validate_flags_or_exit,
+)
 from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id
 from .runtime import run_async
@@ -75,16 +81,6 @@ from .services.playwright_login import (
 )
 from .services.playwright_login import (
     PlaywrightLoginPlan,
-    run_playwright_login,
-)
-from .services.playwright_login import (
-    prepare_login_paths as _prepare_login_paths,
-)
-from .services.playwright_login import (
-    repair_playwright_account_metadata as _repair_playwright_account_metadata,
-)
-from .services.playwright_login import (
-    validate_login_flag_conflicts as _validate_login_flag_conflicts,
 )
 from .services.session_context import (
     LogoutOutcome,
@@ -144,14 +140,14 @@ def _run_playwright_login(
     storage_path: Path,
     include_domains: set[str] | None = None,
 ) -> None:
-    """Backward-compat wrapper around :func:`run_playwright_login`."""
+    """Backward-compat wrapper around :func:`run_login`."""
     plan = PlaywrightLoginPlan(
         browser=browser,
         browser_profile=browser_profile,
         storage_path=storage_path,
         include_domains=include_domains,
     )
-    run_playwright_login(plan)
+    run_login(plan)
 
 
 def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
@@ -642,7 +638,7 @@ def register_session_commands(cli):
                 )
                 exit_with_code(1)
 
-            _validate_login_flag_conflicts(
+            validate_flags_or_exit(
                 browser_cookies=browser_cookies,
                 account_email=account_email,
                 all_accounts=all_accounts,
@@ -690,7 +686,7 @@ def register_session_commands(cli):
                 return
 
             profile = ctx.obj.get("profile") if ctx.obj else None
-            storage_path, browser_profile = _prepare_login_paths(profile, storage, fresh)
+            storage_path, browser_profile = prepare_paths_or_exit(profile, storage, fresh)
             _run_playwright_login(
                 browser=browser,
                 browser_profile=browser_profile,
@@ -1073,7 +1069,7 @@ def register_session_commands(cli):
             if storage_path.exists():
                 metadata = read_account_metadata(storage_path)
                 if not _is_valid_account_metadata(metadata):
-                    _repair_playwright_account_metadata(storage_path, quiet=quiet)
+                    repair_after_refresh(storage_path, quiet=quiet)
 
             if not quiet:
                 console.print(f"[green]ok[/green] refreshed: {storage_path}")

@@ -28,6 +28,7 @@ from typing import Any
 
 import pytest
 
+from notebooklm.cli.playwright_login_io import make_login_io
 from notebooklm.cli.services.playwright_login import (
     ensure_chromium_installed,
     redact_subprocess_output,
@@ -314,7 +315,7 @@ def test_install_failure_prints_sanitised_stderr(
 
     # ``exit_with_code(1)`` calls ``sys.exit(1)``; capture the SystemExit.
     with pytest.raises(SystemExit) as exc_info:
-        ensure_chromium_installed()
+        ensure_chromium_installed(make_login_io())
 
     assert exc_info.value.code == 1
     assert len(call_log) == 2  # dry-run probe + install attempt
@@ -360,7 +361,7 @@ def test_install_failure_falls_back_to_stdout_when_stderr_is_only_whitespace(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     with pytest.raises(SystemExit):
-        ensure_chromium_installed()
+        ensure_chromium_installed(make_login_io())
 
     captured = capsys.readouterr().out
     assert "actual actionable error from stdout" in captured
@@ -389,7 +390,7 @@ def test_dry_run_unexpected_stderr_routed_through_redactor(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     with caplog.at_level(_logging.DEBUG, logger="notebooklm.cli.services.playwright_login"):
-        ensure_chromium_installed()
+        ensure_chromium_installed(make_login_io())
 
     # The debug log line should be present but redacted.
     matching = [

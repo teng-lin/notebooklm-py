@@ -28,8 +28,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from notebooklm.cli.playwright_login_io import make_login_io
 from notebooklm.cli.services import playwright_login
 from notebooklm.cli.services.playwright_login import (
+    Conflict,
+    PathError,
+    PreparedPaths,
     _select_playwright_account,
     ensure_chromium_installed,
     prepare_login_paths,
@@ -38,6 +42,31 @@ from notebooklm.cli.services.playwright_login import (
     validate_login_flag_conflicts,
     windows_playwright_event_loop,
 )
+
+
+class _FakeLoginIO:
+    """Shared fake ``LoginIO`` for direct-call tests.
+
+    ``fail`` raises ``SystemExit`` so ``pytest.raises(SystemExit)`` fires on the
+    service's terminal paths (a bare ``MagicMock`` ``fail`` would return a Mock
+    and break the assertion). ``emit`` records its calls for the few tests that
+    inspect the rendered help text; ``run_async`` drives the awaitable.
+    """
+
+    def __init__(self) -> None:
+        self.emitted: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def emit(self, *args: Any, **kwargs: Any) -> None:
+        self.emitted.append((args, kwargs))
+
+    def fail(self, code: int) -> Any:
+        raise SystemExit(code)
+
+    def run_async(self, coro: Any) -> Any:
+        import asyncio
+
+        return asyncio.run(coro)
+
 
 # ---------------------------------------------------------------------------
 # _select_playwright_account
@@ -114,7 +143,9 @@ def test_repair_metadata_clear_failure_is_logged(tmp_path, caplog) -> None:
         patch("notebooklm.auth.extract_email_from_html", return_value=None),
         caplog.at_level(logging.WARNING, logger="notebooklm.cli.services.playwright_login"),
     ):
-        result = repair_playwright_account_metadata(storage_path, page_html=None, quiet=True)
+        result = repair_playwright_account_metadata(
+            storage_path, _FakeLoginIO(), page_html=None, quiet=True
+        )
 
     assert result is False
     assert any(
@@ -180,7 +211,7 @@ def test_ensure_chromium_timeout_warns_and_continues(monkeypatch, capsys) -> Non
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    ensure_chromium_installed()  # must not raise
+    ensure_chromium_installed(make_login_io())  # must not raise
 
     out = capsys.readouterr().out
     assert "pre-flight check timed out" in out
@@ -196,7 +227,7 @@ def test_ensure_chromium_generic_exception_warns_and_continues(monkeypatch, caps
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    ensure_chromium_installed()  # must not raise
+    ensure_chromium_installed(make_login_io())  # must not raise
 
     out = capsys.readouterr().out
     assert "pre-flight check failed" in out
@@ -218,14 +249,14 @@ def test_recover_page_target_closed_exits(monkeypatch) -> None:
     context.new_page.side_effect = PlaywrightError(
         "Target page, context or browser has been closed"
     )
-    console_ = MagicMock()
+    io = _FakeLoginIO()
 
     with pytest.raises(SystemExit) as exc_info:
-        recover_page(context, console_)
+        recover_page(context, io)
 
     assert exc_info.value.code == 1
-    console_.print.assert_called_once()
-    assert "browser window was closed" in console_.print.call_args[0][0].lower()
+    assert len(io.emitted) == 1
+    assert "browser window was closed" in io.emitted[0][0][0].lower()
 
 
 @pytest.mark.requires_playwright
@@ -235,10 +266,9 @@ def test_recover_page_non_target_closed_reraises() -> None:
 
     context = MagicMock()
     context.new_page.side_effect = PlaywrightError("some other failure")
-    console_ = MagicMock()
 
     with pytest.raises(PlaywrightError):
-        recover_page(context, console_)
+        recover_page(context, _FakeLoginIO())
 
 
 @pytest.mark.requires_playwright
@@ -247,7 +277,7 @@ def test_recover_page_success_returns_new_page() -> None:
     fresh = object()
     context = MagicMock()
     context.new_page.return_value = fresh
-    assert recover_page(context, MagicMock()) is fresh
+    assert recover_page(context, _FakeLoginIO()) is fresh
 
 
 # ---------------------------------------------------------------------------
@@ -269,36 +299,40 @@ def _base_flags(**overrides: Any) -> dict[str, Any]:
 
 
 def test_validate_flags_account_requires_browser_cookies() -> None:
-    """--account without --browser-cookies exits 1."""
-    with pytest.raises(SystemExit):
-        validate_login_flag_conflicts(
-            **_base_flags(browser_cookies=None, account_email="bob@example.com")
-        )
+    """--account without --browser-cookies returns a Conflict."""
+    result = validate_login_flag_conflicts(
+        **_base_flags(browser_cookies=None, account_email="bob@example.com")
+    )
+    assert isinstance(result, Conflict)
+    assert "require --browser-cookies" in result.message
 
 
 def test_validate_flags_all_accounts_with_account_conflicts() -> None:
-    """--all-accounts + --account exits 1."""
-    with pytest.raises(SystemExit):
-        validate_login_flag_conflicts(
-            **_base_flags(all_accounts=True, account_email="bob@example.com")
-        )
+    """--all-accounts + --account returns a Conflict."""
+    result = validate_login_flag_conflicts(
+        **_base_flags(all_accounts=True, account_email="bob@example.com")
+    )
+    assert isinstance(result, Conflict)
+    assert "cannot be combined with --account" in result.message
 
 
 def test_validate_flags_all_accounts_with_storage_conflicts() -> None:
-    """--all-accounts + --storage exits 1 (lines 686-691)."""
-    with pytest.raises(SystemExit):
-        validate_login_flag_conflicts(**_base_flags(all_accounts=True, storage="/tmp/s.json"))
+    """--all-accounts + --storage returns a Conflict (lines 686-691)."""
+    result = validate_login_flag_conflicts(**_base_flags(all_accounts=True, storage="/tmp/s.json"))
+    assert isinstance(result, Conflict)
+    assert "cannot be combined with --storage" in result.message
 
 
 def test_validate_flags_update_requires_all_accounts() -> None:
-    """--update without --all-accounts exits 1."""
-    with pytest.raises(SystemExit):
-        validate_login_flag_conflicts(**_base_flags(update=True, all_accounts=False))
+    """--update without --all-accounts returns a Conflict."""
+    result = validate_login_flag_conflicts(**_base_flags(update=True, all_accounts=False))
+    assert isinstance(result, Conflict)
+    assert "--update only applies to --all-accounts" in result.message
 
 
 def test_validate_flags_clean_combo_passes() -> None:
-    """A valid flag combination does not raise."""
-    validate_login_flag_conflicts(**_base_flags())
+    """A valid flag combination returns None (no conflict)."""
+    assert validate_login_flag_conflicts(**_base_flags()) is None
 
 
 # ---------------------------------------------------------------------------
@@ -319,12 +353,14 @@ def test_prepare_login_paths_explicit_storage(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
     monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
 
-    storage_path, returned_profile = prepare_login_paths(
+    outcome = prepare_login_paths(
         profile=None, storage=str(tmp_path / "explicit.json"), fresh=False
     )
 
-    assert storage_path == Path(str(tmp_path / "explicit.json"))
-    assert returned_profile == browser_profile
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.storage_path == Path(str(tmp_path / "explicit.json"))
+    assert outcome.browser_profile == browser_profile
+    assert outcome.fresh_cleared is False
     # Explicit ``--storage`` short-circuits the path resolver entirely.
     fake_storage_path.assert_not_called()
     fake_browser_profile_dir.assert_called_once_with()
@@ -342,10 +378,11 @@ def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
     monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
 
-    storage_path, returned_profile = prepare_login_paths(profile="work", storage=None, fresh=False)
+    outcome = prepare_login_paths(profile="work", storage=None, fresh=False)
 
-    assert storage_path == profile_storage
-    assert returned_profile == browser_profile
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.storage_path == profile_storage
+    assert outcome.browser_profile == browser_profile
     # The profile branch forwards the profile name to the storage resolver.
     fake_storage_path.assert_called_once_with(profile="work")
     fake_browser_profile_dir.assert_called_once_with()
@@ -395,8 +432,8 @@ def test_run_playwright_login_capture_html_error_is_swallowed(tmp_path) -> None:
         ),
         patch(
             "notebooklm.cli.services.playwright_login.repair_playwright_account_metadata",
-            side_effect=lambda storage_path, *, page_html=None, quiet=False: repair_calls.append(
-                page_html
+            side_effect=lambda storage_path, io, *, page_html=None, quiet=False: (
+                repair_calls.append(page_html)
             ),
         ),
     ):
@@ -405,7 +442,8 @@ def test_run_playwright_login_capture_html_error_is_swallowed(tmp_path) -> None:
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,
-            )
+            ),
+            _FakeLoginIO(),
         )
 
     # content() raised, so the page-html passed to repair is None.
@@ -471,7 +509,8 @@ def test_run_playwright_login_cookie_forcing_inner_recovery_reraises(tmp_path) -
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,
-            )
+            ),
+            _FakeLoginIO(),
         )
 
 
@@ -509,7 +548,7 @@ def test_ensure_chromium_install_success(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    ensure_chromium_installed()
+    ensure_chromium_installed(make_login_io())
 
     out = capsys.readouterr().out
     assert "installed successfully" in out
@@ -533,15 +572,60 @@ def test_prepare_login_paths_win32_skips_mode(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
     monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
 
-    storage_path, returned_profile = prepare_login_paths(profile=None, storage=None, fresh=False)
+    outcome = prepare_login_paths(profile=None, storage=None, fresh=False)
 
-    assert storage_path == storage_target
-    assert returned_profile == browser_profile
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.storage_path == storage_target
+    assert outcome.browser_profile == browser_profile
     assert storage_target.parent.is_dir()
     assert browser_profile.is_dir()
     # No profile, no explicit storage -> the resolver is called with no args.
     fake_storage_path.assert_called_once_with()
     fake_browser_profile_dir.assert_called_once_with()
+
+
+def test_prepare_login_paths_fresh_wipe_success_flags_cleared(tmp_path, monkeypatch) -> None:
+    """A ``--fresh`` wipe of an existing profile sets ``fresh_cleared``."""
+    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    browser_profile = tmp_path / "profile"
+    browser_profile.mkdir()
+    storage_target = tmp_path / "store" / "storage.json"
+
+    monkeypatch.setattr(
+        playwright_login, "get_browser_profile_dir", MagicMock(return_value=browser_profile)
+    )
+    monkeypatch.setattr(
+        playwright_login, "get_storage_path", MagicMock(return_value=storage_target)
+    )
+
+    outcome = prepare_login_paths(profile=None, storage=None, fresh=True)
+
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.fresh_cleared is True
+    # The pre-existing profile dir was removed then recreated as an empty dir.
+    assert browser_profile.is_dir()
+    assert not any(browser_profile.iterdir())
+
+
+def test_prepare_login_paths_fresh_wipe_oserror_returns_path_error(tmp_path, monkeypatch) -> None:
+    """An OSError during the ``--fresh`` wipe returns a :class:`PathError`."""
+    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    browser_profile = tmp_path / "profile"
+    browser_profile.mkdir()
+    storage_target = tmp_path / "store" / "storage.json"
+
+    monkeypatch.setattr(
+        playwright_login, "get_browser_profile_dir", MagicMock(return_value=browser_profile)
+    )
+    monkeypatch.setattr(
+        playwright_login, "get_storage_path", MagicMock(return_value=storage_target)
+    )
+    monkeypatch.setattr(playwright_login.shutil, "rmtree", MagicMock(side_effect=OSError("locked")))
+
+    outcome = prepare_login_paths(profile=None, storage=None, fresh=True)
+
+    assert isinstance(outcome, PathError)
+    assert "Cannot clear browser profile: locked" in outcome.message
 
 
 # ---------------------------------------------------------------------------
@@ -590,5 +674,70 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,
-            )
+            ),
+            _FakeLoginIO(),
         )
+
+
+# ---------------------------------------------------------------------------
+# run_playwright_login — injected ``io.fail`` inside the sync_playwright block
+# still tears the context down via the ``finally`` (#1391 regression).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.requires_playwright
+def test_run_playwright_login_io_fail_inside_block_still_closes_context(tmp_path) -> None:
+    """An ``io.fail`` (``SystemExit``) raised inside the ``with sync_playwright()``
+    block must still run ``context.close()`` via the ``try/finally``.
+
+    The drain (#1391) injects ``fail`` rather than calling ``exit_with_code``
+    directly; because ``fail`` forwards to ``exit_with_code`` it raises
+    ``SystemExit`` (a ``BaseException``), which slips past the ``except
+    Exception`` handler and unwinds through the ``finally`` — so the browser
+    context is torn down before the process exits. This pins that the injected
+    sink does not regress the cleanup contract.
+    """
+    from playwright.sync_api import Error as PlaywrightError  # noqa: F401
+
+    storage_file = tmp_path / "storage.json"
+    browser_dir = tmp_path / "profile"
+
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+    # NOT on the base host even after cookie-forcing → the unexpected-URL
+    # ``io.fail(1)`` branch fires *inside* the sync_playwright block.
+    mock_page.url = "https://accounts.google.com/AccountChooser"
+    mock_page.goto.return_value = None
+    mock_context.pages = [mock_page]
+    mock_context.storage_state.return_value = {"cookies": [], "origins": []}
+
+    mock_playwright = MagicMock()
+    mock_playwright.chromium.launch_persistent_context.return_value = mock_context
+
+    class _FakeSyncPlaywright:
+        def __enter__(self):
+            return mock_playwright
+
+        def __exit__(self, *exc):
+            return False
+
+    with (
+        patch("notebooklm.cli.services.playwright_login.ensure_chromium_installed"),
+        patch(
+            "playwright.sync_api.sync_playwright",
+            side_effect=lambda: _FakeSyncPlaywright(),
+        ),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        playwright_login.run_playwright_login(
+            playwright_login.PlaywrightLoginPlan(
+                browser="chromium",
+                browser_profile=browser_dir,
+                storage_path=storage_file,
+            ),
+            _FakeLoginIO(),
+        )
+
+    assert exc_info.value.code == 1
+    # The ``finally`` ran despite the SystemExit unwinding the block.
+    mock_context.close.assert_called_once_with()

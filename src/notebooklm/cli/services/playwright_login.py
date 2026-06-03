@@ -1,22 +1,19 @@
-"""Playwright-driven Google login service (ADR-008 click-to-service extraction).
+"""Playwright-driven Google login service (ADR-0008 click-to-service extraction).
 
 Owns the entire Playwright fast path for ``notebooklm login`` (the rookiepy
-``--browser-cookies`` path stays in :mod:`notebooklm.cli.services.login`).
-The Click handler stays a thin orchestrator over this service.
+``--browser-cookies`` path stays in :mod:`notebooklm.cli.services.login`). The
+Click handler stays a thin orchestrator over this service.
 
-Public entry points
-===================
-
-* :class:`PlaywrightLoginPlan` — frozen dataclass describing one Playwright
-  login attempt (browser channel, target paths, optional cookie-domain
-  inclusion).
-* :func:`run_playwright_login` — synchronous executor: opens the browser,
-  drives the SSO flow, persists ``storage_state.json`` atomically.
-* :func:`prepare_login_paths` — resolves storage + browser profile paths
-  for a ``login`` invocation (including the ``--fresh`` profile wipe).
-* :func:`validate_login_flag_conflicts` — flag mutual-exclusion gate.
-* :func:`filter_storage_state_cookies_by_domain_policy` — applies the
-  cookie-domain allowlist to a Playwright ``storage_state`` dict.
+Presentation / exit / async-runner side effects are inverted behind the
+:class:`LoginIO` Protocol: callers inject a concrete sink (the command-layer
+:mod:`notebooklm.cli.playwright_login_io`) so this module imports no
+``..rendering`` / ``..error_handler`` / ``..runtime`` command modules (#1391,
+ADR-0008 level-2-import boundary). Pre-flight helpers return typed outcomes
+(:class:`Conflict`, :class:`PreparedPaths`, :class:`PathError`); the command
+wrappers render + exit. Entry points: :class:`PlaywrightLoginPlan`,
+:func:`run_playwright_login`, :func:`prepare_login_paths`,
+:func:`validate_login_flag_conflicts`,
+:func:`filter_storage_state_cookies_by_domain_policy`.
 """
 
 from __future__ import annotations
@@ -30,11 +27,11 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Awaitable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -42,15 +39,31 @@ import httpx
 from ...config import get_base_host, get_base_url
 from ...io import atomic_write_json
 from ...paths import get_browser_profile_dir, get_storage_path
-from ..error_handler import exit_with_code
-from ..rendering import console
-from ..runtime import run_async
 
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
-    from rich.console import Console
 
 logger = logging.getLogger(__name__)
+
+
+class LoginIO(Protocol):
+    """Caller-injected sink for the Playwright login flow's side effects.
+
+    The command layer (:mod:`notebooklm.cli.playwright_login_io`) injects a
+    concrete impl so this service never imports the presentation
+    (``..rendering``), exit-policy (``..error_handler``), or async-runner
+    (``..runtime``) command modules directly (ADR-0008 boundary). ``emit``
+    forwards to ``console.print`` (``*args, **kwargs`` pass through verbatim,
+    incl. ``markup=False``); ``fail`` forwards to ``exit_with_code`` (raises
+    ``SystemExit``); ``run_async`` forwards to ``run_async``.
+    """
+
+    def emit(self, *args: Any, **kwargs: Any) -> None: ...
+
+    def fail(self, code: int) -> NoReturn: ...
+
+    def run_async(self, coro: Awaitable[Any]) -> Any: ...
+
 
 GOOGLE_ACCOUNTS_URL = "https://accounts.google.com/"
 
@@ -93,23 +106,15 @@ CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
 # Subprocess output sanitisation
 # ---------------------------------------------------------------------------
 #
-# When we surface captured stderr / stdout from a Playwright subprocess to
-# the user (e.g. the install failure path below), the raw text can carry
-# two classes of noise we never want to leak into the console:
-#
-#   1. Environment-variable VALUES — Playwright forwards the parent process
-#      environment; if any secret (PSIDTS, API tokens, cookie material set
-#      via the auth-source env var / SAPISID / etc.) is interpolated into
-#      a traceback / config line by the CLI we invoke, it lands verbatim
-#      in ``result.stderr``.
-#
-#   2. ANSI control sequences — pip/playwright CLIs emit progress bars and
-#      colour codes that mangle log scrapers and dirty test snapshots.
-#
-# ``redact_subprocess_output`` strips both before the diagnostic reaches the
-# console. Env-var redaction is conservative: we skip empty / single-char
-# values and common boolean-ish / path-separator constants that would
-# false-positive across normal stderr lines.
+# Captured stderr/stdout from a Playwright subprocess (e.g. the install-failure
+# path below) can leak two classes of noise into the console:
+#   1. Environment-variable VALUES — Playwright forwards the parent env, so a
+#      secret (PSIDTS, API tokens, auth-source / SAPISID cookie material)
+#      interpolated into a traceback lands verbatim in ``result.stderr``.
+#   2. ANSI control sequences — pip/playwright progress bars + colour codes.
+# ``redact_subprocess_output`` strips both. Env-var redaction is conservative:
+# empty / single-char / boolean-ish / path-separator constants are skipped to
+# avoid false positives across normal stderr lines.
 
 # CSI: ESC '[' parameter-bytes intermediate-bytes final-byte
 # OSC: ESC ']' ... (BEL | ESC '\\')
@@ -192,31 +197,19 @@ def _expand_nested_secret_values(value: str) -> Iterator[str]:
 def redact_subprocess_output(text: str, env: Mapping[str, str] | None = None) -> str:
     """Sanitise captured subprocess ``stdout`` / ``stderr`` before printing.
 
-    The transform runs in this order:
+    Runs in two passes (detail in the inline comments + module header):
 
-    1. **Strip ANSI control sequences** (CSI colour codes, OSC titles, and
-       the two-byte C1 Fe escapes used by pip/playwright progress UI).
-       Stripping FIRST means a secret split by an inert reset like
-       ``"abc\\x1b[0m123"`` is reassembled to ``"abc123"`` before
-       redaction runs — otherwise an exact-match redactor would miss it.
+    1. **Strip ANSI control sequences** FIRST so a secret split by an inert
+       reset (``"abc\\x1b[0m123"`` → ``"abc123"``) is reassembled before the
+       exact-match redactor runs — otherwise it would miss it.
+    2. **Replace each non-trivial env-var value** (plus any JSON-nested leaf
+       strings) with ``<redacted>``. The env is snapshotted from ``os.environ``
+       unless ``env`` is supplied. Values under
+       :data:`_REDACTION_MIN_VALUE_LEN` and the :data:`_REDACTION_SAFE_VALUES`
+       constants are skipped; candidates are tried longest-first so a longer
+       secret containing a shorter one is redacted as one token.
 
-    2. **Replace every occurrence of each non-trivial environment-variable
-       value with** ``<redacted>``. The env is snapshotted from
-       ``os.environ`` at call time unless an explicit mapping is supplied
-       (the parameter exists so tests can drive the redaction without
-       mutating real process env). For each env value we also try to
-       parse it as JSON and add every nested string leaf to the
-       candidate set — covers the auth-source env var and any other
-       env-supplied JSON token bag.
-
-       Values shorter than :data:`_REDACTION_MIN_VALUE_LEN` and the
-       well-known constants in :data:`_REDACTION_SAFE_VALUES` are
-       skipped to avoid spamming ``<redacted>`` across every path /
-       boolean in the output. Candidates are tried in descending length
-       order so a longer secret that contains a shorter one is redacted
-       as a single ``<redacted>`` token.
-
-    Returns the sanitised string. The input is not mutated.
+    Returns the sanitised string; the input is not mutated.
     """
     if not text:
         return text
@@ -226,19 +219,14 @@ def redact_subprocess_output(text: str, env: Mapping[str, str] | None = None) ->
     # redactable by the exact-match pass below.
     text = _strip_ansi(text)
 
-    # Materialise the env mapping once. ``dict(os.environ)`` defends
-    # against the (very rare) case where another thread mutates the
-    # process environment while we iterate.
+    # ``dict(os.environ)`` defends against another thread mutating the process
+    # environment mid-iteration (rare).
     source_env: Mapping[str, str] = dict(os.environ) if env is None else env
 
-    # Build the candidate set: every env value plus any JSON leaf
-    # strings nested inside JSON-shaped env values. Also add the
-    # ansi-stripped form of each candidate in case the env value itself
-    # carries embedded control bytes (the input ``text`` has already
-    # been ansi-stripped above). Filter by length / safe-value rules,
-    # then sort by descending length so a longer value (e.g. the
-    # literal PSIDTS cookie) gets redacted before any shorter prefix
-    # that happens to also appear as another env value.
+    # Candidate set: every env value + any JSON-nested leaf strings, plus the
+    # ansi-stripped form of each (the env value may carry embedded control
+    # bytes; ``text`` is already stripped). Sorted longest-first below so a
+    # longer secret is redacted before any shorter prefix.
     candidates: set[str] = set()
     for raw_value in source_env.values():
         if not isinstance(raw_value, str):
@@ -259,8 +247,7 @@ def redact_subprocess_output(text: str, env: Mapping[str, str] | None = None) ->
 
 
 # ---------------------------------------------------------------------------
-# Cookie-domain filter (kept here because it's only consumed by the
-# Playwright path — the rookiepy path applies its own allowlist upstream)
+# Cookie-domain filter (kept here — only the Playwright path consumes it)
 # ---------------------------------------------------------------------------
 
 
@@ -272,32 +259,24 @@ def filter_storage_state_cookies_by_domain_policy(
 ) -> dict[str, Any]:
     """Filter a Playwright ``storage_state`` dict to the configured cookie-domain policy.
 
-    The rookiepy / ``--browser-cookies`` extraction path asks Chrome only for
-    cookies on the explicit domain allowlist from
-    :func:`_build_google_cookie_domains` — so sibling-product cookies the user
-    happens to be signed into (``mail.google.com``, ``myaccount.google.com``,
-    ``docs.google.com``, ``.youtube.com``) never reach ``storage_state.json``
-    unless the user opts in via ``--include-domains=...``.
-
-    The Playwright login flow, by contrast, captures every cookie the browser
-    context holds. Without this filter, sibling-product cookies leak into the
-    persisted ``storage_state.json`` and inflate the blast radius if the file
-    is ever read by an attacker. This helper applies the same allowlist at
-    write time so both login paths produce equivalent on-disk state.
-
-    The match is exact-against-allowlist with leading-dot/no-dot equivalence
-    (``http.cookiejar`` may normalize either form). Sibling-product subdomains
-    are deliberately not matched by a broad ``.google.com`` suffix check —
-    that's the bug we're fixing.
+    The Playwright login flow captures every cookie the browser context holds.
+    Without this filter, sibling-product cookies (``mail.google.com``,
+    ``myaccount.google.com``, ``docs.google.com``, ``.youtube.com``) the user
+    happens to be signed into leak into the persisted ``storage_state.json``
+    and inflate the blast radius. This applies the same allowlist the rookiepy
+    path uses (:func:`_build_google_cookie_domains`) at write time so both
+    login paths produce equivalent on-disk state, opt-in via
+    ``--include-domains=...``. The match is exact-against-allowlist with
+    leading-dot/no-dot equivalence (``http.cookiejar`` may normalize either);
+    sibling subdomains are deliberately NOT matched by a broad ``.google.com``
+    suffix — that's the bug being fixed.
 
     Args:
-        state: Playwright ``storage_state`` dict (output of
-            ``BrowserContext.storage_state()``).
+        state: Playwright ``storage_state`` dict (``BrowserContext.storage_state()``).
         include_optional: When ``True``, opt in to every label in
             :data:`notebooklm._auth.cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL`.
-        include_domains: Set of optional-domain labels to opt in. ``"all"``
-            is accepted as a shortcut for every label. Mirrors the rookiepy
-            path semantics.
+        include_domains: Optional-domain labels to opt in (``"all"`` = every
+            label). Mirrors the rookiepy path semantics.
 
     Returns:
         A new ``storage_state`` dict with ``cookies`` filtered and ``origins``
@@ -363,20 +342,20 @@ def _select_playwright_account(
 
 def repair_playwright_account_metadata(
     storage_path: Path,
+    io: LoginIO,
     *,
     page_html: str | None = None,
     quiet: bool = False,
 ) -> bool:
     """Populate ``notebooklm.account`` from Playwright storage when unambiguous.
 
-    This is used immediately after interactive Playwright login and by
-    file-backed ``auth refresh`` as a repair path for older Playwright-created
-    storage states. Ambiguous multi-account states are deliberately left
-    unbound after clearing any stale metadata.
-
-    Returns:
-        ``True`` when metadata was written, ``False`` when it was cleared or
-        left absent.
+    Used immediately after interactive Playwright login and by file-backed
+    ``auth refresh`` as a repair path for older Playwright-created storage
+    states. Ambiguous multi-account states are left unbound after clearing
+    stale metadata. ``io`` carries the presentation / async-runner sink;
+    ``quiet`` stays a service-level parameter (the Protocol has no silencing
+    concept). Returns ``True`` when metadata was written, ``False`` when it
+    was cleared or left absent.
     """
     from ...auth import (
         build_httpx_cookies_from_storage,
@@ -389,14 +368,14 @@ def repair_playwright_account_metadata(
     active_email = extract_email_from_html(page_html) if isinstance(page_html, str) else None
     try:
         if not quiet:
-            console.print("[dim]Identifying Google account...[/dim]")
+            io.emit("[dim]Identifying Google account...[/dim]")
         jar = build_httpx_cookies_from_storage(storage_path)
-        accounts = run_async(enumerate_accounts(jar))
+        accounts = io.run_async(enumerate_accounts(jar))
         selected, reason = _select_playwright_account(accounts, active_email=active_email)
         if selected is None:
             clear_account_metadata(storage_path)
             if not quiet:
-                console.print(
+                io.emit(
                     "[yellow]Warning: account metadata was not written; "
                     f"{reason}. {ACCOUNT_METADATA_REMEDIATION}[/yellow]"
                 )
@@ -416,7 +395,7 @@ def repair_playwright_account_metadata(
                 clear_exc,
             )
         if not quiet:
-            console.print(
+            io.emit(
                 "[yellow]Warning: account metadata was not written. "
                 "NotebookLM auth still saved, but multi-account routing may "
                 "fall back to authuser=0. "
@@ -425,7 +404,7 @@ def repair_playwright_account_metadata(
         return False
 
     if not quiet:
-        console.print(f"[green]Account:[/green] {selected.email}")
+        io.emit(f"[green]Account:[/green] {selected.email}")
     return True
 
 
@@ -438,13 +417,11 @@ def repair_playwright_account_metadata(
 def windows_playwright_event_loop() -> Iterator[None]:
     """Temporarily restore the default event loop policy for Playwright on Windows.
 
-    Playwright's sync API uses subprocess to spawn the browser, which requires
+    Playwright's sync API spawns the browser via subprocess, which needs
     ``ProactorEventLoop`` on Windows. The CLI sets
-    ``WindowsSelectorEventLoopPolicy`` globally (issue #79) which is incompatible
-    with that subprocess path. This context manager swaps the policy in for the
-    Playwright section, then restores the selector policy on exit.
-
-    No-op on non-Windows platforms.
+    ``WindowsSelectorEventLoopPolicy`` globally (issue #79), incompatible with
+    that path; this swaps the policy in for the Playwright section and restores
+    it on exit. No-op on non-Windows platforms.
     """
     if sys.platform != "win32":
         yield
@@ -458,18 +435,17 @@ def windows_playwright_event_loop() -> Iterator[None]:
         asyncio.set_event_loop_policy(original_policy)
 
 
-def ensure_chromium_installed() -> None:
+def ensure_chromium_installed(io: LoginIO) -> None:
     """Check if Chromium is installed and install if needed.
 
     Runs ``playwright install --dry-run chromium`` to detect a missing browser,
-    then auto-installs. Silently proceeds on any error so Playwright handles
-    them during launch.
-
-    Both subprocess calls are bounded by timeouts so a network-stalled
-    Playwright CLI cannot hang ``notebooklm login`` indefinitely: 30 s for
-    the dry-run probe, 300 s for the install. ``TimeoutExpired`` is treated as a pre-flight failure —
-    the warning surfaces and login continues; Playwright will surface the
-    real error during browser launch.
+    then auto-installs. Silently proceeds on any error so Playwright handles it
+    during launch. Both subprocess calls are timeout-bounded (30 s dry-run,
+    300 s install) so a network-stalled CLI cannot hang ``notebooklm login``;
+    ``TimeoutExpired`` is a pre-flight failure — the warning surfaces and login
+    continues. ``io`` carries the presentation / exit sink (an install failure
+    exits 1 via ``io.fail``; the ``except SystemExit: raise`` re-raise keeps
+    that terminal path intact).
     """
     try:
         result = subprocess.run(
@@ -491,7 +467,7 @@ def ensure_chromium_installed() -> None:
                 )
             return
 
-        console.print("[yellow]Chromium browser not installed. Installing now...[/yellow]")
+        io.emit("[yellow]Chromium browser not installed. Installing now...[/yellow]")
         install_result = subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
             capture_output=True,
@@ -512,45 +488,42 @@ def ensure_chromium_installed() -> None:
             sanitised_stderr = redact_subprocess_output(install_result.stderr or "").strip()
             sanitised_stdout = redact_subprocess_output(install_result.stdout or "").strip()
             diagnostic_tail = sanitised_stderr or sanitised_stdout
-            console.print(
+            io.emit(
                 "[red]Failed to install Chromium browser.[/red]\n"
                 f'Run manually: "{sys.executable}" -m playwright install chromium'
             )
             if diagnostic_tail:
                 # markup=False: the captured CLI output is not Rich markup
                 # and may contain stray ``[``/``]`` characters.
-                console.print(
+                io.emit(
                     f"[dim]Subprocess output (sanitised):[/dim]\n{diagnostic_tail}",
                     markup=False,
                 )
-            exit_with_code(1)
-        console.print("[green]Chromium installed successfully.[/green]\n")
+            io.fail(1)
+        io.emit("[green]Chromium installed successfully.[/green]\n")
     except SystemExit:
         raise
     except subprocess.TimeoutExpired as exc:
         # Network stall during download or a hung subprocess; surface the
         # diagnostic and let Playwright handle the real launch error.
-        console.print(
+        io.emit(
             f"[dim]Warning: Chromium pre-flight check timed out after "
             f"{exc.timeout}s. Proceeding anyway.[/dim]"
         )
     except Exception as e:
         # FileNotFoundError: playwright CLI not found but sync_playwright imported
         # Other exceptions: dry-run check failed — let Playwright handle it during launch.
-        console.print(
-            f"[dim]Warning: Chromium pre-flight check failed: {e}. Proceeding anyway.[/dim]"
-        )
+        io.emit(f"[dim]Warning: Chromium pre-flight check failed: {e}. Proceeding anyway.[/dim]")
 
 
-def recover_page(context: BrowserContext, console_: Console) -> Page:
+def recover_page(context: BrowserContext, io: LoginIO) -> Page:
     """Get a fresh page from a persistent browser context.
 
-    Used when the current page reference is stale (TargetClosedError).
-    A new page in a persistent context inherits all cookies and storage.
-
-    Returns a new ``Page``, or raises ``SystemExit`` if the context/browser
-    is dead. Re-raises the original ``PlaywrightError`` for non-TargetClosed
-    failures.
+    Used when the current page reference is stale (TargetClosedError); a new
+    page in a persistent context inherits all cookies and storage. Returns a
+    new ``Page``, or raises ``SystemExit`` (via ``io.fail``) if the
+    context/browser is dead; re-raises the original ``PlaywrightError`` for
+    non-TargetClosed failures. ``io`` supplies both emit + fail.
     """
     from playwright.sync_api import Error as PlaywrightError
 
@@ -560,8 +533,8 @@ def recover_page(context: BrowserContext, console_: Console) -> Page:
         error_str = str(exc)
         if TARGET_CLOSED_ERROR in error_str:
             logger.error("Browser context is dead, cannot recover page: %s", error_str)
-            console_.print(BROWSER_CLOSED_HELP)
-            exit_with_code(1)
+            io.emit(BROWSER_CLOSED_HELP)
+            io.fail(1)
         logger.error("Failed to create new page for recovery: %s", error_str)
         raise
 
@@ -606,6 +579,29 @@ def connection_error_help() -> str:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Conflict:
+    """A ``login`` flag conflict; ``message`` is the styled line the wrapper emits before exit 1."""
+
+    message: str
+
+
+@dataclass(frozen=True)
+class PreparedPaths:
+    """Resolved storage + browser-profile paths; ``fresh_cleared`` flags a ``--fresh`` wipe."""
+
+    storage_path: Path
+    browser_profile: Path
+    fresh_cleared: bool
+
+
+@dataclass(frozen=True)
+class PathError:
+    """A ``--fresh`` wipe failure; ``message`` is the styled block the wrapper emits before exit 1."""
+
+    message: str
+
+
 def validate_login_flag_conflicts(
     *,
     browser_cookies: str | None,
@@ -614,44 +610,45 @@ def validate_login_flag_conflicts(
     update: bool,
     profile_name: str | None,
     storage: str | None,
-) -> None:
+) -> Conflict | None:
     """Enforce ``login`` flag mutual-exclusion rules.
 
-    Emits a styled error and ``exit_with_code(1)`` on the first conflict.
-    The env-supplied-auth check is intentionally not handled
-    here: it is an environment vs file-auth conflict, distinct from flag
-    mutual-exclusion, and stays in the ``login`` orchestrator.
+    Returns the first :class:`Conflict` (carrying the styled error message the
+    command layer emits before exiting 1), or ``None`` when valid. The
+    env-supplied-auth check stays in the ``login`` orchestrator — it is an
+    environment vs file-auth conflict, distinct from flag mutual-exclusion.
     """
     if browser_cookies is None and (
         account_email is not None or all_accounts or profile_name is not None
     ):
-        console.print(
+        return Conflict(
             "[red]Error: --account, --all-accounts, and --profile-name "
             "require --browser-cookies.[/red]"
         )
-        exit_with_code(1)
     if all_accounts and (account_email is not None or profile_name is not None):
-        console.print(
+        return Conflict(
             "[red]Error: --all-accounts cannot be combined with --account or --profile-name.[/red]"
         )
-        exit_with_code(1)
     if all_accounts and storage:
-        console.print(
+        return Conflict(
             "[red]Error: --all-accounts writes one profile per account "
             "and cannot be combined with --storage.[/red]"
         )
-        exit_with_code(1)
     if update and not all_accounts:
-        console.print("[red]Error: --update only applies to --all-accounts.[/red]")
-        exit_with_code(1)
+        return Conflict("[red]Error: --update only applies to --all-accounts.[/red]")
+    return None
 
 
-def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -> tuple[Path, Path]:
+def prepare_login_paths(
+    profile: str | None, storage: str | None, fresh: bool
+) -> PreparedPaths | PathError:
     """Resolve storage and browser-profile paths for the Playwright login flow.
 
-    Clears the cached browser profile on ``--fresh`` (exiting 1 on OSError),
-    then creates both parent directories with platform-aware permissions.
-    Returns ``(storage_path, browser_profile)``.
+    Clears the cached browser profile on ``--fresh`` (returning
+    :class:`PathError` on OSError so the command layer exits 1), then creates
+    both parent dirs with platform-aware permissions. Returns
+    :class:`PreparedPaths` on success (``fresh_cleared`` flags whether the
+    wipe ran, so the wrapper emits the cleared-session line).
     """
     if storage:
         storage_path = Path(storage)
@@ -661,18 +658,18 @@ def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -
         storage_path = get_storage_path()
     browser_profile = get_browser_profile_dir()
 
+    fresh_cleared = False
     if fresh and browser_profile.exists():
         try:
             shutil.rmtree(browser_profile)
-            console.print("[yellow]Cleared cached browser session (--fresh)[/yellow]")
+            fresh_cleared = True
         except OSError as exc:
             logger.error("Failed to clear browser profile %s: %s", browser_profile, exc)
-            console.print(
+            return PathError(
                 f"[red]Cannot clear browser profile: {exc}[/red]\n"
                 "Close any open browser windows and try again.\n"
                 f"If the problem persists, manually delete: {browser_profile}"
             )
-            exit_with_code(1)
 
     if sys.platform == "win32":
         # On Windows < Python 3.13, mode= is ignored by mkdir(). On
@@ -687,7 +684,11 @@ def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -
         browser_profile.mkdir(parents=True, exist_ok=True, mode=0o700)
         browser_profile.chmod(0o700)
 
-    return storage_path, browser_profile
+    return PreparedPaths(
+        storage_path=storage_path,
+        browser_profile=browser_profile,
+        fresh_cleared=fresh_cleared,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -700,13 +701,12 @@ class PlaywrightLoginPlan:
     """Frozen description of one Playwright login attempt.
 
     Fields:
-        browser: Browser channel; one of ``"chromium"`` or any key of
-            :data:`CHANNEL_BROWSERS` (``"chrome"``, ``"msedge"``).
-        browser_profile: Persistent-context directory Playwright launches
-            against. Survives across login attempts so the session
-            persists for the user.
+        browser: Channel; ``"chromium"`` or any :data:`CHANNEL_BROWSERS` key
+            (``"chrome"``, ``"msedge"``).
+        browser_profile: Persistent-context dir Playwright launches against
+            (survives across attempts so the session persists).
         storage_path: Destination for the captured ``storage_state.json``.
-        include_domains: Optional ``--include-domains`` labels. ``None`` /
+        include_domains: Optional ``--include-domains`` labels; ``None`` /
             empty means "only required Google cookies + regional ccTLDs."
     """
 
@@ -716,16 +716,16 @@ class PlaywrightLoginPlan:
     include_domains: set[str] | None = None
 
 
-def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
+def run_playwright_login(plan: PlaywrightLoginPlan, io: LoginIO) -> None:
     """Drive the Playwright-based Google login and persist storage state.
 
-    Imports Playwright lazily (raising ``SystemExit(1)`` with an install hint
-    on ImportError), runs the chromium pre-flight when the bundled browser is
-    selected, opens a persistent context, retries navigation on transient
-    connection errors, waits for login completion, pins ``.google.com``
-    cookies, applies the cookie-domain allowlist filter, atomically
-    writes ``storage_state.json``, and writes account metadata when the active
-    Google account can be identified safely.
+    Imports Playwright lazily (``io.fail(1)`` + install hint on ImportError),
+    runs the chromium pre-flight for the bundled browser, opens a persistent
+    context, retries navigation on transient connection errors, waits for
+    login, pins ``.google.com`` cookies, applies the cookie-domain allowlist,
+    atomically writes ``storage_state.json``, and writes account metadata when
+    the active account can be identified safely. ``io`` carries every
+    presentation / exit / async-runner side effect.
     """
     browser = plan.browser
     browser_profile = plan.browser_profile
@@ -737,20 +737,19 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
         from playwright.sync_api import TimeoutError as PlaywrightTimeout
         from playwright.sync_api import sync_playwright
     except ImportError:
-        # NOTE: passing markup=False so rich does not interpret `[browser]` as a style tag
-        # (which would strip it, leaving the user with `pip install "notebooklm-py"` — no extras).
+        # markup=False below so Rich keeps the literal `[browser]` pip extra.
         if browser in CHANNEL_BROWSERS:
             install_hint = '  pip install "notebooklm-py[browser]"'
         else:
             install_hint = '  pip install "notebooklm-py[browser]"\n  playwright install chromium'
-        console.print("[red]Playwright not installed. Run:[/red]")
-        console.print(install_hint, markup=False)
-        exit_with_code(1)
+        io.emit("[red]Playwright not installed. Run:[/red]")
+        io.emit(install_hint, markup=False)
+        io.fail(1)
 
     # Pre-flight check: verify Chromium browser is installed (system Chrome
     # and Edge are checked at launch time by Playwright's channel routing).
     if browser == "chromium":
-        ensure_chromium_installed()
+        ensure_chromium_installed(io)
 
     def _capture_page_html(page: Any) -> str | None:
         try:
@@ -765,9 +764,9 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
     profile_name = resolve_profile()
     channel_info = CHANNEL_BROWSERS.get(browser)
     browser_label = channel_info[0] if channel_info else "Chromium"
-    console.print(f"[dim]Profile: {profile_name}[/dim]")
-    console.print(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
-    console.print(f"[dim]Using persistent profile: {browser_profile}[/dim]")
+    io.emit(f"[dim]Profile: {profile_name}[/dim]")
+    io.emit(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
+    io.emit(f"[dim]Using persistent profile: {browser_profile}[/dim]")
 
     account_metadata_page_html: str | None = None
     should_repair_account_metadata = False
@@ -791,7 +790,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
         try:
             context = p.chromium.launch_persistent_context(**launch_kwargs)
 
-            page = context.pages[0] if context.pages else recover_page(context, console)
+            page = context.pages[0] if context.pages else recover_page(context, io)
 
             # Retry navigation on transient connection errors with backoff
             for attempt in range(1, LOGIN_MAX_RETRIES + 1):
@@ -805,7 +804,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
 
                     if (is_retryable or is_target_closed) and attempt < LOGIN_MAX_RETRIES:
                         if is_target_closed:
-                            page = recover_page(context, console)
+                            page = recover_page(context, io)
 
                         backoff_seconds = attempt  # Linear backoff: 1s, 2s
                         logger.debug(
@@ -815,13 +814,13 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                             error_str,
                         )
                         if is_target_closed:
-                            console.print(
+                            io.emit(
                                 f"[yellow]Browser page closed "
                                 f"(attempt {attempt}/{LOGIN_MAX_RETRIES}). "
                                 f"Retrying with fresh page...[/yellow]"
                             )
                         else:
-                            console.print(
+                            io.emit(
                                 f"[yellow]Connection interrupted "
                                 f"(attempt {attempt}/{LOGIN_MAX_RETRIES}). "
                                 f"Retrying in {backoff_seconds}s...[/yellow]"
@@ -833,53 +832,51 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                             LOGIN_MAX_RETRIES,
                             error_str,
                         )
-                        console.print(BROWSER_CLOSED_HELP)
-                        exit_with_code(1)
+                        io.emit(BROWSER_CLOSED_HELP)
+                        io.fail(1)
                     elif is_retryable:
                         logger.error(
                             f"Failed to connect to NotebookLM after {LOGIN_MAX_RETRIES} attempts. "
                             f"Last error: {error_str}"
                         )
-                        console.print(connection_error_help())
-                        exit_with_code(1)
+                        io.emit(connection_error_help())
+                        io.fail(1)
                     else:
                         logger.debug("Non-retryable error: %s", error_str)
                         raise
 
             if url_matches_base_host(page.url):
                 # Persistent browser profile already has a valid session.
-                console.print("[green]Already logged in.[/green]")
+                io.emit("[green]Already logged in.[/green]")
             else:
-                console.print("\n[bold green]Instructions:[/bold green]")
-                console.print("1. Complete the Google login in the browser window")
-                console.print(
-                    "2. Authentication will be saved automatically once login is detected\n"
-                )
-                console.print("[dim]Waiting for login (up to 5 minutes)...[/dim]")
+                io.emit("\n[bold green]Instructions:[/bold green]")
+                io.emit("1. Complete the Google login in the browser window")
+                io.emit("2. Authentication will be saved automatically once login is detected\n")
+                io.emit("[dim]Waiting for login (up to 5 minutes)...[/dim]")
                 try:
                     page.wait_for_url(f"{get_base_url()}/**", timeout=300_000)
                 except PlaywrightTimeout:
-                    console.print(
+                    io.emit(
                         "[red]Login not detected within 5 minutes.[/red]\n"
                         "Try again with: notebooklm login"
                     )
-                    exit_with_code(1)
+                    io.fail(1)
                 except PlaywrightError as exc:
                     # Browser/tab closed during the wait. Cannot resume a
                     # partially completed SSO form, so surface the same
                     # help text other browser-closed paths use.
                     if TARGET_CLOSED_ERROR in str(exc):
-                        console.print(BROWSER_CLOSED_HELP)
-                        exit_with_code(1)
+                        io.emit(BROWSER_CLOSED_HELP)
+                        io.fail(1)
                     raise
-                console.print("[green]Login detected.[/green]")
+                io.emit("[green]Login detected.[/green]")
 
             active_page_html = _capture_page_html(page)
 
             # Force .google.com cookies for regional users (e.g. UK lands on
-            # .google.co.uk). Use "commit" to resolve once response headers
-            # (including Set-Cookie) are processed, before any client-side
-            # JS redirect can interrupt. See #214.
+            # .google.co.uk). "commit" resolves once response headers (incl.
+            # Set-Cookie) are processed, before a client-side redirect can
+            # interrupt. See #214.
             recovered_during_cookie_forcing = False
             for url in [GOOGLE_ACCOUNTS_URL, f"{get_base_url()}/"]:
                 try:
@@ -888,45 +885,40 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                     error_str = str(exc)
                     if TARGET_CLOSED_ERROR in error_str:
                         # Page was destroyed (e.g. user switched accounts) -- get fresh page
-                        page = recover_page(context, console)
+                        page = recover_page(context, io)
                         recovered_during_cookie_forcing = True
                         try:
                             page.goto(url, wait_until="commit")
                         except PlaywrightError as inner_exc:
                             if TARGET_CLOSED_ERROR in str(inner_exc):
-                                console.print(BROWSER_CLOSED_HELP)
-                                exit_with_code(1)
+                                io.emit(BROWSER_CLOSED_HELP)
+                                io.fail(1)
                             elif not is_navigation_interrupted_error(inner_exc):
                                 raise
                     elif not is_navigation_interrupted_error(error_str):
                         raise
 
-            # Defense-in-depth: wait_for_url proved we reached the host,
-            # but the cookie-forcing round-trip above can land us back on
-            # accounts.google.com if the session was invalidated mid-flow
-            # (rare, but the old interactive path defended against this
-            # via a "save anyway?" confirm). Auto-detect is non-interactive,
-            # so fail fast with a clear next step instead.
+            # Defense-in-depth: wait_for_url proved we reached the host, but the
+            # cookie-forcing round-trip above can land us back on
+            # accounts.google.com if the session was invalidated mid-flow (rare).
+            # Auto-detect is non-interactive, so fail fast with a clear next step.
             if not url_matches_base_host(page.url):
-                console.print(
+                io.emit(
                     f"[red]Unexpected URL after login: {page.url}[/red]\n"
                     "Authentication may be incomplete. "
                     "Try: notebooklm login --fresh"
                 )
-                exit_with_code(1)
+                io.fail(1)
 
             if recovered_during_cookie_forcing:
                 active_page_html = _capture_page_html(page)
 
-            # Atomic write with chmod 0o600 — Playwright's path= argument
-            # writes directly (non-atomic + world-readable window).
-            #
-            # Apply the same cookie-domain allowlist that the rookiepy
-            # path uses (``_build_google_cookie_domains``) so sibling-product
-            # cookies (mail, myaccount, docs, youtube) the user happens to be
-            # signed into in the same browser session don't leak into
-            # ``storage_state.json``. Opt-in via ``--include-domains=...``
-            # mirrors the rookiepy semantics.
+            # Atomic write with chmod 0o600 — Playwright's path= writes directly
+            # (non-atomic + world-readable window). Apply the same cookie-domain
+            # allowlist the rookiepy path uses so sibling-product cookies (mail,
+            # myaccount, docs, youtube) the user is signed into in the same
+            # browser session don't leak into ``storage_state.json`` (opt-in via
+            # ``--include-domains=...``).
             playwright_state = context.storage_state()
             filtered_state: dict[str, Any] = filter_storage_state_cookies_by_domain_policy(
                 dict(playwright_state), include_domains=include_domains
@@ -951,15 +943,14 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                 if is_not_found:
                     label, install_url = CHANNEL_BROWSERS[browser]
                     logger.error("%s not found: %s", label, e)
-                    console.print(
+                    io.emit(
                         f"[red]{label} not found.[/red]\n"
                         f"Install from: {install_url}\n"
                         "Or use the default Chromium browser: notebooklm login"
                     )
-                    exit_with_code(1)
-            # Keep the diagnostic available at debug level without flooding stderr
-            # by default. The bare ``raise`` propagates to ``handle_errors`` which
-            # converts it to a friendly ``Unexpected error: <msg>`` line + exit 2.
+                    io.fail(1)
+            # Diagnostic stays at debug level; the bare ``raise`` propagates to
+            # ``handle_errors`` → friendly ``Unexpected error: <msg>`` + exit 2.
             logger.debug("Login failed: %s", e, exc_info=True)
             raise
         finally:
@@ -967,7 +958,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                 context.close()
 
     if should_repair_account_metadata:
-        repair_playwright_account_metadata(storage_path, page_html=account_metadata_page_html)
+        repair_playwright_account_metadata(storage_path, io, page_html=account_metadata_page_html)
 
 
 __all__ = [
@@ -977,7 +968,11 @@ __all__ = [
     "LOGIN_MAX_RETRIES",
     "RETRYABLE_CONNECTION_ERRORS",
     "TARGET_CLOSED_ERROR",
+    "Conflict",
+    "LoginIO",
+    "PathError",
     "PlaywrightLoginPlan",
+    "PreparedPaths",
     "connection_error_help",
     "ensure_chromium_installed",
     "filter_storage_state_cookies_by_domain_policy",

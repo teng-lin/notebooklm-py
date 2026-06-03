@@ -103,6 +103,7 @@ GUARDED_PATHS = {
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
     "cli/services/login/refresh.py": SERVICES_ROOT / "login" / "refresh.py",
     "cli/services/login/rookiepy_errors.py": SERVICES_ROOT / "login" / "rookiepy_errors.py",
+    "cli/services/playwright_login.py": SERVICES_ROOT / "playwright_login.py",
     "cli/services/polling.py": SERVICES_ROOT / "polling.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
@@ -141,50 +142,16 @@ GUARDED_PATHS = {
 #                               A pair but still reaches into Click.
 #   ``rationale``             — short note on what migration is in flight or
 #                               why the module is here.
-TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {
-    "cli/services/playwright_login.py": {
-        "path": SERVICES_ROOT / "playwright_login.py",
-        "forbidden_imports": [
-            "playwright_login.py:45: forbidden relative import: '..error_handler'",
-            "playwright_login.py:46: forbidden relative import: '..rendering'",
-            "playwright_login.py:47: forbidden relative import: '..runtime'",
-        ],
-        "pattern_a_violations": [
-            ("ensure_chromium_installed", 526),
-            ("validate_login_flag_conflicts", 632),
-            ("validate_login_flag_conflicts", 637),
-            ("validate_login_flag_conflicts", 643),
-            ("validate_login_flag_conflicts", 646),
-            ("prepare_login_paths", 675),
-            ("run_playwright_login", 748),
-            ("run_playwright_login", 837),
-            ("run_playwright_login", 844),
-            ("run_playwright_login", 866),
-            ("run_playwright_login", 873),
-            ("run_playwright_login", 898),
-            ("run_playwright_login", 916),
-            ("run_playwright_login", 959),
-        ],
-        "rationale": (
-            "Playwright login orchestrator owns the full presentation + "
-            "exit-code matrix for browser-automation failures; the sole "
-            "remaining residual after #1383 drained the other four targets "
-            "(auth_source / chromium_accounts / firefox_accounts / "
-            "refresh). Unlike the ``login/`` submodules it sits at "
-            "``cli/services/`` so its reach-ins are LEVEL-2 imports "
-            "(``..rendering`` / ``..error_handler`` / ``..runtime``) that "
-            "the boundary scanner DOES flag — a lazy ``_emit`` seam cannot "
-            "clear the import violation, and the ~30 ``console.print`` "
-            "calls stream live during a multi-minute browser SSO session "
-            "(so they resist a return-an-outcome inversion). Draining it "
-            "needs a caller-provided sink/callback inversion, tracked in "
-            "#1391. Line numbers shifted in #1367 when the "
-            "``_resolve_paths_helper`` patch-surface bridge (and the "
-            "``_ensure_chromium_installed`` ``session_cmd`` getattr) were "
-            "deleted; refreshed here."
-        ),
-    },
-}
+# Emptied by #1391: ``playwright_login.py`` was the sole remaining entry. The
+# drain inverted its ``console.print`` / ``exit_with_code`` / ``run_async``
+# reach-ins into a caller-injected ``LoginIO`` sink (the concrete sink +
+# command wrappers live in ``cli/playwright_login_io.py``), so the service no
+# longer imports ``..rendering`` / ``..error_handler`` / ``..runtime`` and
+# carries zero Pattern A pairs — it is now a fully cleaned ``GUARDED_PATHS``
+# module. Every service module under ``cli/services/`` is now either GUARDED or
+# WAIVED; this dict stays declared (and asserted ``== {}`` below) so a future
+# re-introduction of a transitional module is a deliberate, reviewed addition.
+TRANSITIONAL_GUARDED_PATHS: dict[str, dict[str, object]] = {}
 
 # Modules with a documented, indefinite exception. Empty by default; adding
 # to this dict requires a documented architecture exception.
@@ -414,6 +381,25 @@ def test_transitional_services_boundary_violations_are_documented(logical_name, 
         "If this removes a violation, update the expected list in the same PR.\n"
         "If this adds a violation, move rendering/exit policy back to the command layer.\n"
         "Current violations:\n  " + "\n  ".join(violations)
+    )
+
+
+def test_transitional_allowlist_is_empty():
+    """The Stage-3 transitional allowlist is fully drained (#1391).
+
+    ``playwright_login.py`` was the last entry; the drain inverted its
+    presentation / exit / async reach-ins behind a caller-injected
+    ``LoginIO`` sink (concrete sink + command wrappers in
+    ``cli/playwright_login_io.py``), promoting it to ``GUARDED_PATHS``. This
+    is the ADR-0008 end state: every ``cli/services/`` module is enforced at
+    the level-2-import boundary, with no transitional carve-outs. Adding a new
+    transitional entry is a deliberate regression this assertion blocks.
+    """
+    assert TRANSITIONAL_GUARDED_PATHS == {}, (
+        "TRANSITIONAL_GUARDED_PATHS must stay empty after #1391 — a service "
+        "module that owns presentation/exit policy must instead invert it "
+        "behind a caller-injected sink (see cli/playwright_login_io.py) and "
+        f"land in GUARDED_PATHS. Unexpected entries: {sorted(TRANSITIONAL_GUARDED_PATHS)}"
     )
 
 
