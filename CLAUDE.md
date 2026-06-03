@@ -364,6 +364,7 @@ src/notebooklm/
         │   ├── cookie_writes.py
         │   ├── exceptions.py
         │   ├── firefox_accounts.py
+        │   ├── io_seam.py        # Caller-injected LoginIO Protocol + resolver (#1393)
         │   ├── outcomes.py
         │   ├── profile_targets.py
         │   ├── refresh.py

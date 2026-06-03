@@ -20,6 +20,7 @@ from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
     from ....auth import Account
+    from .io_seam import LoginIO
 
 # Shared rookiepy-not-installed message — kept identical to the single-jar
 # path (``browser_accounts._read_browser_cookies``) so the user sees the
@@ -33,20 +34,15 @@ _ROOKIEPY_NOT_INSTALLED_MESSAGE = (
 )
 
 
-def _emit_progress(message: str) -> None:
-    """Emit a verbose-mode progress line.
+def _emit_progress(io: LoginIO, message: str) -> None:
+    """Emit a verbose-mode progress line through the caller-injected sink.
 
-    Routed through a module-level seam so the boundary test
-    (:func:`_pattern_a_pairs`) does not see a literal ``console.print``
-    call inside the reader bodies. The seam imports ``rendering.console``
-    lazily — the rendering module is a level-3 reach-in from this
-    services-package subdirectory, which the boundary test explicitly
-    does not flag — and forwards the call so text-mode UX (the "Reading
-    cookies from ..." status lines) is preserved byte-for-byte.
+    Routes the text-mode "Reading cookies from ..." status lines
+    (byte-for-byte unchanged) through ``io.emit`` so this service never
+    imports the command layer's ``...rendering`` module (ADR-0008 level-3
+    boundary, #1393).
     """
-    from ...rendering import console
-
-    console.print(message)
+    io.emit(message)
 
 
 def _chromium_profiles_module() -> Any:
@@ -71,6 +67,7 @@ def _split_chromium_profile_browser_spec(browser_name: str) -> tuple[str, str] |
 
 
 def _read_chromium_profile_cookies_from_selector(
+    io: LoginIO,
     browser_name: str,
     profile_selector: str,
     *,
@@ -83,6 +80,7 @@ def _read_chromium_profile_cookies_from_selector(
     :class:`.outcomes.BrowserCookieOutcome` on failure. The command layer
     (or :func:`refresh._exit_on_outcome`) renders ``outcome.message`` and
     exits; this keeps presentation + exit policy out of ``cli/services``.
+    The ``io`` sink carries the verbose progress line.
     """
     chromium_profiles = _chromium_profiles_module()
 
@@ -94,8 +92,9 @@ def _read_chromium_profile_cookies_from_selector(
     domains = _build_google_cookie_domains(include_domains=include_domains)
     if verbose:
         _emit_progress(
+            io,
             f"[yellow]Reading cookies from {profile.browser} profile "
-            f"'{profile.human_name}' (directory: {profile.directory_name})...[/yellow]"
+            f"'{profile.human_name}' (directory: {profile.directory_name})...[/yellow]",
         )
 
     try:
@@ -114,6 +113,7 @@ def _read_chromium_profile_cookies_from_selector(
 
 
 def _enumerate_chromium_profiles_fanout(
+    io: LoginIO,
     browser_name: str,
     profiles: list[Any],
     *,
@@ -131,7 +131,8 @@ def _enumerate_chromium_profiles_fanout(
     Returns ``(per_profile_cookies, accounts)`` on success, or a
     :class:`.outcomes.BrowserCookieOutcome` on failure. The command layer
     renders ``outcome.message`` and exits — presentation + exit policy stay
-    out of ``cli/services``.
+    out of ``cli/services``. The ``io`` sink carries the verbose progress and
+    per-profile skip/dedupe lines.
     """
     chromium_profiles = _chromium_profiles_module()
 
@@ -140,8 +141,9 @@ def _enumerate_chromium_profiles_fanout(
     if verbose:
         names = ", ".join(f"'{p.human_name}'" for p in profiles)
         _emit_progress(
+            io,
             f"[yellow]Reading cookies from {len(profiles)} {browser_name} "
-            f"user-profiles: {names}[/yellow]"
+            f"user-profiles: {names}[/yellow]",
         )
 
     from ....auth import Account
@@ -169,8 +171,9 @@ def _enumerate_chromium_profiles_fanout(
             read_failures.append((profile.human_name, e))
             if verbose:
                 _emit_progress(
+                    io,
                     f"  [yellow]skipping {browser_name} profile "
-                    f"'{profile.human_name}': {e}[/yellow]"
+                    f"'{profile.human_name}': {e}[/yellow]",
                 )
             continue
 
@@ -181,6 +184,7 @@ def _enumerate_chromium_profiles_fanout(
                 browser_name,
                 browser_profile=profile.directory_name,
                 quiet=True,
+                io=io,
             )
         except httpx.RequestError as e:
             # Network failure — every subsequent profile probe will hit the
@@ -199,7 +203,8 @@ def _enumerate_chromium_profiles_fanout(
             # normal — continue to the next one.
             if verbose:
                 _emit_progress(
-                    f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]"
+                    io,
+                    f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]",
                 )
             continue
         accounts = jar_result
@@ -209,9 +214,10 @@ def _enumerate_chromium_profiles_fanout(
             if account.email in seen_emails:
                 if verbose:
                     _emit_progress(
+                        io,
                         f"  [yellow]warning: {account.email} also appears in "
                         f"'{profile.human_name}'; using cookies from "
-                        f"'{seen_emails[account.email]}'[/yellow]"
+                        f"'{seen_emails[account.email]}'[/yellow]",
                     )
                 continue
             seen_emails[account.email] = profile.directory_name

@@ -26,18 +26,32 @@ PKG_PATH = Path("src/notebooklm/cli/services/login")
 # but you also remove the documented design intent that says "this edge is
 # legitimate when needed". Keep the entry; add a comment when you start
 # using it.
+# ``io_seam`` (the caller-injected ``LoginIO`` Protocol + resolver, #1393) is a
+# leaf: it imports no siblings. Every helper that emits / exits / runs async now
+# threads a ``LoginIO`` sink and imports ``io_seam`` (the resolver and/or the
+# Protocol under TYPE_CHECKING), so it is an allowed edge from the whole DAG.
 ALLOWED_EDGES: dict[str, set[str]] = {
     "exceptions": set(),
     "outcomes": set(),
     "cookie_domains": set(),
     "rookiepy_errors": set(),
+    "io_seam": set(),
     "cookie_jar": {
         "outcomes",
         # allowed but currently unused — _enumerate_one_jar formats its own
         # rookiepy error messages and does not call _handle_rookiepy_error.
         "rookiepy_errors",
+        # io_seam: _enumerate_one_jar drives the account probe via io.run_async.
+        "io_seam",
     },
-    "chromium_accounts": {"cookie_jar", "rookiepy_errors", "cookie_domains", "outcomes"},
+    "chromium_accounts": {
+        "cookie_jar",
+        "rookiepy_errors",
+        "cookie_domains",
+        "outcomes",
+        # io_seam: the chromium readers emit verbose progress via io.emit.
+        "io_seam",
+    },
     "firefox_accounts": {
         # _read_firefox_container_cookies returns a CookieValidationFailure
         # (a BrowserCookieOutcome) on every extractor failure instead of
@@ -49,6 +63,8 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         # back to the caller (browser_accounts) which then routes through
         # _enumerate_one_jar; this module does not import it directly.
         "cookie_jar",
+        # io_seam: the firefox readers emit verbose progress via io.emit.
+        "io_seam",
     },
     "browser_accounts": {
         "chromium_accounts",
@@ -63,6 +79,8 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         # browser-family subordinates. Adding the edge here keeps the dispatch
         # logic colocated; the DAG stays acyclic (cookie_domains is a leaf).
         "cookie_domains",
+        # io_seam: the dispatcher resolves + threads the LoginIO sink.
+        "io_seam",
     },
     "profile_targets": {
         # ADR-015 Pattern B decoupling — _validate_profile_name raises
@@ -75,8 +93,19 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "browser_accounts",
         "cookie_domains",
         "outcomes",
+        # io_seam: _write_extracted_cookies / _select_account emit warnings and
+        # run the verification probe through the injected sink.
+        "io_seam",
     },
-    "refresh": {"browser_accounts", "cookie_writes", "outcomes", "profile_targets"},
+    "refresh": {
+        "browser_accounts",
+        "cookie_writes",
+        "outcomes",
+        "profile_targets",
+        # io_seam: refresh drivers own success messaging + exit policy via the
+        # injected sink (io.emit / io.fail / io.run_async).
+        "io_seam",
+    },
 }
 
 

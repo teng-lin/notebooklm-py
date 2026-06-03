@@ -14,6 +14,7 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import MagicMock, patch
 
+from _fixtures.login_io import make_recording_io
 from notebooklm.cli.services.login import firefox_accounts
 from notebooklm.cli.services.login.outcomes import BrowserCookieOutcome
 
@@ -34,14 +35,18 @@ class TestReadFirefoxContainerCookiesErrors:
             tmp_path, extract_side_effect=FileNotFoundError("no cookies.sqlite")
         )
         with patch.object(firefox_accounts, "_firefox_containers_module", return_value=mod):
-            result = firefox_accounts._read_firefox_container_cookies("none", verbose=False)
+            result = firefox_accounts._read_firefox_container_cookies(
+                make_recording_io(), "none", verbose=False
+            )
         assert isinstance(result, BrowserCookieOutcome)
         assert "no cookies.sqlite" in result.message
 
     def test_oserror_routes_through_rookiepy_handler(self, tmp_path):
         mod = _fake_containers_module(tmp_path, extract_side_effect=OSError("database is locked"))
         with patch.object(firefox_accounts, "_firefox_containers_module", return_value=mod):
-            result = firefox_accounts._read_firefox_container_cookies("none", verbose=False)
+            result = firefox_accounts._read_firefox_container_cookies(
+                make_recording_io(), "none", verbose=False
+            )
         assert isinstance(result, BrowserCookieOutcome)
         # The locked-DB message from _handle_rookiepy_error is surfaced.
         assert "database is locked" in result.message
@@ -51,7 +56,9 @@ class TestReadFirefoxContainerCookiesErrors:
             tmp_path, extract_side_effect=RuntimeError("totally unexpected")
         )
         with patch.object(firefox_accounts, "_firefox_containers_module", return_value=mod):
-            result = firefox_accounts._read_firefox_container_cookies("none", verbose=False)
+            result = firefox_accounts._read_firefox_container_cookies(
+                make_recording_io(), "none", verbose=False
+            )
         assert isinstance(result, BrowserCookieOutcome)
 
     def test_sqlite_database_error_returns_outcome(self, tmp_path):
@@ -59,7 +66,9 @@ class TestReadFirefoxContainerCookiesErrors:
             tmp_path, extract_side_effect=sqlite3.DatabaseError("malformed db")
         )
         with patch.object(firefox_accounts, "_firefox_containers_module", return_value=mod):
-            result = firefox_accounts._read_firefox_container_cookies("none", verbose=False)
+            result = firefox_accounts._read_firefox_container_cookies(
+                make_recording_io(), "none", verbose=False
+            )
         assert isinstance(result, BrowserCookieOutcome)
         assert "malformed db" in result.message
 
@@ -72,7 +81,9 @@ class TestReadFirefoxContainerCookiesErrors:
                 firefox_accounts, "_build_google_cookie_domains", return_value=[".google.com"]
             ),
         ):
-            cookies = firefox_accounts._read_firefox_container_cookies("none", verbose=False)
+            cookies = firefox_accounts._read_firefox_container_cookies(
+                make_recording_io(), "none", verbose=False
+            )
         assert cookies == [{"name": "SID"}]
 
 
@@ -84,7 +95,7 @@ class TestMaybeWarnFirefoxContainersInUse:
             patch.object(firefox_accounts, "_firefox_containers_module", return_value=mod),
             patch.object(firefox_accounts, "_emit_progress") as emit,
         ):
-            firefox_accounts._maybe_warn_firefox_containers_in_use()
+            firefox_accounts._maybe_warn_firefox_containers_in_use(make_recording_io())
         mod.has_container_cookies_in_use.assert_not_called()
         emit.assert_not_called()
 
@@ -96,6 +107,8 @@ class TestMaybeWarnFirefoxContainersInUse:
             patch.object(firefox_accounts, "_firefox_containers_module", return_value=mod),
             patch.object(firefox_accounts, "_emit_progress") as emit,
         ):
-            firefox_accounts._maybe_warn_firefox_containers_in_use()
+            firefox_accounts._maybe_warn_firefox_containers_in_use(make_recording_io())
         emit.assert_called_once()
-        assert "Multi-Account Container" in emit.call_args[0][0]
+        # ``_emit_progress`` now takes ``(io, message)`` — the message is the
+        # second positional arg.
+        assert "Multi-Account Container" in emit.call_args[0][1]

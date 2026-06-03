@@ -92,6 +92,21 @@ def mind_map_result(spec: dict | None = None, **overrides: Any) -> MindMapResult
     return MindMapResult(mind_map=data.get("mind_map"), note_id=data.get("note_id"))
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _register_default_login_io():
+    """Ensure the browser-cookie login default ``LoginIO`` sink is registered.
+
+    The login DAG (``cli/services/login/*``) resolves its presentation / exit /
+    async sink via ``io_seam.resolve_login_io`` (#1393); the concrete default
+    factory is registered as a side effect of importing the command-layer
+    ``cli/playwright_login_io.py``. Direct-service unit tests import only the
+    service module, so without this they'd race on collection order to have the
+    factory wired. Importing it here once per session makes ``resolve_login_io``
+    deterministic for tests that call a driver without injecting ``io``.
+    """
+    import notebooklm.cli.playwright_login_io  # noqa: F401  (registration side effect)
+
+
 @pytest.fixture(autouse=True)
 def _disable_chromium_profile_fanout():
     """Default: Chromium multi-user-profile discovery returns nothing in tests.

@@ -32,6 +32,13 @@ from notebooklm.cli.services.login import refresh
 from notebooklm.cli.services.login.outcomes import BrowserCookieOutcome
 
 REFRESH = "notebooklm.cli.services.login.refresh"
+# The async bridge is no longer ``refresh.run_async`` (#1393 inverted it behind
+# the injected ``LoginIO`` sink). With no ``io`` injected these drivers resolve
+# the command-layer default sink (``PlaywrightLoginIO``), whose ``run_async``
+# binds ``cli.playwright_login_io.run_async``. Patching it here intercepts the
+# async probe while leaving ``emit`` → ``console.print`` intact so ``capsys``
+# still captures the rendered warning lines.
+IO_RUN_ASYNC = "notebooklm.cli.playwright_login_io.run_async"
 
 
 def _account(email: str, *, authuser: int = 0, browser_profile: str = "Default") -> Any:
@@ -308,7 +315,7 @@ def test_login_with_cookies_write_metadata_oserror_warns(tmp_path, capsys) -> No
                 side_effect=OSError("metadata write fail"),
             )
         )
-        stack.enter_context(patch(f"{REFRESH}.run_async"))
+        stack.enter_context(patch(IO_RUN_ASYNC))
         refresh._login_with_browser_cookies(
             tmp_path / "storage.json", "chrome", authuser=1, email="x@example.com"
         )
@@ -326,7 +333,7 @@ def test_login_with_cookies_clear_metadata_oserror_logged(tmp_path, caplog) -> N
         stack.enter_context(
             patch("notebooklm.auth.clear_account_metadata", side_effect=OSError("clear fail"))
         )
-        stack.enter_context(patch(f"{REFRESH}.run_async"))
+        stack.enter_context(patch(IO_RUN_ASYNC))
         stack.enter_context(caplog.at_level(logging.WARNING, logger=REFRESH))
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     assert any(
@@ -340,7 +347,7 @@ def test_login_with_cookies_account_line_printed(tmp_path, capsys) -> None:
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
         stack.enter_context(patch("notebooklm.auth.write_account_metadata"))
-        stack.enter_context(patch(f"{REFRESH}.run_async"))
+        stack.enter_context(patch(IO_RUN_ASYNC))
         refresh._login_with_browser_cookies(
             tmp_path / "storage.json", "chrome", authuser=2, email="dave@example.com"
         )
@@ -354,9 +361,7 @@ def test_login_with_cookies_verify_valueerror_warns(tmp_path, capsys) -> None:
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
         stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
-        stack.enter_context(
-            patch(f"{REFRESH}.run_async", side_effect=ValueError("invalid cookies"))
-        )
+        stack.enter_context(patch(IO_RUN_ASYNC, side_effect=ValueError("invalid cookies")))
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     out = capsys.readouterr().out
     assert "failed validation" in out
@@ -368,9 +373,7 @@ def test_login_with_cookies_verify_network_error_warns(tmp_path, capsys) -> None
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
         stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
-        stack.enter_context(
-            patch(f"{REFRESH}.run_async", side_effect=httpx.RequestError("connect failed"))
-        )
+        stack.enter_context(patch(IO_RUN_ASYNC, side_effect=httpx.RequestError("connect failed")))
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     out = capsys.readouterr().out
     assert "network issue" in out
@@ -382,7 +385,7 @@ def test_login_with_cookies_verify_unexpected_error_warns(tmp_path, capsys) -> N
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
         stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
-        stack.enter_context(patch(f"{REFRESH}.run_async", side_effect=RuntimeError("boom")))
+        stack.enter_context(patch(IO_RUN_ASYNC, side_effect=RuntimeError("boom")))
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     out = capsys.readouterr().out
     assert "Unexpected error during verification" in out

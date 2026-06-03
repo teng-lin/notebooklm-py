@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from _fixtures.login_io import RecordingLoginIO
 from notebooklm.cli.services.login import cookie_jar
 from notebooklm.cli.services.login.outcomes import (
     CookieValidationFailure,
@@ -35,14 +36,21 @@ class _FakeAccount:
 def _enumerate_env(*, validate_return, run_async_side_effect=None, run_async_return=None):
     """Patch the collaborators ``_enumerate_one_jar`` reaches at call time.
 
-    ``validate_with_recovery`` and ``run_async`` are module-level imports in
-    ``cookie_jar`` (patched via ``patch.object``); ``build_cookie_jar`` /
+    ``validate_with_recovery`` is a module-level import in ``cookie_jar``
+    (patched via ``patch.object``); ``build_cookie_jar`` /
     ``extract_cookies_with_domains`` / ``enumerate_accounts`` are *function-local*
     ``from ....auth import ...`` lookups, so they're patched on ``notebooklm.auth``.
     ``enumerate_accounts`` is async, so an auto-specced ``patch`` would hand back
-    an un-awaited coroutine (``run_async`` is stubbed and never awaits it); an
+    an un-awaited coroutine (the ``io.run_async`` stub never awaits it); an
     explicit sync ``MagicMock`` returns a plain sentinel instead.
+
+    The async bridge is no longer a module-level ``run_async`` (#1393 inverted
+    it behind the injected ``LoginIO`` sink). This helper yields a
+    :class:`RecordingLoginIO` whose ``run_async`` is the configured stub; tests
+    pass it as ``io=`` so the probe result / side-effect is controlled exactly
+    as before.
     """
+    run_async = MagicMock(side_effect=run_async_side_effect, return_value=run_async_return)
     with ExitStack() as stack:
         stack.enter_context(
             patch.object(cookie_jar, "validate_with_recovery", return_value=validate_return)
@@ -52,21 +60,13 @@ def _enumerate_env(*, validate_return, run_async_side_effect=None, run_async_ret
         stack.enter_context(
             patch("notebooklm.auth.enumerate_accounts", MagicMock(return_value=object()))
         )
-        if run_async_side_effect is not None:
-            stack.enter_context(
-                patch.object(cookie_jar, "run_async", side_effect=run_async_side_effect)
-            )
-        else:
-            stack.enter_context(
-                patch.object(cookie_jar, "run_async", return_value=run_async_return)
-            )
-        yield
+        yield RecordingLoginIO(run_async=run_async)
 
 
 class TestValidationFailure:
     def test_quiet_returns_collapsed_validation_failure(self):
-        with _enumerate_env(validate_return=({"cookies": []}, ValueError("missing SID"))):
-            out = cookie_jar._enumerate_one_jar([], "chrome", None, quiet=True)
+        with _enumerate_env(validate_return=({"cookies": []}, ValueError("missing SID"))) as io:
+            out = cookie_jar._enumerate_one_jar([], "chrome", None, quiet=True, io=io)
 
         assert isinstance(out, CookieValidationFailure)
         assert out.code == "COOKIE_VALIDATION_FAILED"
@@ -75,8 +75,8 @@ class TestValidationFailure:
         assert "\n" not in out.message
 
     def test_loud_returns_validation_failure_with_hint(self):
-        with _enumerate_env(validate_return=({"cookies": []}, ValueError("missing SID"))):
-            out = cookie_jar._enumerate_one_jar([], "chrome", None, quiet=False)
+        with _enumerate_env(validate_return=({"cookies": []}, ValueError("missing SID"))) as io:
+            out = cookie_jar._enumerate_one_jar([], "chrome", None, quiet=False, io=io)
 
         assert isinstance(out, CookieValidationFailure)
         assert out.code == "COOKIE_VALIDATION_FAILED"
@@ -90,8 +90,8 @@ class TestStaleCookies:
         with _enumerate_env(
             validate_return=({"cookies": [1]}, None),
             run_async_side_effect=ValueError("rejected"),
-        ):
-            out = cookie_jar._enumerate_one_jar([{"x": 1}], "firefox", None, quiet=True)
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "firefox", None, quiet=True, io=io)
 
         assert isinstance(out, StaleCookies)
         assert out.code == "STALE_COOKIES"
@@ -102,8 +102,8 @@ class TestStaleCookies:
         with _enumerate_env(
             validate_return=({"cookies": [1]}, None),
             run_async_side_effect=ValueError("rejected"),
-        ):
-            out = cookie_jar._enumerate_one_jar([{"x": 1}], "firefox", None, quiet=False)
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "firefox", None, quiet=False, io=io)
 
         assert isinstance(out, StaleCookies)
         assert out.code == "STALE_COOKIES"
@@ -117,17 +117,17 @@ class TestNetworkFailure:
             _enumerate_env(
                 validate_return=({"cookies": [1]}, None),
                 run_async_side_effect=httpx.ConnectError("no route"),
-            ),
+            ) as io,
             pytest.raises(httpx.RequestError),
         ):
-            cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", None, quiet=True)
+            cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", None, quiet=True, io=io)
 
     def test_loud_returns_network_failure_outcome(self):
         with _enumerate_env(
             validate_return=({"cookies": [1]}, None),
             run_async_side_effect=httpx.ConnectError("no route"),
-        ):
-            out = cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", None, quiet=False)
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", None, quiet=False, io=io)
 
         assert isinstance(out, NetworkFailure)
         assert out.code == "NETWORK_ERROR"
@@ -136,8 +136,10 @@ class TestNetworkFailure:
 class TestSuccessPath:
     def test_legacy_single_jar_returns_accounts_unchanged(self):
         accounts = [_FakeAccount(0, "a@gmail.com", True)]
-        with _enumerate_env(validate_return=({"cookies": [1]}, None), run_async_return=accounts):
-            out = cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", None)
+        with _enumerate_env(
+            validate_return=({"cookies": [1]}, None), run_async_return=accounts
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", None, io=io)
 
         assert out == accounts
 
@@ -145,8 +147,10 @@ class TestSuccessPath:
         # Account is reconstructed inside the function from notebooklm.auth, so
         # leave the real class in place here (only the probe is stubbed).
         accounts = [_FakeAccount(0, "a@gmail.com", True)]
-        with _enumerate_env(validate_return=({"cookies": [1]}, None), run_async_return=accounts):
-            out = cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", "Profile 1")
+        with _enumerate_env(
+            validate_return=({"cookies": [1]}, None), run_async_return=accounts
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "chrome", "Profile 1", io=io)
 
         assert len(out) == 1
         assert out[0].browser_profile == "Profile 1"

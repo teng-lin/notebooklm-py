@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from .error_handler import exit_with_code
 from .rendering import console
 from .runtime import run_async
+from .services.login.io_seam import set_default_login_io_factory
 from .services.playwright_login import (
     PathError,
     PlaywrightLoginPlan,
@@ -76,6 +77,17 @@ class PlaywrightLoginIO:
 def make_login_io() -> LoginIO:
     """Build the concrete :class:`PlaywrightLoginIO` sink for the login flow."""
     return PlaywrightLoginIO()
+
+
+# Register this concrete sink as the browser-cookie login service's default at
+# import time (#1393). The login DAG (``services/login/*``) inverts its
+# presentation / exit / async reach-ins behind a ``LoginIO`` Protocol and
+# resolves an explicit injected sink first; when none is injected (direct
+# callers, and tests that exercise the service through the command layer) it
+# falls back to this factory so behavior is byte-for-byte identical. Importing
+# this command-layer module is what wires the default — the service never
+# imports across the ADR-0008 boundary itself.
+set_default_login_io_factory(make_login_io)
 
 
 def validate_flags_or_exit(

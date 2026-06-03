@@ -37,6 +37,7 @@ from .firefox_accounts import (
     _maybe_warn_firefox_containers_in_use,
     _read_firefox_container_cookies,
 )
+from .io_seam import resolve_login_io
 from .outcomes import (
     BrowserCookieOutcome,
     CookieValidationFailure,
@@ -47,28 +48,18 @@ from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
     from ....auth import Account
+    from .io_seam import LoginIO
 
 
-def _emit_progress(message: str) -> None:
-    """Emit a verbose-mode progress line.
+def _emit_progress(io: LoginIO, message: str) -> None:
+    """Emit a verbose-mode progress line through the caller-injected sink.
 
-    Routed through a module-level seam so the boundary test
-    (:func:`_pattern_a_pairs`) does not see a literal ``console.print``
-    call inside the dispatcher's function body. The seam imports
-    ``rendering.console`` lazily — the rendering module is still a
-    level-3 reach-in from this services-package subdirectory, which the
-    boundary test explicitly does not flag — and forwards the call so
-    text-mode UX is preserved (the "Reading cookies from ..." status
-    line that callers like ``login --browser-cookies chrome`` rely on).
-
-    Future PRs that lift rendering reach-in entirely will replace this
-    with an injected progress callback owned by the command layer; the
-    seam is the minimum change that keeps text-mode behavior identical
-    while moving this module into :data:`GUARDED_PATHS`.
+    Routes the "Reading cookies from ..." status line (byte-for-byte
+    unchanged) through ``io.emit`` so this dispatcher never imports the
+    command layer's ``...rendering`` module (ADR-0008 level-3 boundary,
+    #1393). The command layer supplies the concrete ``console.print`` sink.
     """
-    from ...rendering import console
-
-    console.print(message)
+    io.emit(message)
 
 
 def _enumerate_browser_accounts(
@@ -76,6 +67,7 @@ def _enumerate_browser_accounts(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
+    io: LoginIO | None = None,
 ) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]] | BrowserCookieOutcome:
     """Read cookies from ``browser_name`` and discover signed-in accounts.
 
@@ -95,6 +87,9 @@ def _enumerate_browser_accounts(
         include_domains: Forwarded to :func:`_read_browser_cookies` to
             broaden the extraction set with sibling-product cookies. See
             :func:`_parse_include_domains`.
+        io: Optional caller-injected :class:`.io_seam.LoginIO` sink (resolved
+            to the command-layer default when ``None``) threaded to the
+            chromium / firefox readers for their verbose progress lines.
 
     Returns:
         On success — ``(per_profile_cookies, accounts)``:
@@ -113,12 +108,14 @@ def _enumerate_browser_accounts(
         the unknown-browser dispatch); the command layer — or
         ``refresh._exit_on_outcome`` — renders ``outcome.message`` and exits.
     """
+    io = resolve_login_io(io)
     chromium_profiles = _chromium_profiles_module()
 
     scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
     if scoped_chromium is not None:
         scoped_browser, profile_selector = scoped_chromium
         scoped_result = _read_chromium_profile_cookies_from_selector(
+            io,
             scoped_browser,
             profile_selector,
             verbose=verbose,
@@ -131,6 +128,7 @@ def _enumerate_browser_accounts(
             raw_cookies,
             profile.browser,
             browser_profile=profile.directory_name,
+            io=io,
         )
         if isinstance(result, BrowserCookieOutcome):
             return result
@@ -143,6 +141,7 @@ def _enumerate_browser_accounts(
         profiles = chromium_profiles.discover_chromium_profiles(browser_name)
         if len(profiles) > 1:
             return _enumerate_chromium_profiles_fanout(
+                io,
                 browser_name,
                 profiles,
                 verbose=verbose,
@@ -150,11 +149,11 @@ def _enumerate_browser_accounts(
             )
 
     cookies_result = _read_browser_cookies(
-        browser_name, verbose=verbose, include_domains=include_domains
+        browser_name, verbose=verbose, include_domains=include_domains, io=io
     )
     if isinstance(cookies_result, BrowserCookieOutcome):
         return cookies_result
-    enum_result = _enumerate_one_jar(cookies_result, browser_name, browser_profile=None)
+    enum_result = _enumerate_one_jar(cookies_result, browser_name, browser_profile=None, io=io)
     if isinstance(enum_result, BrowserCookieOutcome):
         return enum_result
     return {None: cookies_result}, enum_result
@@ -165,6 +164,7 @@ def _read_browser_cookies(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
+    io: LoginIO | None = None,
 ) -> list[dict[str, Any]] | BrowserCookieOutcome:
     """Load Google cookies from an installed browser via rookiepy.
 
@@ -186,6 +186,9 @@ def _read_browser_cookies(
             extraction set with sibling-product cookies. ``None`` (the
             default) keeps the extraction tight to
             :data:`REQUIRED_COOKIE_DOMAINS`.
+        io: Optional caller-injected :class:`.io_seam.LoginIO` sink (resolved
+            to the command-layer default when ``None``) threaded to the
+            firefox / chromium readers and used for the verbose progress line.
 
     Returns:
         On success — raw cookie dicts as returned by rookiepy (or by the
@@ -198,6 +201,7 @@ def _read_browser_cookies(
         (rookiepy not installed, empty Firefox container spec, or read
         failure surfaced by :func:`_handle_rookiepy_error`).
     """
+    io = resolve_login_io(io)
     # Firefox container syntax: ``firefox::<name>`` or ``firefox::none``.
     # Routed to a direct sqlite3 reader because rookiepy does not honor
     # ``originAttributes`` — see issue #367.
@@ -215,13 +219,14 @@ def _read_browser_cookies(
                 ),
             )
         return _read_firefox_container_cookies(
-            container_spec, verbose=verbose, include_domains=include_domains
+            io, container_spec, verbose=verbose, include_domains=include_domains
         )
 
     scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
     if scoped_chromium is not None:
         scoped_browser, profile_selector = scoped_chromium
         scoped_result = _read_chromium_profile_cookies_from_selector(
+            io,
             scoped_browser,
             profile_selector,
             verbose=verbose,
@@ -266,7 +271,8 @@ def _read_browser_cookies(
     if browser_name == "auto":
         if verbose:
             _emit_progress(
-                "[yellow]Reading cookies from installed browser (auto-detect)...[/yellow]"
+                io,
+                "[yellow]Reading cookies from installed browser (auto-detect)...[/yellow]",
             )
         try:
             return rookiepy.load(domains=domains)
@@ -278,7 +284,7 @@ def _read_browser_cookies(
 
     assert canonical is not None
     if verbose:
-        _emit_progress(f"[yellow]Reading cookies from {browser_name}...[/yellow]")
+        _emit_progress(io, f"[yellow]Reading cookies from {browser_name}...[/yellow]")
     browser_fn = getattr(rookiepy, canonical, None)
     if browser_fn is None or not callable(browser_fn):
         return UnsupportedBrowser(
@@ -301,6 +307,6 @@ def _read_browser_cookies(
     # every Multi-Account Container. Skip when ``verbose=False`` so callers
     # like ``auth inspect --json`` don't pollute stdout before their JSON.
     if canonical == "firefox" and verbose:
-        _maybe_warn_firefox_containers_in_use()
+        _maybe_warn_firefox_containers_in_use(io)
 
     return cookies

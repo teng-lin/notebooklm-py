@@ -1579,7 +1579,10 @@ class TestLoginLanguageSync:
 
         with (
             patch_session_login_dual("NotebookLMClient") as mock_client_cls,
-            patch_session_login_dual("console") as mock_console,
+            # The warning is now emitted through the injected ``LoginIO`` sink
+            # (#1393); with no sink passed, the default ``PlaywrightLoginIO``
+            # resolves and forwards ``emit`` to ``playwright_login_io.console``.
+            patch("notebooklm.cli.playwright_login_io.console") as mock_console,
         ):
             # Raise from the sync `from_storage` call itself.
             mock_client_cls.from_storage = MagicMock(side_effect=Exception("Network error"))

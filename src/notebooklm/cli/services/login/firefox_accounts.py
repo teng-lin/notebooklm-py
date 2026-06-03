@@ -15,26 +15,26 @@ error printer), and :mod:`.cookie_domains` (domain-list builder).
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .cookie_domains import _build_google_cookie_domains
 from .outcomes import BrowserCookieOutcome, CookieValidationFailure
 from .rookiepy_errors import _handle_rookiepy_error
 
+if TYPE_CHECKING:
+    from .io_seam import LoginIO
 
-def _emit_progress(message: str) -> None:
-    """Emit a verbose-mode progress line through a lazy ``console`` seam.
 
-    Keeps the literal ``console.print`` call out of the reader body (the
-    boundary :func:`_pattern_a_pairs` scanner only flags ``console.print``
-    co-occurring with ``exit_with_code`` in the same function) while
-    preserving the text-mode "Reading cookies from Firefox ..." status
-    lines byte-for-byte. ``rendering`` is a level-3 reach-in the boundary
-    test explicitly does not flag.
+def _emit_progress(io: LoginIO, message: str) -> None:
+    """Emit a verbose-mode progress line through the caller-injected sink.
+
+    Routes the text-mode "Reading cookies from Firefox ..." status lines
+    (byte-for-byte unchanged) through ``io.emit`` so this service never
+    imports the command layer's ``...rendering`` module (ADR-0008 level-3
+    boundary, #1393). The split-helper shape also keeps the literal print
+    call out of any function body that owns exit policy.
     """
-    from ...rendering import console
-
-    console.print(message)
+    io.emit(message)
 
 
 def _firefox_containers_module() -> Any:
@@ -44,6 +44,7 @@ def _firefox_containers_module() -> Any:
 
 
 def _read_firefox_container_cookies(
+    io: LoginIO,
     container_spec: str,
     *,
     verbose: bool = True,
@@ -57,6 +58,8 @@ def _read_firefox_container_cookies(
     helpers in :mod:`notebooklm.cli._firefox_containers`.
 
     Args:
+        io: Caller-injected :class:`.io_seam.LoginIO` sink for the verbose
+            progress line.
         container_spec: The part after ``firefox::`` (e.g. ``"Work"`` or
             ``"none"`` for the no-container default).
         verbose: When False, suppress the progress line; used by
@@ -94,11 +97,12 @@ def _read_firefox_container_cookies(
 
     if verbose:
         if container_id == "none":
-            _emit_progress("[yellow]Reading cookies from Firefox (no container)...[/yellow]")
+            _emit_progress(io, "[yellow]Reading cookies from Firefox (no container)...[/yellow]")
         else:
             _emit_progress(
+                io,
                 f"[yellow]Reading cookies from Firefox container "
-                f"'{container_spec}' (userContextId={container_id})...[/yellow]"
+                f"'{container_spec}' (userContextId={container_id})...[/yellow]",
             )
 
     domains = _build_google_cookie_domains(include_domains=include_domains)
@@ -119,7 +123,7 @@ def _read_firefox_container_cookies(
         )
 
 
-def _maybe_warn_firefox_containers_in_use() -> None:
+def _maybe_warn_firefox_containers_in_use(io: LoginIO) -> None:
     """Emit a one-line warning when unscoped ``firefox`` is risky.
 
     Triggers when ``cookies.sqlite`` has at least one row whose
@@ -138,11 +142,12 @@ def _maybe_warn_firefox_containers_in_use() -> None:
         return
     if firefox_containers.has_container_cookies_in_use(profile_path):
         _emit_progress(
+            io,
             "[yellow]Warning: this Firefox profile has cookies stored inside "
             "a Multi-Account Container, but '--browser-cookies firefox' "
             "merges every container into one jar. If your Google session "
             "lives inside a container, re-run with "
             "[cyan]--browser-cookies 'firefox::<container-name>'[/cyan] "
             "(or [cyan]'firefox::none'[/cyan] for the no-container "
-            "default).[/yellow]"
+            "default).[/yellow]",
         )

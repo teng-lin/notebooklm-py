@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -41,17 +41,24 @@ from .outcomes import (
     CookieValidationFailure,
 )
 
+if TYPE_CHECKING:
+    from .io_seam import LoginIO
+
 logger = logging.getLogger(__name__)
 
 
-def _emit_warning(message: str) -> None:
-    """Render a nonfatal text-mode warning while keeping failure paths typed."""
-    from ...rendering import console
+def _emit_warning(io: LoginIO, message: str) -> None:
+    """Render a nonfatal text-mode warning through the caller-injected sink.
 
-    console.print(message)
+    Routes the warning line through ``io.emit`` so this service never imports
+    the command layer's ``...rendering`` module (ADR-0008 level-3 boundary,
+    #1393), while keeping the failure paths typed (outcomes, not exits).
+    """
+    io.emit(message)
 
 
 def _select_account(
+    io: LoginIO,
     accounts: list[Any],
     *,
     account_email: str | None,
@@ -65,7 +72,8 @@ def _select_account(
     :class:`.outcomes.CookieValidationFailure` outcome with a
     human-readable message when no accounts were discovered or the
     requested email is absent. The default-account fallback still emits
-    the legacy nonfatal warning and then returns the first account.
+    the legacy nonfatal warning (via the injected ``io`` sink) and then
+    returns the first account.
     """
     if not accounts:
         return CookieValidationFailure(
@@ -96,8 +104,9 @@ def _select_account(
     # No default marker — fall back to the first account. This is a
     # nonfatal success-path warning, so keep the previous text-mode output.
     _emit_warning(
+        io,
         "[yellow]Warning: Browser account list did not mark a default account; "
-        f"using {accounts[0].email}.[/yellow]"
+        f"using {accounts[0].email}.[/yellow]",
     )
     logger.warning(
         "Browser account list did not mark a default account; using %s.",
@@ -170,6 +179,7 @@ def _select_refresh_account(
 
 
 def _write_extracted_cookies(
+    io: LoginIO,
     raw_cookies: list[dict[str, Any]],
     *,
     storage_path: Path,
@@ -188,11 +198,10 @@ def _write_extracted_cookies(
     :class:`.outcomes.BrowserCookieOutcome` subclass on failure
     (validation failure or disk-write failure). The success-path
     confirmation print is emitted by the caller; nonfatal metadata and
-    verification warnings are still rendered here to preserve the
-    historical text-mode behavior.
+    verification warnings are routed through the injected ``io`` sink to
+    preserve the historical text-mode behavior, and ``io.run_async`` drives
+    the cookie-verification probe.
     """
-    from ...runtime import run_async
-
     storage_state, validation_error = validate_with_recovery(raw_cookies)
     if validation_error is not None:
         cookie_names = cookie_names_from_storage(storage_state)
@@ -232,8 +241,9 @@ def _write_extracted_cookies(
         # but preserve the previous user-facing warning text.
         logger.warning("Failed to save account metadata for %s: %s", storage_path, type(e).__name__)
         _emit_warning(
+            io,
             f"[yellow]Warning: cookies saved but account metadata write failed.[/yellow]\n"
-            f"Details: {e}"
+            f"Details: {e}",
         )
 
     # Success-path confirmation print is the caller's job. We log a
@@ -246,13 +256,14 @@ def _write_extracted_cookies(
     # not fatal (the existing behavior warned but did not exit), so we
     # log a WARNING and return None.
     try:
-        run_async(fetch_tokens_with_domains(storage_path, profile))
+        io.run_async(fetch_tokens_with_domains(storage_path, profile))
     except ValueError as e:
         logger.warning("Extracted cookies for %s failed verification: %s", email, e)
-        _emit_warning(f"    [yellow]Warning: cookies for {email} failed verification.[/yellow]")
+        _emit_warning(io, f"    [yellow]Warning: cookies for {email} failed verification.[/yellow]")
     except httpx.RequestError as e:
         logger.warning("Could not verify cookies for %s: %s", email, e)
         _emit_warning(
-            f"    [yellow]Warning: could not verify cookies for {email} (network).[/yellow]"
+            io,
+            f"    [yellow]Warning: could not verify cookies for {email} (network).[/yellow]",
         )
     return None

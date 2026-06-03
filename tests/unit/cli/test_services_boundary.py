@@ -53,17 +53,21 @@ import pytest
 # dependency.
 FORBIDDEN_TOP_LEVEL_MODULES = {"click"}
 
-# Relative imports from these sibling packages of ``cli/services`` are
-# forbidden. The check fires for any ``from ..<name>`` or ``from ..<name>.X``
-# import — i.e. ``..rendering`` and ``..rendering.something`` both count.
+# Relative imports from these presentation/runtime modules are forbidden
+# regardless of nesting depth. The check fires for any ``from ..<name>`` /
+# ``from ..<name>.X`` import (a sibling of ``cli/services``) AND any
+# ``from ...<name>`` / ``from ...<name>.X`` import (a sibling of ``cli``,
+# reached from a deeper subpackage like ``cli/services/login/``). Both resolve
+# to the same real command-layer module (e.g. ``cli.rendering``), so both are
+# a presentation reach-in.
 #
-# Note: level-3 imports (``...rendering``, from a deeper subpackage like
-# ``cli/services/login/``) are NOT flagged here. Login submodules currently
-# rely on that path; tracking their reach-in is done via the
-# ``pattern_a_violations`` inventory inside ``TRANSITIONAL_GUARDED_PATHS``
-# (e.g. ``cli/services/login/browser_accounts.py``). Broadening the import
-# scanner to level-3 would surface those automatically; that's a deliberate
-# follow-up, not a gap to plug here.
+# History: the scanner originally flagged only the level-2 (``..rendering``)
+# form. ``cli/services/login/*`` modules sit one directory deeper, so their
+# ``...rendering`` reach-ins resolved to the real ``cli.rendering`` while
+# slipping past the gate (#1393). The login DAG was inverted behind a
+# caller-injected ``LoginIO`` sink (``cli/services/login/io_seam.py``, concrete
+# sink in ``cli/playwright_login_io.py``) and the scanner tightened to level-3
+# so the blind spot is closed.
 FORBIDDEN_RELATIVE_PARENTS = {"rendering", "error_handler", "runtime"}
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -72,16 +76,17 @@ SERVICES_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli" / "services"
 # Fully cleaned service modules. Each must have zero ``_boundary_violations``
 # AND zero Pattern A pairs (see :func:`_pattern_a_pairs`).
 #
-# Several login submodules (``browser_accounts.py``, ``cookie_writes.py``,
-# ``chromium_accounts.py``, ``firefox_accounts.py``, ``refresh.py``) still
-# emit progress/warning output (and ``refresh.py`` owns success messaging +
-# the shared ``_exit_on_outcome`` rendering boundary) through a narrow lazy
-# LEVEL-3 ``console`` seam (``_emit`` / ``_emit_progress``). The boundary
-# scanner intentionally does not flag those level-3 imports; the load-bearing
-# invariant is zero Pattern A pairs — no single function body co-locates
-# ``console.print`` with ``exit_with_code``, because the print is routed
-# through a split helper the scanner treats as the preferred shape. The
-# remaining seams can be inverted into caller-provided callbacks later.
+# The login submodules (``browser_accounts.py``, ``cookie_writes.py``,
+# ``chromium_accounts.py``, ``firefox_accounts.py``, ``refresh.py``) used to
+# reach the command layer's ``console`` / ``exit_with_code`` / ``run_async``
+# through narrow LEVEL-3 (``...rendering`` / ``...error_handler`` /
+# ``...runtime``) seams that slipped past this scanner. #1393 tightened the
+# import check to level-3 and inverted those reach-ins behind a caller-injected
+# ``LoginIO`` sink (Protocol + resolver in ``cli/services/login/io_seam.py``;
+# concrete sink registered by the command layer in
+# ``cli/playwright_login_io.py``). The ``_emit`` / ``_emit_progress`` /
+# ``_emit_warning`` helpers now forward to ``io.emit`` — no presentation import
+# remains in any of these modules, so they are genuinely GUARDED.
 # Login ``cookie_domains.py`` is pure service code: the command layer hosts
 # Click ``BadParameter`` translation and optional-domain warning rendering.
 GUARDED_PATHS = {
@@ -99,6 +104,7 @@ GUARDED_PATHS = {
     "cli/services/login/cookie_writes.py": SERVICES_ROOT / "login" / "cookie_writes.py",
     "cli/services/login/exceptions.py": SERVICES_ROOT / "login" / "exceptions.py",
     "cli/services/login/firefox_accounts.py": SERVICES_ROOT / "login" / "firefox_accounts.py",
+    "cli/services/login/io_seam.py": SERVICES_ROOT / "login" / "io_seam.py",
     "cli/services/login/outcomes.py": SERVICES_ROOT / "login" / "outcomes.py",
     "cli/services/login/profile_targets.py": SERVICES_ROOT / "login" / "profile_targets.py",
     "cli/services/login/refresh.py": SERVICES_ROOT / "login" / "refresh.py",
@@ -232,9 +238,18 @@ def _boundary_violations(path: pathlib.Path) -> list[str]:
         if not target.startswith(".") and head in FORBIDDEN_TOP_LEVEL_MODULES:
             violations.append(f"{path.name}:{line}: forbidden top-level import: {target!r}")
             continue
-        # Relative import ``from ..rendering ...`` etc. (exactly two leading dots
-        # because that targets a sibling of ``cli/services``).
-        if target.startswith("..") and not target.startswith("..."):
+        # Relative import of a presentation/runtime command module. Two forms
+        # resolve to the *same* real module (e.g. ``cli.rendering``):
+        #   * level-2 ``from ..rendering`` — from a ``cli/services/*`` module
+        #     (a sibling of ``cli/services``).
+        #   * level-3 ``from ...rendering`` — from a deeper subpackage like
+        #     ``cli/services/login/*`` (a sibling of ``cli``). #1393 tightened
+        #     the gate to cover this depth, which previously slipped through.
+        # Deeper forms (level-4 ``....rendering`` → ``notebooklm.rendering``,
+        # which does not exist) are not command-layer reach-ins, so the check
+        # is scoped to exactly levels 2 and 3.
+        dot_run = len(target) - len(target.lstrip("."))
+        if dot_run in (2, 3):
             remainder = target.lstrip(".")
             parent = remainder.split(".", 1)[0]
             if parent in FORBIDDEN_RELATIVE_PARENTS:
@@ -520,6 +535,36 @@ def test_guard_helper_detects_from_parent_import_sibling(tmp_path):
     bad.write_text("from __future__ import annotations\nfrom .. import rendering\n")
     violations = _boundary_violations(bad)
     assert any("rendering" in v for v in violations), violations
+
+
+def test_guard_helper_detects_level_3_relative_import(tmp_path):
+    """``from ...rendering import X`` (level-3) must trip the guard (#1393).
+
+    Login submodules sit one directory deeper than ``cli/services``, so their
+    presentation reach-ins use three leading dots and resolve to the real
+    ``cli.rendering`` module. The scanner originally flagged only the level-2
+    (``..rendering``) form, letting these slip through; this guards the
+    tightened check so a regression to level-2-only is caught.
+    """
+    bad = tmp_path / "fake_level3_service.py"
+    bad.write_text("from __future__ import annotations\nfrom ...rendering import console\n")
+    violations = _boundary_violations(bad)
+    assert any("rendering" in v for v in violations), violations
+
+
+def test_guard_helper_allows_level_4_relative_import(tmp_path):
+    """``from ....auth import X`` (level-4) must NOT trip the guard.
+
+    From a ``cli/services/login/*`` module, four leading dots resolve to a
+    package outside ``cli`` (``notebooklm.auth``), not a presentation module,
+    so the check must stay scoped to levels 2-3.
+    """
+    ok = tmp_path / "fake_level4_service.py"
+    ok.write_text(
+        "from __future__ import annotations\n"
+        "from ....rendering import console  # notebooklm.rendering — not cli.rendering\n"
+    )
+    assert _boundary_violations(ok) == []
 
 
 def test_guard_helper_allows_type_checking_imports(tmp_path):

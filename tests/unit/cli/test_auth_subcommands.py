@@ -6,7 +6,6 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 ``patch_session_login_dual`` lives in ``tests/_fixtures``.
 """
 
-import asyncio
 import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1414,7 +1413,14 @@ class TestAuthRefreshCommand:
 
 
 class TestAuthInspect:
-    def test_session_run_async_patch_reaches_login_service_helper(self):
+    def test_injected_io_run_async_reaches_login_service_helper(self):
+        """The injected ``LoginIO`` sink's ``run_async`` drives the probe (#1393).
+
+        Previously ``_enumerate_one_jar`` bound a module-level ``run_async``;
+        the async bridge is now the injected sink's ``run_async``. This pins
+        that the helper routes the account-enumeration probe through the sink.
+        """
+        from _fixtures.login_io import make_recording_io
         from notebooklm.auth import Account
         from notebooklm.cli.services.login import _enumerate_one_jar
 
@@ -1425,14 +1431,12 @@ class TestAuthInspect:
             awaitable.close()
             return accounts
 
-        with (
-            patch("notebooklm.auth.enumerate_accounts", return_value=object()),
-            patch_session_login_dual("run_async", side_effect=fake_run_async) as mock_run_async,
-        ):
-            result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
+        io = make_recording_io(run_async=MagicMock(side_effect=fake_run_async))
+        with patch("notebooklm.auth.enumerate_accounts", return_value=object()):
+            result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None, io=io)
 
         assert result == accounts
-        mock_run_async.assert_called_once()
+        io.run_async.assert_called_once()
 
     def test_enumerate_one_jar_network_error_non_quiet_exits_without_reraising(self):
         from notebooklm.cli.services.login import _enumerate_one_jar
@@ -1452,6 +1456,7 @@ class TestAuthInspect:
         assert "offline" in message
 
     def test_select_account_without_marked_default_uses_first_account(self, caplog):
+        from _fixtures.login_io import RecordingLoginIO
         from notebooklm.auth import Account
         from notebooklm.cli.services.login import _select_account
 
@@ -1460,24 +1465,26 @@ class TestAuthInspect:
             Account(authuser=1, email="bob@gmail.com", is_default=False),
         ]
 
-        with (
-            caplog.at_level("WARNING", logger="notebooklm.cli.services.login.cookie_writes"),
-            patch("notebooklm.cli.rendering.console") as mock_console,
-        ):
-            selected = _select_account(accounts, account_email=None)
+        # The no-default warning is now emitted through the injected ``LoginIO``
+        # sink (#1393); capture it on a ``RecordingLoginIO`` instead of the
+        # module-level console.
+        io = RecordingLoginIO()
+        with caplog.at_level("WARNING", logger="notebooklm.cli.services.login.cookie_writes"):
+            selected = _select_account(io, accounts, account_email=None)
 
         assert selected == accounts[0]
-        warning_text = mock_console.print.call_args[0][0]
+        warning_text = io.emitted[0]
         assert "default account" in warning_text
         assert "alice@example.com" in warning_text
         assert "default account" in caplog.text
         assert "alice@example.com" in caplog.text
 
     def test_select_account_empty_accounts_returns_user_message(self):
+        from _fixtures.login_io import make_recording_io
         from notebooklm.cli.services.login.cookie_writes import _select_account
         from notebooklm.cli.services.login.outcomes import CookieValidationFailure
 
-        result = _select_account([], account_email=None)
+        result = _select_account(make_recording_io(), [], account_email=None)
 
         assert isinstance(result, CookieValidationFailure)
         message = result.message
@@ -1505,9 +1512,12 @@ class TestAuthInspect:
                 Account(authuser=2, email="carol@ws.com", is_default=False),
             ]
 
+        # The account-enumeration probe now runs through the injected ``LoginIO``
+        # sink's ``run_async`` (the default ``PlaywrightLoginIO`` →
+        # ``cli.runtime.run_async``, #1393); mocking ``enumerate_accounts`` is
+        # enough — the real ``run_async`` drives the (already-async) stub.
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch_session_login_dual("run_async", side_effect=asyncio.run),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])

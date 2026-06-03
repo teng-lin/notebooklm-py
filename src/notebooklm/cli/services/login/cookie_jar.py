@@ -35,7 +35,7 @@ from ....auth import (
     missing_cookies_hint,
     validate_with_recovery,
 )
-from ...runtime import run_async
+from .io_seam import resolve_login_io
 from .outcomes import (
     BrowserCookieOutcome,
     CookieValidationFailure,
@@ -45,6 +45,7 @@ from .outcomes import (
 
 if TYPE_CHECKING:
     from ....auth import Account
+    from .io_seam import LoginIO
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ def _enumerate_one_jar(
     browser_profile: str | None,
     *,
     quiet: bool = False,
+    io: LoginIO | None = None,
 ) -> list[Account] | BrowserCookieOutcome:
     """Probe ``?authuser=N`` against one cookie set and return tagged Accounts.
 
@@ -87,6 +89,10 @@ def _enumerate_one_jar(
         browser_name: The browser the cookies came from (for error messages).
         browser_profile: Tag attached to each Account (``"Default"``,
             ``"Profile 1"``, ...) or ``None`` for the legacy single-jar path.
+        io: Optional caller-injected :class:`.io_seam.LoginIO` sink (resolved
+            to the command-layer default when ``None``) whose ``run_async``
+            drives the synchronous account-enumeration probe. This module owns
+            no presentation/exit — only the async bridge.
         quiet: Suppress the loud multi-line user-facing message body in the
             returned outcome (the fan-out caller prints its own per-profile
             soft note for signed-out / stale-cookie profiles and would
@@ -122,6 +128,7 @@ def _enumerate_one_jar(
         extract_cookies_with_domains,
     )
 
+    io = resolve_login_io(io)
     storage_state, validation_error = validate_with_recovery(raw_cookies)
     if validation_error is not None:
         if quiet:
@@ -143,7 +150,7 @@ def _enumerate_one_jar(
     cookie_map = extract_cookies_with_domains(storage_state)
     jar = build_cookie_jar(cookies=cookie_map)
     try:
-        accounts = run_async(enumerate_accounts(jar))
+        accounts = io.run_async(enumerate_accounts(jar))
     except ValueError:
         # Cookies are present but Google rejected them (passive sign-in
         # redirected to the account chooser, or RotateCookies returned 401).
