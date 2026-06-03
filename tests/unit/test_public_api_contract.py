@@ -16,12 +16,15 @@ The allowlist exists because flipping ``get()`` to raise ``*NotFoundError`` (and
 drop its ``| None``) is deferred to issue #1247; this test passes against today's
 surface and the allowlist must *shrink* — never grow — as that flip lands.
 
-This walk is deliberately independent of ``scripts/audit_public_api_compat.py``:
-that comparator ignores return types, and its collector under-covers
-``mind_maps``. Namespaces are enumerated explicitly here (including
-``mind_maps``) so the divergence that originally occurred
-(``mind_maps.get() -> MindMap | None``, added without the deprecation warning)
-is a signature smell this catches with no backend.
+This walk is deliberately independent of ``scripts/audit_public_api_compat.py``.
+The two former coverage holes in that comparator are now closed (issue #1378:
+it audits the ``mind_maps`` namespace and flags ``changed-return`` breaks), but
+the comparator answers a different question — "did the public surface break
+*against the previous release*" — whereas this walk asserts the absolute
+return-shape *rules* against today's surface with no backend or git baseline.
+Namespaces are enumerated explicitly here (including ``mind_maps``) so the
+divergence that originally occurred (``mind_maps.get() -> MindMap | None``, added
+without the deprecation warning) is a signature smell this catches directly.
 """
 
 from __future__ import annotations

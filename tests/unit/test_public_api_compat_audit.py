@@ -28,8 +28,11 @@ def script():
     return _load_module()
 
 
-def _signature(*params: dict) -> dict:
-    return {"text": "(...)", "parameters": list(params)}
+def _signature(*params: dict, return_annotation: str | None = None) -> dict:
+    payload = {"text": "(...)", "parameters": list(params)}
+    if return_annotation is not None:
+        payload["return_annotation"] = return_annotation
+    return payload
 
 
 def _param(
@@ -177,6 +180,8 @@ def test_collect_manifest_includes_representative_client_namespace_methods(scrip
     assert {
         "artifacts.download_audio",
         "chat.ask",
+        "mind_maps.generate",
+        "mind_maps.get",
         "notebooks.list",
         "notes.create",
         "research.start",
@@ -184,6 +189,19 @@ def test_collect_manifest_includes_representative_client_namespace_methods(scrip
         "sharing.set_public",
         "sources.add_url",
     } <= set(members)
+
+
+def test_mind_maps_namespace_is_audited(script):
+    assert "mind_maps" in script.CLIENT_NAMESPACE_ATTRIBUTES
+
+
+def test_collect_manifest_captures_return_annotation(script):
+    manifest = script.collect_manifest(REPO_ROOT)
+    members = manifest["modules"]["notebooklm"]["exports"]["NotebookLMClient"]["members"]
+
+    delete = members["sources.delete"]["signature"]
+    assert "return_annotation" in delete
+    assert delete["return_annotation"] == "None"
 
 
 def test_collect_manifest_preserves_defaulted_dataclass_fields(script):
@@ -266,6 +284,68 @@ def test_signature_compare_rejects_removed_kwargs(script):
         script._signature_breakage(old, new)
         == "old signature accepted **kwargs, new signature does not"
     )
+
+
+def test_return_breakage_detects_changed_return_annotation(script):
+    old = _signature(_param("self"), return_annotation="bool")
+    new = _signature(_param("self"), return_annotation="None")
+
+    assert script._return_breakage(old, new) == "return annotation changed from 'bool' to 'None'"
+
+
+def test_return_breakage_ignores_unchanged_and_additive_annotations(script):
+    same = _signature(_param("self"), return_annotation="None")
+    assert script._return_breakage(same, same) is None
+
+    # Older baselines predate return-annotation capture: a missing key on either
+    # side, or an annotation appearing where there was none, is not a break.
+    no_key = _signature(_param("self"))
+    annotated = _signature(_param("self"), return_annotation="MindMap")
+    assert script._return_breakage(no_key, annotated) is None
+    assert script._return_breakage(annotated, no_key) is None
+    none_to_value = {**no_key, "return_annotation": None}
+    assert script._return_breakage(none_to_value, annotated) is None
+
+
+def test_compare_manifests_flags_client_namespace_return_type_change(script):
+    baseline = _manifest(
+        {
+            "NotebookLMClient": _class(
+                members={
+                    "mind_maps.get": {
+                        "kind": "method",
+                        "signature": _signature(
+                            _param("self"),
+                            _param("notebook_id"),
+                            return_annotation="dict[str, Any] | None",
+                        ),
+                    },
+                },
+            )
+        }
+    )
+    current = _manifest(
+        {
+            "NotebookLMClient": _class(
+                members={
+                    "mind_maps.get": {
+                        "kind": "method",
+                        "signature": _signature(
+                            _param("self"),
+                            _param("notebook_id"),
+                            return_annotation="MindMap | None",
+                        ),
+                    },
+                },
+            )
+        }
+    )
+
+    breaks = script.compare_manifests(baseline, current)
+
+    assert [item.code for item in breaks] == ["changed-return"]
+    assert breaks[0].object == "notebooklm.NotebookLMClient.mind_maps.get"
+    assert "MindMap | None" in breaks[0].detail
 
 
 def test_compare_manifests_detects_enum_value_change(script):
