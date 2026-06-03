@@ -17,6 +17,54 @@ from notebooklm.types import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_cli_console_width():
+    """Pin the shared Rich console to a wide, fixed width for every CLI unit test.
+
+    Under ``CliRunner`` (no TTY) Rich derives its line width from the terminal,
+    and that fallback diverges across the OS matrix and by terminal size — so an
+    exact ``"..." in result.output`` assertion flakes whenever a message reflows
+    at a different column (issue #1332; seen on ``test_login_multi_account``
+    where ``"not overwriting"`` wrapped across a newline as ``"not\noverwriting"``
+    in a narrow terminal). Forcing a wide fixed width removes the *incidental*
+    mid-line reflow, leaving only the **authored** newlines in the source strings
+    (the real render contract). The single shared ``console`` is reused by the
+    services, ``session_cmd`` and the error paths, so pinning its size once
+    covers every render site while still writing through to ``CliRunner``'s
+    captured stdout. ``Console.size`` only honours the pinned dimensions when
+    **both** ``_width`` and ``_height`` are set (otherwise it falls back to the
+    OS-divergent terminal/``COLUMNS`` detection), so both are patched.
+    """
+    from notebooklm.cli import rendering
+
+    with (
+        patch.object(rendering.console, "_width", 400),
+        patch.object(rendering.console, "_height", 100),
+    ):
+        yield
+
+
+@pytest.fixture
+def narrow_console():
+    """Override the autouse wide pin with a narrow, fixed width.
+
+    The few tests that assert *width-dependent* rendering — e.g. ``list``
+    truncating an over-wide title (``test_*_list_default_truncates_long_title``)
+    — need a deterministic *narrow* width to exercise truncation. Requesting
+    this fixture re-pins the shared console to 80 columns on top of the autouse
+    400-wide pin (pytest runs the autouse fixture first, so this inner patch
+    wins for the test body), so truncation is exercised deterministically rather
+    than relying on the OS-divergent auto-detected width (issue #1332).
+    """
+    from notebooklm.cli import rendering
+
+    with (
+        patch.object(rendering.console, "_width", 80),
+        patch.object(rendering.console, "_height", 100),
+    ):
+        yield
+
+
 def source_guide(spec: dict | None = None, **overrides: Any) -> SourceGuide:
     """Build a typed ``SourceGuide`` from a legacy guide dict spec.
 

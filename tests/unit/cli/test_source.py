@@ -158,7 +158,7 @@ class TestSourceList:
             assert result.output.count("X") >= 200
             assert "…" not in result.output
 
-    def test_source_list_default_truncates_long_title(self, runner, mock_auth):
+    def test_source_list_default_truncates_long_title(self, runner, mock_auth, narrow_console):
         """Default rendering inserts an ellipsis for over-wide titles."""
         long_title = "X" * 200
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:

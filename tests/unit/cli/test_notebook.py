@@ -216,7 +216,7 @@ class TestNotebookList:
             assert result.output.count("X") >= 200
             assert "…" not in result.output
 
-    def test_notebook_list_default_truncates_long_title(self, runner, mock_auth):
+    def test_notebook_list_default_truncates_long_title(self, runner, mock_auth, narrow_console):
         """Default rendering inserts an ellipsis for over-wide titles.
 
         Pins the existing default behavior so --no-truncate doesn't change
