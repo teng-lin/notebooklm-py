@@ -13,12 +13,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import SplitResult, urlsplit
 
 import httpx
 import pytest
 
+import notebooklm._source.upload as _upload_mod
 from notebooklm._source.upload import (
     SourceUploadPipeline,
     _build_invalid_argument_source_limit_hint,
@@ -71,28 +72,33 @@ def test_redact_upload_url_returns_placeholder_when_scheme_missing() -> None:
     assert _redact_upload_url("///just/a/path") == "[REDACTED_UPLOAD_URL]"
 
 
-def test_redact_upload_url_value_error_returns_placeholder() -> None:
+def test_redact_upload_url_value_error_returns_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A urlsplit ValueError is swallowed into the redacted placeholder."""
-    with patch(
-        "notebooklm._source.upload.urlsplit",
-        side_effect=ValueError("bad url"),
-    ):
-        assert _redact_upload_url("https://example.com/x") == "[REDACTED_UPLOAD_URL]"
+    # ADR-007 forbids string-target ``mock.patch`` on notebooklm internals;
+    # patch the module-level ``urlsplit`` seam object-form instead.
+    fake_urlsplit = MagicMock(side_effect=ValueError("bad url"))
+    monkeypatch.setattr(_upload_mod, "urlsplit", fake_urlsplit)
+    assert _redact_upload_url("https://example.com/x") == "[REDACTED_UPLOAD_URL]"
+    fake_urlsplit.assert_called_once_with("https://example.com/x")
 
 
-def test_validate_resumable_upload_url_value_error_wrapped() -> None:
+def test_validate_resumable_upload_url_value_error_wrapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A urlsplit ValueError becomes a ValidationError (lines 146-147)."""
 
     def _boom(_url: str) -> SplitResult:
         raise ValueError("malformed")
 
-    # ADR-007 forbids string-target ``monkeypatch.setattr`` on notebooklm
-    # internals; use ``unittest.mock.patch`` instead.
-    with (
-        patch("notebooklm._source.upload.urlsplit", _boom),
-        pytest.raises(ValidationError, match="Upload URL is not valid"),
-    ):
+    # ADR-007 forbids string-target ``mock.patch`` on notebooklm internals;
+    # patch the module-level ``urlsplit`` seam object-form instead.
+    fake_urlsplit = MagicMock(side_effect=_boom)
+    monkeypatch.setattr(_upload_mod, "urlsplit", fake_urlsplit)
+    with pytest.raises(ValidationError, match="Upload URL is not valid"):
         _validate_resumable_upload_url("https://example.com/?upload_id=x")
+    fake_urlsplit.assert_called_once_with("https://example.com/?upload_id=x")
 
 
 def test_validate_resumable_upload_url_missing_host_raises() -> None:

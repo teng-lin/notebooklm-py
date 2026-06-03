@@ -15,11 +15,13 @@ import json
 import re
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm.paths as _nb_paths
 from notebooklm import auth as auth_module
 from notebooklm._auth import psidts_recovery
 
@@ -736,23 +738,30 @@ class TestLoadAuthFromStorageIntegration:
         usage. The recovery must resolve the same default.
         """
         # Point ``get_storage_path()`` at a tmp file populated with the
-        # recoverable-but-PSIDTS-missing state. Patch the SOURCE module so
-        # both ``_load_storage_state`` (imports at module level into
-        # ``_auth.cookies``) and the recovery's ``_resolve_recovery_path``
-        # (lazy-imports from ``..paths``) see the same override.
+        # recoverable-but-PSIDTS-missing state. Object-form patches (ADR-007
+        # Form-2) against the live module-object seams so both
+        # ``_load_storage_state`` (module-level ``get_storage_path`` in
+        # ``_auth.cookies``, reached via the ``psidts_recovery._auth_cookies``
+        # alias) and the recovery's ``_resolve_recovery_path`` (lazy
+        # ``from ..paths import get_storage_path``, reached via the
+        # ``notebooklm.paths`` module object) see the same override.
         default_path = tmp_path / "default_storage_state.json"
         _write_storage(default_path, _RECOVERABLE_COOKIES)
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
-        monkeypatch.setattr("notebooklm.paths.get_storage_path", lambda: default_path)
-        monkeypatch.setattr(
-            "notebooklm._auth.cookies.get_storage_path",
-            lambda: default_path,
-        )
+        fake_paths_get = Mock(return_value=default_path)
+        fake_cookies_get = Mock(return_value=default_path)
+        monkeypatch.setattr(_nb_paths, "get_storage_path", fake_paths_get)
+        monkeypatch.setattr(psidts_recovery._auth_cookies, "get_storage_path", fake_cookies_get)
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
         cookies = auth_module.load_auth_from_storage(None)
 
         assert cookies["__Secure-1PSIDTS"] == "fresh_psidts_value"
+        # Bite-check: both module-object seams must be the live resolution path.
+        # ``_resolve_recovery_path`` reaches ``notebooklm.paths.get_storage_path``;
+        # ``_load_storage_state`` reaches ``_auth.cookies.get_storage_path``.
+        fake_paths_get.assert_called()
+        fake_cookies_get.assert_called()
 
 
 class TestBuildHttpxCookiesFromStorageIntegration:
@@ -1046,12 +1055,16 @@ class TestEdgeCases:
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
         # Force the persist step to return False (CAS rejection / I/O error / etc.).
-        monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._auth_storage.save_cookies_to_storage",
-            lambda *args, **kwargs: False,
-        )
+        # Object-form patch against the local ``_auth_storage`` module alias on
+        # ``psidts_recovery`` (ADR-007 Form-2) — the recovery resolves
+        # ``_auth_storage.save_cookies_to_storage`` via this module's globals at
+        # call time, so patching the alias module object is the live seam.
+        fake_save = Mock(return_value=False)
+        monkeypatch.setattr(psidts_recovery._auth_storage, "save_cookies_to_storage", fake_save)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
+        # Bite-check: the recovery must actually reach the persist step.
+        fake_save.assert_called()
 
     @pytest.mark.no_default_keepalive_mock
     def test_save_raising_propagates_as_failure(self, tmp_path, monkeypatch, httpx_mock: HTTPXMock):
@@ -1060,15 +1073,16 @@ class TestEdgeCases:
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
-        def raise_oserror(*_args, **_kwargs):
-            raise OSError("simulated disk-full")
-
-        monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._auth_storage.save_cookies_to_storage",
-            raise_oserror,
-        )
+        # Object-form patch against the local ``_auth_storage`` module alias on
+        # ``psidts_recovery`` (ADR-007 Form-2) — the recovery resolves
+        # ``_auth_storage.save_cookies_to_storage`` via this module's globals at
+        # call time, so patching the alias module object is the live seam.
+        fake_save = Mock(side_effect=OSError("simulated disk-full"))
+        monkeypatch.setattr(psidts_recovery._auth_storage, "save_cookies_to_storage", fake_save)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
+        # Bite-check: the recovery must actually reach the persist step.
+        fake_save.assert_called()
 
     @pytest.mark.no_default_keepalive_mock
     def test_cross_process_flock_held_skips_post(

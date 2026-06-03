@@ -179,145 +179,23 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 # ---------------------------------------------------------------------------
-# File-level allowlist — baked at PR-start (2026-05-18). Shrinks across
-# D1 PR-2 and D1 PR-3; target end state is an empty set.
+# File-level allowlist — DRAINED TO ZERO (issue #1376).
 #
-# A second batch (issue #1325) was added when the lint was extended to also
-# catch ``mock.patch("notebooklm._private…")`` / ``patch.object`` string targets
-# into private internals — a previously-unpoliced channel. Those entries are
-# grouped under the "issue #1325" header below and shrink toward zero on the
-# same terms: a file whose offenders are migrated to seams must be removed from
-# the allowlist (a stale entry fails the lint).
+# The allowlist was baked at PR-start (2026-05-18) with 33 offending files and
+# shrank wave-by-wave as each file was migrated to constructor injection /
+# locally-imported seam aliases. With the final wave merged it is **empty**:
+# every test file under ``tests/`` now satisfies the ADR-007 monkeypatch
+# policy with zero exemptions, so the per-file gate is now a *global*
+# invariant — any new forbidden pattern fails the lint unconditionally.
+#
+# The allowlist MUST stay empty. The migration is complete; ADR-007 is now
+# plain ``Accepted``. Re-adding an entry would silently re-open the escape
+# hatch the drain closed, so ``test_allowlist_stays_empty`` below asserts
+# ``_ALLOWLIST == frozenset()`` as a hardening guard — new offenders must be
+# migrated, never allowlisted.
 # ---------------------------------------------------------------------------
 
-_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        # CLI VCR test patches `notebooklm.cli.services.login.refresh.*` and
-        # `notebooklm.auth.account.*` module-level seams (browser-cookie
-        # extraction, account profile loaders) — these are CLI-side seams above
-        # the `NotebookLMClient` core that `make_fake_core(...)` covers.
-        # reason: CLI-side module seam — out of scope for `make_fake_core` (core-injection only)
-        "tests/integration/cli_vcr/test_login_browser_cookies.py",
-        # reason: loop-affinity violation test — raw patch required
-        "tests/integration/concurrency/test_aexit_exception_masking.py",
-        # reason: loop-affinity violation test — raw patch required
-        "tests/integration/concurrency/test_download_blocks_loop.py",
-        # reason: loop-affinity violation test — raw patch required
-        "tests/integration/concurrency/test_idempotency_create.py",
-        # reason: loop-affinity violation test — raw patch required
-        "tests/integration/concurrency/test_upload_blocks_loop.py",
-        # reason: loop-affinity violation test — raw patch required
-        "tests/integration/concurrency/test_upload_cancel_dangling_session.py",
-        # reason: integration test patches transport-side
-        # `notebooklm.<module>.*` stdlib seams (httpx-level overrides for
-        # side-effects/idempotency cassettes); these patches sit below the
-        # core-injection seam that `make_fake_core` covers.
-        "tests/integration/test_side_effects_idempotency.py",
-        # reason: integration test patches transport-side `notebooklm.<module>.*`
-        # stdlib seams (httpx-level overrides for sources idempotency cassettes);
-        # below the core-injection seam covered by `make_fake_core`.
-        "tests/integration/test_sources_idempotency.py",
-        # reason: CLI conftest patches `notebooklm.cli.*` module-level seams
-        # (resolvers, click context shims) above the `NotebookLMClient` core
-        # that `make_fake_core(...)` covers.
-        "tests/unit/cli/conftest.py",
-        # reason: download-collision concurrency test exercises raw Session-attribute
-        # mutation to provoke download-id collision races; not a candidate for
-        # constructor injection since the test is *about* attribute-level races.
-        "tests/unit/concurrency/test_download_collision.py",
-        # reason: public API coverage smoke-test imports `notebooklm.<feature>`
-        # facades to assert re-export shapes; the string-target patches verify
-        # the facade itself, not the core surface.
-        "tests/unit/test_api_coverage.py",
-        # reason: cookie save-race test patches module-level
-        # `_try_claim_rotation`, `_file_lock_try_exclusive`,
-        # `save_cookies_to_storage` rotation/lock helpers — outside the
-        # core-injection surface.
-        "tests/unit/test_auth_cookie_save_race.py",
-        # reason: PSIDTS inline recovery (issue #865) patches module-level
-        # rotation/lock seams (`_try_claim_rotation`, `_file_lock_try_exclusive`,
-        # `save_cookies_to_storage`, `_load_storage_state`, `get_storage_path`)
-        # — outside the core-injection surface `make_fake_core` covers.
-        "tests/unit/test_auth_psidts_recovery.py",
-        # reason: RPC executor unit test stub-patches `notebooklm._rpc_executor`
-        # module-level stdlib seams (asyncio.sleep, time providers) on the
-        # executor module itself — below the core-injection seam.
-        "tests/unit/test_rpc_executor.py",
-        # reason: authed-post pipeline test patches `notebooklm._streaming_post`
-        # and `notebooklm._transport_errors` module-level stdlib seams (httpx
-        # response builders, time/retry helpers) — transport-layer seams below
-        # the core-injection surface.
-        "tests/unit/test_authed_post_pipeline.py",
-        # reason: Firefox container detection test patches module-level
-        # `notebooklm.cli.services.login.firefox_accounts.*` filesystem and
-        # database-discovery helpers — CLI-side seam outside `make_fake_core`.
-        "tests/unit/test_firefox_containers.py",
-        # reason: client __init__ ordering test patches construction helpers to
-        # assert wiring order — verifies construction sequencing, not a core method seam.
-        "tests/unit/test_init_order.py",
-        # reason: public-API shim test asserts forwarding of `notebooklm.<x>`
-        # facades; the string-target patches *are* the test subject (shim
-        # routing) rather than an incidental implementation detail.
-        "tests/unit/test_public_shims.py",
-        # reason: RPC overrides test patches `notebooklm.rpc.types.RPC_METHOD_OVERRIDES`
-        # module-level mapping used during request encoding — module-level data
-        # seam, not a core attribute.
-        "tests/unit/test_rpc_overrides.py",
-        # -------------------------------------------------------------------
-        # issue #1325: pre-existing `mock.patch("notebooklm._private…")`
-        # string-target offenders, surfaced when the lint's coverage was
-        # extended to the `unittest.mock` channel. These reach into private
-        # `notebooklm._*` modules and must migrate to constructor seams /
-        # public hooks; this list shrinks toward zero.
-        # (`tests/integration/concurrency/test_download_blocks_loop.py` also
-        # matches this rule but is already allowlisted above.)
-        # -------------------------------------------------------------------
-        # reason: patches `notebooklm._runtime.init` construction internals to
-        # assert httpx connection-pool tuning — runtime seam below the
-        # core-injection surface.
-        "tests/integration/concurrency/test_pool_tuning.py",
-        # reason: patches `notebooklm._sources` internals to assert upload
-        # timeout config — service seam, not a core attribute.
-        "tests/integration/concurrency/test_upload_timeout_config.py",
-        # reason: patches `notebooklm._artifact.downloads` download-coordinator
-        # internals (httpx-level) for the artifacts integration cassette.
-        "tests/integration/test_artifacts_integration.py",
-        # reason: patches `notebooklm._sources` source-addition internals for
-        # the sources integration cassette.
-        "tests/integration/test_sources_integration.py",
-        # reason: patches `notebooklm._artifact.downloads` download-coordinator
-        # internals to exercise the asynchronous download path.
-        "tests/unit/test_artifact_downloads.py",
-        # reason: patches `notebooklm._artifact.downloads` internals for artifact
-        # coverage edge cases.
-        "tests/unit/test_artifacts_coverage.py",
-        # reason: patches `notebooklm._artifact.downloads` internals to assert
-        # download-result shaping.
-        "tests/unit/test_download_result.py",
-        # reason: patches `notebooklm._artifact.downloads` internals to assert
-        # download-URL resolution.
-        "tests/unit/test_download_url.py",
-        # reason: patches `notebooklm._deadline` retry/backoff timing internals
-        # to assert rate-limit retry behaviour.
-        "tests/unit/test_rate_limit_retry.py",
-        # reason: patches `notebooklm._research` research-flow internals to
-        # exercise import-with-verification — the largest single concentration
-        # of private-target patches (issue #1325).
-        "tests/unit/test_research_import_with_verification.py",
-        # reason: patches `notebooklm._sources` poll-coordinator internals
-        # for the source polling service.
-        "tests/unit/test_source_polling_service.py",
-        # reason: patches `notebooklm._sources` internals to assert source
-        # status transitions.
-        "tests/unit/test_source_status.py",
-        # reason: patches `notebooklm._source.upload` internals for upload
-        # coverage edge cases.
-        "tests/unit/test_source_upload_coverage.py",
-        # reason: patches `notebooklm._types` dataclass internals exercised
-        # through the public types surface.
-        "tests/unit/test_types.py",
-    }
-)
+_ALLOWLIST: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -415,3 +293,23 @@ def test_no_forbidden_monkeypatches_outside_allowlist() -> None:
 
     if stale:
         raise AssertionError("\n\n".join(extra_messages))
+
+
+def test_allowlist_stays_empty() -> None:
+    """Hardening guard: the ADR-007 allowlist must remain empty (issue #1376).
+
+    The migration drained every offending file (33 → 0); ADR-007 is now plain
+    ``Accepted``. This invariant prevents the allowlist from silently
+    re-growing: a regression that adds a forbidden pattern must be fixed by
+    migrating the test to a constructor seam, **not** by re-allowlisting the
+    file. Any non-empty ``_ALLOWLIST`` fails here.
+    """
+
+    assert not _ALLOWLIST, (
+        "The ADR-007 monkeypatch allowlist was drained to zero (issue #1376) "
+        "and must stay empty. New forbidden patterns must be migrated to "
+        "constructor injection via ``tests/_fixtures/make_fake_core(...)`` or a "
+        "locally-imported seam alias — not added back to ``_ALLOWLIST``.\n\n"
+        f"Unexpected entries ({len(_ALLOWLIST)}):\n"
+        + "\n".join(f"  - {entry}" for entry in sorted(_ALLOWLIST))
+    )

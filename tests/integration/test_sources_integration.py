@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm._sources as _sources_mod
 from notebooklm import NotebookLMClient, Source, SourceType
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
@@ -1724,7 +1725,7 @@ class TestAddUrlErrorPaths:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch("notebooklm._sources.is_youtube_url", return_value=True) as mock_is_yt:
+            with patch.object(_sources_mod, "is_youtube_url", return_value=True) as mock_is_yt:
                 with patch.object(
                     client.sources,
                     "_extract_youtube_video_id",
@@ -2266,11 +2267,14 @@ class TestExtractYoutubeVideoId:
         """Test _extract_youtube_video_id() handles exceptions gracefully (lines 817-819)."""
         async with NotebookLMClient(auth_tokens) as client:
             # Patching urlparse to raise ValueError covers the except block
-            with patch("notebooklm._sources.urlparse", side_effect=ValueError("parse error")):
+            with patch.object(
+                _sources_mod, "urlparse", side_effect=ValueError("parse error")
+            ) as mock_urlparse:
                 result = client.sources._extract_youtube_video_id(
                     "https://youtube.com/watch?v=abc123"
                 )
 
+        mock_urlparse.assert_called_once()
         assert result is None
 
     @pytest.mark.asyncio
@@ -2977,8 +2981,12 @@ class TestWaitUntilReadyMidLoopTimeout:
                 new_callable=AsyncMock,
                 return_value=processing_source,
             ):
-                with patch("notebooklm._sources.monotonic", side_effect=fake_monotonic):
+                with patch.object(
+                    _sources_mod, "monotonic", side_effect=fake_monotonic
+                ) as mock_monotonic:
                     with pytest.raises(SourceTimeoutError):
                         await client.sources.wait_until_ready(
                             "nb_123", "src_race", timeout=timeout_val
                         )
+
+        mock_monotonic.assert_called()

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from _fixtures.fake_core import FakeSession, make_fake_core
 from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
@@ -1196,9 +1197,16 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
 # ---------------------------------------------------------------------------
 
 
-def _make_core_for_mind_map_flow() -> tuple[MagicMock, list[tuple[Any, Any]]]:
-    """Build a ``MagicMock`` core whose ``rpc_call`` returns canned mind-map
-    responses keyed on the RPC method.
+def _make_core_for_mind_map_flow() -> tuple[FakeSession, list[tuple[Any, Any]]]:
+    """Build a :class:`FakeSession` core whose ``rpc_call`` returns canned
+    mind-map responses keyed on the RPC method.
+
+    The core is built via ``make_fake_core(rpc_call=AsyncMock(...))`` — the
+    sanctioned constructor-injection substrate (ADR-007). The factory wires
+    the injected mock onto ``fake.rpc_executor.rpc_call`` (the ``RpcCaller``
+    surface the mind-map flow threads into ``ArtifactsAPI``) and supplies
+    benign defaults for the ``assert_bound_loop`` / ``operation_scope`` /
+    ``register_drain_hook`` surfaces the artifacts runtime touches.
 
     Returns ``(core, calls)`` where ``calls`` is a list of ``(method, params)``
     tuples populated as the test exercises the API.
@@ -1233,22 +1241,11 @@ def _make_core_for_mind_map_flow() -> tuple[MagicMock, list[tuple[Any, Any]]]:
             return [[]]
         return None
 
-    core = MagicMock()
-    # The fake mirrors production: ``rpc_executor`` is the ``RpcCaller``
-    # collaborator. ``MagicMock`` auto-vivifies the other ArtifactsRuntime
-    # surfaces (``assert_bound_loop`` / ``operation_scope`` /
-    # ``register_drain_hook``) on ``core.rpc_executor`` so it satisfies
-    # the composite Protocol when threaded into ``ArtifactsAPI``.
-    core.rpc_executor.rpc_call = AsyncMock(side_effect=fake_rpc_call)
-    # MagicMock blocks ``assert``-prefixed attribute access — install the
-    # no-op ``assert_bound_loop`` stub on ``core`` explicitly since it is
-    # also passed as the ``drain`` / ``lifecycle`` collaborator.
-    core.assert_bound_loop = MagicMock()
-    core.get_source_ids = AsyncMock(return_value=["src_1"])
+    core = make_fake_core(rpc_call=AsyncMock(side_effect=fake_rpc_call))
     return core, calls
 
 
-def _build_artifacts_with_real_mind_map_service(core: MagicMock) -> ArtifactsAPI:
+def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsAPI:
     """Build an ``ArtifactsAPI`` whose mind-map services are real
     instances backed by ``core.rpc_executor`` so the mind-map flow
     exercises the live RPC callbacks against the canned executor.
@@ -1279,6 +1276,11 @@ async def test_generate_mind_map_works_without_notes_injection() -> None:
 
     assert result.note_id == "note_abc"
     assert result.mind_map["name"] == "Mind Map Title"
+
+    # The constructor-injected RPC mock was actually exercised (ADR-007
+    # Form-1 bite-check: the injected collaborator is reached, not silently
+    # bypassed by a stale auto-vivified attribute).
+    core.rpc_executor.rpc_call.assert_awaited()
 
     # The flow must have gone GENERATE_MIND_MAP -> CREATE_NOTE -> UPDATE_NOTE
     method_names = [getattr(m, "name", str(m)) for m, _ in calls]

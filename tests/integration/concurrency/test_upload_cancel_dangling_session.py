@@ -42,6 +42,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+import notebooklm._sources as _sources
 from notebooklm import NotebookLMClient
 
 from .helpers import with_simulated_cancel
@@ -214,7 +215,7 @@ async def test_cancel_before_finalize_fires_scotty_cleanup(
         kwargs.setdefault("transport", cleanup_transport)
         return _BlockingFinalizeClient(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr("notebooklm._sources.httpx.AsyncClient", _client_factory)
+    monkeypatch.setattr(_sources.httpx, "AsyncClient", _client_factory)
 
     async with NotebookLMClient(auth_tokens) as client:
         # with_simulated_cancel cancels the inner task after `delay`
@@ -277,8 +278,8 @@ def _patch_async_client_transport(
     """
 
     # Capture the unpatched AsyncClient before monkeypatch swaps the
-    # attribute. `monkeypatch.setattr("notebooklm._sources.httpx.AsyncClient", ...)`
-    # mutates the shared `httpx` module object, so calling `httpx.AsyncClient`
+    # attribute. Setting ``AsyncClient`` on ``_sources.httpx`` mutates the
+    # shared ``httpx`` module object, so calling ``httpx.AsyncClient``
     # inside the factory would recurse into the factory itself.
     original_async_client = httpx.AsyncClient
 
@@ -286,4 +287,4 @@ def _patch_async_client_transport(
         kwargs["transport"] = transport
         return original_async_client(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr("notebooklm._sources.httpx.AsyncClient", _factory)
+    monkeypatch.setattr(_sources.httpx, "AsyncClient", _factory)

@@ -109,10 +109,10 @@ def _disable_chromium_profile_fanout():
     synthetic profiles — the autouse here just guarantees deterministic
     legacy-path behavior everywhere else.
 
-    D1 PR-3 migration: previously used
-    ``monkeypatch.setattr("notebooklm.cli._chromium_profiles...", ...)``
-    — the string-target form ADR-007 forbids because it silently no-ops
-    if the target relocates. Now uses ``patch(...)`` which raises
+    D1 PR-3 migration: previously used a ``monkeypatch`` string-target
+    setattr aimed at the ``cli._chromium_profiles`` discovery helper — the
+    string-target form ADR-007 forbids because it silently no-ops if the
+    target relocates. Now uses ``patch(...)`` which raises
     ``AttributeError`` on missing targets.
     """
     with patch(

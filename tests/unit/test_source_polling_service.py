@@ -379,17 +379,26 @@ async def test_sources_api_wait_until_ready_delegates_with_call_time_dependencie
 
 
 @pytest.mark.asyncio
-async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic() -> None:
+async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import notebooklm._sources as _sources
+
     api = SourcesAPI(MagicMock(), uploader=MagicMock())
     processing = Source(id="src_1", status=SourceStatus.PROCESSING)
     ready = Source(id="src_1", status=SourceStatus.READY)
 
-    with (
-        patch.object(api, "_get_or_none", new_callable=AsyncMock, side_effect=[processing, ready]),
-        patch("notebooklm._sources.asyncio.sleep", new_callable=AsyncMock) as sleep,
-        patch("notebooklm._sources.monotonic", MagicMock(return_value=0.0)) as monotonic,
-    ):
-        result = await api.wait_until_ready("nb_1", "src_1", initial_interval=0.75)
+    sleep = AsyncMock()
+    monotonic = MagicMock(return_value=0.0)
+    monkeypatch.setattr(api, "_get_or_none", AsyncMock(side_effect=[processing, ready]))
+    # Object-form patches against the locally-imported `_sources` seam alias:
+    # the production code resolves `asyncio.sleep`/`monotonic` from this module
+    # namespace (see `_sources.wait_until_ready`), so substituting them here
+    # exercises that resolution without an import-string patch.
+    monkeypatch.setattr(_sources.asyncio, "sleep", sleep)
+    monkeypatch.setattr(_sources, "monotonic", monotonic)
+
+    result = await api.wait_until_ready("nb_1", "src_1", initial_interval=0.75)
 
     assert result is ready
     sleep.assert_awaited_once_with(0.75)

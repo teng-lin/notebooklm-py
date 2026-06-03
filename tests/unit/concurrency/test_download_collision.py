@@ -15,15 +15,18 @@ This test exercises the previously-broken path directly via
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
+from unittest.mock import MagicMock
 
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm._artifact.downloads as _downloads
 from notebooklm import NotebookLMClient
 
 
 @pytest.fixture(autouse=True)
-def _stub_storage_cookies(monkeypatch: pytest.MonkeyPatch) -> None:
+def _stub_storage_cookies(monkeypatch: pytest.MonkeyPatch) -> Iterator[MagicMock]:
     """Bypass on-disk storage_state.json lookup in `_download_url`.
 
     `ArtifactDownloadService.download_url` calls
@@ -32,10 +35,21 @@ def _stub_storage_cookies(monkeypatch: pytest.MonkeyPatch) -> None:
     been through `notebooklm login`. We don't care about the cookies for
     this test (the mock transport doesn't validate auth) — return an
     empty dict.
+
+    Object-form seam patch (ADR-0007): the cookie loader is referenced as
+    a module global by the `_load_httpx_cookies` wrapper, so we substitute
+    the attribute on the imported `_downloads` module object rather than via
+    an import-string target. The fixture yields the stub and asserts on
+    teardown that the download path actually invoked it — if the seam ever
+    relocates, this stub stops being called, the assertion fails, and the
+    silent-no-op is surfaced instead of swallowed.
     """
-    monkeypatch.setattr(
-        "notebooklm._artifact.downloads.load_httpx_cookies",
-        lambda path=None: {},
+    fake_loader = MagicMock(return_value={})
+    monkeypatch.setattr(_downloads, "load_httpx_cookies", fake_loader)
+    yield fake_loader
+    assert fake_loader.called, (
+        "download path never invoked the patched load_httpx_cookies seam — "
+        "the object-form monkeypatch target may have relocated"
     )
 
 

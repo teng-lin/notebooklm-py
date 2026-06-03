@@ -49,6 +49,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+import notebooklm._runtime.helpers as _runtime_helpers
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
@@ -628,7 +629,19 @@ async def test_add_text_no_probe_no_retry_under_5xx(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._runtime.helpers.asyncio.sleep", _no_sleep)
+    # Object-form patch against the locally-imported seam alias (ADR-007
+    # Form 2): mutate the ``asyncio`` module reference that
+    # ``_runtime.helpers`` reads, instead of a string-target patch. This is a
+    # *defensive* shim — under the correct NON_IDEMPOTENT_NO_RETRY behavior
+    # ``add_text`` never retries, so ``asyncio.sleep`` is never reached; the
+    # patch only bounds wall-time if a regression re-enables retries. Because
+    # the green path never sleeps, the seam-binding itself is asserted
+    # (``resolve_sleep`` is the production read path) rather than call count.
+    monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
+    assert _runtime_helpers.resolve_sleep(None) is _no_sleep, (
+        "object-form patch must target the seam production reads via "
+        "resolve_sleep(None); a wrong-namespace alias would silently no-op"
+    )
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens)

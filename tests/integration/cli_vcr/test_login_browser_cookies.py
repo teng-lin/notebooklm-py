@@ -5,13 +5,17 @@ homepage fetch that ``_login_with_browser_cookies`` performs after
 ``atomic_write_json`` lands the storage_state file. No batchexecute RPC, no
 OAuth handshake, and no RotateCookies POST is recorded.
 
-Two monkeypatches keep the recorded path narrow:
+Two seams keep the recorded path narrow (patched in object-form against the
+locally-imported module that the run actually resolves — ADR-007):
 
 1. ``_read_browser_cookies`` — patched to return a sanitized rookiepy cookie
    set instead of opening the user's real browser DB.
 2. ``_sync_server_language_to_config`` — neutralized so it does not fire the
    ``get_output_language`` batchexecute RPC that ``_login_with_browser_cookies``
-   normally invokes at line ``session.py:984``.
+   normally invokes at line ``session.py:984``. The default browser-cookies
+   path resolves this name in the ``refresh`` module namespace, so the patch
+   targets ``refresh._sync_server_language_to_config`` rather than the
+   ``session_cmd`` re-export.
 
 ``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`` suppresses the layer-1 RotateCookies
 POST. ``NOTEBOOKLM_HOME`` is redirected to ``tmp_path`` so the test never
@@ -141,29 +145,43 @@ class TestLoginBrowserCookies:
         # and re-exported by the package's ``__init__.py``; the caller path
         # (``refresh._login_with_browser_cookies``) imports it via the
         # ``browser_accounts`` binding, so we patch the call-site module too.
+        # Object-form patches against locally-imported seam modules (ADR-007):
+        # each ``setattr`` targets the live module attribute, not an import
+        # string, so a relocation surfaces as an ``AttributeError`` instead of
+        # silently no-opping.
+        import notebooklm.cli.services.login as _login_pkg
+        import notebooklm.cli.services.login.browser_accounts as _browser_accounts
+        import notebooklm.cli.services.login.refresh as _refresh
+
         _fake_reader = lambda *a, **kw: SANITIZED_ROOKIEPY_COOKIES  # noqa: E731
-        monkeypatch.setattr("notebooklm.cli.services.login._read_browser_cookies", _fake_reader)
-        monkeypatch.setattr(
-            "notebooklm.cli.services.login.browser_accounts._read_browser_cookies",
-            _fake_reader,
-        )
-        monkeypatch.setattr(
-            "notebooklm.cli.services.login.refresh._read_browser_cookies",
-            _fake_reader,
-        )
+        monkeypatch.setattr(_login_pkg, "_read_browser_cookies", _fake_reader)
+        monkeypatch.setattr(_browser_accounts, "_read_browser_cookies", _fake_reader)
+        monkeypatch.setattr(_refresh, "_read_browser_cookies", _fake_reader)
 
         # Skip the post-verification settings RPC (line session.py:984) so the
         # cassette only captures the homepage GET. Without this, the run would
-        # also fire a batchexecute call for ``get_output_language``.
+        # also fire a batchexecute call for ``get_output_language``. The default
+        # browser-cookies path resolves ``_sync_server_language_to_config`` in
+        # the ``refresh`` module namespace (``refresh.py:436``), so the object-
+        # form patch must target ``_refresh`` — patching the ``session_cmd``
+        # re-export would silently no-op on this path. ``_sync_calls`` records
+        # the invocation so the patch is bite-checkable (``assert_called``).
+        _sync_calls: list[bool] = []
         monkeypatch.setattr(
-            "notebooklm.cli.session_cmd._sync_server_language_to_config",
-            lambda *a, **kw: None,
+            _refresh,
+            "_sync_server_language_to_config",
+            lambda *a, **kw: _sync_calls.append(True),
         )
 
         result = runner.invoke(cli, ["login", "--browser-cookies", "chrome"])
 
         assert result.exit_code == 0, result.output
         assert "Cookies verified successfully." in result.output
+        # Bite-check: the seam we patched is the one the run actually reaches.
+        assert _sync_calls == [True], (
+            "_sync_server_language_to_config was not invoked through the patched "
+            f"refresh-module seam; output was: {result.output}"
+        )
         # The storage_state file must have been atomically written under the
         # profile dir inside NOTEBOOKLM_HOME.
         storage_files = list(tmp_path.glob("**/storage_state.json"))
@@ -192,16 +210,20 @@ class TestLoginBrowserCookies:
         # ``_read_browser_cookies`` is defined in ``browser_accounts`` and called
         # from ``refresh._login_with_browser_cookies``; both binding sites need the
         # patch so the dispatcher's local lookup hits our capture function.
-        monkeypatch.setattr("notebooklm.cli.services.login._read_browser_cookies", _capture)
-        monkeypatch.setattr(
-            "notebooklm.cli.services.login.browser_accounts._read_browser_cookies",
-            _capture,
-        )
-        monkeypatch.setattr("notebooklm.cli.services.login.refresh._read_browser_cookies", _capture)
-        monkeypatch.setattr(
-            "notebooklm.cli.session_cmd._sync_server_language_to_config",
-            lambda *a, **kw: None,
-        )
+        # Object-form patches against locally-imported seam modules (ADR-007):
+        # targeting the live module attribute keeps a relocation loud instead of
+        # a silent import-string no-op. ``_sync_server_language_to_config`` is
+        # resolved in the ``refresh`` module namespace on this path, so its
+        # patch targets ``_refresh`` (the ``session_cmd`` re-export is not the
+        # binding the run reaches).
+        import notebooklm.cli.services.login as _login_pkg
+        import notebooklm.cli.services.login.browser_accounts as _browser_accounts
+        import notebooklm.cli.services.login.refresh as _refresh
+
+        monkeypatch.setattr(_login_pkg, "_read_browser_cookies", _capture)
+        monkeypatch.setattr(_browser_accounts, "_read_browser_cookies", _capture)
+        monkeypatch.setattr(_refresh, "_read_browser_cookies", _capture)
+        monkeypatch.setattr(_refresh, "_sync_server_language_to_config", lambda *a, **kw: None)
 
         result = runner.invoke(cli, ["login", "--browser-cookies", "firefox"])
 

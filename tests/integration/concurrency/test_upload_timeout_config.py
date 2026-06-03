@@ -70,7 +70,7 @@ async def test_custom_upload_timeout_propagates_to_start(
     capturing = _make_capturing_async_client(captured)
 
     async with NotebookLMClient(auth_tokens, upload_timeout=custom) as client:
-        with patch("notebooklm._sources.httpx.AsyncClient", capturing):
+        with patch.object(httpx, "AsyncClient", capturing):
             # Call the helper directly — exercises the start-resumable-upload
             # site in isolation. The actual network call will fail (no real
             # server), but we only care that the timeout kwarg was captured
@@ -97,7 +97,7 @@ async def test_default_upload_timeout_preserves_back_compat_start(auth_tokens) -
     capturing = _make_capturing_async_client(captured)
 
     async with NotebookLMClient(auth_tokens) as client:  # no upload_timeout
-        with patch("notebooklm._sources.httpx.AsyncClient", capturing):
+        with patch.object(httpx, "AsyncClient", capturing):
             with pytest.raises((httpx.HTTPError, OSError)):
                 await client.sources._start_resumable_upload(
                     notebook_id="nb-test",
@@ -123,7 +123,7 @@ async def test_custom_upload_timeout_propagates_to_finalize(
     capturing = _make_capturing_async_client(captured)
 
     async with NotebookLMClient(auth_tokens, upload_timeout=custom) as client:
-        with patch("notebooklm._sources.httpx.AsyncClient", capturing):
+        with patch.object(httpx, "AsyncClient", capturing):
             with pytest.raises((httpx.HTTPError, OSError)):
                 await client.sources._upload_file_streaming(
                     upload_url="https://notebooklm.google.com/upload/_/?upload_id=timeout",
@@ -145,7 +145,7 @@ async def test_default_upload_timeout_preserves_back_compat_finalize(
     capturing = _make_capturing_async_client(captured)
 
     async with NotebookLMClient(auth_tokens) as client:  # no upload_timeout
-        with patch("notebooklm._sources.httpx.AsyncClient", capturing):
+        with patch.object(httpx, "AsyncClient", capturing):
             with pytest.raises((httpx.HTTPError, OSError)):
                 await client.sources._upload_file_streaming(
                     upload_url="https://notebooklm.google.com/upload/_/?upload_id=timeout",

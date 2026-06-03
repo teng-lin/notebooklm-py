@@ -13,12 +13,14 @@ import ast
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import httpx
 import pytest
 
 from _helpers.client_factory import build_client_shell_for_tests
 from conftest import install_post_as_stream
+from notebooklm import _env
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
@@ -235,7 +237,10 @@ def test_resolve_rpc_id_host_not_allowlisted_ignores_override(monkeypatch):
     rpc_overrides._logged_override_hashes.clear()
     # The host gate uses ``_env.get_base_host`` — patch it inline so we don't
     # depend on a real off-allowlist URL (which the validator would reject).
-    monkeypatch.setattr("notebooklm._env.get_base_host", lambda: "evil.example.com")
+    # ``resolve_rpc_id`` re-imports the name from ``notebooklm._env`` at call
+    # time, so patching the attribute on the imported module object is the
+    # injection seam (ADR-007).
+    monkeypatch.setattr(_env, "get_base_host", lambda: "evil.example.com")
     assert (
         resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)
         == RPCMethod.LIST_NOTEBOOKS.value
@@ -250,7 +255,7 @@ def test_resolve_rpc_id_host_resolver_raises_falls_back(monkeypatch):
     def _boom() -> str:
         raise ValueError("malformed NOTEBOOKLM_BASE_URL")
 
-    monkeypatch.setattr("notebooklm._env.get_base_host", _boom)
+    monkeypatch.setattr(_env, "get_base_host", _boom)
     assert (
         resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)
         == RPCMethod.LIST_NOTEBOOKS.value
@@ -261,8 +266,14 @@ def test_resolve_rpc_id_enterprise_host_allowed(monkeypatch):
     """The enterprise host (notebooklm.cloud.google.com) also passes the gate."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "ENT_ID"}')
     rpc_overrides._logged_override_hashes.clear()
-    monkeypatch.setattr("notebooklm._env.get_base_host", lambda: "notebooklm.cloud.google.com")
+    # The personal default host is *also* allowlisted, so the override would
+    # apply regardless of which allowlisted host the gate sees; spying on the
+    # injected resolver proves the gate actually consulted the enterprise host
+    # we substituted (and that the seam was hit, not silently bypassed).
+    fake_get_base_host = Mock(return_value="notebooklm.cloud.google.com")
+    monkeypatch.setattr(_env, "get_base_host", fake_get_base_host)
     assert resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value) == "ENT_ID"
+    fake_get_base_host.assert_called()
 
 
 def test_resolve_rpc_id_logs_once_per_unique_set(monkeypatch, caplog):
@@ -413,7 +424,7 @@ async def test_rpc_call_host_off_allowlist_ignores_override(monkeypatch):
     monkeypatched env can't leak custom RPC ids to a hostile endpoint.
     """
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "shouldNOTApply"}')
-    monkeypatch.setattr("notebooklm._env.get_base_host", lambda: "evil.example.com")
+    monkeypatch.setattr(_env, "get_base_host", lambda: "evil.example.com")
     rpc_overrides._logged_override_hashes.clear()
 
     core = _make_core()

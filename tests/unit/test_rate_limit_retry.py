@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm._deadline as _deadline
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from _helpers.client_factory import build_client_shell_for_tests
 from conftest import install_post_as_stream
@@ -72,36 +73,62 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
 
 
 @pytest.mark.asyncio
-async def test_rate_limit_retry_after_larger_than_client_timeout_does_not_sleep(auth_tokens):
-    """The middleware uses the client timeout as the aggregate retry budget."""
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.post.return_value = _build_429("300")
+async def test_rate_limit_retry_after_larger_than_client_timeout_does_not_sleep(
+    auth_tokens, monkeypatch
+):
+    """The middleware enforces the client timeout as the aggregate retry budget.
 
-    core = build_client_shell_for_tests(auth_tokens, timeout=0.25, rate_limit_max_retries=2)
+    A controlled monotonic clock starts the retry deadline at ``t=0`` and then
+    jumps past the ``timeout`` budget before the budget check runs, so the
+    middleware refuses to sleep (the requested retry would exceed the remaining
+    budget) and re-raises ``RateLimitError`` after the single initial POST. The
+    fake clock is *load-bearing*: with the real clock the near-zero elapsed time
+    would leave the full budget intact and the middleware would sleep + retry.
+    """
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    # Retry-After (1s) is *within* the configured 10s budget, so the no-sleep
+    # decision here is driven entirely by the controlled clock exhausting the
+    # deadline — not by a header that trivially outruns the timeout.
+    mock_client.post.return_value = _build_429("1")
+
+    core = build_client_shell_for_tests(auth_tokens, timeout=10.0, rate_limit_max_retries=2)
     install_http_client_for_test(core._collaborators.kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
     sleeps: list[float] = []
-    clock = 0.0
+    # A clock that leaps far past the 10s budget on *every* successive read, so
+    # whichever read the retry deadline captures as its start, the next read
+    # (the budget check) is already > timeout past it and ``remaining()``
+    # collapses to 0. Robust to the deadline clock being shared with other
+    # consumers in the call (the exact read ordering must not matter).
+    clock = {"t": 0.0}
 
-    def monotonic() -> float:
-        return clock
+    def _monotonic() -> float:
+        now = clock["t"]
+        clock["t"] += 1000.0
+        return now
+
+    # ADR-007: patch the deadline clock through a locally-imported module alias
+    # (object form) rather than a ``notebooklm._deadline...`` string target.
+    # ``MagicMock`` wraps the fake clock so the bite-check can assert the
+    # injected seam was actually consulted.
+    fake_monotonic = MagicMock(side_effect=_monotonic)
+    monkeypatch.setattr(_deadline.time, "monotonic", fake_monotonic)
 
     async def _record_sleep(seconds: float) -> None:
-        nonlocal clock
         sleeps.append(seconds)
-        clock += seconds
 
     with (
-        patch("notebooklm._deadline.time.monotonic", side_effect=monotonic),
         patch("asyncio.sleep", side_effect=_record_sleep),
         pytest.raises(RateLimitError),
     ):
         await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
+    # The controlled clock exhausted the budget before any retry sleep fired.
     assert mock_client.post.call_count == 1
     assert sleeps == []
-    assert clock == 0.0
+    # Bite-check: the injected deadline clock was actually consulted.
+    fake_monotonic.assert_called()
 
 
 @pytest.mark.asyncio

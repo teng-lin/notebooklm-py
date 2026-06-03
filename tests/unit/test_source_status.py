@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import notebooklm._sources as _sources_mod
 from notebooklm._sources import SourcesAPI
 from notebooklm.types import (
     Source,
@@ -278,7 +279,7 @@ class TestWaitUntilReady:
 
         with (
             patch.object(sources_api, "_get_or_none", side_effect=mock_get),
-            patch("notebooklm._sources.asyncio.sleep", side_effect=mock_sleep),
+            patch.object(_sources_mod.asyncio, "sleep", side_effect=mock_sleep),
         ):
             await sources_api.wait_until_ready(
                 "nb_1",

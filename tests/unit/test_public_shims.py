@@ -1088,6 +1088,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
     ``source_path`` / ``_is_retry`` / ``operation_variant`` kwargs were
     removed and are no longer forwarded by this layer.
     """
+    from _fixtures.fake_core import make_fake_core
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
@@ -1099,7 +1100,13 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
             session_id="session",
         )
     )
-    client._rpc_executor.rpc_call = AsyncMock(return_value={"ok": True})
+    # ADR-007 constructor injection: substitute the whole executor
+    # collaborator with the seam fixture's fake instead of mutating
+    # ``client._rpc_executor.rpc_call`` after the fact. The public
+    # ``rpc_call`` wrapper reads ``self._rpc_executor``, so swapping the
+    # executor exercises the same forwarding path.
+    fake = make_fake_core(rpc_call=AsyncMock(return_value={"ok": True}))
+    client._rpc_executor = fake.rpc_executor
 
     result = await client.rpc_call(
         RPCMethod.CREATE_NOTEBOOK,
@@ -1109,7 +1116,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
     )
 
     assert result == {"ok": True}
-    client._rpc_executor.rpc_call.assert_awaited_once_with(
+    fake.rpc_executor.rpc_call.assert_awaited_once_with(
         method=RPCMethod.CREATE_NOTEBOOK,
         params=["My Notebook"],
         allow_null=True,
@@ -1120,6 +1127,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
 @pytest.mark.asyncio
 async def test_client_rpc_call_forwards_default_arguments() -> None:
     """The default-shape call forwards minimal kwargs and inherits executor defaults."""
+    from _fixtures.fake_core import make_fake_core
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
@@ -1131,9 +1139,11 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
             session_id="session",
         )
     )
-    # No async context is needed: this test replaces the executor's RPC
-    # coroutine before any real transport initialization can be required.
-    client._rpc_executor.rpc_call = AsyncMock(return_value=[])
+    # No async context is needed: ADR-007 constructor injection swaps the
+    # whole executor collaborator for the seam fixture's fake before any
+    # real transport initialization can be required.
+    fake = make_fake_core(rpc_call=AsyncMock(return_value=[]))
+    client._rpc_executor = fake.rpc_executor
 
     result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
@@ -1141,7 +1151,7 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
     # The wrapper forwards only the kwargs it owns; the rest of
     # RpcExecutor.rpc_call's signature (source_path, _is_retry,
     # operation_variant) keeps its module-level defaults.
-    client._rpc_executor.rpc_call.assert_awaited_once_with(
+    fake.rpc_executor.rpc_call.assert_awaited_once_with(
         method=RPCMethod.LIST_NOTEBOOKS,
         params=[],
         allow_null=False,

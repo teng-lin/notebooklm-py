@@ -223,9 +223,9 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
     """Pin that the constructor-injected ``decode_response`` reaches the executor.
 
     The legacy module-level ``_decode_response_late_bound`` wrapper used to
-    re-import ``notebooklm.rpc.decode_response`` on every call, so a
-    ``monkeypatch.setattr("notebooklm.rpc.decode_response", …)`` after the
-    executor was already constructed still affected the live decode path.
+    re-import ``notebooklm.rpc.decode_response`` on every call, so a late
+    string-target monkeypatch of that module attribute (after the executor
+    was already constructed) still affected the live decode path.
     The constructor-DI seam (``Session(..., decode_response=…)``) intentionally
     captures the callable at construction time — see
     ``docs/improvement.md`` §4.1. This test asserts the new contract: the
@@ -658,9 +658,9 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     """Pin that the constructor-injected ``sleep`` reaches the executor.
 
     The legacy module-level ``_sleep_late_bound`` wrapper used to re-import
-    ``asyncio.sleep`` on every call, so a
-    ``monkeypatch.setattr("notebooklm._runtime.helpers.asyncio.sleep", …)`` after the
-    executor was already constructed still affected the live sleep path.
+    ``asyncio.sleep`` on every call, so a late string-target monkeypatch of
+    the ``notebooklm._runtime.helpers`` ``asyncio.sleep`` attribute (after the
+    executor was already constructed) still affected the live sleep path.
     The constructor-DI seam (``Session(..., sleep=…)``) intentionally captures
     the callable at construction time — see ``docs/improvement.md`` §4.1.
     This test asserts the new contract: the injected callable reaches

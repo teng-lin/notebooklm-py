@@ -30,15 +30,23 @@ pytestmark = pytest.mark.allow_no_vcr
 
 
 @pytest.fixture(autouse=True)
-def _stub_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make `_core.open()` a no-op that just installs a stub `_http_client`.
+def _stub_open(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """Make `lifecycle.open()` a no-op that just installs a stub `_http_client`.
 
     The full `open()` path constructs a real `httpx.AsyncClient` and runs
     auth refresh; for these arbitration tests we only need a non-None
     `_http_client` whose `aclose()` we can control.
+
+    Returns the per-test ``calls`` list the stub appends to on each
+    invocation. Tests assert it is non-empty so the seam stays load-bearing:
+    if the object-form patch ever stopped resolving (a silent no-op), the
+    real `open()` would run instead, ``calls`` would be empty, and the
+    assertion fails — the ADR-007 Form-2 disable->red bite-check.
     """
+    calls: list[object] = []
 
     async def _stub_open(self, **_kwargs: object) -> None:
+        calls.append(self)
         if self._kernel.http_client is not None:
             return
         # Lazy import keeps the test file dep-free at module load.
@@ -46,12 +54,20 @@ def _stub_open(monkeypatch: pytest.MonkeyPatch) -> None:
 
         install_http_client_for_test(self._kernel, httpx.AsyncClient())
 
-    monkeypatch.setattr("notebooklm._runtime.lifecycle.ClientLifecycle.open", _stub_open)
+    # Object-form patch against a locally-imported seam alias (ADR-007 Form 2):
+    # patch the unbound `open` method on the `ClientLifecycle` class so the
+    # `client._collaborators.lifecycle.open(...)` instance call resolves to the
+    # stub. Avoids the import-string-target form that silently no-ops on relocation.
+    import notebooklm._runtime.lifecycle as _lifecycle
+
+    monkeypatch.setattr(_lifecycle.ClientLifecycle, "open", _stub_open)
+    return calls
 
 
 async def test_body_raises_and_close_raises_body_wins(
     auth_tokens,
     caplog: pytest.LogCaptureFixture,
+    _stub_open: list[object],
 ) -> None:
     """Body's ValueError must propagate; close's RuntimeError logged + suppressed.
 
@@ -63,6 +79,10 @@ async def test_body_raises_and_close_raises_body_wins(
     # Capture the http client reference BEFORE entering the cm — successful
     # close sets `client._collaborators.kernel.http_client = None`, so we need our own ref.
     async with client:
+        # ADR-007 Form-2 bite-check: the object-form `ClientLifecycle.open`
+        # patch must have resolved — the stub ran on context entry. If the
+        # seam ever stopped binding (silent no-op), `calls` is empty here.
+        assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
         http_client_ref = client._collaborators.kernel.get_http_client()
         assert http_client_ref is not None
 
@@ -102,6 +122,7 @@ async def test_body_raises_and_close_raises_body_wins(
 
 async def test_body_succeeds_and_close_raises_close_propagates(
     auth_tokens,
+    _stub_open: list[object],
 ) -> None:
     """No body exception → close() failure propagates as the cm exit exception."""
     client = NotebookLMClient(auth_tokens)
@@ -116,9 +137,14 @@ async def test_body_succeeds_and_close_raises_close_propagates(
         async with client:
             pass
 
+    # ADR-007 Form-2 bite-check: the object-form `ClientLifecycle.open` patch
+    # resolved — the stub ran on context entry (empty => silent no-op).
+    assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
+
 
 async def test_cancel_mid_close_does_not_leak_transport(
     auth_tokens,
+    _stub_open: list[object],
 ) -> None:
     """`asyncio.shield` in `_core.close()` keeps `aclose()` running through cancel.
 
@@ -129,6 +155,9 @@ async def test_cancel_mid_close_does_not_leak_transport(
     """
     client = NotebookLMClient(auth_tokens)
     await client.__aenter__()
+    # ADR-007 Form-2 bite-check: the object-form `ClientLifecycle.open` patch
+    # resolved — the stub ran on __aenter__ (empty => silent no-op).
+    assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
     http_client_ref = client._collaborators.kernel.get_http_client()
     assert http_client_ref is not None
 

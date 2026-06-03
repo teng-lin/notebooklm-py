@@ -530,10 +530,7 @@ class TestFindFirefoxProfilePath:
             "[General]\n"
             "StartWithLastProfile=1\n",
         )
-        monkeypatch.setattr(
-            "notebooklm.cli._firefox_containers._firefox_root_dirs",
-            lambda: [root],
-        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [root])
         assert find_firefox_profile_path() == profile
 
     def test_falls_back_to_default_equals_1(self, tmp_path, monkeypatch):
@@ -544,10 +541,7 @@ class TestFindFirefoxProfilePath:
             root,
             "[Profile0]\nName=default\nIsRelative=1\nPath=Profiles/xyz.default\nDefault=1\n",
         )
-        monkeypatch.setattr(
-            "notebooklm.cli._firefox_containers._firefox_root_dirs",
-            lambda: [root],
-        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [root])
         assert find_firefox_profile_path() == profile.resolve()
 
     def test_falls_back_to_first_profile_with_cookies_sqlite(self, tmp_path, monkeypatch):
@@ -560,16 +554,12 @@ class TestFindFirefoxProfilePath:
             root,
             "[Profile0]\nName=only\nIsRelative=1\nPath=Profiles/only.default\n",
         )
-        monkeypatch.setattr(
-            "notebooklm.cli._firefox_containers._firefox_root_dirs",
-            lambda: [root],
-        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [root])
         assert find_firefox_profile_path() == profile.resolve()
 
     def test_returns_none_when_no_firefox(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "notebooklm.cli._firefox_containers._firefox_root_dirs",
-            lambda: [tmp_path / "DoesNotExist"],
+            _firefox_containers, "_firefox_root_dirs", lambda: [tmp_path / "DoesNotExist"]
         )
         assert find_firefox_profile_path() is None
 
@@ -577,10 +567,7 @@ class TestFindFirefoxProfilePath:
         root = tmp_path / "Firefox"
         root.mkdir()
         (root / "profiles.ini").write_text("\x00not\x00ini", encoding="utf-8")
-        monkeypatch.setattr(
-            "notebooklm.cli._firefox_containers._firefox_root_dirs",
-            lambda: [root],
-        )
+        monkeypatch.setattr(_firefox_containers, "_firefox_root_dirs", lambda: [root])
         # We deliberately swallow parser errors and try the next root; with
         # only one root that fails, we get None.
         try:

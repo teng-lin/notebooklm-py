@@ -57,15 +57,21 @@ class TestTimestampParsing:
         assert parsed is not None
         assert parsed.timestamp() == ts
 
-    def test_datetime_from_timestamp_oserror(self):
+    def test_datetime_from_timestamp_oserror(self, monkeypatch):
         """Platform-specific timestamp errors should normalize to None."""
+        from unittest.mock import MagicMock
+
+        from notebooklm._types import common as _common
         from notebooklm.types import _datetime_from_timestamp
 
-        with patch("notebooklm._types.common.datetime") as mock_datetime:
-            mock_datetime.fromtimestamp.side_effect = OSError("timestamp out of range")
-            parsed = _datetime_from_timestamp(1704067200)
+        mock_datetime = MagicMock()
+        mock_datetime.fromtimestamp.side_effect = OSError("timestamp out of range")
+        monkeypatch.setattr(_common, "datetime", mock_datetime)
+
+        parsed = _datetime_from_timestamp(1704067200)
 
         assert parsed is None
+        mock_datetime.fromtimestamp.assert_called_once_with(1704067200)
 
     @pytest.mark.parametrize("value", ["bad", None, float("inf"), float("-inf")])
     def test_datetime_from_timestamp_invalid_value(self, value):

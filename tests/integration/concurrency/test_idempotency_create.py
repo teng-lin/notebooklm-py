@@ -36,6 +36,7 @@ import json
 import httpx
 import pytest
 
+import notebooklm._runtime.helpers as _runtime_helpers
 from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import (
     NonIdempotentRetryError,
@@ -452,8 +453,9 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
         (initial + 2 retries) before raising.
       - ``disable_internal_retries=True`` issues exactly 1 POST.
 
-    Patches ``asyncio.sleep`` to a no-op so the test doesn't pay the
-    exponential-backoff wall time on the default-retries path.
+    Swaps the retry seam's ``asyncio.sleep`` for a no-op so the test doesn't
+    pay the exponential-backoff wall time on the default-retries path, and
+    asserts that seam was actually exercised.
     """
     request_count = 0
 
@@ -465,10 +467,18 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     transport = httpx.MockTransport(handler)
 
     # Skip backoff sleeps — only the *count* of retries matters here.
+    sleep_calls = 0
+
     async def _no_sleep(_seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
         return None
 
-    monkeypatch.setattr("notebooklm._runtime.helpers.asyncio.sleep", _no_sleep)
+    # Object-form patch against a locally-imported seam alias (ADR-007 Form 2):
+    # ``resolve_sleep`` re-reads ``asyncio.sleep`` from the ``_runtime.helpers``
+    # module global on every call, so swapping ``sleep`` on that module's
+    # ``asyncio`` reference is what the retry loop observes.
+    monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     # --- with disable_internal_retries=True: exactly 1 POST ------------
     client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
@@ -499,3 +509,12 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
         assert request_count == 3, f"with default retries expected 3 POSTs, got {request_count}"
     finally:
         await client._collaborators.kernel.get_http_client().aclose()
+
+    # Bite-check: the patched seam must actually have been exercised. The
+    # default-retries path fires one backoff sleep per retry (2 retries), so a
+    # wrong-namespace patch that silently no-ops would leave ``sleep_calls`` at
+    # zero and fail here rather than passing on stale behaviour.
+    assert sleep_calls >= 2, (
+        f"patched asyncio.sleep seam was not exercised (sleep_calls={sleep_calls}); "
+        "the Form-2 object-form patch did not land on the live retry seam"
+    )

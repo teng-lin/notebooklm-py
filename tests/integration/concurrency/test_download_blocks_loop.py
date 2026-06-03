@@ -55,6 +55,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
@@ -95,25 +96,33 @@ def _assert_offloaded_to_worker_thread(
 
 
 @pytest.fixture
-def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
-    """``ArtifactsAPI`` wired to a mock RPC executor and lifecycle core.
+def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
+    """``ArtifactsAPI`` wired to a constructor-injected fake core.
 
     Same shape as the unit-test fixture in ``tests/unit/test_artifact_downloads.py``
     so future readers can cross-reference the protocol shaping. We keep
     a local copy here because importing across the unit/integration
     boundary in pytest is fragile when both define ``mock_artifacts_api``
     at module scope.
+
+    The core is built via ``make_fake_core(...)`` (ADR-007 constructor
+    injection) rather than mutating a ``MagicMock``'s ``rpc_call`` after
+    construction: the fake exposes the shared ``RpcCaller`` surface on
+    ``mock_core`` (and its ``rpc_executor`` mirror) plus the drain /
+    lifecycle capability stubs the API reads, so no post-hoc
+    ``AsyncMock`` attribute assignment is needed.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
-    mock_core = MagicMock()
-    mock_core.rpc_executor.rpc_call = AsyncMock()
-    mock_core.get_source_ids = AsyncMock(return_value=[])
-    note_service = NoteService(mock_core.rpc_executor)
+    mock_core = make_fake_core(
+        rpc_call=AsyncMock(),
+        get_source_ids=AsyncMock(return_value=[]),
+    )
+    note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
-        rpc=mock_core.rpc_executor,
+        rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
@@ -126,7 +135,7 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
 
 @pytest.mark.asyncio
 async def test_download_report_runs_write_off_loop_thread(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
 ) -> None:
     """``download_report`` must offload its ``Path.write_text`` to a thread.
@@ -186,7 +195,7 @@ async def test_download_report_runs_write_off_loop_thread(
 
 @pytest.mark.asyncio
 async def test_download_mind_map_runs_write_off_loop_thread(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
 ) -> None:
     """``download_mind_map`` must offload its JSON write to a thread.
@@ -268,7 +277,7 @@ async def test_download_mind_map_runs_write_off_loop_thread(
 
 @pytest.mark.asyncio
 async def test_concurrent_downloads_both_offload_writes(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
 ) -> None:
     """End-to-end fan-out: report + mind-map concurrently must both offload.
@@ -359,7 +368,7 @@ async def test_concurrent_downloads_both_offload_writes(
 
 @pytest.mark.asyncio
 async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
 ) -> None:
     """``_download_urls_batch`` must offload its ``load_httpx_cookies`` call.
@@ -369,6 +378,8 @@ async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
     an ``httpx.AsyncClient``, which doesn't touch the network until
     the first request.
     """
+    import notebooklm._artifact.downloads as artifact_downloads
+
     api, _ = mock_artifacts_api
 
     loop_thread_id = threading.get_ident()
@@ -378,8 +389,13 @@ async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
         captured.append(threading.get_ident())
         return {}
 
-    with patch(
-        "notebooklm._artifact.downloads.load_httpx_cookies",
+    # Object-form patch against the locally-imported downloads module
+    # (ADR-007): the seam is the ``load_httpx_cookies`` name bound *in*
+    # ``_artifact.downloads`` (imported there from ``..auth``), which the
+    # ``asyncio.to_thread(_load_httpx_cookies, ...)`` offload resolves.
+    with patch.object(
+        artifact_downloads,
+        "load_httpx_cookies",
         new=recording_load_httpx_cookies,
     ):
         result = await api._download_urls_batch([])
@@ -398,7 +414,7 @@ async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
 
 @pytest.mark.asyncio
 async def test_download_url_cookie_load_runs_off_loop_thread(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
     httpx_mock,
 ) -> None:
@@ -411,6 +427,8 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
     bytes hit the wire). The thread-id capture has already happened by
     the time the HTTP step runs.
     """
+    import notebooklm._artifact.downloads as artifact_downloads
+
     api, _ = mock_artifacts_api
     output_path = tmp_path / "download.bin"
 
@@ -432,8 +450,12 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
         return {}
 
     with (
-        patch(
-            "notebooklm._artifact.downloads.load_httpx_cookies",
+        # Object-form patch against the locally-imported downloads module
+        # (ADR-007) — patches the ``load_httpx_cookies`` name bound in
+        # ``_artifact.downloads`` that the cookie-load offload resolves.
+        patch.object(
+            artifact_downloads,
+            "load_httpx_cookies",
             new=recording_load_httpx_cookies,
         ),
         pytest.raises(ArtifactDownloadError),
@@ -450,7 +472,7 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
 
 @pytest.mark.asyncio
 async def test_download_url_uses_single_writer_thread_for_all_chunks(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
 ) -> None:
     """``_download_url`` must drive ALL chunks through ONE writer thread.
@@ -493,6 +515,8 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
     import threading as real_threading
 
     import httpx as real_httpx
+
+    import notebooklm._artifact.downloads as artifact_downloads
 
     # 32 chunks of 64 KiB. Anything > ~2 demonstrates the regression
     # signal cleanly; 32 keeps the test fast while making the
@@ -571,8 +595,11 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
 
     with (
         patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-        patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value=MagicMock()),
-        patch("notebooklm._artifact.downloads.threading.Thread", new=_RecordingThread),
+        # Object-form patches against the locally-imported downloads module
+        # (ADR-007): the cookie-load seam and the module's ``threading``
+        # reference whose ``Thread`` the writer-thread construction uses.
+        patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
+        patch.object(artifact_downloads.threading, "Thread", new=_RecordingThread),
         patch.object(builtins, "open", new=_patched_open),
     ):
         result = await api._download_url(
@@ -613,7 +640,7 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
 
 @pytest.mark.asyncio
 async def test_download_url_writer_failure_does_not_deadlock_producer(
-    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
 ) -> None:
     """A failing writer thread must not deadlock the producer.
@@ -645,6 +672,8 @@ async def test_download_url_writer_failure_does_not_deadlock_producer(
     import threading
 
     import httpx as real_httpx
+
+    import notebooklm._artifact.downloads as artifact_downloads
 
     api, _ = mock_artifacts_api
     output_path = tmp_path / "doomed.bin"
@@ -719,7 +748,10 @@ async def test_download_url_writer_failure_does_not_deadlock_producer(
 
     with (
         patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-        patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value=MagicMock()),
+        # Object-form patch against the locally-imported downloads module
+        # (ADR-007) — patches the cookie-load seam bound in
+        # ``_artifact.downloads``.
+        patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
         patch.object(builtins, "open", new=_patched_open),
     ):
         download_coro = api._download_url(

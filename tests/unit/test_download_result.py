@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm._artifact.downloads as _downloads
 from notebooklm._artifacts import DownloadResult
 from notebooklm.exceptions import ArtifactDownloadError
 
@@ -119,7 +120,7 @@ def _patched_httpx_client(get_behavior: Any) -> Iterator[AsyncMock]:
     Yields the inner mock_client for further customization if needed.
     """
     with (
-        patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
+        patch.object(_downloads, "load_httpx_cookies", return_value={}),
         patch("httpx.AsyncClient") as mock_client_cls,
     ):
         mock_client = AsyncMock()
@@ -213,7 +214,7 @@ async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_p
     """Untrusted-domain ``ArtifactDownloadError`` lands in ``failed``, not raised."""
     api, _ = mock_artifacts_api
 
-    with patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}):
+    with patch.object(_downloads, "load_httpx_cookies", return_value={}):
         result = await api._download_urls_batch(
             [("https://evil.example.com/file.mp4", str(tmp_path / "x.mp4"))]
         )

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm._artifact.downloads as _downloads_mod
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
@@ -99,7 +100,7 @@ def _patch_httpx_client(
 
     return (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
-        patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value=MagicMock()),
+        patch.object(_downloads_mod, "load_httpx_cookies", return_value=MagicMock()),
     )
 
 
@@ -128,7 +129,7 @@ class TestDownloadUrlErrorWrapping:
             response = _build_mock_response(content=content)
             client_patch, cookies_patch = _patch_httpx_client(response)
 
-            with client_patch, cookies_patch:
+            with client_patch, cookies_patch as mock_load_cookies:
                 result = await api._download_url(
                     "https://storage.googleapis.com/file.mp4", output_path
                 )
@@ -136,6 +137,9 @@ class TestDownloadUrlErrorWrapping:
             assert result == output_path
             with open(output_path, "rb") as f:
                 assert f.read() == content
+            # The locally-imported seam alias was actually patched and
+            # invoked -- guards against a silently-no-op object patch.
+            mock_load_cookies.assert_called_once()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

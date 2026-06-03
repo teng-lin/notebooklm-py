@@ -60,13 +60,12 @@ import asyncio
 import builtins
 import threading
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 
@@ -91,41 +90,27 @@ HEARTBEAT_INTERVAL_S = 0.01
 MIN_HEARTBEATS = 5
 
 
-def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
-    """Build a SourcesAPI with a minimal mocked core.
+def _make_sources_api() -> tuple[SourcesAPI, FakeSession]:
+    """Build a SourcesAPI via constructor-injection over ``make_fake_core``.
 
     Mirrors ``tests/unit/test_sources_upload.py``'s ``mock_core`` /
-    ``sources_api`` fixture pair. We don't import them because they are
-    module-local; copying the four-line setup here keeps the test
-    self-contained and avoids a conftest cross-dependency between
-    unit/ and integration/concurrency/.
+    ``sources_api`` fixture pair, which themselves build on
+    ``make_fake_core`` — the sanctioned ADR-007 substrate. The fake bundles
+    every narrow collaborator the upload pipeline needs:
+
+    - ``rpc_executor.rpc_call`` (RpcCaller) — injected fresh per call so a
+      test can set ``.return_value`` without the default ``side_effect``
+      shadowing it,
+    - ``operation_scope`` (the ``drain`` slot) and ``assert_bound_loop``
+      (the ``lifecycle`` slot) used by ``add_file``,
+    - ``kernel`` (live cookie jar) and ``auth`` (authuser routing) consumed
+      by the streaming/start paths,
+    - ``record_upload_queue_wait`` for the upload-metrics path.
+
+    Returning the fake lets callers configure ``core.rpc_executor.rpc_call``
+    and assert it was awaited (the Form-1 bite-check for ADR-007).
     """
-    core = MagicMock()
-    core.rpc_executor.rpc_call = AsyncMock()
-    core.auth = MagicMock()
-    core.auth.authuser = 0
-    core.auth.account_email = None
-    core.auth.cookie_jar = MagicMock(name="auth_cookie_jar")
-    core.get_http_client.return_value.cookies = MagicMock(name="live_cookie_jar")
-    core.kernel = core
-    core._drain_tracker = MagicMock()
-    core._drain_tracker.begin_transport_post = AsyncMock(return_value=object())
-    core._drain_tracker.finish_transport_post = AsyncMock()
-    core.operation_scope = MagicMock()
-
-    def operation_scope(_label):
-        @asynccontextmanager
-        async def scope() -> AsyncIterator[None]:
-            yield None
-
-        return scope()
-
-    core.operation_scope.side_effect = operation_scope
-    core.record_upload_queue_wait = MagicMock()
-    # MagicMock blocks ``assert``-prefixed attribute access as a foot-gun
-    # guard; the no-op ``assert_bound_loop`` stub used by ``add_file``
-    # must therefore be installed explicitly.
-    core.assert_bound_loop = MagicMock()
+    core = make_fake_core(rpc_call=AsyncMock())
     uploader = SourceUploadPipeline(
         rpc=core.rpc_executor,
         drain=core,
@@ -411,3 +396,7 @@ async def test_add_file_open_runs_off_loop_thread(
         "It must be wrapped in asyncio.to_thread so a slow filesystem cannot stall "
         "concurrent tasks."
     )
+    # Form-1 bite-check (ADR-007): prove the constructor-injected RPC
+    # collaborator from ``make_fake_core`` is the one ``add_file`` drove,
+    # so the migration off the monkeypatch allowlist is wired, not a no-op.
+    _core.rpc_executor.rpc_call.assert_awaited()

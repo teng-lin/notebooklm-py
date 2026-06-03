@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm._artifact.downloads as _downloads
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.exceptions import (
     ArtifactInProgressTimeoutError,
@@ -76,8 +77,9 @@ class TestDownloadUrlsBatch:
         mock_response.headers = {"content-type": "video/mp4"}
         mock_response.raise_for_status = MagicMock()
 
+        load_cookies = MagicMock(return_value={})
         with (
-            patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
+            patch.object(_downloads, "load_httpx_cookies", load_cookies),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -93,6 +95,8 @@ class TestDownloadUrlsBatch:
 
             result = await api._download_urls_batch(urls_and_paths)
 
+        # Bite-check (ADR-0007 Form-2): the injected seam alias is exercised.
+        load_cookies.assert_called_once()
         assert result.all_succeeded
         assert len(result.succeeded) == 2
         assert str(tmp_path / "file1.mp4") in result.succeeded
@@ -117,8 +121,9 @@ class TestDownloadUrlsBatch:
         mock_response.headers = {"content-type": "text/html"}
         mock_response.raise_for_status = MagicMock()
 
+        load_cookies = MagicMock(return_value={})
         with (
-            patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
+            patch.object(_downloads, "load_httpx_cookies", load_cookies),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -133,6 +138,8 @@ class TestDownloadUrlsBatch:
 
             result = await api._download_urls_batch(urls_and_paths)
 
+        # Bite-check (ADR-0007 Form-2): the injected seam alias is exercised.
+        load_cookies.assert_called_once()
         assert result.succeeded == []
         assert len(result.failed) == 1
         url, exc = result.failed[0]
@@ -150,8 +157,9 @@ class TestDownloadUrlsBatch:
         success_response.headers = {"content-type": "video/mp4"}
         success_response.raise_for_status = MagicMock()
 
+        load_cookies = MagicMock(return_value={})
         with (
-            patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value={}),
+            patch.object(_downloads, "load_httpx_cookies", load_cookies),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -167,6 +175,8 @@ class TestDownloadUrlsBatch:
 
             result = await api._download_urls_batch(urls_and_paths)
 
+        # Bite-check (ADR-0007 Form-2): the injected seam alias is exercised.
+        load_cookies.assert_called_once()
         # Only first file should succeed; second is recorded in failed.
         assert not result.all_succeeded
         assert result.partial

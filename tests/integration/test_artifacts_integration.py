@@ -1219,8 +1219,11 @@ class TestArtifactErrorPaths:
         httpx_mock: HTTPXMock,
         build_rpc_response,
         tmp_path,
+        monkeypatch,
     ):
         """Test download_slide_deck with format='pptx' downloads PPTX URL."""
+        import notebooklm._artifact.downloads as _downloads
+
         pdf_url = "https://docs.googleusercontent.com/slides.pdf"
         pptx_url = "https://docs.googleusercontent.com/slides.pptx"
         slide_art = [
@@ -1246,13 +1249,23 @@ class TestArtifactErrorPaths:
         httpx_mock.add_response(content=response.encode())
         httpx_mock.add_response(content=b"pptx-content")
 
+        # Form-2 object-form patch against the locally-imported seam alias:
+        # the download coordinator resolves cookies through the module-level
+        # ``load_httpx_cookies`` name on ``_artifact.downloads`` (the
+        # ``_load_httpx_cookies`` wrapper calls it), so stub it on the module
+        # object to avoid touching real on-disk cookie storage.
+        fake_cookies = MagicMock()
+        fake_loader = MagicMock(return_value=fake_cookies)
+        monkeypatch.setattr(_downloads, "load_httpx_cookies", fake_loader)
+
         output = str(tmp_path / "slides.pptx")
-        with patch("notebooklm._artifact.downloads.load_httpx_cookies", return_value=MagicMock()):
-            async with NotebookLMClient(auth_tokens) as client:
-                result = await client.artifacts.download_slide_deck(
-                    "nb_123", output, output_format="pptx"
-                )
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.artifacts.download_slide_deck(
+                "nb_123", output, output_format="pptx"
+            )
         assert result == output
+        # Bite-check: the patched seam was actually exercised on the download path.
+        fake_loader.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_poll_status_in_progress(
