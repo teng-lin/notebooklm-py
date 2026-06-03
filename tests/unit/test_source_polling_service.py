@@ -395,7 +395,13 @@ async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic
     # the production code resolves `asyncio.sleep`/`monotonic` from this module
     # namespace (see `_sources.wait_until_ready`), so substituting them here
     # exercises that resolution without an import-string patch.
-    monkeypatch.setattr(_sources.asyncio, "sleep", sleep)
+    # `_sources.monotonic` is a module-local alias (`from time import monotonic`),
+    # so patching it is already isolated. For `asyncio.sleep` we swap the whole
+    # `_sources.asyncio` binding for a mock wrapping the real module with only
+    # `sleep` overridden, so we never mutate the shared stdlib `asyncio` object.
+    fake_asyncio = MagicMock(wraps=_sources.asyncio)
+    fake_asyncio.sleep = sleep
+    monkeypatch.setattr(_sources, "asyncio", fake_asyncio)
     monkeypatch.setattr(_sources, "monotonic", monotonic)
 
     result = await api.wait_until_ready("nb_1", "src_1", initial_interval=0.75)

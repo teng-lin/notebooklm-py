@@ -111,9 +111,14 @@ async def test_rate_limit_retry_after_larger_than_client_timeout_does_not_sleep(
     # ADR-007: patch the deadline clock through a locally-imported module alias
     # (object form) rather than a ``notebooklm._deadline...`` string target.
     # ``MagicMock`` wraps the fake clock so the bite-check can assert the
-    # injected seam was actually consulted.
+    # injected seam was actually consulted. We replace ``_deadline.time`` with a
+    # mock that wraps the real ``time`` module and overrides only ``monotonic``,
+    # so the patch is isolated to ``_deadline``'s consumer-side binding and never
+    # mutates the shared stdlib ``time`` module object for the rest of the process.
     fake_monotonic = MagicMock(side_effect=_monotonic)
-    monkeypatch.setattr(_deadline.time, "monotonic", fake_monotonic)
+    fake_time = MagicMock(wraps=_deadline.time)
+    fake_time.monotonic = fake_monotonic
+    monkeypatch.setattr(_deadline, "time", fake_time)
 
     async def _record_sleep(seconds: float) -> None:
         sleeps.append(seconds)

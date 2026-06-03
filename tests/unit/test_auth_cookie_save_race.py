@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -733,11 +734,11 @@ class TestSaveReturnsBoolSuccess:
         snapshot = snapshot_cookie_jar(jar)
         _set_cookie_value(jar, "SID", "new")
 
-        # Simulate ENOSPC at the temp-file write step. Patch the
-        # ``NamedTemporaryFile`` attribute on the ``tempfile`` module object as
-        # the atomic-writer module sees it (``_atomic_io.tempfile``), so the
-        # patch lands on the exact module reference the production code resolves
-        # at call time.
+        # Simulate ENOSPC at the temp-file write step. Replace the atomic-writer
+        # module's ``tempfile`` binding (``_atomic_io.tempfile``) with a mock that
+        # wraps the real module and overrides only ``NamedTemporaryFile``, so the
+        # patch lands on the exact reference the production code resolves at call
+        # time without mutating the shared stdlib ``tempfile`` module object.
         real_namedtemp = _atomic_io.tempfile.NamedTemporaryFile
 
         def boom_namedtemp(*args, **kwargs):
@@ -745,7 +746,9 @@ class TestSaveReturnsBoolSuccess:
             handle.write = lambda *a, **k: (_ for _ in ()).throw(OSError("simulated ENOSPC"))
             return handle
 
-        monkeypatch.setattr(_atomic_io.tempfile, "NamedTemporaryFile", boom_namedtemp)
+        fake_tempfile = MagicMock(wraps=_atomic_io.tempfile)
+        fake_tempfile.NamedTemporaryFile = boom_namedtemp
+        monkeypatch.setattr(_atomic_io, "tempfile", fake_tempfile)
 
         assert save_cookies_to_storage(jar, storage, original_snapshot=snapshot) is False
         # And the original on-disk value must still be intact.
@@ -1256,10 +1259,13 @@ class TestNoTempFileLeakOnWriteFailure:
             handle.write = lambda *a, **k: (_ for _ in ()).throw(OSError("simulated ENOSPC"))
             return handle
 
-        # Patch the atomic-writer module's view of ``tempfile.NamedTemporaryFile``
-        # (object form) so the failing handle is what the production write path
-        # resolves at call time.
-        monkeypatch.setattr(_atomic_io.tempfile, "NamedTemporaryFile", boom_namedtemp)
+        # Replace the atomic-writer module's ``tempfile`` binding with a mock that
+        # wraps the real module and overrides only ``NamedTemporaryFile`` (object
+        # form), so the failing handle is what the production write path resolves
+        # at call time without mutating the shared stdlib ``tempfile`` module.
+        fake_tempfile = MagicMock(wraps=_atomic_io.tempfile)
+        fake_tempfile.NamedTemporaryFile = boom_namedtemp
+        monkeypatch.setattr(_atomic_io, "tempfile", fake_tempfile)
 
         # The injected write failure must actually fire (returns False); this
         # guards that the object-form patch lands on the production write path —
