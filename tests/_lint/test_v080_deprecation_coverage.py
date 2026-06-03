@@ -43,6 +43,7 @@ carries a non-empty reason).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -88,6 +89,11 @@ class Runway:
         """The literal string the gate searches for in :attr:`module`."""
         # Exactly one is non-None (enforced in __post_init__).
         return self.symbol if self.symbol is not None else self.notice  # type: ignore[return-value]
+
+    @property
+    def is_symbol(self) -> bool:
+        """True for a ``symbol`` runway (verified against code, not comments)."""
+        return self.symbol is not None
 
 
 @dataclass(frozen=True)
@@ -191,6 +197,22 @@ V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
 # touching the filesystem.
 
 
+# Strips a trailing ``#`` comment from a line. Anchored after a non-``#`` run so
+# a ``#`` inside an already-started comment doesn't matter, and a literal ``#``
+# at column 0 (a full-line comment) is caught by the leading ``^[^#]*`` matching
+# the empty prefix. This is a deliberately *coarse* filter: it does not parse
+# string literals, so a ``#`` inside a string would truncate that line. That is
+# fine here — a ``symbol`` needle (a bare identifier like ``deprecated_kwarg``)
+# never legitimately lives inside a string literal, and the only thing we want
+# to deny is a symbol that appears *solely* in a comment.
+_COMMENT_RE = re.compile(r"#.*$", re.MULTILINE)
+
+
+def _strip_comments(text: str) -> str:
+    """Return ``text`` with ``#`` line-comments removed (coarse; see note above)."""
+    return _COMMENT_RE.sub("", text)
+
+
 def _tag(change: BreakingChange) -> str:
     """Return ``"runway"`` / ``"exemption"``, asserting exactly one is set.
 
@@ -219,11 +241,15 @@ def _missing_runways(
 ) -> dict[int, str]:
     """Map ``issue -> reason`` for every runwayed entry whose runway is absent.
 
-    A runway is "present" when its :attr:`Runway.needle` (the warn-helper symbol
-    or the notice substring) appears in the cited module's source text. An entry
-    that cites a module missing from ``sources``, or whose needle is absent from
-    that module, is flagged — so the table cannot claim a runway that isn't
-    wired in. Pure on its inputs.
+    A runway is "present" when its :attr:`Runway.needle` appears in the cited
+    module. For a ``symbol`` runway (a warn-helper / mixin identifier) the search
+    is over a **comment-stripped** view of the source, so a symbol mentioned only
+    in a comment or docstring-like ``#`` line does not falsely satisfy the runway
+    — the signal must be in code. For a ``notice`` runway (a stderr transition
+    string) the search is over the raw text, since the notice legitimately lives
+    inside a string literal. An entry that cites a module missing from
+    ``sources``, or whose needle is absent, is flagged — so the table cannot
+    claim a runway that isn't wired in. Pure on its inputs.
     """
     missing: dict[int, str] = {}
     for change in changes:
@@ -233,9 +259,14 @@ def _missing_runways(
         text = sources.get(runway.module)
         if text is None:
             missing[change.issue] = f"cited module {runway.module!r} not found"
-        elif runway.needle not in text:
+            continue
+        haystack = _strip_comments(text) if runway.is_symbol else text
+        if runway.needle not in haystack:
+            where = "code (excluding comments)" if runway.is_symbol else runway.module
             missing[change.issue] = (
-                f"runway needle {runway.needle!r} not found in {runway.module!r}"
+                f"runway needle {runway.needle!r} not found in {where!r}"
+                if runway.is_symbol
+                else f"runway needle {runway.needle!r} not found in {runway.module!r}"
             )
     return missing
 
@@ -257,13 +288,11 @@ def _cited_modules() -> dict[str, str]:
         if rel in sources:
             continue
         path = SRC_ROOT / rel
-        sources[rel] = path.read_text(encoding="utf-8") if path.is_file() else ""
-        # Distinguish "missing file" from "present but empty": a real empty file
-        # is vanishingly unlikely and would be caught by the path-existence test
-        # anyway; the detector treats "file missing" via the absent-key path, so
-        # drop the key when the file does not exist.
-        if not path.is_file():
-            del sources[rel]
+        # Key absent <-> module missing (the detector flags it "not found");
+        # key present (even an empty "") <-> module exists (the detector then
+        # checks the needle). So only set the key when the file actually exists.
+        if path.is_file():
+            sources[rel] = path.read_text(encoding="utf-8")
     return sources
 
 
@@ -364,7 +393,10 @@ def test_three_silent_breaks_are_exempted_today() -> None:
     three gains a runway, this also fails — a prompt to drop it from the
     exemption baseline.
     """
-    exempted = sorted(c.issue for c in V080_BREAKING_CHANGES if c.exemption)
+    # Match ``_tag``'s blank-reason handling: a whitespace-only exemption is "no
+    # reason" (it would already fail ``test_every_entry_is_runwayed_or_exempted``),
+    # so it must not be counted toward the baseline here either.
+    exempted = sorted(c.issue for c in V080_BREAKING_CHANGES if c.exemption and c.exemption.strip())
     assert exempted == [1290, 1342, 1362], (
         "The v0.8.0 silent-break exemption set changed. It is meant to SHRINK as "
         "runways are added, never to grow silently. If you added a NEW exemption, "
@@ -476,6 +508,43 @@ def test_missing_runways_verifies_notice_substring() -> None:
     )
     result = _missing_runways((present, absent), sources)
     assert set(result) == {21}
+
+
+def test_symbol_runway_ignores_comment_only_mentions() -> None:
+    """A ``symbol`` runway present only in a comment is flagged, not satisfied.
+
+    Closes the substring-vs-code gap raised in review: the warn-helper signal
+    must be in *code* (an import/call), so a symbol that appears solely in a
+    ``#`` comment or docstring-like line does not falsely satisfy the runway. A
+    real in-code call still passes.
+    """
+    comment_only = {"c.py": "# we used to call warn_get_returns_none here but removed it\nx = 1\n"}
+    in_code = {"c.py": "def get():\n    warn_get_returns_none('source')  # warns on miss\n"}
+    change = BreakingChange(
+        issue=30,
+        summary="symbol in comment only",
+        runway=Runway(module="c.py", description="x", symbol="warn_get_returns_none"),
+    )
+    # Comment-only mention -> flagged (the code-only view has no match)...
+    flagged = _missing_runways((change,), comment_only)
+    assert set(flagged) == {30}
+    assert "excluding comments" in flagged[30]
+    # ...while a genuine in-code call passes even with a trailing comment.
+    assert _missing_runways((change,), in_code) == {}
+
+
+def test_strip_comments_removes_full_and_trailing_comments() -> None:
+    """``_strip_comments`` drops full-line and trailing ``#`` comments.
+
+    Unit-checks the coarse comment filter the symbol-runway verification relies
+    on: a leading-``#`` full-line comment vanishes, a trailing comment is cut at
+    the ``#``, and code before the ``#`` survives.
+    """
+    stripped = _strip_comments("# full line\ncode = 1  # trailing\nplain = 2\n")
+    assert "full line" not in stripped
+    assert "trailing" not in stripped
+    assert "code = 1" in stripped
+    assert "plain = 2" in stripped
 
 
 def test_runway_rejects_zero_or_two_signals() -> None:
