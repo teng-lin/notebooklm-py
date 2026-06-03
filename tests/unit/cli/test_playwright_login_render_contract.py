@@ -44,7 +44,11 @@ with zero ``src/`` change and must stay green across PR-2.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
+import time
+from contextlib import ExitStack
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -118,6 +122,22 @@ def _fake_path(text: str, *, exists: bool = False) -> MagicMock:
     return fake
 
 
+def _wrapped_module(real_module: Any, **overrides: Any) -> MagicMock:
+    """A ``MagicMock`` wrapping ``real_module`` with selected attrs overridden.
+
+    Patching the *consumer's* module binding (e.g. ``_pl.subprocess``) with this
+    instead of mutating the global stdlib object (``patch("subprocess.run", ...)``)
+    keeps the override scoped to the service under test — the real ``subprocess``
+    / ``sys`` / ``shutil`` / ``time`` modules are never touched, so there is no
+    process-global window. ``wraps`` forwards every un-overridden attribute to the
+    real module.
+    """
+    fake = MagicMock(wraps=real_module)
+    for name, value in overrides.items():
+        setattr(fake, name, value)
+    return fake
+
+
 def _required_cookie_state() -> dict[str, Any]:
     """A minimal valid Playwright ``storage_state`` for the auth-refresh flow."""
     return {
@@ -178,17 +198,40 @@ def _drive_login(
     if storage_state is None:
         storage_state = {"cookies": [], "origins": []}
 
-    from contextlib import ExitStack
-
     with ExitStack() as stack:
         if patch_ensure:
             stack.enter_context(patch.object(_pl, "ensure_chromium_installed"))
-        if subprocess_run is not None:
-            stack.enter_context(patch("subprocess.run", subprocess_run))
+        # Override stdlib callables on the *service's* module bindings (not the
+        # global modules): subprocess.run for the chromium pre-flight,
+        # sys.executable so the install-failure "Run manually:" line is host-
+        # independent, shutil.rmtree for the ``--fresh`` wipe, and time.sleep so
+        # the linear retry backoff doesn't sleep real seconds. ``sys`` is wrapped
+        # only when ``python_executable`` is requested — a ``wraps`` mock returns
+        # child Mocks for plain attributes like ``sys.platform``, so the real
+        # module is left in place otherwise.
         if python_executable is not None:
-            # Pin ``sys.executable`` so the install-failure "Run manually:" line
-            # wraps deterministically regardless of the host interpreter path.
-            stack.enter_context(patch.object(_pl.sys, "executable", python_executable))
+            stack.enter_context(
+                patch.object(_pl, "sys", _wrapped_module(sys, executable=python_executable))
+            )
+        if subprocess_run is not None:
+            # ``TimeoutExpired`` must stay the real class — the service's
+            # ``except subprocess.TimeoutExpired`` resolves it through this same
+            # binding, and a child Mock there would break the except clause.
+            stack.enter_context(
+                patch.object(
+                    _pl,
+                    "subprocess",
+                    _wrapped_module(
+                        subprocess, run=subprocess_run, TimeoutExpired=subprocess.TimeoutExpired
+                    ),
+                )
+            )
+        stack.enter_context(
+            patch.object(
+                _pl, "shutil", _wrapped_module(shutil, rmtree=MagicMock(side_effect=rmtree_side))
+            )
+        )
+        stack.enter_context(patch.object(_pl, "time", _wrapped_module(time, sleep=MagicMock())))
         mock_pw = stack.enter_context(patch("playwright.sync_api.sync_playwright"))
         stack.enter_context(
             patch.object(_pl, "get_storage_path", return_value=_fake_path(_STORAGE))
@@ -201,6 +244,12 @@ def _drive_login(
             )
         )
         stack.enter_context(patch("notebooklm.paths.resolve_profile", return_value=_PROFILE_NAME))
+        # Pin the base host so ``connection_error_help()`` (which reads
+        # ``NOTEBOOKLM_BASE_URL`` via ``get_base_host()``) renders the default
+        # host regardless of any env var set in the test runner.
+        stack.enter_context(
+            patch.object(_pl, "get_base_host", return_value="notebooklm.google.com")
+        )
         stack.enter_context(patch("notebooklm.cli.session_cmd._sync_server_language_to_config"))
         if patch_repair:
             stack.enter_context(
@@ -209,16 +258,6 @@ def _drive_login(
         # The synthetic ``_STORAGE`` path is never created on disk; stub the
         # atomic write so the success paths don't touch the filesystem.
         stack.enter_context(patch("notebooklm.cli.services.playwright_login.atomic_write_json"))
-        # ``--fresh`` wipes the (fake) profile via ``shutil.rmtree``; control
-        # success vs OSError here. Non-fresh runs skip the wipe entirely.
-        stack.enter_context(
-            patch(
-                "notebooklm.cli.services.playwright_login.shutil.rmtree",
-                side_effect=rmtree_side,
-            )
-        )
-        # Linear retry backoff sleeps real seconds; neutralise it.
-        stack.enter_context(patch("notebooklm.cli.services.playwright_login.time.sleep"))
 
         mock_context = MagicMock()
         page = MagicMock()
@@ -260,8 +299,6 @@ def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
     nothing is read from / written to disk. Only ``enumerate_accounts`` varies
     per test to drive the repair branches.
     """
-    from contextlib import ExitStack
-
     storage = _fake_path(_STORAGE, exists=True)
     with ExitStack() as stack:
         stack.enter_context(patch.object(_pl, "get_storage_path", return_value=storage))
