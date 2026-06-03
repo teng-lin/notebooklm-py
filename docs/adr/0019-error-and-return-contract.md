@@ -4,9 +4,26 @@
 
 Accepted. The library-wide error-and-return contract is ratified; this ADR
 records the decision ahead of the work. The v0.8.0 implementation is tracked
-separately under umbrella #1346 and is **not yet scheduled** — no code has
-landed. Ratifies the already-committed v0.8.0 work (#1247, #1254, #1251) as
-instances of one contract.
+separately under umbrella #1346, with the additive half landed and the breaking
+flips still pending. Ratifies the already-committed v0.8.0 work (#1247, #1254,
+#1251) as instances of one contract.
+
+**Status update (v0.7.0):** the additive, non-breaking half of the enforcement
+floor has landed. The Tier-1 *static* conformance gate
+(`tests/unit/test_public_api_contract.py`) is in force — its
+`inspect.signature` walk pins the whole public surface's return-shape rules —
+and the `mind_maps` divergence it names (`mind_maps.get() -> MindMap | None`
+added without the deprecation warning) is fixed. The Tier-1 *behavioural*
+companion (`tests/unit/test_public_api_behavior.py`) executes each namespace's
+miss path to assert today's warn-contract (`get()` warns + returns `None`;
+`get_or_none()` is silent), so a correctly-annotated `get()` that forgets to
+warn — the exact historical `mind_maps` bug — is now caught at runtime, not just
+by signature. Tier-2's single-sourced `unwrap_or_raise` helper (`_lookup.py`)
+also landed. Still **pending** are the v0.8.0 *breaking* flips this ADR queues:
+#1247 (`get()` → raise `*NotFoundError`, dropping `| None`) and #1251
+(`MappingCompat` removal). The "Enforcement (in scope for 0.8.0)" section below
+describes that pending breaking work; the static + behavioural gates that guard
+it are already green.
 
 ## Context
 
