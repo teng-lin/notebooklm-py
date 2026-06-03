@@ -89,7 +89,11 @@ def _extract_language(
     block = safe_index(data, *required_prefix, method_id=method_id, source=source)
     result: Any = block
     for idx in optional_tail:
-        if not isinstance(result, list) or idx >= len(result):
+        # Bound-check both ends: ``idx >= len`` guards the trailing-optional
+        # absence; ``idx < 0`` guards against a negative index silently
+        # wrapping to Python's from-the-end semantics for any future caller
+        # (today's tails are hardcoded non-negative tuples).
+        if not isinstance(result, list) or not 0 <= idx < len(result):
             return None
         result = result[idx]
     return result or None

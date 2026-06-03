@@ -292,6 +292,28 @@ def test_extract_language_legitimate_absent_returns_none(flags_block):
     )
 
 
+def test_extract_language_tail_negative_index_returns_none():
+    """A negative tail index degrades to ``None`` rather than from-the-end wrapping.
+
+    The tail loop bound-checks both ends, so a hypothetical future caller
+    passing a negative index can't silently read from the end of a list.
+    """
+    # Flags block has a populated [4] slot; a negative tail index must still
+    # not wrap around to it.
+    response = _get_response([True, None, None, True, ["fr"]])
+
+    assert (
+        _extract_language(
+            response,
+            _GET_WIRE_PREFIX,
+            (-1, 0),
+            method_id="ZwVcOc",
+            source="test",
+        )
+        is None
+    )
+
+
 @pytest.mark.parametrize(
     "response",
     [
@@ -316,6 +338,32 @@ def test_extract_language_envelope_drift_raises(response):
             _GET_WIRE_PREFIX,
             _GET_WIRE_TAIL,
             method_id="ZwVcOc",
+            source="test",
+        )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,  # no payload at all
+        [],  # empty SET envelope (no result[2])
+        [None, [6, 500, 300, 500000]],  # truncated before the flags block at [2]
+        42,  # non-subscriptable scalar payload
+    ],
+    ids=["none", "empty", "truncated-envelope", "scalar"],
+)
+def test_extract_language_set_prefix_envelope_drift_raises(response):
+    """Drift in the SET envelope prefix (``result[2]``) raises, like the GET path.
+
+    The SET response has a shorter mandatory prefix (``(2,)`` vs GET's
+    ``(0, 2)``); this pins that its drift surfaces as a typed error too.
+    """
+    with pytest.raises(UnknownRPCMethodError):
+        _extract_language(
+            response,
+            _SET_WIRE_PREFIX,
+            _SET_WIRE_TAIL,
+            method_id="hT54vc",
             source="test",
         )
 
