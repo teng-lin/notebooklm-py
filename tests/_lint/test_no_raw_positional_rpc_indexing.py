@@ -209,7 +209,8 @@ def test_detector_flags_chained_descent() -> None:
     Both positive and *negative* literal indices count -- ``payload[4][-1]`` is
     just as positional as ``payload[4][3]`` and must not sidestep the gate. An
     explicit unary-plus literal (``payload[+1][0]``) is positional too and must
-    not slip through.
+    not slip through. A call-rooted chain (``parse()[0][1]``) is the same fragile
+    descent and is flagged as well.
     """
     tree = ast.parse(
         "\n".join(
@@ -220,11 +221,12 @@ def test_detector_flags_chained_descent() -> None:
                 "d = payload[4][-1]",  # negative trailing index -- still positional
                 "e = payload[-1][0]",  # negative leading index -- still positional
                 "f = payload[+1][0]",  # explicit unary-plus -- still positional
+                "g = parse()[0][1]",  # call-rooted chained descent -- still positional
             ]
         )
     )
     # Every line contains at least one chained descent.
-    assert _chained_positional_offenders(tree) == [1, 2, 3, 4, 5, 6]
+    assert _chained_positional_offenders(tree) == [1, 2, 3, 4, 5, 6, 7]
 
 
 def test_detector_flags_unary_plus_index() -> None:
