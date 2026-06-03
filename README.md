@@ -242,6 +242,7 @@ Fetches the canonical [SKILL.md](SKILL.md) directly from GitHub.
 - **[Release Guide](docs/releasing.md)** - Release checklist and packaging verification
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[API Stability](docs/stability.md)** - Versioning policy and stability guarantees
+- **[Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md)** - Breaking-change migration guide for the v0.8.0 error-and-return contract
 
 ### For Contributors
 

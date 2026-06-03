@@ -9,6 +9,12 @@ removal, and any cross-references.
 the broader stability policy (semver promise, supported Python versions, the
 0.x pre-1.0 semantics), start there.
 
+> **Upgrading to v0.8.0?** See the consolidated
+> [Upgrading to v0.8.0](upgrading-to-0.8.0.md) guide for the full set of
+> breaking error-and-return contract changes, the exact before→after migration
+> for each, and the `NOTEBOOKLM_FUTURE_ERRORS=1` preview flag that lets you run
+> your suite against v0.8.0 behavior on 0.7.0.
+
 ## Scheduled for removal
 
 | Deprecated | Replacement | Since | Removal | Notes |
