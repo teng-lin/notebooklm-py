@@ -450,13 +450,18 @@ def test_find_credential_leaks_ignores_placeholder_fixture_content() -> None:
 # pin the field-agnostic backstop: it WOULD catch a planted novel token, yet
 # produces ZERO false positives on every committed cassette.
 
-# Synthetic novel credentials assembled at runtime so this source file carries
-# no static credential-shaped literal (which would itself trip secret scanning)
-# and so the shapes are distinct from the known g.a000-/sidts-/ya29./AIza
-# prefixes. ``random``-free deterministic mixes keep the entropy well above the
-# 4.0 bits/char floor.
-NOVEL_BASE64_TOKEN = "kJ8sLm2NpQr5TvWxYz0AbCdEfGhIjKlMnOpQrStUvWxYz12345678AbCdEf"
-NOVEL_HEX_TOKEN = "9f8e7d6c5b4a392817065fe4d3c2b1a09f8e7d6c5b4a392817065fe4d3c2b1a0"
+# Synthetic novel credentials assembled at runtime from shorter chunks so this
+# source file carries NO contiguous static credential-shaped literal — a 64-char
+# hex or 40+ char base64 string written inline would itself trip secret scanning
+# (Betterleaks flags it as a generic API key). The shapes are also distinct from
+# the known g.a000-/sidts-/ya29./AIza prefixes, and the deterministic mixes keep
+# the base64 entropy well above the 4.0 bits/char floor.
+NOVEL_BASE64_TOKEN = "".join(
+    ("kJ8sLm2NpQr5TvWx", "Yz0AbCdEfGhIjKlM", "nOpQrStUvWxYz123", "45678AbCdEf")
+)
+NOVEL_HEX_TOKEN = "".join(
+    ("9f8e7d6c5b4a3928", "17065fe4d3c2b1a0", "9f8e7d6c5b4a3928", "17065fe4d3c2b1a0")
+)
 assert len(NOVEL_BASE64_TOKEN) >= 40
 assert len(NOVEL_HEX_TOKEN) >= 64
 

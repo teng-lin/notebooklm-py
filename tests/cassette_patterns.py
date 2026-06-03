@@ -997,6 +997,15 @@ _ENTROPY_MIN_LEN_BASE64 = 40
 _ENTROPY_MIN_BITS = 4.0
 _ENTROPY_MIN_LEN_HEX = 64
 
+# Cap the substring fed to the entropy computation. A cassette can carry a
+# multi-megabyte base64-encoded asset as one quoted scalar (an inline image /
+# PDF / audio blob), and computing Shannon entropy over the whole run would be a
+# needless O(n) hot loop per scanned line. A random credential is high-entropy
+# throughout, so a 512-char prefix is a faithful representative — the entropy of
+# the prefix and the whole token converge well before this bound (gemini review
+# on #1387). Length gating still uses the FULL token length, not the cap.
+_ENTROPY_SAMPLE_CHARS = 512
+
 # A quoted JSON string scalar whose entire content is a single base64url / hex
 # token. ``\A``/``\Z`` inside the captured group are unnecessary because the
 # surrounding quotes already anchor the run to the FULL value — a token split
@@ -1019,11 +1028,17 @@ def _shannon_entropy(token: str) -> float:
     A measure of per-character randomness: a token drawn uniformly from an
     ``N``-symbol alphabet approaches ``log2(N)`` bits/char, while repetitive or
     small-alphabet content scores lower. Returns ``0.0`` for the empty string.
+
+    Only the first :data:`_ENTROPY_SAMPLE_CHARS` characters are analyzed so a
+    multi-megabyte base64 asset scalar does not turn this into a per-line hot
+    loop; a random credential is high-entropy throughout, so the prefix is
+    representative.
     """
     if not token:
         return 0.0
-    length = len(token)
-    return -sum((count / length) * math.log2(count / length) for count in Counter(token).values())
+    sample = token[:_ENTROPY_SAMPLE_CHARS]
+    length = len(sample)
+    return -sum((count / length) * math.log2(count / length) for count in Counter(sample).values())
 
 
 def _is_high_entropy_token(token: str) -> bool:
