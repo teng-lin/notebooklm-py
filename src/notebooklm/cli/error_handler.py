@@ -19,6 +19,7 @@ from ..exceptions import (
     NetworkError,
     NotebookLimitError,
     NotebookLMError,
+    NotFoundError,
     RateLimitError,
     RPCError,
     ValidationError,
@@ -56,6 +57,41 @@ def current_json_output(default: bool = False) -> bool:
 def exit_with_code(exit_code: int = 1) -> NoReturn:
     """Canonical raw exit path for callers that already emitted their payload."""
     raise SystemExit(exit_code)
+
+
+# Per-``*NotFoundError`` resource-id attribute names, in MRO order. Each
+# concrete subclass stores its missing-id under exactly one of these (e.g.
+# ``SourceNotFoundError.source_id``, ``NotebookNotFoundError.notebook_id``),
+# so the central handler can surface the id in the ``NOT_FOUND`` JSON envelope
+# the same way the per-command sites do — without importing every subclass.
+_NOT_FOUND_ID_ATTRS = (
+    "notebook_id",
+    "source_id",
+    "artifact_id",
+    "note_id",
+    "mind_map_id",
+)
+
+
+def _not_found_extra(error: NotFoundError) -> dict[str, Any]:
+    """Build the JSON ``extra`` block for a ``*NotFoundError`` envelope.
+
+    Surfaces whichever resource-id attribute the concrete subclass carries
+    (``source_id`` / ``artifact_id`` / ``note_id`` / ``mind_map_id`` /
+    ``notebook_id``) under both its native key and a generic ``id`` key, so
+    automation can read the id without knowing the exact not-found subtype —
+    mirroring the per-command ``source``/``artifact``/``note get`` payloads.
+    Returns an empty dict when no known id attribute is present (e.g. a future
+    ``*NotFoundError`` subclass); the caller drops an empty ``extra``.
+    """
+    extra: dict[str, Any] = {}
+    for attr in _NOT_FOUND_ID_ATTRS:
+        value = getattr(error, attr, None)
+        if value is not None:
+            extra[attr] = value
+            extra["id"] = value
+            break
+    return extra
 
 
 def _generation_status_extra(status: Any) -> dict[str, Any]:
@@ -255,6 +291,28 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
             json_output,
             1,
             extra=extra_data,
+        )
+    except NotFoundError as e:
+        # The ``NotFoundError`` umbrella catches every concrete
+        # ``*NotFoundError`` (notebook / source / artifact / note / mind map),
+        # which all derive ``(NotFoundError, RPCError, <Domain>Error)``. Placed
+        # AFTER the more-specific branches (none of which are ancestors of a
+        # ``*NotFoundError`` — verified by the handler's exception MRO) and
+        # BEFORE the generic ``NotebookLMError`` catch-all so a missing resource
+        # emits the typed ``NOT_FOUND`` envelope (matching the per-command
+        # ``source``/``artifact``/``note get`` convention) instead of the
+        # generic ``NOTEBOOKLM_ERROR``. This makes the central handler faithful
+        # to the v0.8.0 raise-sites previewed by ``NOTEBOOKLM_FUTURE_ERRORS``
+        # (e.g. ``get()`` -> raise, ``rename``/``update`` on a missing target).
+        nf_extra = _not_found_extra(e)
+        if verbose and isinstance(e, RPCError) and e.method_id:
+            nf_extra["method_id"] = e.method_id
+        _output_error(
+            f"Error: {e}",
+            "NOT_FOUND",
+            json_output,
+            1,
+            extra=nf_extra or None,
         )
     except NotebookLMError as e:
         extra_info: dict[str, Any] | None = None

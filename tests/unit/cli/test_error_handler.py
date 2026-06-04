@@ -13,13 +13,19 @@ from notebooklm.cli.error_handler import (
     handle_errors,
 )
 from notebooklm.exceptions import (
+    ArtifactNotFoundError,
     ArtifactPendingTimeoutError,
     AuthError,
     ConfigurationError,
+    MindMapNotFoundError,
     NetworkError,
     NotebookLimitError,
+    NotebookNotFoundError,
+    NoteNotFoundError,
+    NotFoundError,
     RateLimitError,
     RPCError,
+    SourceNotFoundError,
     ValidationError,
 )
 from notebooklm.types import GenerationStatus
@@ -227,6 +233,113 @@ class TestHandleErrorsJsonOutput:
         assert data["code"] == "PATH_ERROR"
         assert data["message"] == "Bad path"
         assert data["path"] == str(Path("tmp_test_path"))
+
+
+class TestHandleErrorsNotFound:
+    """The ``*NotFoundError`` family emits the typed ``NOT_FOUND`` envelope.
+
+    Regression guard for issue #1364: before the dedicated ``except
+    NotFoundError`` branch, any ``*NotFoundError`` reaching the centralized
+    handler fell through to the generic ``NOTEBOOKLM_ERROR`` catch-all. The
+    handler now emits ``code="NOT_FOUND"`` with exit ``1`` (matching the
+    per-command ``source``/``artifact``/``note get`` convention) and surfaces
+    the missing resource id in the JSON ``extra`` block.
+    """
+
+    # (exception, native id key, id value) for each concrete subclass. All
+    # five derive ``(NotFoundError, RPCError, <Domain>Error)`` so the umbrella
+    # ``except NotFoundError`` catches every one.
+    _CASES = [
+        (NotebookNotFoundError("nb_123"), "notebook_id", "nb_123"),
+        (SourceNotFoundError("src_456"), "source_id", "src_456"),
+        (ArtifactNotFoundError("art_789", "audio"), "artifact_id", "art_789"),
+        (NoteNotFoundError("note_111"), "note_id", "note_111"),
+        (MindMapNotFoundError("mm_222"), "mind_map_id", "mm_222"),
+    ]
+
+    @pytest.mark.parametrize(
+        ("exc", "id_key", "id_value"),
+        _CASES,
+        ids=lambda v: type(v).__name__ if isinstance(v, Exception) else str(v),
+    )
+    def test_not_found_json_envelope(self, capsys, exc, id_key, id_value):
+        """Each ``*NotFoundError`` produces NOT_FOUND + exit 1 + the resource id."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors(json_output=True):
+            raise exc
+
+        assert exc_info.value.code == 1
+        data = json.loads(capsys.readouterr().out)
+        assert data["error"] is True
+        assert data["code"] == "NOT_FOUND"
+        # Native attribute key plus the generic ``id`` alias are both present so
+        # automation can read the id without knowing the exact subtype.
+        assert data[id_key] == id_value
+        assert data["id"] == id_value
+
+    @pytest.mark.parametrize(
+        ("exc", "id_key", "id_value"),
+        _CASES,
+        ids=lambda v: type(v).__name__ if isinstance(v, Exception) else str(v),
+    )
+    def test_not_found_exit_code_is_1(self, exc, id_key, id_value):
+        """Not-found is a user error (exit 1), never the system-error exit 2."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors():
+            raise exc
+        assert exc_info.value.code == 1
+
+    def test_not_found_text_mode(self, capsys):
+        """Text mode prints the exception message (no traceback, exit 1)."""
+        with pytest.raises(SystemExit) as exc_info, handle_errors(json_output=False):
+            raise SourceNotFoundError("src_456")
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().err
+        assert "Source not found: src_456" in output
+
+    def test_not_found_verbose_includes_method_id(self, capsys):
+        """With ``verbose``, the RPC ``method_id`` is surfaced in the envelope."""
+        with pytest.raises(SystemExit), handle_errors(json_output=True, verbose=True):
+            raise SourceNotFoundError("src_456", method_id="abc123")
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["code"] == "NOT_FOUND"
+        assert data["method_id"] == "abc123"
+
+    def test_not_found_non_verbose_excludes_method_id(self, capsys):
+        """Without ``verbose``, ``method_id`` stays out of the envelope."""
+        with pytest.raises(SystemExit), handle_errors(json_output=True, verbose=False):
+            raise SourceNotFoundError("src_456", method_id="abc123")
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["code"] == "NOT_FOUND"
+        assert "method_id" not in data
+
+    def test_not_found_branch_precedes_generic_rpc_error(self, capsys):
+        """A bare ``NotFoundError`` umbrella instance still maps to NOT_FOUND.
+
+        Confirms the dedicated branch sits before the generic
+        ``except NotebookLMError`` (the catch-all that would otherwise emit
+        ``NOTEBOOKLM_ERROR``). A future ``*NotFoundError`` subclass with no
+        recognized id attribute drops the (empty) ``extra`` cleanly.
+        """
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise NotFoundError("nothing here")
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["code"] == "NOT_FOUND"
+        assert "id" not in data
+
+    def test_generic_rpc_error_still_emits_notebooklm_error(self, capsys):
+        """A non-not-found ``RPCError`` is unaffected — still NOTEBOOKLM_ERROR.
+
+        Guards against the new branch widening too far and swallowing ordinary
+        RPC failures.
+        """
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise RPCError("RPC failed")
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["code"] == "NOTEBOOKLM_ERROR"
 
 
 class TestHandleErrorsTextOutput:

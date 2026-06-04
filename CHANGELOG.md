@@ -388,6 +388,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CLI now emits the `NOT_FOUND` error envelope for the `*NotFoundError`
+  family from the centralized handler, instead of the generic
+  `NOTEBOOKLM_ERROR`.** Any `NotebookNotFoundError` / `SourceNotFoundError` /
+  `ArtifactNotFoundError` / `NoteNotFoundError` / `MindMapNotFoundError` that
+  reaches `cli/error_handler.py` (e.g. `notebooks.get()` on a missing notebook,
+  or a `rename` whose target was deleted mid-operation) now exits `1` with the
+  typed `{"error": true, "code": "NOT_FOUND", ...}` JSON envelope carrying the
+  missing resource id — matching the per-command `source` / `artifact` /
+  `note get` convention (the documented CLI not-found contract since v0.5.0).
+  The per-command `get` paths already used `get_or_none` and are unaffected.
+  This also makes the `NOTEBOOKLM_FUTURE_ERRORS=1` preview faithful at the CLI
+  boundary, pre-positioning it for the v0.8.0 `get()` → raise / mutate-existing
+  fail-loud flips (issues #1364, #1247, #1362).
 - **`Source.from_api_response` now reports the real processing `status`.** The
   `ADD_SOURCE` / rename parsing path previously never read the status block and
   always fell back to `SourceStatus.READY`, while `client.sources.list()` /

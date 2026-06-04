@@ -229,6 +229,70 @@ class TestArtifactList:
             assert result.output.count("X") < 200
             assert "…" in result.output
 
+    def test_artifact_list_json_missing_notebook_emits_not_found(self, runner, mock_auth):
+        """A ``NotebookNotFoundError`` reaching the central handler maps to NOT_FOUND.
+
+        End-to-end coverage for issue #1364 via a direct raise-site:
+        ``artifact list --json`` calls ``client.notebooks.get`` to build the
+        envelope title, and ``notebooks.get`` raises ``NotebookNotFoundError``
+        on a missing notebook (it always raises — not gated by
+        ``NOTEBOOKLM_FUTURE_ERRORS``). The central handler must emit the typed
+        ``NOT_FOUND`` envelope rather than the generic ``NOTEBOOKLM_ERROR``.
+        """
+        from notebooklm.exceptions import NotebookNotFoundError
+
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(return_value=[])
+            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+            mock_client.notebooks.get = AsyncMock(side_effect=NotebookNotFoundError("nb_123"))
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["artifact", "list", "-n", "nb_123", "--json"])
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "NOT_FOUND"
+            assert data["notebook_id"] == "nb_123"
+            assert data["id"] == "nb_123"
+
+    def test_artifact_list_future_errors_missing_notebook_emits_not_found(
+        self, runner, mock_auth, monkeypatch
+    ):
+        """The ``NOTEBOOKLM_FUTURE_ERRORS`` preview is faithful at the CLI boundary.
+
+        With the v0.8.0 error-contract preview enabled, the same missing-notebook
+        path still yields the typed ``NOT_FOUND`` envelope (code + exit 1) —
+        confirming the central handler already routes the previewed raise-sites
+        correctly so the v0.8.0 flips land with zero CLI scramble (issue #1364).
+        """
+        from notebooklm.exceptions import NotebookNotFoundError
+
+        monkeypatch.setenv("NOTEBOOKLM_FUTURE_ERRORS", "1")
+
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(return_value=[])
+            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+            mock_client.notebooks.get = AsyncMock(side_effect=NotebookNotFoundError("nb_123"))
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["artifact", "list", "-n", "nb_123", "--json"])
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["code"] == "NOT_FOUND"
+            assert data["notebook_id"] == "nb_123"
+
 
 # =============================================================================
 # ARTIFACT GET TESTS
@@ -536,6 +600,46 @@ class TestArtifactRename:
             )
             # Mind maps never fall through to the regular-artifact rename path.
             mock_client.artifacts.rename.assert_not_called()
+
+    def test_artifact_rename_missing_target_emits_not_found(self, runner, mock_auth):
+        """A ``*NotFoundError`` from ``rename`` reaches the central handler as NOT_FOUND.
+
+        End-to-end coverage for issue #1364: the v0.7.0+ ``rename`` raise-site
+        (mutate-existing fail-loud, #1362) surfaces ``ArtifactNotFoundError``
+        when the target is absent — e.g. deleted between the partial-id resolve
+        and the rename. It must emit the typed ``NOT_FOUND`` envelope, not the
+        generic ``NOTEBOOKLM_ERROR``.
+        """
+        from notebooklm.exceptions import ArtifactNotFoundError
+
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            # ``list`` resolves the partial id (proves it existed at resolve
+            # time); ``rename`` then races a delete and raises.
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[Artifact(id="art_123", title="Old Title", _artifact_type=4, status=3)]
+            )
+            mock_client.mind_maps.list = AsyncMock(return_value=[])
+            mock_client.artifacts.rename = AsyncMock(
+                side_effect=ArtifactNotFoundError("art_123", "audio")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["artifact", "rename", "art_123", "New Title", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "NOT_FOUND"
+            assert data["artifact_id"] == "art_123"
+            assert data["id"] == "art_123"
 
 
 # =============================================================================
