@@ -416,8 +416,9 @@ class MappingCompatMixin:
         """Return the historical ``dict`` shape. Subclasses must override."""
         raise NotImplementedError
 
-    def _block_if_future_errors(self, exc: Exception) -> None:
-        """Raise *exc* — the v0.8.0 "mixin removed" preview — iff the flag is on.
+    def _block_if_future_errors(self, exc_type: type[Exception], message: str) -> None:
+        """Raise ``exc_type(message)`` — the v0.8.0 "mixin removed" preview — iff
+        the flag is on.
 
         At v0.8.0 the mixin is dropped and the return is an attribute-only
         dataclass, so the *whole* mapping surface breaks, not just subscript.
@@ -425,10 +426,11 @@ class MappingCompatMixin:
         bare dataclass would (``TypeError`` for subscript / ``in`` / ``iter`` /
         ``len``, ``AttributeError`` for ``get`` / ``keys`` / ``items`` /
         ``values``), so forward-testing catches every removed access (#1251).
-        Bypasses the quiet gate, like the warnings it replaces.
+        Bypasses the quiet gate, like the warnings it replaces. The exception is
+        constructed only when raising, so the default-off path allocates nothing.
         """
         if _future_errors_enabled():
-            raise exc
+            raise exc_type(message)
 
     def __getitem__(self, key: str) -> Any:
         """Deprecated dict-style read; warns and returns the legacy dict value.
@@ -440,7 +442,7 @@ class MappingCompatMixin:
         regardless of the quiet gate (issue #1251).
         """
         self._block_if_future_errors(
-            TypeError(f"{type(self).__name__!r} object is not subscriptable")
+            TypeError, f"{type(self).__name__!r} object is not subscriptable"
         )
         legacy = self.to_public_dict()
         if key not in legacy:
@@ -469,46 +471,46 @@ class MappingCompatMixin:
         gone in v0.8.0), previewing the removal (#1251).
         """
         self._block_if_future_errors(
-            AttributeError(f"{type(self).__name__!r} object has no attribute 'get'")
+            AttributeError, f"{type(self).__name__!r} object has no attribute 'get'"
         )
         return self.to_public_dict().get(key, default)
 
     def keys(self) -> KeysView[str]:
         """Return the legacy dict keys view (silent off the flag; raises under it)."""
         self._block_if_future_errors(
-            AttributeError(f"{type(self).__name__!r} object has no attribute 'keys'")
+            AttributeError, f"{type(self).__name__!r} object has no attribute 'keys'"
         )
         return self.to_public_dict().keys()
 
     def items(self) -> ItemsView[str, Any]:
         """Return the legacy dict items view (silent off the flag; raises under it)."""
         self._block_if_future_errors(
-            AttributeError(f"{type(self).__name__!r} object has no attribute 'items'")
+            AttributeError, f"{type(self).__name__!r} object has no attribute 'items'"
         )
         return self.to_public_dict().items()
 
     def values(self) -> ValuesView[Any]:
         """Return the legacy dict values view (silent off the flag; raises under it)."""
         self._block_if_future_errors(
-            AttributeError(f"{type(self).__name__!r} object has no attribute 'values'")
+            AttributeError, f"{type(self).__name__!r} object has no attribute 'values'"
         )
         return self.to_public_dict().values()
 
     def __len__(self) -> int:
         """Return the legacy dict key count (silent off the flag; raises under it)."""
         self._block_if_future_errors(
-            TypeError(f"object of type {type(self).__name__!r} has no len()")
+            TypeError, f"object of type {type(self).__name__!r} has no len()"
         )
         return len(self.to_public_dict())
 
     def __contains__(self, key: object) -> bool:
         """Support ``"key" in result`` (silent off the flag; raises under it)."""
         self._block_if_future_errors(
-            TypeError(f"argument of type {type(self).__name__!r} is not iterable")
+            TypeError, f"argument of type {type(self).__name__!r} is not iterable"
         )
         return key in self.to_public_dict()
 
     def __iter__(self) -> Iterator[str]:
         """Iterate the legacy dict keys (silent off the flag; raises under it)."""
-        self._block_if_future_errors(TypeError(f"{type(self).__name__!r} object is not iterable"))
+        self._block_if_future_errors(TypeError, f"{type(self).__name__!r} object is not iterable")
         return iter(self.to_public_dict())
