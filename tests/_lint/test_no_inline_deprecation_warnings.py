@@ -1,6 +1,6 @@
 """Meta-lint: no inline ``DeprecationWarning`` outside ``_deprecation.py``.
 
-ADR-018 (``docs/adr/0018-deprecation-strategy.md``) requires that **every**
+ADR-0018 (``docs/adr/0018-deprecation-strategy.md``) requires that **every**
 deprecation warning be gated behind ``NOTEBOOKLM_QUIET_DEPRECATIONS`` and that
 the mechanics live in a single module, ``src/notebooklm/_deprecation.py``. It
 explicitly rejects "per-feature ``warnings.warn(...)`` calls" as "exactly the
@@ -18,7 +18,7 @@ Why a lint and not vigilance: issue #1369 found four inline
 ``_research.py`` ``poll(task_id=None)``, ``_notebooks.py`` ``NotebooksAPI.share()``)
 that bypassed the suppression gate, so ``NOTEBOOKLM_QUIET_DEPRECATIONS=1`` did
 **not** silence them. Tellingly, **3 of 4 independent ADR-compliance audit
-passes reported ADR-018 "clean"** and missed this entire class — exactly the
+passes reported ADR-0018 "clean"** and missed this entire class — exactly the
 kind of blind spot that human/agent review keeps missing. The durable fix is a
 gate on the right dimension (call shape), not another round of vigilance.
 
@@ -152,7 +152,7 @@ def test_no_inline_deprecation_warnings_outside_deprecation_module() -> None:
 
     assert offenders == {}, (
         "Inline DeprecationWarning(s) bypass the NOTEBOOKLM_QUIET_DEPRECATIONS "
-        "gate (ADR-018). Route them through notebooklm._deprecation "
+        "gate (ADR-0018). Route them through notebooklm._deprecation "
         f"(e.g. warn_deprecated): {offenders}"
     )
 

@@ -1,4 +1,4 @@
-"""Unit tests for MiddlewareChainBuilder — pins ADR-009 ordering at builder level."""
+"""Unit tests for MiddlewareChainBuilder — pins ADR-0009 ordering at builder level."""
 
 from __future__ import annotations
 

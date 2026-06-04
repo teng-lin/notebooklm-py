@@ -844,7 +844,7 @@ async def test_get_artifact_content_indexes_result():
     # safe_index(result, 0, 9, 0) -> result[0][9][0] is the HTML string.
     inner = [None] * 10
     inner[9] = ["<html>quiz</html>"]
-    # Configure rpc_call at construction (ADR-007 forbids dynamic AsyncMock
+    # Configure rpc_call at construction (ADR-0007 forbids dynamic AsyncMock
     # attribute assignment onto a duck-typed collaborator).
     rpc = MagicMock(rpc_call=AsyncMock(return_value=[inner]))
     service = _make_service(rpc=rpc)

@@ -1,4 +1,4 @@
-"""Saved-from-chat note encoder (private; refactor-history.md Step 8, ADR-013).
+"""Saved-from-chat note encoder (private; refactor-history.md Step 8, ADR-0013).
 
 Owns the CREATE_NOTE wire format used by the web UI's "Save to note"
 button on a chat answer (issue #660). The saved-chat path lives next to
@@ -7,7 +7,7 @@ unrelated despite both being CREATE_NOTE variants.
 
 The exported call site is :func:`save_chat_answer_as_note`, invoked
 exclusively by :meth:`ChatAPI.save_answer_as_note`. All other names
-in this module are private (underscore-prefix per ADR-012) and exist
+in this module are private (underscore-prefix per ADR-0012) and exist
 only to keep the encoder testable in isolation.
 """
 

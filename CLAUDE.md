@@ -97,9 +97,9 @@ RPC Layer (rpc/)
 | `_env.py`, `config.py` | Runtime environment defaults and the public config re-export surface |
 | `_logging.py`, `log.py` | Redaction/correlation logging internals and the public logging helper surface |
 | `_callbacks.py` | Sync-or-async callback invocation helper used by telemetry/retry hooks |
-| `_lookup.py` | `unwrap_or_raise(obj, exc)` — the shared single-row-lookup helper backing the public `get`/`get_or_none` pair across all five namespaces (ADR-019 Enforcement tier-2; the `get()`-raises wiring lands with the v0.8.0 flip, issue #1247). |
+| `_lookup.py` | `unwrap_or_raise(obj, exc)` — the shared single-row-lookup helper backing the public `get`/`get_or_none` pair across all five namespaces (ADR-0019 Enforcement tier-2; the `get()`-raises wiring lands with the v0.8.0 flip, issue #1247). |
 | `_loop_bound.py` | `LoopBoundPrimitive` — template-method base for the loop-affinity `set_bound_loop` protocol. Owns the `_bound_loop` field + a `set_bound_loop` that always stores the binding and fires the `_on_loop_rebind(old, new)` hook only on a real loop change (hook before store). Trivial owners (`TransportDrainTracker`/`ReqidCounter`/`AuthRefreshCoordinator`) use the default no-op hook; clear-on-rebind owners (`ClientComposed`/`SourceUploadPipeline`/`ChatAPI`) override it to discard their cached loop-bound primitive/locks. Owns only the binding + rebind hook — the cross-loop *assert* stays in `_loop_affinity`, and each owner keeps its own `reset_after_open`. |
-| `_deprecation.py` | Deprecation helpers, all gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`: `warn_deprecated` — generic gated primitive for one-off deprecations that don't fit the three specific families (awaiting `from_storage(...)`, ambiguous `research.poll(task_id=None)`, `NotebooksAPI.share()`); pass `removal=None` when no removal version is pinned yet. ADR-018 forbids inline `warnings.warn(..., DeprecationWarning)` outside this module — `tests/_lint/test_no_inline_deprecation_warnings.py` enforces it (governs the `DeprecationWarning` category only; an inline `RuntimeWarning`/`UserWarning` is allowed). Note `save_cookies_to_storage(original_snapshot=None)` is NOT a deprecation — it's a permanent back-compat shim emitting an inline `RuntimeWarning` race advisory, outside ADR-018 scope and ungated (issue #1369). `warn_get_returns_none` — single place for the `get()`-returns-`None` `DeprecationWarning` (public `sources/artifacts/notes/mind_maps.get()` warn on a miss; the public `get_or_none()` — and its zero-churn private `_get_or_none` alias — never warns; flip to raising `*NotFoundError` in v0.8.0, issue #1247); `deprecated_kwarg` / `deprecations_quiet` — keyword-alias helper that names the v0.8.0 removal and errors when both the old and new keyword are passed (used by `ResearchAPI.wait_for_completion` `interval` → `initial_interval`); and `MappingCompatMixin` — dict-subscript backward-compat bridge for dataclasses that replaced `dict[str, Any]` returns (issue #1209: `ResearchTask`/`ResearchStart`/`MindMapResult`/`SourceGuide`); `result["key"]` warns and returns the value from the dataclass's `to_public_dict()`; `get`/`keys`/`in`/`iter` stay silent off the flag but — like the subscript — raise the exact bare-dataclass error under `NOTEBOOKLM_FUTURE_ERRORS` (full #1251 preview, not just subscript; #1405 follow-up); dropped in v0.8.0. See `docs/deprecations.md`. |
+| `_deprecation.py` | Deprecation helpers, all gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`: `warn_deprecated` — generic gated primitive for one-off deprecations that don't fit the three specific families (awaiting `from_storage(...)`, ambiguous `research.poll(task_id=None)`, `NotebooksAPI.share()`); pass `removal=None` when no removal version is pinned yet. ADR-0018 forbids inline `warnings.warn(..., DeprecationWarning)` outside this module — `tests/_lint/test_no_inline_deprecation_warnings.py` enforces it (governs the `DeprecationWarning` category only; an inline `RuntimeWarning`/`UserWarning` is allowed). Note `save_cookies_to_storage(original_snapshot=None)` is NOT a deprecation — it's a permanent back-compat shim emitting an inline `RuntimeWarning` race advisory, outside ADR-0018 scope and ungated (issue #1369). `warn_get_returns_none` — single place for the `get()`-returns-`None` `DeprecationWarning` (public `sources/artifacts/notes/mind_maps.get()` warn on a miss; the public `get_or_none()` — and its zero-churn private `_get_or_none` alias — never warns; flip to raising `*NotFoundError` in v0.8.0, issue #1247); `deprecated_kwarg` / `deprecations_quiet` — keyword-alias helper that names the v0.8.0 removal and errors when both the old and new keyword are passed (used by `ResearchAPI.wait_for_completion` `interval` → `initial_interval`); and `MappingCompatMixin` — dict-subscript backward-compat bridge for dataclasses that replaced `dict[str, Any]` returns (issue #1209: `ResearchTask`/`ResearchStart`/`MindMapResult`/`SourceGuide`); `result["key"]` warns and returns the value from the dataclass's `to_public_dict()`; `get`/`keys`/`in`/`iter` stay silent off the flag but — like the subscript — raise the exact bare-dataclass error under `NOTEBOOKLM_FUTURE_ERRORS` (full #1251 preview, not just subscript; #1405 follow-up); dropped in v0.8.0. See `docs/deprecations.md`. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
 | `_client_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
@@ -111,7 +111,7 @@ RPC Layer (rpc/)
 | `_auth_refresh_retry.py` | Shared auth refresh-and-retry core for the two retry layers (HTTP-status `AuthRefreshMiddleware` + decoded-RPC `RpcExecutor`): the once-per-logical-call `RefreshBudget` token and the common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). Unifies the previously-divergent copies per issue #1205; the two layers keep their distinct triggers and refresh-failure exception shapes. |
 | `_runtime/lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
 | `_runtime/transport.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the middleware chain and typed transport response handling |
-| `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5). Defines a single local `DecodeResponse` Protocol. |
+| `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Defines a single local `DecodeResponse` Protocol. |
 | `_request_types.py` | Shared authed POST request construction types: `AuthSnapshot`, `BuildRequest`, `PostBody`, and materialization helpers. |
 | `_transport_errors.py` | Transport exceptions, `Retry-After` parsing, and terminal `Kernel.post` error mapping for retry/auth middleware. |
 | `_streaming_post.py` | Size-capped streaming POST helper used by `Kernel.post`. |
@@ -122,7 +122,7 @@ RPC Layer (rpc/)
 | `_polling_registry.py` | Pending-poll registry for long-running artifact generations |
 | `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_runtime/contracts.py` | Shared runtime Protocols consumed by sub-clients |
-| `_idempotency.py` | Mutating-RPC idempotency policy registry and probe-then-retry wrapper; ADR-005 is the taxonomy source |
+| `_idempotency.py` | Mutating-RPC idempotency policy registry and probe-then-retry wrapper; ADR-0005 is the taxonomy source |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
 | `paths.py`, `migration.py` | Profile-aware path resolution and locked migration from the legacy flat layout |
@@ -134,7 +134,7 @@ RPC Layer (rpc/)
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_sources.py` | `client.sources` API |
-| `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (see ADR-012) |
+| `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (see ADR-0012) |
 | `_chat/api.py` | `client.chat` API |
 | `_research.py` | `client.research` API |
 | `_notes.py` | `client.notes` API |
@@ -161,10 +161,10 @@ RPC Layer (rpc/)
 | `_chat/notes.py` | Chat-adjacent note saving workflow adapter |
 | `_chat/wire.py` | Streamed-chat wire request construction + response parsing for the chat client |
 | `_chat/transport.py` | Chat-specific error mapping over the shared transport pipeline |
-| `_middleware/chain.py` | Constructs the middleware chain in the canonical ADR-009 order |
+| `_middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
 | `_middleware/*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-003's flat-re-export goal was closed by ADR-014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
+| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-0003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-0003's flat-re-export goal was closed by ADR-0014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/headers.py` | HTTP header construction |
@@ -178,7 +178,7 @@ src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── __main__.py                  # `python -m notebooklm` entry point
 ├── client.py                    # NotebookLMClient
-├── auth.py                      # Authentication facade — almost pure re-exports (`enumerate_accounts` exception; ADR-003 flat-re-export goal closed by ADR-014; see file table above)
+├── auth.py                      # Authentication facade — almost pure re-exports (`enumerate_accounts` exception; ADR-0003 flat-re-export goal closed by ADR-0014; see file table above)
 ├── types.py                     # Dataclasses
 ├── artifacts.py                 # Public artifact-generation retry helpers
 ├── config.py                    # Public config facade over _env
@@ -348,7 +348,7 @@ src/notebooklm/
     ├── share_cmd.py             # Sharing management CLI commands
     ├── skill_cmd.py             # Skill management commands
     ├── source_cmd.py            # source add, list, delete
-    └── services/                # CLI-specific service layer (ADR-008 Click-to-service extraction)
+    └── services/                # CLI-specific service layer (ADR-0008 Click-to-service extraction)
         ├── __init__.py
         ├── artifact_generation.py # `generate` artifact orchestration service
         ├── auth_diagnostics.py  # `auth check` diagnostic service

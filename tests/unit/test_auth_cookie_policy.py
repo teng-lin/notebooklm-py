@@ -2,8 +2,8 @@
 
 This file owns one concern from the auth subpackage. The original
 ``tests/unit/test_auth.py`` (4090 LOC) was split into six concern-aligned
-files alongside the deletion of ``_AuthFacadeModule``; see ADR-003
-(superseded) and ADR-007 (test-monkeypatch policy) for the rationale.
+files alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
+(superseded) and ADR-0007 (test-monkeypatch policy) for the rationale.
 """
 
 import json

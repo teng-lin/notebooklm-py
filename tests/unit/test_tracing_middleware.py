@@ -1,7 +1,7 @@
 """Unit tests for :class:`notebooklm._middleware.tracing.TracingMiddleware`.
 
 PR 12.3 of the Tier-12/13 greenfield migration lands ``TracingMiddleware``
-as the innermost middleware in the chain (ADR-009 §"Chain ordering"). The
+as the innermost middleware in the chain (ADR-0009 §"Chain ordering"). The
 middleware is a pure observer: it logs one "starting" record before
 ``next_call`` and one "completed"/"failed" record after, without
 transforming the request or response.
@@ -85,7 +85,7 @@ def test_tracing_middleware_calls_through_to_transport() -> None:
 
     Uses the shared :func:`chain_calls_through_to_terminal` fixture from
     ``tests/_fixtures/chain.py`` — the canonical wire-up smoke test for
-    every middleware PR per ADR-009 §"Per-position rationale" and master
+    every middleware PR per ADR-0009 §"Per-position rationale" and master
     plan line 105.
     """
     terminal = FakeChainTerminal()
@@ -104,7 +104,7 @@ async def test_emits_starting_and_completed_records_on_success(
 ) -> None:
     """Two records around a successful call: one "starting", one "completed".
 
-    Verifies the per-attempt visibility requirement from ADR-009 §"Chain
+    Verifies the per-attempt visibility requirement from ADR-0009 §"Chain
     ordering" (Tracing innermost — "logs every actual HTTP attempt").
     """
     expected_response = httpx.Response(status_code=200, content=b"ok")

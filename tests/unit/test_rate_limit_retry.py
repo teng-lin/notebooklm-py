@@ -108,7 +108,7 @@ async def test_rate_limit_retry_after_larger_than_client_timeout_does_not_sleep(
         clock["t"] += 1000.0
         return now
 
-    # ADR-007: patch the deadline clock through a locally-imported module alias
+    # ADR-0007: patch the deadline clock through a locally-imported module alias
     # (object form) rather than a ``notebooklm._deadline...`` string target.
     # ``MagicMock`` wraps the fake clock so the bite-check can assert the
     # injected seam was actually consulted. We replace ``_deadline.time`` with a

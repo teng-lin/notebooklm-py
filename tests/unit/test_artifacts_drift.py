@@ -9,7 +9,7 @@ These tests pin down the strict-decoding contract:
   Strict decoding is the only mode — the legacy
   ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out (which returned the
   ``GenerationStatus(status="failed", task_id="")`` sentinel) was retired in
-  v0.7.0; see ADR-011.
+  v0.7.0; see ADR-0011.
 
 Real-shape happy-path coverage for the wire-level flow already exists in
 ``tests/integration/test_artifacts_integration.py::TestParseGenerationResult``

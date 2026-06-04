@@ -400,7 +400,7 @@ class TestGenerateVideo:
             ["generate", "video", "--style", "custom", "-n", "nb_123"],
         )
 
-        # Per ADR-015, post-parse validation failures exit 1 via
+        # Per ADR-0015, post-parse validation failures exit 1 via
         # ``output_error`` (VALIDATION_ERROR), not 2 via Click's UsageError.
         assert result.exit_code == 1
         assert "--style custom requires --style-prompt" in result.output
@@ -514,7 +514,7 @@ class TestGenerateCinematicVideo:
             ],
         )
 
-        # Per ADR-015, post-parse validation exits 1 via ``output_error``.
+        # Per ADR-0015, post-parse validation exits 1 via ``output_error``.
         assert result.exit_code == 1
         assert "--style-prompt cannot be used with cinematic video" in result.output
 
@@ -522,7 +522,7 @@ class TestGenerateCinematicVideo:
         self, runner, mock_auth, mock_fetch_tokens
     ):
         """`cinematic-video --format explainer` (or any non-cinematic value) is
-        rejected through ``output_error`` (per ADR-015) — exit 1, not a silent
+        rejected through ``output_error`` (per ADR-0015) — exit 1, not a silent
         format override."""
         for bad_format in ("explainer", "brief"):
             result = runner.invoke(
@@ -1433,7 +1433,7 @@ class TestResolveLanguageDirect:
     """Direct tests for resolve_language() covering uncovered branches."""
 
     def test_invalid_language_exits_via_output_error(self, capsys):
-        """Invalid language code routes through ``output_error`` (per ADR-015):
+        """Invalid language code routes through ``output_error`` (per ADR-0015):
         exit 1, message on stderr. Replaces the old ``click.BadParameter``
         contract — the post-parse JSON envelope contract supersedes it."""
         import importlib
@@ -1505,7 +1505,7 @@ class TestResolveLanguageDirect:
         assert result == "zh_Hans"
 
     def test_invalid_env_exits_via_output_error(self, monkeypatch, capsys):
-        """An unsupported NOTEBOOKLM_HL value still gets validated. Per ADR-015
+        """An unsupported NOTEBOOKLM_HL value still gets validated. Per ADR-0015
         it routes through ``output_error`` (exit 1, message on stderr) rather
         than ``click.BadParameter``. The message must name ``NOTEBOOKLM_HL`` so
         the user can tell which input source is at fault — mirroring the
@@ -1526,7 +1526,7 @@ class TestResolveLanguageDirect:
 
     def test_resolve_language_rejects_invalid_config_value(self, capsys):
         """An unsupported language stored in the config file gets validated.
-        Per ADR-015, routes through ``output_error`` (exit 1, message on
+        Per ADR-0015, routes through ``output_error`` (exit 1, message on
         stderr) rather than ``click.BadParameter``."""
         import importlib
 

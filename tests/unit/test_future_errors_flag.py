@@ -404,7 +404,7 @@ def test_public_alias_matches_private_resolver(monkeypatch):
 def _make_artifacts_api(rpc_call: AsyncMock) -> ArtifactsAPI:
     """Build a minimal ``ArtifactsAPI`` over a single ``rpc_call`` seam.
 
-    ADR-007: the ``rpc_call`` seam is injected via ``make_fake_core`` rather
+    ADR-0007: the ``rpc_call`` seam is injected via ``make_fake_core`` rather
     than dotted attribute assignment so the forbidden-monkeypatch lint stays
     clean.
     """

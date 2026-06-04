@@ -535,7 +535,7 @@ def test_drifted_answer_row_raises(drifted_inner: Any) -> None:
     soft-mode opt-out was retired in v0.7.0), so this raises
     :class:`UnknownRPCMethodError` instead of silently collapsing to an empty
     answer — that silent collapse was the gap the
-    ``architecture-gap-review`` flagged for ``_chat.wire`` (ADR-011:38).
+    ``architecture-gap-review`` flagged for ``_chat.wire`` (ADR-0011:38).
     """
     from notebooklm.exceptions import UnknownRPCMethodError
 

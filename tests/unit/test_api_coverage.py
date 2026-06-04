@@ -52,7 +52,7 @@ class TestConfigureChat:
 
     @pytest.fixture
     def rpc_call(self):
-        """RPC seam injected at construction (ADR-007)."""
+        """RPC seam injected at construction (ADR-0007)."""
         return AsyncMock(return_value=None)
 
     @pytest.fixture
@@ -61,7 +61,7 @@ class TestConfigureChat:
 
         The ``rpc_call`` mock is injected via ``make_fake_core(rpc_call=...)``
         / the ``ChatAPI`` constructor rather than assigned onto an instance
-        attribute after the fact, satisfying the ADR-007 monkeypatch policy.
+        attribute after the fact, satisfying the ADR-0007 monkeypatch policy.
         ``configure`` only exercises the ``rpc`` collaborator; the remaining
         constructor collaborators are inert ``MagicMock`` stand-ins.
         """
@@ -135,7 +135,7 @@ class TestGetSourceGuide:
 
         Returns ``(sources, rpc_call)`` so tests can assert the seam was
         exercised. ``make_fake_core(rpc_call=...)`` is the sanctioned
-        constructor-injection substrate (ADR-007); ``get_guide`` routes
+        constructor-injection substrate (ADR-0007); ``get_guide`` routes
         through the injected ``rpc`` collaborator only.
         """
         rpc_call = AsyncMock(return_value=return_value)
@@ -280,7 +280,7 @@ class TestPayloadFixes:
 
         Returns ``(sources, rpc_call)``; the ``True`` return value mimics
         the freshness/refresh RPC acknowledgements. Constructor injection
-        via ``make_fake_core(rpc_call=...)`` keeps the test ADR-007-clean.
+        via ``make_fake_core(rpc_call=...)`` keeps the test ADR-0007-clean.
         """
         rpc_call = AsyncMock(return_value=True)
         core = make_fake_core(rpc_call=rpc_call)

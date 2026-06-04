@@ -229,13 +229,13 @@ class ArtifactsAPI:
     async def get_or_none(self, notebook_id: str, artifact_id: str) -> Artifact | None:
         """Get an artifact by ID, returning ``None`` when it does not exist.
 
-        The sanctioned ``None``-on-miss lookup (ADR-019): unlike :meth:`get`
+        The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
         — which is slated to raise
         :class:`~notebooklm.exceptions.ArtifactNotFoundError` on a miss in
         v0.8.0 (issue #1247) — this returns ``None`` for a genuine absence and
         emits no deprecation warning. This method neither catches nor synthesizes
         a miss itself; it lists once and id-matches, inheriting :meth:`list`'s
-        behavior unchanged. (Per ADR-019 Rule 3, ``list`` keeps its deliberate
+        behavior unchanged. (Per ADR-0019 Rule 3, ``list`` keeps its deliberate
         *partial-availability* policy: a transport failure of the mind-map
         sub-fetch logs a warning and yields the studio artifacts that did load,
         so a note-backed mind-map id can read absent while that sub-fetch is
@@ -593,7 +593,7 @@ class ArtifactsAPI:
         in-place operation, so callers decide whether to re-invoke after a
         later terminal ``failed`` status (observed by polling).
 
-        This method follows the ADR-019 "async kickoff" contract: a
+        This method follows the ADR-0019 "async kickoff" contract: a
         synchronous server refusal (``USER_DISPLAYABLE_ERROR`` — e.g. rate
         limit, quota, or a non-retryable artifact) **raises** the underlying
         :class:`~notebooklm.exceptions.RateLimitError` /
@@ -625,7 +625,7 @@ class ArtifactsAPI:
         params = build_retry_artifact_params(artifact_id)
         # Unlike ``_call_generate`` / ``revise_slide``, a USER_DISPLAYABLE_ERROR
         # refusal is intentionally NOT swallowed into status="failed" — it
-        # propagates as RateLimitError/RPCError per ADR-019 "async kickoff".
+        # propagates as RateLimitError/RPCError per ADR-0019 "async kickoff".
         #
         # ``allow_null=True`` lets a null decode through to the explicit
         # ``result is None`` guard below (the golden fixture pins the
@@ -643,7 +643,7 @@ class ArtifactsAPI:
                 "retry",
                 method_id=RPCMethod.RETRY_ARTIFACT.value,
             )
-        # Born ADR-019-correct: a missing/empty artifact id means no
+        # Born ADR-0019-correct: a missing/empty artifact id means no
         # generation task was created, so raise rather than return the
         # synthesized ``status="failed"`` that ``_parse_generation_result``
         # produces for a falsy id (a refusal must never masquerade as a

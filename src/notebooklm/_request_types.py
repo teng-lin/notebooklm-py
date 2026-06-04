@@ -7,7 +7,7 @@ and the chain terminal share.
 Five names live here:
 
 - :data:`AuthSnapshot` — point-in-time view of auth headers used to build
-  one HTTP attempt. ADR-009 pins this as the public input type of the
+  one HTTP attempt. ADR-0009 pins this as the public input type of the
   ``AuthRefreshMiddleware`` callbacks.
 - :data:`BuildRequest` — sync callable that maps an ``AuthSnapshot`` to a
   ``(url, body, headers)`` tuple ready for the transport. The chain leaf reads
@@ -63,7 +63,7 @@ BuildRequest = Callable[[AuthSnapshot], tuple[str, PostBody, dict[str, str] | No
 class BuildRequestResult:
     """Named dataclass form of the ``(url, body, headers)`` request triple.
 
-    Used by ``AuthRefreshMiddleware`` (ADR-009): the middleware's
+    Used by ``AuthRefreshMiddleware`` (ADR-0009): the middleware's
     ``build_request_factory`` callback returns this dataclass
     instead of the legacy ``(url, body, headers)`` tuple so the constructor
     signature reads as a single named value rather than positional unpacking.
@@ -73,7 +73,7 @@ class BuildRequestResult:
     - ``url`` — fully-built ``batchexecute`` URL (including ``authuser`` and
       ``_reqid`` query params).
     - ``body`` — encoded ``batchexecute`` body. Pinned to :class:`bytes` in
-      ADR-009; the legacy ``BuildRequest`` tuple accepts ``str | bytes`` for
+      ADR-0009; the legacy ``BuildRequest`` tuple accepts ``str | bytes`` for
       backward compatibility with existing call sites that build the body as
       a UTF-8 string.
     - ``headers`` — extra headers to merge for this request, or ``None`` when

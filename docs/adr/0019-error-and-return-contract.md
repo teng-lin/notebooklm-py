@@ -1,4 +1,4 @@
-# ADR-019: Error-and-return contract for the public API
+# ADR-0019: Error-and-return contract for the public API
 
 ## Status
 
@@ -36,14 +36,14 @@ synchronous server refusal **three** ways, and a null/shape-drift result
 #1256) adopted the about-to-be-deprecated None-on-miss convention — without even
 the deprecation warning — and reached for `ValueError`.
 
-Related decisions: [ADR-005](0005-idempotency-taxonomy.md) (mutating-RPC retry
-policy), [ADR-011](0011-schema-validation-policy.md) (strict-decode default;
+Related decisions: [ADR-0005](0005-idempotency-taxonomy.md) (mutating-RPC retry
+policy), [ADR-0011](0011-schema-validation-policy.md) (strict-decode default;
 shape-drift raises `UnknownRPCMethodError`/`DecodingError` — this ADR extends
-that boundary to the hand-rolled list helpers ADR-011 left for follow-up),
-[ADR-012](0012-implementation-surface-convention.md) (private surface),
-[ADR-017](0017-public-facade-private-implementation.md) (the public facade
+that boundary to the hand-rolled list helpers ADR-0011 left for follow-up),
+[ADR-0012](0012-implementation-surface-convention.md) (private surface),
+[ADR-0017](0017-public-facade-private-implementation.md) (the public facade
 surface owns the compatibility contract; logic stays in private modules),
-[ADR-018](0018-deprecation-strategy.md) (how breaking changes ship). None of
+[ADR-0018](0018-deprecation-strategy.md) (how breaking changes ship). None of
 them says *what a method returns versus raises for each failure mode* — that gap
 is what this ADR closes, making the committed Class-1 work (#1247 flip `get()`
 to raise; #1254 remove `interval`; #1251 drop `MappingCompat`) instances of one
@@ -112,7 +112,7 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
    (`:1251-1260`); v0.8.0 **removes** both, re-raising the refusal and raising
    `DecodingError`/`ArtifactFeatureUnavailableError` for a missing/degenerate id.
 3. **Drift raises.** A malformed/unparseable RPC payload raises
-   `DecodingError`/`UnknownRPCMethodError` ([ADR-011](0011-schema-validation-policy.md));
+   `DecodingError`/`UnknownRPCMethodError` ([ADR-0011](0011-schema-validation-policy.md));
    it is not collapsed to `None`/`""`/`[]`/a sentinel. v0.8.0 tightens the
    **positional shape-drift** collapse in the hand-rolled list helpers
    (`_note_service.py:135`, `_artifact/listing.py:113`). The composite-lister
@@ -132,13 +132,13 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
    status (`_artifact/polling.py:366-384`). `poll_status` is a stateless
    primitive where `not_found` is inherently *lag-or-bogus* ambiguous by design;
    callers needing a terminal answer use `wait_for_completion`.
-5. **The facade owns the contract.** Per [ADR-017](0017-public-facade-private-implementation.md)
+5. **The facade owns the contract.** Per [ADR-0017](0017-public-facade-private-implementation.md)
    the public facade *surface* owns the compatibility contract (logic stays
-   private); breaks ship via [ADR-018](0018-deprecation-strategy.md) — #1247/#1254/#1251
+   private); breaks ship via [ADR-0018](0018-deprecation-strategy.md) — #1247/#1254/#1251
    had a v0.7.0 deprecation runway, the refusal/`ValueError`/`update` changes are
    deliberate clean breaks in the already-breaking 0.8.0 — are allowlisted
    (`scripts/api-compat-allowlist.json`), and idempotency is unchanged
-   ([ADR-005](0005-idempotency-taxonomy.md): kickoffs stay non-blind-replayable).
+   ([ADR-0005](0005-idempotency-taxonomy.md): kickoffs stay non-blind-replayable).
 
 `ValueError` remains valid for **input validation**; it is banned only for
 resource absence and server failure.
@@ -168,7 +168,7 @@ composite-lister partial-availability policy (Rule 3) is decided in its own PR.
 - Type-narrowing works: `get()` returns a non-optional object; callers branch on
   exceptions, not on `None`/`""`/sentinel ambiguity.
 - A refusal can no longer masquerade as a started-then-failed task.
-- Mechanically auditable alongside [ADR-017](0017-public-facade-private-implementation.md).
+- Mechanically auditable alongside [ADR-0017](0017-public-facade-private-implementation.md).
 
 **Unwanted**
 

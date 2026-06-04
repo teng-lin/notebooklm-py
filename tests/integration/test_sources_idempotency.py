@@ -629,7 +629,7 @@ async def test_add_text_no_probe_no_retry_under_5xx(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    # Object-form patch against the locally-imported seam alias (ADR-007
+    # Object-form patch against the locally-imported seam alias (ADR-0007
     # Form 2): mutate the ``asyncio`` module reference that
     # ``_runtime.helpers`` reads, instead of a string-target patch. This is a
     # *defensive* shim — under the correct NON_IDEMPOTENT_NO_RETRY behavior

@@ -102,7 +102,7 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
     assert executor is not None
 
     # Stub ``rpc_call`` on the executor with a plain async function
-    # rather than ``unittest.mock.AsyncMock`` — ADR-007 forbids
+    # rather than ``unittest.mock.AsyncMock`` — ADR-0007 forbids
     # ``Mock`` / ``AsyncMock`` attribute assignment as a test seam, so
     # we use a captured-state ``async def`` to record the dispatch.
     # This is the same pattern as ``_fixtures/fake_core.py``: an

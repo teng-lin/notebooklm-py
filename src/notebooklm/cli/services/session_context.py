@@ -12,7 +12,7 @@ The Click handlers stay thin orchestrators around small plan + executor pairs:
 * :func:`execute_logout` — sync; removes the resolved storage file +
   browser profile + cached context. Returns a typed
   :class:`LogoutOutcome` capturing success or per-step failure; the
-  handler owns the presentation and exit-code decisions (ADR-015).
+  handler owns the presentation and exit-code decisions (ADR-0015).
 
 Presentation (Rich tables, ``console.print``) and exit-code policy live
 in :mod:`notebooklm.cli.session_cmd`; this service module returns typed

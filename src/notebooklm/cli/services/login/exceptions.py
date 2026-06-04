@@ -4,7 +4,7 @@ These exceptions let login service modules signal configuration errors
 without taking a runtime dependency on Click. The calling Click commands
 in :mod:`notebooklm.cli.session_cmd` and :mod:`notebooklm.cli.profile_cmd`
 catch these and translate them to ``click.ClickException`` (or the JSON
-error envelope) at the boundary — see ADR-015.
+error envelope) at the boundary — see ADR-0015.
 """
 
 from __future__ import annotations

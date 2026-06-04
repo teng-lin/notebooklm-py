@@ -188,7 +188,7 @@ def _disable_chromium_profile_fanout():
 
     D1 PR-3 migration: previously used a ``monkeypatch`` string-target
     setattr aimed at the ``cli._chromium_profiles`` discovery helper — the
-    string-target form ADR-007 forbids because it silently no-ops if the
+    string-target form ADR-0007 forbids because it silently no-ops if the
     target relocates. Now uses ``patch(...)`` which raises
     ``AttributeError`` on missing targets.
     """

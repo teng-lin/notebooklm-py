@@ -2,10 +2,10 @@
 
 > **Status:** Shipped in v0.5.0.
 > **Current runtime shape:** [`docs/architecture.md`](architecture.md).
-> **Ratifying decision:** [ADR-013 — composable session capabilities](adr/0013-composable-session-capabilities.md), which supersedes [ADR-010 — Session/Kernel split](adr/0010-session-kernel-split.md).
+> **Ratifying decision:** [ADR-0013 — composable session capabilities](adr/0013-composable-session-capabilities.md), which supersedes [ADR-0010 — Session/Kernel split](adr/0010-session-kernel-split.md).
 > **Last updated:** 2026-05-21
 
-> **⚠️ Superseded in part by [ADR-014](adr/0014-feature-local-runtime-adapters.md).**
+> **⚠️ Superseded in part by [ADR-0014](adr/0014-feature-local-runtime-adapters.md).**
 > A later refactor removed the `Session` facade class entirely and renamed the
 > `_session_*` home modules to `_runtime_*` (`_session_contracts` →
 > `_runtime_contracts`, `_session_auth` → `_runtime_auth`, `_session_lifecycle`
@@ -46,7 +46,7 @@ restructured the **private** core layer of `notebooklm-py`:
   `_core_*` module out of the legacy `_core` namespace into final
   homes (`_session_auth`, `_session_lifecycle`, `_request_types`,
   `_transport_errors`, `_streaming_post`, `_rpc_executor`, and so on).
-- The **capability refactor** that followed (ADR-013) replaced the
+- The **capability refactor** that followed (ADR-0013) replaced the
   broad `Session` Protocol that Tier 13 originally shipped with a
   composable set of narrow capability Protocols
   (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`,
@@ -143,7 +143,7 @@ not change, only their home module did.
 
 | Tier 12 symbol | Tier 13 home | Notes |
 |---|---|---|
-| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` was retired. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-013. |
+| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` was retired. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-0013. |
 | `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._transport_errors.MAX_RETRY_AFTER_SECONDS` | No longer re-exported via `_session` or `_core`. |
 | `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._session_config.DEFAULT_*` | |
 | `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._session_helpers` | |
@@ -164,7 +164,7 @@ These modules did not exist before Tier 12 began:
 
 | Module | Purpose |
 |---|---|
-| `notebooklm._session_contracts` | `AuthMetadata`, `Kernel`, and the four shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-013). The originally-shipped broad `Session` Protocol and the standalone `DrainHookRegistration` Protocol were deleted in the final phase. The follow-up feature-local composite-runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses introduced in their owning feature modules were retired once it was clear they only hid three stable collaborators with one production satisfier; feature constructors take their three runtime collaborators (`rpc` + `drain` + `lifecycle`) directly. |
+| `notebooklm._session_contracts` | `AuthMetadata`, `Kernel`, and the four shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-0013). The originally-shipped broad `Session` Protocol and the standalone `DrainHookRegistration` Protocol were deleted in the final phase. The follow-up feature-local composite-runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses introduced in their owning feature modules were retired once it was clear they only hid three stable collaborators with one production satisfier; feature constructors take their three runtime collaborators (`rpc` + `drain` + `lifecycle`) directly. |
 | `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Located at root (`src/notebooklm/_kernel.py`), not nested. |
 | `notebooklm._middleware` | Middleware chain primitives (`Middleware` Protocol, `NextCall` callable type, `RpcRequest` / `RpcResponse` envelope dataclasses, `build_chain` composer). |
 | `notebooklm._middleware_tracing` | Tier 12 PR 12.3 — request tracing middleware. |
@@ -184,11 +184,11 @@ These modules did not exist before Tier 12 began:
 | Symbol or default | Replacement / new behavior |
 |---|---|
 | `notebooklm._core._SyntheticErrorTransport` (deleted) | `notebooklm._middleware_error_injection.ErrorInjectionMiddleware` (chain-resident; mode is still resolved from `NOTEBOOKLM_VCR_RECORD_ERRORS` via `_error_injection._get_error_injection_mode`). |
-| Strict-decode opt-in (changed default) | `NOTEBOOKLM_STRICT_DECODE` now defaults to `1` (flipped in Tier 13 PR 13.9a). Set it to `0` to restore the legacy lenient decode. See [ADR-011](adr/0011-schema-validation-policy.md). |
+| Strict-decode opt-in (changed default) | `NOTEBOOKLM_STRICT_DECODE` now defaults to `1` (flipped in Tier 13 PR 13.9a). Set it to `0` to restore the legacy lenient decode. See [ADR-0011](adr/0011-schema-validation-policy.md). |
 
 ## Design intent
 
-The capability refactor (ADR-013) replaced the broad
+The capability refactor (ADR-0013) replaced the broad
 `_session_contracts.Session` Protocol that Tier 13 originally shipped.
 That Protocol had become a capability bag:
 
@@ -205,7 +205,7 @@ class Session(Protocol):
 ```
 
 That shape violated the intent of
-[ADR-010](adr/0010-session-kernel-split.md): feature APIs should not
+[ADR-0010](adr/0010-session-kernel-split.md): feature APIs should not
 depend on concrete `Session` internals. It also made dependencies
 hard to read — most features only needed logical RPC calls, while
 chat, uploads, and artifact polling needed narrower specialized
@@ -405,12 +405,12 @@ runtime shape is canonicalized in [`docs/architecture.md`](architecture.md).
 - [`docs/architecture.md`](architecture.md) — post-refactor runtime
   shape (`Session` collaborator graph, capability-protocol model,
   dispatch path).
-- [ADR-010 — Session / Kernel split](adr/0010-session-kernel-split.md) —
-  the design driver for Tier 13. **Superseded by ADR-013.**
-- [ADR-011 — Schema validation policy](adr/0011-schema-validation-policy.md) —
+- [ADR-0010 — Session / Kernel split](adr/0010-session-kernel-split.md) —
+  the design driver for Tier 13. **Superseded by ADR-0013.**
+- [ADR-0011 — Schema validation policy](adr/0011-schema-validation-policy.md) —
   the strict-decode default flip.
-- [ADR-012 — Implementation-surface convention](adr/0012-implementation-surface-convention.md).
-- [ADR-013 — Composable session capabilities](adr/0013-composable-session-capabilities.md) —
+- [ADR-0012 — Implementation-surface convention](adr/0012-implementation-surface-convention.md).
+- [ADR-0013 — Composable session capabilities](adr/0013-composable-session-capabilities.md) —
   the ratifying decision for the capability model described here.
 - [`docs/stability.md`](stability.md) — public stability contract.
 - [`docs/python-api.md`](python-api.md) — canonical public API reference.

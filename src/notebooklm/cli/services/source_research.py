@@ -2,7 +2,7 @@
 
 Owns research start orchestration and the optional ``--import-all`` step.
 The protocol-level wait loop and task-id pinning live in
-``ResearchAPI.wait_for_completion``. ADR-008 boundary: this module returns
+``ResearchAPI.wait_for_completion``. ADR-0008 boundary: this module returns
 a discriminated :class:`SourceAddResearchResult` and never touches
 ``console``/``exit_with_code`` — the command layer in
 ``cli/source_cmd.py`` owns rendering and exit-code policy. It MAY call the
@@ -97,7 +97,7 @@ async def execute_source_add_research(
     The service is fully I/O-free except for the underlying ``client``
     awaits: it never calls ``console.print``, ``click.echo``, or
     ``exit_with_code``. The command handler owns rendering and exit-code
-    policy per ADR-008.
+    policy per ADR-0008.
 
     The wait call passes the task discriminator returned by ``research.start``
     so a second research task started mid-wait (e.g. concurrent caller, web UI,

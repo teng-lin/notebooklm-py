@@ -1,4 +1,4 @@
-# ADR-018: Deprecation strategy (`_deprecation.py` + `MappingCompatMixin`)
+# ADR-0018: Deprecation strategy (`_deprecation.py` + `MappingCompatMixin`)
 
 ## Status
 
@@ -89,7 +89,7 @@ The rules:
 
 - **Clean breaks with no deprecation window.** Rejected for real public
   contracts: downstream callers need a runway, and the API-compat gate
-  (ADR-017 / `scripts/audit_public_api_compat.py`) exists precisely to stop
+  (ADR-0017 / `scripts/audit_public_api_compat.py`) exists precisely to stop
   unannounced breaks. (Clean breaks remain acceptable for non-contract
   internals and bug fixes — that is a separate policy, not a deprecation.)
 - **Per-feature `warnings.warn(...)` calls.** Rejected. It produces

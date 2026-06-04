@@ -76,7 +76,7 @@ def test_redact_upload_url_value_error_returns_placeholder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A urlsplit ValueError is swallowed into the redacted placeholder."""
-    # ADR-007 forbids string-target ``mock.patch`` on notebooklm internals;
+    # ADR-0007 forbids string-target ``mock.patch`` on notebooklm internals;
     # patch the module-level ``urlsplit`` seam object-form instead.
     fake_urlsplit = MagicMock(side_effect=ValueError("bad url"))
     monkeypatch.setattr(_upload_mod, "urlsplit", fake_urlsplit)
@@ -92,7 +92,7 @@ def test_validate_resumable_upload_url_value_error_wrapped(
     def _boom(_url: str) -> SplitResult:
         raise ValueError("malformed")
 
-    # ADR-007 forbids string-target ``mock.patch`` on notebooklm internals;
+    # ADR-0007 forbids string-target ``mock.patch`` on notebooklm internals;
     # patch the module-level ``urlsplit`` seam object-form instead.
     fake_urlsplit = MagicMock(side_effect=_boom)
     monkeypatch.setattr(_upload_mod, "urlsplit", fake_urlsplit)

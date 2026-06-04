@@ -30,7 +30,7 @@ baseline-diff; sources: url-match; ``add_text``: no probe possible — see
 This module is private (``_idempotency.py``); call sites live in the
 domain APIs (``_notebooks.py``, ``_sources.py``) and the RPC executor
 (``_rpc_executor.py``). The canonical home for the taxonomy itself and
-the per-RPC classification rationale is ADR-005
+the per-RPC classification rationale is ADR-0005
 (``docs/adr/0005-idempotency-taxonomy.md``).
 """
 
@@ -179,7 +179,7 @@ class IdempotencyPolicy(str, Enum):
 
     Five policies — no more, no fewer. The axis was sized to cover all
     realistic NotebookLM RPC shapes without inventing per-method special
-    cases. See ADR-005 (``docs/adr/0005-idempotency-taxonomy.md``) for
+    cases. See ADR-0005 (``docs/adr/0005-idempotency-taxonomy.md``) for
     the derivation and the per-policy rationale.
 
     Policies fall into three retry-safety bands:
@@ -579,7 +579,7 @@ IDEMPOTENCY_REGISTRY.register(
 #
 # These entries replace the UNCLASSIFIED placeholders for mutating RPCs whose
 # side-effect semantics are well-understood and stable. The full
-# audit decision matrix lives in ADR-005
+# audit decision matrix lives in ADR-0005
 # (``docs/adr/0005-idempotency-taxonomy.md``); the short version follows.
 #
 # CREATE_NOTEBOOK
@@ -852,7 +852,7 @@ IDEMPOTENCY_REGISTRY.register(
 # of 30s mirrors the cadence of similar advisory-log throttles elsewhere in the
 # codebase.
 _AT_LEAST_ONCE_LOG_INTERVAL: float = 30.0
-# Single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
+# Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
 _at_least_once_last_logged: dict[tuple[RPCMethod, str | None], float] = {}
 
 

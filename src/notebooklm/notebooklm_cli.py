@@ -113,7 +113,7 @@ from .cli import (
 )
 from .cli.grouped import SectionedGroup
 
-# Public surface (ADR-012). ``main`` is the ``[project.scripts]`` entry
+# Public surface (ADR-0012). ``main`` is the ``[project.scripts]`` entry
 # point and ``src/notebooklm/__main__.py`` shim; ``cli`` is the root
 # ``click.Group`` imported by tests to drive ``CliRunner`` invocations.
 # The underscore-prefixed helpers in this module (``_reconfigure_output_stream``,

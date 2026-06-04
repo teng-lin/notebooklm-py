@@ -10,7 +10,7 @@ exceptions (``TransportAuthExpired``, ``TransportRateLimited``,
 :class:`ChatAPI.ask`) stay free of HTTP-status branching.
 
 :meth:`ChatAPI.ask` calls :func:`chat_aware_authed_post` directly. Per
-ADR-014 Rule 2 Corollary, this helper takes the :class:`RuntimeTransport`
+ADR-0014 Rule 2 Corollary, this helper takes the :class:`RuntimeTransport`
 collaborator directly rather than a local ``ChatRuntime`` Protocol — the
 indirection through a chat-local Protocol added no value once
 ``transport_post`` was its only member.
@@ -55,7 +55,7 @@ async def chat_aware_authed_post(
         transport: :class:`RuntimeTransport` collaborator that owns the
             authed POST entry point on the shared transport pipeline.
             Passed directly via constructor injection from
-            ``NotebookLMClient.__init__`` (ADR-014 Rule 2 Corollary) — no
+            ``NotebookLMClient.__init__`` (ADR-0014 Rule 2 Corollary) — no
             chat-local Protocol intermediates.
         build_request: Request builder forwarded to
             :meth:`RuntimeTransport.perform_authed_post`.

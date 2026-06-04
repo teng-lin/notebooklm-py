@@ -1,4 +1,4 @@
-# ADR-006: VCR cassette scrubber strategy
+# ADR-0006: VCR cassette scrubber strategy
 
 ## Status
 

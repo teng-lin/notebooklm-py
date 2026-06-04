@@ -28,7 +28,7 @@ def _current_storage_override() -> Path | None:
 
     Reads the live Click context here (in the command layer) and passes it
     explicitly into the :class:`AuthSource` resolver, keeping the
-    Click-context read out of ``cli/services`` per ADR-008. New callers
+    Click-context read out of ``cli/services`` per ADR-0008. New callers
     should use the :class:`AuthSource` resolver directly so they pick up the
     full precedence chain (env-var fast path etc.).
     """

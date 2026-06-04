@@ -210,7 +210,7 @@ def register_chat_commands(cli):
           notebooklm ask "explain X" --save-as-note     # Save response as a note
         """
         if new_conversation and conversation_id:
-            # Per ADR-015 §2: under --json this mutual-exclusion conflict
+            # Per ADR-0015 §2: under --json this mutual-exclusion conflict
             # must emit the typed JSON envelope and exit 1 (VALIDATION_ERROR),
             # not ride Click's parse-time UsageError path (exit 2, usage
             # text on stderr, no JSON on stdout). Under text mode we

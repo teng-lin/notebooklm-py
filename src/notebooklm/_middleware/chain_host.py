@@ -24,7 +24,7 @@ This module is intentionally narrow:
   (the auth-snapshot host) and the collaborator bundle.
 * The host has no back-reference to :class:`NotebookLMClient` — it is reachable
   from :class:`NotebookLMClient` (via ``self._chain_host``) but not the other
-  way around. This avoids a client ↔ transport cycle, per ADR-014 Rule 4.
+  way around. This avoids a client ↔ transport cycle, per ADR-0014 Rule 4.
 
 The transport / wire helpers take the host directly via the
 ``chain_host`` parameter; the chain reads ``chain_host._<attr>`` on

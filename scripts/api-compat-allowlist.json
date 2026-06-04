@@ -190,7 +190,7 @@
     {
       "code": "removed-member",
       "object": "notebooklm.NotebookLMClient.notes.create_from_chat",
-      "reason": "v0.5.0 DeprecationWarning cycle completed (two MINOR cycles: 0.5.0 and 0.6.0); the deprecated NotesAPI.create_from_chat forwarder was removed. Replacement is client.chat.save_answer_as_note(...), the canonical citation-rich saved-from-chat method and data owner (ADR-013). Behavior is identical; only the call site moves. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md."
+      "reason": "v0.5.0 DeprecationWarning cycle completed (two MINOR cycles: 0.5.0 and 0.6.0); the deprecated NotesAPI.create_from_chat forwarder was removed. Replacement is client.chat.save_answer_as_note(...), the canonical citation-rich saved-from-chat method and data owner (ADR-0013). Behavior is identical; only the call site moves. See docs/deprecations.md 'Removed in v0.7.0' and CHANGELOG.md."
     },
     {
       "code": "removed-member",

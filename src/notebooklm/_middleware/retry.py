@@ -1,6 +1,6 @@
 """RetryMiddleware — 429/5xx retry loop for the chain.
 
-Per ADR-009 §"Chain ordering", ``RetryMiddleware`` sits just *inside*
+Per ADR-0009 §"Chain ordering", ``RetryMiddleware`` sits just *inside*
 ``SemaphoreMiddleware`` and just *outside* ``AuthRefreshMiddleware``. The
 chain is
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
@@ -33,7 +33,7 @@ Behavior:
 - **Same disable_internal_retries gate** — read from
   ``RPC_CONTEXT_DISABLE_INTERNAL_RETRIES`` (post-resolution bool produced
   by ``_idempotency.resolve_effective_disable_internal_retries`` before
-  chain entry; see ADR-009 §"Per-request behavior").
+  chain entry; see ADR-0009 §"Per-request behavior").
 - **Same exception types on exhaustion** —
   :class:`TransportRateLimited` /
   :class:`TransportServerError` re-raised verbatim so
@@ -167,7 +167,7 @@ class RetryMiddleware:
         :func:`_idempotency.resolve_effective_disable_internal_retries`.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
-        # Post-resolution bool — see ADR-009 §"Per-request behavior".
+        # Post-resolution bool — see ADR-0009 §"Per-request behavior".
         disable_internal_retries = bool(
             request.context.get(RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, False)
         )

@@ -1,6 +1,6 @@
 """SemaphoreMiddleware — RPC concurrency gate for the chain.
 
-Per ADR-009 §"Chain ordering", ``SemaphoreMiddleware``
+Per ADR-0009 §"Chain ordering", ``SemaphoreMiddleware``
 sits between ``MetricsMiddleware`` and ``RetryMiddleware``. The chain
 ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection,
 Tracing]``.

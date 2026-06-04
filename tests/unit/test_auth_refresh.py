@@ -2,8 +2,8 @@
 
 This file owns one concern from the auth subpackage. The original
 ``tests/unit/test_auth.py`` (4090 LOC) was split into six concern-aligned
-files alongside the deletion of ``_AuthFacadeModule``; see ADR-003
-(superseded) and ADR-007 (test-monkeypatch policy) for the rationale.
+files alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
+(superseded) and ADR-0007 (test-monkeypatch policy) for the rationale.
 """
 
 import json
@@ -113,7 +113,7 @@ class TestFetchTokens:
                 )
                 return httpx.Response(200, content=b"<html>Login</html>", request=request)
 
-        # Seam-aliased object-attribute patches (ADR-007): patches the owning
+        # Seam-aliased object-attribute patches (ADR-0007): patches the owning
         # ``_auth.refresh`` module so bare-name lookups inside
         # ``_fetch_tokens_with_jar`` observe the fakes.
         monkeypatch.setattr(_auth_refresh, "_poke_session", fake_poke_session)
@@ -364,7 +364,7 @@ class TestFetchTokensAutoRefresh:
                 }
             )
         )
-        # Seam-aliased patch (ADR-007): ``_auth.refresh`` imports
+        # Seam-aliased patch (ADR-0007): ``_auth.refresh`` imports
         # ``get_storage_path`` at module top, so patching the owning module
         # reaches the bare-name call site.
         monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage_file)
@@ -658,7 +658,7 @@ class TestFetchTokensAutoRefresh:
                 }
             )
         )
-        # Seam-aliased patch (ADR-007): ``_auth.refresh`` imports
+        # Seam-aliased patch (ADR-0007): ``_auth.refresh`` imports
         # ``get_storage_path`` at module top, so patching the owning module
         # reaches the bare-name call site.
         monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage_file)

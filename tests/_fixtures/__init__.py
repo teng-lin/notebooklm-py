@@ -1,7 +1,7 @@
 """Constructor-injection factories for unit and integration tests.
 
 This subpackage is the canonical replacement for the ``monkeypatch.setattr(...)``
-+ ``core.X = AsyncMock(...)`` gravity well documented in ADR-007. New tests
++ ``core.X = AsyncMock(...)`` gravity well documented in ADR-0007. New tests
 acquire collaborators through ``make_fake_core(**overrides)`` rather than
 mutating production modules from the outside.
 

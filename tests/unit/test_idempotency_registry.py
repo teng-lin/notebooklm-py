@@ -405,7 +405,7 @@ def _build_rpc_executor() -> Any:
         captured["rpc_method"] = rpc_method
         return httpx.Response(200, text=")]}'\n[]")
 
-    # ADR-014 Rule 5 (Wave 4 of session-decoupling): RpcExecutor takes
+    # ADR-0014 Rule 5 (Wave 4 of session-decoupling): RpcExecutor takes
     # its four collaborators (kernel/transport/auth_refresh/metrics) as
     # keyword-only args. Use four MagicMock collaborators so each role
     # can be inspected independently.
@@ -444,7 +444,7 @@ def _build_rpc_executor() -> Any:
     )
     # ``_unused`` slot preserved for backward-compatible 3-tuple unpacking
     # at call sites that have not been migrated to the keyword-collaborators
-    # shape. After Wave 4 of session-decoupling (ADR-014 Rule 5), the executor
+    # shape. After Wave 4 of session-decoupling (ADR-0014 Rule 5), the executor
     # holds its collaborators directly so the middle slot is just None.
     return executor, None, captured
 

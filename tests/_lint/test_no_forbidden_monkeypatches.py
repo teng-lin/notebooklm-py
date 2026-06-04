@@ -1,4 +1,4 @@
-"""Meta-lint enforcing the test-monkeypatch policy from ADR-007.
+"""Meta-lint enforcing the test-monkeypatch policy from ADR-0007.
 
 This test scans every ``.py`` file under ``tests/`` for the four
 forbidden patterns documented in
@@ -56,7 +56,7 @@ invariant.
 
 The allowlist is file-level, not site-level (line-number-level), so it
 survives rebases and reorderings without spurious churn. See
-ADR-007 "Alternatives considered: per-site allowlist entries".
+ADR-0007 "Alternatives considered: per-site allowlist entries".
 
 A few path conventions:
 
@@ -130,7 +130,7 @@ _PATTERN_ASYNCMOCK_ASSIGN = re.compile(
     # would create a silent escape hatch: a test that re-introduces the
     # forbidden ``<chain>.transport_post = AsyncMock(...)`` pattern
     # against a ``MagicMock(spec=...)`` would no longer surface, even
-    # though that is exactly the ADR-007 violation the lint is supposed
+    # though that is exactly the ADR-0007 violation the lint is supposed
     # to catch. ``rpc_call`` is the canonical core-RPC seam; the
     # transport-side names retained here
     # (``transport_post`` / ``_perform_authed_post`` / ``next_reqid`` /
@@ -170,11 +170,11 @@ _PATTERN_MOCK_PATCH_OBJECT_PRIVATE = re.compile(
 )
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("string-target monkeypatch (forbidden by ADR-007)", _PATTERN_STRING_TARGET),
-    ("object-attribute monkeypatch (forbidden by ADR-007)", _PATTERN_OBJECT_ATTR),
-    ("AsyncMock attribute assignment (forbidden by ADR-007)", _PATTERN_ASYNCMOCK_ASSIGN),
-    ("mock.patch string-target into private (forbidden by ADR-007)", _PATTERN_MOCK_PATCH_PRIVATE),
-    ("patch.object into private module (forbidden by ADR-007)", _PATTERN_MOCK_PATCH_OBJECT_PRIVATE),
+    ("string-target monkeypatch (forbidden by ADR-0007)", _PATTERN_STRING_TARGET),
+    ("object-attribute monkeypatch (forbidden by ADR-0007)", _PATTERN_OBJECT_ATTR),
+    ("AsyncMock attribute assignment (forbidden by ADR-0007)", _PATTERN_ASYNCMOCK_ASSIGN),
+    ("mock.patch string-target into private (forbidden by ADR-0007)", _PATTERN_MOCK_PATCH_PRIVATE),
+    ("patch.object into private module (forbidden by ADR-0007)", _PATTERN_MOCK_PATCH_OBJECT_PRIVATE),
 )
 
 
@@ -184,11 +184,11 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # The allowlist was baked at PR-start (2026-05-18) with 33 offending files and
 # shrank wave-by-wave as each file was migrated to constructor injection /
 # locally-imported seam aliases. With the final wave merged it is **empty**:
-# every test file under ``tests/`` now satisfies the ADR-007 monkeypatch
+# every test file under ``tests/`` now satisfies the ADR-0007 monkeypatch
 # policy with zero exemptions, so the per-file gate is now a *global*
 # invariant — any new forbidden pattern fails the lint unconditionally.
 #
-# The allowlist MUST stay empty. The migration is complete; ADR-007 is now
+# The allowlist MUST stay empty. The migration is complete; ADR-0007 is now
 # plain ``Accepted``. Re-adding an entry would silently re-open the escape
 # hatch the drain closed, so ``test_allowlist_stays_empty`` below asserts
 # ``_ALLOWLIST == frozenset()`` as a hardening guard — new offenders must be
@@ -280,7 +280,7 @@ def test_no_forbidden_monkeypatches_outside_allowlist() -> None:
         )
         msg = (
             "Forbidden test-monkeypatch patterns detected outside the "
-            "ADR-007 allowlist. Migrate the test(s) to constructor "
+            "ADR-0007 allowlist. Migrate the test(s) to constructor "
             "injection via ``tests/_fixtures/make_fake_core(...)`` or, "
             "if migration must defer, add the file path to "
             "``tests/_lint/test_no_forbidden_monkeypatches.py::_ALLOWLIST`` "
@@ -296,9 +296,9 @@ def test_no_forbidden_monkeypatches_outside_allowlist() -> None:
 
 
 def test_allowlist_stays_empty() -> None:
-    """Hardening guard: the ADR-007 allowlist must remain empty (issue #1376).
+    """Hardening guard: the ADR-0007 allowlist must remain empty (issue #1376).
 
-    The migration drained every offending file (33 → 0); ADR-007 is now plain
+    The migration drained every offending file (33 → 0); ADR-0007 is now plain
     ``Accepted``. This invariant prevents the allowlist from silently
     re-growing: a regression that adds a forbidden pattern must be fixed by
     migrating the test to a constructor seam, **not** by re-allowlisting the
@@ -310,7 +310,7 @@ def test_allowlist_stays_empty() -> None:
     # future refactor that reintroduces mutability would silently weaken this
     # guard. Pin both the immutable type and the empty value.
     assert isinstance(_ALLOWLIST, frozenset) and len(_ALLOWLIST) == 0, (
-        "The ADR-007 monkeypatch allowlist was drained to zero (issue #1376) "
+        "The ADR-0007 monkeypatch allowlist was drained to zero (issue #1376) "
         "and must stay an empty ``frozenset``. New forbidden patterns must be "
         "migrated to constructor injection via "
         "``tests/_fixtures/make_fake_core(...)`` or a locally-imported seam "

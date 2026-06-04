@@ -125,14 +125,14 @@ The feature-facing surface is the set of **capability Protocols** in
 `AuthMetadata` and `Kernel` consumed by the upload pipeline. The
 broad `Session` Protocol that previously bundled these together was
 deleted in the final phase of the capability refactor (see
-[`docs/refactor-history.md`](refactor-history.md) and ADR-013); each
+[`docs/refactor-history.md`](refactor-history.md) and ADR-0013); each
 feature now depends on the narrowest slice it needs and takes those
 collaborators by keyword-only constructor argument. The feature-local
 composite-runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`,
 `UploadRuntime`) and their adapter dataclasses that previously bundled
 three capability Protocols apiece were retired once it was clear they
 only hid three stable collaborators with one production satisfier; see
-ADR-013 for the promotion criterion (≥2 consumers) that still gates
+ADR-0013 for the promotion criterion (≥2 consumers) that still gates
 adding any new shared Protocol.
 
 Private service modules sit inside the client layer but below the public
@@ -202,7 +202,7 @@ from those catalogues rather than introducing parallel patterns.
    bundle them into a feature-local composite-runtime Protocol unless a
    second consumer materialises. **Do NOT depend on a broad runtime
    facade for type annotations** — there is no concrete `Session` class
-   (the broad `Session` Protocol was deleted; see ADR-013). Depend on the
+   (the broad `Session` Protocol was deleted; see ADR-0013). Depend on the
    narrow capability Protocols in `_runtime_contracts` instead.
 3. Add to `client.py`: wire each collaborator explicitly from the
    composition root (e.g. `self.newfeature = NewFeatureAPI(rpc=internals.executor,

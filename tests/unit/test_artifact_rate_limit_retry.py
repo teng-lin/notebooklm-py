@@ -126,7 +126,7 @@ class TestWithRateLimitRetry:
 
     @pytest.mark.asyncio
     async def test_retries_raised_rate_limit_error_then_returns_success(self) -> None:
-        # The ADR-019 "async kickoff" path (e.g. ``retry_failed``) raises
+        # The ADR-0019 "async kickoff" path (e.g. ``retry_failed``) raises
         # RateLimitError on a synchronous refusal rather than returning a
         # rate-limited status; the helper must back off and retry that too.
         success = GenerationStatus(task_id="task_123", status="in_progress")

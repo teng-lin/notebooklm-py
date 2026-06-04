@@ -1506,7 +1506,7 @@ class TestExtractAnswerAndRefsFromChunk:
 
         Previously this silently returned ``(None, ...)`` (the answer was
         dropped). Since the strict-decode migration of ``_chat.wire``
-        (ADR-011) a non-list answer row in a *populated* ``wrb.fr`` record is
+        (ADR-0011) a non-list answer row in a *populated* ``wrb.fr`` record is
         treated as Google-side wire drift and raises ``UnknownRPCMethodError``.
         Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
         soft-mode opt-out was retired in v0.7.0).
@@ -1828,7 +1828,7 @@ class TestGetConversationIdNullRaw:
         async with NotebookLMClient(auth_tokens) as client:
             # Patch the direct ``rpc`` collaborator on ChatAPI to return
             # None (bypasses decode error). Wave 8 of session-decoupling
-            # (ADR-014 Rule 2 Corollary) replaced the old facade with
+            # (ADR-0014 Rule 2 Corollary) replaced the old facade with
             # direct constructor injection of the underlying collaborators,
             # so we reach the chat dispatch surface via ``client.chat._rpc``.
             with patch.object(

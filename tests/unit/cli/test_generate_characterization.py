@@ -315,7 +315,7 @@ def test_video_cinematic_rejects_style_prompt(
 ) -> None:
     """``--style-prompt`` is rejected when the video format is cinematic.
 
-    Per ADR-015, the post-parse validation routes through ``output_error``:
+    Per ADR-0015, the post-parse validation routes through ``output_error``:
     exit 1 (VALIDATION_ERROR), message on stderr, no usage footer.
     """
     result = authed_invoke(

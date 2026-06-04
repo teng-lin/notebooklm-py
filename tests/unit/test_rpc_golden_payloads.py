@@ -870,7 +870,7 @@ def test_fixture_corpus_is_scrubbed() -> None:
     """Lint guard: no fixture may contain real-credential / real-PII substrings.
 
     The fixture directory sits outside the cassette-scrubber pipeline (per
-    ADR-006) because these payloads are synthetic by construction. This
+    ADR-0006) because these payloads are synthetic by construction. This
     lint enforces that posture: if anyone edits a fixture and pastes a real
     cookie / OAuth token / Drive URL / email, this test fails before the
     leak lands in a commit. Pair the lint with the placeholder taxonomy

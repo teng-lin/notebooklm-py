@@ -6,7 +6,7 @@ non-dict storage payloads, the ``_probe_authuser`` non-200 path, legacy
 ``context.json`` migration cleanup, the corrupt-storage ``RuntimeError`` guard,
 and the in-band clear helper's no-op / lock branches.
 
-New file per ADR-007: patches owning modules at the bare-name call site rather
+New file per ADR-0007: patches owning modules at the bare-name call site rather
 than editing the existing concern-aligned test file.
 """
 

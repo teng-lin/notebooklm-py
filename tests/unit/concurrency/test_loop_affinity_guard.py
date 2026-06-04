@@ -194,7 +194,7 @@ def test_chat_ask_guards_against_cross_loop_call() -> None:
     acquiring the per-conversation lock so a cross-loop follow-up doesn't
     hang on a lock bound to a dead loop.
 
-    Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ``ChatAPI``
+    Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary): ``ChatAPI``
     takes the :class:`LoopGuard` collaborator directly via keyword arg
     instead of reaching for it through a chat-local runtime composite.
     """

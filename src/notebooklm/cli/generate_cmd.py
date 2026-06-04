@@ -1,4 +1,4 @@
-"""Generate content CLI commands — thin Click handlers (ADR-008).
+"""Generate content CLI commands — thin Click handlers (ADR-0008).
 
 All validation, enum mapping, retry/wait orchestration, and output
 dispatch live in ``cli/services/generate.py``. Tests patch
@@ -61,7 +61,7 @@ def resolve_language(language: str | None) -> str:
     > "en" default. Uses explicit None checks to avoid treating empty
     string as falsy. Validates each candidate against the supported list.
 
-    Invalid codes route through :func:`output_error` per ADR-015: under
+    Invalid codes route through :func:`output_error` per ADR-0015: under
     ``--json`` the typed JSON envelope is emitted on stdout
     (``code: "VALIDATION_ERROR"``, exit 1); in text mode the same message
     is written to stderr (exit 1, no Click usage footer). The active

@@ -8,7 +8,7 @@ public-ish aliases in ``src/notebooklm/_request_types.py``:
 - ``Middleware: Protocol`` structural typing — a plain async callable
   satisfies the Protocol without inheriting from it.
 - ``build_chain`` composition order — leftmost middleware in the sequence
-  becomes the outermost wrapper (matches ADR-009 chain ordering).
+  becomes the outermost wrapper (matches ADR-0009 chain ordering).
 - ``BuildRequestResult`` value semantics and request materialization bridges.
 
 These tests target the type scaffolding and materialization contracts from
@@ -76,7 +76,7 @@ def test_rpc_request_replace_returns_new_instance() -> None:
     assert new.url == "https://y"
     assert req.url == "https://x"  # original untouched
     # ``replace`` keeps the same context dict by reference (intentional —
-    # ADR-009 §"Per-request behavior"). Mutating ``new.context`` is visible
+    # ADR-0009 §"Per-request behavior"). Mutating ``new.context`` is visible
     # on ``req.context`` because they are the same object.
     assert new.context is req.context
 
@@ -131,7 +131,7 @@ def test_class_with_async_call_satisfies_middleware_protocol() -> None:
 
 
 # ---------------------------------------------------------------------------
-# build_chain ordering — leftmost-is-outermost (the ADR-009 contract)
+# build_chain ordering — leftmost-is-outermost (the ADR-0009 contract)
 # ---------------------------------------------------------------------------
 
 
@@ -171,7 +171,7 @@ def test_build_chain_empty_middlewares_returns_terminal_unchanged() -> None:
 def test_build_chain_three_middleware_call_order() -> None:
     """First in list is outermost; last in list is innermost.
 
-    Matches ADR-009 chain ordering: ``[Drain, Metrics, Semaphore, Retry,
+    Matches ADR-0009 chain ordering: ``[Drain, Metrics, Semaphore, Retry,
     AuthRefresh, ErrorInjection, Tracing]`` → Drain (index 0) is the outermost
     wrapper, Tracing (index 6) wraps the terminal directly.
     """
@@ -399,7 +399,7 @@ def test_materialize_build_request_preserves_bytes_body_and_none_headers() -> No
 
 
 def test_materialize_rpc_request_populates_envelope_and_preserves_context_identity() -> None:
-    """The future middleware envelope keeps ADR-009's shared context object."""
+    """The future middleware envelope keeps ADR-0009's shared context object."""
     snap = AuthSnapshot(csrf_token="csrf", session_id="sid", authuser=0, account_email=None)
 
     def factory(snapshot: AuthSnapshot) -> tuple[str, str, None]:

@@ -1,7 +1,7 @@
 """Unit tests for :class:`MetricsMiddleware` (Tier-12 PR 12.4).
 
 Pins the contract documented in
-``src/notebooklm/_middleware/metrics.py`` and ADR-009 §"Chain ordering":
+``src/notebooklm/_middleware/metrics.py`` and ADR-0009 §"Chain ordering":
 
 - Pass-through identity (the middleware is a pure observer; it must not
   mutate ``RpcRequest`` or transform the ``RpcResponse``).

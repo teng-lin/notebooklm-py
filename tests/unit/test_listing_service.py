@@ -8,7 +8,7 @@ Split across the two layers:
   JSON stdout output, empty-message printing, and Rich table assembly via a
   monkeypatched console.
 
-The split mirrors the ADR-008 boundary refactor in PR-C: ``cli.services.listing``
+The split mirrors the ADR-0008 boundary refactor in PR-C: ``cli.services.listing``
 no longer imports anything from ``..rendering`` and never writes to stdout.
 """
 

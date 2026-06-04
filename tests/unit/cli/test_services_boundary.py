@@ -1,4 +1,4 @@
-"""Static AST checks enforcing the ADR-008 ``cli/services`` layering boundary.
+"""Static AST checks enforcing the ADR-0008 ``cli/services`` layering boundary.
 
 This file scans cleaned ``cli/services`` modules for forbidden imports —
 top-level ``click`` and relative imports that *resolve* to the command-layer
@@ -195,7 +195,7 @@ def _runtime_imports(path: pathlib.Path) -> Iterator[tuple[str, int]]:
 
     Imports inside ``if TYPE_CHECKING:`` blocks are skipped — those have no
     runtime dependency on the cited module and are explicitly allowed by
-    ADR-008 (they keep forward-reference type hints possible without
+    ADR-0008 (they keep forward-reference type hints possible without
     importing the presentation layer at runtime).
     """
     tree = ast.parse(path.read_text())
@@ -460,7 +460,7 @@ def test_services_boundary_no_forbidden_imports(logical_name, path):
     """Each guarded service module must be free of presentation/runtime imports."""
     assert path.exists(), f"Expected guarded service module at {path}"
     violations = _boundary_violations(path)
-    assert not violations, f"{logical_name} violates ADR-008 boundary:\n  " + "\n  ".join(
+    assert not violations, f"{logical_name} violates ADR-0008 boundary:\n  " + "\n  ".join(
         violations
     )
 
@@ -485,7 +485,7 @@ def test_transitional_services_boundary_violations_are_documented(logical_name, 
     assert path.exists(), f"Expected guarded service module at {path}"
     violations = _boundary_violations(path)
     assert violations == expected_violations, (
-        f"{logical_name} ADR-008 boundary inventory changed.\n"
+        f"{logical_name} ADR-0008 boundary inventory changed.\n"
         "If this removes a violation, update the expected list in the same PR.\n"
         "If this adds a violation, move rendering/exit policy back to the command layer.\n"
         "Current violations:\n  " + "\n  ".join(violations)

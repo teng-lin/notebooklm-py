@@ -51,11 +51,11 @@ def _no_backoff_jitter(monkeypatch):
     Mirrors the ``_no_backoff_jitter`` fixture in
     ``test_authed_post_pipeline.py`` semantically — pin the ±20%
     exponential-backoff jitter to 0 so these chain-level tests can
-    assert exact sleep schedules. Uses ADR-007 object-target
+    assert exact sleep schedules. Uses ADR-0007 object-target
     monkeypatching: ``random`` is a singleton module, so patching
     ``random.uniform`` directly is functionally identical to patching
     ``notebooklm._backoff._random.uniform`` (the string-target form),
-    but the object form is the ADR-007-preferred shape and keeps this
+    but the object form is the ADR-0007-preferred shape and keeps this
     file out of the forbidden-monkeypatch allowlist.
     """
     monkeypatch.setattr(random, "uniform", lambda a, b: 0.0)
@@ -130,7 +130,7 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
         async def fake_sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
-        # ADR-007 object-target form. ``asyncio`` is a singleton module
+        # ADR-0007 object-target form. ``asyncio`` is a singleton module
         # so patching ``asyncio.sleep`` directly is functionally
         # identical to the string-target form
         # ``notebooklm._runtime.helpers.asyncio.sleep`` — both resolve to the

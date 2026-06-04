@@ -1,4 +1,4 @@
-# ADR-014: Feature-local runtime adapters as Protocol satisfiers
+# ADR-0014: Feature-local runtime adapters as Protocol satisfiers
 
 > **Current state (2026-05-29).** The normative body below describes the state
 > *at decision time*, when a concrete `Session` facade class and module still
@@ -23,7 +23,7 @@ recorded under [Revision history](#revision-history) below.
 
 ## Context
 
-[ADR-013](./0013-composable-session-capabilities.md) introduced narrow capability Protocols
+[ADR-0013](./0013-composable-session-capabilities.md) introduced narrow capability Protocols
 (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AuthMetadata`, `Kernel` in
 `_session_contracts.py`) plus feature-local
 composite runtime Protocols (`ChatRuntime` in `_chat.py`, `ArtifactsRuntime` in
@@ -56,9 +56,9 @@ satisfier of every Protocol. This produces four observable consequences:
 3. **Tests monkeypatch `Session`, not the collaborator.** At runtime, the method
    body lives on `Session`. Tests that need to fake `transport_post` patch
    `Session.transport_post`, not `SessionTransport.perform_authed_post`. The
-   [ADR-007](./0007-test-monkeypatch-policy.md) forbidden-monkeypatch
+   [ADR-0007](./0007-test-monkeypatch-policy.md) forbidden-monkeypatch
    allowlist (~30 file-level entries today) is the visible gravity well this
-   creates — every entry pins a Session-shaped surface that ADR-013's narrow
+   creates — every entry pins a Session-shaped surface that ADR-0013's narrow
    Protocols _should_ have eliminated.
 
 4. **`RpcOwner` Protocol carries underscore-prefixed `Session` internals.**
@@ -71,7 +71,7 @@ satisfier of every Protocol. This produces four observable consequences:
 
 The architectural pressure is real and ongoing. Every feature added between v0.5.0
 and today has either grown `Session` or required a new compatibility forward.
-ADR-013 framed the _interface_ model correctly; what was missing is the matching
+ADR-0013 framed the _interface_ model correctly; what was missing is the matching
 _implementation_ model.
 
 ## Decision
@@ -137,7 +137,7 @@ that exist only as type-hint documentation drift out of sync with the code.
 # in _artifacts.py, next to ArtifactsRuntime
 @dataclass(frozen=True)
 class ArtifactsRuntimeAdapter:
-    """Concrete satisfier of :class:`ArtifactsRuntime` per ADR-014.
+    """Concrete satisfier of :class:`ArtifactsRuntime` per ADR-0014.
 
     Earns its keep under Rule 2 because:
       - composite has 3 capabilities (RpcCaller + AsyncWorkRuntime + DrainHookRegistration),
@@ -190,7 +190,7 @@ The migration ships in two stages so the structural change does not balloon:
   `build_collaborators` moves to `NotebookLMClient.__init__`. `Session` takes
   the bundle as a constructor argument. This is the strategic end-state but is
   a wider blast radius (every `Session(...)` test-construction site updates)
-  and is deferred so the in-flight ADR-014 migration stays bounded.
+  and is deferred so the in-flight ADR-0014 migration stays bounded.
 
 Stage A is sufficient to discharge the runtime decoupling: features stop
 receiving `Session` (they receive the collaborator or adapter directly), and
@@ -319,13 +319,13 @@ directly, `ChatRuntime` has no remaining consumer and is deleted. `ChatAPI`
 takes the underlying collaborators as keyword-only constructor parameters
 instead.
 
-The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
+The ADR-0013 promotion rule (≥2 consumers ⇒ shared Protocol in
 `_session_contracts.py`) is unchanged. Adapters are _not_ promoted to
 `_session_contracts.py`; the file stays interface-only.
 
 ## Consequences
 
-**Migration outcome:** Migration completed in PRs #1064–#1082; ADR-007 Session-shaped allowlist entries drained; later Session-elimination work moved the remaining lifecycle/public-surface duties onto `NotebookLMClient` and client-owned collaborators. The two Wave-7 follow-ups (#1084 Stage B and #1085 MiddlewareChainHost) were closed by the post-refactoring plan 2026-05-27 — Stage B1 (#1086 / #1089 / #1091) and Stage B2 (#1090 / #1092 / this PR) respectively. See [Revision history](#revision-history) for the chain-ownership carve-out introduced under Stage B2 and the 2026-05-28 elimination note.
+**Migration outcome:** Migration completed in PRs #1064–#1082; ADR-0007 Session-shaped allowlist entries drained; later Session-elimination work moved the remaining lifecycle/public-surface duties onto `NotebookLMClient` and client-owned collaborators. The two Wave-7 follow-ups (#1084 Stage B and #1085 MiddlewareChainHost) were closed by the post-refactoring plan 2026-05-27 — Stage B1 (#1086 / #1089 / #1091) and Stage B2 (#1090 / #1092 / this PR) respectively. See [Revision history](#revision-history) for the chain-ownership carve-out introduced under Stage B2 and the 2026-05-28 elimination note.
 
 **Wanted:**
 
@@ -333,7 +333,7 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
   new adapter (5-10 lines, local to the feature module), not a new `Session` method.
 - `RpcOwner` Protocol disappears entirely. No more underscore-prefixed
   Session-internal members in a "narrow" contract.
-- Tests fake the adapter or single collaborator, not `Session`. The ADR-007
+- Tests fake the adapter or single collaborator, not `Session`. The ADR-0007
   forbidden-monkeypatch allowlist becomes drainable — the surface tests pinned
   (Session method bodies) is gone.
 - Independent feature testability. A test for `ChatAPI` constructs a narrow
@@ -342,7 +342,7 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
 - Construction is explicit. `NotebookLMClient.__init__` reads as a wiring
   diagram. Replaces "Session has every method" with "every feature gets exactly
   what it asked for".
-- Closes ADR-013's runtime story. ADR-013 framed the interface model; this ADR
+- Closes ADR-0013's runtime story. ADR-0013 framed the interface model; this ADR
   completes the implementation model.
 
 **Unwanted:**
@@ -353,7 +353,7 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
 - Wider `NotebookLMClient.__init__`. Mitigated by `_session_init.build_collaborators`
   already returning a typed bundle.
 - Migration churn for existing tests. Tests that constructed a `Session` and then
-  patched a method must migrate to fake-adapter construction. The ADR-007
+  patched a method must migrate to fake-adapter construction. The ADR-0007
   program already pays for this migration; this ADR aligns the destination.
 - Adapter method bodies are formally one-line forwards. They could be
   auto-generated. We do not — explicit method bodies keep the Protocol contract
@@ -383,14 +383,14 @@ The ADR-013 promotion rule (≥2 consumers ⇒ shared Protocol in
   from one location to N, and doesn't share collaborator instances across
   features cleanly.
 
-- **Keep `Session` as universal satisfier; drain the ADR-007 allowlist by
+- **Keep `Session` as universal satisfier; drain the ADR-0007 allowlist by
   case-by-case exception.** Rejected. The allowlist exists because `Session`'s
   method surface is the test gravity well. Draining the allowlist while the
   gravity persists is treating the symptom; it grows back as new features are
   added.
 
 - **Stop the decomposition; embrace `Session` as god-object.** Rejected. Gives
-  up ADR-013's gains. The maintenance cost of `Session` has been measurable
+  up ADR-0013's gains. The maintenance cost of `Session` has been measurable
   across the multi-phase refactor program.
 
 ## Migration
@@ -467,7 +467,7 @@ were retired. Each adapter only hid three stable collaborators
 exactly one production satisfier, so they sat at the bottom of Rule
 2's keep-vs-delete spectrum. The feature constructors now take their
 three runtime collaborators (`rpc` + `drain` + `lifecycle`) as
-keyword-only arguments directly — mirroring the post-ADR-014 `ChatAPI`
+keyword-only arguments directly — mirroring the post-ADR-0014 `ChatAPI`
 pattern. The feature-local composite Protocols (`ArtifactsRuntime`,
 `UploadRuntime`) and the local `DrainHookRegistration` Protocol were
 deleted with their adapters; the mypy structural-satisfier guards near
@@ -497,7 +497,7 @@ same way. Wave 4 (PR for this revision) added regression lints under
 `test_client_composition.py` and `test_no_session.py` so neither host
 Protocol nor the deleted Session forwards can quietly come back.
 The auth-refresh path is now fully explicit-collaborator-driven and
-ADR-014 Rule 3 holds end-to-end on the refresh code path as it
+ADR-0014 Rule 3 holds end-to-end on the refresh code path as it
 already did on the feature constructors.
 
 ### 2026-05-28 — Session elimination (plan `session-elimination-plan`)
@@ -513,12 +513,12 @@ that the deleted module, deleted helper names, deleted client attribute, and
 
 ## Related decisions
 
-- Builds on [ADR-013](./0013-composable-session-capabilities.md) (capability
-  Protocol pattern). This ADR is the runtime-side completion of ADR-013's
+- Builds on [ADR-0013](./0013-composable-session-capabilities.md) (capability
+  Protocol pattern). This ADR is the runtime-side completion of ADR-0013's
   interface-side decoupling.
-- Enables completion of the [ADR-007](./0007-test-monkeypatch-policy.md)
+- Enables completion of the [ADR-0007](./0007-test-monkeypatch-policy.md)
   allowlist drain by removing the surface those entries currently pin.
-- Closes the deferred goal in [ADR-003](./0003-auth-facade-write-through.md)
+- Closes the deferred goal in [ADR-0003](./0003-auth-facade-write-through.md)
   by example — `auth.py` follows the same delegate-to-private-module pattern
   Rule 1 applies to collaborators.
 - Supersedes the former "Session as facade" and lifecycle-root framing in

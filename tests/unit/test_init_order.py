@@ -335,7 +335,7 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 #   * ``_artifact/downloads.py`` migrated (PR #896, T2 of the
 #     encapsulation-reach-in-remediation phase).
 #   * ``_artifact_generation.py`` was folded directly into the
-#     ``ArtifactsAPI`` facade (issue #1205, ADR-012 sibling fold); the
+#     ``ArtifactsAPI`` facade (issue #1205, ADR-0012 sibling fold); the
 #     service module no longer exists, so there is no separate helper to
 #     guard for facade reach-in.
 _REACH_IN_MIGRATED_MODULES: list[str] = [
@@ -1202,7 +1202,7 @@ def _make_core_for_mind_map_flow() -> tuple[FakeSession, list[tuple[Any, Any]]]:
     mind-map responses keyed on the RPC method.
 
     The core is built via ``make_fake_core(rpc_call=AsyncMock(...))`` — the
-    sanctioned constructor-injection substrate (ADR-007). The factory wires
+    sanctioned constructor-injection substrate (ADR-0007). The factory wires
     the injected mock onto ``fake.rpc_executor.rpc_call`` (the ``RpcCaller``
     surface the mind-map flow threads into ``ArtifactsAPI``) and supplies
     benign defaults for the ``assert_bound_loop`` / ``operation_scope`` /
@@ -1277,7 +1277,7 @@ async def test_generate_mind_map_works_without_notes_injection() -> None:
     assert result.note_id == "note_abc"
     assert result.mind_map["name"] == "Mind Map Title"
 
-    # The constructor-injected RPC mock was actually exercised (ADR-007
+    # The constructor-injected RPC mock was actually exercised (ADR-0007
     # Form-1 bite-check: the injected collaborator is reached, not silently
     # bypassed by a stale auto-vivified attribute).
     core.rpc_executor.rpc_call.assert_awaited()

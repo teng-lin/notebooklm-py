@@ -474,7 +474,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
         sleep_calls += 1
         return None
 
-    # Object-form patch against a locally-imported seam alias (ADR-007 Form 2):
+    # Object-form patch against a locally-imported seam alias (ADR-0007 Form 2):
     # ``resolve_sleep`` re-reads ``asyncio.sleep`` from the ``_runtime.helpers``
     # module global on every call, so swapping ``sleep`` on that module's
     # ``asyncio`` reference is what the retry loop observes.

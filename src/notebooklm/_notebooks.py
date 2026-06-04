@@ -510,7 +510,7 @@ class NotebooksAPI:
     async def get_or_none(self, notebook_id: str) -> Notebook | None:
         """Get notebook details, returning ``None`` when it does not exist.
 
-        The sanctioned ``None``-on-miss lookup (ADR-019): a companion to
+        The sanctioned ``None``-on-miss lookup (ADR-0019): a companion to
         :meth:`get`, which raises :class:`~notebooklm.exceptions.NotebookNotFoundError`
         on a miss. This catches *only* that genuine-absence signal and returns
         ``None``; transport, auth, and decode faults — including the broader

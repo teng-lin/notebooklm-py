@@ -1,6 +1,6 @@
 """MetricsMiddleware — per-RPC telemetry emitter for the middleware chain.
 
-Per ADR-009 §"Chain ordering", ``MetricsMiddleware`` sits
+Per ADR-0009 §"Chain ordering", ``MetricsMiddleware`` sits
 just inside ``DrainMiddleware`` (and just outside ``SemaphoreMiddleware``) in
 the chain ordering
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``,

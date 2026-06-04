@@ -95,7 +95,7 @@ def _make_sources_api() -> tuple[SourcesAPI, FakeSession]:
 
     Mirrors ``tests/unit/test_sources_upload.py``'s ``mock_core`` /
     ``sources_api`` fixture pair, which themselves build on
-    ``make_fake_core`` — the sanctioned ADR-007 substrate. The fake bundles
+    ``make_fake_core`` — the sanctioned ADR-0007 substrate. The fake bundles
     every narrow collaborator the upload pipeline needs:
 
     - ``rpc_executor.rpc_call`` (RpcCaller) — injected fresh per call so a
@@ -108,7 +108,7 @@ def _make_sources_api() -> tuple[SourcesAPI, FakeSession]:
     - ``record_upload_queue_wait`` for the upload-metrics path.
 
     Returning the fake lets callers configure ``core.rpc_executor.rpc_call``
-    and assert it was awaited (the Form-1 bite-check for ADR-007).
+    and assert it was awaited (the Form-1 bite-check for ADR-0007).
     """
     core = make_fake_core(rpc_call=AsyncMock())
     uploader = SourceUploadPipeline(
@@ -396,7 +396,7 @@ async def test_add_file_open_runs_off_loop_thread(
         "It must be wrapped in asyncio.to_thread so a slow filesystem cannot stall "
         "concurrent tasks."
     )
-    # Form-1 bite-check (ADR-007): prove the constructor-injected RPC
+    # Form-1 bite-check (ADR-0007): prove the constructor-injected RPC
     # collaborator from ``make_fake_core`` is the one ``add_file`` drove,
     # so the migration off the monkeypatch allowlist is wired, not a no-op.
     _core.rpc_executor.rpc_call.assert_awaited()

@@ -29,7 +29,7 @@ def _pending_type4_artifact(artifact_id: str, title: str = "INT") -> Artifact:
 
 
 def _make_api(*, note_rows=None, interactive=None):
-    # ADR-007: configure the rpc_call seam via MagicMock(...) construction
+    # ADR-0007: configure the rpc_call seam via MagicMock(...) construction
     # keyword (and configure_mock(...) for per-test overrides below) rather
     # than dotted AsyncMock attribute assignment, which the forbidden-
     # monkeypatch lint rejects on the rpc_call seam.
@@ -112,7 +112,7 @@ async def test_rename_missing_raises():
     api, *_ = _make_api()
     with pytest.raises(MindMapNotFoundError, match="not found") as excinfo:
         await api.rename("nb", "ghost", "X")
-    # Catchable via the cross-domain umbrella too (ADR-019).
+    # Catchable via the cross-domain umbrella too (ADR-0019).
     assert isinstance(excinfo.value, NotFoundError)
     assert excinfo.value.mind_map_id == "ghost"
 
@@ -221,7 +221,7 @@ async def test_generate_interactive_wait_false_skips_tree():
 
 @pytest.mark.asyncio
 async def test_generate_interactive_raises_feature_unavailable_when_no_artifact_id():
-    # ADR-019 async-kickoff null contract (issue #1359): a null/degenerate
+    # ADR-0019 async-kickoff null contract (issue #1359): a null/degenerate
     # CREATE_ARTIFACT raises ArtifactFeatureUnavailableError (no task created),
     # matching the sibling generate_* / retry_failed null-create paths.
     api, rpc, *_ = _make_api()
@@ -524,7 +524,7 @@ async def test_get_tree_auto_detect_interactive_falls_through_to_rpc():
 
 @pytest.mark.asyncio
 async def test_get_tree_auto_detect_missing_returns_none():
-    # Derived read (ADR-019): a missing parent yields the uniform-empty value
+    # Derived read (ADR-0019): a missing parent yields the uniform-empty value
     # (None), not a raise — get() is the existence check, not get_tree().
     api, rpc, *_ = _make_api()
     assert await api.get_tree("nb", "ghost") is None
@@ -569,7 +569,7 @@ async def test_delete_auto_detect_interactive():
 @pytest.mark.asyncio
 async def test_delete_auto_detect_missing_is_idempotent():
     # Auto-detect (kind=None) on an already-absent id is a no-op that returns
-    # None (ADR-019 idempotent delete), matching sources/artifacts/notes —
+    # None (ADR-0019 idempotent delete), matching sources/artifacts/notes —
     # not a raise. Neither delete RPC family is dispatched.
     api, _, mind_maps, artifacts, _ = _make_api()
     assert await api.delete("nb", "ghost") is None

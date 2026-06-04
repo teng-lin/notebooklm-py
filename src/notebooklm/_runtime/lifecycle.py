@@ -247,7 +247,7 @@ class ClientLifecycle:
         return self._bound_loop
 
     def assert_bound_loop(self) -> None:
-        """Satisfies the ``LoopGuard`` capability Protocol (ADR-014 Rule 1).
+        """Satisfies the ``LoopGuard`` capability Protocol (ADR-0014 Rule 1).
 
         Delegates to the free function in :mod:`notebooklm._loop_affinity`
         with this lifecycle's captured loop. Feature APIs that depend on

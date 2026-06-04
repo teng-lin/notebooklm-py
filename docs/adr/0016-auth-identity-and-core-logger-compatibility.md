@@ -1,4 +1,4 @@
-# ADR-016: Auth Identity and Core Logger Compatibility
+# ADR-0016: Auth Identity and Core Logger Compatibility
 
 ## Status
 

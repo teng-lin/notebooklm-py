@@ -157,7 +157,7 @@ def research_wait(
       notebooklm research wait --json
     """
     if cited_only and not import_all:
-        # Per ADR-015 §2: under --json this flag-combination conflict must
+        # Per ADR-0015 §2: under --json this flag-combination conflict must
         # emit the typed JSON envelope and exit 1 (VALIDATION_ERROR), not
         # ride Click's parse-time UsageError path (exit 2, usage text on
         # stderr, no JSON on stdout). Under text mode we preserve the

@@ -263,7 +263,7 @@ one, this is what it means:
 | Token | Meaning |
 |-------|---------|
 | **`#NNNN`** | A GitHub pull request or issue number in `teng-lin/notebooklm-py`, e.g. <https://github.com/teng-lin/notebooklm-py/pull/1205>. Bare numbers are not clickable in most renderers; resolve them on GitHub. |
-| **ADR-NNN** | An Architecture Decision Record under [`docs/adr/`](./adr/) (zero-padded, e.g. ADR-014 → `docs/adr/0014-*.md`). The authoritative source for a design decision and its trade-offs. |
+| **ADR-NNN** | An Architecture Decision Record under [`docs/adr/`](./adr/) (zero-padded, e.g. ADR-0014 → `docs/adr/0014-*.md`). The authoritative source for a design decision and its trade-offs. |
 | **Wave N** | A sequenced step of a larger multi-PR migration (e.g. the session-decoupling / host-protocol-removal effort). Waves are *planning* units, not releases; the durable record of what a wave did is the ADR it closed and the merged PRs. |
 | **Phase N** | A coarser planning grouping than a Wave, used by some older migrations. |
 | **Tier N** | Yet another planning grouping (e.g. "tier-12-13" migration); interchangeable with Phase in intent. |

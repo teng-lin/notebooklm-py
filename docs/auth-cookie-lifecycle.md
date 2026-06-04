@@ -1197,7 +1197,7 @@ To heal this proactively, `_recover_psidts_inline` (implemented in `src/notebook
   3. It uses a cross-process flock protection file lock (`psidts_recovery.lock`) to prevent concurrent cold-start processes from fanning out identical recovery calls.
 - **Mechanism**: It makes a preflight HTTP call to `accounts.google.com/RotateCookies` using `__Secure-1PSID`, which proactively mints a valid `__Secure-1PSIDTS` and writes it to the cookie jar and local storage before the primary session handshake begins.
 
-See [ADR-013 Consequences](./adr/0013-composable-session-capabilities.md#consequences) for architectural context on the cold-start preflight design.
+See [ADR-0013 Consequences](./adr/0013-composable-session-capabilities.md#consequences) for architectural context on the cold-start preflight design.
 
 ---
 
@@ -1591,7 +1591,7 @@ can both capture the same `_REFRESH_GENERATIONS` value and pass the
 between two loops can run the refresh command twice. The contract is
 encoded by `tests/unit/test_refresh_lock_registry.py` as
 `1 <= run_count <= 2`. Cross-loop client reuse is unsupported anyway
-per [ADR-004](adr/0004-loop-affinity-contract.md) (one
+per [ADR-0004](adr/0004-loop-affinity-contract.md) (one
 `NotebookLMClient` per event loop), so this race is only reachable when
 two independently-constructed clients in different loops share a
 storage path; filesystem-level locking on the storage path was

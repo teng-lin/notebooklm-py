@@ -1,4 +1,4 @@
-"""Tests pinning strict-only decoding (ADR-011).
+"""Tests pinning strict-only decoding (ADR-0011).
 
 The ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0
 (see ``docs/deprecations.md``). Strict decoding is now the only mode:

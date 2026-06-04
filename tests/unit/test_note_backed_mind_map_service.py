@@ -149,7 +149,7 @@ class TestRenameMindMap:
         with pytest.raises(MindMapNotFoundError, match="ghost") as excinfo:
             await service.rename_mind_map("nb_abc", "ghost", "New Title")
 
-        # Catchable via the cross-domain umbrella too (ADR-019), and carries the id.
+        # Catchable via the cross-domain umbrella too (ADR-0019), and carries the id.
         assert isinstance(excinfo.value, NotFoundError)
         assert excinfo.value.mind_map_id == "ghost"
         mock_notes.update_note.assert_not_awaited()

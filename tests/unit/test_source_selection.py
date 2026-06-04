@@ -115,7 +115,7 @@ def mock_core():
 
     # Assemble the bag-of-attributes fixture in one ``SimpleNamespace`` call
     # so every collaborator slot ``ChatAPI`` and ``ArtifactsAPI`` read from
-    # the fixture lands at construction time. ADR-007 specifically forbids
+    # the fixture lands at construction time. ADR-0007 specifically forbids
     # the ``core.<attr> = <value>`` re-assignment pattern (which is why this
     # is *not* built via ``make_fake_core`` + post-construction stubs); the
     # SimpleNamespace constructor satisfies the policy by setting every
@@ -177,7 +177,7 @@ def mock_notebooks_api():
 def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     """Build a ``ChatAPI`` from the ``mock_core`` fixture's surfaces.
 
-    Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary): ``ChatAPI``
+    Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary): ``ChatAPI``
     takes its four direct collaborators by keyword arg. The legacy single-
     arg ``ChatAPI(mock_core)`` form is gone; this helper preserves the
     test shape by mapping the bag-of-attributes mock_core fixture onto

@@ -1,4 +1,4 @@
-# ADR-004: Loop-affinity contract for `NotebookLMClient`
+# ADR-0004: Loop-affinity contract for `NotebookLMClient`
 
 ## Status
 
@@ -21,7 +21,7 @@ The contract is enforced at two layers:
 - `src/notebooklm/_loop_affinity.py` exposes `assert_bound_loop(bound_loop)` which compares the current loop to the captured one and raises `RuntimeError` with an actionable diagnostic if they differ.
 - `src/notebooklm/_session_lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. Every authed POST path forwards the captured loop into `assert_bound_loop()` before touching any loop-bound primitive.
 
-`Session.bound_loop()` (`src/notebooklm/_session.py`, symbol `bound_loop`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call. The capability-Protocol surface that feature APIs depend on lives in `src/notebooklm/_session_contracts.py` (symbols `AuthMetadata`, `Kernel`, `RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`); per ADR-013 the broad `SessionCapabilities` adapter and its `_capabilities.py` home were retired in favor of these narrow shared Protocols plus feature-local runtimes.
+`Session.bound_loop()` (`src/notebooklm/_session.py`, symbol `bound_loop`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call. The capability-Protocol surface that feature APIs depend on lives in `src/notebooklm/_session_contracts.py` (symbols `AuthMetadata`, `Kernel`, `RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`); per ADR-0013 the broad `SessionCapabilities` adapter and its `_capabilities.py` home were retired in favor of these narrow shared Protocols plus feature-local runtimes.
 
 ## Decision
 

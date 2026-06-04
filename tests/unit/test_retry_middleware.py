@@ -1,7 +1,7 @@
 """Unit tests for :class:`RetryMiddleware` (Tier-12 PR 12.7).
 
 Pins the contract documented in ``src/notebooklm/_middleware/retry.py`` and
-ADR-009 §"Chain ordering":
+ADR-0009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call`` invocation; result
   returned unchanged.

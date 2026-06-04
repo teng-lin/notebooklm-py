@@ -323,7 +323,7 @@ class TestChatRefreshRetry:
                 monkeypatch, core._collaborators.kernel.get_http_client(), fake_post
             )
 
-            # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary):
+            # Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary):
             # ``ChatAPI`` takes its four direct collaborators by keyword
             # arg. Wired here from the real ``Session`` under test so the
             # refresh path exercises the production transport/rpc/reqid
@@ -521,7 +521,7 @@ class TestBuildChatRequestFactory:
     """
 
     def _factory(self) -> ChatAPI:
-        # Wave 8 of session-decoupling (ADR-014 Rule 2 Corollary):
+        # Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary):
         # ``ChatAPI`` takes direct collaborators by keyword arg. Pure
         # ``_build_chat_request`` exercise — none of these collaborators
         # are touched, so they are bare ``MagicMock()`` placeholders.

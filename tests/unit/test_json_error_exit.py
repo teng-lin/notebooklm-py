@@ -254,7 +254,7 @@ def _source_add_research_start_failed(client: MagicMock) -> None:
 
     The service returns ``outcome="start_failed"`` which the command handler
     converts to the typed JSON envelope (``VALIDATION_ERROR``, exit 1) per
-    ADR-015.
+    ADR-0015.
     """
     client.research.start = AsyncMock(return_value={})
 
@@ -398,7 +398,7 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         _download_no_artifacts,
     ),
     # download flag-conflict: post-parse UsageError sites routed through the
-    # JSON envelope per ADR-015 (services/download.py build_download_plan).
+    # JSON envelope per ADR-0015 (services/download.py build_download_plan).
     # One entry per conflict pair so a future regression in any of the three
     # _emit_flag_conflict call sites surfaces here.
     (
@@ -447,7 +447,7 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],
         _research_no_research,
     ),
-    # source add-research failure-to-start: ADR-015 typed envelope on the
+    # source add-research failure-to-start: ADR-0015 typed envelope on the
     # `start_failed` outcome from services/source_research.py.
     (
         "source_add_research_failure_json",
@@ -455,7 +455,7 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         _source_add_research_start_failed,
     ),
     # source add-research --cited-only without --import-all: post-parse
-    # UsageError site routed through the JSON envelope per ADR-015.
+    # UsageError site routed through the JSON envelope per ADR-0015.
     (
         "source_research_cited_only_conflict_json",
         [
@@ -469,7 +469,7 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ],
         None,
     ),
-    # ADR-015 §2: post-parse UsageError under --json must route through the
+    # ADR-0015 §2: post-parse UsageError under --json must route through the
     # typed JSON envelope rather than Click's parse-time usage text. The
     # gate fires synchronously at the top of ``research_wait`` before any
     # client call, so no customizer is needed.
@@ -486,7 +486,7 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         None,
     ),
     # source add-research --no-wait with --import-all: same post-parse
-    # flag-conflict path, same ADR-015 JSON envelope.
+    # flag-conflict path, same ADR-0015 JSON envelope.
     (
         "source_add_research_no_wait_import_all_conflict_json",
         [
@@ -514,10 +514,10 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         _fail_notebook_create,
     ),
     # doctor + profile-list: filesystem-driven failures wrapped in the
-    # canonical ADR-015 JSON error envelope.
+    # canonical ADR-0015 JSON error envelope.
     ("doctor_failure", ["doctor", "--json"], None),
     ("profile_list_unauthorized", ["profile", "list", "--json"], None),
-    # Per ADR-015, post-parse ``ClickException`` validation failures in command
+    # Per ADR-0015, post-parse ``ClickException`` validation failures in command
     # bodies and the service layer they call now flow through ``output_error``
     # and must emit a typed JSON envelope on stdout under ``--json``. The two
     # cases below cover both subclasses in the generate command tree:
@@ -553,7 +553,7 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         ],
         None,
     ),
-    # ADR-015 §2: ``ask`` ``--new`` and ``--conversation-id`` are mutually
+    # ADR-0015 §2: ``ask`` ``--new`` and ``--conversation-id`` are mutually
     # exclusive. Under --json the gate emits the typed JSON envelope and
     # exits 1; under text mode it still raises Click's UsageError.
     (
@@ -709,7 +709,7 @@ def test_download_audio_non_json_mode_still_exits_nonzero(runner: CliRunner, moc
 
 
 def test_download_flag_conflict_json_emits_typed_envelope(runner: CliRunner, mock_auth_env) -> None:
-    """ADR-015 spot-check: ``--force --no-clobber --json`` emits the typed
+    """ADR-0015 spot-check: ``--force --no-clobber --json`` emits the typed
     ``VALIDATION_ERROR`` envelope and exits 1, not Click's exit-2 usage text.
     """
     client = _make_client()
@@ -743,7 +743,7 @@ def test_download_flag_conflict_text_mode_raises_click_usage_error(
 ) -> None:
     """Regression guard: in text mode (no ``--json``) the flag conflict still
     raises ``click.UsageError`` so Click's parser renders usage text on stderr
-    and exits 2 (ADR-015 Rule 4 — text-mode path preserved for this site).
+    and exits 2 (ADR-0015 Rule 4 — text-mode path preserved for this site).
     """
     client = _make_client()
     result = _run_with_mock_client(

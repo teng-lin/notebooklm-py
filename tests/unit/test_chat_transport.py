@@ -15,7 +15,7 @@ longer brackets its own transport call with explicit drain calls —
 admission and finalization are middleware concerns now. The tests
 correspondingly stub only ``perform_authed_post`` on the transport.
 
-As of Wave 8 of the session-decoupling plan (ADR-014 Rule 2 Corollary),
+As of Wave 8 of the session-decoupling plan (ADR-0014 Rule 2 Corollary),
 ``chat_aware_authed_post`` takes the :class:`RuntimeTransport` collaborator
 directly rather than a chat-local ``ChatRuntime`` Protocol, and calls
 ``transport.perform_authed_post(build_request=..., log_label=parse_label)``

@@ -40,7 +40,7 @@ email_to_profile_name = login_service.email_to_profile_name
 def _validate_profile_name_or_click(name: str) -> str:
     """Validate ``name`` and translate service errors to ``click.ClickException``.
 
-    The login service raises ``LoginConfigurationError`` (ADR-015 Pattern
+    The login service raises ``LoginConfigurationError`` (ADR-0015 Pattern
     B decoupling) so this command layer owns the Click translation. The
     end-user message preserves the historical wording — error text plus
     a single-sentence hint about the allowed character set.

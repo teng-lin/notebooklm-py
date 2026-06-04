@@ -108,7 +108,7 @@ class TransportDrainTracker(LoopBoundPrimitive):
         # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base, which also
         # owns ``set_bound_loop``. This tracker only stores the binding, so it
         # uses the default no-op ``_on_loop_rebind``.
-        # ADR-014 Rule 1: close-time drain hooks are owned here, not on
+        # ADR-0014 Rule 1: close-time drain hooks are owned here, not on
         # the client. Insertion order is preserved (Python 3.7+ dict
         # invariant) and :meth:`run_drain_hooks` fires them in that order
         # under ``ClientLifecycle.close``.
@@ -237,7 +237,7 @@ class TransportDrainTracker(LoopBoundPrimitive):
 
     @asynccontextmanager
     async def operation_scope(self, label: str) -> AsyncIterator[None]:
-        """Drain-tracked operation scope for feature-owned work (ADR-014 Rule 1).
+        """Drain-tracked operation scope for feature-owned work (ADR-0014 Rule 1).
 
         Wraps :meth:`begin_transport_post` / :meth:`finish_transport_post`
         so feature code can write ``async with tracker.operation_scope("upload"):``
@@ -254,7 +254,7 @@ class TransportDrainTracker(LoopBoundPrimitive):
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook.
 
-        Per ADR-014 Rule 1, this tracker owns the drain-hook storage so
+        Per ADR-0014 Rule 1, this tracker owns the drain-hook storage so
         ``DrainHookRegistration`` is satisfied directly.
         ``ClientLifecycle.close`` fires registered hooks via
         :meth:`run_drain_hooks`.

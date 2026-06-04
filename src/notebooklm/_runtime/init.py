@@ -3,7 +3,7 @@
 Splits the client-runtime constructor into three concerns:
 :func:`validate_constructor_args` (kwarg validation + normalization),
 :func:`build_collaborators` (the seven collaborators in dependency order),
-and :func:`wire_middleware_chain` (the seven-middleware ADR-009 chain).
+and :func:`wire_middleware_chain` (the seven-middleware ADR-0009 chain).
 Dependency-ordering and seam-resolution comments live inside the helpers so
 future readers see *why* the order matters.
 
@@ -446,7 +446,7 @@ def wire_middleware_chain(
     callable so rebinding ``ClientSeams.is_auth_error`` after construction
     still steers the chain.
     """
-    # ADR-009 chain construction. PR history, leaf exception shape,
+    # ADR-0009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in
     # ``_middleware/chain.py`` module docstring.
     chain_builder = MiddlewareChainBuilder(

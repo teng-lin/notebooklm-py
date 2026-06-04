@@ -15,7 +15,7 @@ This module defines:
   callback shape into the future populated ``RpcRequest`` envelope.
 - :func:`build_chain` — composes a ``Sequence[Middleware]`` around a terminal
   ``NextCall`` so the leftmost middleware in the sequence becomes the
-  *outermost* wrapper (matches the ordering documented in ADR-009).
+  *outermost* wrapper (matches the ordering documented in ADR-0009).
 
 Production ``NotebookLMClient`` wiring composes these envelopes through the current
 middleware stack. During the request-materialization migration, the chain
@@ -65,7 +65,7 @@ class RpcRequest:
     rebuilding headers and URL after an auth refresh.
 
     :attr:`context` is mutable by reference (it's a plain :class:`dict`) and
-    is shared across the chain by design — see ADR-009 §"Per-request
+    is shared across the chain by design — see ADR-0009 §"Per-request
     behavior". Middlewares that want isolation should make a shallow copy
     before mutating.
     """
@@ -93,9 +93,9 @@ class RpcRequest:
     """RPC-level metadata the chain reads.
 
     The allowed vocabulary is exported as
-    :data:`ALLOWED_RPC_CONTEXT_KEYS` and mirrored in ADR-009. Middlewares
+    :data:`ALLOWED_RPC_CONTEXT_KEYS` and mirrored in ADR-0009. Middlewares
     and the transport terminal use the ``RPC_CONTEXT_*`` constants for
-    lookups and writes; adding a key requires updating this module, ADR-009,
+    lookups and writes; adding a key requires updating this module, ADR-0009,
     and the lint-style unit test that guards the vocabulary.
     """
 
@@ -144,7 +144,7 @@ def materialize_rpc_request(
     through the ``BuildRequest`` callback. A ``Kernel.post`` terminal can
     consume the same envelope directly.
 
-    ``context`` is intentionally retained by reference, matching ADR-009's
+    ``context`` is intentionally retained by reference, matching ADR-0009's
     mutable per-request metadata contract.
     """
     request = materialize_build_request(build_request, snapshot)
@@ -192,7 +192,7 @@ class Middleware(Protocol):
     The constructor of a middleware is not constrained by this Protocol —
     each middleware takes whatever collaborators it needs (the
     :class:`AuthRefreshMiddleware` constructor signature is pinned in
-    ADR-009 §"AuthRefreshMiddleware constructor signature").
+    ADR-0009 §"AuthRefreshMiddleware constructor signature").
     """
 
     async def __call__(
@@ -220,7 +220,7 @@ def build_chain(
     ``B.__call__(request, →C)`` where ``→C`` invokes
     ``C.__call__(request, →T)``.
 
-    This matches the chain ordering documented in ADR-009: ``[Drain,
+    This matches the chain ordering documented in ADR-0009: ``[Drain,
     Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]`` —
     Drain at index 0 is the outermost wrapper, Tracing at index 6 is the
     innermost wrapper around the terminal.

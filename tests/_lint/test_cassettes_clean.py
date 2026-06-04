@@ -18,7 +18,7 @@ A child process keeps that bootstrap fully isolated.
 
 ``is_clean()`` is necessary-not-sufficient — it is name/shape-anchored, so a
 credential family it doesn't yet know about can pass silently. This guard is
-one layer; GitHub secret-scanning remains the backstop (see ADR-006 and
+one layer; GitHub secret-scanning remains the backstop (see ADR-0006 and
 ``tests/cassette_patterns.py``).
 """
 

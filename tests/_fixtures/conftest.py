@@ -1,7 +1,7 @@
 """Pytest fixtures wrapping :mod:`tests._fixtures.fake_core`.
 
 This file deliberately exposes a small surface — exactly two fixtures —
-to satisfy the hybrid factory-first design recorded in ADR-007 (see
+to satisfy the hybrid factory-first design recorded in ADR-0007 (see
 "Alternatives considered: pure pytest fixtures"). A larger menu of
 parametric fixtures was rejected because the combinatorial explosion of
 ``fake_core_with_X_returning_Y`` shapes scales worse than the

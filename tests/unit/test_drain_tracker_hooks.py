@@ -1,4 +1,4 @@
-"""Close-ordering contract for ``TransportDrainTracker`` drain hooks (ADR-014 Rule 1).
+"""Close-ordering contract for ``TransportDrainTracker`` drain hooks (ADR-0014 Rule 1).
 
 Wave 2 of the session-decoupling plan moved the drain-hook storage and firing
 from ``Session._drain_hooks`` to ``TransportDrainTracker.register_drain_hook``

@@ -696,7 +696,7 @@ def artifact_retry(
                         # non-success for automation — exit non-zero so a
                         # provider-side retry failure is not reported as a
                         # successful command. Matches the JSON branch above and
-                        # ADR-019's "report failures as failures" posture.
+                        # ADR-0019's "report failures as failures" posture.
                         console.print(f"[yellow]Status:[/yellow] {final.status}")
                         exit_with_code(1)
 

@@ -1,4 +1,4 @@
-"""Behavioral conformance for the public ``get`` / ``get_or_none`` miss contract (ADR-019).
+"""Behavioral conformance for the public ``get`` / ``get_or_none`` miss contract (ADR-0019).
 
 The static sibling, ``test_public_api_contract.py``, walks
 ``inspect.signature(...)`` return annotations across the whole public surface. It

@@ -12,7 +12,7 @@ compatibility forward was deleted in Wave 11c of session-decoupling;
 tests now drive the canonical collaborator method directly.
 
 These tests verify the wiring contract from
-ADR-009 §"RpcRequest.context keys":
+ADR-0009 §"RpcRequest.context keys":
 
 1. Both call paths (``RuntimeTransport.perform_authed_post`` directly
    and the ``RpcExecutor._execute_once`` keyword shape) flow through
@@ -255,7 +255,7 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
 
 @pytest.mark.asyncio
 async def test_chain_seeded_with_final_adr_009_ordering() -> None:
-    """``NotebookLMClient.__init__`` seeds the chain with the FINAL ADR-009 ordering.
+    """``NotebookLMClient.__init__`` seeds the chain with the FINAL ADR-0009 ordering.
 
     PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
     prepended ``MetricsMiddleware``; PR 12.5 prepended ``DrainMiddleware``
@@ -264,12 +264,12 @@ async def test_chain_seeded_with_final_adr_009_ordering() -> None:
     Metrics and ErrorInjection; PR 12.8 inserted ``AuthRefreshMiddleware``
     between Retry and ErrorInjection; PR 12.9 inserted
     ``SemaphoreMiddleware`` between Metrics and Retry (codex catch — see
-    ADR-009 close-out notes). The list now reads the final ADR-009
+    ADR-0009 close-out notes). The list now reads the final ADR-0009
     ordering
     ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``
     (outermost → innermost).
 
-    Order rationale (per ADR-009):
+    Order rationale (per ADR-0009):
     - Drain outermost — every in-flight call counts toward shutdown wait
     - Metrics outside Semaphore — latency includes queue wait
     - Semaphore outside Retry — retry attempts stay in one slot

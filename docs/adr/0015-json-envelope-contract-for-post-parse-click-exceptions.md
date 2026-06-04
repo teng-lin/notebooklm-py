@@ -1,4 +1,4 @@
-# ADR-015: Typed JSON error envelope covers post-parse `ClickException` failures
+# ADR-0015: Typed JSON error envelope covers post-parse `ClickException` failures
 
 ## Status
 
@@ -227,10 +227,10 @@ Concretely:
 - Command and service code converges on one error-emission path
   (`output_error(...)` / library exceptions through `handle_errors(...)`),
   which composes cleanly with the `cli/services/` extraction pattern in
-  [ADR-008](./0008-cli-services-extraction-pattern.md). Service modules no
+  [ADR-0008](./0008-cli-services-extraction-pattern.md). Service modules no
   longer need to choose between raising Click exceptions (skips the
   envelope) and importing `output_error` (couples to the CLI layer); the
-  ADR-008 boundary becomes the right place to enforce typed-outcome
+  ADR-0008 boundary becomes the right place to enforce typed-outcome
   returns. Service-layer convergence work referenced under meta-audit C3
   lands as separate per-site PRs that cite this ADR.
 - Tests can assert the envelope shape with the existing JSON-purity sweeps
@@ -286,7 +286,7 @@ Concretely:
 - **Plumb `json_output` into every service helper and have each call
   `output_error(..., json_output=...)` directly from the helper.**
   Rejected as the *primary* contract shape (it would couple service
-  modules to the CLI error layer, contradicting ADR-008's boundary), but
+  modules to the CLI error layer, contradicting ADR-0008's boundary), but
   accepted as the smallest viable patch for any single site under
   remediation pressure. The preferred long-term shape is "service returns
   a typed outcome; command routes outcome through `output_error`"; the

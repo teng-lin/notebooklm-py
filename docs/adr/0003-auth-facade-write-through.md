@@ -1,8 +1,8 @@
-# ADR-003: `auth.py` write-through facade (`_AuthFacadeModule`)
+# ADR-0003: `auth.py` write-through facade (`_AuthFacadeModule`)
 
 ## Status
 
-**Superseded — closed by [ADR-014](./0014-feature-local-runtime-adapters.md) (session-decoupling plan Waves 3a + 4 T2.2 + 5).**
+**Superseded — closed by [ADR-0014](./0014-feature-local-runtime-adapters.md) (session-decoupling plan Waves 3a + 4 T2.2 + 5).**
 
 The deferred goal — reducing `auth.py` to an almost-flat re-export module — was
 completed across three PRs in the session-decoupling plan:
@@ -28,11 +28,11 @@ definitions. Every other top-level name is a one-line re-export from the
 relevant `_auth/*` module. The historical write-through machinery is fully
 retired.
 
-**Why "Superseded by ADR-014" rather than "Accepted (completed)":** the
-original ADR-003 framing was a *write-through* approach (mirror writes
-through the facade). ADR-014's Rule 3 closes the same goal by *inversion*
+**Why "Superseded by ADR-0014" rather than "Accepted (completed)":** the
+original ADR-0003 framing was a *write-through* approach (mirror writes
+through the facade). ADR-0014's Rule 3 closes the same goal by *inversion*
 (facades become identity-preserving delegates; rebinding happens on the
-canonical home). The two approaches are not the same shape, so ADR-003
+canonical home). The two approaches are not the same shape, so ADR-0003
 is correctly marked superseded rather than promoted.
 
 The rest of this ADR is preserved as the historical record of why the
@@ -103,12 +103,12 @@ The mechanism is *Accepted* today because:
 - The `_REFRESH_DEP_MIRROR_NAMES` / `_KEEPALIVE_DEP_MIRROR_NAMES` cross-module mirror sets encode an even subtler invariant — names that are owned by one seam but aliased into another at import time. A reader has to trace the `from … import …` chains to verify the mirror is complete.
 - The whole apparatus exists to make tests pass under a pattern (`monkeypatch.setattr("notebooklm.auth.X", …)`) that an internal architecture audit (disease D1) wants to retire entirely.
 
-The retirement path began in the D1 auth-side PR ([#834](https://github.com/teng-lin/notebooklm-py/pull/834)): the monolithic `tests/unit/test_auth.py` was split into concern-aligned files (`test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.), monkeypatches were migrated to constructor injection, and `_AuthFacadeModule` itself was deleted. ADR-014's session-decoupling work finished the second half: `AuthTokens` and `load_auth_from_storage()` now live in `_auth/tokens.py`, `_validate_required_cookies` is a direct `_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the only remaining `auth.py` function body (see the **Status** block above for the current contract).
+The retirement path began in the D1 auth-side PR ([#834](https://github.com/teng-lin/notebooklm-py/pull/834)): the monolithic `tests/unit/test_auth.py` was split into concern-aligned files (`test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.), monkeypatches were migrated to constructor injection, and `_AuthFacadeModule` itself was deleted. ADR-0014's session-decoupling work finished the second half: `AuthTokens` and `load_auth_from_storage()` now live in `_auth/tokens.py`, `_validate_required_cookies` is a direct `_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the only remaining `auth.py` function body (see the **Status** block above for the current contract).
 
 ## Alternatives considered
 
 - **Constructor injection via factories — chosen replacement for the D1 auth-side PR.** Tests construct fakes by calling a `make_fake_core(**overrides)` factory (or the auth-specific equivalent) and inject them through the public constructor instead of patching module globals. The facade becomes unnecessary because no test reaches into `notebooklm.auth.<name>` anymore. Cost: ~70 test sites in `test_auth.py` plus several dozen scattered elsewhere must be rewritten. The migration is sequenced explicitly so the rewrite lands in one auditable PR.
-- **Delete `_AuthFacadeModule` outright without migrating tests.** Rejected. The audit measured ~152 object-attribute patches and 58 string-target patches across the test suite, many of them targeting `notebooklm.auth.<name>`. Removing the facade in isolation would break those tests with no actionable diagnostic; contributors would re-add an equivalent mechanism under a different name within a tier or two. (This exact regeneration risk is the reason ADR-001 / ADR-002 / ADR-003 are being written *before* the deletion work — the ADR records the trade-off that prevents the rebuild.)
+- **Delete `_AuthFacadeModule` outright without migrating tests.** Rejected. The audit measured ~152 object-attribute patches and 58 string-target patches across the test suite, many of them targeting `notebooklm.auth.<name>`. Removing the facade in isolation would break those tests with no actionable diagnostic; contributors would re-add an equivalent mechanism under a different name within a tier or two. (This exact regeneration risk is the reason ADR-0001 / ADR-0002 / ADR-0003 are being written *before* the deletion work — the ADR records the trade-off that prevents the rebuild.)
 - **Move the mirror logic into a `__getattr__`-on-module mechanism.** Rejected. `__getattr__` at module level cannot intercept *writes*, only fallback reads. The patches in scope are writes (`monkeypatch.setattr(...)`), so a read-side fallback would not solve the problem.
 - **Keep the original monolithic `auth.py` instead of splitting.** Rejected at the time of tier 7. The seven concerns inside `auth.py` had non-overlapping invariants and non-overlapping change cadences; co-locating them was already paying maintenance interest. The split was correct; the facade is the trailing cost of the split done under a test pattern that should not have been load-bearing.
 - **Selectively retire the facade names (whittle the registries down).** Rejected. Partial retirement would leave a partial gravity well — easier to grow back than to maintain. The D1 plan is "migrate every site, then delete the whole apparatus in one PR."

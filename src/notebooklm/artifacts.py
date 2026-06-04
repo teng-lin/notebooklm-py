@@ -80,7 +80,7 @@ async def with_rate_limit_retry(
     * it returns a ``GenerationStatus`` whose ``is_rate_limited`` property is
       true (the legacy ``generate_*`` path, which swallows a rate-limit refusal
       into ``status="failed"`` until v0.8.0); **or**
-    * it raises :class:`~notebooklm.exceptions.RateLimitError` (the ADR-019
+    * it raises :class:`~notebooklm.exceptions.RateLimitError` (the ADR-0019
       "async kickoff" path used by ``retry_failed``, where a synchronous
       refusal propagates as an exception rather than a returned status).
 

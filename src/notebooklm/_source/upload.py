@@ -67,7 +67,7 @@ class AuthMetadata(Protocol):
 
     Inlined from ``_runtime.contracts`` in issue #1327: the upload
     pipeline is the only consumer, so this single-consumer Protocol lives
-    local to its owner per the ADR-013 ≥2-feature promotion bar.
+    local to its owner per the ADR-0013 ≥2-feature promotion bar.
     ``AuthTokens`` structurally satisfies it.
     """
 
@@ -263,7 +263,7 @@ _HTML_UPLOAD_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".xht"})
 _HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 
 
-# Single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
+# Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
 
 
@@ -640,7 +640,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         # ``operation_scope`` or lazily allocating the upload semaphore.
         # Both are loop-bound on first use, so a cross-loop call would
         # otherwise attach a primitive to the wrong loop before the
-        # documented ``RuntimeError`` guard fires (ADR-004).
+        # documented ``RuntimeError`` guard fires (ADR-0004).
         self._lifecycle.assert_bound_loop()
         module_logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
         if title is not None:

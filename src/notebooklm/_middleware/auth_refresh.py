@@ -1,6 +1,6 @@
 """AuthRefreshMiddleware — 401/403/400-CSRF retry-with-refresh for the chain.
 
-Per ADR-009 §"Chain ordering", ``AuthRefreshMiddleware`` sits just *inside*
+Per ADR-0009 §"Chain ordering", ``AuthRefreshMiddleware`` sits just *inside*
 ``RetryMiddleware`` and just *outside* ``ErrorInjectionMiddleware``. The chain
 is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
 
@@ -12,7 +12,7 @@ catches the raw auth-error ``httpx.HTTPStatusError``, triggers a coalesced
 refresh via :class:`AuthRefreshCoordinator`, rebuilds the request envelope,
 then re-invokes ``next_call`` exactly once.
 
-Why "exactly once": ADR-009 §"Retry semantics" pins
+Why "exactly once": ADR-0009 §"Retry semantics" pins
 "**exactly one** retry per ``next_call`` invocation. If the retry also
 raises 401, the exception propagates — no second retry, no recursion."
 ``RetryMiddleware`` outside this middleware does NOT retry on auth
@@ -307,7 +307,7 @@ class AuthRefreshMiddleware:
           the chain with that same original ``RpcRequest``. The marker on
           the shared context suppresses a second refresh on the
           original-request retry, preserving the "exactly one refresh per
-          logical call" contract pinned in ADR-009 §"Retry semantics".
+          logical call" contract pinned in ADR-0009 §"Retry semantics".
 
         - ``RPC_CONTEXT_AUTH_SNAPSHOT`` is updated below to the freshly
           captured snapshot. Because :func:`materialize_rpc_request`

@@ -1,6 +1,6 @@
 """ErrorInjectionMiddleware — synthetic-error short-circuit for the chain.
 
-Per ADR-009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
+Per ADR-0009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
 ``RetryMiddleware`` / ``AuthRefreshMiddleware`` and just *outside*
 ``TracingMiddleware``. The chain is
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
@@ -39,7 +39,7 @@ Behavior contract:
   regardless of builder.
 - Env var set, builder wired, mode ``"429"`` → raise
   :class:`TransportRateLimited` so the OUTER ``RetryMiddleware`` retries
-  (restoring ADR-009 §"ErrorInjection inside Retry — synthetic transient
+  (restoring ADR-0009 §"ErrorInjection inside Retry — synthetic transient
   failures trigger retry"). The raised
   exception carries the synthetic ``Retry-After`` header so the retry
   honors the rate-limit timing.
@@ -193,7 +193,7 @@ class ErrorInjectionMiddleware:
             request=synthetic_request,
         )
         # Raise the proper exception for each mode so the OUTER chain
-        # middlewares actually fire — per ADR-009 §"Chain ordering
+        # middlewares actually fire — per ADR-0009 §"Chain ordering
         # rationale":
         # - 429 → ``TransportRateLimited`` → ``RetryMiddleware`` retries
         #   with Retry-After or exponential backoff

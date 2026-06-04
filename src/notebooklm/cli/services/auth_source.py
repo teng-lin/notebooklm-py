@@ -187,7 +187,7 @@ def current_storage_override(ctx: click.Context | None) -> Path | None:
     ``cli/context.py``. The caller (a command-layer module) is responsible
     for resolving the live Click context via
     ``click.get_current_context(silent=True)`` and passing it in — this
-    keeps the Click-context read out of ``cli/services`` per ADR-008. A
+    keeps the Click-context read out of ``cli/services`` per ADR-0008. A
     ``None`` context resolves to "no override."
 
     Public consumers should prefer :meth:`AuthSource.from_click_context`

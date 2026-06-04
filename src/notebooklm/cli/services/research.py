@@ -1,4 +1,4 @@
-"""Service layer for ``research wait`` (ADR-008 Click-to-service extraction).
+"""Service layer for ``research wait`` (ADR-0008 Click-to-service extraction).
 
 The CLI ``research wait`` command was a 130-line Click handler that mixed
 plan construction (parsing flags + validation), wait orchestration, and I/O

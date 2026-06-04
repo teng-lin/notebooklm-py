@@ -6,7 +6,7 @@ to ``safe_index`` so drift raises ``UnknownRPCMethodError`` carrying
 ``method_id=RPCMethod.SUMMARIZE.value`` and ``source='_notebooks.get_summary'``
 for debuggability. Strict decoding is the only mode — the legacy
 ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out (which warn-logged and
-returned ``""``) was retired in v0.7.0; see ADR-011.
+returned ``""``) was retired in v0.7.0; see ADR-0011.
 """
 
 from __future__ import annotations

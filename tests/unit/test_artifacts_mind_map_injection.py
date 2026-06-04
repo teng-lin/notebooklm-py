@@ -20,7 +20,7 @@ These tests pin three contracts:
    ``TypeError``.
 
 ``ArtifactsAPI`` consumes its three runtime collaborators (``rpc`` +
-``drain`` + ``lifecycle``) directly per ADR-014 Rule 2; the tests here
+``drain`` + ``lifecycle``) directly per ADR-0014 Rule 2; the tests here
 do not exercise RPC traffic — they pin the constructor contract — so
 the collaborator stubs only need to silently accept the calls
 ``ArtifactsAPI.__init__`` makes (``drain.register_drain_hook``).
@@ -52,7 +52,7 @@ def _make_collaborators() -> tuple[MagicMock, MagicMock, MagicMock]:
 async def test_list_mind_maps_delegates_to_injected_facade():
     """``_list_mind_maps`` calls the injected ``mind_maps`` facade.
 
-    Phase 6 (refactor-history.md Step 9, ADR-013) removed the module-level
+    Phase 6 (refactor-history.md Step 9, ADR-0013) removed the module-level
     ``_mind_map.list_mind_maps`` wrapper that previously needed to be
     monkeypatched as a guard; the only path now is through the
     injected adapter. Confirming the adapter sees the call still pins

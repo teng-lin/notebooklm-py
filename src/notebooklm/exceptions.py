@@ -1395,7 +1395,7 @@ class MindMapNotFoundError(NotFoundError, RPCError, MindMapError):
     transport 404 (mind maps share storage with notes / studio artifacts). The
     derived read ``get_tree`` and the idempotent ``delete`` interpret the same
     absence signal differently: ``get_tree`` returns ``None`` and ``delete`` is
-    a no-op (ADR-019).
+    a no-op (ADR-0019).
 
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`MindMapError`

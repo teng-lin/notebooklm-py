@@ -1,7 +1,7 @@
 """Unit tests for :class:`AuthRefreshMiddleware` (Tier-12 PR 12.8).
 
 Pins the contract documented in ``src/notebooklm/_middleware/auth_refresh.py``
-and ADR-009 §"Chain ordering":
+and ADR-0009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call``; result returned.
 - **Pass-through on non-auth exception.** ``TransportRateLimited`` /
@@ -20,7 +20,7 @@ and ADR-009 §"Chain ordering":
   wired → exactly one retry via ``next_call(retry_request)``.
 - **Refresh failure** → wrap original ``HTTPStatusError`` in
   ``TransportAuthExpired`` and propagate.
-- **Exactly one retry.** Per ADR-009 §"Retry semantics", a second auth
+- **Exactly one retry.** Per ADR-0009 §"Retry semantics", a second auth
   error on the retry leg propagates — no second refresh, no recursion.
 - **Post-refresh sleep honored** when ``refresh_retry_delay > 0``.
 - **Live-bound `refresh_retry_delay`.** Callable getter so test mutation
@@ -504,7 +504,7 @@ async def test_context_auth_refreshed_flag_set_after_first_refresh() -> None:
 
 @pytest.mark.asyncio
 async def test_second_auth_error_on_retry_propagates_no_recursion() -> None:
-    """Per ADR-009: "exactly one retry per next_call invocation".
+    """Per ADR-0009: "exactly one retry per next_call invocation".
 
     First call raises 401 → refresh → retry raises 401 again → propagate.
     The middleware must NOT refresh a second time, NOT recurse.

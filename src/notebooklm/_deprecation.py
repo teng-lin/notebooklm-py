@@ -171,7 +171,7 @@ def warn_deprecated(message: str, *, removal: str | None = None, stacklevel: int
     specific families (``warn_get_returns_none`` / ``deprecated_kwarg`` /
     ``MappingCompatMixin``). Routing every ad-hoc warning through here keeps the
     ``NOTEBOOKLM_QUIET_DEPRECATIONS`` gate and the ``DeprecationWarning``
-    category in one place — ADR-018 rejects inline ``warnings.warn(...)`` calls
+    category in one place — ADR-0018 rejects inline ``warnings.warn(...)`` calls
     scattered through feature modules precisely because they bypass this gate.
 
     No-ops when :func:`_deprecations_quiet` is true (i.e. when

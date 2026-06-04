@@ -233,7 +233,7 @@ class NotebookLMClient:
         # captures the same (possibly rebound) instance that
         # :func:`compose_client_internals` then propagates into
         # :class:`CookiePersistence`, the snapshot-provider lambdas,
-        # and :class:`SourceUploadPipeline`. ADR-016's Auth Instance
+        # and :class:`SourceUploadPipeline`. ADR-0016's Auth Instance
         # Invariant requires every reference across the live object graph
         # to alias this exact same mutable object so
         # :meth:`AuthRefreshCoordinator.update_auth_tokens` in-place
@@ -349,11 +349,11 @@ class NotebookLMClient:
         # ``rpc_call`` sees the swap on every feature consumer).
         self._rpc_executor = internals.executor
 
-        # ADR-014 Rule 2: the upload pipeline takes its three runtime
+        # ADR-0014 Rule 2: the upload pipeline takes its three runtime
         # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
         # instead of via a composite-runtime adapter. ``Kernel`` and
         # ``AuthMetadata`` continue to flow as separate parameters per
-        # the ADR-014 Rule 6 example. ``NotebookLMClient.__init__`` is
+        # the ADR-0014 Rule 6 example. ``NotebookLMClient.__init__`` is
         # the composition root that knows these internals;
         # ``SourcesAPI`` no longer reads them back off a broad host.
         source_uploader = SourceUploadPipeline(
@@ -361,7 +361,7 @@ class NotebookLMClient:
             drain=internals.collaborators.drain_tracker,
             lifecycle=internals.collaborators.lifecycle,
             kernel=internals.collaborators.kernel,
-            # ADR-016's Auth Instance Invariant: the upload pipeline
+            # ADR-0016's Auth Instance Invariant: the upload pipeline
             # reads the client-owned ``self._auth`` reference set above
             # instead of a detached auth copy. Production refresh-time
             # mutation is therefore observed by the uploader unchanged.
@@ -379,7 +379,7 @@ class NotebookLMClient:
         # ``ClientLifecycle.open`` which calls
         # ``set_bound_loop`` / ``reset_after_open`` on it.
         self._source_uploader = source_uploader
-        # Per ADR-014 Rule 3: simple features take their RpcCaller dependency
+        # Per ADR-0014 Rule 3: simple features take their RpcCaller dependency
         # directly from the composition root's executor.
         self.sources = SourcesAPI(
             internals.executor,
@@ -395,7 +395,7 @@ class NotebookLMClient:
         # NoteService.create_note directly to persist a generated mind map.
         note_service = NoteService(internals.executor)
         mind_maps = NoteBackedMindMapService(note_service)
-        # ADR-014 Rule 2: the artifacts API takes its three runtime
+        # ADR-0014 Rule 2: the artifacts API takes its three runtime
         # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
         # instead of via a composite-runtime adapter. ``rpc`` covers
         # RPC dispatch; ``drain`` covers ``operation_scope`` and the
@@ -410,7 +410,7 @@ class NotebookLMClient:
             note_service=note_service,
             storage_path=storage_path,
         )
-        # ChatAPI (per ADR-014) takes its
+        # ChatAPI (per ADR-0014) takes its
         # four direct collaborators (RpcCaller, RuntimeTransport,
         # ReqidCounter, LoopGuard) by keyword argument. The transport is
         # sourced from ``self._composed``; other runtime fields come from
@@ -445,7 +445,7 @@ class NotebookLMClient:
     def auth(self) -> AuthTokens:
         """Get the authentication tokens.
 
-        ADR-016's Auth Instance Invariant requires every reference across
+        ADR-0016's Auth Instance Invariant requires every reference across
         the live object graph to alias the same mutable
         :class:`AuthTokens` object set in :meth:`__init__`, so the public
         ``client.auth`` identity and behavior are unchanged.

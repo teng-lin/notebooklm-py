@@ -1,4 +1,4 @@
-# ADR-013: Composable Session Capabilities and Feature-Local Runtimes
+# ADR-0013: Composable Session Capabilities and Feature-Local Runtimes
 
 > **Historical note (2026-05).** This ADR is **Accepted** and its core
 > decision — composable, per-capability Protocols instead of one fat `Session`
@@ -10,7 +10,7 @@
 > Protocols `ChatRuntime`, `ArtifactsRuntime`, and `UploadRuntime` (Decision
 > §3) were **retired** in favour of feature constructors taking their narrow
 > collaborators by keyword-only argument (see
-> [ADR-014](0014-feature-local-runtime-adapters.md) and the
+> [ADR-0014](0014-feature-local-runtime-adapters.md) and the
 > `_runtime_contracts.py` module docstring). Read the specific module names,
 > Protocol names, and `file.py:NNN` line numbers below as historical; the
 > `CLAUDE.md` file table and the current source tree are authoritative. The
@@ -24,8 +24,8 @@ Accepted.
 
 This ADR ratifies the capability-composition model originally proposed
 in `docs/refactor-history.md` (revision 5, dated 2026-05-20). It supersedes
-[ADR-010](0010-session-kernel-split.md) (Session/Kernel split), which
-was re-statused to `Superseded by ADR-013 (#866)` when this ADR landed.
+[ADR-0010](0010-session-kernel-split.md) (Session/Kernel split), which
+was re-statused to `Superseded by ADR-0013 (#866)` when this ADR landed.
 
 The 11-step migration originally drafted alongside this ADR landed in
 full across Phases 1–7 of the capability refactor arc; the broad
@@ -34,7 +34,7 @@ full across Phases 1–7 of the capability refactor arc; the broad
 
 ## Context
 
-ADR-010 (Tier 13 PR 13.1) pinned a deliberately narrow feature-facing
+ADR-0010 (Tier 13 PR 13.1) pinned a deliberately narrow feature-facing
 `Session: Protocol` with **exactly five members** — `rpc_call`,
 `transport_post`, `next_reqid`, `assert_bound_loop`, and `operation_scope`
 — alongside a three-member `Kernel: Protocol` and a one-member
@@ -55,7 +55,7 @@ grown to **eight members**:
 7. `operation_scope(...)`
 8. `register_drain_hook(...)`
 
-The five-member intent of ADR-010 was gone. `auth` and `kernel` had been
+The five-member intent of ADR-0010 was gone. `auth` and `kernel` had been
 promoted as members for upload-flow convenience; `register_drain_hook`
 had been added to the general contract despite a standalone
 `DrainHookRegistration` Protocol covering the same shape — leaving two
@@ -66,7 +66,7 @@ them. (Post-this-ADR, Phase 7 deleted the broad `Session` Protocol
 entirely; the current `_runtime_contracts.py` exposes only the four
 shared capability Protocols below plus `AuthMetadata` and `Kernel`.)
 
-Re-reading the codebase against ADR-010's original constraint, the audit
+Re-reading the codebase against ADR-0010's original constraint, the audit
 identified two categories of capability:
 
 - **SHARED**: a capability used by ≥2 features today, justifying
@@ -122,12 +122,12 @@ runtimes. Concretely:
    **shared by ≥2 features**. No capability is promoted on speculation.
 
    The symmetric demotion / sibling-fold rule lives in
-   [ADR-012 §Demotion / consolidation rule](0012-implementation-surface-convention.md#demotion--consolidation-rule):
+   [ADR-0012 §Demotion / consolidation rule](0012-implementation-surface-convention.md#demotion--consolidation-rule):
    when a previously-shared capability drops back to a single consumer,
    or when two underscore-prefixed seam siblings become small enough
-   and mutually-isolated, the ADR-012 rule authorizes the inverse
-   motion. The two rules read as a paired policy — ADR-013 §1 governs
-   promotion *up* into a shared Protocol; ADR-012 §Demotion governs
+   and mutually-isolated, the ADR-0012 rule authorizes the inverse
+   motion. The two rules read as a paired policy — ADR-0013 §1 governs
+   promotion *up* into a shared Protocol; ADR-0012 §Demotion governs
    collapse *back down* into a feature-local Protocol or a folded
    seam file. Neither motion needs a fresh ADR; only changes to the
    criteria themselves do.
@@ -179,7 +179,7 @@ runtimes. Concretely:
    Rule 6 and is binding for this refactor and future feature work.
 
 8. **Underscore-prefix module privacy from
-   [ADR-012](0012-implementation-surface-convention.md) still applies.**
+   [ADR-0012](0012-implementation-surface-convention.md) still applies.**
    This ADR does not change the public surface: `NotebookLMClient` and
    every `client.<feature>.<method>` reachable at v0.4.1 keeps its
    signature, defaults, and return type. Only private constructors and
@@ -245,7 +245,7 @@ narrative of how the cutover landed.
 - **C-X. `cookie_saver` / `cookie_rotator` late-binding seams** — introduced by PR [#879](https://github.com/teng-lin/notebooklm-py/pull/879) (`76b301d`). The cookie persistence hooks are resolved dynamically during session lifecycle setup in `_session_lifecycle.py`, decoupling persistence logic from the core HTTP client transport and ensuring clean integration with the cookie keepalive loop.
 - **C-Y. Inline `__Secure-1PSIDTS` cold-start recovery** — introduced by PR [#872](https://github.com/teng-lin/notebooklm-py/pull/872) / issue #865 (`6d8b5f4`). Production utilizes `_recover_psidts_inline` in `_auth/psidts_recovery.py` to run a preflight healing check. If preconditions are met (e.g. not bypassing credentials in environment-driven auth, and utilizing a flock-based cross-process lock), the system proactively mints a valid `__Secure-1PSIDTS` cookie before initializing the session facade to prevent cold-start failures.
 - **C-Z. AST-based delegate-surface regression guard** — introduced by PR [#885](https://github.com/teng-lin/notebooklm-py/pull/885) (`f48d4b9`). To prevent erosion of the session-facade decoupling contract, a regression test in `tests/unit/test_session_compat_delegates.py` uses AST analysis to enforce that eight legacy/compatibility methods on the `Session` facade remain simple delegate forwards (6 `RpcExecutor`-adjacent and 2 `AuthRefreshCoordinator`-adjacent methods, each restricted to a maximum of 3 statements).
-- **C-AA. Drain-hook registration is owned by the transport drain tracker** — The standalone `DrainHookRegistration` Protocol from the Session/Kernel split was retired. *Current state (2026-05):* `DrainHookRegistration` is **not** a Protocol local to an `ArtifactsRuntime` (that composite no longer exists). It is a plain callable type alias — `DrainHookRegistration = Callable[[], Awaitable[None]]` — defined in `src/notebooklm/_transport_drain.py`; the registration surface collapsed onto `TransportDrainTracker.register_drain_hook(...)` in the same module. Feature code that owns long-running async work — artifact polling in `_artifact_polling.py` — registers its close-time hook there, and `ClientLifecycle.close` fires the registered hooks. See ADR-014.
+- **C-AA. Drain-hook registration is owned by the transport drain tracker** — The standalone `DrainHookRegistration` Protocol from the Session/Kernel split was retired. *Current state (2026-05):* `DrainHookRegistration` is **not** a Protocol local to an `ArtifactsRuntime` (that composite no longer exists). It is a plain callable type alias — `DrainHookRegistration = Callable[[], Awaitable[None]]` — defined in `src/notebooklm/_transport_drain.py`; the registration surface collapsed onto `TransportDrainTracker.register_drain_hook(...)` in the same module. Feature code that owns long-running async work — artifact polling in `_artifact_polling.py` — registers its close-time hook there, and `ClientLifecycle.close` fires the registered hooks. See ADR-0014.
 - **C-AB. Narrow executor host Protocols after bridge retirement** *(historical)* — The session-shrink arc narrowed the former `RpcOwner` host Protocol after the legacy `Session` private-attribute shims were retired, dropping `_timeout`, `_refresh_callback`, `_refresh_retry_delay`, and `_http_client`. *Current state (2026-05):* `RpcOwner` was deleted entirely (session-decoupling Wave 4, #1068); `RpcExecutor` (`_rpc_executor.py`) now takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters and keeps only a local `DecodeResponse` Protocol.
 - **C-AC. Retire the legacy transport Adapter** — The middleware chain terminal now calls `Kernel.post` directly through `Session._authed_post_chain_terminal`. Request construction lives in `_request_types.py`, transport exceptions and `Retry-After` parsing live in `_transport_errors.py`, and size-capped streaming lives in `_streaming_post.py`. This removed the last legacy host Protocol and the shallow Adapter seam.
 
@@ -253,16 +253,16 @@ narrative of how the cutover landed.
 
 1. **Keep the broad `Session` contract and let it continue to grow.**
    Rejected. At ADR-write time the drift was already visible in
-   `_runtime_contracts.py`'s broad `Session` Protocol: ADR-010 specified
+   `_runtime_contracts.py`'s broad `Session` Protocol: ADR-0010 specified
    five members, and the contract had grown to eight. Without an
    explicit promotion criterion (shared by ≥2 features), every future
    single-consumer capability is a candidate for promotion, and the
    contract is one PR away from nine members. The "narrow Session"
-   intent of ADR-010 is not recoverable by exhortation; it requires a
+   intent of ADR-0010 is not recoverable by exhortation; it requires a
    structural rule.
 
 2. **Per-sub-client narrow Protocols only, no feature-local runtimes**
-   (the post-D2 replacement from the ADR-002 lineage). Rejected.
+   (the post-D2 replacement from the ADR-0002 lineage). Rejected.
    `ChatRuntime`'s `transport_post + next_reqid` slice cannot be
    modelled this way without either (a) widening a shared Protocol to
    include capabilities only chat uses, or (b) duplicating the

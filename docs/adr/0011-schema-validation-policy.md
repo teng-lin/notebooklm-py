@@ -1,4 +1,4 @@
-# ADR-011: Schema validation policy (strict-decode default)
+# ADR-0011: Schema validation policy (strict-decode default)
 
 ## Status
 
@@ -184,8 +184,8 @@ asymmetry between "the decoder knows the payload doesn't match" and
 "the caller silently returns an empty value" is the exact failure mode
 this helper was introduced to eliminate. Leaving the soft default
 permanent defeats the purpose of the migration that landed in Tier-12
-and preserves the very ambiguity ADR-006 (cassette scrubbing) and
-ADR-007 (test monkeypatch policy) work to remove from the test suite.
+and preserves the very ambiguity ADR-0006 (cassette scrubbing) and
+ADR-0007 (test monkeypatch policy) work to remove from the test suite.
 
 **Flip the default AND simultaneously delete the soft-mode branch.**
 Rejected for this PR. The opt-out gives one release of migration
@@ -193,7 +193,7 @@ runway for downstream consumers who were relying on the pre-flip
 contract; removing the branch in the same PR would force every
 consumer to migrate in one release window with no graceful
 downgrade. The two-PR sequence (flip default now, remove branch
-later) is the standard deprecation cadence for the project (see ADR-007,
+later) is the standard deprecation cadence for the project (see ADR-0007,
 "Phase 1: warn; Phase 2: error"; same pattern here).
 
 **Move the toggle to a runtime constructor argument

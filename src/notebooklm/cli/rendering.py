@@ -318,7 +318,7 @@ def _list_column_options(header: str, *, no_truncate: bool) -> dict[str, Any]:
     """Return the default Rich column options for common list-table headers.
 
     Layering note: this lives in ``cli.rendering`` (presentation layer) so
-    ``cli.services.listing`` stays free of Rich/Click imports per ADR-008.
+    ``cli.services.listing`` stays free of Rich/Click imports per ADR-0008.
     """
     title_overflow: Literal["fold", "ellipsis"] = "fold" if no_truncate else "ellipsis"
     if header == "ID":

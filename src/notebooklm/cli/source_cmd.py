@@ -1,4 +1,4 @@
-"""Source management CLI commands — thin Click-handler layer (ADR-008).
+"""Source management CLI commands — thin Click-handler layer (ADR-0008).
 
 Each command builds a ``cli/services/source_*`` plan dataclass and delegates
 to its executor:
@@ -905,7 +905,7 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
 def _emit_add_research_flag_conflict(message: str, *, json_output: bool) -> NoReturn:
     """Surface a ``source add-research`` flag conflict via the active CLI error contract.
 
-    Per ADR-015, post-parse flag-combination failures route through the typed
+    Per ADR-0015, post-parse flag-combination failures route through the typed
     JSON envelope under ``--json`` (exit ``1`` with
     ``{"error": true, "code": "VALIDATION_ERROR", ...}`` on stdout) and via
     Click's parser-style ``UsageError`` otherwise (exit ``2`` with usage text
@@ -938,7 +938,7 @@ def _render_add_research_result(result: SourceAddResearchResult, *, json_output:
 
     The handler owns all CLI I/O — text vs JSON, exit codes, the
     ``Starting ... research`` info line, and the ``Imported N sources``
-    summary — so the service layer can stay pure (ADR-008) and exit-policy
+    summary — so the service layer can stay pure (ADR-0008) and exit-policy
     free.
     """
     if result.outcome == "start_failed":
@@ -1094,7 +1094,7 @@ def source_add_research(
     """
     query = resolve_prompt(query, prompt_file, "query", required=True)
     if cited_only and not import_all:
-        # ADR-015 §2: under --json route through the typed envelope; preserve
+        # ADR-0015 §2: under --json route through the typed envelope; preserve
         # Click's parser-style ``UsageError`` (exit 2 with usage text) in text
         # mode so interactive callers still see the canonical conflict prose.
         _emit_add_research_flag_conflict(

@@ -88,7 +88,7 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
                                  |
                                  v
 +----------------------------------------------------------------+
-| ADR-009 middleware chain                                       |
+| ADR-0009 middleware chain                                       |
 |   Drain -> Metrics -> Sema -> Retry -> AuthRefresh             |
 |   -> ErrInj -> Tracing                                         |
 +----------------------------------------------------------------+
@@ -96,7 +96,7 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
                                  v
 +----------------------------------------------------------------+
 | MiddlewareChainHost._authed_post_chain_terminal(...)           |
-|   chain leaf — ADR-014 Rule 4                                  |
+|   chain leaf — ADR-0014 Rule 4                                  |
 +----------------------------------------------------------------+
                                  |
                                  v
@@ -118,7 +118,7 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
 ```
 
 Production wires `RpcExecutor` directly into each feature as its
-`RpcCaller` per ADR-014 Rule 1; `NotebookLMClient.rpc_call` dispatches
+`RpcCaller` per ADR-0014 Rule 1; `NotebookLMClient.rpc_call` dispatches
 through the same `RpcExecutor` stored as `NotebookLMClient._rpc_executor`
 for the public raw-RPC escape hatch.
 
@@ -154,7 +154,7 @@ error mapping, so the first ask POST goes through:
                                  |
                                  v
 +----------------------------------------------------------------+
-| ADR-009 middleware chain                                       |
+| ADR-0009 middleware chain                                       |
 +----------------------------------------------------------------+
                                  |
                                  v
@@ -194,7 +194,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 Three policies thread through the layers above and are easy to violate by
 accident. Each is pinned by an ADR.
 
-### Loop affinity (ADR-004)
+### Loop affinity (ADR-0004)
 
 **Why we need it.** The client is built on `httpx.AsyncClient` plus a
 network of `asyncio` primitives — locks, semaphores, condition variables,
@@ -227,10 +227,10 @@ called from every helper that captured a loop reference at `open()` time
 The `LoopGuard` capability Protocol (`assert_bound_loop()`) is how
 feature APIs surface the same check without taking a `Session` dependency.
 
-See [ADR-004](./adr/0004-loop-affinity-contract.md) and the consumer
+See [ADR-0004](./adr/0004-loop-affinity-contract.md) and the consumer
 notes in [`docs/python-api.md`](./python-api.md#concurrency-contract).
 
-### Idempotency (ADR-005)
+### Idempotency (ADR-0005)
 
 **Why we need it.** `batchexecute` runs over HTTPS, so every mutating
 call (create, delete, refresh, share, generate, …) is exposed to a
@@ -279,12 +279,12 @@ as replay-safe `IDEMPOTENT_SET_OP` rows rather than left as
 production-`UNCLASSIFIED`; `UNCLASSIFIED` is retained only as a
 placeholder for tests and future development.
 
-See [ADR-005](./adr/0005-idempotency-taxonomy.md). Side-effect probing
+See [ADR-0005](./adr/0005-idempotency-taxonomy.md). Side-effect probing
 (`idempotent_create(...)`) is a separate mechanism not owned by the
 registry; see the upload/source-add row in the "Uploads, downloads, and
 polling" table above.
 
-### Schema validation (ADR-011)
+### Schema validation (ADR-0011)
 
 Batchexecute responses are undocumented and Google reshapes them without
 notice. Decoders walk nested positional lists; a single index shift
@@ -301,14 +301,14 @@ raises a typed shape-drift error: strict decoding is the only mode (the
 `RPCError`; other exception types (e.g. `AttributeError`) intentionally
 propagate as code bugs rather than being conflated with shape drift.
 
-See [ADR-011](./adr/0011-schema-validation-policy.md).
+See [ADR-0011](./adr/0011-schema-validation-policy.md).
 
 ## Per-capability protocol model
 
-ADR-013 ("Composable Session Capabilities") is the design rationale:
+ADR-0013 ("Composable Session Capabilities") is the design rationale:
 feature APIs depend on narrow capability Protocols rather than on the
 deleted concrete `Session` class.
-[ADR-014](./adr/0014-feature-local-runtime-adapters.md) extends that
+[ADR-0014](./adr/0014-feature-local-runtime-adapters.md) extends that
 intent at runtime: each feature receives the specific collaborator it
 needs, never a broad runtime facade. `NotebookLMClient.__init__` is the
 composition root that wires each feature with the satisfier it needs.
@@ -317,10 +317,10 @@ Six Protocols live in
 [`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py) —
 four shared capability Protocols used by ≥2 features, plus `AuthMetadata`
 and `Kernel`, whose sole consumer today is `SourceUploadPipeline`. Per
-ADR-013 §Decision §2, those two stay in the shared contracts module
+ADR-0013 §Decision §2, those two stay in the shared contracts module
 (rather than moving into `_source/upload.py`) because they front
 client-owned objects (the authenticated account snapshot and the
-transport kernel). ADR-013 explicitly rejects anticipatory promotion —
+transport kernel). ADR-0013 explicitly rejects anticipatory promotion —
 "No capability is promoted on speculation." Feature-module-local runtime
 Protocols live next to their single consumer.
 
@@ -347,21 +347,21 @@ constructor argument:
   `reqid: ReqidCounter`, `loop_guard: LoopGuard`.
 
 Production satisfies the shared Protocols via the underlying
-collaborators (ADR-014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
+collaborators (ADR-0014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
 `ClientLifecycle` satisfies `LoopGuard`, `TransportDrainTracker`
 satisfies `OperationScopeProvider`). There is no production `Session`
 class in the runtime graph.
 Tests substitute
 [`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py)
-(constructed via `make_fake_core(...)`) — the sanctioned ADR-007 / ADR-013
+(constructed via `make_fake_core(...)`) — the sanctioned ADR-0007 / ADR-0013
 fixture pattern. `FakeSession` is a backward-compatible test-fixture name,
 not a production runtime class. Tests that inject narrow fakes into a single feature
 (e.g. `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`) construct
-the feature directly under ADR-014.
+the feature directly under ADR-0014.
 
 ### Executor takes its collaborators directly
 
-Per ADR-014 Rule 5, `RpcExecutor` takes its kernel, transport,
+Per ADR-0014 Rule 5, `RpcExecutor` takes its kernel, transport,
 auth-refresh coordinator, and metrics tracker directly — there is no
 Session-shaped owner Protocol. The constructor takes
 `kernel: Kernel`, `transport: RuntimeTransport`,
@@ -373,7 +373,7 @@ executor enters transport through
 terminal is `MiddlewareChainHost._authed_post_chain_terminal →
 RuntimeTransport.terminal → Kernel.post`. The chain leaf lives on
 `MiddlewareChainHost` so the chain owns its own terminal and retry
-tunables (ADR-014 Rule 4 chain-ownership carve-out). Request types,
+tunables (ADR-0014 Rule 4 chain-ownership carve-out). Request types,
 transport errors, and streaming helpers live in separate owning
 modules. This keeps feature APIs on narrow capability Protocols and
 the executor on direct collaborator dependencies.
@@ -411,7 +411,7 @@ the executor on direct collaborator dependencies.
              |
              v
   RpcExecutor.rpc_call → RuntimeTransport.perform_authed_post
-      → ADR-009 chain → RuntimeTransport.terminal → Kernel.post → httpx
+      → ADR-0009 chain → RuntimeTransport.terminal → Kernel.post → httpx
 ```
 
 | Collaborator | Module | Responsibility |
@@ -419,12 +419,12 @@ the executor on direct collaborator dependencies.
 | `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, `_composed`, `_collaborators`, `_rpc_executor`, and the eight feature API attributes. `__aenter__`, `close`, `drain`, `is_connected`, `metrics_snapshot`, and `rpc_call` route directly to the owning collaborator. |
 | `ClientSeams` | [`_client_seams.py`](../src/notebooklm/_client_seams.py) | Mutable holder for runtime callables that closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
 | `ClientComposed` | [`_client_composed.py`](../src/notebooklm/_client_composed.py) | Write-once holder for composition state: `transport`, `executor`, `chain_host`, `chain_builder`, `middlewares`, lazy RPC semaphore, and `runtime_collaborators`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
-| `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
-| `RuntimeTransport` | [`_runtime/transport.py`](../src/notebooklm/_runtime/transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `chat_aware_authed_post` (ChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-014 Rule 4. |
+| `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
+| `RuntimeTransport` | [`_runtime/transport.py`](../src/notebooklm/_runtime/transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `chat_aware_authed_post` (ChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
 | `MiddlewareChainHost` | [`_middleware/chain_host.py`](../src/notebooklm/_middleware/chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `client._composed.chain_host._rate_limit_max_retries = 0`) still steers the live chain. |
 | `AuthRefreshCoordinator` | [`_runtime/auth.py`](../src/notebooklm/_runtime/auth.py) | Owns the auth-snapshot lock and refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(auth=...)`, `update_auth_tokens(auth=..., csrf=..., session_id=...)`, and `update_auth_headers(auth=..., kernel=...)`; callers pass explicit collaborators rather than a host object. |
 | `ClientLifecycle` | [`_runtime/lifecycle.py`](../src/notebooklm/_runtime/lifecycle.py) | HTTP-client open/close, keepalive task, cookie save coordination. Holds `_timeout`, `_bound_loop`, `_http_client`, `_keepalive_*`. |
-| `MiddlewareChainBuilder` | [`_middleware/chain.py`](../src/notebooklm/_middleware/chain.py) | Constructs the middleware chain in the canonical ADR-009 order. |
+| `MiddlewareChainBuilder` | [`_middleware/chain.py`](../src/notebooklm/_middleware/chain.py) | Constructs the middleware chain in the canonical ADR-0009 order. |
 | `TransportDrainTracker` | [`_transport_drain.py`](../src/notebooklm/_transport_drain.py) | Tracks in-flight transport operations + the drain condition variable. Gates graceful shutdown. |
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
 | `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
@@ -435,11 +435,11 @@ the executor on direct collaborator dependencies.
 | `_streaming_post` | [`_streaming_post.py`](../src/notebooklm/_streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
 | `Kernel` | [`_kernel.py`](../src/notebooklm/_kernel.py) | Pure transport core. Owns the `httpx.AsyncClient` and cookie jar; exposes `post()`, the `cookies` property, and `aclose()` (the close path wraps it in `asyncio.shield` from `ClientLifecycle.close()`). Concrete class behind the `Kernel` Protocol in `_runtime/contracts.py`; constructed by `build_collaborators(...)` and called from the middleware leaf via `RuntimeTransport.terminal → Kernel.post`. |
 | `_runtime/init` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Construction-time helpers for `NotebookLMClient`: `validate_constructor_args` (kwarg validation/normalization), `build_collaborators` (the seven collaborators in dependency order: `metrics`, `drain_tracker`, `reqid`, `auth_coord`, `kernel`, `lifecycle`, `cookie_persistence`), `build_runtime_transport`, `wire_middleware_chain`, and `compose_client_internals`. It binds the runtime graph into `ClientComposed` and returns `ClientInternals(collaborators, executor)`. |
-| `_loop_affinity` | [`_loop_affinity.py`](../src/notebooklm/_loop_affinity.py) | Tiny free-function `assert_bound_loop(bound_loop)` shared by every helper that captures a loop reference at `open()` time (`TransportDrainTracker`, `ReqidCounter`, `AuthRefreshCoordinator`, `ArtifactPollingService`, `ChatAPI`). Enforces ADR-004 without coupling those helpers to the public client. |
+| `_loop_affinity` | [`_loop_affinity.py`](../src/notebooklm/_loop_affinity.py) | Tiny free-function `assert_bound_loop(bound_loop)` shared by every helper that captures a loop reference at `open()` time (`TransportDrainTracker`, `ReqidCounter`, `AuthRefreshCoordinator`, `ArtifactPollingService`, `ChatAPI`). Enforces ADR-0004 without coupling those helpers to the public client. |
 
 ### Shipped runtime invariants
 
-[ADR-016](./adr/0016-auth-identity-and-core-logger-compatibility.md)
+[ADR-0016](./adr/0016-auth-identity-and-core-logger-compatibility.md)
 pins two compatibility-sensitive details that survive the session-elimination
 work:
 
@@ -473,7 +473,7 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 
 [`auth.py`](../src/notebooklm/auth.py) is a thin public facade that
 re-exports the canonical implementations under
-[`_auth/`](../src/notebooklm/_auth). ADR-014 closed ADR-003's deferred
+[`_auth/`](../src/notebooklm/_auth). ADR-0014 closed ADR-0003's deferred
 flat-re-export goal: `AuthTokens` and `load_auth_from_storage()` now live
 in `_auth.tokens`, `_validate_required_cookies` is a direct
 `_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the
@@ -499,7 +499,7 @@ The cookie lifecycle — what gets written, who rotates, what the
 keepalive contract is — is documented separately in
 [`docs/auth-cookie-lifecycle.md`](./auth-cookie-lifecycle.md).
 
-## CLI layer (ADR-008)
+## CLI layer (ADR-0008)
 
 The CLI is intentionally a thin adapter over the public Python client.
 It does not build raw batchexecute payloads, import the RPC layer, or
@@ -509,7 +509,7 @@ commands in
 parsing, user-visible rendering, JSON envelopes, and exit codes;
 workflow logic lives in
 [`src/notebooklm/cli/services/`](../src/notebooklm/cli/services). This
-separation is the [ADR-008](./adr/0008-cli-services-extraction-pattern.md)
+separation is the [ADR-0008](./adr/0008-cli-services-extraction-pattern.md)
 extraction pattern.
 
 The console-script entry point is
@@ -602,7 +602,7 @@ The cross-command helpers form a small internal CLI stack:
 | [`cli/resolve.py`](../src/notebooklm/cli/resolve.py) | Notebook/source/artifact/note ID resolution, including partial-ID matching against public client list calls. |
 | [`cli/options.py`](../src/notebooklm/cli/options.py) + [`cli/completion.py`](../src/notebooklm/cli/completion.py) | Shared Click option decorators and best-effort shell completion. Completion providers may load auth and list public client resources, but swallow all failures so shells never print diagnostics during TAB completion. |
 | [`cli/rendering.py`](../src/notebooklm/cli/rendering.py) | Rich/text/JSON rendering helpers. Status lines in JSON mode go to stderr so stdout remains parseable JSON. |
-| [`cli/error_handler.py`](../src/notebooklm/cli/error_handler.py) | Canonical CLI error-to-exit mapping. Under `--json`, command-body failures use the typed error envelope from [ADR-015](./adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md). Parse-time Click parser errors remain Click-owned. |
+| [`cli/error_handler.py`](../src/notebooklm/cli/error_handler.py) | Canonical CLI error-to-exit mapping. Under `--json`, command-body failures use the typed error envelope from [ADR-0015](./adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md). Parse-time Click parser errors remain Click-owned. |
 | [`cli/helpers.py`](../src/notebooklm/cli/helpers.py) | Backward-compatible facade for historical imports and test patch targets. New production code should import from the owning helper module instead. |
 
 The boundary is enforced statically by
@@ -614,7 +614,7 @@ helpers (`runtime`, `context`, `resolve`, `rendering`, `auth_runtime`,
 `options`) from growing upward dependencies on command modules or the
 `cli.helpers` compatibility facade.
 
-## Middleware chain (ADR-009)
+## Middleware chain (ADR-0009)
 
 The runtime chain order is pinned by
 [`tests/unit/test_chain_wiring.py`](../tests/unit/test_chain_wiring.py)
@@ -684,7 +684,7 @@ shared with every feature API.
 
 Feature APIs receive the collaborator they need (`RpcExecutor` for
 `RpcCaller`, `ClientLifecycle` for `LoopGuard`, `TransportDrainTracker`
-for `OperationScopeProvider` / `register_drain_hook`) per ADR-014 Rules
+for `OperationScopeProvider` / `register_drain_hook`) per ADR-0014 Rules
 1 + 3. Features that need more than one capability — `ChatAPI`,
 `ArtifactsAPI`, and `SourceUploadPipeline` — take each collaborator by
 keyword-only constructor argument. The composition wiring is in
@@ -694,7 +694,7 @@ keyword-only constructor argument. The composition wiring is in
 
 Two policies define how tests interact with the architecture above.
 
-### Constructor-injection fixtures (ADR-007)
+### Constructor-injection fixtures (ADR-0007)
 
 The forbidden patterns are `monkeypatch.setattr("notebooklm.…")` against
 module-level seams and direct attribute assignment like
@@ -712,14 +712,14 @@ directly via those constructors.
 
 The meta-lint at `tests/_lint/test_no_forbidden_monkeypatches.py`
 enforces the policy; the file-level allowlist shrinks as legacy tests
-migrate. See [ADR-007](./adr/0007-test-monkeypatch-policy.md).
+migrate. See [ADR-0007](./adr/0007-test-monkeypatch-policy.md).
 
 ### Test suite taxonomy
 
 - **Unit tests** (`tests/unit/`): No network, decode/encode only.
 - **Integration tests** (`tests/integration/`): Mock HTTP responses or
   use VCR cassettes scrubbed per
-  [ADR-006](./adr/0006-vcr-scrubber-strategy.md).
+  [ADR-0006](./adr/0006-vcr-scrubber-strategy.md).
 - **E2E tests** (`tests/e2e/`): Real API; require auth; marked
   `@pytest.mark.e2e` and excluded from the default run.
 
@@ -731,7 +731,7 @@ the pin is a bug.
 A fuller taxonomy can be generated with
 [`scripts/test_taxonomy_inventory.py`](../scripts/test_taxonomy_inventory.py).
 
-## Implementation surface convention (ADR-012)
+## Implementation surface convention (ADR-0012)
 
 `notebooklm-py` keeps a small set of public-named modules (`artifacts.py`,
 `auth.py`, `client.py`, `config.py`, `exceptions.py`, `io.py`, `log.py`,
@@ -739,7 +739,7 @@ A fuller taxonomy can be generated with
 `types.py`, `urls.py`, `utils.py`) and routes everything else through
 underscore-prefixed seam modules. Anything underscored is *not* a
 supported import surface; it can be moved, renamed, or deleted without a
-deprecation cycle. See [ADR-012](./adr/0012-implementation-surface-convention.md).
+deprecation cycle. See [ADR-0012](./adr/0012-implementation-surface-convention.md).
 
 The corollary for contributors: if you find yourself reaching into
 `notebooklm._foo`, prefer a capability Protocol or a public function in
@@ -776,7 +776,7 @@ Vocabulary that recurs in this document and the surrounding code.
 | Term | Meaning |
 |------|---------|
 | `batchexecute` | Google's internal RPC protocol over HTTPS. The wire is positional lists keyed by an obfuscated method id; see [`rpc/types.py`](../src/notebooklm/rpc/types.py). |
-| Capability Protocol | A narrow structural `Protocol` (e.g. `RpcCaller`, `LoopGuard`) a feature depends on instead of taking the deleted concrete `Session` class or a broad runtime facade. See [ADR-013](./adr/0013-composable-session-capabilities.md). |
+| Capability Protocol | A narrow structural `Protocol` (e.g. `RpcCaller`, `LoopGuard`) a feature depends on instead of taking the deleted concrete `Session` class or a broad runtime facade. See [ADR-0013](./adr/0013-composable-session-capabilities.md). |
 | Chain / leaf / terminal | The middleware chain's ordering vocabulary. The chain wraps outermost-first; the **leaf** is the innermost middleware (`TracingMiddleware`); the **terminal** is the authed-POST function (`RuntimeTransport.terminal → Kernel.post`) that ends the chain. |
 | Drain | Graceful-shutdown waiting on in-flight transport operations to complete. Owned by `TransportDrainTracker` and admitted by `DrainMiddleware`. |
 | `idempotent_create(...)` | Caller-owned probe-then-create wrapper used by source-add / Drive-add flows. Distinct from the `IdempotencyRegistry` (which only classifies retry safety inside the executor). |
@@ -786,21 +786,21 @@ Vocabulary that recurs in this document and the surrounding code.
 
 ## ADR cross-references
 
-- [ADR-001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy (superseded; shims retired).
-- [ADR-002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by ADR-013).
-- [ADR-003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-014](./adr/0014-feature-local-runtime-adapters.md); `auth.py` is now almost pure re-exports with `enumerate_accounts` as the sole function-body exception).
-- [ADR-004](./adr/0004-loop-affinity-contract.md) — Loop-affinity contract (Accepted; enforced by `_loop_affinity.assert_bound_loop`).
-- [ADR-005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_idempotency.IdempotencyRegistry`).
-- [ADR-006](./adr/0006-vcr-scrubber-strategy.md) — VCR cassette scrubber strategy (Accepted).
-- [ADR-007](./adr/0007-test-monkeypatch-policy.md) — Constructor-injection test pattern via `tests/_fixtures/` (Accepted; enforced by `tests/_lint/test_no_forbidden_monkeypatches.py`).
-- [ADR-008](./adr/0008-cli-services-extraction-pattern.md) — `cli/services/` extraction pattern (Accepted).
-- [ADR-009](./adr/0009-middleware-chain.md) — Middleware chain ordering (Accepted; load-bearing).
-- [ADR-010](./adr/0010-session-kernel-split.md) — Session/Kernel split (Superseded by ADR-013).
-- [ADR-011](./adr/0011-schema-validation-policy.md) — Schema validation policy (Accepted; `safe_index` is the canonical decode helper).
-- [ADR-012](./adr/0012-implementation-surface-convention.md) — Implementation surface convention (Accepted; underscore-prefix = unsupported import surface).
-- [ADR-013](./adr/0013-composable-session-capabilities.md) — Composable Session Capabilities (the post-v0.5.0 capability model).
-- [ADR-014](./adr/0014-feature-local-runtime-adapters.md) — Feature-local runtime adapters (Accepted; features receive direct collaborators instead of `Session`).
-- [ADR-015](./adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) — Typed JSON error envelope for post-parse CLI failures (Accepted).
+- [ADR-0001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy (superseded; shims retired).
+- [ADR-0002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by ADR-0013).
+- [ADR-0003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-0014](./adr/0014-feature-local-runtime-adapters.md); `auth.py` is now almost pure re-exports with `enumerate_accounts` as the sole function-body exception).
+- [ADR-0004](./adr/0004-loop-affinity-contract.md) — Loop-affinity contract (Accepted; enforced by `_loop_affinity.assert_bound_loop`).
+- [ADR-0005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_idempotency.IdempotencyRegistry`).
+- [ADR-0006](./adr/0006-vcr-scrubber-strategy.md) — VCR cassette scrubber strategy (Accepted).
+- [ADR-0007](./adr/0007-test-monkeypatch-policy.md) — Constructor-injection test pattern via `tests/_fixtures/` (Accepted; enforced by `tests/_lint/test_no_forbidden_monkeypatches.py`).
+- [ADR-0008](./adr/0008-cli-services-extraction-pattern.md) — `cli/services/` extraction pattern (Accepted).
+- [ADR-0009](./adr/0009-middleware-chain.md) — Middleware chain ordering (Accepted; load-bearing).
+- [ADR-0010](./adr/0010-session-kernel-split.md) — Session/Kernel split (Superseded by ADR-0013).
+- [ADR-0011](./adr/0011-schema-validation-policy.md) — Schema validation policy (Accepted; `safe_index` is the canonical decode helper).
+- [ADR-0012](./adr/0012-implementation-surface-convention.md) — Implementation surface convention (Accepted; underscore-prefix = unsupported import surface).
+- [ADR-0013](./adr/0013-composable-session-capabilities.md) — Composable Session Capabilities (the post-v0.5.0 capability model).
+- [ADR-0014](./adr/0014-feature-local-runtime-adapters.md) — Feature-local runtime adapters (Accepted; features receive direct collaborators instead of `Session`).
+- [ADR-0015](./adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) — Typed JSON error envelope for post-parse CLI failures (Accepted).
 
 ## See also
 

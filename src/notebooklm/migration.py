@@ -26,7 +26,7 @@ from .paths import get_config_path, get_home_dir
 
 logger = logging.getLogger(__name__)
 
-# Public surface (ADR-012). Underscore-prefixed constants such as
+# Public surface (ADR-0012). Underscore-prefixed constants such as
 # ``_MIGRATION_LOCK``, ``_MIGRATION_MARKER``, and ``_MIGRATION_LOCK_TIMEOUT``
 # remain importable / monkeypatch-able for tests via direct attribute
 # lookup; ``__all__`` only governs ``from notebooklm.migration import *``

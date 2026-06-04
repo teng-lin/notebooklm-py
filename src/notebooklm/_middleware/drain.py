@@ -1,6 +1,6 @@
 """DrainMiddleware — in-flight transport-operation tracker for the middleware chain.
 
-Per ADR-009 §"Chain ordering", ``DrainMiddleware`` sits at
+Per ADR-0009 §"Chain ordering", ``DrainMiddleware`` sits at
 the OUTERMOST position of the chain
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
 

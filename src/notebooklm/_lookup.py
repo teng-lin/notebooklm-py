@@ -1,6 +1,6 @@
 """Shared single-row-lookup helper for the public ``get`` / ``get_or_none`` pair.
 
-ADR-019 (error-and-return contract) makes resource absence an exception on
+ADR-0019 (error-and-return contract) makes resource absence an exception on
 ``get`` and reserves ``None``-on-miss for an explicit ``get_or_none``. Both share
 the same underlying optional-lookup body; only their handling of a genuine miss
 differs. :func:`unwrap_or_raise` is the one-line bridge that lets a namespace
@@ -13,7 +13,7 @@ keep its fully-typed, per-arity signatures while single-sourcing the
     )
 
 (The ``get()``-raises wiring lands with the v0.8.0 flip, issue #1247; this module
-is the additive foundation it will build on — see ADR-019 Enforcement tier-2.)
+is the additive foundation it will build on — see ADR-0019 Enforcement tier-2.)
 """
 
 from __future__ import annotations

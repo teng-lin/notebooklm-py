@@ -55,7 +55,7 @@ def _extract_language(
 ) -> str | None:
     """Extract the output-language code from a settings RPC response.
 
-    The descent is split into two regimes, per ADR-011 (schema-validation
+    The descent is split into two regimes, per ADR-0011 (schema-validation
     policy) and the ``_notebooks._extract_suggested_topics`` precedent for a
     routinely-optional trailing slot:
 
@@ -176,7 +176,7 @@ class SettingsAPI:
     # responses, split into a mandatory envelope prefix (routed through
     # ``safe_index`` — raises on drift) and an optional language tail (plain
     # guard — degrades to ``None`` when the user has no language set). See
-    # ``_extract_language`` for the ADR-011 rationale behind the split.
+    # ``_extract_language`` for the ADR-0011 rationale behind the split.
     #
     # SET_USER_SETTINGS shape: result[2][4][0]   (flags block at result[2])
     _SET_LANGUAGE_PREFIX = (2,)

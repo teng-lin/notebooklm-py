@@ -166,7 +166,7 @@ async def test_delete_notebook_retries_remain_enabled(
         nonlocal sleep_calls
         sleep_calls += 1
 
-    # Object-form (ADR-007): patch ``sleep`` on the ``asyncio`` module
+    # Object-form (ADR-0007): patch ``sleep`` on the ``asyncio`` module
     # object that ``_runtime.helpers.resolve_sleep`` re-reads on every
     # call. ``_runtime_helpers.asyncio`` IS the singleton ``asyncio``
     # module, so this is functionally identical to the string-target
@@ -213,7 +213,7 @@ async def test_delete_source_retries_remain_enabled(
         nonlocal sleep_calls
         sleep_calls += 1
 
-    # Object-form (ADR-007): see ``test_delete_notebook_retries_remain_enabled``.
+    # Object-form (ADR-0007): see ``test_delete_notebook_retries_remain_enabled``.
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
@@ -250,7 +250,7 @@ async def test_delete_artifact_retries_remain_enabled(
         nonlocal sleep_calls
         sleep_calls += 1
 
-    # Object-form (ADR-007): see ``test_delete_notebook_retries_remain_enabled``.
+    # Object-form (ADR-0007): see ``test_delete_notebook_retries_remain_enabled``.
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
@@ -429,7 +429,7 @@ async def test_notebooks_create_probe_propagates_network_error(
         nonlocal sleep_calls
         sleep_calls += 1
 
-    # Object-form (ADR-007): see ``test_delete_notebook_retries_remain_enabled``.
+    # Object-form (ADR-0007): see ``test_delete_notebook_retries_remain_enabled``.
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)

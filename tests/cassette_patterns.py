@@ -66,7 +66,7 @@ field, passes them silently (this has bitten the guard twice — ``LSID`` and
 complement that catches a long high-entropy base64/hex token in ANY quoted
 JSON scalar. See its KNOWN-SHAPE BOUNDARY block for the residual-risk decision
 this draws (it is scoped to quoted scalars on purpose; non-quoted high-entropy
-text remains GitHub-secret-scanning's job). Relates to ADR-006.
+text remains GitHub-secret-scanning's job). Relates to ADR-0006.
 
 Upload + Drive token coverage
 -----------------------------
@@ -938,7 +938,7 @@ _CREDENTIAL_DETECTORS: list[tuple[str, re.Pattern[str]]] = [
 # Generic high-entropy / unknown-field credential scan
 # =============================================================================
 #
-# THE KNOWN-SHAPE BOUNDARY (residual-risk decision; ADR-006, issue #1382).
+# THE KNOWN-SHAPE BOUNDARY (residual-risk decision; ADR-0006, issue #1382).
 # ---------------------------------------------------------------------------
 # Everything ABOVE this point is *name-anchored* (cookie names, WIZ field IDs)
 # or *known-shape* (``g.a000-`` / ``sidts-`` / ``ya29.`` / ``AIza`` prefixes).

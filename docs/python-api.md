@@ -268,7 +268,7 @@ It returns `None` for a genuine absence and re-raises transport, auth, and
 decode faults rather than swallowing them. (The one documented carve-out is
 `artifacts`, which inherits `client.artifacts.list(...)`'s deliberate
 partial-availability behavior: a transport failure of the mind-map sub-fetch is
-logged and the studio artifacts that loaded are still returned — see ADR-019
+logged and the studio artifacts that loaded are still returned — see ADR-0019
 Rule 3.) The workflows that
 *already* raise `SourceNotFoundError` are `client.sources.get_fulltext(...)` and
 `client.sources.wait_until_ready(...)`. Artifact-download workflows raise
@@ -722,7 +722,7 @@ These validations run in `NotebookLMClient.__init__` /
 
 Kernel owns the `httpx.AsyncClient`; `NotebookLMClient` constructs the
 runtime graph and owns the public surface. Per the
-[ADR-010](adr/0010-session-kernel-split.md) split, `Kernel.__init__` in
+[ADR-0010](adr/0010-session-kernel-split.md) split, `Kernel.__init__` in
 `src/notebooklm/_kernel.py` constructs the `httpx.AsyncClient` and is
 responsible for closing it on `aclose()`. `_runtime/init.py` constructs
 the collaborator bundle, `RuntimeTransport`, middleware chain, and
@@ -768,7 +768,7 @@ feature-local composite-runtime Protocols (`ChatRuntime`,
 previously bundled three collaborators apiece were retired once it was
 clear they only hid three stable collaborators with one production
 satisfier.
-See [ADR-013](adr/0013-composable-session-capabilities.md) and
+See [ADR-0013](adr/0013-composable-session-capabilities.md) and
 [`docs/architecture.md`](architecture.md) for the rationale and the
 post-v0.5.0 collaborator graph.
 
@@ -1121,7 +1121,7 @@ already-failed artifact **in place** — the UI "Retry" action. The artifact is
 not deleted first; the same `artifact_id` is preserved and returned as the task
 id, so `poll_status()` / `wait_for_completion()` keep working against it.
 
-It follows the ADR-019 "async kickoff" contract: an accepted retry returns
+It follows the ADR-0019 "async kickoff" contract: an accepted retry returns
 `GenerationStatus(status="in_progress")`, while a **synchronous refusal**
 (`USER_DISPLAYABLE_ERROR` — rate limit, quota, or a non-retryable artifact)
 **raises** the underlying `RateLimitError` / `RPCError` rather than returning a
@@ -2575,7 +2575,7 @@ with correlation_id("my-custom-flow-id"):
 
 ### Capability Protocols (Extension Surface)
 
-Decomposed Protocols introduced in ADR-013 to decouple service facades from target domain runtimes.
+Decomposed Protocols introduced in ADR-0013 to decouple service facades from target domain runtimes.
 
 #### `NotebookSourceLister` Protocol
 

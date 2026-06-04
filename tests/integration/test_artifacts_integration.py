@@ -1866,7 +1866,7 @@ class TestRetryFailedArtifact:
     ):
         """A non-null row with no artifact id raises rather than soft-failing.
 
-        Born ADR-019-correct: a missing/empty id means no generation task was
+        Born ADR-0019-correct: a missing/empty id means no generation task was
         created, so retry_failed raises ArtifactFeatureUnavailableError instead
         of returning the ``status="failed"`` that ``_parse_generation_result``
         synthesizes for a falsy id.
@@ -1891,7 +1891,7 @@ class TestRetryFailedArtifact:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """A synchronous USER_DISPLAYABLE_ERROR refusal RAISES (ADR-019).
+        """A synchronous USER_DISPLAYABLE_ERROR refusal RAISES (ADR-0019).
 
         Unlike generate_* / revise_slide, retry_failed does NOT swallow the
         refusal into status="failed" — it lets the RateLimitError propagate.

@@ -1,4 +1,4 @@
-# ADR-005: Mutating-RPC idempotency taxonomy
+# ADR-0005: Mutating-RPC idempotency taxonomy
 
 ## Status
 
@@ -7,7 +7,7 @@ classification shipped in tier-9 (B1 foundation + Wave-2 classifications
 across `b-research-notes`, `b-generation`, `b-sources`, and
 `b-side-effects`). This ADR is the canonical home for the rationale that
 previously lived in the now-gitignored tier-9 plan; the registry code in
-`src/notebooklm/_idempotency.py` references this ADR as ADR-005.
+`src/notebooklm/_idempotency.py` references this ADR as ADR-0005.
 
 Amended on 2026-05-29 to remove the unregistered `CLIENT_TOKEN_DEDUPE`
 policy and executor token-injection hook. No current `RPCMethod` has a

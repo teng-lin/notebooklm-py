@@ -49,7 +49,7 @@ def _status_error(status_code: int, *, retry_after: str | None = None) -> httpx.
 class _Owner:
     """Test stub satisfying RpcExecutor's four collaborator dependencies.
 
-    Wave 4 of session-decoupling (ADR-014 Rule 5): RpcExecutor takes
+    Wave 4 of session-decoupling (ADR-0014 Rule 5): RpcExecutor takes
     Kernel + RuntimeTransport + AuthRefreshCoordinator + ClientMetrics
     directly via keyword arguments. This stub plays all four roles in
     one object — see :func:`_executor` for the wiring.
@@ -128,7 +128,7 @@ def _executor(
     def _decode(_: str, rpc_id: str, *, allow_null: bool = False) -> dict[str, Any]:
         return {"rpc_id": rpc_id, "allow_null": allow_null}
 
-    # ADR-014 Rule 5 (Wave 4 of session-decoupling): the executor takes
+    # ADR-0014 Rule 5 (Wave 4 of session-decoupling): the executor takes
     # its four collaborators as keyword-only args. The ``_Owner`` stub
     # plays all four roles; pass it under each keyword so the executor's
     # ``self._kernel`` / ``self._metrics`` / ``self._transport`` /
@@ -250,7 +250,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
     ) -> httpx.Response:
         return _ok_response("wire")
 
-    # ADR-014 Rule 5 (Wave 4 of session-decoupling): the executor calls
+    # ADR-0014 Rule 5 (Wave 4 of session-decoupling): the executor calls
     # ``self._transport.perform_authed_post(...)`` directly instead of
     # routing through ``Session._perform_authed_post``. Patch the
     # collaborator the executor actually reaches.
@@ -709,7 +709,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         assert operation_variant is None
         return {"ok": True}
 
-    # ADR-014 Rule 5 (Wave 4): executor calls ``self._auth_refresh.await_refresh()``
+    # ADR-0014 Rule 5 (Wave 4): executor calls ``self._auth_refresh.await_refresh()``
     # directly. Patch the collaborator the executor actually reaches.
     monkeypatch.setattr(core._collaborators.auth_coord, "await_refresh", fake_await_refresh)
     monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)

@@ -532,7 +532,7 @@ class TestDownloadUrl:
             mock_cookies = MagicMock()
             fake_load_cookies = MagicMock(return_value=mock_cookies)
             # Object-form patch against the locally-imported ``downloads``
-            # module seam (ADR-007: no string-target patches into private
+            # module seam (ADR-0007: no string-target patches into private
             # internals). ``_load_httpx_cookies`` reads this module global.
             monkeypatch.setattr(artifact_downloads, "load_httpx_cookies", fake_load_cookies)
             with patch.object(real_httpx, "AsyncClient", return_value=mock_client):
@@ -576,7 +576,7 @@ class TestDownloadUrl:
             mock_cookies = MagicMock()
             fake_load_cookies = MagicMock(return_value=mock_cookies)
             # Object-form patch against the locally-imported ``downloads``
-            # module seam (ADR-007: no string-target patches into private
+            # module seam (ADR-0007: no string-target patches into private
             # internals). ``_load_httpx_cookies`` reads this module global.
             monkeypatch.setattr(artifact_downloads, "load_httpx_cookies", fake_load_cookies)
             with (
@@ -894,7 +894,7 @@ class TestStoragePathEncapsulation:
             raise _StopAfterCapture
 
         # Object-form patch against the locally-imported ``downloads`` module
-        # seam (ADR-007: no string-target patches into private internals).
+        # seam (ADR-0007: no string-target patches into private internals).
         monkeypatch.setattr(artifact_downloads, "load_httpx_cookies", recording)
         with pytest.raises(_StopAfterCapture):
             await service.download_url(
@@ -925,7 +925,7 @@ class TestStoragePathEncapsulation:
             return {}
 
         # Object-form patch against the locally-imported ``downloads`` module
-        # seam (ADR-007: no string-target patches into private internals).
+        # seam (ADR-0007: no string-target patches into private internals).
         monkeypatch.setattr(artifact_downloads, "load_httpx_cookies", recording)
         await service.download_urls_batch([])
 

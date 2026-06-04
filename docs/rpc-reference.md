@@ -1786,7 +1786,7 @@ await rpc_call(
 identical to a `LIST_ARTIFACTS` row): `row[0]` is the same `artifact_id`
 (returned as the task id) and `row[4] == 1` (`PROCESSING` → `in_progress`).
 
-Contract (ADR-019 "async kickoff"): an accepted retry returns
+Contract (ADR-0019 "async kickoff"): an accepted retry returns
 `GenerationStatus(status="in_progress")`; a synchronous server refusal
 (`USER_DISPLAYABLE_ERROR` — rate limit, quota, or non-retryable artifact)
 **raises** the underlying `RateLimitError` / `RPCError`; a null / missing-id

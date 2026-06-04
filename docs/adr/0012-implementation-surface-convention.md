@@ -1,4 +1,4 @@
-# ADR-012: Implementation surface convention (underscore-prefix policy)
+# ADR-0012: Implementation surface convention (underscore-prefix policy)
 
 > **Current state (2026-05-29).** The normative body and the illustrative tree
 > below were written when `_core.py`, `_session.py`, and the `_session_*.py`
@@ -66,7 +66,7 @@ Three facts shape this ADR:
    become public, it is re-exported from a non-underscore-prefixed
    module (typically `__init__.py`, `auth.py`, `exceptions.py`, or
    `types.py`); the underscore-prefixed source module stays internal.
-   ADR-003 (auth facade write-through) and the `_artifacts.py` →
+   ADR-0003 (auth facade write-through) and the `_artifacts.py` →
    `__init__.py` export pattern both rely on this rule.
 3. **The seam churn is high.** Tier-7 through Tier-13 moved
    ~40 distinct seams; that motion will continue. Pinning down which
@@ -233,13 +233,13 @@ To balance the ratchet, two seam-tier consolidation triggers apply:
    self-describing).
 2. **Capability demotion.** When a capability that was previously
    promoted to a shared Protocol (per
-   [ADR-013](0013-composable-session-capabilities.md) §1, the ≥2
+   [ADR-0013](0013-composable-session-capabilities.md) §1, the ≥2
    feature-consumer rule) has dropped back to **a single consumer** —
    i.e. exactly one feature still types against it — that capability
    is a **candidate to demote** back into its sole consumer as a
    feature-local Protocol, mirroring the
    `ChatRuntime` / `ArtifactsRuntime` / `UploadRuntime` pattern in
-   ADR-013 §3.
+   ADR-0013 §3.
 
 Both triggers are *candidates*, not mandates: a reviewer may decline
 the fold/demotion (e.g. when the two siblings have meaningfully
@@ -250,19 +250,19 @@ fresh justification each time — not to force collapses against
 reviewer judgment.
 
 **Demotion does not require an ADR update.** It is the symmetric
-counterpart to ADR-013's promotion rule (also a standing rule that
+counterpart to ADR-0013's promotion rule (also a standing rule that
 applies per-PR, not per-ADR). A demotion or sibling fold is a normal
 refactor PR; it references this section as its policy basis, the same
-way a new shared Protocol references ADR-013 §1. Only a change to the
+way a new shared Protocol references ADR-0013 §1. Only a change to the
 *criteria themselves* (the <300-LOC threshold, the second-consumer
 count, or the mutual-isolation condition on cross-seam imports)
 requires an ADR amendment.
 
 This rule is paired with the underscore-prefix convention rather than
-with ADR-013 because the rule's *evidence* is module-level
+with ADR-0013 because the rule's *evidence* is module-level
 (file sizes, file-to-file imports inside `src/notebooklm/`) and the
 rule's *target* is the seam-tier file layout this ADR pins. The two
-ADRs read as a paired policy: ADR-013 §1 governs when a
+ADRs read as a paired policy: ADR-0013 §1 governs when a
 single-consumer capability becomes shared; this section governs when
 a previously-shared capability or an over-decomposed file pair
 collapses back.
@@ -280,7 +280,7 @@ collapses back.
   internal modules between releases as long as the public-named
   re-export modules continue to expose the same `__all__`.
 - New ADRs and refactor plans can reference the rule by name ("the
-  underscore-prefix convention from ADR-012") instead of restating
+  underscore-prefix convention from ADR-0012") instead of restating
   it each time, shortening planning artifacts and reducing ambiguity
   across the Tier-13+ refactor arc.
 - Static analysers (linters, IDEs) can be configured to warn on
@@ -297,7 +297,7 @@ collapses back.
   submodules but cannot prevent them.
 - Some seams that *look* public-grade are not. For example,
   `_env.is_strict_decode_enabled` (the topic of the sibling
-  ADR-011 flip) is a private seam that downstream code might
+  ADR-0011 flip) is a private seam that downstream code might
   reasonably want to call to mirror the library's strict-decode
   policy. The convention says: re-export it through a public module
   (`config.py` or `__init__.py`) if that need is real, do not
@@ -305,7 +305,7 @@ collapses back.
   will enumerate which seam-level names have legitimate downstream
   demand and promote those re-exports explicitly.
 - The Tier-13 `_session.py` / `_kernel.py` / `_session_contracts.py`
-  module triad is still pinned by ADR-010 with underscore prefixes
+  module triad is still pinned by ADR-0010 with underscore prefixes
   even though `Session` and `Kernel` are arguably the most-load-bearing
   contracts in the post-Tier-13 architecture. That is consistent with
   this ADR: the contracts are stable across the migration, but the
@@ -342,7 +342,7 @@ gain over the existing flat structure. The single-underscore prefix
 already accomplishes the "this is internal" signal without restructuring.
 
 **Promote `_env.is_strict_decode_enabled` to a public name in this PR
-(since ADR-011 lands the same release).** Rejected. ADR-011 pins the
+(since ADR-0011 lands the same release).** Rejected. ADR-0011 pins the
 *behavior* (strict by default) and the *env-var contract*
 (`NOTEBOOKLM_STRICT_DECODE`). Downstream code controls behaviour by
 setting the env var, not by importing the helper. Exposing the
@@ -352,9 +352,9 @@ two unrelated changes in the same PR. PR 13.9b's `__all__` audit is
 the right place to revisit which seam-level names have real downstream
 demand and merit promotion.
 
-**Tie this ADR to ADR-010 (Session/Kernel split).** Rejected. ADR-010
-pins a specific contract shape (the Session/Kernel contract triad from ADR-010, now superseded by ADR-013). This ADR pins a *naming* convention
+**Tie this ADR to ADR-0010 (Session/Kernel split).** Rejected. ADR-0010
+pins a specific contract shape (the Session/Kernel contract triad from ADR-0010, now superseded by ADR-0013). This ADR pins a *naming* convention
 that applies across the entire `src/notebooklm/` tree. The two are
-complementary: ADR-010 says *what* the load-bearing contracts are;
+complementary: ADR-0010 says *what* the load-bearing contracts are;
 this ADR says *where* their implementation lives and how downstream
 code should reference them.

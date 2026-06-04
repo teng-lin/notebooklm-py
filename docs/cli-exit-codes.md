@@ -9,8 +9,8 @@ control flow rather than scraping stdout/stderr text — the text is intended fo
 humans and may evolve, but the exit-code contract is stable.
 
 The companion architectural decision for the `--json` error contract is
-[ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md);
-this document is the surface-level reference for callers, and ADR-015 is the
+[ADR-0015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md);
+this document is the surface-level reference for callers, and ADR-0015 is the
 rationale for the post-parse `ClickException` rules called out below.
 
 For the canonical implementation, see the `handle_errors` context manager in
@@ -56,7 +56,7 @@ mapping in `error_handler.py`:
 | Anything else (`Exception`) | `UNEXPECTED_ERROR` | `2` |
 | Parse-time `click.UsageError` / `click.BadParameter` (Click's parser, before command body runs) | `VALIDATION_ERROR` under `--json`; — in text mode | `2` (under `--json`: typed JSON envelope on stdout, **exit code preserved**; text mode: Click's `Usage:/Error:` on stderr) |
 | Parse-time `click.ClickException` (other subclasses raised by Click's parser) | `VALIDATION_ERROR` under `--json`; — in text mode | `1` (same: JSON envelope under `--json` with the exit code preserved; native text otherwise) |
-| Post-parse `ClickException` raised from a command body or service module | `VALIDATION_ERROR` (or another standard code, per the raise site) | `1` (typed JSON envelope under `--json`; see ADR-015) |
+| Post-parse `ClickException` raised from a command body or service module | `VALIDATION_ERROR` (or another standard code, per the raise site) | `1` (typed JSON envelope under `--json`; see ADR-0015) |
 
 `click.ClickException` raised by **Click's own parser** is the *parse-time*
 path: argv parsing decides the command body should not run at all (unknown
@@ -79,9 +79,9 @@ catches the parse-time `ClickException` itself.
   `Usage: ... / Error: ...` message on stderr and exits with that same
   `exc.exit_code` (`2` / `1`).
 
-This supersedes the original ADR-015 §1 stance that "no JSON envelope is
+This supersedes the original ADR-0015 §1 stance that "no JSON envelope is
 emitted at parse time"; see the amendment note in
-[ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
+[ADR-0015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
 
 `ClickException`-subclass failures raised from inside a **command body or
 its service-layer code** are *post-parse*: argv parsing succeeded, the
@@ -94,7 +94,7 @@ raise `ClickException` for post-parse validation failures except at the
 small set of input-validation boundaries pinned by
 `ALLOWED_CLICK_EXCEPTION_SITES` in
 [`src/notebooklm/cli/error_handler.py`](../src/notebooklm/cli/error_handler.py);
-see [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md)
+see [ADR-0015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md)
 for the contract and rationale.
 
 ## JSON output mode (`--json`)
@@ -125,7 +125,7 @@ succeeds) are routed through this same envelope under `--json` and exit
 `1` with `code: "VALIDATION_ERROR"` (or another standard code chosen by
 the raise site). The contract decision and its enumerated raise sites
 are recorded in
-[ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
+[ADR-0015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
 
 **Parse-time `ClickException` is also covered under `--json`.**
 `ClickException` raised by Click's own parser (before the command body runs)
@@ -140,7 +140,7 @@ failures no longer fall back to usage prose just because they fired before the
 command body. The behavior is pinned by
 [`tests/unit/cli/test_json_validation_contract.py`](../tests/unit/cli/test_json_validation_contract.py)
 (`test_json_validation_errors_emit_json`, `test_text_validation_errors_keep_click_usage_output`)
-and amended into ADR-015 (amendment note, 2026-06-02).
+and amended into ADR-0015 (amendment note, 2026-06-02).
 
 ## Intentional exceptions to the standard convention
 
@@ -401,7 +401,7 @@ section above.
 |------|------------------|
 | `0`  | The command succeeded as documented — the requested effect was carried out and any reported result is authoritative. |
 | `1`  | The command failed, **or** the queried target was not found. Both share exit `1` because automation typically wants the same control-flow branch (`if !` / `case 1)`); JSON mode (`--json`) distinguishes them via the typed `code` field (`NOT_FOUND` vs. `AUTH_ERROR` vs. `VALIDATION_ERROR`, etc.). |
-| `2`  | Click parser-time error — argv could not be parsed into a valid command invocation (unknown flag, type-validation failure, missing required argument). Under `--json` the root group still emits the typed JSON envelope on stdout (`code: "VALIDATION_ERROR"`) but **preserves** this exit `2`; in text mode Click renders its `Usage:/Error:` prose on stderr. See the [parser-time row in the Exception → exit-code mapping](#exception--exit-code-mapping) for the full behavior; this entry exists to call out that `2` is **not** a post-parse code in the default case. Post-parse `ClickException` is contracted by [ADR-015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) to route through the typed JSON envelope and exit `1`, not `2`. The same code is also raised when `handle_errors` catches an unhandled non-`NotebookLMError` exception (likely a bug — see the [Standard exit codes](#standard-exit-codes) table). |
+| `2`  | Click parser-time error — argv could not be parsed into a valid command invocation (unknown flag, type-validation failure, missing required argument). Under `--json` the root group still emits the typed JSON envelope on stdout (`code: "VALIDATION_ERROR"`) but **preserves** this exit `2`; in text mode Click renders its `Usage:/Error:` prose on stderr. See the [parser-time row in the Exception → exit-code mapping](#exception--exit-code-mapping) for the full behavior; this entry exists to call out that `2` is **not** a post-parse code in the default case. Post-parse `ClickException` is contracted by [ADR-0015](adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) to route through the typed JSON envelope and exit `1`, not `2`. The same code is also raised when `handle_errors` catches an unhandled non-`NotebookLMError` exception (likely a bug — see the [Standard exit codes](#standard-exit-codes) table). |
 
 Two commands deliberately deviate from this baseline because their primary
 use case is shell control flow:

@@ -130,7 +130,7 @@ class TestLoginWindowsPermissions:
         """Patch all login dependencies to isolate mkdir/chmod behavior.
 
         D1 PR-3 migration: previously used the string-target ``setattr`` form
-        on a ``"notebooklm....X.Y"`` literal path. ADR-007 forbids that
+        on a ``"notebooklm....X.Y"`` literal path. ADR-0007 forbids that
         form because it silently no-ops when the target relocates. Now uses
         ``patch(...)`` context managers which raise ``AttributeError`` if
         the target is missing, surfacing relocations immediately.

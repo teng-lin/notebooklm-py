@@ -11,7 +11,7 @@ button is clicked. Drift from that payload risks the server silently
 dropping citation anchors and reverting the note to plain text.
 
 The encoder moved from ``_mind_map.py`` to ``_chat/notes.py`` in
-Phase 6 (refactor-history.md Step 8, ADR-013); the test imports were updated
+Phase 6 (refactor-history.md Step 8, ADR-0013); the test imports were updated
 accordingly.
 """
 

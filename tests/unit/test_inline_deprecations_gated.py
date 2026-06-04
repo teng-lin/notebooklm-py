@@ -1,7 +1,7 @@
 """Formerly-inline warnings honor the right category + gate (#1369).
 
 Four sites used to call ``warnings.warn(..., DeprecationWarning)`` inline,
-bypassing the suppression gate ADR-018 promises. The fix split them by what
+bypassing the suppression gate ADR-0018 promises. The fix split them by what
 they actually are:
 
 * **Three genuine scheduled deprecations** — awaiting ``from_storage(...)``,

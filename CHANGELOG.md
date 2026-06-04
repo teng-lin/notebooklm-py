@@ -139,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 >   two MINOR cycles of warnings served; the documented removal target was
 >   v0.7.0). It was a pure forwarder. Use `ChatAPI.save_answer_as_note(...)`,
 >   the canonical citation-rich saved-from-chat method and data owner
->   (ADR-013): `await client.chat.save_answer_as_note(nb_id, ask_result)`.
+>   (ADR-0013): `await client.chat.save_answer_as_note(nb_id, ask_result)`.
 >   The now-unused `save_chat_answer` injection plumbing on `NotesAPI` was
 >   removed with it.
 >
@@ -168,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   if src is None:
       ...
   ```
-  Additive (ADR-019; issue #1247).
+  Additive (ADR-0019; issue #1247).
 - `NOTEBOOKLM_FUTURE_ERRORS` opt-in preview flag — run the **v0.8.0 error
   contract** early to test forward-compatibility before the breaking flips ship
   (ADR-0019 / umbrella #1346). Default-off and **byte-identical** to current
@@ -201,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Studio artifact in place (the web UI "Retry" action), via the new
   `RETRY_ARTIFACT` (`Rytqqe`) RPC. The artifact is not deleted first and the
   same `artifact_id` is preserved, so existing `poll_status()` /
-  `wait_for_completion()` flows keep working. Follows the ADR-019 "async
+  `wait_for_completion()` flows keep working. Follows the ADR-0019 "async
   kickoff" contract: an accepted retry returns
   `GenerationStatus(status="in_progress")`, while a synchronous refusal
   (`USER_DISPLAYABLE_ERROR` — rate limit / quota / not-retryable) **raises** the
@@ -220,7 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so it is catchable via the cross-domain `NotFoundError` umbrella, at
   transport-level `except RPCError` call sites, and at domain-level
   `except NoteError` / `except MindMapError` call sites. These are the
-  prerequisite for the mind-map not-found work (ADR-019; issues #1291, #1346).
+  prerequisite for the mind-map not-found work (ADR-0019; issues #1291, #1346).
   `MindMapNotFoundError` is now raised by the `mind_maps` mutation paths (see
   *Changed* below); `NoteNotFoundError` is not raised by any method yet.
 - `ResearchStatus.NOT_FOUND` — a typed lifecycle sentinel for the
@@ -230,7 +230,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the requested id) when a non-empty pinned `task_id` matches no in-flight task;
   the unfiltered `task_id=None` empty poll still returns `NO_RESEARCH`
   unchanged. Additive and non-breaking — the poll never raises for an absent
-  task (ADR-019 Rule 4; issues #1344, #1346).
+  task (ADR-0019 Rule 4; issues #1344, #1346).
 - **Typed return values for the research / mind-map / source-guide methods.**
   `research.poll` / `research.start` / `research.wait_for_completion`,
   `artifacts.generate_mind_map`, and `sources.get_guide` now return typed
@@ -303,7 +303,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kind`-supplied path). `get_tree` returns `None` for a missing mind map (it is
   a derived read that does not police parent existence) — previously `kind=None`
   raised on an unknown id. Shape-drift in the interactive payload still raises
-  `UnknownRPCMethodError` (ADR-019; issues #1291, #1346).
+  `UnknownRPCMethodError` (ADR-0019; issues #1291, #1346).
 - `client.mind_maps.generate(kind=MindMapKind.INTERACTIVE)` now raises
   `ArtifactFeatureUnavailableError` (instead of a bare `ArtifactError`) when the
   `CREATE_ARTIFACT` call returns no artifact id — no generation task was
@@ -313,7 +313,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `except RPCError` *before* `except ArtifactError` will now take the `RPCError`
   branch — the same MRO the sibling `generate_*` / `retry_failed` null-create
   paths already produce.) This aligns the interactive async kickoff with that
-  sibling null-create contract (ADR-019 "async kickoff"; issue #1359).
+  sibling null-create contract (ADR-0019 "async kickoff"; issue #1359).
 - Documented two pre-existing `client.mind_maps` read semantics (docs-only, no
   behavior change): `list()` populates `MindMap.tree` only for note-backed
   entries — interactive entries carry `tree=None` ("not fetched", not "empty";
@@ -490,12 +490,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - There is no public replacement for the removed internal-only kwargs (`_is_retry`, `operation_variant`); they were never part of the supported surface in the first place.
 - **`source add --url` rejects internal hosts by default (SSRF guard).** `localhost`, `127.0.0.1`, RFC-1918, and link-local URLs — and any non-`http(s)` scheme — are now refused before ingestion. **Migration:** pass the new `--allow-internal` flag to ingest an internal `http(s)` URL intentionally (the scheme allowlist still applies). Full detail in **Security** below ([#1114](https://github.com/teng-lin/notebooklm-py/pull/1114)).
 - **`source` CLI `--json` output shape changed.** `source get --json` now emits the bare kind value (`"type": "url"`) instead of the leaked Python enum repr (`"type": "SourceType.URL"`), and `source fulltext --json` emits a fixed `{source_id, title, kind, content, url, char_count}` payload instead of a raw `asdict(SourceFulltext)` dump. **Migration:** `--json` consumers parsing `source get`'s `type` field, or relying on extra `fulltext` keys, must update. Full detail in **Fixed** below ([#1129](https://github.com/teng-lin/notebooklm-py/pull/1129)).
-- **Post-parse CLI validation errors exit `1` (was `2`) and print a JSON envelope on stdout under `--json`.** For `download` flag conflicts, `generate` validation, `research wait --cited-only`, and `ask --new` + `--conversation-id`, a `--json` invocation now emits `{"error": true, "code": "VALIDATION_ERROR", ...}` on stdout and exits `1` instead of Click's stderr usage text + exit `2`. Text-mode behavior is unchanged. **Migration:** automation parsing these `--json` failures should branch on exit `1` + the JSON body. Full detail in **Changed** below (ADR-015; [#1112](https://github.com/teng-lin/notebooklm-py/pull/1112), [#1115](https://github.com/teng-lin/notebooklm-py/pull/1115), [#1117](https://github.com/teng-lin/notebooklm-py/pull/1117)).
+- **Post-parse CLI validation errors exit `1` (was `2`) and print a JSON envelope on stdout under `--json`.** For `download` flag conflicts, `generate` validation, `research wait --cited-only`, and `ask --new` + `--conversation-id`, a `--json` invocation now emits `{"error": true, "code": "VALIDATION_ERROR", ...}` on stdout and exits `1` instead of Click's stderr usage text + exit `2`. Text-mode behavior is unchanged. **Migration:** automation parsing these `--json` failures should branch on exit `1` + the JSON body. Full detail in **Changed** below (ADR-0015; [#1112](https://github.com/teng-lin/notebooklm-py/pull/1112), [#1115](https://github.com/teng-lin/notebooklm-py/pull/1115), [#1117](https://github.com/teng-lin/notebooklm-py/pull/1117)).
 
 ### Added
 
 - **`notebooklm source stale --exit-on-stale` flag** — opt-in back-compat for the legacy inverted-predicate exit codes (`0` = stale, `1` = fresh). The default behavior is now the standard CLI convention (see **Breaking changes** above); pass `--exit-on-stale` to keep `if notebooklm source stale --exit-on-stale ID; then refresh; fi` shell idioms working.
-- **`Exit code semantics` summary section in [`docs/cli-exit-codes.md`](docs/cli-exit-codes.md#exit-code-semantics).** A normative one-line table — `0` = succeeded as documented, `1` = failed or queried target not found, `2` = Click parser-time error — backing the convention every command obeys outside the documented intentional exceptions. Cross-references the existing tables and [ADR-015](docs/adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
+- **`Exit code semantics` summary section in [`docs/cli-exit-codes.md`](docs/cli-exit-codes.md#exit-code-semantics).** A normative one-line table — `0` = succeeded as documented, `1` = failed or queried target not found, `2` = Click parser-time error — backing the convention every command obeys outside the documented intentional exceptions. Cross-references the existing tables and [ADR-0015](docs/adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md).
 - **`NotFoundError` cross-domain umbrella exception.** Catch `NotFoundError` to handle any "resource not found" case across notebooks, sources, and artifacts in one `except` clause — replacing `except (NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError):`. `NotebookNotFoundError`, `SourceNotFoundError`, and `ArtifactNotFoundError` all inherit from `NotFoundError`. The umbrella itself is additive; the asymmetric inheritance noted on its original introduction has been resolved in the same release — all three subclasses also mix in `RPCError` (see **Breaking changes** above for the `except`-ordering migration).
 - **`notebooklm notebook delete --json`** ([#1167](https://github.com/teng-lin/notebooklm-py/issues/1167)). `notebook delete` was the last delete command (and the only `list` / `create` / `metadata` sibling) without a JSON envelope — passing `--json` crashed with `No such option`. It now emits the typed success/cancel envelope, refuses to prompt in `--json` mode (requiring `--yes`, else a `VALIDATION_ERROR` envelope + exit `1`), and surfaces `context_cleared: true` when the deleted notebook was the active context ([#1193](https://github.com/teng-lin/notebooklm-py/pull/1193)).
 - **`notebooklm skill install --dry-run` / `--no-clobber` / `--force`** ([#1109](https://github.com/teng-lin/notebooklm-py/pull/1109)). Project-scope installs now classify each target as create / up-to-date / overwrite. A target that would be overwritten with *different* content exits `1` and lists the conflicts unless `--force` (overwrite) or `--no-clobber` (skip differing, still create missing) is passed; `--dry-run` previews intended writes without touching disk. Writes go through an atomic temp-file + `os.replace` so a crash can't leave a partial `SKILL.md`. User scope keeps the historical always-overwrite behavior (the new flags error when paired with `--scope user`).
@@ -506,7 +506,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Media `--wait` default timeouts raised.** `generate audio --wait` now defaults to 1200 s ([#1140](https://github.com/teng-lin/notebooklm-py/pull/1140)) and the video / cinematic-video wait defaults were increased to match empirical generation durations ([#1088](https://github.com/teng-lin/notebooklm-py/pull/1088), [#1094](https://github.com/teng-lin/notebooklm-py/issues/1094)), so long generations no longer time out before the artifact is ready under default settings. `docs/` now documents the media wait budgets and the manual `artifact wait` recovery path.
 - **`notebooklm doctor` exits `1` when any check fails** ([#1160](https://github.com/teng-lin/notebooklm-py/issues/1160)). It previously built `status: "fail"` entries but always exited `0`, so CI health checks, `set -e` scripts, and monitoring probes read a broken install as green. Overall health is now computed from the final check states (after any `--fix`) and the process exits `1` if any check still fails (warnings stay non-fatal). The exit happens after the payload/table is emitted, so machine-readable `--json` output is unaffected; `doctor` profile JSON errors are also now wrapped in the typed envelope ([#1179](https://github.com/teng-lin/notebooklm-py/pull/1179), [#1146](https://github.com/teng-lin/notebooklm-py/pull/1146)).
-- **Post-parse CLI validation errors emit the typed JSON envelope under `--json`** ([ADR-015](docs/adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md)). `download` flag conflicts (`--force` + `--no-clobber`, `--latest` + `--earliest`, `--all` + `--artifact`), `generate` validation (cinematic `--format` / `--style` conflicts, invalid `--language` / `NOTEBOOKLM_HL`), `research wait --cited-only` without `--import-all`, and `ask --new` + `--conversation-id` now route through `{"error": true, "code": "VALIDATION_ERROR", ...}` on stdout and exit `1` under `--json`, instead of Click's parser bypassing the envelope to exit `2` with usage text on stderr. Text-mode behavior (usage text, exit `2`) is unchanged. Flagged under **Breaking changes** above for `--json` automation ([#1112](https://github.com/teng-lin/notebooklm-py/pull/1112), [#1115](https://github.com/teng-lin/notebooklm-py/pull/1115), [#1117](https://github.com/teng-lin/notebooklm-py/pull/1117)).
+- **Post-parse CLI validation errors emit the typed JSON envelope under `--json`** ([ADR-0015](docs/adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md)). `download` flag conflicts (`--force` + `--no-clobber`, `--latest` + `--earliest`, `--all` + `--artifact`), `generate` validation (cinematic `--format` / `--style` conflicts, invalid `--language` / `NOTEBOOKLM_HL`), `research wait --cited-only` without `--import-all`, and `ask --new` + `--conversation-id` now route through `{"error": true, "code": "VALIDATION_ERROR", ...}` on stdout and exit `1` under `--json`, instead of Click's parser bypassing the envelope to exit `2` with usage text on stderr. Text-mode behavior (usage text, exit `2`) is unchanged. Flagged under **Breaking changes** above for `--json` automation ([#1112](https://github.com/teng-lin/notebooklm-py/pull/1112), [#1115](https://github.com/teng-lin/notebooklm-py/pull/1115), [#1117](https://github.com/teng-lin/notebooklm-py/pull/1117)).
 
 ### Fixed
 
@@ -610,7 +610,7 @@ Items that need attention when upgrading from 0.4.x. Full migration prose lives 
 - **Per-call upload timeouts on `sources.add_file` / `add_drive`** (#618). New `upload_timeout` / `chunk_timeout` keyword args for tuning large-file uploads against slow networks.
 - **`ResearchAPI.wait_for_completion(notebook_id, task_id=None, *, timeout=1800, interval=5)`** ([#970](https://github.com/teng-lin/notebooklm-py/pull/970)). Polls until research reaches a terminal state (`completed` / `failed`) or the timeout fires; passes through `task_id` on subsequent polls once the backend assigns one to prevent a later concurrent task from substituting its sources/report. Surfaces a new terminal `failed` status so wait loops no longer spin until timeout after the backend rejects a task.
 - **`notebooklm.artifacts.with_rate_limit_retry(callable, *, max_retries=3, ...)`** ([#969](https://github.com/teng-lin/notebooklm-py/pull/969)). Shared retry helper for the `client.artifacts.generate_*` family — catches generation-time `RateLimitError`, honors `retry_after`, and falls back to exponential backoff. Replaces the per-caller try/except/sleep boilerplate previously suggested in `docs/python-api.md`.
-- **`__all__` declared on `notebooklm.paths`, `notebooklm.migration`, and `notebooklm.notebooklm_cli`** ([#958](https://github.com/teng-lin/notebooklm-py/pull/958)). ADR-012 marks all three as public modules; `__all__` now pins the exported surface (12 names on `paths`, 3 on `migration`, `cli` + `main` on the CLI entry point) so `from notebooklm.paths import *` is well-defined and the public API compatibility audit can lock it.
+- **`__all__` declared on `notebooklm.paths`, `notebooklm.migration`, and `notebooklm.notebooklm_cli`** ([#958](https://github.com/teng-lin/notebooklm-py/pull/958)). ADR-0012 marks all three as public modules; `__all__` now pins the exported surface (12 names on `paths`, 3 on `migration`, `cli` + `main` on the CLI entry point) so `from notebooklm.paths import *` is well-defined and the public API compatibility audit can lock it.
 
 ### Changed
 - **Custom `--storage` downloads now use the selected auth file** ([#838](https://github.com/teng-lin/notebooklm-py/issues/838), [#888](https://github.com/teng-lin/notebooklm-py/pull/888)). `ArtifactDownloadService` previously snapshotted the session's storage path at construction time, so `--storage` overrides applied after construction were silently ignored on download. CLI `--storage` flag and mid-process profile switches are now inherited reliably.

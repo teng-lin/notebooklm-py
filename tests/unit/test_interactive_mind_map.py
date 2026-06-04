@@ -115,10 +115,10 @@ def _download_service(studio_rows, note_rows, *, interactive_tree=None):
     else:
         # An empty GET_INTERACTIVE_HTML response: the service reads an absent
         # tree as "not ready" via the real _get_interactive_mind_map_tree path
-        # (no method monkeypatch — ADR-007).
+        # (no method monkeypatch — ADR-0007).
         response = None
     # Wire rpc_call via the MagicMock constructor (not post-hoc attribute
-    # assignment) so the ADR-007 meta-lint stays clean.
+    # assignment) so the ADR-0007 meta-lint stays clean.
     rpc = MagicMock(spec=RpcCaller, rpc_call=AsyncMock(return_value=response))
     return ArtifactDownloadService(rpc=rpc, listing=listing, mind_maps=mind_maps)
 

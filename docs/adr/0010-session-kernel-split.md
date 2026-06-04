@@ -1,8 +1,8 @@
-# ADR-010: Session/Kernel split
+# ADR-0010: Session/Kernel split
 
 > **Current state (2026-05).** This ADR is **Superseded** (by
-> [ADR-013](0013-composable-session-capabilities.md), then
-> [ADR-014](0014-feature-local-runtime-adapters.md)) and documents a transient
+> [ADR-0013](0013-composable-session-capabilities.md), then
+> [ADR-0014](0014-feature-local-runtime-adapters.md)) and documents a transient
 > tier-13 shape for historical context only. Since it was written, the broad
 > `Session: Protocol` was **deleted**, `_session_contracts.py` was **renamed
 > to `_runtime_contracts.py`**, and the feature-local composite Protocols
@@ -20,9 +20,9 @@
 
 ## Status
 
-Superseded by [ADR-013](0013-composable-session-capabilities.md) (#866).
+Superseded by [ADR-0013](0013-composable-session-capabilities.md) (#866).
 
-Tier-13 stabilised the 5-member Session/3-member Kernel/1-member DrainHookRegistration triad. ADR-013 documents the post-drift capability-composition model that replaces it.
+Tier-13 stabilised the 5-member Session/3-member Kernel/1-member DrainHookRegistration triad. ADR-0013 documents the post-drift capability-composition model that replaces it.
 
 ## Context
 

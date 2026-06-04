@@ -239,7 +239,7 @@ def test_resolve_rpc_id_host_not_allowlisted_ignores_override(monkeypatch):
     # depend on a real off-allowlist URL (which the validator would reject).
     # ``resolve_rpc_id`` re-imports the name from ``notebooklm._env`` at call
     # time, so patching the attribute on the imported module object is the
-    # injection seam (ADR-007).
+    # injection seam (ADR-0007).
     monkeypatch.setattr(_env, "get_base_host", lambda: "evil.example.com")
     assert (
         resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)

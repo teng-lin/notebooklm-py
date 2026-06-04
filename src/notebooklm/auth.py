@@ -164,7 +164,7 @@ __all__ = [
 ]
 
 
-# Per ADR-014, ``_validate_required_cookies`` is a direct re-export of
+# Per ADR-0014, ``_validate_required_cookies`` is a direct re-export of
 # ``_auth.cookie_policy._validate_required_cookies``.
 # The prior write-through that copy-forwarded facade-level rebindings of
 # ``MINIMUM_REQUIRED_COOKIES`` / ``_EXTRACTION_HINT`` /
@@ -225,7 +225,7 @@ async def enumerate_accounts(
     )
 
 
-# ``load_auth_from_storage`` lives in ``_auth/tokens.py`` (see ADR-014).
+# ``load_auth_from_storage`` lives in ``_auth/tokens.py`` (see ADR-0014).
 # This module re-exports it so ``notebooklm.auth.load_auth_from_storage``
 # stays a stable public import.
 load_auth_from_storage = _auth_tokens.load_auth_from_storage
@@ -250,7 +250,7 @@ _REFRESH_ATTEMPTED_ENV = _auth_paths._REFRESH_ATTEMPTED_ENV
 # ``_rotate_cookies``) keeps resolving against this module. Tests that
 # need to substitute a moved body should patch the canonical home directly
 # (``_auth.keepalive.X``) — production code no longer mirrors writes
-# (``_AuthFacadeModule`` retired per ADR-003).
+# (``_AuthFacadeModule`` retired per ADR-0003).
 KEEPALIVE_ROTATE_URL = _auth_keepalive.KEEPALIVE_ROTATE_URL
 _KEEPALIVE_ROTATE_HEADERS = _auth_keepalive._KEEPALIVE_ROTATE_HEADERS
 _KEEPALIVE_ROTATE_BODY = _auth_keepalive._KEEPALIVE_ROTATE_BODY
@@ -310,7 +310,7 @@ _rotation_lock_path = _auth_paths._rotation_lock_path
 # carrying the redaction logic, etc.) keep resolving against
 # ``notebooklm.auth``. Tests that need to substitute a moved body should
 # patch the canonical home directly (``_auth.refresh.X``) — production
-# code no longer mirrors writes (``_AuthFacadeModule`` retired per ADR-003).
+# code no longer mirrors writes (``_AuthFacadeModule`` retired per ADR-0003).
 _REFRESH_ATTEMPTED_CONTEXT = _auth_refresh._REFRESH_ATTEMPTED_CONTEXT
 _REFRESH_STATE_LOCK = _auth_refresh._REFRESH_STATE_LOCK
 _REFRESH_LOCKS_BY_LOOP = _auth_refresh._REFRESH_LOCKS_BY_LOOP

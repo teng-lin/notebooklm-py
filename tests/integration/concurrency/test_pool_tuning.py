@@ -67,7 +67,7 @@ async def test_default_limits_passed_to_async_client(auth_tokens, monkeypatch) -
         captured["limits"] = kwargs.get("limits")  # type: ignore[assignment]
         return real_async_client(**kwargs)  # type: ignore[arg-type]
 
-    # ADR-007 Form-2: object-form patch against the locally-imported
+    # ADR-0007 Form-2: object-form patch against the locally-imported
     # `_runtime.init` seam alias. `_runtime_init.httpx` is the same module
     # object the production factory reads `AsyncClient` off of, so patching
     # the attribute here intercepts default-path client construction.
@@ -100,7 +100,7 @@ async def test_custom_limits_passed_to_async_client(auth_tokens, monkeypatch) ->
         captured["limits"] = kwargs.get("limits")  # type: ignore[assignment]
         return real_async_client(**kwargs)  # type: ignore[arg-type]
 
-    # ADR-007 Form-2: object-form patch against the locally-imported
+    # ADR-0007 Form-2: object-form patch against the locally-imported
     # `_runtime.init` seam alias (see the default-limits test above).
     monkeypatch.setattr(_runtime_init.httpx, "AsyncClient", _capturing_client)
     async with NotebookLMClient(auth_tokens, limits=custom):

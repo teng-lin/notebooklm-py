@@ -83,7 +83,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "io_seam",
     },
     "profile_targets": {
-        # ADR-015 Pattern B decoupling — _validate_profile_name raises
+        # ADR-0015 Pattern B decoupling — _validate_profile_name raises
         # LoginConfigurationError instead of click.ClickException.
         "exceptions",
     },

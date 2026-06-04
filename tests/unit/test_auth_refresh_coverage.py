@@ -9,7 +9,7 @@ shell-mode and empty-target basename extraction in the non-zero-exit raise,
 the ``_settle`` future-cancel callback, and the post-refresh retry
 ``route_kwargs`` (``account_email`` / ``force_authuser_query``) plumbing.
 
-New file per ADR-007: patches the owning ``_auth.refresh`` module at the
+New file per ADR-0007: patches the owning ``_auth.refresh`` module at the
 bare-name call site rather than editing the existing concern-aligned files.
 """
 

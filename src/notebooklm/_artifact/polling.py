@@ -46,7 +46,7 @@ class OperationScopeProvider(Protocol):
 
     Inlined from ``_runtime.contracts`` in issue #1327: artifact polling
     is the only consumer, so this single-consumer Protocol lives local to
-    its owner per the ADR-013 ≥2-feature promotion bar.
+    its owner per the ADR-0013 ≥2-feature promotion bar.
     """
 
     def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]: ...

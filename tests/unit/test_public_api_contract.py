@@ -1,6 +1,6 @@
-"""Static-shape conformance for the public return/error contract (ADR-019).
+"""Static-shape conformance for the public return/error contract (ADR-0019).
 
-This is the Tier-1 enforcement floor from ADR-019: a parametrised
+This is the Tier-1 enforcement floor from ADR-0019: a parametrised
 *static-shape* conformance check over the whole public client surface. It walks
 ``inspect.signature(...)`` return annotations (resolved through
 ``typing.get_type_hints`` so PEP 563 string annotations are honoured) across
@@ -37,7 +37,7 @@ from collections.abc import Callable
 
 import pytest
 
-# Every public client namespace, enumerated explicitly (ADR-019 Tier-1 requires
+# Every public client namespace, enumerated explicitly (ADR-0019 Tier-1 requires
 # the walk cover the whole surface, including ``mind_maps`` which the
 # ``audit_public_api_compat`` collector under-covers). Imported from the private
 # implementation modules rather than constructing a live ``NotebookLMClient`` so
@@ -181,7 +181,7 @@ def test_lookup_surface_is_pinned(method_name: str, discovered: list[str]) -> No
     that makes ``hasattr(cls, method)`` go quietly false), which would otherwise
     shrink the parametrisation to a still-green subset.
     """
-    # ADR-019: every lookup namespace exposes all three of get/get_or_none/
+    # ADR-0019: every lookup namespace exposes all three of get/get_or_none/
     # delete, so the three discovered sets must each equal the same constant.
     assert set(discovered) == LOOKUP_NAMESPACES, (
         f"namespaces exposing {method_name!r} = {sorted(discovered)}, "
@@ -191,7 +191,7 @@ def test_lookup_surface_is_pinned(method_name: str, discovered: list[str]) -> No
 
 @pytest.mark.parametrize("namespace", _GET_OR_NONE_NAMESPACES)
 def test_get_or_none_returns_optional(namespace: str) -> None:
-    """Every namespace exposing ``get_or_none`` annotates it ``Optional`` (ADR-019)."""
+    """Every namespace exposing ``get_or_none`` annotates it ``Optional`` (ADR-0019)."""
     annotation = _require_return(namespace, "get_or_none")
     assert _is_optional(annotation), (
         f"{namespace}.get_or_none must return Optional[...]; got {annotation!r}"
@@ -200,7 +200,7 @@ def test_get_or_none_returns_optional(namespace: str) -> None:
 
 @pytest.mark.parametrize("namespace", _DELETE_NAMESPACES)
 def test_delete_returns_none(namespace: str) -> None:
-    """Every public ``delete`` is an idempotent no-payload command -> ``None`` (ADR-019)."""
+    """Every public ``delete`` is an idempotent no-payload command -> ``None`` (ADR-0019)."""
     annotation = _require_return(namespace, "delete")
     assert _is_none(annotation), f"{namespace}.delete must return None; got {annotation!r}"
 
@@ -244,7 +244,7 @@ def test_get_optional_exemptions_are_live(namespace: str) -> None:
 
 
 def test_mind_maps_delete_exposes_kind_parameter() -> None:
-    """``mind_maps.delete`` keeps its kind-dispatch parameter (ADR-019 Tier-2).
+    """``mind_maps.delete`` keeps its kind-dispatch parameter (ADR-0019 Tier-2).
 
     ``mind_maps.delete(..., kind=...)`` is irreducibly per-namespace (it is
     kind-dispatched), so the generic ``ResourceAPI[T]`` base was rejected and
@@ -265,7 +265,7 @@ def test_lookup_methods_have_no_varargs(method_name: str, namespace: str) -> Non
     """No public lookup/delete method uses a ``*args``/``*ids`` varargs signature.
 
     A ``*ids`` base would erase the per-namespace public signatures (the
-    namespaces differ in arity); ADR-019 Tier-2 rejected that base for exactly
+    namespaces differ in arity); ADR-0019 Tier-2 rejected that base for exactly
     this reason. This asserts the explicit, typed signatures are preserved.
     """
     fn = getattr(NAMESPACES[namespace], method_name, None)
@@ -273,5 +273,5 @@ def test_lookup_methods_have_no_varargs(method_name: str, namespace: str) -> Non
         pytest.skip(f"{namespace} does not expose {method_name}")
     assert not _has_varargs(fn), (
         f"{namespace}.{method_name} must not use *args/*ids varargs; "
-        "keep an explicit, per-namespace typed signature (ADR-019 Tier-2)."
+        "keep an explicit, per-namespace typed signature (ADR-0019 Tier-2)."
     )

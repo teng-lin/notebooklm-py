@@ -57,7 +57,7 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
     :class:`~notebooklm.exceptions.UnknownRPCMethodError` so callers fail
     fast on Google-side shape drift. The legacy
     ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0.
-    See ADR-011 (``docs/adr/0011-schema-validation-policy.md``) for the
+    See ADR-0011 (``docs/adr/0011-schema-validation-policy.md``) for the
     rationale.
 
     Args:
@@ -124,7 +124,7 @@ class ChatAPI(LoopBoundPrimitive):
     ):
         """Initialize the chat API.
 
-        Per ADR-014 Rule 2 Corollary, ``ChatAPI`` depends on the
+        Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the
         **direct** collaborators it actually exercises rather than a
         chat-local Runtime Protocol that bundles them. ``ChatAPI`` takes
         the four underlying collaborators (``rpc``, ``transport``,

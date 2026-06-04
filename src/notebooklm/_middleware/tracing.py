@@ -1,6 +1,6 @@
 """TracingMiddleware — innermost middleware in the chain.
 
-Per ADR-009 §"Chain ordering", ``TracingMiddleware`` is
+Per ADR-0009 §"Chain ordering", ``TracingMiddleware`` is
 the **innermost** wrapper around the ``Kernel.post`` transport leaf. It logs one
 "starting" record before invoking ``next_call`` and one "completed"
 (success) or "failed" (exception) record after, capturing per-attempt

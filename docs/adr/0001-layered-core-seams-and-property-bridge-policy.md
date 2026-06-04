@@ -1,4 +1,4 @@
-# ADR-001: Layered `_core` seams and the property-bridge policy
+# ADR-0001: Layered `_core` seams and the property-bridge policy
 
 > **Current state (2026-05-29).** This ADR is **Superseded** and documents a
 > retired pattern for historical context only. The `_core.py` monolith it
@@ -70,7 +70,7 @@ def _save_lock(self, value: threading.Lock) -> None:
 Roughly 324 lines of `_core.py` (lines ~450-774) are property bridges of this form. They exist for two distinct reasons:
 
 1. **Sub-client compatibility** — the capability adapter (`_capabilities.py`) refers to attribute names that have been physically extracted; the bridge keeps the adapter's contract intact.
-2. **Test compatibility** — `monkeypatch.setattr(core, "_save_lock", fake_lock)` is a load-bearing test idiom across ~273 sites (see ADR-003 and the forthcoming ADR-007); the bridge makes such patches write through to the real storage.
+2. **Test compatibility** — `monkeypatch.setattr(core, "_save_lock", fake_lock)` is a load-bearing test idiom across ~273 sites (see ADR-0003 and the forthcoming ADR-0007); the bridge makes such patches write through to the real storage.
 
 ## Decision
 
@@ -80,7 +80,7 @@ Property bridges in `_core.py` are *permitted but tracked*. Each bridge must:
 
 - Be added only when the attribute being relocated has live external readers (tests, sub-clients, downstream code).
 - Read and write through to the owning seam — never store state of its own.
-- Be retired the moment its only readers are themselves retired (see ADR-002 for the sub-client-compat half; ADR-007 will cover the test-compat half).
+- Be retired the moment its only readers are themselves retired (see ADR-0002 for the sub-client-compat half; ADR-0007 will cover the test-compat half).
 
 The seam extractions are behavior-preserving moves. Each one ships with a unit-test fixture that exercises the seam in isolation; nothing on the seam should require a full `Session` to test.
 
@@ -96,8 +96,8 @@ The seam extractions are behavior-preserving moves. Each one ships with a unit-t
 
 - Historical: `_core.py` stayed large even after extraction because of
   the property-bridge zoo. The bridges were the *exit cost* of the
-  architecture's test patterns, not the seam pattern itself. ADR-002,
-  ADR-007, and the later session-shrink arc supplied the removal path.
+  architecture's test patterns, not the seam pattern itself. ADR-0002,
+  ADR-0007, and the later session-shrink arc supplied the removal path.
 - The seam protocols (`RpcOwner`, `DecodeResponse`, feature runtime Protocols, etc.) introduce extra type surface. This pays for itself only because the seams are tested independently — if the seams collapsed back into `_core.py`, the protocols would be ceremonial.
 - New contributors must learn the seam map. The CLAUDE.md "Repository Structure" section exists for this reason; it should remain a thin onboarding guide rather than a duplicate of this ADR.
 

@@ -43,7 +43,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Public surface (ADR-012). Underscore-prefixed helpers like
+# Public surface (ADR-0012). Underscore-prefixed helpers like
 # ``_read_default_profile`` and ``_reset_config_cache`` remain importable for
 # test fixtures via the standard ``from notebooklm.paths import _foo`` syntax
 # (Python attribute lookup is unaffected by ``__all__``); ``__all__`` only

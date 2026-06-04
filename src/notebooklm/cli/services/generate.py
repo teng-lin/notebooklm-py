@@ -1,4 +1,4 @@
-"""Service layer for ``notebooklm generate`` commands (ADR-008).
+"""Service layer for ``notebooklm generate`` commands (ADR-0008).
 
 This module owns the Click-free orchestration for all 11 ``generate``
 leaf commands:
@@ -8,7 +8,7 @@ leaf commands:
   ``data-table``, ``mind-map``, ``report``
 
 The split mirrors the ``services/source_add.py`` / ``services/login.py``
-shape established by earlier ADR-008 extractions:
+shape established by earlier ADR-0008 extractions:
 
 * :func:`build_generation_plan` does all Click-time validation, parameter
   coercion (e.g. report smart-custom detection, cinematic-video alias
@@ -320,7 +320,7 @@ def build_generation_plan(
             (cinematic video + ``--style-prompt``, ``--style custom``
             without ``--style-prompt``, ``cinematic-video --format
             <non-cinematic>``). The command layer renders the error through
-            the ADR-015 JSON/text surface.
+            the ADR-0015 JSON/text surface.
         ValueError: When ``kind`` is not recognized.
     """
     is_explicit: Callable[[str], bool] = parameter_explicit or (lambda _name: False)
@@ -395,7 +395,7 @@ def _build_video_plan_for_kind(
 
     ``alias=True`` enforces the cinematic-video flag rules. Validation
     failures are raised as typed service errors for the command layer to
-    render via text or the ADR-015 JSON envelope.
+    render via text or the ADR-0015 JSON envelope.
     """
     common = _common(raw_args)
     video_format = raw_args.get("video_format", "explainer")

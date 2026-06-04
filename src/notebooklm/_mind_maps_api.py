@@ -220,7 +220,7 @@ class MindMapsAPI:
     async def get_or_none(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
         """Get a mind map by ID, returning ``None`` when it does not exist.
 
-        The sanctioned ``None``-on-miss lookup (ADR-019), spanning both
+        The sanctioned ``None``-on-miss lookup (ADR-0019), spanning both
         backings (note-backed JSON + interactive studio-artifact). Unlike
         :meth:`get` — which is slated to raise
         :class:`~notebooklm.exceptions.MindMapNotFoundError` on a miss in v0.8.0
@@ -279,7 +279,7 @@ class MindMapsAPI:
                 A subclass of :class:`~notebooklm.exceptions.ArtifactError`, so
                 ``except ArtifactError`` still catches it; aligns the interactive
                 async kickoff with the sibling ``generate_*`` / ``retry_failed``
-                null-create contract (ADR-019; issue #1359).
+                null-create contract (ADR-0019; issue #1359).
         """
         if kind == MindMapKind.NOTE_BACKED:
             res = await self._artifacts.generate_mind_map(
@@ -310,7 +310,7 @@ class MindMapsAPI:
         )
         new_id = _new_artifact_id(create_response)
         if new_id is None:
-            # ADR-019 async-kickoff null contract: a null/degenerate
+            # ADR-0019 async-kickoff null contract: a null/degenerate
             # CREATE_ARTIFACT means no generation task was created, so raise
             # ArtifactFeatureUnavailableError (a subclass of ArtifactError, so
             # ``except ArtifactError`` still catches it) rather than the bare
@@ -381,7 +381,7 @@ class MindMapsAPI:
                 Absence is detected via a content/list lookup, not a transport
                 404, but is still surfaced as a ``*NotFoundError`` so callers can
                 ``except NotFoundError`` (or ``except MindMapError``) uniformly
-                across namespaces (ADR-019; issues #1255, #1291).
+                across namespaces (ADR-0019; issues #1255, #1291).
 
         .. note::
             Unlike ``notebooks``/``sources``/``artifacts`` rename — whose
@@ -465,7 +465,7 @@ class MindMapsAPI:
 
         Idempotent on a missing target: like ``sources``/``artifacts``/``notes``
         delete, deleting an already-absent mind map is a no-op that returns
-        ``None`` (ADR-019). When ``kind`` is omitted, ``_detect_kind`` lists to
+        ``None`` (ADR-0019). When ``kind`` is omitted, ``_detect_kind`` lists to
         pick the right RPC family and raises ``MindMapNotFoundError`` for an
         unknown id; that already-absent signal is swallowed here.
 
@@ -478,7 +478,7 @@ class MindMapsAPI:
             try:
                 kind = await self._detect_kind(notebook_id, mind_map_id)
             except MindMapNotFoundError:
-                # Already absent — deletion is idempotent (ADR-019), matching
+                # Already absent — deletion is idempotent (ADR-0019), matching
                 # the kind-supplied path (whose delete RPCs are no-ops on a
                 # missing id) and the sibling sources/artifacts/notes deletes.
                 return None
@@ -502,7 +502,7 @@ class MindMapsAPI:
         Omitting ``kind`` triggers an extra list RPC (and possibly a second
         ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
 
-        As a derived read (ADR-019), this does **not** police parent existence:
+        As a derived read (ADR-0019), this does **not** police parent existence:
         a missing mind map and an existing-but-unpopulated (not-ready) one both
         return ``None``. Use :meth:`get` to distinguish absence from emptiness.
         Shape-drift in the interactive payload still raises
@@ -559,7 +559,7 @@ class MindMapsAPI:
         ``rename`` / ``get_tree`` auto-detect paths do **not** call this — they
         inline the same note-first/interactive-second resolution to avoid a
         second ``list_mind_maps`` RPC, but mirror its precedence and raise type
-        (ADR-019: one resolution rule, interpreted per operation class —
+        (ADR-0019: one resolution rule, interpreted per operation class —
         mutate-existing re-raises, derived reads return the uniform-empty
         value, idempotent delete swallows it).
         """

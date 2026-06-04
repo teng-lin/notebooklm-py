@@ -8,7 +8,7 @@ Note-row primitives live in :mod:`_note_service` and the
 mind-map-only facade lives in :mod:`_mind_map` as
 :class:`NoteBackedMindMapService`. Saving a chat answer as a
 citation-rich note lives on :class:`ChatAPI` as ``save_answer_as_note``
-(refactor-history.md Step 8, ADR-013); the former
+(refactor-history.md Step 8, ADR-0013); the former
 ``NotesAPI.create_from_chat`` forwarder was removed in v0.7.0.
 """
 
@@ -123,7 +123,7 @@ class NotesAPI:
     async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
         """Get a note by ID, returning ``None`` when it does not exist.
 
-        The sanctioned ``None``-on-miss lookup (ADR-019): unlike :meth:`get`
+        The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
         — which is slated to raise ``NoteNotFoundError`` on a miss in v0.8.0
         (issue #1247) — this returns ``None`` for a genuine absence and emits no
         deprecation warning. Transport, auth, and decode faults raised by the
@@ -191,7 +191,7 @@ class NotesAPI:
                 no-ops on a missing note, so the current (v0.7.0) contract
                 silently "succeeds" on a miss; the preview adds a public-facade
                 existence preflight so a mutate-existing op fails loud per
-                ADR-019 Class 5.
+                ADR-0019 Class 5.
         """
         if future_errors_enabled():
             # v0.8.0 preview (issue #1362): detect a missing target at the

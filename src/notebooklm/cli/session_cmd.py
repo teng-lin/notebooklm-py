@@ -17,7 +17,7 @@ modules:
 
 Body-used names that *moved* into those services are re-imported here as
 the command layer's own bindings. A handful are also bound on the
-``notebooklm.cli.session_cmd`` namespace by tests that pre-date ADR-008's
+``notebooklm.cli.session_cmd`` namespace by tests that pre-date ADR-0008's
 services-side patching convention (e.g. ``_sync_server_language_to_config``,
 ``_login_browser_cookies_single``); those names stay because they are
 referenced from this module's body.
@@ -57,10 +57,10 @@ from .services.auth_diagnostics import (
 )
 from .services.auth_source import AUTH_JSON_ENV_NAME, has_env_auth_json
 
-# Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-008.
+# Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-0008.
 # These names are all called from this module's body. Several also serve as
 # ``notebooklm.cli.session_cmd.*`` monkeypatch surfaces for tests that pre-date
-# ADR-008's services-side patching convention (e.g.
+# ADR-0008's services-side patching convention (e.g.
 # ``_sync_server_language_to_config``, ``_login_browser_cookies_single``,
 # ``_refresh_from_browser_cookies``, ``_enumerate_browser_accounts``); those
 # patches keep working because the body-used name stays bound here.
@@ -104,7 +104,7 @@ async def fetch_tokens_with_domains(*args: Any, **kwargs: Any) -> Any:
 def _click_exception_from(exc: LoginConfigurationError) -> click.ClickException:
     """Translate a login-service ``LoginConfigurationError`` into a Click error.
 
-    The login services raise plain Python exceptions (ADR-015 Pattern B
+    The login services raise plain Python exceptions (ADR-0015 Pattern B
     decoupling) so the command layer owns the Click translation here.
     ``hint`` is appended to the user-facing message when present so the
     final ``Error: ...`` line carries the remediation advice.
@@ -179,7 +179,7 @@ def _render_status(report: StatusReport, *, json_output: bool) -> None:
 
     Lives here rather than in
     :mod:`notebooklm.cli.services.session_context` so the service layer
-    does not reach into ``..rendering`` (ADR-008). Supports ``--paths``
+    does not reach into ``..rendering`` (ADR-0008). Supports ``--paths``
     (resolved configuration paths) and ``--json`` (machine-readable
     envelope).
     """
@@ -338,7 +338,7 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
 
     The presentation + exit-code policy lives here in the command layer
     so ``services/auth_diagnostics.py`` can stay free of rendering and
-    exit imports (ADR-008 boundary).
+    exit imports (ADR-0008 boundary).
     """
     plan = result.plan
     all_passed = result.all_passed
@@ -438,7 +438,7 @@ def _render_auth_inspect(
     """Render ``auth inspect`` results (text table or JSON envelope).
 
     Moved here from ``services/auth_diagnostics.py`` so the service module
-    stays free of rendering imports (ADR-008 boundary).
+    stays free of rendering imports (ADR-0008 boundary).
     """
     if json_output:
         json_output_response(
@@ -666,7 +666,7 @@ def register_session_commands(cli):
                     return
                 active_profile = ctx.obj.get("profile") if ctx.obj else None
                 # Inject ``click.confirm`` as the overwrite confirmer so the
-                # login service stays Click-free (ADR-015 Pattern B). The
+                # login service stays Click-free (ADR-0015 Pattern B). The
                 # service defaults ``confirm=None`` to "auto-accept" for
                 # non-interactive callers; production CLI runs always inject
                 # an actual prompt here.

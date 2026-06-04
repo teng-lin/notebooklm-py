@@ -61,7 +61,7 @@ class ResearchStatus(str, Enum):
     # tasks); ``NOT_FOUND`` is the poll-observed absence of a *specific*
     # requested ``task_id`` (the task is not among the polled results). It is a
     # typed lifecycle sentinel, not an error — distinct from looking up a
-    # resource that does not exist, which raises (ADR-019 Rule 4, #1346).
+    # resource that does not exist, which raises (ADR-0019 Rule 4, #1346).
     NOT_FOUND = "not_found"
 
     def __str__(self) -> str:  # pragma: no cover - trivial
@@ -186,7 +186,7 @@ class ResearchTask(MappingCompatMixin):
         Used when a poll explicitly requested ``task_id`` but that task is not
         among the polled results. Distinct from :meth:`empty` (nothing in
         flight): this carries the requested ``task_id`` and the typed
-        :attr:`ResearchStatus.NOT_FOUND` sentinel (ADR-019 Rule 4).
+        :attr:`ResearchStatus.NOT_FOUND` sentinel (ADR-0019 Rule 4).
         """
         return cls(task_id=task_id, status=ResearchStatus.NOT_FOUND)
 

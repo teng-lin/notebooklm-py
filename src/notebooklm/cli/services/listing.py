@@ -8,7 +8,7 @@ level WITHOUT validation, before adding the entity list and ``count`` keys.
 Future list commands should treat this docstring as the canonical contract for
 command-specific envelope fields.
 
-This module is part of the ``cli/services`` layer per ADR-008 and is therefore
+This module is part of the ``cli/services`` layer per ADR-0008 and is therefore
 boundary-clean: no Click imports, no ``..rendering`` / ``..error_handler`` /
 ``..runtime`` imports, and the service does not write to stdout. It returns a
 :class:`ListRender` (and the smaller :class:`ListResult`) describing what to

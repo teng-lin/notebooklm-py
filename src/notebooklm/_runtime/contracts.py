@@ -1,7 +1,7 @@
 """Type-only contracts shared across feature APIs.
 
 This module defines the narrow structural Protocols feature APIs depend
-on. Per ADR-013, a Protocol lives here only when **shared by ≥2
+on. Per ADR-0013, a Protocol lives here only when **shared by ≥2
 features**; single-consumer capabilities stay local to their owning
 feature module (e.g. ``AuthMetadata`` lives in ``_source/upload.py`` and
 ``OperationScopeProvider`` lives in ``_artifact/polling.py``, each with a
@@ -13,7 +13,7 @@ Contents:
   pipeline (and structurally satisfied by the concrete ``Kernel``).
 * :class:`RpcCaller` (~17 consumers) and :class:`LoopGuard` (2
   consumers) — the surviving shared capability Protocols that meet the
-  ADR-013 ≥2-feature bar.
+  ADR-0013 ≥2-feature bar.
 
 Feature APIs that need more than one capability take their direct
 collaborators by keyword-only constructor argument (``ChatAPI`` in

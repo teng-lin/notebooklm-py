@@ -1422,7 +1422,7 @@ class TestResearch:
         Distinct from the unfiltered empty-poll case (NO_RESEARCH): when the
         caller explicitly requested a specific task that is not among the
         polled results, the typed NOT_FOUND status carries the requested id
-        (ADR-019 Rule 4). The poll does not raise.
+        (ADR-0019 Rule 4). The poll does not raise.
         """
         other_task = [None, ["other query", 1], 1, [[], ""], 1]
         response_body = build_rpc_response(RPCMethod.POLL_RESEARCH, [[["task_other", other_task]]])

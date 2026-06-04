@@ -26,7 +26,7 @@ def _validate_profile_name(name: str) -> str:
         LoginConfigurationError: when ``name`` does not match the allowed
             alphanumeric/hyphen/underscore pattern. The calling Click
             command translates this to a ``click.ClickException`` (or JSON
-            error envelope) at the boundary — see ADR-015.
+            error envelope) at the boundary — see ADR-0015.
     """
     if not _PROFILE_NAME_RE.match(name):
         raise LoginConfigurationError(

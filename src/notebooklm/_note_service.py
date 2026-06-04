@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # Task storage from GC-ing them mid-flight. Sharing one set across all
 # ``NoteService`` instances is correct and simpler than per-instance
 # bookkeeping — there is no per-instance state on the tasks themselves.
-# Single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
+# Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
 _cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 

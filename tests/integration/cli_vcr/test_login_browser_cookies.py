@@ -6,7 +6,7 @@ homepage fetch that ``_login_with_browser_cookies`` performs after
 OAuth handshake, and no RotateCookies POST is recorded.
 
 Two seams keep the recorded path narrow (patched in object-form against the
-locally-imported module that the run actually resolves — ADR-007):
+locally-imported module that the run actually resolves — ADR-0007):
 
 1. ``_read_browser_cookies`` — patched to return a sanitized rookiepy cookie
    set instead of opening the user's real browser DB.
@@ -145,7 +145,7 @@ class TestLoginBrowserCookies:
         # and re-exported by the package's ``__init__.py``; the caller path
         # (``refresh._login_with_browser_cookies``) imports it via the
         # ``browser_accounts`` binding, so we patch the call-site module too.
-        # Object-form patches against locally-imported seam modules (ADR-007):
+        # Object-form patches against locally-imported seam modules (ADR-0007):
         # each ``setattr`` targets the live module attribute, not an import
         # string, so a relocation surfaces as an ``AttributeError`` instead of
         # silently no-opping.
@@ -210,7 +210,7 @@ class TestLoginBrowserCookies:
         # ``_read_browser_cookies`` is defined in ``browser_accounts`` and called
         # from ``refresh._login_with_browser_cookies``; both binding sites need the
         # patch so the dispatcher's local lookup hits our capture function.
-        # Object-form patches against locally-imported seam modules (ADR-007):
+        # Object-form patches against locally-imported seam modules (ADR-0007):
         # targeting the live module attribute keeps a relocation loud instead of
         # a silent import-string no-op. ``_sync_server_language_to_config`` is
         # resolved in the ``refresh`` module namespace on this path, so its

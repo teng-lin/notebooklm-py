@@ -1,4 +1,4 @@
-"""Unit tests for the ``_chat.notes`` module (Phase 6, ADR-013).
+"""Unit tests for the ``_chat.notes`` module (Phase 6, ADR-0013).
 
 The encoder is tested separately in
 ``tests/unit/test_save_chat_as_note_encoder.py``. The tests here pin
@@ -40,7 +40,7 @@ def _make_refs(n: int = 1) -> list[ChatReference]:
 
 @pytest.fixture
 def rpc() -> FakeSession:
-    """ADR-007 substrate: ``FakeSession`` with ``rpc_call`` injected.
+    """ADR-0007 substrate: ``FakeSession`` with ``rpc_call`` injected.
 
     ``save_chat_answer_as_note`` only consumes the ``rpc_call`` method
     from its :class:`SaveChatNoteRpc` protocol surface, so the

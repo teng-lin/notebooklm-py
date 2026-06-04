@@ -88,7 +88,7 @@ it to `decode_response`. A case must declare **exactly one** of:
 All identifiers in these fixtures are **synthetic** and obviously scrubbed.
 This avoids any leak risk and is the simpler alternative to the
 cassette-scrubber pipeline documented in
-[ADR-006](../../../docs/adr/0006-vcr-scrubber-strategy.md).
+[ADR-0006](../../../docs/adr/0006-vcr-scrubber-strategy.md).
 
 | Class | Placeholder example |
 |---|---|

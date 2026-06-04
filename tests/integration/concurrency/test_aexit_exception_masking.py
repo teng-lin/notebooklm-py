@@ -41,7 +41,7 @@ def _stub_open(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     invocation. Tests assert it is non-empty so the seam stays load-bearing:
     if the object-form patch ever stopped resolving (a silent no-op), the
     real `open()` would run instead, ``calls`` would be empty, and the
-    assertion fails — the ADR-007 Form-2 disable->red bite-check.
+    assertion fails — the ADR-0007 Form-2 disable->red bite-check.
     """
     calls: list[object] = []
 
@@ -54,7 +54,7 @@ def _stub_open(monkeypatch: pytest.MonkeyPatch) -> list[object]:
 
         install_http_client_for_test(self._kernel, httpx.AsyncClient())
 
-    # Object-form patch against a locally-imported seam alias (ADR-007 Form 2):
+    # Object-form patch against a locally-imported seam alias (ADR-0007 Form 2):
     # patch the unbound `open` method on the `ClientLifecycle` class so the
     # `client._collaborators.lifecycle.open(...)` instance call resolves to the
     # stub. Avoids the import-string-target form that silently no-ops on relocation.
@@ -79,7 +79,7 @@ async def test_body_raises_and_close_raises_body_wins(
     # Capture the http client reference BEFORE entering the cm — successful
     # close sets `client._collaborators.kernel.http_client = None`, so we need our own ref.
     async with client:
-        # ADR-007 Form-2 bite-check: the object-form `ClientLifecycle.open`
+        # ADR-0007 Form-2 bite-check: the object-form `ClientLifecycle.open`
         # patch must have resolved — the stub ran on context entry. If the
         # seam ever stopped binding (silent no-op), `calls` is empty here.
         assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
@@ -137,7 +137,7 @@ async def test_body_succeeds_and_close_raises_close_propagates(
         async with client:
             pass
 
-    # ADR-007 Form-2 bite-check: the object-form `ClientLifecycle.open` patch
+    # ADR-0007 Form-2 bite-check: the object-form `ClientLifecycle.open` patch
     # resolved — the stub ran on context entry (empty => silent no-op).
     assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
 
@@ -155,7 +155,7 @@ async def test_cancel_mid_close_does_not_leak_transport(
     """
     client = NotebookLMClient(auth_tokens)
     await client.__aenter__()
-    # ADR-007 Form-2 bite-check: the object-form `ClientLifecycle.open` patch
+    # ADR-0007 Form-2 bite-check: the object-form `ClientLifecycle.open` patch
     # resolved — the stub ran on __aenter__ (empty => silent no-op).
     assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
     http_client_ref = client._collaborators.kernel.get_http_client()

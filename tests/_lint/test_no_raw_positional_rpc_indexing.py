@@ -13,7 +13,7 @@ decode those positional structures are:
 Everywhere else, walking a decoded payload with a hand-rolled *chain* of
 integer-literal subscripts (``first[4][3]``, ``result[0][2][4]``,
 ``cite[0][0]``) re-scatters the position knowledge the adapters exist to
-contain, and -- per **ADR-011** -- routinely *swallows* shape drift to an
+contain, and -- per **ADR-0011** -- routinely *swallows* shape drift to an
 empty/wrong value behind ``try/except (IndexError, TypeError)`` instead of
 raising ``UnknownRPCMethodError`` via ``safe_index``.
 
@@ -153,7 +153,7 @@ def test_no_unbaselined_chained_positional_rpc_indexing() -> None:
     unbaselined = {f: lines for f, lines in offenders.items() if f not in ALLOWLIST}
     assert not unbaselined, (
         "Raw chained positional indexing of RPC payloads (`x[i][j]`) is forbidden "
-        "outside src/notebooklm/rpc/ and src/notebooklm/_row_adapters/ (see ADR-011, "
+        "outside src/notebooklm/rpc/ and src/notebooklm/_row_adapters/ (see ADR-0011, "
         "issue #1377). Decode through rpc/_safe_index.safe_index() or a typed "
         "_row_adapters/ view so shape drift RAISES UnknownRPCMethodError instead of "
         "silently degrading to empty/wrong data.\n\n"

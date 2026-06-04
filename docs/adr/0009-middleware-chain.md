@@ -1,8 +1,8 @@
-# ADR-009: Middleware chain for cross-cutting transport concerns
+# ADR-0009: Middleware chain for cross-cutting transport concerns
 
 ## Status
 
-Accepted (Tier 12 PR 12.1; closed by PR 12.9); context refined by [ADR-013](0013-composable-session-capabilities.md) (#866).
+Accepted (Tier 12 PR 12.1; closed by PR 12.9); context refined by [ADR-0013](0013-composable-session-capabilities.md) (#866).
 Amended (arc-1, closes the `[arc-1-formalized-as-deferred-permanent]`
 item on the v0.6 architecture-deepening backlog, §6.1): the
 `RpcRequest.context: dict[str, Any]` shape is the **long-term**
@@ -42,16 +42,16 @@ load-bearing: PR 12.8's implementation has zero degrees of freedom on
 shape. PRs 12.2–12.7 also depend on the chain ordering and the
 `RpcRequest.context` keys defined below.
 
-ADR-002 ("Capability Protocol pattern, `SessionCapabilities` fat
+ADR-0002 ("Capability Protocol pattern, `SessionCapabilities` fat
 union") was superseded by the `arch-d2-cutover` PR (D2 PR-2), per
-ADR-002's own Status line. ADR-010 was the original Tier-13 supersession plan but was itself superseded by [ADR-013](0013-composable-session-capabilities.md) ("Composable Session Capabilities") in v0.5.0. See [`docs/architecture.md`](../architecture.md)
+ADR-0002's own Status line. ADR-0010 was the original Tier-13 supersession plan but was itself superseded by [ADR-0013](0013-composable-session-capabilities.md) ("Composable Session Capabilities") in v0.5.0. See [`docs/architecture.md`](../architecture.md)
 for the post-supersession capability-protocol model.
 
 ## Context
 
 The post-remediation `Session` orchestrates six cross-cutting concerns
 across every authenticated POST. The "Today" column below describes the
-pre-Tier-12 state (when ADR-009 was written, before any chain extraction
+pre-Tier-12 state (when ADR-0009 was written, before any chain extraction
 landed); the "Post-Tier-12" column describes where each concern lives
 after PR 12.9 closed the tier. `_SyntheticErrorTransport` was deleted by
 PR 12.9; the chain-layer `ErrorInjectionMiddleware` is the only
@@ -68,7 +68,7 @@ substitution path going forward.
 | Per-attempt tracing/logging | scattered `logger.debug` calls inside the retry loop | `TracingMiddleware` (chain pos 6) |
 
 Before the chain extraction, adding another concern (e.g. an
-idempotency-routing wrapper for retry safety, ADR-005) required touching
+idempotency-routing wrapper for retry safety, ADR-0005) required touching
 the transport POST loop directly. Each concern's state holder
 (`TransportDrainTracker` / `ClientMetrics` / etc.) was also threaded into
 that leaf, which meant: (a) a new concern grew the host Interface, and
@@ -94,7 +94,7 @@ Five details that shaped this ADR:
    stateless; per-call metadata travels through `RpcRequest.context`.
    Tests override the middleware list via constructor injection
    (`Session(kernel, middlewares=[FakeMetrics(), real_drain])`) — never
-   by monkeypatching (ADR-007).
+   by monkeypatching (ADR-0007).
 4. **Idempotency resolution happens *above* the chain.**
    `RpcExecutor.rpc_call` calls
    `_idempotency.resolve_effective_disable_internal_retries(...)` and
@@ -265,7 +265,7 @@ than deferred to a future arc):
   Reviewer attention is the actual gate today; the planned meta-lint
   (see "Follow-up" below) makes that gate enforceable without per-call
   type machinery.
-- This is the same trade ADR-013's composable-capabilities split makes
+- This is the same trade ADR-0013's composable-capabilities split makes
   in the other direction: keep the typed surfaces typed, keep the
   metadata-bag surface stringly when its consumers are a closed set
   governed by ADR review.
@@ -273,7 +273,7 @@ than deferred to a future arc):
 **Policy: vocabulary additions require an ADR update.**
 
 - Any new `context` key — read OR written — by a middleware, the
-  terminal, or a host helper requires an ADR-009 amendment that adds
+  terminal, or a host helper requires an ADR-0009 amendment that adds
   the key to the vocabulary table above with `Set by` / `Read by`
   columns populated.
 - Reuse before invention: if an existing key carries the same semantic
@@ -570,9 +570,9 @@ Tier-13 follow-up: rewrite
 once `Kernel.post` is the chain leaf. The signature pinned in
 §"AuthRefreshMiddleware constructor signature" above is the target.
 
-ADR-010 (the original target of this forward reference) was itself
-superseded by ADR-013 ("Composable Session Capabilities") in v0.5.0.
-ADR-009's middleware-chain ordering remains load-bearing; chain
+ADR-0010 (the original target of this forward reference) was itself
+superseded by ADR-0013 ("Composable Session Capabilities") in v0.5.0.
+ADR-0009's middleware-chain ordering remains load-bearing; chain
 construction now lives in `MiddlewareChainBuilder`
 (`_middleware_chain.py`) — an extraction performed inside this ADR's
 domain, not a supersession — and the order is preserved by

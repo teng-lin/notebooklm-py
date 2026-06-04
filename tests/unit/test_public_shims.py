@@ -664,7 +664,7 @@ def test_types_private_state_seams_are_live_objects(monkeypatch: pytest.MonkeyPa
     assert _SOURCE_TYPE_COMPAT_MAP is public_types._SOURCE_TYPE_COMPAT_MAP
     source_warnings: set[int] = set()
     artifact_warnings: set[tuple[int | None, int | None]] = set()
-    # ADR-007 seam-aliased object-target form: patch the canonical owners in
+    # ADR-0007 seam-aliased object-target form: patch the canonical owners in
     # ``_types/{sources,artifacts}`` directly. ``notebooklm.types._warned_*``
     # are re-exports of those canonical objects, so the test must target the
     # canonical home — patching the public facade would rebind only the
@@ -1024,7 +1024,7 @@ def test_auth_subpackage_init_wires_new_seam_modules() -> None:
 
 
 def test_auth_validation_is_identity_re_export() -> None:
-    """ADR-014 + Wave 4 T2.2: ``auth._validate_required_cookies`` is now a
+    """ADR-0014 + Wave 4 T2.2: ``auth._validate_required_cookies`` is now a
     direct re-export of ``_auth.cookie_policy._validate_required_cookies``.
 
     Round-2 reviewer finding (codex/momus): the prior write-through that
@@ -1100,7 +1100,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
             session_id="session",
         )
     )
-    # ADR-007 constructor injection: substitute the whole executor
+    # ADR-0007 constructor injection: substitute the whole executor
     # collaborator with the seam fixture's fake instead of mutating
     # ``client._rpc_executor.rpc_call`` after the fact. The public
     # ``rpc_call`` wrapper reads ``self._rpc_executor``, so swapping the
@@ -1139,7 +1139,7 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
             session_id="session",
         )
     )
-    # No async context is needed: ADR-007 constructor injection swaps the
+    # No async context is needed: ADR-0007 constructor injection swaps the
     # whole executor collaborator for the seam fixture's fake before any
     # real transport initialization can be required.
     fake = make_fake_core(rpc_call=AsyncMock(return_value=[]))
@@ -1271,7 +1271,7 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
 
 # ---------------------------------------------------------------------------
 # D1 PR-2 retired ``_AuthFacadeModule`` and the four ``_AUTH_*_FACADE_NAMES``
-# mirror tables (ADR-003 → Superseded). The patch-and-execute tests that
+# mirror tables (ADR-0003 → Superseded). The patch-and-execute tests that
 # pinned the facade-mirror semantics are gone with the mechanism; the
 # identity / re-export tests below still apply and stay.
 # ---------------------------------------------------------------------------

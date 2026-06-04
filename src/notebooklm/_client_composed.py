@@ -46,7 +46,7 @@ class ClientComposed(LoopBoundPrimitive):
         self._chain_host: MiddlewareChainHost | None = None
         self._chain_builder: MiddlewareChainBuilder | None = None
         self._middlewares: list[Middleware] | None = None
-        # Avoid a plain `.collaborators` attribute here: the ADR-014 lint
+        # Avoid a plain `.collaborators` attribute here: the ADR-0014 lint
         # reserves that bare name so feature APIs can't grab the whole
         # bundle.
         self._runtime_collaborators: RuntimeCollaborators | None = None

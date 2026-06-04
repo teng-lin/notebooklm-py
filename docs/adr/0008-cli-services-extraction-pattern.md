@@ -1,4 +1,4 @@
-# ADR-008: `cli/services/` extraction pattern
+# ADR-0008: `cli/services/` extraction pattern
 
 ## Status
 
@@ -10,7 +10,7 @@ CLI commands grew organically: every new feature added a new Click command (or s
 
 The audit identified three concrete failure modes:
 
-1. **Click commands were not unit-testable in isolation.** Testing "what happens if browser profile enumeration returns three entries" required either driving the full Click test runner (slow, mixes parsing + business logic + presentation in every assertion) or `monkeypatch.setattr("notebooklm.cli.session_cmd._enumerate_…", fake)` — the test-monkeypatch gravity pattern that ADR-003 and ADR-007 describe.
+1. **Click commands were not unit-testable in isolation.** Testing "what happens if browser profile enumeration returns three entries" required either driving the full Click test runner (slow, mixes parsing + business logic + presentation in every assertion) or `monkeypatch.setattr("notebooklm.cli.session_cmd._enumerate_…", fake)` — the test-monkeypatch gravity pattern that ADR-0003 and ADR-0007 describe.
 2. **Business logic was uncoupled from re-use.** The same browser-profile enumeration logic would have been useful from the Python API, but importing it required reaching past Click decorators into `cli/session.py`. The CLI module became a sink for logic that should have been library-level.
 3. **CLI commands could not shrink.** Even the trivial commands carried ~50 lines of validation / setup before they could call into the actual work, because the "actual work" was inline.
 
@@ -67,12 +67,12 @@ The pattern is deliberately *light*: there is no service-layer base class, no DI
 - Business logic is unit-testable without driving Click. Tests can call `build_source_add_plan(...)` directly and assert on the returned plan; tests can call `execute_source_add(plan, fake_facade)` and assert on the facade calls.
 - The service modules document the *contract* of each CLI domain via their `Plan` dataclass and their facade `Protocol`. A reviewer reading `cli/services/source_add.py` sees the entire decision graph for `source add` in one file.
 - Business logic is re-usable. The Python API can import from `cli/services/<domain>.py` when a Python-side feature wants the same logic without re-implementing it (this is rare but real — `cli/services/source_clean.py` is consumed by both the CLI and an internal cleanup helper).
-- The pattern composes with ADR-007's test-fixture pattern (constructor injection): service-layer functions take their collaborators as parameters, so test fixtures provide them; no monkeypatching of module globals.
+- The pattern composes with ADR-0007's test-fixture pattern (constructor injection): service-layer functions take their collaborators as parameters, so test fixtures provide them; no monkeypatching of module globals.
 
 **Unwanted:**
 
 - Some Click commands have *no* business logic and still gain a service module if they cross a complexity threshold; reviewers must agree on where that threshold is. The current rule of thumb is "if the command body exceeds 50 lines or has more than one branch on validation results, extract a service."
-- The pattern *requires* a `Protocol`-typed facade for testability; in some cases the protocol has a single implementer (`NotebookLMClient`) and looks ceremonial. The audit ADR-002 calls out this exact failure mode for capability Protocols; the mitigation here is that the facade Protocols are narrow (per-service, listing only the methods that service uses) so they do not slip into fat-union shape.
+- The pattern *requires* a `Protocol`-typed facade for testability; in some cases the protocol has a single implementer (`NotebookLMClient`) and looks ceremonial. The audit ADR-0002 calls out this exact failure mode for capability Protocols; the mitigation here is that the facade Protocols are narrow (per-service, listing only the methods that service uses) so they do not slip into fat-union shape.
 - The split is visible in the file count. `cli/services/login.py` is ~1,300 lines because the business logic is genuinely complex; the parent `cli/session.py` plus the service module exceeds the original monolith. The trade is "two reviewable files" vs "one unreviewable file"; the audit chose the former.
 
 ## Alternatives considered

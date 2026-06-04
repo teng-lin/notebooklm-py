@@ -61,7 +61,7 @@ class DecodeResponse(Protocol):
 class RpcExecutor:
     """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry.
 
-    Per ADR-014 Rule 5, the constructor takes its four runtime collaborators
+    Per ADR-0014 Rule 5, the constructor takes its four runtime collaborators
     (Kernel, RuntimeTransport, AuthRefreshCoordinator, ClientMetrics) directly
     via keyword-only arguments rather than reaching them through an owner facade.
     """

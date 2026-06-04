@@ -24,7 +24,7 @@ from notebooklm.types import AccountLimits, Notebook, NotebookMetadata, Source, 
 def _make_core(rpc_call: AsyncMock | None = None):
     """Return a fake collaborator core with a pre-wired ``rpc_call``.
 
-    ADR-007 substrate: built via :func:`make_fake_core` so the resulting
+    ADR-0007 substrate: built via :func:`make_fake_core` so the resulting
     bag-of-attributes satisfies the capability Protocols without re-
     introducing the forbidden post-construction AsyncMock attribute-
     assignment pattern. Callers that need to control the dispatch

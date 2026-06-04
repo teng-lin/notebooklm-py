@@ -181,10 +181,10 @@ The flip happens in lockstep at the version bump, enforced by the
 
 | Removed | Replacement | Deprecated since | Removed in | Notes |
 |---------|-------------|------------------|------------|-------|
-| `NOTEBOOKLM_STRICT_DECODE=0` soft-mode opt-out | Unset the variable (strict is the only mode) | v0.5.0 | v0.7.0 | The env var is now ignored; `safe_index` always raises `UnknownRPCMethodError` on shape drift. Rationale in `docs/stability.md` "Strict decode" + ADR-011 |
+| `NOTEBOOKLM_STRICT_DECODE=0` soft-mode opt-out | Unset the variable (strict is the only mode) | v0.5.0 | v0.7.0 | The env var is now ignored; `safe_index` always raises `UnknownRPCMethodError` on shape drift. Rationale in `docs/stability.md` "Strict decode" + ADR-0011 |
 | Positional `wait` / `wait_timeout` on `SourcesAPI.add_url`, `SourcesAPI.add_text`, `SourcesAPI.add_file`, `SourcesAPI.add_drive` | Pass `wait=...` and `wait_timeout=...` as keywords | v0.5.0 | v0.7.0 | `wait` / `wait_timeout` are now keyword-only; positional calls raise `TypeError`. CLI already used keyword arguments |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.7.0 | The `poll_interval` keyword was removed; passing it raises `TypeError` |
-| `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.7.0 | Pure deprecated forwarder, now removed (two MINOR cycles of warnings served). `ChatAPI.save_answer_as_note(...)` is the canonical citation-rich saved-from-chat method and data owner (ADR-013); call it directly. |
+| `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.7.0 | Pure deprecated forwarder, now removed (two MINOR cycles of warnings served). `ChatAPI.save_answer_as_note(...)` is the canonical citation-rich saved-from-chat method and data owner (ADR-0013); call it directly. |
 
 ## Removed in v0.6.0
 
@@ -208,7 +208,7 @@ The flip happens in lockstep at the version bump, enforced by the
   renamed-keyword warnings, the dict-subscript bridge, and the one-off
   warnings routed through `src/notebooklm/_deprecation.py::warn_deprecated`
   (awaiting `from_storage(...)`, ambiguous `research.poll`, `NotebooksAPI.share()`).
-  All mechanics live in `_deprecation.py`; ADR-018 forbids inline
+  All mechanics live in `_deprecation.py`; ADR-0018 forbids inline
   `warnings.warn(..., DeprecationWarning)` elsewhere and a lint
   (`tests/_lint/test_no_inline_deprecation_warnings.py`) enforces it. See
   `docs/configuration.md`.
@@ -217,7 +217,7 @@ The flip happens in lockstep at the version bump, enforced by the
   *permanent* public-API back-compat shim (see
   `docs/auth-cookie-lifecycle.md` §3.4.1), not a scheduled removal, so it emits
   a **`RuntimeWarning`** safety advisory about the stale-overwrite-fresh race —
-  outside ADR-018's scope and intentionally **not** silenced by
+  outside ADR-0018's scope and intentionally **not** silenced by
   `NOTEBOOKLM_QUIET_DEPRECATIONS`.
 * `NOTEBOOKLM_FUTURE_ERRORS=1` is the opposite gate: instead of *silencing* a
   warn-runway it makes the runway adopt its v0.8.0 *target* behavior (raise)

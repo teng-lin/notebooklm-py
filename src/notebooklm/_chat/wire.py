@@ -32,7 +32,7 @@ logger = logging.getLogger("notebooklm._chat")
 # chat endpoint (``GenerateFreeFormStreamed``) is not a batchexecute RPC, so
 # there is no obfuscated method ID to thread — descents pass ``method_id=None``
 # and rely on these labels to localize schema drift in raised
-# ``UnknownRPCMethodError`` diagnostics (ADR-011).
+# ``UnknownRPCMethodError`` diagnostics (ADR-0011).
 _CHUNK_SOURCE = "_chat_wire._extract_chunk_with_parseable"
 
 _UUID_PATTERN = re.compile(
@@ -345,7 +345,7 @@ def _extract_chunk_with_parseable(
                 # is genuine Google-side drift that previously collapsed into a
                 # silent empty answer. Raise the same drift signal
                 # ``safe_index`` uses (``UnknownRPCMethodError``) so the chat
-                # path fails loudly instead of dropping the answer (ADR-011).
+                # path fails loudly instead of dropping the answer (ADR-0011).
                 # Strict decoding is the only mode (the
                 # ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired
                 # in v0.7.0). ``safe_index`` cannot enforce the list *type* (a
