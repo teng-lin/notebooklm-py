@@ -80,18 +80,29 @@ def find_misformatted_adr_refs(text: str) -> list[str]:
 
 
 def _scanned_files() -> list[Path]:
-    """All tracked-ish text files to scan, excluding this gate's own examples."""
+    """All tracked-ish text files to scan, excluding this gate's own examples.
+
+    Prunes skipped directories *during* traversal rather than walking the whole
+    tree and filtering, so a large ``.venv`` / ``node_modules`` (present in CI
+    after ``uv sync``) is never descended into.
+    """
     this_file = Path(__file__).resolve()
     out: list[Path] = []
-    for path in _REPO_ROOT.rglob("*"):
-        if not path.is_file() or path.suffix not in _SCANNED_SUFFIXES:
-            continue
-        if any(part in _SKIP_DIRS for part in path.relative_to(_REPO_ROOT).parts):
-            continue
-        if path.resolve() == this_file:
-            # This module deliberately constructs malformed examples below.
-            continue
-        out.append(path)
+
+    def walk(directory: Path) -> None:
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            return
+        for path in entries:
+            if path.is_dir():
+                if path.name not in _SKIP_DIRS:
+                    walk(path)
+            elif path.suffix in _SCANNED_SUFFIXES and path.resolve() != this_file:
+                # this_file constructs malformed examples below, so skip it.
+                out.append(path)
+
+    walk(_REPO_ROOT)
     return out
 
 
