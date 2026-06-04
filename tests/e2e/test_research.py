@@ -27,7 +27,6 @@ class TestResearchStart:
         )
 
         assert result is not None, "Research start should return a result"
-        assert "task_id" in result, "Result should contain task_id"
         assert result.task_id is not None, "task_id should not be None"
         assert result.notebook_id == temp_notebook.id
         assert result.query == "artificial intelligence basics"
@@ -45,7 +44,6 @@ class TestResearchStart:
         )
 
         assert result is not None, "Deep research start should return a result"
-        assert "task_id" in result, "Result should contain task_id"
         assert result.task_id is not None, "task_id should not be None"
         assert result.mode == "deep"
 
@@ -97,7 +95,7 @@ class TestResearchPoll:
         result = await client.research.poll(temp_notebook.id)
 
         assert result is not None
-        status = result.get("status")
+        status = result.status
         assert status == "no_research", f"Expected 'no_research', got {status}"
 
     @pytest.mark.asyncio
@@ -119,14 +117,14 @@ class TestResearchPoll:
         poll_result = await client.research.poll(temp_notebook.id)
 
         assert poll_result is not None
-        status = poll_result.get("status")
+        status = poll_result.status
         assert status is not None, f"Invalid poll response: {poll_result}"
         # Should be either in_progress or completed
         assert status in ("in_progress", "completed", "no_research")
 
         if status != "no_research":
-            assert "task_id" in poll_result
-            assert "query" in poll_result
+            assert poll_result.task_id
+            assert poll_result.query
 
     @pytest.mark.asyncio
     async def test_poll_until_complete(self, client, temp_notebook):
@@ -144,19 +142,18 @@ class TestResearchPoll:
         max_attempts = int(POLL_TIMEOUT / POLL_INTERVAL)
         for _ in range(max_attempts):
             poll_result = await client.research.poll(temp_notebook.id)
-            status = poll_result.get("status")
+            status = poll_result.status
 
             if status is None:
                 pytest.fail(f"Invalid poll response (missing status): {poll_result}")
 
             if status == "completed":
                 # Verify completed result structure
-                assert "sources" in poll_result
-                assert isinstance(poll_result.get("sources"), list)
+                assert isinstance(poll_result.sources, tuple)
                 # Research may or may not find sources
-                sources = poll_result.get("sources", [])
+                sources = poll_result.sources
                 if sources:
-                    assert "url" in sources[0] or "title" in sources[0]
+                    assert sources[0].url or sources[0].title
                 return  # Test passed
 
             if status == "no_research":
@@ -204,7 +201,7 @@ class TestResearchImport:
             mode="fast",
         )
         assert start_result is not None, "Failed to start research"
-        task_id = start_result.get("task_id")
+        task_id = start_result.task_id
         assert task_id is not None, "start_result missing task_id"
 
         # Step 2: Poll until complete
@@ -212,7 +209,7 @@ class TestResearchImport:
         max_attempts = int(POLL_TIMEOUT / POLL_INTERVAL)
         for _ in range(max_attempts):
             poll_result = await client.research.poll(temp_notebook.id)
-            status = poll_result.get("status")
+            status = poll_result.status
 
             if status is None:
                 pytest.fail(f"Invalid poll response: {poll_result}")
@@ -226,11 +223,11 @@ class TestResearchImport:
 
             await asyncio.sleep(POLL_INTERVAL)
 
-        if poll_result is None or poll_result.get("status") != "completed":
+        if poll_result is None or poll_result.status != "completed":
             pytest.skip(f"Research did not complete within {POLL_TIMEOUT}s")
 
         # Step 3: Import sources (if any found)
-        sources = poll_result.get("sources", [])
+        sources = poll_result.sources
         if not sources:
             pytest.skip("No sources found by research - cannot test import")
 
@@ -280,5 +277,5 @@ class TestResearchDriveSource:
         if result is None:
             pytest.skip("Drive research returned no results - may need Drive access")
 
-        assert "task_id" in result
+        assert result.task_id is not None
         assert result.mode == "fast"

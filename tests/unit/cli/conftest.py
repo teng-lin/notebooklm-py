@@ -34,12 +34,20 @@ def _pin_cli_console_width():
     captured stdout. ``Console.size`` only honours the pinned dimensions when
     **both** ``_width`` and ``_height`` are set (otherwise it falls back to the
     OS-divergent terminal/``COLUMNS`` detection), so both are patched.
+
+    ``rendering`` exposes a *second* console — ``stderr_console`` (a
+    ``Console(stderr=True)`` for diagnostic/status output in ``--json`` mode) —
+    and the ~15 CLI tests that assert on ``result.stderr`` reflow on its width
+    the same way (#1410). Pin both consoles to the same wide, fixed dimensions
+    so stderr assertions are as deterministic as stdout ones.
     """
     from notebooklm.cli import rendering
 
     with (
         patch.object(rendering.console, "_width", 400),
         patch.object(rendering.console, "_height", 100),
+        patch.object(rendering.stderr_console, "_width", 400),
+        patch.object(rendering.stderr_console, "_height", 100),
     ):
         yield
 
@@ -55,12 +63,18 @@ def narrow_console():
     400-wide pin (pytest runs the autouse fixture first, so this inner patch
     wins for the test body), so truncation is exercised deterministically rather
     than relying on the OS-divergent auto-detected width (issue #1332).
+
+    ``stderr_console`` is re-pinned to the same narrow width so any
+    width-dependent stderr rendering exercised by these tests stays
+    deterministic too (#1410).
     """
     from notebooklm.cli import rendering
 
     with (
         patch.object(rendering.console, "_width", 80),
         patch.object(rendering.console, "_height", 100),
+        patch.object(rendering.stderr_console, "_width", 80),
+        patch.object(rendering.stderr_console, "_height", 100),
     ):
         yield
 

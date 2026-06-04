@@ -47,7 +47,7 @@ class TestResearchImportVerification:
             mode="fast",
         )
         assert start_result is not None, "Failed to start research"
-        task_id = start_result.get("task_id")
+        task_id = start_result.task_id
         assert task_id is not None, "start_result missing task_id"
 
         # Wait for research to register before polling
@@ -59,7 +59,7 @@ class TestResearchImportVerification:
         max_attempts = int(research_timeout / POLL_INTERVAL)
         for _ in range(max_attempts):
             poll_result = await client.research.poll(temp_notebook.id)
-            status = poll_result.get("status")
+            status = poll_result.status
 
             if status == "completed":
                 break
@@ -68,16 +68,16 @@ class TestResearchImportVerification:
 
             await asyncio.sleep(POLL_INTERVAL)
 
-        if poll_result is None or poll_result.get("status") != "completed":
+        if poll_result is None or poll_result.status != "completed":
             pytest.skip(f"Research did not complete within {research_timeout}s")
 
         # Step 3: Get sources to import
-        sources = poll_result.get("sources", [])
+        sources = poll_result.sources
         if not sources:
             pytest.skip("No sources found by research - cannot test import")
 
         # Filter to sources with URLs (required for import)
-        sources_with_urls = [s for s in sources if s.get("url")]
+        sources_with_urls = [s for s in sources if s.url]
         if not sources_with_urls:
             pytest.skip("All sources lack URLs - cannot test import")
 
@@ -148,7 +148,7 @@ class TestResearchImportVerification:
         except RateLimitError as e:
             pytest.skip(f"START_DEEP_RESEARCH rate limited by NotebookLM: {e}")
         assert start_result is not None, "Failed to start deep research"
-        start_task_id = start_result.get("task_id")
+        start_task_id = start_result.task_id
         assert start_task_id is not None, "start_result missing task_id"
 
         await asyncio.sleep(3)
@@ -163,10 +163,10 @@ class TestResearchImportVerification:
         max_attempts = int(research_timeout / POLL_INTERVAL)
         for _ in range(max_attempts):
             poll_result = await client.research.poll(temp_notebook.id, task_id=polled_task_id)
-            status = poll_result.get("status")
+            status = poll_result.status
 
             if polled_task_id is None:
-                polled_task_id = poll_result.get("task_id")
+                polled_task_id = poll_result.task_id
 
             if status == "completed":
                 break
@@ -175,20 +175,18 @@ class TestResearchImportVerification:
 
             await asyncio.sleep(POLL_INTERVAL)
 
-        if poll_result is None or poll_result.get("status") != "completed":
+        if poll_result is None or poll_result.status != "completed":
             pytest.skip(f"Deep research did not complete within {research_timeout}s")
 
-        sources = poll_result.get("sources", [])
+        sources = poll_result.sources
         if not sources:
             pytest.skip("Deep research returned no sources — cannot test import")
 
         # Count importable entries: report rows (result_type=5 with markdown) +
         # web rows with non-empty URLs. ``import_sources`` skips everything
         # else, so this is the upper bound we expect to land in sources.list.
-        report_entries = [
-            src for src in sources if src.get("result_type") == 5 and src.get("report_markdown")
-        ]
-        web_entries = [src for src in sources if src.get("url")]
+        report_entries = [src for src in sources if src.result_type == 5 and src.report_markdown]
+        web_entries = [src for src in sources if src.url]
         expected_import_count = len(report_entries) + len(web_entries)
         if expected_import_count == 0:
             pytest.skip("Deep research returned sources but none are importable")

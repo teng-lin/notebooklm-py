@@ -380,10 +380,9 @@ class TestMindMapGeneration:
 
         result = await client.artifacts.generate_mind_map(generation_notebook_id)
         assert result is not None
-        assert "mind_map" in result
-        assert "note_id" in result
+        assert result.note_id is not None
         # Verify mind map structure
-        mind_map = result["mind_map"]
+        mind_map = result.mind_map
         assert isinstance(mind_map, dict)
         assert "name" in mind_map
         assert "children" in mind_map
