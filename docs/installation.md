@@ -293,7 +293,7 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 
 ### `playwright install chromium` — when required, when auto-installed
 
-- **Required**: when you'll use `notebooklm login` (the interactive Playwright flow), unless the CLI auto-installs Chromium for you (it does — see `_ensure_chromium_installed()` in `cli/session.py`, which runs `python -m playwright install chromium` on first login if Chromium is missing).
+- **Required**: when you'll use `notebooklm login` (the interactive Playwright flow), unless the CLI auto-installs Chromium for you (it does — see `ensure_chromium_installed()` in `cli/services/playwright_login.py`, which runs `python -m playwright install chromium` on first login if Chromium is missing).
 - **Not required**: for headless servers (Persona D), library use (Persona C), or `--browser-cookies`-based auth (Persona A/F with `[cookies]`).
 
 ### `playwright install-deps chromium` — Linux system libraries

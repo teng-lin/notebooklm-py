@@ -17,8 +17,9 @@ existing file. A broken link into the package is never intentional, even in an
 ADR or refactor-history doc.
 
 **(2) Inline module-ref check (LIVE docs only, allowlisted).** In the *live*
-docs (``docs/**/*.md`` MINUS ``docs/adr/**`` MINUS ``docs/refactor-history.md``,
-which intentionally name historical modules in prose), every inline code span
+docs (``docs/**/*.md`` + root ``*.md`` MINUS the historical-prose docs —
+``docs/adr/**``, ``docs/refactor-history.md``, and ``CHANGELOG.md`` — which
+intentionally name historical modules in prose), every inline code span
 ```` `<ref>` ```` whose ``<ref>`` matches a ``src/notebooklm`` module shape MUST
 resolve to ``src/notebooklm/<ref>``. The rare intentional historical mention in
 a live doc is carried in :data:`_ALLOWLIST` (shrink-only). CLAUDE.md is covered
@@ -56,15 +57,14 @@ _PACKAGE_RELDIR = "src/notebooklm"
 # optional subdirectories, ending in ``.py``. ``test_*.py`` / ``conftest.py`` and
 # anything under ``tests/`` / ``scripts/`` are excluded by the caller, not here.
 #
-# Scope: the inline-ref check intentionally covers the ``_*`` private modules plus
-# the known top-level public module names. The ``rpc/`` and ``cli/`` subpackages
-# are out of scope (they were not reorganised in #1328), so an inline ``rpc/...``
-# / ``cli/...`` ref is not resolved here — the broken-link check (which has no
-# such shape filter) still guards any ``src/notebooklm/rpc/...`` *link* target.
-# The test ``test_test_and_script_refs_are_not_module_shaped`` pins this scope.
+# Scope: covers the ``_*`` private modules, the known top-level public modules,
+# the ``notebooklm_cli`` entry point, and the ``rpc/`` + ``cli/`` subpackages
+# (broadened per review so an inline ``rpc/types.py`` / ``cli/session_cmd.py``
+# ref is resolved, not silently skipped). The test
+# ``test_test_and_script_refs_are_not_module_shaped`` pins this scope.
 _MODULE_REF_RE = re.compile(
     r"^(_[a-z0-9_]+|client|auth|exceptions|config|io|log|migration|paths|research"
-    r"|types|urls|utils|artifacts)([/][a-z0-9_]+)*\.py$"
+    r"|types|urls|utils|artifacts|notebooklm_cli|rpc|cli)([/][a-z0-9_]+)*\.py$"
 )
 
 # Inline code spans: ``\`...\```. Non-greedy so adjacent spans on one line are
@@ -184,13 +184,25 @@ def find_violations(
 # --- Filesystem helpers (I/O at the edge) -------------------------------------
 
 
+def _is_historical_prose(rel: str) -> bool:
+    """True for docs that intentionally name historical/old module paths in prose.
+
+    These are frozen-or-by-design historical records — ADRs, the refactor history,
+    and the CHANGELOG (whose entries describe edits to modules *as they were named
+    at the time*, e.g. ``cli/note.py`` for a fix that predates the ``_cmd`` rename).
+    The inline module-ref check skips them; the broken-link check still applies (a
+    dead *link* into the package is never intentional, even in history).
+    """
+    return rel.startswith("docs/adr/") or rel == "docs/refactor-history.md" or rel == "CHANGELOG.md"
+
+
 def _iter_docs(repo_root: Path):
     """Yield ``(path, relpath, is_live)`` for every doc the gate inspects.
 
     Docs = every ``docs/**/*.md`` plus every root-level ``*.md``. CLAUDE.md is
-    excluded (covered by the sibling gate). ``is_live`` is False for
-    ``docs/adr/**`` and ``docs/refactor-history.md`` (historical-prose docs) so
-    the inline check skips them while the link check still applies.
+    excluded (covered by the sibling gate). ``is_live`` is False for the
+    historical-prose docs (see :func:`_is_historical_prose`) so the inline check
+    skips them while the link check still applies.
     """
     docs_dir = repo_root / "docs"
     md_paths: list[Path] = []
@@ -202,8 +214,7 @@ def _iter_docs(repo_root: Path):
         rel = path.relative_to(repo_root).as_posix()
         if rel == "CLAUDE.md":
             continue
-        is_live = not (rel.startswith("docs/adr/") or rel == "docs/refactor-history.md")
-        yield path, rel, is_live
+        yield path, rel, not _is_historical_prose(rel)
 
 
 def _make_resolver(repo_root: Path, doc_path: Path) -> Callable[[str], bool]:

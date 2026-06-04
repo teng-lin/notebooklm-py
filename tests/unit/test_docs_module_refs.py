@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from scripts.check_docs_module_refs import (  # noqa: E402
     _ALLOWLIST,
+    _is_historical_prose,
     _is_module_shaped,
     _unused_allowlist_entries,
     collect_violations,
@@ -160,12 +161,43 @@ def test_test_and_script_refs_are_not_module_shaped() -> None:
     assert not _is_module_shaped("conftest.py")
     assert not _is_module_shaped("tests/unit/test_x.py")
     assert not _is_module_shaped("scripts/check_docs_module_refs.py")
-    # ...but real package modules (flat and subpackage) are.
+    # ...but real package modules (flat and subpackage) are, including the
+    # rpc/ + cli/ subpackages and the notebooklm_cli entry point (broadened
+    # per review so their inline refs are resolved, not silently skipped).
     assert _is_module_shaped("_runtime_lifecycle.py")
     assert _is_module_shaped("_runtime/lifecycle.py")
     assert _is_module_shaped("client.py")
-    assert _is_module_shaped("rpc/types.py") is False  # `rpc` is not a top-level name in the shape
     assert _is_module_shaped("types.py")
+    assert _is_module_shaped("rpc/types.py")
+    assert _is_module_shaped("cli/session_cmd.py")
+    assert _is_module_shaped("cli/services/generate.py")
+    assert _is_module_shaped("notebooklm_cli.py")
+
+
+def test_historical_prose_docs_are_classified() -> None:
+    # ADRs, refactor-history, and the CHANGELOG are historical-prose (inline
+    # check skipped); ordinary live docs are not.
+    assert _is_historical_prose("docs/adr/0014-x.md")
+    assert _is_historical_prose("docs/refactor-history.md")
+    assert _is_historical_prose("CHANGELOG.md")
+    assert not _is_historical_prose("docs/architecture.md")
+    assert not _is_historical_prose("README.md")
+
+
+def test_changelog_skips_inline_check_but_enforces_links(tmp_path) -> None:
+    # CHANGELOG entries name modules as they were at the time (e.g. cli/note.py
+    # pre-_cmd-rename); the inline check must skip them, but a dead LINK into the
+    # package is still reported.
+    _write(tmp_path / "src/notebooklm/__init__.py", "")
+    _write(tmp_path / "src/notebooklm/cli/note_cmd.py", "")
+    (tmp_path / "docs").mkdir()  # main() requires a docs/ tree to exist
+    # Historical inline ref to a now-renamed module -> allowed.
+    _write(tmp_path / "CHANGELOG.md", "Fixed `cli/note.py` exit codes.\n")
+    assert main(["--repo-root", str(tmp_path)]) == 0
+
+    # ...but a dead link into the package in the CHANGELOG still fails.
+    _write(tmp_path / "CHANGELOG.md", "See [src](src/notebooklm/cli/note.py).\n")
+    assert main(["--repo-root", str(tmp_path)]) == 1
 
 
 def test_inline_ref_to_tests_path_is_not_flagged() -> None:
