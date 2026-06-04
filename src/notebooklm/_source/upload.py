@@ -19,6 +19,7 @@ import httpx
 from .._callbacks import maybe_await_callback
 from .._env import get_base_url
 from .._idempotency import idempotent_create
+from .._loop_bound import LoopBoundPrimitive
 from .._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
@@ -478,7 +479,7 @@ def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
         )
 
 
-class SourceUploadPipeline:
+class SourceUploadPipeline(LoopBoundPrimitive):
     """Own file registration and resumable upload orchestration."""
 
     def __init__(
@@ -507,7 +508,11 @@ class SourceUploadPipeline:
         self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
+        # ``_bound_loop`` + ``set_bound_loop`` come from the
+        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base; this pipeline
+        # overrides :meth:`_on_loop_rebind` to discard the cached
+        # ``_upload_semaphore`` on a loop change. Cross-loop *use* is guarded by
+        # the lifecycle's ``assert_bound_loop`` at the top of ``add_file``.
         # Defaults; SourcesAPI replaces these via configure_source_lifecycle()
         # so the pipeline shares its lister/poller (single owner for the
         # source-lifecycle verbs). Direct callers keep these fresh instances.
@@ -563,31 +568,23 @@ class SourceUploadPipeline:
             return httpx.Cookies()
         return cast(httpx.Cookies, cookies)
 
-    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
-        """Capture or clear the event-loop binding for the upload semaphore.
+    def _on_loop_rebind(
+        self,
+        old: asyncio.AbstractEventLoop | None,
+        new: asyncio.AbstractEventLoop | None,
+    ) -> None:
+        """Discard the cached upload semaphore when the bound loop changes.
 
-        Called by :meth:`ClientLifecycle.open` after it captures the running
-        loop, mirroring the identically-named method on
-        :class:`notebooklm._client_composed.ClientComposed`,
-        :class:`TransportDrainTracker`, :class:`ReqidCounter`, and
-        :class:`AuthRefreshCoordinator`. Passing ``None`` clears the binding
-        for the next ``open()`` (which rebinds to a fresh loop).
-
-        When the loop actually changes, the cached semaphore is discarded here
-        too so this method is self-consistent even if called independently of
-        :meth:`reset_after_open` (e.g. directly in a test or a future caller):
-        a stale semaphore bound to the old loop must never be reused after a
-        rebind. The production ``open()`` path also calls
-        :meth:`reset_after_open` immediately after, so the discard is
-        idempotent there.
-
-        The cross-loop guard for ``add_file`` is the lifecycle's
-        ``assert_bound_loop`` (already called at the top of :meth:`add_file`);
-        this binding only governs when the lazy semaphore is rebuilt.
+        Fires from :meth:`~notebooklm._loop_bound.LoopBoundPrimitive.set_bound_loop`
+        only on a real loop change (and before ``_bound_loop`` is updated), so a
+        stale semaphore bound to the old loop is never reused after a rebind.
+        ``set_bound_loop`` is thus self-consistent even when called outside the
+        ``open()`` path; production also calls :meth:`reset_after_open` right
+        after, making the discard idempotent there. This hook only governs the
+        semaphore *rebuild*; cross-loop *use* is rejected by the lifecycle's
+        ``assert_bound_loop`` at the top of :meth:`add_file`.
         """
-        if loop is not self._bound_loop:
-            self._upload_semaphore = None
-        self._bound_loop = loop
+        self._upload_semaphore = None
 
     def reset_after_open(self) -> None:
         """Discard the lazy upload semaphore so a reopened client rebinds it.

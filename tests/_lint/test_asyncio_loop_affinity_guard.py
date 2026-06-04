@@ -47,6 +47,15 @@ LOOP_BOUND_PRIMITIVES = frozenset({"Lock", "Semaphore", "BoundedSemaphore", "Eve
 # A class is considered compliant when it defines BOTH.
 REQUIRED_GUARD_METHODS = ("set_bound_loop", "reset_after_open")
 
+# The template-method base that supplies ``set_bound_loop`` (and the
+# ``_bound_loop`` field) to its subclasses. A class inheriting this provides the
+# ``set_bound_loop`` half of the protocol by inheritance, not by a direct
+# ``def`` — the AST method scan must credit it so the owners that dropped their
+# duplicated ``set_bound_loop`` body in favour of the mixin stay compliant. They
+# still must define ``reset_after_open`` directly (each resets distinct
+# owner-specific state, intentionally not unified into the base).
+LOOP_BOUND_BASE = "LoopBoundPrimitive"
+
 
 class _AllowlistEntry:
     """A documented exemption for one primitive construction site.
@@ -85,9 +94,11 @@ class _AllowlistEntry:
 # ---------------------------------------------------------------------------
 ALLOWLIST: tuple[_AllowlistEntry, ...] = (
     # NOTE: ``ClientComposed``, ``TransportDrainTracker``,
-    # ``SourceUploadPipeline``, and ``ChatAPI`` are NOT allowlisted — they each
-    # define the full ``set_bound_loop`` + ``reset_after_open`` protocol and so
-    # are detected as compliant by the owner-method scan.
+    # ``SourceUploadPipeline``, and ``ChatAPI`` are NOT allowlisted — they
+    # inherit ``set_bound_loop`` from ``LoopBoundPrimitive`` (credited by the
+    # base-class check in ``_class_methods``) and each still define
+    # ``reset_after_open`` directly, so the owner-method scan detects them as
+    # compliant.
     #
     # ``set_bound_loop`` only (no ``reset_after_open``): the lazy ``asyncio.Lock``
     # is rebuilt implicitly because these coordinators are reconstructed per
@@ -201,22 +212,46 @@ class _ConstructionSite:
         return f"{self.path}:{self.lineno} asyncio.{self.primitive} (owner={owner})"
 
 
+def _inherits_loop_bound_base(node: ast.ClassDef) -> bool:
+    """Return ``True`` if *node* lists :data:`LOOP_BOUND_BASE` among its bases.
+
+    Matches both ``class C(LoopBoundPrimitive)`` (a bare ``Name``) and a
+    dotted/aliased reference ``class C(mod.LoopBoundPrimitive)`` (an
+    ``Attribute``) so an owner can't bypass the credit by importing the base
+    under a module-qualified path.
+    """
+    for base in node.bases:
+        if isinstance(base, ast.Name) and base.id == LOOP_BOUND_BASE:
+            return True
+        if isinstance(base, ast.Attribute) and base.attr == LOOP_BOUND_BASE:
+            return True
+    return False
+
+
 def _class_methods(module: ast.Module) -> dict[int, set[str]]:
-    """Map each class's *start line* to the methods it defines.
+    """Map each class's *start line* to the methods it provides.
 
     Keyed by start line (unique within a file) rather than by class name so two
     same-named classes in different scopes (e.g. a helper ``_State`` nested in
     two separate outer classes) don't collide and silently misreport
     compliance.
+
+    A class inheriting :data:`LOOP_BOUND_BASE` is credited with
+    ``set_bound_loop`` even though it no longer defines it directly: the
+    template-method base supplies that half of the protocol. ``reset_after_open``
+    is *not* credited by inheritance — each owner must still define it directly.
     """
     methods: dict[int, set[str]] = {}
     for node in ast.walk(module):
         if isinstance(node, ast.ClassDef):
-            methods[node.lineno] = {
+            provided = {
                 child.name
                 for child in node.body
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
             }
+            if _inherits_loop_bound_base(node):
+                provided.add("set_bound_loop")
+            methods[node.lineno] = provided
     return methods
 
 
@@ -380,3 +415,29 @@ def test_detector_handles_all_import_styles() -> None:
     assert _detect("from threading import Lock\nx = Lock()\n") == set()
     # Non-primitive asyncio constructs must NOT match.
     assert _detect("import asyncio\nx = asyncio.Queue()\n") == set()
+
+
+def _first_classdef(source: str) -> ast.ClassDef:
+    """Return the first ``ClassDef`` node parsed from *source*."""
+    node = ast.parse(source).body[0]
+    assert isinstance(node, ast.ClassDef)
+    return node
+
+
+def test_inherits_loop_bound_base_credits_only_the_right_classes() -> None:
+    """The base-class check matches bare + dotted bases and nothing else.
+
+    Guards the inheritance credit in ``_class_methods``: if this regressed,
+    the four mixin owners would silently lose their ``set_bound_loop`` credit
+    and either be (wrongly) flagged or, worse, an unrelated class could be
+    (wrongly) credited and an unguarded primitive could slip through.
+    """
+    # Bare ``class C(LoopBoundPrimitive)``.
+    assert _inherits_loop_bound_base(_first_classdef("class C(LoopBoundPrimitive): pass"))
+    # Dotted / module-qualified base.
+    assert _inherits_loop_bound_base(_first_classdef("class C(mod.LoopBoundPrimitive): pass"))
+    # Mixed bases — credited as long as the base appears anywhere.
+    assert _inherits_loop_bound_base(_first_classdef("class C(Base, LoopBoundPrimitive): pass"))
+    # No inheritance / unrelated base must NOT be credited.
+    assert not _inherits_loop_bound_base(_first_classdef("class C: pass"))
+    assert not _inherits_loop_bound_base(_first_classdef("class C(SomethingElse): pass"))

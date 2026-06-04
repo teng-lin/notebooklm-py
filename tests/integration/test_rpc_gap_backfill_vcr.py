@@ -5,8 +5,10 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
+import yaml
 
 from notebooklm import NotebookLMClient, ResearchSource
 from notebooklm.rpc import RPCMethod
@@ -43,7 +45,27 @@ MUTABLE_NOTEBOOK_ID = os.environ.get(
 RESEARCH_TASK_ID = "task_backfill_001"
 RESEARCH_SOURCE_TITLE = "research backfill source"
 
-# These raw ID assertions protect the static method-coverage gate's literal-id path.
+_CASSETTE_DIR = Path(__file__).resolve().parent.parent / "cassettes"
+
+
+def _cassette_request_rpcids(cassette_name: str) -> set[str]:
+    """Return the set of ``rpcids`` query values across a cassette's requests.
+
+    Reads the recorded request URIs (``...?rpcids=<id>&...``) so a test can
+    assert the interaction it replays targeted a specific
+    :class:`~notebooklm.rpc.RPCMethod` *by its constant* rather than re-pinning
+    the obfuscated literal. When Google rotates an ID, ``rpc/types.py`` and the
+    cassette rotate together and this assertion keeps holding with no edit —
+    ``rpc/types.py`` stays the single source of truth.
+    """
+    text = (_CASSETTE_DIR / cassette_name).read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    rpcids: set[str] = set()
+    for interaction in data.get("interactions", []):
+        uri = interaction.get("request", {}).get("uri", "")
+        query = urlsplit(uri).query
+        rpcids.update(parse_qs(query).get("rpcids", []))
+    return rpcids
 
 
 @asynccontextmanager
@@ -60,7 +82,9 @@ async def test_refresh_source_rpc_has_cassette_coverage():
         refreshed = await client.sources.refresh(MUTABLE_NOTEBOOK_ID, "source_backfill_001")
 
     assert refreshed is True
-    assert RPCMethod.REFRESH_SOURCE.value == "FLmJqe"
+    # Rotation-proof: assert the replayed interaction targeted REFRESH_SOURCE by
+    # its constant (rpc/types.py is the single source of truth), not a literal.
+    assert RPCMethod.REFRESH_SOURCE.value in _cassette_request_rpcids("sources_refresh_direct.yaml")
 
 
 @pytest.mark.asyncio
@@ -80,4 +104,8 @@ async def test_import_research_rpc_has_cassette_coverage():
         )
 
     assert imported == [{"id": "imported_source_001", "title": RESEARCH_SOURCE_TITLE}]
-    assert RPCMethod.IMPORT_RESEARCH.value == "LBwxtb"
+    # Rotation-proof: assert the replayed interaction targeted IMPORT_RESEARCH by
+    # its constant (rpc/types.py is the single source of truth), not a literal.
+    assert RPCMethod.IMPORT_RESEARCH.value in _cassette_request_rpcids(
+        "research_import_sources_direct.yaml"
+    )

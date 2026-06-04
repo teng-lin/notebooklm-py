@@ -65,7 +65,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "cli/source_cmd.py": 1498,
     "exceptions.py": 1426,
     "_artifacts.py": 1420,
-    "_source/upload.py": 1239,
+    "_source/upload.py": 1236,
     "cli/session_cmd.py": 1080,
     "_sources.py": 1023,
     "cli/services/playwright_login.py": 988,
@@ -73,7 +73,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "client.py": 973,
     "_research.py": 969,
     "cli/services/generate.py": 954,
-    "_chat/api.py": 953,
+    "_chat/api.py": 948,
     "_idempotency.py": 936,
 }
 

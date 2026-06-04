@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from .._conversation_cache import ConversationCache
 from .._deprecation import future_errors_enabled
 from .._logging import get_request_id, reset_request_id, set_request_id
+from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._request_types import AuthSnapshot
 from .._runtime.contracts import LoopGuard, RpcCaller
@@ -91,7 +92,7 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
     return content
 
 
-class ChatAPI:
+class ChatAPI(LoopBoundPrimitive):
     """Operations for notebook chat/conversations.
 
     Provides methods for asking questions to notebooks and managing
@@ -192,44 +193,38 @@ class ChatAPI:
         self._new_conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        # Event-loop binding for the two lazy lock maps above. Captured at
-        # ``ClientLifecycle.open()`` time via :meth:`set_bound_loop` (mirroring
-        # :class:`notebooklm._client_composed.ClientComposed` and
-        # :class:`notebooklm._source.upload.SourceUploadPipeline`). Each lock
-        # in the maps binds to whichever loop is running the first time it is
-        # awaited; if the client is closed on loop A and reopened on loop B, a
-        # stale lock bound to the now-dead loop A must never be reused — see
-        # :meth:`set_bound_loop` / :meth:`reset_after_open`.
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
+        # Event-loop binding for the two lazy lock maps above. ``_bound_loop``
+        # and the ``set_bound_loop`` template method come from the
+        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base; this API
+        # overrides :meth:`_on_loop_rebind` to clear the two lock maps on a
+        # loop change. Each lock in the maps binds to whichever loop is running
+        # the first time it is awaited; if the client is closed on loop A and
+        # reopened on loop B, a stale lock bound to the now-dead loop A must
+        # never be reused — see :meth:`_on_loop_rebind` / :meth:`reset_after_open`.
 
-    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
-        """Capture or clear the event-loop binding for the conversation locks.
+    def _on_loop_rebind(
+        self,
+        old: asyncio.AbstractEventLoop | None,
+        new: asyncio.AbstractEventLoop | None,
+    ) -> None:
+        """Clear the lazy conversation lock maps when the bound loop changes.
 
-        Called by :meth:`ClientLifecycle.open` after it captures the running
-        loop, mirroring the identically-named method on
-        :class:`notebooklm._client_composed.ClientComposed`,
-        :class:`notebooklm._source.upload.SourceUploadPipeline`,
-        :class:`TransportDrainTracker`, :class:`ReqidCounter`, and
-        :class:`AuthRefreshCoordinator`. Passing ``None`` clears the binding
-        for the next ``open()`` (which rebinds to a fresh loop).
-
-        When the loop actually changes, the two lazy lock maps are cleared
-        here too so this method is self-consistent even if called
-        independently of :meth:`reset_after_open` (e.g. directly in a test or a
-        future caller): a stale ``asyncio.Lock`` bound to the old loop must
-        never be reused after a rebind. The production ``open()`` path also
-        calls :meth:`reset_after_open` immediately after, so the clear is
-        idempotent there.
+        Fires from :meth:`~notebooklm._loop_bound.LoopBoundPrimitive.set_bound_loop`
+        only on a real loop change (and before ``_bound_loop`` is updated), so
+        ``set_bound_loop`` is self-consistent even if called independently of
+        :meth:`reset_after_open` (e.g. directly in a test or a future caller):
+        a stale ``asyncio.Lock`` bound to the old loop must never be reused
+        after a rebind. The production ``open()`` path also calls
+        :meth:`reset_after_open` immediately after, so the clear is idempotent
+        there.
 
         The cross-loop guard for :meth:`ask` is the injected
         ``loop_guard.assert_bound_loop`` (already called at the top of
-        :meth:`ask` before any lock is acquired); this binding only governs
-        when the lazy locks are rebuilt.
+        :meth:`ask` before any lock is acquired); this hook only governs when
+        the lazy locks are rebuilt.
         """
-        if loop is not self._bound_loop:
-            self._conversation_locks.clear()
-            self._new_conversation_locks.clear()
-        self._bound_loop = loop
+        self._conversation_locks.clear()
+        self._new_conversation_locks.clear()
 
     def reset_after_open(self) -> None:
         """Discard the lazy conversation locks so a reopened client rebinds them.

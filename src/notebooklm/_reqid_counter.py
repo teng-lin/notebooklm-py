@@ -41,6 +41,7 @@ import time
 from collections.abc import Callable
 
 from ._loop_affinity import assert_bound_loop
+from ._loop_bound import LoopBoundPrimitive
 
 # Baseline counter value (matches the chat-API expectation of a large positive
 # integer). Module-level constant so tests / future callers can reference it
@@ -59,7 +60,7 @@ def _noop_record_lock_wait(_wait_seconds: float) -> None:
     """
 
 
-class ReqidCounter:
+class ReqidCounter(LoopBoundPrimitive):
     """Monotonic request-id counter with lazy ``asyncio.Lock`` serialisation.
 
     The accessor surface is ``self._reqid._value`` and
@@ -89,25 +90,13 @@ class ReqidCounter:
         self._on_lock_wait: Callable[[float], None] = (
             on_lock_wait if on_lock_wait is not None else _noop_record_lock_wait
         )
-        # Loop-affinity guard. Captured at ``ClientLifecycle.open()``
-        # time via :meth:`set_bound_loop` and consulted by
-        # :meth:`next_reqid` so a cross-loop call raises an actionable
-        # ``RuntimeError`` rather than hanging on ``_lock`` (which is
-        # bound to the loop the lock was first acquired under). ``None``
-        # is a silent no-op — standalone fixtures and never-opened
-        # counters skip the check.
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
-
-    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
-        """Capture or clear the event-loop binding for the affinity guard.
-
-        Called by :meth:`ClientLifecycle.open` after it captures the
-        running loop, so :meth:`next_reqid` can short-circuit cross-loop
-        misuse before touching :attr:`_lock`. Passing ``None`` clears the
-        binding (useful when a client is closed and the next ``open()``
-        will rebind to a fresh loop).
-        """
-        self._bound_loop = loop
+        # ``_bound_loop`` (the loop-affinity guard consulted by
+        # :meth:`next_reqid` before touching the lazy ``_lock``) and
+        # ``set_bound_loop`` are provided by the
+        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base. This
+        # counter only stores the binding, so it uses the default no-op
+        # ``_on_loop_rebind`` (the lazy ``Lock`` is never held across
+        # ``open()`` and is rebuilt implicitly per ``open()``).
 
     @property
     def value(self) -> int:

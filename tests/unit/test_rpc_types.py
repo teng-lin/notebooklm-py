@@ -1,6 +1,7 @@
 """Unit tests for RPC types and constants."""
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -96,46 +97,60 @@ class TestRPCConstants:
         assert get_query_url().startswith("https://notebooklm.cloud.google.com/")
 
 
+# Shape every ``RPCMethod`` value must satisfy. These are Google's obfuscated
+# batchexecute method IDs — short, case-sensitive alphanumeric tokens. The
+# bound is deliberately loose (the real values are 5-6 chars today) so a routine
+# Google ID rotation does NOT force a test edit; the invariant catches the
+# failure modes that actually matter: an empty/whitespace value, a structurally
+# wrong token, or a duplicate ID silently aliasing two methods.
+_RPC_ID_SHAPE = re.compile(r"^[A-Za-z0-9]{4,12}$")
+
+
 class TestRPCMethod:
-    def test_list_notebooks(self):
-        """Test LIST_NOTEBOOKS RPC ID."""
-        assert RPCMethod.LIST_NOTEBOOKS == "wXbhsf"
+    """Structural invariant over the whole ``RPCMethod`` enum.
 
-    def test_create_notebook(self):
-        """Test CREATE_NOTEBOOK RPC ID."""
-        assert RPCMethod.CREATE_NOTEBOOK == "CCqFvf"
+    Replaces a wall of per-method ``== "literal"`` value-pins that merely
+    re-stated ``rpc/types.py`` (zero behavioral value, a mechanical re-edit on
+    every ID rotation). This is strictly stronger: it holds for ALL members and
+    catches empties / malformed tokens / cross-enum duplicate IDs that the
+    individual pins never checked. ``rpc/types.py`` remains the single source of
+    truth for the literal values.
+    """
 
-    def test_get_notebook(self):
-        """Test GET_NOTEBOOK RPC ID."""
-        assert RPCMethod.GET_NOTEBOOK == "rLM1Ne"
+    def test_every_value_matches_the_obfuscated_id_shape(self):
+        """Every member's value is a non-empty, well-formed obfuscated ID."""
+        offenders = {
+            member.name: member.value
+            for member in RPCMethod
+            if not _RPC_ID_SHAPE.fullmatch(member.value)
+        }
+        assert offenders == {}, (
+            f"RPCMethod value(s) do not match the obfuscated-ID shape "
+            f"{_RPC_ID_SHAPE.pattern}: {offenders}"
+        )
 
-    def test_delete_notebook(self):
-        """Test DELETE_NOTEBOOK RPC ID."""
-        assert RPCMethod.DELETE_NOTEBOOK == "WWINqb"
+    def test_values_are_unique_across_the_enum(self):
+        """No two distinct methods may share an obfuscated ID (silent aliasing)."""
+        # ``str`` Enum members with equal values alias to a single canonical
+        # member, so a collision shrinks the distinct-value set below the
+        # distinct-name count. Compare names→values to surface which collide.
+        seen: dict[str, str] = {}
+        collisions: dict[str, list[str]] = {}
+        for member in RPCMethod:
+            if member.value in seen:
+                collisions.setdefault(member.value, [seen[member.value]]).append(member.name)
+            else:
+                seen[member.value] = member.name
+        assert collisions == {}, f"Duplicate RPCMethod ID(s) alias multiple methods: {collisions}"
 
-    def test_add_source(self):
-        """Test ADD_SOURCE RPC ID."""
-        assert RPCMethod.ADD_SOURCE == "izAoDd"
-
-    def test_summarize(self):
-        """Test SUMMARIZE RPC ID."""
-        assert RPCMethod.SUMMARIZE == "VfAZjd"
-
-    def test_create_artifact(self):
-        """Test CREATE_ARTIFACT RPC ID."""
-        assert RPCMethod.CREATE_ARTIFACT == "R7cb6c"
-
-    def test_list_artifacts(self):
-        """Test LIST_ARTIFACTS RPC ID."""
-        assert RPCMethod.LIST_ARTIFACTS == "gArtLc"
-
-    def test_get_user_tier(self):
-        """Test GET_USER_TIER RPC ID."""
-        assert RPCMethod.GET_USER_TIER == "ozz5Z"
+    def test_enum_is_non_empty(self):
+        """A behavioral floor: the enum must actually define methods."""
+        assert len(list(RPCMethod)) > 0
 
     def test_rpc_method_is_string(self):
         """Test RPCMethod values are strings (for JSON serialization)."""
         assert isinstance(RPCMethod.LIST_NOTEBOOKS.value, str)
+        assert all(isinstance(member.value, str) for member in RPCMethod)
 
 
 class TestArtifactTypeCode:

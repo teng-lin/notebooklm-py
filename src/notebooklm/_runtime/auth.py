@@ -58,6 +58,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, cast
 
 from .._loop_affinity import assert_bound_loop
+from .._loop_bound import LoopBoundPrimitive
 from .._request_types import AuthSnapshot
 from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
@@ -72,7 +73,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(CORE_LOGGER_NAME)
 
 
-class AuthRefreshCoordinator:
+class AuthRefreshCoordinator(LoopBoundPrimitive):
     """Owns refresh single-flight, snapshot serialization, and auth-header sync.
 
     Field names (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``,
@@ -100,21 +101,13 @@ class AuthRefreshCoordinator:
         self._metrics: ClientMetrics | None = metrics
         # Distinct from ``_refresh_lock`` — see module docstring.
         self._auth_snapshot_lock: asyncio.Lock | None = None
-        # Loop-affinity guard. Set by :meth:`ClientLifecycle.open`
-        # so :meth:`await_refresh` can short-circuit cross-loop misuse
-        # before touching the lazily-built ``_refresh_lock`` (bound to
-        # the loop the lock was first acquired under). ``None`` is a
-        # silent no-op for standalone fixtures.
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
-
-    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
-        """Capture or clear the event-loop binding for the affinity guard.
-
-        :meth:`ClientLifecycle.open` propagates the captured loop here.
-        Passing ``None`` clears the binding for the next ``open()``
-        (which will rebind to a fresh loop).
-        """
-        self._bound_loop = loop
+        # ``_bound_loop`` (the loop-affinity guard consulted by
+        # :meth:`await_refresh` before touching the lazy ``_refresh_lock``)
+        # and ``set_bound_loop`` are provided by the
+        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base. This
+        # coordinator only stores the binding, so it uses the default no-op
+        # ``_on_loop_rebind`` (the lazy locks are never held across
+        # ``open()`` and are rebuilt implicitly per ``open()``).
 
     @property
     def has_refresh_callback(self) -> bool:
