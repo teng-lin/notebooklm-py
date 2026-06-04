@@ -1337,10 +1337,10 @@ class NoteNotFoundError(NotFoundError, RPCError, NoteError):
     """Note not found in notebook.
 
     .. note::
-       Under v0.7.0 this type is raised only when the ``NOTEBOOKLM_FUTURE_ERRORS``
-       preview is on — ``notes.update`` then fails loud on a missing note (#1362).
-       It becomes the unconditional not-found signal for note read/mutation paths
-       in v0.8.0 (umbrella #1346); the wording below describes that catchability.
+       Under v0.7.0 this type is raised only when ``NOTEBOOKLM_FUTURE_ERRORS``
+       is on — ``notes.get`` (via ``resolve_get``, #1247) and ``notes.update``
+       (#1362) then fail loud on a missing note. It is the unconditional
+       not-found signal for note paths in v0.8.0 (#1346); see below.
 
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`NoteError`

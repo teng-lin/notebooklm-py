@@ -640,7 +640,7 @@ class SourcesAPI:
                 ``UPDATE_SOURCE`` echo, fetching only on a null echo). When
                 ``False``, return ``None`` without hydrating. Under the v0.8.0
                 preview ``False`` still returns ``None`` but adds miss-detection
-                (the flag gates detection, not the return — see ``Raises``).
+                (the flag gates detection, not return — see ``Raises``).
 
         Returns:
             The renamed :class:`~notebooklm.types.Source`, or ``None`` when
@@ -654,7 +654,7 @@ class SourcesAPI:
         .. versionchanged:: 0.7.0
             **Breaking change:** no longer fabricates an unverified
             ``Source(id, title)`` on a null echo; it hydrates and raises
-            :class:`SourceNotFoundError` (#1255). Added ``return_object``.
+            :class:`SourceNotFoundError` (#1255), plus ``return_object``.
         """
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
@@ -664,11 +664,11 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if result and return_object:  # truthy echo proves existence
+        if result and return_object:
             return Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
-        # Null echo: hydrate via the internal optional-lookup (never public
-        # ``get()`` — #1247) so a miss raises. v0.7.0 ``False`` skips this; the
-        # v0.8.0 preview (#1362) runs it to detect a miss but returns ``None``.
+        # Null echo: hydrate via the internal lookup (never public ``get()`` —
+        # #1247) so a miss raises. ``False`` skips it when existence is proven
+        # (echo) or flag-off; the v0.8.0 preview (#1362) runs it to detect a miss.
         if not return_object and (result or not future_errors_enabled()):
             return None
         source = await self._get_or_none(notebook_id, source_id)
@@ -686,7 +686,7 @@ class SourcesAPI:
         Returns:
             ``True`` if refresh was initiated (failures raise first, so it is
             uninformative). Under ``NOTEBOOKLM_FUTURE_ERRORS`` (#1290) returns
-            ``None`` (``-> bool`` stays until the v0.8.0 flip).
+            ``None``; ``-> bool`` stays until v0.8.0.
         """
         params = [None, [source_id], [2]]
         await self._rpc.rpc_call(
