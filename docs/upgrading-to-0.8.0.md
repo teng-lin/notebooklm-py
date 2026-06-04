@@ -63,6 +63,19 @@ tests, fix what breaks using the migrations below, and you're ready for 0.8.0.
 > it; the second silences the *warnings* the current behavior emits while you
 > migrate. They can be set together.
 
+> **Surfacing the warnings.** Python **hides `DeprecationWarning` by default**
+> outside `__main__`, so the per-change runways may be invisible in a normal run.
+> To see them, enable them explicitly:
+> ```bash
+> python -W error::DeprecationWarning -m pytest          # turn them into errors
+> PYTHONWARNINGS=default::DeprecationWarning python app.py  # just print them
+> ```
+> But `NOTEBOOKLM_FUTURE_ERRORS=1` is the more reliable forward-test: it
+> **raises** (not warns), so it surfaces regardless of your warning filters — and
+> it is the **only** 0.7.0 signal for the silent behavioral breaks (return-value
+> flips, refusal-raises, mutate-existing fail-loud) that emit no
+> `DeprecationWarning` at all.
+
 ---
 
 ## Summary table

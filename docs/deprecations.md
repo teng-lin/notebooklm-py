@@ -156,6 +156,27 @@ the resumable-upload content-type header (overriding filename-extension
 inference), so both are now supported parameters. The earlier
 `DeprecationWarning` was removed.
 
+## v0.8.0 breaking changes without a deprecation warning
+
+A few v0.8.0 breaks are **return-value or behavioral** changes that cannot emit a
+clean `DeprecationWarning` (you cannot warn on "this returns `True` today but
+`None` tomorrow" without firing on every call). They are **silent** in v0.7.0 and
+surface only under `NOTEBOOKLM_FUTURE_ERRORS=1` — that flag is the *only* v0.7.0
+signal for them. Full before/after migrations are in
+[`docs/upgrading-to-0.8.0.md`](upgrading-to-0.8.0.md). They ship **together** with
+the rest of the break-set (one release; #1344 is not split to 0.9.0).
+
+| Change | v0.7.0 (default) | v0.8.0 | v0.7.0 preview | Tracked by |
+|--------|------------------|--------|----------------|------------|
+| `sources.refresh()` / `chat.delete_conversation()` return value | `True` (uninformative — failures raise first) | `None` | `NOTEBOOKLM_FUTURE_ERRORS=1` | [#1290](https://github.com/teng-lin/notebooklm-py/issues/1290) |
+| Synchronous generation refusal (`generate_*` / `revise_slide` / `research.start`) | swallowed into `GenerationStatus(status="failed")` / returns `None` | raises `RateLimitError` / `RPCError` / `DecodingError` / `ArtifactFeatureUnavailableError` | `NOTEBOOKLM_FUTURE_ERRORS=1` | [#1342](https://github.com/teng-lin/notebooklm-py/issues/1342) |
+| `notes.update()` / `sources.rename(return_object=False)` / `artifacts.rename(return_object=False)` on a missing target | silent no-op / returns `None` | raises the matching `*NotFoundError` | `NOTEBOOKLM_FUTURE_ERRORS=1` | [#1362](https://github.com/teng-lin/notebooklm-py/issues/1362) |
+| Derived-read drift + lister drift-tightening | malformed / unknown payloads collapse to empty / `None` | raise `DecodingError` | _(no flag preview yet)_ | [#1344](https://github.com/teng-lin/notebooklm-py/issues/1344) |
+
+The flip happens in lockstep at the version bump, enforced by the
+`tests/_lint/test_v080_release_gate.py` no-orphans gate (umbrella
+[#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)).
+
 ## Removed in v0.7.0
 
 | Removed | Replacement | Deprecated since | Removed in | Notes |
