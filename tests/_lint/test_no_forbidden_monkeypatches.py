@@ -174,7 +174,10 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("object-attribute monkeypatch (forbidden by ADR-0007)", _PATTERN_OBJECT_ATTR),
     ("AsyncMock attribute assignment (forbidden by ADR-0007)", _PATTERN_ASYNCMOCK_ASSIGN),
     ("mock.patch string-target into private (forbidden by ADR-0007)", _PATTERN_MOCK_PATCH_PRIVATE),
-    ("patch.object into private module (forbidden by ADR-0007)", _PATTERN_MOCK_PATCH_OBJECT_PRIVATE),
+    (
+        "patch.object into private module (forbidden by ADR-0007)",
+        _PATTERN_MOCK_PATCH_OBJECT_PRIVATE,
+    ),
 )
 
 
