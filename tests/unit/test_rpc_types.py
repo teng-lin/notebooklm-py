@@ -99,10 +99,11 @@ class TestRPCConstants:
 
 # Shape every ``RPCMethod`` value must satisfy. These are Google's obfuscated
 # batchexecute method IDs — short, case-sensitive alphanumeric tokens. The
-# bound is deliberately loose (the real values are 5-6 chars today) so a routine
-# Google ID rotation does NOT force a test edit; the invariant catches the
-# failure modes that actually matter: an empty/whitespace value, a structurally
-# wrong token, or a duplicate ID silently aliasing two methods.
+# length bound is deliberately loose: the real values are 5-6 chars today, and
+# {4,12} leaves rotation headroom on both sides so a routine Google ID rotation
+# does NOT force a test edit; the invariant catches the failure modes that
+# actually matter: an empty/whitespace value, a structurally wrong token, or a
+# duplicate ID silently aliasing two methods.
 _RPC_ID_SHAPE = re.compile(r"^[A-Za-z0-9]{4,12}$")
 
 
@@ -130,17 +131,20 @@ class TestRPCMethod:
         )
 
     def test_values_are_unique_across_the_enum(self):
-        """No two distinct methods may share an obfuscated ID (silent aliasing)."""
-        # ``str`` Enum members with equal values alias to a single canonical
-        # member, so a collision shrinks the distinct-value set below the
-        # distinct-name count. Compare names→values to surface which collide.
+        """No two distinct method names may share an obfuscated ID (silent aliasing)."""
+        # MUST iterate ``__members__.items()``, not ``RPCMethod`` directly:
+        # ``Enum.__iter__`` yields only *canonical* members and silently hides
+        # aliases (a second member declared with a duplicate value), so
+        # ``for member in RPCMethod`` would never see the collision and this
+        # test would pass with a duplicate present. ``__members__`` includes the
+        # alias names, which is exactly what we want to catch.
         seen: dict[str, str] = {}
         collisions: dict[str, list[str]] = {}
-        for member in RPCMethod:
+        for name, member in RPCMethod.__members__.items():
             if member.value in seen:
-                collisions.setdefault(member.value, [seen[member.value]]).append(member.name)
+                collisions.setdefault(member.value, [seen[member.value]]).append(name)
             else:
-                seen[member.value] = member.name
+                seen[member.value] = name
         assert collisions == {}, f"Duplicate RPCMethod ID(s) alias multiple methods: {collisions}"
 
     def test_enum_is_non_empty(self):
