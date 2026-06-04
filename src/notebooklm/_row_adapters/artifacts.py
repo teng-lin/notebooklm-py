@@ -33,7 +33,8 @@ class ArtifactRow:
     7      report markdown payload (string or one-element wrapper)
     8      video metadata; nested media variants
     9      options block; ``[9][1][0]`` is the variant code (used to
-           distinguish QUIZ from FLASHCARDS when type == 4)
+           distinguish QUIZ from FLASHCARDS from the interactive mind map
+           (variant 4) when type == 4)
     15     timestamp block; ``[15][0]`` is the creation timestamp
            (seconds since epoch)
     16     slide deck metadata; ``[16][3]`` is PDF URL and ``[16][4]``
@@ -153,7 +154,8 @@ class ArtifactRow:
 
     @property
     def variant(self) -> int | None:
-        """Variant code at ``data[9][1][0]`` — distinguishes QUIZ vs FLASHCARDS.
+        """Variant code at ``data[9][1][0]`` — distinguishes QUIZ vs FLASHCARDS
+        vs the interactive mind map (variant 4) within the type-4 family.
 
         Returns ``None`` when:
 
@@ -467,8 +469,8 @@ class ArtifactRow:
                 to pick downloadable artifacts.
 
         Note:
-            This is a *raw* type-code match. The QUIZ vs FLASHCARDS
-            variant distinction lives one layer up in
+            This is a *raw* type-code match. The QUIZ vs FLASHCARDS vs
+            interactive mind map (variant 4) distinction lives one layer up in
             ``_artifact.listing._matches_artifact_type`` because it
             operates on :class:`Artifact` objects (which know variant
             mapping), not raw rows. Keep that separation intentional —

@@ -717,7 +717,7 @@ params = [
         [
             None,
             [
-                2,                    # Variant: 2=quiz, 1=flashcards
+                2,                    # Variant: 2=quiz, 1=flashcards, 4=interactive mind map
                 None,
                 instructions,
                 None,
@@ -752,7 +752,7 @@ params = [
         [
             None,
             [
-                1,                    # Variant: 1=flashcards (vs 2=quiz)
+                1,                    # Variant: 1=flashcards (vs 2=quiz, 4=interactive mind map)
                 None,
                 instructions,
                 None,

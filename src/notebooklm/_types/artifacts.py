@@ -24,7 +24,8 @@ class ArtifactType(str, Enum):
     """User-facing artifact types.
 
     This is a str enum that hides internal variant complexity. For example,
-    quizzes and flashcards are both type 4 internally but distinguished by variant.
+    quizzes, flashcards, and interactive mind maps are all type 4 internally,
+    distinguished by variant.
 
     Comparisons work with both enum members and strings:
         artifact.kind == ArtifactType.AUDIO  # True
@@ -62,12 +63,14 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
 
     Args:
         artifact_type: ArtifactTypeCode integer value from API.
-        variant: Optional variant code (e.g., for quiz vs flashcards).
+        variant: Optional variant code (e.g., for quiz vs flashcards vs
+            interactive mind map).
 
     Returns:
         ArtifactType enum member. Returns UNKNOWN for unrecognized types.
     """
-    # Handle QUIZ/FLASHCARDS distinction.
+    # Resolve the type-4 family (QUIZ / FLASHCARDS / interactive mind map)
+    # by variant; the interactive mind map (variant 4) is also returned here.
     if artifact_type == ArtifactTypeCode.QUIZ.value:
         if variant == FLASHCARDS_VARIANT:
             return ArtifactType.FLASHCARDS
@@ -82,7 +85,7 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
             if key not in _warned_artifact_types:
                 _warned_artifact_types.add(key)
                 warnings.warn(
-                    f"Unknown QUIZ variant {variant}. "
+                    f"Unknown type-4 (quiz / flashcards / mind-map) variant {variant}. "
                     "Consider updating notebooklm-py to the latest version.",
                     UnknownTypeWarning,
                     stacklevel=3,

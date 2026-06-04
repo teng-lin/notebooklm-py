@@ -1890,7 +1890,7 @@ class Artifact:
     status: int                     # 1=processing, 2=pending, 3=completed, 4=failed
     created_at: Optional[datetime]
     url: Optional[str]
-    _variant: int | None = None     # Internal variant for type-4 artifacts (1=flashcards, 2=quiz).
+    _variant: int | None = None     # Internal variant for type-4 artifacts (1=flashcards, 2=quiz, 4=interactive mind map).
 
     @property
     def kind(self) -> ArtifactType:
