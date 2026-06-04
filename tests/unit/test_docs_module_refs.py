@@ -265,6 +265,20 @@ def test_main_fails_on_dead_inline_ref(tmp_path, capsys) -> None:
     assert "Dead inline module refs in live docs" in capsys.readouterr().err
 
 
+def test_main_fails_on_stale_allowlist(tmp_path, capsys, monkeypatch) -> None:
+    # Completes main()'s exit-code coverage: the third error branch fires when an
+    # _ALLOWLIST entry is no longer justified (its doc exists but no longer
+    # mentions the ref). Patch the module-level allowlist with a bogus entry.
+    import scripts.check_docs_module_refs as mod
+
+    _write(tmp_path / "src/notebooklm/__init__.py", "")
+    _write(tmp_path / "docs/foo.md", "No module mention here.\n")
+    monkeypatch.setattr(mod, "_ALLOWLIST", {"docs/foo.md:_old.py": "stale: doc dropped it"})
+
+    assert mod.main(["--repo-root", str(tmp_path)]) == 1
+    assert "Stale _ALLOWLIST entries" in capsys.readouterr().err
+
+
 def test_main_succeeds_when_all_refs_resolve(tmp_path) -> None:
     _write(tmp_path / "src/notebooklm/__init__.py", "")
     _write(tmp_path / "src/notebooklm/_runtime/lifecycle.py", "")

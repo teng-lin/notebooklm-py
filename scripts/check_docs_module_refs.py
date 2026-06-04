@@ -55,6 +55,13 @@ _PACKAGE_RELDIR = "src/notebooklm"
 # either a private ``_foo`` name or one of the known public module names), with
 # optional subdirectories, ending in ``.py``. ``test_*.py`` / ``conftest.py`` and
 # anything under ``tests/`` / ``scripts/`` are excluded by the caller, not here.
+#
+# Scope: the inline-ref check intentionally covers the ``_*`` private modules plus
+# the known top-level public module names. The ``rpc/`` and ``cli/`` subpackages
+# are out of scope (they were not reorganised in #1328), so an inline ``rpc/...``
+# / ``cli/...`` ref is not resolved here — the broken-link check (which has no
+# such shape filter) still guards any ``src/notebooklm/rpc/...`` *link* target.
+# The test ``test_test_and_script_refs_are_not_module_shaped`` pins this scope.
 _MODULE_REF_RE = re.compile(
     r"^(_[a-z0-9_]+|client|auth|exceptions|config|io|log|migration|paths|research"
     r"|types|urls|utils|artifacts)([/][a-z0-9_]+)*\.py$"
