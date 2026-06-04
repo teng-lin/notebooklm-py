@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   today and run on both 0.7.0 and 0.8.0 with no flag day:
   - **Test your code against 0.8.0 today** — set `NOTEBOOKLM_FUTURE_ERRORS=1` to
     opt your process into the v0.8.0 error contract (`get()` raises
-    `*NotFoundError` on a miss, dict-subscript on the typed returns raises, and
+    `*NotFoundError` on a miss, all dict-style access on the typed returns
+    (`[...]`, `.get()`, `in`, `.keys()`, …) raises, and
     the deprecated `wait_for_completion(interval=...)` alias raises) **without
     changing default behavior**. Run your test suite with it on to find breakage
     before you upgrade. This is the "test-before-you-migrate" mechanism paired
@@ -174,7 +175,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   v0.7.0 behavior; when truthy (`1`/`true`/`yes`/`on`) the three warn-runways
   adopt their v0.8.0 raise-target: `sources.get` / `artifacts.get` /
   `notes.get` / `mind_maps.get` raise the matching `*NotFoundError` on a miss
-  (#1247), `MappingCompatMixin` dict-subscript raises `TypeError` (#1251), and
+  (#1247), the **whole** `MappingCompatMixin` mapping surface — `[...]`
+  subscript plus the silent `get` / `keys` / `items` / `values` / `len` / `in` /
+  `iter` shims — raises the exact error a bare dataclass would (#1251), and
   the deprecated `ResearchAPI.wait_for_completion(interval=...)` alias raises
   `TypeError` (#1254). Takes precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`
   (a runway raises regardless of quiet). The four `get()` methods are now routed

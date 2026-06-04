@@ -49,7 +49,8 @@ silently preferring one.
 A second, orthogonal gate lives here too: ``NOTEBOOKLM_FUTURE_ERRORS``
 (:func:`future_errors_enabled`). When on, the three runways above adopt their
 v0.8.0 *target* behavior early — ``deprecated_kwarg`` and the
-:class:`MappingCompatMixin` subscript raise instead of warn (the
+whole :class:`MappingCompatMixin` mapping surface (subscript plus the silent
+``get`` / ``keys`` / ``in`` / ``iter`` shims) raise instead of warn (the
 ``<resource>.get()`` runway is routed through ``_lookup.resolve_get``). The same
 gate also previews the purely-behavioral v0.8.0 changes that have no warn-runway
 (issue #1405): the uninformative ``bool`` returns become ``None`` (#1290), a
@@ -134,8 +135,10 @@ def future_errors_enabled() -> bool:
     early. When on, the v0.7.0 deprecation *runways* that still warn today adopt
     their v0.8.0 *target* behavior instead — ``<resource>.get()`` raises the
     matching ``*NotFoundError`` on a miss (#1247), the
-    :class:`MappingCompatMixin` dict-subscript bridge raises instead of
-    warning-and-returning (#1251), and :func:`deprecated_kwarg` raises on the
+    :class:`MappingCompatMixin` mapping surface — ``[...]`` subscript plus the
+    silent ``get`` / ``keys`` / ``items`` / ``values`` / ``len`` / ``in`` /
+    ``iter`` shims — raises instead of warning-and-returning (#1251), and
+    :func:`deprecated_kwarg` raises on the
     deprecated keyword instead of aliasing it (#1254). Any other value —
     including unset — keeps the current (warn) behavior, so default-off is
     byte-identical to v0.7.0.
@@ -383,12 +386,16 @@ class MappingCompatMixin:
     working against the *historical dict shape*, emitting a single
     :class:`DeprecationWarning` on each *subscript* access (``__getitem__`` only).
     The rest of the read-mapping surface — ``get`` / ``keys`` / ``items`` /
-    ``values`` / ``__len__`` / ``__contains__`` / ``__iter__`` — stays silent so
-    callers can probe shape without a warning storm. (``dict(result)`` still
-    works but warns, since the ``dict`` constructor reads each key via
-    ``__getitem__``.) The warning names the **v0.8.0** removal and is
-    suppressible via ``NOTEBOOKLM_QUIET_DEPRECATIONS``. In v0.8.0 the mixin is
-    dropped and the dataclasses become attribute-only.
+    ``values`` / ``__len__`` / ``__contains__`` / ``__iter__`` — stays silent
+    **off the flag** so callers can probe shape without a warning storm.
+    (``dict(result)`` still works but warns, since the ``dict`` constructor
+    reads each key via ``__getitem__``.) The warning names the **v0.8.0**
+    removal and is suppressible via ``NOTEBOOKLM_QUIET_DEPRECATIONS``. Under
+    ``NOTEBOOKLM_FUTURE_ERRORS`` the **whole** mapping surface raises the exact
+    error a bare attribute-only dataclass would (the mixin is gone in v0.8.0),
+    so forward-testing catches every removed access — not just subscript
+    (#1251). In v0.8.0 the mixin is dropped and the dataclasses become
+    attribute-only.
 
     The legacy values come from the subclass's ``to_public_dict()`` (the exact
     historical dict that method used to return) so nested access like
@@ -409,6 +416,20 @@ class MappingCompatMixin:
         """Return the historical ``dict`` shape. Subclasses must override."""
         raise NotImplementedError
 
+    def _block_if_future_errors(self, exc: Exception) -> None:
+        """Raise *exc* — the v0.8.0 "mixin removed" preview — iff the flag is on.
+
+        At v0.8.0 the mixin is dropped and the return is an attribute-only
+        dataclass, so the *whole* mapping surface breaks, not just subscript.
+        Under ``NOTEBOOKLM_FUTURE_ERRORS`` each shim raises the exact error a
+        bare dataclass would (``TypeError`` for subscript / ``in`` / ``iter`` /
+        ``len``, ``AttributeError`` for ``get`` / ``keys`` / ``items`` /
+        ``values``), so forward-testing catches every removed access (#1251).
+        Bypasses the quiet gate, like the warnings it replaces.
+        """
+        if _future_errors_enabled():
+            raise exc
+
     def __getitem__(self, key: str) -> Any:
         """Deprecated dict-style read; warns and returns the legacy dict value.
 
@@ -418,8 +439,9 @@ class MappingCompatMixin:
         plain dataclass raises — ``'<Type>' object is not subscriptable``),
         regardless of the quiet gate (issue #1251).
         """
-        if _future_errors_enabled():
-            raise TypeError(f"{type(self).__name__!r} object is not subscriptable")
+        self._block_if_future_errors(
+            TypeError(f"{type(self).__name__!r} object is not subscriptable")
+        )
         legacy = self.to_public_dict()
         if key not in legacy:
             raise KeyError(key)
@@ -438,35 +460,55 @@ class MappingCompatMixin:
         return legacy[key]
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Deprecated ``dict.get`` shim. Silent (no warning) like ``dict.get``.
+        """Deprecated ``dict.get`` shim. Silent off the flag, like ``dict.get``.
 
         Returns the legacy dict value when ``key`` is present, otherwise
-        ``default``. Unlike :meth:`__getitem__` this does not warn, so existing
-        ``result.get("status", "")`` shape-probes stay quiet; the migration
-        prompt is reserved for the subscript form.
+        ``default``. Off the flag this does not warn, so existing
+        ``result.get("status", "")`` shape-probes stay quiet. Under
+        ``NOTEBOOKLM_FUTURE_ERRORS`` it raises ``AttributeError`` (the method is
+        gone in v0.8.0), previewing the removal (#1251).
         """
+        self._block_if_future_errors(
+            AttributeError(f"{type(self).__name__!r} object has no attribute 'get'")
+        )
         return self.to_public_dict().get(key, default)
 
     def keys(self) -> KeysView[str]:
-        """Return the legacy dict keys view (silent)."""
+        """Return the legacy dict keys view (silent off the flag; raises under it)."""
+        self._block_if_future_errors(
+            AttributeError(f"{type(self).__name__!r} object has no attribute 'keys'")
+        )
         return self.to_public_dict().keys()
 
     def items(self) -> ItemsView[str, Any]:
-        """Return the legacy dict items view (silent)."""
+        """Return the legacy dict items view (silent off the flag; raises under it)."""
+        self._block_if_future_errors(
+            AttributeError(f"{type(self).__name__!r} object has no attribute 'items'")
+        )
         return self.to_public_dict().items()
 
     def values(self) -> ValuesView[Any]:
-        """Return the legacy dict values view (silent)."""
+        """Return the legacy dict values view (silent off the flag; raises under it)."""
+        self._block_if_future_errors(
+            AttributeError(f"{type(self).__name__!r} object has no attribute 'values'")
+        )
         return self.to_public_dict().values()
 
     def __len__(self) -> int:
-        """Return the number of legacy dict keys (silent)."""
+        """Return the legacy dict key count (silent off the flag; raises under it)."""
+        self._block_if_future_errors(
+            TypeError(f"object of type {type(self).__name__!r} has no len()")
+        )
         return len(self.to_public_dict())
 
     def __contains__(self, key: object) -> bool:
-        """Support ``"key" in result`` against the legacy key set (silent)."""
+        """Support ``"key" in result`` (silent off the flag; raises under it)."""
+        self._block_if_future_errors(
+            TypeError(f"argument of type {type(self).__name__!r} is not iterable")
+        )
         return key in self.to_public_dict()
 
     def __iter__(self) -> Iterator[str]:
-        """Iterate the legacy dict keys (silent; mirrors ``dict`` iteration)."""
+        """Iterate the legacy dict keys (silent off the flag; raises under it)."""
+        self._block_if_future_errors(TypeError(f"{type(self).__name__!r} object is not iterable"))
         return iter(self.to_public_dict())

@@ -170,7 +170,7 @@ class TestResolveGet:
 
 
 # ---------------------------------------------------------------------------
-# MappingCompatMixin.__getitem__ — dict-subscript flip (#1251)
+# MappingCompatMixin — full mapping-surface flip (#1251)
 # ---------------------------------------------------------------------------
 
 
@@ -184,7 +184,7 @@ class _CompatProbe(MappingCompatMixin):
         return {"status": self.status}
 
 
-class TestMappingCompatSubscriptFlip:
+class TestMappingCompatFlip:
     def test_off_warns_and_returns_legacy_value(self, monkeypatch):
         monkeypatch.delenv(_FLAG, raising=False)
         monkeypatch.delenv(_QUIET, raising=False)
@@ -222,15 +222,43 @@ class TestMappingCompatSubscriptFlip:
         assert "object is not subscriptable" in plain_msg
         assert "object is not subscriptable" in str(caught.value)
 
-    def test_on_silent_surface_unaffected(self, monkeypatch):
-        # Only __getitem__ flips; get/keys/in/iter stay the silent legacy shape.
+    def test_on_full_mapping_surface_raises(self, monkeypatch):
+        # In v0.8.0 the mixin is gone, so EVERY mapping op breaks — not just
+        # subscript. The flag previews each with the exact error a bare
+        # attribute-only dataclass raises: AttributeError for the method-style
+        # shims, TypeError for the operator-style ones (#1251).
         monkeypatch.setenv(_FLAG, "1")
+        probe = _CompatProbe()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            with pytest.raises(AttributeError, match="has no attribute 'get'"):
+                probe.get("status")
+            with pytest.raises(AttributeError, match="has no attribute 'keys'"):
+                probe.keys()
+            with pytest.raises(AttributeError, match="has no attribute 'items'"):
+                probe.items()
+            with pytest.raises(AttributeError, match="has no attribute 'values'"):
+                probe.values()
+            with pytest.raises(TypeError, match="has no len"):
+                len(probe)
+            with pytest.raises(TypeError, match="not iterable"):
+                assert "status" in probe
+            with pytest.raises(TypeError, match="not iterable"):
+                iter(probe)
+
+    def test_off_mapping_surface_stays_silent(self, monkeypatch):
+        # Off the flag the shape-probe surface is unchanged (no warning storm):
+        # get/keys/in/iter/len keep returning the legacy dict shape quietly.
+        monkeypatch.delenv(_FLAG, raising=False)
+        monkeypatch.delenv(_QUIET, raising=False)
         probe = _CompatProbe()
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             assert probe.get("status") == "completed"
             assert "status" in probe
             assert list(probe.keys()) == ["status"]
+            assert len(probe) == 1
+            assert list(iter(probe)) == ["status"]
 
 
 # ---------------------------------------------------------------------------

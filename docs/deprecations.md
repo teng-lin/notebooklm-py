@@ -46,7 +46,7 @@ purely-behavioral previews with no warning today (#1405):
 | Runway | v0.7.0 (default / flag off) | With `NOTEBOOKLM_FUTURE_ERRORS=1` | Tracked by |
 |--------|-----------------------------|-----------------------------------|------------|
 | `sources.get()` / `artifacts.get()` / `notes.get()` / `mind_maps.get()` on a miss | Warns, returns `None` | Raises the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` / `MindMapNotFoundError`) | [#1247](https://github.com/teng-lin/notebooklm-py/issues/1247) |
-| Dict-subscript `result["key"]` on the typed research / mind-map / source-guide returns (`MappingCompatMixin`) | Warns, returns the legacy dict value | Raises `TypeError: '<Type>' object is not subscriptable` (the same error a plain dataclass raises once the mixin is removed) | [#1251](https://github.com/teng-lin/notebooklm-py/issues/1251) |
+| Dict-style access on the typed research / mind-map / source-guide returns (`MappingCompatMixin`) — `result["key"]`, `result.get(...)`, `"k" in result`, `result.keys()` / `items()` / `values()`, `iter(result)`, `len(result)` | `[...]` warns; the rest are silent; all return the legacy dict value | Each raises the exact error a bare attribute-only dataclass would once the mixin is removed: `TypeError` for `[...]` / `in` / `iter` / `len`, `AttributeError` for `get` / `keys` / `items` / `values` | [#1251](https://github.com/teng-lin/notebooklm-py/issues/1251) |
 | Deprecated keyword alias `ResearchAPI.wait_for_completion(interval=...)` | Warns, aliases to `initial_interval` | Raises `TypeError` (the deprecated keyword is gone) | [#1254](https://github.com/teng-lin/notebooklm-py/issues/1254) |
 | `sources.refresh()` / `chat.delete_conversation()` return value | Returns `True` (uninformative — failures raise first) | Returns `None` (the `-> bool` annotation is preserved until the v0.8.0 flip) | [#1290](https://github.com/teng-lin/notebooklm-py/issues/1290) |
 | Synchronous generation refusal (`generate_*` / `revise_slide` / `research.start`) | Swallowed into `GenerationStatus(status="failed")` / returned `None` | Raises the decoder's `RateLimitError` / `RPCError` / `DecodingError` / `ArtifactFeatureUnavailableError` ("couldn't-start" is an error, not data) | [#1342](https://github.com/teng-lin/notebooklm-py/issues/1342) |
@@ -57,12 +57,13 @@ actually ships; it only lets you preview the target behavior. The flag changes
 only the *deprecated* paths in the table; the sanctioned replacements are
 **unaffected** in both modes: `get_or_none()` stays the silent `None`-on-miss
 lookup, and attribute access (`result.status`, `result.sources`, …) stays the
-warning-free read on the typed dataclasses. Note that the *other*
-`MappingCompatMixin` accessors (`result.get(...)` / `keys()` / `in` / `iter(...)`)
-stay silent **under this flag** — it gates only `__getitem__` — but they are part
-of the mixin and are removed wholesale in v0.8.0 along with subscript; the only
-post-flip read is attribute access. Use them as a temporary migration aid, not a
-target shape.
+warning-free read on the typed dataclasses. Under this flag the **entire**
+`MappingCompatMixin` surface raises — `result.get(...)` / `keys()` / `in` /
+`iter(...)` / `len(...)` are no longer silent (they were before this preview was
+completed), so forward-testing catches every removed access, not just subscript.
+Off the flag they stay silent (no warning storm). All of them are removed
+wholesale in v0.8.0; the only post-flip read is attribute access. Use them as a
+temporary migration aid, not a target shape.
 
 **Precedence over `NOTEBOOKLM_QUIET_DEPRECATIONS`.** When `NOTEBOOKLM_FUTURE_ERRORS`
 is on, a runway **raises regardless of the quiet setting** — quiet only silences
