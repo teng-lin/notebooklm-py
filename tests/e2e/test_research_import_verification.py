@@ -182,10 +182,10 @@ class TestResearchImportVerification:
         if not sources:
             pytest.skip("Deep research returned no sources — cannot test import")
 
-        # Count importable entries: report rows (result_type=5 with markdown) +
+        # Count importable entries: report rows (is_report with markdown) +
         # web rows with non-empty URLs. ``import_sources`` skips everything
         # else, so this is the upper bound we expect to land in sources.list.
-        report_entries = [src for src in sources if src.result_type == 5 and src.report_markdown]
+        report_entries = [src for src in sources if src.is_report and src.report_markdown]
         web_entries = [src for src in sources if src.url]
         expected_import_count = len(report_entries) + len(web_entries)
         if expected_import_count == 0:
