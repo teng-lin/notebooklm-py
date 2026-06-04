@@ -33,7 +33,7 @@ class ArtifactRow:
     7      report markdown payload (string or one-element wrapper)
     8      video metadata; nested media variants
     9      options block; ``[9][1][0]`` is the variant code (used to
-           distinguish QUIZ from FLASHCARDS from the interactive mind map
+           distinguish among QUIZ, FLASHCARDS, and the interactive mind map
            (variant 4) when type == 4)
     15     timestamp block; ``[15][0]`` is the creation timestamp
            (seconds since epoch)

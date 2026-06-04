@@ -69,8 +69,7 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     Returns:
         ArtifactType enum member. Returns UNKNOWN for unrecognized types.
     """
-    # Resolve the type-4 family (QUIZ / FLASHCARDS / interactive mind map)
-    # by variant; the interactive mind map (variant 4) is also returned here.
+    # Resolve the type-4 family (QUIZ / FLASHCARDS / interactive mind map) by variant.
     if artifact_type == ArtifactTypeCode.QUIZ.value:
         if variant == FLASHCARDS_VARIANT:
             return ArtifactType.FLASHCARDS
