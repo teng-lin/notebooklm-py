@@ -4,8 +4,8 @@ ADR design docs are named ``docs/adr/NNNN-*.md`` with a 4-digit zero-padded
 number (``0001-`` … ``0019-``). Prose references must use the **same** 4-digit
 width so a reference maps unambiguously onto its file.
 
-Before this gate the two diverged badly: references drifted between the 3-digit
-short form (``ADR-019``, 626 occurrences) and the 4-digit form (``ADR-0019``,
+Before this gate the two diverged badly: references drifted between a 3-digit
+short form (``ADR-NNN``, 626 occurrences) and the 4-digit form (``ADR-0019``,
 49) — and the *same* ADR was spelled both ways in CLAUDE.md, the docs, the
 tests, and the ADRs' own cross-references. A one-time scripted sweep unified
 everything to the 4-digit form; this gate keeps it that way.
@@ -15,9 +15,13 @@ Two invariants, plus self-tests of the detector:
 1. Every ``ADR-<digits>`` reference in tracked text uses exactly 4 digits.
 2. Every referenced ``ADR-NNNN`` maps to an existing ``docs/adr/NNNN-*.md``.
 
-If check 1 fails, someone wrote ``ADR-19`` / ``ADR-019`` / ``ADR-00019`` instead
-of ``ADR-0019``. If check 2 fails, a reference points at an ADR number that has
-no file (a typo, or a doc citing an ADR that was never written).
+If check 1 fails, someone wrote a non-4-digit form (``ADR-NN`` / ``ADR-NNN`` /
+``ADR-NNNNN``) instead of ``ADR-0019``. If check 2 fails, a reference points at
+an ADR number that has no file (a typo, or a doc citing an ADR never written).
+
+This module is itself scanned by the gate (it is *not* excluded): the examples
+above use letter placeholders (``ADR-NNN``) and the self-tests build malformed
+strings at runtime, so the file contains no malformed literal of its own.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ _ADR_DIR = _REPO_ROOT / "docs" / "adr"
 
 # An ADR reference: the literal ``ADR-`` followed by a run of digits. The digit
 # run is captured so its width can be checked; a non-digit (or end) terminates
-# it, so ``ADR-00190`` is caught as a 5-digit reference and rejected.
+# it, so a 5-digit ``ADR-NNNNN`` run is caught and rejected.
 _ADR_REF = re.compile(r"ADR-(\d+)")
 
 _CANONICAL_WIDTH = 4
@@ -80,13 +84,14 @@ def find_misformatted_adr_refs(text: str) -> list[str]:
 
 
 def _scanned_files() -> list[Path]:
-    """All tracked-ish text files to scan, excluding this gate's own examples.
+    """All tracked-ish text files to scan — including this module itself.
 
     Prunes skipped directories *during* traversal rather than walking the whole
     tree and filtering, so a large ``.venv`` / ``node_modules`` (present in CI
-    after ``uv sync``) is never descended into.
+    after ``uv sync``) is never descended into. This file is deliberately *not*
+    excluded — it carries no malformed literal (see the module docstring), so the
+    gate polices its own references too.
     """
-    this_file = Path(__file__).resolve()
     out: list[Path] = []
 
     def walk(directory: Path) -> None:
@@ -98,8 +103,7 @@ def _scanned_files() -> list[Path]:
             if path.is_dir():
                 if path.name not in _SKIP_DIRS:
                     walk(path)
-            elif path.suffix in _SCANNED_SUFFIXES and path.resolve() != this_file:
-                # this_file constructs malformed examples below, so skip it.
+            elif path.suffix in _SCANNED_SUFFIXES:
                 out.append(path)
 
     walk(_REPO_ROOT)
