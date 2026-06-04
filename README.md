@@ -67,7 +67,7 @@
 | **Flashcards** | Configurable quantity and difficulty | JSON, Markdown, HTML |
 | **Report** | Briefing doc, study guide, blog post, or custom prompt | Markdown |
 | **Data Table** | Custom structure via natural language | CSV |
-| **Mind Map** | Interactive hierarchical visualization | JSON |
+| **Mind Map** | Hierarchical node tree — **two kinds**: note-backed JSON or the newer interactive studio map (`--kind` / `MindMapKind`) | JSON |
 
 ### Beyond the Web UI
 
@@ -147,7 +147,7 @@ notebooklm generate quiz --difficulty hard
 notebooklm generate flashcards --quantity more
 notebooklm generate slide-deck
 notebooklm generate infographic --orientation portrait
-notebooklm generate mind-map
+notebooklm generate mind-map --kind interactive   # newer studio map; note-backed JSON is the default kind
 notebooklm generate data-table "compare key concepts"
 
 # 5. Download artifacts
@@ -208,7 +208,9 @@ async def main():
         await client.artifacts.wait_for_completion(nb.id, status.task_id)
         await client.artifacts.download_quiz(nb.id, "quiz.json", output_format="json")
 
-        # Generate mind map and export
+        # Generate a mind map — two kinds (issue #1256): note-backed JSON (shown)
+        # or the newer interactive studio map, both via the unified client.mind_maps
+        # API, e.g. await client.mind_maps.generate(nb.id, kind="interactive")
         result = await client.artifacts.generate_mind_map(nb.id)
         await client.artifacts.download_mind_map(nb.id, "mindmap.json")
 
