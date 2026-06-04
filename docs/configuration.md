@@ -362,12 +362,16 @@ When on, the three warn-runways adopt their v0.8.0 raise-target:
    raise the matching `*NotFoundError` instead of warning-and-returning `None`
    ([#1247](https://github.com/teng-lin/notebooklm-py/issues/1247)).
    `get_or_none()` is unaffected — it stays the silent `None`-on-miss path.
-2. **Dict-subscript raises.** `result["key"]` on the typed research / mind-map /
-   source-guide returns (`MappingCompatMixin`) raises
-   `TypeError: '<Type>' object is not subscriptable` — the same error a plain
-   dataclass raises once the mixin is removed
-   ([#1251](https://github.com/teng-lin/notebooklm-py/issues/1251)). Attribute
-   access (`result.status`) and the silent shape-probes are unaffected.
+2. **The whole `MappingCompatMixin` mapping surface raises.** On the typed
+   research / mind-map / source-guide returns, subscript (`result["key"]`) plus
+   the shims that stay silent off the flag — `result.get(...)` / `keys()` /
+   `items()` / `values()` / `len(result)` / `"k" in result` / `iter(result)` —
+   each raises the exact error a bare dataclass would once the mixin is removed:
+   `TypeError` for `[...]` / `in` / `iter` / `len`, `AttributeError` for `get` /
+   `keys` / `items` / `values`
+   ([#1251](https://github.com/teng-lin/notebooklm-py/issues/1251)). Off the flag
+   only subscript warns (and still returns the value); the rest stay silent.
+   Attribute access (`result.status`) is unaffected in both modes.
 3. **Deprecated keyword raises.** Passing
    `ResearchAPI.wait_for_completion(interval=...)` raises `TypeError` instead of
    aliasing to `initial_interval=`

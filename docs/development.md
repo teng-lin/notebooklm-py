@@ -31,9 +31,9 @@ src/notebooklm/
 ├── _notebooks.py        # NotebooksAPI implementation
 ├── _notebook_metadata.py # Private notebook metadata composition service
 ├── _sources.py          # SourcesAPI implementation
-├── _source_*.py         # Private source services
+├── _source/             # Private source services
 ├── _artifacts.py        # ArtifactsAPI implementation
-├── _artifact_*.py       # Private artifact services
+├── _artifact/           # Private artifact services
 ├── _chat/               # ChatAPI implementation (facade + chat helpers)
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # NotesAPI implementation
