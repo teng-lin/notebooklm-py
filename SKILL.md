@@ -208,6 +208,8 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 | Wait for completion | `notebooklm artifact wait <artifact_id>` |
 | Download audio | `notebooklm download audio ./output.mp3` |
 | Download video | `notebooklm download video ./output.mp4` |
+| Download cinematic video | `notebooklm download cinematic-video ./cinematic.mp4` (alias for `download video`) |
+| Download infographic | `notebooklm download infographic ./infographic.png` |
 | Download slide deck (PDF) | `notebooklm download slide-deck ./slides.pdf` |
 | Download slide deck (PPTX) | `notebooklm download slide-deck ./slides.pptx --format pptx` |
 | Download report | `notebooklm download report ./report.md` |
@@ -297,7 +299,7 @@ All generate commands support:
 | Type | Command | Options | Download |
 |------|---------|---------|----------|
 | Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .mp3 |
-| Video | `generate video` | `--format [explainer\|brief]`, `--style [auto\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]` | .mp4 |
+| Video | `generate video` | `--format [explainer\|brief\|cinematic]` (⁴), `--style [auto\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]` | .mp4 |
 | Slide Deck | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` (²) | .pdf / .pptx |
 | Slide Revision | `generate revise-slide "prompt" --artifact <id> --slide N` | `--wait`, `--notebook` | *(re-downloads parent deck)* |
 | Infographic | `generate infographic` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | .png |
@@ -310,6 +312,8 @@ All generate commands support:
 ¹ `--append` only customizes the built-in templates. With `--format custom`, pass the prompt as the positional `DESCRIPTION` argument (`notebooklm generate report "PROMPT" --format custom`); `--append` is silently ignored in that mode (the CLI prints a warning).
 
 ³ **Two kinds of mind map (issue #1256).** `generate mind-map --kind note-backed` (today's default) creates the **note-backed** kind — a JSON node tree, generated synchronously. `generate mind-map --kind interactive` creates the newer **interactive** studio artifact (what the web app now makes); it is polled to completion. Both emit the same `{mind_map, note_id, kind}` JSON, list under `artifact list --type mind-map`, and export via `download mind-map`. `--instructions` applies only to the note-backed kind. **The default `--kind` switches to `interactive` in v0.8.0**; omitting `--kind` prints a one-time stderr notice (silence with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`).
+
+⁴ **Cinematic video (Veo 3).** `generate video --format cinematic` generates AI documentary footage via Veo 3; it **ignores `--style`**, takes ~30-40 min, and requires a Google AI Ultra subscription. Also exposed as the `generate cinematic-video` alias (which forces `--format cinematic` and a longer default timeout). Download with `download video` or the `download cinematic-video` alias.
 
 ² **Portrait / vertical slide decks via prompt.** Slide-deck has no `--orientation` flag (unlike infographic). Treat portrait decks as skill-level prompt guidance, not a typed CLI/API contract: NotebookLM currently honors orientation cues written into the `DESCRIPTION` positional argument. Including phrases like `"9:16 portrait"`, `"vertical layout"`, `"portrait mobile format"`, or `"vertical 9:16 layout"` can make NotebookLM render each slide as a 9:16 portrait image. Empirically:
 
@@ -364,7 +368,7 @@ When user wants full automation (generate and download when ready):
    ```python
    Task(
      prompt="Wait for artifact {task_id} in notebook {notebook_id} to complete, then download.
-             Use: notebooklm artifact wait {task_id} -n {notebook_id} --timeout 600
+             Use: notebooklm artifact wait {task_id} -n {notebook_id} --timeout 1200
              Then: notebooklm download audio ./podcast.mp3 -a {task_id} -n {notebook_id}",
      subagent_type="general-purpose"
    )
@@ -415,7 +419,7 @@ When adding multiple sources and needing to wait for processing before chat/gene
    ```
    Task(
      prompt="Wait for sources {source_ids} in notebook {notebook_id} to be ready.
-             For each: notebooklm source wait {id} -n {notebook_id} --timeout 120
+             For each: notebooklm source wait {id} -n {notebook_id} --timeout 600
              Report when all ready or if any fail.",
      subagent_type="general-purpose"
    )
@@ -423,10 +427,10 @@ When adding multiple sources and needing to wait for processing before chat/gene
 3. Main conversation continues while agent waits
 4. Once sources are ready, proceed with chat or generation
 
-**Why wait for sources?** Sources must be indexed before chat or generation. Takes 10-60 seconds per source.
+**Why wait for sources?** Sources must be indexed before chat or generation. Takes ~30 seconds to several minutes per source (see the processing-times table below).
 
 ### Deep Web Research (Subagent Pattern)
-**Time:** 2-5 minutes, runs in background
+**Time:** 15-30+ minutes, runs in background
 
 Deep research finds and analyzes web sources on a topic:
 
@@ -439,7 +443,7 @@ Deep research finds and analyzes web sources on a topic:
    ```
    Task(
      prompt="Wait for research in notebook {notebook_id} to complete and import sources.
-             Use: notebooklm research wait -n {notebook_id} --import-all --timeout 300
+             Use: notebooklm research wait -n {notebook_id} --import-all --timeout 1800
              Report how many sources were imported.",
      subagent_type="general-purpose"
    )
@@ -450,12 +454,12 @@ Deep research finds and analyzes web sources on a topic:
 **Alternative (blocking):** For simple cases, omit `--no-wait`:
 ```bash
 notebooklm source add-research "topic" --mode deep --import-all
-# Blocks for up to 5 minutes
+# Blocks until research completes (deep mode: 15-30+ min)
 ```
 
 **When to use each mode:**
 - `--mode fast`: Specific topic, quick overview needed (5-10 sources, seconds)
-- `--mode deep`: Broad topic, comprehensive analysis needed (20+ sources, 2-5 min)
+- `--mode deep`: Broad topic, comprehensive analysis needed (20+ sources, 15-30+ min)
 
 **Research sources:**
 - `--from web`: Search the web (default)
