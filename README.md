@@ -186,7 +186,7 @@ Use `--prompt-file PATH` with `ask`, prompt-based `generate` commands, and `sour
 
 ```python
 import asyncio
-from notebooklm import NotebookLMClient
+from notebooklm import NotebookLMClient, MindMapKind
 
 async def main():
     async with NotebookLMClient.from_storage() as client:
@@ -208,10 +208,10 @@ async def main():
         await client.artifacts.wait_for_completion(nb.id, status.task_id)
         await client.artifacts.download_quiz(nb.id, "quiz.json", output_format="json")
 
-        # Generate a mind map — two kinds (issue #1256): note-backed JSON (shown)
-        # or the newer interactive studio map, both via the unified client.mind_maps
-        # API, e.g. await client.mind_maps.generate(nb.id, kind="interactive")
-        result = await client.artifacts.generate_mind_map(nb.id)
+        # Generate a mind map via the unified client.mind_maps API (issue #1256) —
+        # two kinds: the newer MindMapKind.INTERACTIVE studio map (shown; polled to
+        # completion by default) or MindMapKind.NOTE_BACKED JSON. Both export via:
+        await client.mind_maps.generate(nb.id, kind=MindMapKind.INTERACTIVE)
         await client.artifacts.download_mind_map(nb.id, "mindmap.json")
 
 asyncio.run(main())
