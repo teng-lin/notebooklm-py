@@ -23,22 +23,22 @@
 | `wXbhsf` | LIST_NOTEBOOKS | List all notebooks | `_notebooks.py` |
 | `CCqFvf` | CREATE_NOTEBOOK | Create new notebook | `_notebooks.py` |
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_notebooks.py` |
-| `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat.py` |
+| `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat/api.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
 | `izAoDd` | ADD_SOURCE | Add URL/text/YouTube source | `_sources.py` |
 | `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_sources.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
-| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_source_content.py` |
+| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_source/content.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
 | `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_artifacts.py` |
 | `Rytqqe` | RETRY_ARTIFACT | Retry a failed Studio artifact in place | `_artifacts.py` |
-| `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat.py` |
-| `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat.py` |
-| `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat.py` |
+| `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat/api.py` |
+| `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat/api.py` |
+| `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat/api.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
@@ -57,7 +57,7 @@
 | `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_sharing.py` |
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
-| `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_artifact_downloads.py` |
+| `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_artifact/downloads.py` |
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
@@ -350,7 +350,7 @@ params = [[[[source_id]]]]
 
 ### RPC: GET_SOURCE (hizoJc)
 
-**Source:** `_source_content.py::get_fulltext()`
+**Source:** `_source/content.py::get_fulltext()`
 
 **Purpose:** Get raw text or clean HTML/markdown content of a source.
 
@@ -429,7 +429,7 @@ params = [
 
 ### RPC: RENAME_NOTEBOOK (s0tc2d) - Configure Chat
 
-**Source:** `_chat.py::configure()`
+**Source:** `_chat/api.py::configure()`
 
 ```python
 # Chat goal codes (ChatGoal enum)
@@ -456,7 +456,7 @@ params = [
 
 ### RPC: GET_LAST_CONVERSATION_ID (hPTbtc)
 
-**Source:** `_chat.py::get_conversation_id()`
+**Source:** `_chat/api.py::get_conversation_id()`
 
 Returns the most recent conversation ID for a notebook. The server always returns
 exactly one ID regardless of the `limit` param. Use `GET_CONVERSATION_TURNS` to
@@ -477,7 +477,7 @@ params = [
 
 ### RPC: GET_CONVERSATION_TURNS (khqZz)
 
-**Source:** `_chat.py::get_conversation_turns()`
+**Source:** `_chat/api.py::get_conversation_turns()`
 
 Returns the Q&A turns for a specific conversation. Turns are ordered newest-first.
 
@@ -499,7 +499,7 @@ params = [
 
 ### RPC: DELETE_CONVERSATION (J7Gthc)
 
-**Source:** `_chat.py::delete_conversation()`
+**Source:** `_chat/api.py::delete_conversation()`
 
 Deletes a conversation server-side. Mirrors the NotebookLM web UI's "Delete
 history" button. After the call, the next `ask()` with no `conversation_id`
@@ -1831,7 +1831,7 @@ await rpc_call(
 
 ### RPC: GET_INTERACTIVE_HTML (v9rmvd)
 
-**Source:** `_artifact_downloads.py::_get_artifact_content()` (quiz/flashcard HTML), `_artifact_downloads.py::_get_interactive_mind_map_tree()` (interactive mind-map tree)
+**Source:** `_artifact/downloads.py::_get_artifact_content()` (quiz/flashcard HTML), `_artifact/downloads.py::_get_interactive_mind_map_tree()` (interactive mind-map tree)
 
 Fetch the interactive payload for a studio artifact. Used both for quiz/flashcard
 HTML and for the **interactive** mind-map JSON node tree (issue #1256) — the same
@@ -1945,7 +1945,7 @@ These RPC method IDs exist in `rpc/types.py` but are either legacy (superseded b
 | RPC ID | Method | Status | Notes |
 |--------|--------|--------|-------|
 
-> **Note:** `GET_SOURCE` (`hizoJc`) was previously listed here as "Broken" but is now active — used by `_source_content.py::get_fulltext()`. See [RPC Method Status](#rpc-method-status) and the detailed section above.
+> **Note:** `GET_SOURCE` (`hizoJc`) was previously listed here as "Broken" but is now active — used by `_source/content.py::get_fulltext()`. See [RPC Method Status](#rpc-method-status) and the detailed section above.
 
 **Why keep these?** These IDs are preserved in the codebase in case:
 1. Google re-enables or changes their functionality

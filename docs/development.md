@@ -34,7 +34,7 @@ src/notebooklm/
 ├── _source_*.py         # Private source services
 ├── _artifacts.py        # ArtifactsAPI implementation
 ├── _artifact_*.py       # Private artifact services
-├── _chat.py             # ChatAPI implementation
+├── _chat/               # ChatAPI implementation (facade + chat helpers)
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # NotesAPI implementation
 ├── _mind_map.py         # Private note-backed mind-map service
@@ -110,7 +110,7 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
 | `_reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_runtime_auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
-| `_runtime_lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
+| `_runtime/lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
 | `_rpc_executor.py` | `RpcExecutor` | RPC dispatch executor with direct collaborator dependencies. |
 | `_request_types.py` | `AuthSnapshot`, `BuildRequest`, request materialization | Shared request construction Interface. |
 | `_transport_errors.py` | transport exceptions, `parse_retry_after`, `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |

@@ -421,7 +421,7 @@ except NonIdempotentRetryError:
     ...
 ```
 
-`client.sources.add_file(...)` and `client.sources.add_drive(...)` are now also covered by the probe-then-create wrapper: the create RPC runs with `disable_internal_retries=True` and, on transport failure, the wrapper probes the server-side source list (via `idempotent_create`) before deciding whether to retry — so transient failures no longer produce duplicate sources. See `_source_add.py` (`SourceAddService.add_drive`) and `_source_upload.py` (`SourceUploadPipeline.register_file_source`) for the implementation.
+`client.sources.add_file(...)` and `client.sources.add_drive(...)` are now also covered by the probe-then-create wrapper: the create RPC runs with `disable_internal_retries=True` and, on transport failure, the wrapper probes the server-side source list (via `idempotent_create`) before deciding whether to retry — so transient failures no longer produce duplicate sources. See `_source/add.py` (`SourceAddService.add_drive`) and `_source/upload.py` (`SourceUploadPipeline.register_file_source`) for the implementation.
 
 ---
 
