@@ -212,7 +212,7 @@ After migration, `Session` owns:
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay` — moved off `Session`
   onto `MiddlewareChainHost`
-  ([`_middleware_chain_host.py`](../../src/notebooklm/_middleware_chain_host.py))
+  ([`_middleware_chain_host.py`](../../src/notebooklm/_middleware/chain_host.py))
   in Stage B2 PR 1 (#1090). PR 2 (#1092) then split
   `wire_middleware_chain` / `build_session_transport` to take
   `chain_host: MiddlewareChainHost` directly, so the live chain reads
@@ -421,7 +421,7 @@ section of this ADR's revision history.
 Issue #1085 (deferred `MiddlewareChainHost` extraction) closed.
 
 - **#1090** introduced
-  [`_middleware_chain_host.py`](../../src/notebooklm/_middleware_chain_host.py).
+  [`_middleware_chain_host.py`](../../src/notebooklm/_middleware/chain_host.py).
   The chain's tunable storage (`_authed_post_chain_terminal`,
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay`) moved from

@@ -143,7 +143,7 @@ code picks the right shape.
 |---|---|---|---|
 | `NextCall` | `_middleware/core.py` | **type alias**, not a class: `Callable[[RpcRequest], Awaitable[RpcResponse]]` | Every `Middleware.__call__` — the "call the next link" function passed into around-style middlewares |
 | `RpcCallback` | `_source/upload.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceUploadPipeline.register_file_source` — RPC entrypoint passed as a **keyword argument** at call time |
-| `RpcCaller` | `_runtime_contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs and helper services (`NotesAPI`, `SourceLister`, `ShareManager`, etc.) |
+| `RpcCaller` | `_runtime/contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs and helper services (`NotesAPI`, `SourceLister`, `ShareManager`, etc.) |
 
 ### Why they diverge
 

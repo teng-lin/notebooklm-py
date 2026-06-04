@@ -724,7 +724,7 @@ Kernel owns the `httpx.AsyncClient`; `NotebookLMClient` constructs the
 runtime graph and owns the public surface. Per the
 [ADR-010](adr/0010-session-kernel-split.md) split, `Kernel.__init__` in
 `src/notebooklm/_kernel.py` constructs the `httpx.AsyncClient` and is
-responsible for closing it on `aclose()`. `_runtime_init.py` constructs
+responsible for closing it on `aclose()`. `_runtime/init.py` constructs
 the collaborator bundle, `RuntimeTransport`, middleware chain, and
 `RpcExecutor`, then binds them into `ClientComposed`. The supporting state
 (metrics, drain bookkeeping, request-id counter, transport plumbing,
