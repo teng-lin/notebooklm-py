@@ -1,7 +1,7 @@
 # Upgrading to v0.8.0
 
 **Status:** Active
-**Last Updated:** 2026-06-03
+**Last Updated:** 2026-06-04
 
 `notebooklm-py` v0.8.0 lands a batch of **breaking** error-and-return contract
 changes under [ADR-0019](adr/0019-error-and-return-contract.md) (umbrella
@@ -35,11 +35,13 @@ For the canonical deprecation registry (with removal-version pins), see
 > ✅ rows in the [summary table](#summary-table)) to drive your migration.
 
 You don't have to wait for the 0.8.0 release to find out whether your code is
-ready. Set **`NOTEBOOKLM_FUTURE_ERRORS=1`** and 0.7.x will **raise the v0.8.0
-errors today** — `get()` raises `*NotFoundError`, synchronous generation refusals
+ready. Set **`NOTEBOOKLM_FUTURE_ERRORS=1`** and 0.7.x will **adopt the v0.8.0
+contract today** — `get()` raises `*NotFoundError`, synchronous generation refusals
 raise instead of returning `status="failed"`, mutate-existing ops raise on a
-missing target, and the ambiguous `research.poll` selection raises instead of
-warning. Everything else stays on the 0.7.x code path.
+missing target, and the always-`True` bool returns (`sources.refresh` /
+`chat.delete_conversation`) become `None`. (The ambiguous `research.poll`
+selection is **not** previewed by the flag — it keeps warning on 0.7.x and raises
+only on 0.8.0.) Everything else stays on the 0.7.x code path.
 
 ```bash
 # Run your test suite (or your app) against v0.8.0 behavior, on 0.7.0:
@@ -450,10 +452,12 @@ shipped on the 0.7.0 breaking line — they become `-> None` in v0.8.0.
 > The fix is to **stop branching on the return value** — success is signalled by
 > *not raising*, not by the return — which is correct on both releases.
 
-**Warning in 0.7.0:** **None — this is a silent clean break.** It is a
-return-type change with no runtime warning. (`NOTEBOOKLM_FUTURE_ERRORS=1` does
-**not** surface this one: it changes *error-raising* behavior, and this is a
-benign return-value change, not an error. Audit for it by grep.)
+**Warning in 0.7.0:** **None — this is a silent clean break** (a return-type
+change with no `DeprecationWarning`). But `NOTEBOOKLM_FUTURE_ERRORS=1` **does**
+surface it: under the flag these methods already return `None` on 0.7.x (the
+#1290 preview), so a truthiness check like `if await client.sources.refresh(...):`
+flips under the flag exactly as it will on 0.8.0. Set the flag — or grep for the
+call sites — to find affected code.
 
 **Migration.** Drop the truthiness check; rely on the call not raising:
 
