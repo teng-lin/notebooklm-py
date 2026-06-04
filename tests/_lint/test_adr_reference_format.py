@@ -103,7 +103,8 @@ def _scanned_files() -> list[Path]:
             if path.is_dir():
                 if path.name not in _SKIP_DIRS:
                     walk(path)
-            elif path.suffix in _SCANNED_SUFFIXES:
+            elif path.suffix.casefold() in _SCANNED_SUFFIXES:
+                # casefold so an upper/mixed-case suffix (.MD, .YAML) still matches.
                 out.append(path)
 
     walk(_REPO_ROOT)
