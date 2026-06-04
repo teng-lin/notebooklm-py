@@ -31,7 +31,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests._lint.test_v080_deprecation_coverage import (
+# Relative import: ``tests/_lint`` is a package (has ``__init__.py``), so pytest
+# imports this module as ``_lint.test_v080_release_gate`` with ``tests/`` — not
+# the repo root — on ``sys.path``. ``from tests._lint...`` therefore fails to
+# resolve under CI's prepend import mode; the sibling-relative form is correct.
+from .test_v080_deprecation_coverage import (
     PROJECT_ROOT,
     SRC_ROOT,
     V080_BREAKING_CHANGES,
@@ -134,10 +138,13 @@ def test_no_orphaned_v080_breaks_at_release() -> None:
 
 # --- Self-checks: the detector must be non-vacuous in BOTH directions ----------
 # A crafted "runway live" source (all four machinery markers present) and a
-# non-empty stand-in table, so the self-checks never depend on the real tree's
-# current state.
+# static non-empty stand-in table. The dummy is deliberately *decoupled* from the
+# real ``V080_BREAKING_CHANGES`` (it is NOT ``[:1]`` of it): at the 0.8.0 flip the
+# real table is emptied, which would otherwise make these self-checks vacuous /
+# spuriously fail. ``_orphans`` reads only truthiness + ``.issue`` (via getattr
+# fallback), so a bare sentinel string is a valid stand-in entry.
 _LIVE_SRC = "\n".join(_MACHINERY)
-_NONEMPTY_TABLE: tuple[object, ...] = V080_BREAKING_CHANGES[:1]
+_NONEMPTY_TABLE: tuple[object, ...] = ("dummy-break-sentinel",)
 
 
 def test_selfcheck_pre_flip_healthy_when_runway_intact() -> None:
