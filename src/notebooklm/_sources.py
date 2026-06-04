@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ._deprecation import future_errors_enabled
 from ._lookup import resolve_get
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._runtime.contracts import RpcCaller
@@ -635,29 +636,25 @@ class SourcesAPI:
             source_id: The source ID to rename.
             new_title: The new title.
             return_object: When ``True`` (default), return the renamed
-                :class:`~notebooklm.types.Source` — preferring the
-                ``UPDATE_SOURCE`` echo and falling back to a fetch only when
-                the echo is null. When ``False``, return ``None`` without
-                hydrating (cheaper for bulk renames that ignore the return);
-                this also skips missing-target detection, so a missing source
-                does **not** raise — pass ``return_object=True`` (the default)
-                if you need the missing-target guarantee.
+                :class:`~notebooklm.types.Source` (preferring the
+                ``UPDATE_SOURCE`` echo, fetching only on a null echo). When
+                ``False``, return ``None`` without hydrating. Under the v0.8.0
+                preview ``False`` still returns ``None`` but adds miss-detection
+                (the flag gates detection, not the return — see ``Raises``).
 
         Returns:
             The renamed :class:`~notebooklm.types.Source`, or ``None`` when
             ``return_object=False``.
 
         Raises:
-            SourceNotFoundError: if the source does not exist (the rename RPC
-                is silent on a missing target, so absence is detected via a
-                content/list fetch — not a transport 404). Only raised when
-                ``return_object=True``.
+            SourceNotFoundError: if the source does not exist (detected via a
+                content/list fetch, not a 404). Always when ``return_object=True``;
+                also on ``False`` under ``NOTEBOOKLM_FUTURE_ERRORS``.
 
         .. versionchanged:: 0.7.0
             **Breaking change:** no longer fabricates an unverified
-            ``Source(id, title)`` when the RPC echoes nothing. It now hydrates
-            via an internal fetch and raises :class:`SourceNotFoundError` for a
-            missing target (issue #1255). Added the ``return_object`` opt-out.
+            ``Source(id, title)`` on a null echo; it hydrates and raises
+            :class:`SourceNotFoundError` (#1255). Added ``return_object``.
         """
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
@@ -667,18 +664,17 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if not return_object:
-            return None
-        # Prefer the UPDATE_SOURCE echo (avoids the extra fetch).
-        if result:
+        if result and return_object:  # truthy echo proves existence
             return Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
-        # Echo was null: hydrate via the internal optional-lookup (never the
-        # public ``get()``, which warns under #1247). Only genuine absence
-        # maps to ``SourceNotFoundError``; transport/auth errors propagate.
+        # Null echo: hydrate via the internal optional-lookup (never public
+        # ``get()`` — #1247) so a miss raises. v0.7.0 ``False`` skips this; the
+        # v0.8.0 preview (#1362) runs it to detect a miss but returns ``None``.
+        if not return_object and (result or not future_errors_enabled()):
+            return None
         source = await self._get_or_none(notebook_id, source_id)
         if source is None:
             raise SourceNotFoundError(source_id, method_id=RPCMethod.UPDATE_SOURCE.value)
-        return source
+        return None if not return_object else source
 
     async def refresh(self, notebook_id: str, source_id: str) -> bool:
         """Refresh a source to get updated content (for URL/Drive sources).
@@ -688,7 +684,9 @@ class SourcesAPI:
             source_id: The source ID to refresh.
 
         Returns:
-            True if refresh was initiated.
+            ``True`` if refresh was initiated (failures raise first, so it is
+            uninformative). Under ``NOTEBOOKLM_FUTURE_ERRORS`` (#1290) returns
+            ``None`` (``-> bool`` stays until the v0.8.0 flip).
         """
         params = [None, [source_id], [2]]
         await self._rpc.rpc_call(
@@ -697,6 +695,9 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
+        # v0.8.0 preview (#1290): uninformative ``True`` -> ``None`` (runtime-only).
+        if future_errors_enabled():
+            return None  # type: ignore[return-value]
         return True
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
@@ -716,11 +717,8 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        # API returns different structures depending on source type:
-        #   - [] (empty array): source is fresh (URL sources)
-        #   - [[null, true, [source_id]]]: source is fresh (Drive sources)
-        #   - True: source is fresh
-        #   - False: source is stale
+        # Shapes by source type: ``[]`` or ``[[null, true, [id]]]`` = fresh
+        # (URL / Drive); bare ``True`` = fresh; bare ``False`` = stale.
         if result is True:
             return True
         if result is False:

@@ -50,10 +50,16 @@ A second, orthogonal gate lives here too: ``NOTEBOOKLM_FUTURE_ERRORS``
 (:func:`future_errors_enabled`). When on, the three runways above adopt their
 v0.8.0 *target* behavior early — ``deprecated_kwarg`` and the
 :class:`MappingCompatMixin` subscript raise instead of warn (the
-``<resource>.get()`` runway is routed through ``_lookup.resolve_get``). It is an
-opt-in forward-compat preview, default-off, and takes precedence over the quiet
-gate (a runway raises regardless of quiet; quiet only silences the warn path
-that future mode replaces). See ``docs/deprecations.md``.
+``<resource>.get()`` runway is routed through ``_lookup.resolve_get``). The same
+gate also previews the purely-behavioral v0.8.0 changes that have no warn-runway
+(issue #1405): the uninformative ``bool`` returns become ``None`` (#1290), a
+synchronous generation refusal raises instead of soft-failing (#1342), and the
+mutate-existing ops fail loud on a missing target (#1362). Those previews live in
+the feature modules (each gated ``if future_errors_enabled(): ... else: ...``),
+not here; :func:`future_errors_enabled` enumerates them. It is an opt-in
+forward-compat preview, default-off, and takes precedence over the quiet gate
+(a runway raises regardless of quiet; quiet only silences the warn path that
+future mode replaces). See ``docs/deprecations.md``.
 """
 
 from __future__ import annotations
@@ -137,10 +143,20 @@ def future_errors_enabled() -> bool:
     This gate takes precedence over :func:`deprecations_quiet`: when future
     errors are enabled the runway *raises* regardless of the quiet setting,
     because the quiet gate only silences the warning that future mode replaces
-    with an exception. The purely-behavioral v0.8.0 changes that lack a clean
-    warn-runway (bool returns, refusal-suppression, fail-loud listing) are
-    **not** covered by this flag yet; they will be folded in as their v0.8.0
-    behavior is defined (tracked as a follow-up).
+    with an exception. The flag **also** previews the purely-behavioral v0.8.0
+    changes that have no warn-runway (issue #1405), each gated the same way:
+    the uninformative ``bool`` returns of ``sources.refresh`` /
+    ``chat.delete_conversation`` become ``None`` (#1290); a synchronous
+    generation refusal **raises** the decoder's ``RateLimitError`` / ``RPCError``
+    / ``DecodingError`` / ``ArtifactFeatureUnavailableError`` instead of being
+    swallowed into ``GenerationStatus(status="failed")`` / returned ``None``
+    (#1342, across ``_call_generate`` / ``revise_slide`` /
+    ``_parse_generation_result`` / ``research.start``); and the mutate-existing
+    ops ``notes.update`` and ``sources``/``artifacts``
+    ``rename(return_object=False)`` fail loud with a ``*NotFoundError`` on a
+    missing target (#1362). These previews are **runtime-only** — no public
+    return annotation changes until the v0.8.0 flip — so default-off stays
+    byte-identical to v0.7.0.
     """
     return _future_errors_enabled()
 

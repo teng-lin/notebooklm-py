@@ -12,6 +12,7 @@ import weakref
 from typing import TYPE_CHECKING, Any
 
 from .._conversation_cache import ConversationCache
+from .._deprecation import future_errors_enabled
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._request_types import AuthSnapshot
@@ -698,43 +699,42 @@ class ChatAPI:
     async def delete_conversation(self, notebook_id: str, conversation_id: str) -> bool:
         """Delete a conversation from the server.
 
-        Mirrors the web UI's "Delete history" action. After deletion the
-        next ``ask()`` with no ``conversation_id`` starts a fresh
-        server-side conversation rather than extending the deleted one.
+        Mirrors the web UI's "Delete history" action. After deletion the next
+        ``ask()`` with no ``conversation_id`` starts a fresh server-side
+        conversation rather than extending the deleted one.
 
         Args:
             notebook_id: The notebook that owns the conversation.
             conversation_id: The conversation to delete.
 
         Returns:
-            True on success. The server returns an empty body; any
-            RPC-level error raises before this returns.
+            ``True`` on success (errors raise first, so the ``True`` is
+            uninformative). Under ``NOTEBOOKLM_FUTURE_ERRORS`` (v0.8.0 preview,
+            #1290) returns ``None``; the ``-> bool`` annotation stays until the
+            v0.8.0 flip.
         """
         # Catch cross-loop misuse before acquiring the per-conversation lock
-        # below — like ``ask`` does — so a client reused from a different loop
-        # fails fast at the call site instead of hanging on (or rebuilding) a
-        # lock bound to a dead loop. The owner-level ``set_bound_loop`` /
-        # ``reset_after_open`` protocol (#1225) only resets the locks on a
-        # *reopen*; an already-open client driven cross-loop is still rejected
-        # here by the injected guard.
+        # (like ``ask``), so a client reused from another loop fails fast rather
+        # than hang on a dead-loop lock. ``set_bound_loop`` / ``reset_after_open``
+        # (#1225) only reset locks on *reopen*; an open cross-loop client raises.
         self._loop_guard.assert_bound_loop()
         logger.debug("Deleting conversation %s in notebook %s", conversation_id, notebook_id)
-        # Hold the per-``conversation_id`` lock the same way ``ask`` does
-        # for follow-ups, so a concurrent follow-up ``ask`` can't read
-        # pre-delete history, then POST it after the delete has cleared
-        # both server-side state and the local cache.
+        # Hold the per-``conversation_id`` lock like ``ask`` does for follow-ups,
+        # so a concurrent follow-up can't read pre-delete history then POST it
+        # after the delete cleared both server-side state and the local cache.
         async with self._get_conversation_lock(conversation_id):
-            # Param shape captured from web-UI traffic. The trailing 1 is
-            # always observed; its meaning is uncharted — treated as a fixed flag.
+            # Param shape from web-UI traffic; trailing 1 is a fixed flag.
             params: list[Any] = [[], conversation_id, None, 1]
             await self._rpc.rpc_call(
                 RPCMethod.DELETE_CONVERSATION,
                 params,
                 source_path=f"/notebook/{notebook_id}",
             )
-            # Clear the cache only after a successful RPC; on failure the
-            # rpc_call above raises and we leave the cache intact for retry.
+            # Clear the cache only after a successful RPC (failure raises above).
             self._cache.clear(conversation_id)
+        # v0.8.0 preview (#1290): uninformative ``True`` -> ``None`` (runtime-only).
+        if future_errors_enabled():
+            return None  # type: ignore[return-value]
         return True
 
     def clear_cache(self, conversation_id: str | None = None) -> bool:

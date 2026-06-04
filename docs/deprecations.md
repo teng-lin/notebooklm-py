@@ -39,13 +39,18 @@ behavior today**, so you can verify your code is forward-compatible before the
 flip ships. It is **off by default**, and default-off is byte-identical to
 current v0.7.0 behavior.
 
-When the flag is on, these three runways adopt their v0.8.0 behavior:
+When the flag is on, these runways adopt their v0.8.0 behavior. The first three
+are deprecation *warn-runways* (the warning becomes a raise); the last three are
+purely-behavioral previews with no warning today (#1405):
 
 | Runway | v0.7.0 (default / flag off) | With `NOTEBOOKLM_FUTURE_ERRORS=1` | Tracked by |
 |--------|-----------------------------|-----------------------------------|------------|
 | `sources.get()` / `artifacts.get()` / `notes.get()` / `mind_maps.get()` on a miss | Warns, returns `None` | Raises the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` / `MindMapNotFoundError`) | [#1247](https://github.com/teng-lin/notebooklm-py/issues/1247) |
 | Dict-subscript `result["key"]` on the typed research / mind-map / source-guide returns (`MappingCompatMixin`) | Warns, returns the legacy dict value | Raises `TypeError: '<Type>' object is not subscriptable` (the same error a plain dataclass raises once the mixin is removed) | [#1251](https://github.com/teng-lin/notebooklm-py/issues/1251) |
 | Deprecated keyword alias `ResearchAPI.wait_for_completion(interval=...)` | Warns, aliases to `initial_interval` | Raises `TypeError` (the deprecated keyword is gone) | [#1254](https://github.com/teng-lin/notebooklm-py/issues/1254) |
+| `sources.refresh()` / `chat.delete_conversation()` return value | Returns `True` (uninformative — failures raise first) | Returns `None` (the `-> bool` annotation is preserved until the v0.8.0 flip) | [#1290](https://github.com/teng-lin/notebooklm-py/issues/1290) |
+| Synchronous generation refusal (`generate_*` / `revise_slide` / `research.start`) | Swallowed into `GenerationStatus(status="failed")` / returned `None` | Raises the decoder's `RateLimitError` / `RPCError` / `DecodingError` / `ArtifactFeatureUnavailableError` ("couldn't-start" is an error, not data) | [#1342](https://github.com/teng-lin/notebooklm-py/issues/1342) |
+| `notes.update()` / `sources.rename(return_object=False)` / `artifacts.rename(return_object=False)` on a missing target | Silent no-op / returns `None` | Raises the matching `*NotFoundError` (the `return_object=False` path still returns `None` on success — the flag gates miss-detection, not the return) | [#1362](https://github.com/teng-lin/notebooklm-py/issues/1362) |
 
 The flag does **not** close those issues — the runways stay until the v0.8.0 flip
 actually ships; it only lets you preview the target behavior. The flag changes
@@ -64,17 +69,17 @@ is on, a runway **raises regardless of the quiet setting** — quiet only silenc
 the *warning* on the warn path, which future mode replaces with an exception, so
 there is nothing left to silence. Setting both is well-defined: future mode wins.
 
-**Not yet covered.** The purely-behavioral v0.8.0 changes that lack a clean
-warn-runway — `delete()` returning `None`
-([#1290](https://github.com/teng-lin/notebooklm-py/issues/1290)),
-refusal-suppression
-([#1342](https://github.com/teng-lin/notebooklm-py/issues/1342)), and the
-fail-loud listing change
-([#1362](https://github.com/teng-lin/notebooklm-py/issues/1362)) — are **not**
-gated by this flag yet. They will be folded in as their v0.8.0 behavior is
-defined (tracked as a follow-up). The flag is implemented in
-`src/notebooklm/_deprecation.py::future_errors_enabled` and routed through
-`src/notebooklm/_lookup.py::resolve_get` for the `get()` flip.
+**Scope.** Both the warn-runway flips and the purely-behavioral previews above
+are gated by the same flag. The behavioral previews are **runtime-only** — no
+public return annotation changes until the v0.8.0 flip — so the default-off path
+is byte-identical to v0.7.0 and the api-compat / conformance gates stay green.
+The flag does **not** close #1290 / #1342 / #1362 — the default behavior remains
+until the v0.8.0 flip ships ([#1405](https://github.com/teng-lin/notebooklm-py/issues/1405)).
+The flag is implemented in
+`src/notebooklm/_deprecation.py::future_errors_enabled`, routed through
+`src/notebooklm/_lookup.py::resolve_get` for the `get()` flip, and consumed at
+each behavioral preview's call site via `if future_errors_enabled(): ... else:
+...`.
 
 ```python
 # Verify forward-compatibility in CI: run your suite with the v0.8.0 contract on.

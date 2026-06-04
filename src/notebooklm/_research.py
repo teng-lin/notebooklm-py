@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
-from ._deprecation import deprecated_kwarg, warn_deprecated
+from ._deprecation import deprecated_kwarg, future_errors_enabled, warn_deprecated
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import parse_research_task_models
 from ._runtime.contracts import RpcCaller
@@ -27,6 +27,7 @@ from ._types.research import (
     ResearchTask,
 )
 from .exceptions import (
+    DecodingError,
     NetworkError,
     ResearchTaskMismatchError,
     ResearchTimeoutError,
@@ -336,17 +337,20 @@ class ResearchAPI:
             notebook_id: The notebook ID.
             query: The research query.
             source: "web" or "drive".
-            mode: "fast" or "deep" (deep only available for web).
+            mode: "fast" or "deep" (deep is web-only).
 
         Returns:
-            A :class:`~notebooklm._types.research.ResearchStart` with
-            ``task_id``, ``report_id``, ``notebook_id``, ``query``, and
-            ``mode``, or ``None`` when the backend returned no task. Legacy
-            ``result["task_id"]`` dict-subscript access still works (with a
-            ``DeprecationWarning``) until v0.8.0; prefer ``result.task_id``.
+            A :class:`~notebooklm._types.research.ResearchStart` (``task_id`` /
+            ``report_id`` / ``notebook_id`` / ``query`` / ``mode``), or ``None``
+            when the backend returned no task (legacy ``result["task_id"]`` dict
+            access still works with a warning until v0.8.0). Under
+            ``NOTEBOOKLM_FUTURE_ERRORS`` (#1342) an empty/non-list payload or
+            falsey ``task_id`` raises ``DecodingError`` instead.
 
         Raises:
             ValidationError: If source/mode combination is invalid.
+            DecodingError: Under the v0.8.0 preview, on an empty/non-list payload
+                or falsey ``task_id`` (no task created).
         """
         logger.debug(
             "Starting %s research in notebook %s: %s",
@@ -382,6 +386,12 @@ class ResearchAPI:
 
         if result and isinstance(result, list) and len(result) > 0:
             task_id = result[0]
+            # v0.8.0 preview (#1342): a falsey ``task_id`` means no task was
+            # created — raise (mirrors ``_parse_generation_result``'s missing id).
+            if not task_id and future_errors_enabled():
+                raise DecodingError(
+                    f"research.start returned no task id: {result!r}", method_id=rpc_id.value
+                )
             report_id = result[1] if len(result) > 1 else None
             return ResearchStart(
                 task_id=task_id,
@@ -389,6 +399,11 @@ class ResearchAPI:
                 notebook_id=notebook_id,
                 query=query,
                 mode=mode_lower,
+            )
+        # v0.8.0 preview (#1342): an empty / non-list payload is couldn't-start.
+        if future_errors_enabled():
+            raise DecodingError(
+                "research.start returned an empty / non-list payload", method_id=rpc_id.value
             )
         return None
 
@@ -407,49 +422,34 @@ class ResearchAPI:
                 ``sources`` / ``summary`` / ``report`` fields describe the
                 matched task, and ``tasks`` contains only that task. When
                 ``None`` and multiple tasks are in flight, a
-                :class:`DeprecationWarning` is emitted and the *latest* task
-                is returned (preserving legacy behavior). When ``None`` and a
-                single task is in flight, behavior is unchanged and no
-                warning fires.
-
-                Migration: callers that started research via
-                :meth:`start` and held onto the returned ``task_id`` should
-                pass it here on every subsequent ``poll`` to remove
-                ambiguity. The ``None`` default will be removed in a future
-                major release.
+                :class:`DeprecationWarning` is emitted and the *latest* task is
+                returned (legacy behavior); a single in-flight task is silent.
+                Migration: pass the ``task_id`` from :meth:`start` on every
+                ``poll`` — the ``None`` default is removed in a future major.
 
         Returns:
-            A :class:`~notebooklm._types.research.ResearchTask` describing the
-            selected research task for the notebook. Use attribute access:
+            A :class:`~notebooklm._types.research.ResearchTask` for the selected
+            task. Use attribute access:
             - ``task.task_id``: task/report identifier for the selected task
             - ``task.status``: a :class:`~notebooklm._types.research.ResearchStatus`
-              (``IN_PROGRESS``, ``COMPLETED``, ``FAILED``, ``NO_RESEARCH``, or
-              ``NOT_FOUND``); compares equal to the historical strings
-              (``task.status == "completed"`` still holds)
+              (``IN_PROGRESS`` / ``COMPLETED`` / ``FAILED`` / ``NO_RESEARCH`` /
+              ``NOT_FOUND``); equals the historical strings
             - ``task.query``: original research query text
-            - ``task.sources``: tuple of
-              :class:`~notebooklm._types.research.ResearchSource` for the
-              selected task
+            - ``task.sources``: tuple of ``ResearchSource`` (each exposes ``url``,
+              ``title``, ``result_type``, ``research_task_id``, ``report_markdown``)
             - ``task.summary``: summary text when present
-            - ``task.report``: extracted deep-research report markdown when present
-            - ``task.tasks``: tuple of all parsed research tasks visible at this
-              poll (filtered to the matched task when ``task_id`` is set)
+            - ``task.report``: extracted deep-research report markdown, if present
+            - ``task.tasks``: all parsed research tasks visible at this poll
+              (filtered to the matched task when ``task_id`` is set)
 
-            Each :class:`ResearchSource` exposes ``url``, ``title``,
-            ``result_type``, ``research_task_id`` (the task/report id that
-            produced the source), and ``report_markdown`` (for deep-research
-            report entries).
-
-            Legacy ``result["status"]`` dict-subscript access still works (with
-            a ``DeprecationWarning``) until v0.8.0; prefer ``result.status``.
+            Legacy ``result["status"]`` dict access still works (with a warning)
+            until v0.8.0; prefer ``result.status``.
 
             When a non-empty ``task_id`` is supplied but no in-flight task
-            matches, the return is ``ResearchTask.not_found(task_id)`` — status
-            ``NOT_FOUND``, carrying the requested ``task_id``, with empty
-            ``tasks``. This is the *poll-observed absence* of that specific
+            matches, the return is ``ResearchTask.not_found(task_id)`` (status
+            ``NOT_FOUND``, empty ``tasks``) — the *poll-observed absence* of that
             task (a typed lifecycle sentinel, not a raise; ADR-019 Rule 4),
-            distinct from the unfiltered empty-poll case (``task_id`` ``None``
-            or empty) which stays ``NO_RESEARCH`` ("nothing in flight").
+            distinct from the unfiltered empty poll, which stays ``NO_RESEARCH``.
         """
         logger.debug("Polling research status for notebook %s", notebook_id)
         parsed_tasks = self._select_polled_tasks(

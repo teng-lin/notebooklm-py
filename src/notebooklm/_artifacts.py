@@ -37,6 +37,7 @@ from ._artifact.payloads import (
     build_suggest_reports_params,
     build_video_artifact_params,
 )
+from ._deprecation import future_errors_enabled
 from ._env import get_default_language
 from ._lookup import resolve_get
 from ._mind_map import NoteBackedMindMapService
@@ -48,6 +49,7 @@ from ._types.research import MindMapResult
 from .exceptions import (
     ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
+    DecodingError,
     ValidationError,
 )
 
@@ -561,7 +563,8 @@ class ArtifactsAPI:
                 allow_null=True,
             )
         except RPCError as e:
-            if e.rpc_code == "USER_DISPLAYABLE_ERROR":
+            # v0.8.0 preview (#1342): a refusal raises; see ``_call_generate``.
+            if e.rpc_code == "USER_DISPLAYABLE_ERROR" and not future_errors_enabled():
                 return GenerationStatus(
                     task_id="",
                     status="failed",
@@ -936,32 +939,27 @@ class ArtifactsAPI:
             notebook_id: The notebook ID.
             artifact_id: The artifact ID to rename.
             new_title: The new title.
-            return_object: When ``True`` (default), re-fetch and return the
-                renamed :class:`~notebooklm.types.Artifact`. When ``False``,
-                skip the re-fetch and return ``None`` — the re-fetch is a full
-                ``LIST_ARTIFACTS`` call, so bulk renamers that ignore the
-                return should opt out to avoid N extra list calls. Opting out
-                also skips missing-target detection, so a missing artifact does
-                **not** raise — pass ``return_object=True`` (the default) if you
-                need the missing-target guarantee.
+            return_object: When ``True`` (default), re-fetch (a full
+                ``LIST_ARTIFACTS`` call) and return the renamed
+                :class:`~notebooklm.types.Artifact`; when ``False``, return
+                ``None`` without re-fetching. Under the v0.8.0 preview ``False``
+                still returns ``None`` but adds miss-detection (the flag gates
+                detection, not the return — see ``Raises``).
 
         Returns:
             The renamed :class:`~notebooklm.types.Artifact`, or ``None`` when
             ``return_object=False``.
 
         Raises:
-            ArtifactNotFoundError: if the artifact does not exist (the rename
-                RPC is silent on a missing target, so absence is detected via
-                a list fetch — not a transport 404). Only raised when
-                ``return_object=True``. Note-backed mind-map ids are *not*
-                renameable here (they use ``UPDATE_NOTE``); such an id is
-                treated as absent and raises — use ``mind_maps.rename`` instead.
+            ArtifactNotFoundError: if the artifact does not exist (detected via
+                a list fetch, not a 404). Always when ``return_object=True``;
+                also on ``False`` under ``NOTEBOOKLM_FUTURE_ERRORS``. Note-backed
+                mind-map ids are *not* renameable here — use ``mind_maps.rename``.
 
         .. versionchanged:: 0.7.0
-            **Breaking change:** previously returned ``None`` even on success.
-            Now re-fetches and returns the renamed ``Artifact``, raising
-            :class:`ArtifactNotFoundError` for a missing target (issue #1255).
-            Added the ``return_object`` opt-out.
+            **Breaking change:** no longer returns ``None`` on success; it
+            re-fetches and raises :class:`ArtifactNotFoundError` for a missing
+            target (#1255), plus the ``return_object`` opt-out.
         """
         params = [[artifact_id, new_title], [["title"]]]
         await self._rpc.rpc_call(
@@ -970,20 +968,18 @@ class ArtifactsAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if not return_object:
+        # Resolve via studio artifacts only — never public ``get()`` (#1247) nor
+        # the merged listing (a note-backed mind-map id no-ops on RENAME_ARTIFACT
+        # — use ``mind_maps.rename``). v0.7.0 ``False`` short-circuits; the v0.8.0
+        # preview (#1362) runs the lookup on ``False`` too but still returns None.
+        if not return_object and not future_errors_enabled():
             return None
-        # Hydrate from studio artifacts only (never the public ``get()``, which
-        # warns under #1247, and never the merged listing — that would let a
-        # note-backed mind-map id, which ``RENAME_ARTIFACT`` no-ops on, read
-        # back as a stale "success"; it belongs to ``mind_maps.rename``). Only
-        # genuine absence maps to ``ArtifactNotFoundError``; transport/auth
-        # errors propagate as-is.
         artifact = await self._listing.get_studio_only(
             notebook_id, artifact_id, list_raw=self._list_raw
         )
         if artifact is None:
             raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.RENAME_ARTIFACT.value)
-        return artifact
+        return None if not return_object else artifact
 
     async def poll_status(self, notebook_id: str, task_id: str) -> GenerationStatus:
         """Poll the status of a generation task.
@@ -1236,12 +1232,9 @@ class ArtifactsAPI:
         )
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         try:
-            # CREATE_ARTIFACT is classified PROBE_THEN_CREATE in
-            # ``_idempotency.py``. ``operation_variant=None`` is
-            # passed explicitly to document this call site as the
-            # no-variant default (the registry resolves the same entry
-            # either way; the explicit kwarg is a future-proofing marker
-            # for a possible variant table).
+            # CREATE_ARTIFACT is PROBE_THEN_CREATE (``_idempotency.py``).
+            # ``operation_variant=None`` marks this call site as the no-variant
+            # default (a future-proofing marker; the registry resolves the same).
             result = await self._rpc.rpc_call(
                 RPCMethod.CREATE_ARTIFACT,
                 params,
@@ -1250,7 +1243,8 @@ class ArtifactsAPI:
                 operation_variant=None,
             )
         except RPCError as e:
-            if e.rpc_code == "USER_DISPLAYABLE_ERROR":
+            # v0.8.0 preview (#1342): a refusal raises (couldn't-start); default-off swallow.
+            if e.rpc_code == "USER_DISPLAYABLE_ERROR" and not future_errors_enabled():
                 return GenerationStatus(
                     task_id="",
                     status="failed",
@@ -1357,6 +1351,12 @@ class ArtifactsAPI:
             status = artifact_status_to_str(status_code) if status_code is not None else "pending"
             return GenerationStatus(task_id=artifact_id, status=status)
 
+        # v0.8.0 preview (#1342): a missing id means no task was created — raise.
+        # Null id (feature gated) -> ArtifactFeatureUnavailableError; else drift.
+        if future_errors_enabled():
+            if artifact_id is None:
+                raise ArtifactFeatureUnavailableError("artifact", method_id=method_id)
+            raise DecodingError(f"No artifact id (source={source})", method_id=method_id)
         return GenerationStatus(
             task_id="", status="failed", error="Generation failed - no artifact_id returned"
         )

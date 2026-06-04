@@ -18,6 +18,7 @@ import builtins
 import logging
 from typing import Any
 
+from ._deprecation import future_errors_enabled
 from ._lookup import resolve_get
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
@@ -182,7 +183,24 @@ class NotesAPI:
             note_id: The note ID.
             content: The new content.
             title: The new title.
+
+        Raises:
+            NoteNotFoundError: When ``NOTEBOOKLM_FUTURE_ERRORS`` (the v0.8.0
+                preview, issue #1362) is enabled and ``note_id`` does not exist.
+                The ``UPDATE_NOTE`` RPC is ``allow_null=True`` and silently
+                no-ops on a missing note, so the current (v0.7.0) contract
+                silently "succeeds" on a miss; the preview adds a public-facade
+                existence preflight so a mutate-existing op fails loud per
+                ADR-019 Class 5.
         """
+        if future_errors_enabled():
+            # v0.8.0 preview (issue #1362): detect a missing target at the
+            # public facade (never inside ``_note_service`` — that crosses the
+            # layer boundary). ``get_or_none`` is the silent optional-lookup;
+            # only a genuine miss yields ``None`` (transport/auth/decode faults
+            # propagate). Default-off keeps the historical silent no-op.
+            if await self.get_or_none(notebook_id, note_id) is None:
+                raise NoteNotFoundError(note_id)
         await self._notes.update_note(notebook_id, note_id, content, title)
 
     async def delete(self, notebook_id: str, note_id: str) -> None:
