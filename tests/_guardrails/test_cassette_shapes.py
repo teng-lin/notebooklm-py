@@ -52,6 +52,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 import yaml
 
+from _guardrails._cassette_shape_lint import _find_leaks
+
 pytestmark = pytest.mark.repo_lint
 
 # Prefer libyaml for the cassette-shape lint. The top-level cassette set is
@@ -130,63 +132,14 @@ def _has_bytecount_drift(cassette: Path) -> bool:
 
 # ---------------------------------------------------------------------------
 # Leak patterns (assertion D — applies to ALL interactions, including
-# non-batchexecute). Kept minimal here; the canonical scrub registry
-# lives in tests/cassette_patterns.py.
+# non-batchexecute). The minimal leak-pattern detectors and the
+# ``DISPLAY_NAME_FALSE_POSITIVES`` allowlist now live in the shared non-test
+# helper ``_guardrails._cassette_shape_lint`` (``_find_leaks`` is imported at
+# the top of this module) so that ``tests/unit/test_cassette_patterns.py``
+# (which cross-checks the allowlist against the scrub registry) can import them
+# from a non-test module instead of from this gate file (issue #1431). The
+# canonical scrub registry lives in tests/cassette_patterns.py.
 # ---------------------------------------------------------------------------
-
-# Escaped JSON display name: \"Two Capitalized Words\" inside a quoted JSON
-# string. Anchored on the escape `\"` so we don't fire on legitimate
-# capitalized prose appearing in plain text. Hyphenated tokens are *not*
-# matched (to skip HTTP header names like `Content-Type` and font families
-# like `Google-Sans-Text`). The broader scrub registry tightens this
-# further by requiring an adjacent JSON-key context.
-LEAK_DISPLAY_NAME = re.compile(r'\\"(?:[A-Z][a-z]+)(?: [A-Z][a-z]+)+\\"')
-# Two-capitalized-word strings that are legitimate UI / artifact / notebook
-# titles produced during E2E test runs — NOT human display-name leaks. Keeping
-# this allowlist explicit so future additions are intentional. Anything new
-# that matches the regex but is benign goes here with a one-line comment.
-DISPLAY_NAME_FALSE_POSITIVES = frozenset(
-    {
-        # Google Sans family (font-family CSS in HTML responses).
-        '\\"Google Sans\\"',
-        '\\"Google Sans Text\\"',
-        '\\"Google Sans Arabic\\"',
-        '\\"Google Sans Japanese\\"',
-        '\\"Google Sans Korean\\"',
-        '\\"Google Sans Simplified Chinese\\"',
-        '\\"Google Sans Traditional Chinese\\"',
-        # Browser user-agent brand surfaced in Sec-CH-UA HTML responses.
-        '\\"Microsoft Edge\\"',
-        # Account UI page title (not a person's name).
-        '\\"Account Information\\"',
-        # Artifact / notebook titles produced by the test corpus.
-        '\\"Agent Development Tutorials\\"',
-        '\\"Agent Flashcards\\"',
-        '\\"Agent Quiz\\"',
-        '\\"Slide Deck\\"',
-        '\\"Tool Use Loop\\"',
-        '\\"Claude Code\\"',
-    }
-)
-# lh3.googleusercontent.com avatar URLs — both /a/ and /ogw/ prefixes.
-LEAK_AVATAR_URL = re.compile(r"https?://lh3\.googleusercontent\.com/(?:a|ogw)/[A-Za-z0-9_\-=]+")
-# Literal IP that the audit caught leaking in example_httpbin_*.yaml.
-LEAK_HTTPBIN_IP = re.compile(r"\b108\.5\.149\.175\b")
-
-
-def _find_leaks(text: str) -> list[str]:
-    """Return human-readable leak descriptors found in `text`."""
-    leaks: list[str] = []
-    for m in LEAK_DISPLAY_NAME.finditer(text):
-        if m.group(0) in DISPLAY_NAME_FALSE_POSITIVES:
-            continue
-        leaks.append(f"escaped display-name literal {m.group(0)!r}")
-        break  # one is enough; the message is the same
-    if m := LEAK_AVATAR_URL.search(text):
-        leaks.append(f"avatar URL {m.group(0)!r}")
-    if m := LEAK_HTTPBIN_IP.search(text):
-        leaks.append(f"httpbin IP {m.group(0)!r}")
-    return leaks
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,9 @@ The static AST reach-in / runtime-import boundary *gates* live in
 ``tests/_guardrails/test_no_facade_reach_in.py``. What remains here are the
 tests that *exercise* the wired client (constructor-DI seams, seam wiring,
 mind-map flows). The two boundary tests that still inspect production source
-with the AST visitors import those helpers from the guardrails module.
+with the AST visitors import those helpers from the shared non-test module
+``tests/_guardrails/_ast_reach_in.py`` (issue #1431) — the same module the
+gate file imports them from — so neither test imports from the other.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from _fixtures.fake_core import FakeSession, make_fake_core
-from _guardrails.test_no_facade_reach_in import (
+from _guardrails._ast_reach_in import (
     _assignment_value,
     _call_keyword_value,
     _facade_construction_lines,

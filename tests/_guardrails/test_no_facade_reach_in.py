@@ -8,8 +8,11 @@ for the artifact / source / notebook-composition service modules — plus the
 self-tests for each AST visitor and the module-deletion asserts.
 
 The construction / init-order behaviour tests that *exercise* the wired client
-stay in ``tests/unit/test_init_order.py``; the two behaviour tests that still
-need these AST visitors import them from here.
+stay in ``tests/unit/test_init_order.py``. The reusable AST visitors / accessor
+helpers both this gate and those behaviour tests need live in the shared
+non-test module ``tests/_guardrails/_ast_reach_in.py`` (issue #1431); this gate
+imports only the two its own tests exercise. The self-tests for each AST visitor
+and the module-deletion asserts stay here.
 """
 
 from __future__ import annotations
@@ -20,6 +23,12 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+
+# The AST reach-in visitors / accessor helpers now live in the shared non-test
+# helper ``_guardrails._ast_reach_in`` so that ``tests/unit/test_init_order.py``
+# can import them from a non-test module instead of from this gate file
+# (issue #1431). This gate imports only the two helpers its own tests exercise.
+from _guardrails._ast_reach_in import _facade_construction_lines, _RuntimeImportVisitor
 
 pytestmark = pytest.mark.repo_lint
 
@@ -212,83 +221,6 @@ def _collect_core_private_accesses(path: Path) -> list[tuple[str, str]]:
     visitor = _CorePrivateAccessVisitor(path.name)
     visitor.visit(tree)
     return visitor.observed
-
-
-def _self_attr_name(node: ast.AST) -> str | None:
-    if (
-        isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == "self"
-    ):
-        return node.attr
-    return None
-
-
-def _assigned_self_attr_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Assign):
-        for target in node.targets:
-            attr_name = _self_attr_name(target)
-            if attr_name is not None:
-                return attr_name
-    if isinstance(node, ast.AnnAssign):
-        return _self_attr_name(node.target)
-    return None
-
-
-def _assignment_value(node: ast.AST) -> ast.AST | None:
-    if isinstance(node, ast.Assign):
-        return node.value
-    if isinstance(node, ast.AnnAssign):
-        return node.value
-    return None
-
-
-def _self_attr_assignment(body: list[ast.stmt], attr_name: str) -> tuple[int, ast.stmt]:
-    for index, statement in enumerate(body):
-        if _assigned_self_attr_name(statement) == attr_name:
-            return index, statement
-    raise AssertionError(f"self.{attr_name} assignment not found")
-
-
-def _method_body(tree: ast.AST, class_name: str, method_name: str) -> list[ast.stmt]:
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ClassDef) or node.name != class_name:
-            continue
-        for item in node.body:
-            if (
-                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and item.name == method_name
-            ):
-                return item.body
-    raise AssertionError(f"{class_name}.{method_name} not found")
-
-
-def _facade_call_name(node: ast.AST, facade_names: set[str]) -> str | None:
-    if isinstance(node, ast.Name) and node.id in facade_names:
-        return node.id
-    if isinstance(node, ast.Attribute):
-        if node.attr in facade_names:
-            return node.attr
-        return _facade_call_name(node.value, facade_names)
-    return None
-
-
-def _facade_construction_lines(tree: ast.AST, facade_names: set[str]) -> dict[str, list[int]]:
-    lines: dict[str, list[int]] = {facade_name: [] for facade_name in facade_names}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        facade_name = _facade_call_name(node.func, facade_names)
-        if facade_name is not None:
-            lines[facade_name].append(node.lineno)
-    return {facade_name: found for facade_name, found in lines.items() if found}
-
-
-def _call_keyword_value(call: ast.Call, keyword_name: str) -> ast.AST:
-    for keyword in call.keywords:
-        if keyword.arg == keyword_name:
-            return keyword.value
-    raise AssertionError(f"keyword argument {keyword_name!r} not found")
 
 
 def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
@@ -557,74 +489,6 @@ def test_deleted_session_module_is_not_importable() -> None:
 
     deleted_module = "notebooklm" + "." + "_session"
     assert importlib.util.find_spec(deleted_module) is None
-
-
-def _is_type_checking_guard(node: ast.AST) -> bool:
-    return (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
-        isinstance(node, ast.Attribute)
-        and node.attr == "TYPE_CHECKING"
-        and isinstance(node.value, ast.Name)
-        and node.value.id == "typing"
-    )
-
-
-class _RuntimeImportVisitor(ast.NodeVisitor):
-    def __init__(
-        self,
-        *,
-        forbidden_names: set[str],
-        forbidden_modules: set[str],
-    ) -> None:
-        self._forbidden_names = forbidden_names
-        self._forbidden_modules = forbidden_modules
-        self.forbidden: list[str] = []
-
-    def visit_If(self, node: ast.If) -> None:
-        if _is_type_checking_guard(node.test):
-            for child in node.orelse:
-                self.visit(child)
-            return
-        self.generic_visit(node)
-
-    @staticmethod
-    def _is_dunder_name(name: str) -> bool:
-        return name.startswith("__") and name.endswith("__")
-
-    @classmethod
-    def _is_forbidden_module_reference(cls, name: str, forbidden_modules: set[str]) -> bool:
-        if not name:
-            return False
-
-        if any(cls._is_dunder_name(part) for part in name.split(".")):
-            return False
-
-        for forbidden_module in forbidden_modules:
-            if cls._is_dunder_name(forbidden_module):
-                continue
-            if name == forbidden_module or name.startswith(f"{forbidden_module}."):
-                return True
-
-        return False
-
-    def visit_Import(self, node: ast.Import) -> None:
-        self.forbidden.extend(
-            alias.name
-            for alias in node.names
-            if self._is_forbidden_module_reference(alias.name, self._forbidden_modules)
-        )
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        module = node.module or ""
-        if self._is_forbidden_module_reference(module, self._forbidden_modules):
-            self.forbidden.extend(f"{module}.{alias.name}" for alias in node.names)
-            return
-
-        self.forbidden.extend(
-            alias.name
-            for alias in node.names
-            if alias.name in self._forbidden_names
-            or self._is_forbidden_module_reference(alias.name, self._forbidden_modules)
-        )
 
 
 def test_runtime_import_visitor_detects_nested_forbidden_modules() -> None:
