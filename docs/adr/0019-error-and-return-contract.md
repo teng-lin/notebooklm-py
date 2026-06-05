@@ -212,11 +212,22 @@ enforcement floor**:
   public-signature typing (the namespaces differ in arity) and `delete` is
   irreducibly per-namespace (`mind_maps.delete(..., kind=...)` is non-idempotent
   + kind-dispatched), so `delete` stays per-namespace.
-- **Tier 3 — sealed async result types (deferred, own ADR).** Replacing the
-  stringly-typed `GenerationStatus.status` with a sealed/discriminated result is
-  the deeper fix (it would dissolve the `failed`/`not_found`/`removed` string
-  juggling), but it is a larger redesign tracked separately; this ADR keeps the
-  typed-string states.
+- **Tier 3 — sealed async result types (resolved #1345: rejected).** Replacing
+  the stringly-typed `GenerationStatus.status` with a sealed/discriminated result
+  was evaluated and **rejected**. The load-bearing overload it targeted — a
+  synchronous *couldn't-start* masquerading as `status="failed"` — was already
+  removed by Tier 1 (#1342 makes refusals raise), so a returned `failed` now
+  means only *started-then-failed*. The residual `not_found`/`removed`/rate-limit
+  juggling is poll-loop interpretation (`removed` is `wait_for_completion`'s
+  conclusion over a sustained miss run, not a result property), cause
+  classification (`is_rate_limited` is a `Failed`/`Removed` detail, not a
+  lifecycle state), and a CLI-local DTO string (`cli/services/artifact_generation.py`
+  synthesizes `"rate_limited"`) — none of which a union dissolves; it relocates
+  them. This ADR keeps the typed-string states. The optional, *non-breaking*
+  follow-up is a `GenerationState(str, Enum)` for `GenerationStatus.status`
+  mirroring `ResearchStatus` (or a `Literal[...]` alias). If sealed types are ever
+  revisited, introduce them via parallel `poll_result()`/`wait_result()` APIs
+  rather than breaking the existing ones in place.
 
 Tier 1 + Tier 2 are required for 0.8.0; together they make this contract
 type/CI-enforced rather than review-enforced.
