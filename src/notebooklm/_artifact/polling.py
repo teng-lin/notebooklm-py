@@ -15,6 +15,7 @@ from .._deadline import Monotonic, RuntimeDeadline, Sleep
 from .._polling_registry import PollRegistry
 from .._row_adapters.artifacts import ArtifactRow
 from .._runtime.contracts import LoopGuard
+from .._types.artifacts import _status_from_code
 from ..exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from ..rpc import (
     ArtifactStatus,
@@ -24,7 +25,7 @@ from ..rpc import (
     ServerError,
     artifact_status_to_str,
 )
-from ..types import GenerationStatus
+from ..types import GenerationState, GenerationStatus
 from .listing import find_artifact_row_by_id
 
 logger = logging.getLogger(__name__)
@@ -144,7 +145,7 @@ class ArtifactPollingService:
 
             return GenerationStatus(
                 task_id=task_id,
-                status=status,
+                status=_status_from_code(status_code),
                 url=url,
                 error=error_msg,
                 metadata=metadata,
@@ -152,7 +153,7 @@ class ArtifactPollingService:
 
         # Artifact not found in the list. Use a distinct status so
         # wait_for_completion can differentiate from genuine "pending".
-        return GenerationStatus(task_id=task_id, status="not_found")
+        return GenerationStatus(task_id=task_id, status=GenerationState.NOT_FOUND)
 
     async def wait_for_completion(
         self,
@@ -363,7 +364,7 @@ class ArtifactPollingService:
             # absent*: a transient/flapping omission — where the artifact keeps
             # coming back and may still complete — never accumulates toward a
             # spurious terminal ``"removed"`` (issue #1198).
-            if status.status == "not_found":
+            if status.is_not_found:
                 consecutive_not_found += 1
                 now = deadline.now()
                 if first_not_found_time is None:
@@ -404,7 +405,7 @@ class ArtifactPollingService:
                     # exception-free callers still get an actionable message.
                     removed_status = GenerationStatus(
                         task_id=task_id,
-                        status="removed",
+                        status=GenerationState.REMOVED,
                         error=(
                             "Generation incomplete: artifact was removed from the "
                             "list by the server. This may indicate a daily "

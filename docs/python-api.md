@@ -1952,7 +1952,7 @@ Returned by `poll_status`, `wait_for_completion`, and most artifact generation m
 @dataclass
 class GenerationStatus:
     task_id: str                          # Same value as Artifact.id once complete
-    status: str                           # "pending" | "in_progress" | "completed" | "failed" | "not_found" | "removed"
+    status: GenerationState               # str-Enum: "pending" | "in_progress" | "completed" | "failed" | "not_found" | "removed" | "unknown"
     url: str | None = None                # Populated for media artifacts when status == "completed"
     error: str | None = None
     error_code: str | None = None         # e.g. "USER_DISPLAYABLE_ERROR" for rate limits
@@ -2008,6 +2008,13 @@ class GenerationStatus:
     def is_rate_limited(self) -> bool:
         """Check if generation failed (or was removed) due to rate limiting."""
 ```
+
+`status` is a `GenerationState(str, Enum)` (importable from `notebooklm` and
+`notebooklm.types`), so it remains a `str` for every existing use — `status ==
+"completed"`, `status in {...}`, `f"{status}"`, and `json.dumps` all keep
+working unchanged. **Prefer the `.is_*` predicates** (`status.is_complete`,
+`status.is_failed`, …) over raw string comparison for new code; the raw
+`status == "completed"` form stays supported.
 
 **`url` semantics:** `poll_status` populates `url` for media artifact types (audio, video, infographic, slide-deck PDF) as soon as the server reports the asset as ready. Slide decks expose the PDF URL here; for the editable PowerPoint, use `client.artifacts.download_slide_deck(..., output_format="pptx")` instead.
 

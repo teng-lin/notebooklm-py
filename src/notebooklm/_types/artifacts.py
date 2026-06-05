@@ -358,6 +358,51 @@ class Artifact:
         return "report"
 
 
+class GenerationState(str, Enum):
+    """The status string of an artifact generation task.
+
+    A ``str`` enum so existing string comparisons (``status == "completed"``),
+    membership checks, ``json.dumps``, ``f"{status}"``, and ``str(status)`` all
+    keep working unchanged. Member names map 1:1 onto the historical status
+    strings emitted by the poll/wait loops.
+    """
+
+    # poll-set: emitted by poll_status() / the generation parsers
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    NOT_FOUND = "not_found"
+    UNKNOWN = "unknown"
+    # wait-only: emitted by wait_for_completion() on a sustained delisting
+    REMOVED = "removed"
+
+    def __str__(self) -> str:
+        # Keep str(member) == member.value (e.g. "completed", not
+        # "GenerationState.COMPLETED") so display/serialization is unchanged.
+        return self.value
+
+    def __repr__(self) -> str:
+        # Keep repr(member) == repr(member.value) so console.print(status)
+        # of a GenerationStatus dataclass renders identically to the old
+        # plain-string field.
+        return repr(self.value)
+
+
+def _status_from_code(
+    code: int | None, *, none_status: GenerationState = GenerationState.PENDING
+) -> GenerationState:
+    """Map an API status code to a :class:`GenerationState` member.
+
+    ``None`` (no status reported yet) maps to ``none_status`` (``PENDING`` by
+    default). Any recognized code maps via :func:`artifact_status_to_str`;
+    unrecognized codes funnel to ``GenerationState.UNKNOWN``.
+    """
+    if code is None:
+        return none_status
+    return GenerationState(artifact_status_to_str(code))
+
+
 @dataclass
 class GenerationStatus:
     """Status of an artifact generation task.
@@ -369,7 +414,10 @@ class GenerationStatus:
     """
 
     task_id: str  # Same as artifact_id - used for polling and becomes Artifact.id
-    status: str  # "pending", "in_progress", "completed", "failed", "not_found", "removed"
+    # "pending", "in_progress", "completed", "failed", "not_found", "removed", "unknown".
+    # Typed as GenerationState, but stays raw-string-permissive: instances built
+    # with a plain str keep working (the .is_* predicates compare with ==).
+    status: GenerationState
     url: str | None = None
     error: str | None = None
     error_code: str | None = None  # e.g., "USER_DISPLAYABLE_ERROR" for rate limits

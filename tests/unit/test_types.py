@@ -93,6 +93,7 @@ _PUBLIC_MOVABLE_CLASSES = [
     "ClientMetricsSnapshot",
     "ConnectionLimits",
     "ConversationTurn",
+    "GenerationState",
     "GenerationStatus",
     "MindMap",
     "MindMapKind",
@@ -127,6 +128,7 @@ def test_artifact_note_chat_and_sharing_types_are_facade_reexports():
 
     assert public_types.Artifact is artifacts.Artifact
     assert public_types.ArtifactType is artifacts.ArtifactType
+    assert public_types.GenerationState is artifacts.GenerationState
     assert public_types.GenerationStatus is artifacts.GenerationStatus
     assert public_types.ReportSuggestion is artifacts.ReportSuggestion
     assert public_types.Note is notes.Note
@@ -169,6 +171,7 @@ def test_representative_public_dataclasses_pickle_round_trip():
         ClientMetricsSnapshot,
         ConnectionLimits,
         ConversationTurn,
+        GenerationState,
         GenerationStatus,
         Notebook,
         NotebookDescription,
@@ -256,7 +259,12 @@ def test_representative_public_dataclasses_pickle_round_trip():
     for instance in instances:
         assert pickle.loads(pickle.dumps(instance)) == instance
 
-    for enum_member in [SourceType.PDF, ArtifactType.AUDIO, ChatMode.DEFAULT]:
+    for enum_member in [
+        SourceType.PDF,
+        ArtifactType.AUDIO,
+        ChatMode.DEFAULT,
+        GenerationState.COMPLETED,
+    ]:
         assert pickle.loads(pickle.dumps(enum_member)) is enum_member
 
 

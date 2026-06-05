@@ -15,6 +15,7 @@ from ._types import sources as _source_types
 from ._types.artifacts import (
     Artifact,
     ArtifactType,
+    GenerationState,
     GenerationStatus,
     ReportSuggestion,
 )
@@ -146,6 +147,7 @@ __all__ = [
     "SourceFulltext",
     "SourceSummary",
     "Artifact",
+    "GenerationState",
     "GenerationStatus",
     "ReportSuggestion",
     "Note",
@@ -233,6 +235,7 @@ for _public_moved_type in (
     ChatMode,
     ChatReference,
     ConversationTurn,
+    GenerationState,
     GenerationStatus,
     MindMap,
     MindMapKind,

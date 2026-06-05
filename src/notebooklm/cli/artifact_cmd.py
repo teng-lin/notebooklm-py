@@ -563,10 +563,10 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
                     # exits 0 for unknown/pending statuses). Without this,
                     # automation sees a JSON payload with an "error" message
                     # but the command still exits 0.
-                    if status.status != "completed":
+                    if not status.is_complete:
                         exit_with_code(1)
                 else:
-                    if status.status == "completed":
+                    if status.is_complete:
                         console.print(f"[green]✓ Artifact completed:[/green] {resolved_id}")
                         if status.url:
                             console.print(f"[dim]URL:[/dim] {status.url}")
@@ -680,10 +680,10 @@ def artifact_retry(
                             "error": final.error,
                         }
                     )
-                    if final.status != "completed":
+                    if not final.is_complete:
                         exit_with_code(1)
                 else:
-                    if final.status == "completed":
+                    if final.is_complete:
                         console.print(f"[green]✓ Artifact completed:[/green] {final.task_id}")
                         if final.url:
                             console.print(f"[dim]URL:[/dim] {final.url}")

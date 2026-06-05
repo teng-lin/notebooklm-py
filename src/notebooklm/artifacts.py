@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from .exceptions import RateLimitError
-from .types import GenerationStatus
+from .types import GenerationState, GenerationStatus
 
 RATE_LIMIT_RETRY_INITIAL_DELAY = 60.0
 RATE_LIMIT_RETRY_MAX_DELAY = 300.0
@@ -141,7 +141,7 @@ async def with_rate_limit_retry(
             # ``None`` (which would force brittle message-substring matching).
             event_result = GenerationStatus(
                 task_id="",
-                status="failed",
+                status=GenerationState.FAILED,
                 error=str(exc),
                 error_code=(
                     str(exc.rpc_code) if exc.rpc_code is not None else "USER_DISPLAYABLE_ERROR"

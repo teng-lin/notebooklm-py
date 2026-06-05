@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import Artifact
+from notebooklm.types import Artifact, GenerationStatus
 
 from .conftest import create_mock_client
 
@@ -1047,8 +1047,11 @@ class TestArtifactWait:
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
-                return_value=MagicMock(
-                    status="failed", url=None, error="Generation failed due to content policy"
+                return_value=GenerationStatus(
+                    task_id="art_123",
+                    status="failed",
+                    url=None,
+                    error="Generation failed due to content policy",
                 )
             )
             mock_client_cls.return_value = mock_client

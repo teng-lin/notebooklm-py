@@ -55,6 +55,7 @@ from .exceptions import (
 if TYPE_CHECKING:
     from ._runtime.lifecycle import ClientLifecycle
     from ._transport_drain import TransportDrainTracker
+from ._types.artifacts import _status_from_code
 from .rpc import (
     ArtifactTypeCode,
     AudioFormat,
@@ -71,7 +72,6 @@ from .rpc import (
     SlideDeckLength,
     VideoFormat,
     VideoStyle,
-    artifact_status_to_str,
     safe_index,
 )
 from .types import (
@@ -1326,8 +1326,7 @@ class ArtifactsAPI:
 
         if artifact_id:
             status_code = safe_index(result, 0, 4, method_id=method_id, source=source)
-            status = artifact_status_to_str(status_code) if status_code is not None else "pending"
-            return GenerationStatus(task_id=artifact_id, status=status)
+            return GenerationStatus(task_id=artifact_id, status=_status_from_code(status_code))
 
         # v0.8.0 (#1342): a missing id means no task was created — raise.
         # Null id (feature gated) -> ArtifactFeatureUnavailableError; else drift.
