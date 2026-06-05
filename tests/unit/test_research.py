@@ -1294,10 +1294,12 @@ class TestResearch:
             sources = poll_result.sources
             assert len(sources) == 3
 
+            # Attribute-only typed sources (#1251): the dict-membership bridge
+            # was dropped; url/title/result_type are plain attributes.
             for src in sources:
-                assert "url" in src
-                assert "title" in src
-                assert "result_type" in src
+                assert hasattr(src, "url")
+                assert hasattr(src, "title")
+                assert hasattr(src, "result_type")
 
             imported = await client.research.import_sources(
                 notebook_id="nb_123", task_id=task_id, sources=sources[:2]

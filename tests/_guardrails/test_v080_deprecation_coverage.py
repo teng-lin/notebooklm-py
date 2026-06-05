@@ -136,15 +136,6 @@ _DELIBERATE_CLEAN_BREAK = (
 V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
     # ---- Runwayed today (a v0.7.0 signal verified present) -----------------
     BreakingChange(
-        issue=1251,
-        summary="remove dict-subscript MappingCompat from research/mind_map/guide typed returns",
-        runway=Runway(
-            module="_types/research.py",
-            description="legacy result[...] subscript warns via MappingCompatMixin.__getitem__",
-            symbol="MappingCompatMixin",
-        ),
-    ),
-    BreakingChange(
         issue=1254,
         summary="remove deprecated 'interval' kwarg alias on research.wait_for_completion",
         runway=Runway(

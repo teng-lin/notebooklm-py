@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from ._research_task_parser import RESEARCH_RESULT_TYPE_REPORT, parse_result_type
-from ._types.research import ResearchSourceInput
+from ._types.research import ResearchSource, ResearchSourceInput
 from .types import CitedSourceSelection
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,23 @@ def extract_report_urls(report: str) -> set[str]:
     return {url for url in urls if url.startswith(("http://", "https://"))}
 
 
+def _source_field(source: ResearchSourceInput, key: str) -> Any:
+    """Read ``key`` from a research source, accepting either input shape.
+
+    ``select_cited_sources`` accepts both typed :class:`ResearchSource` objects
+    (attribute access) and legacy plain ``dict`` sources (``.get``). The typed
+    return dropped its dict-subscript bridge in v0.8.0 (#1251), so a uniform
+    accessor is needed: read the attribute off a :class:`ResearchSource` and
+    fall back to ``Mapping.get`` for a dict. Returns ``None`` for a missing key
+    on either shape.
+    """
+    if isinstance(source, ResearchSource):
+        return getattr(source, key, None)
+    if isinstance(source, Mapping):
+        return source.get(key)
+    return None
+
+
 def select_cited_sources(
     sources: Sequence[ResearchSourceInput],
     report: str,
@@ -92,15 +110,15 @@ def select_cited_sources(
     report_sources = [
         source
         for source in source_list
-        if parse_result_type(source.get("result_type")) == RESEARCH_RESULT_TYPE_REPORT
-        and source.get("report_markdown")
+        if parse_result_type(_source_field(source, "result_type")) == RESEARCH_RESULT_TYPE_REPORT
+        and _source_field(source, "report_markdown")
     ]
     report_source_ids = {id(source) for source in report_sources}
     matched_url_sources = [
         source
         for source in source_list
         if id(source) not in report_source_ids
-        and isinstance((url := source.get("url")), str)
+        and isinstance((url := _source_field(source, "url")), str)
         and normalize_citation_url(url) in cited_urls
     ]
 

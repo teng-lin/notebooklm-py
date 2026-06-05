@@ -8,11 +8,13 @@ adopt their v0.8.0 *target* behavior:
 1. ``<resource>.get()`` raises the matching ``*NotFoundError`` on a miss instead
    of warning-and-returning ``None`` (#1247), routed through
    :func:`notebooklm._lookup.resolve_get`;
-2. :class:`~notebooklm._deprecation.MappingCompatMixin` dict-subscript raises
-   :class:`TypeError` instead of warning-and-returning the legacy dict value
-   (#1251);
-3. :func:`~notebooklm._deprecation.deprecated_kwarg` raises :class:`TypeError`
+2. :func:`~notebooklm._deprecation.deprecated_kwarg` raises :class:`TypeError`
    on the deprecated keyword instead of warning-and-aliasing it (#1254).
+
+(The ``MappingCompatMixin`` dict-subscript flip — formerly previewed by this
+flag — shipped in v0.8.0: the typed returns are now pure attribute-only
+dataclasses, so there is no longer a flag-gated preview to test here. Its
+attribute-only behavior is covered by ``test_typed_returns_compat.py``.)
 
 The flag also previews the three **purely-behavioral** v0.8.0 changes (#1405),
 each gated the same way (``if future_errors_enabled(): <v0.8.0> else: <v0.7.0>``):
@@ -42,8 +44,6 @@ six behavioral previews above (one new test class per gated behavior).
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -52,7 +52,6 @@ from notebooklm import _deprecation
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm._deprecation import (
-    MappingCompatMixin,
     deprecated_kwarg,
     future_errors_enabled,
 )
@@ -133,98 +132,6 @@ class TestResolveGet:
     def test_miss_raises_the_not_found(self):
         with pytest.raises(_Sentinel):
             resolve_get(None, not_found=_Sentinel())
-
-
-# ---------------------------------------------------------------------------
-# MappingCompatMixin — full mapping-surface flip (#1251)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class _CompatProbe(MappingCompatMixin):
-    """Minimal mixin subclass mirroring the real typed-dataclass returns."""
-
-    status: str = "completed"
-
-    def to_public_dict(self) -> dict[str, Any]:
-        return {"status": self.status}
-
-
-class TestMappingCompatFlip:
-    def test_off_warns_and_returns_legacy_value(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        monkeypatch.delenv(_QUIET, raising=False)
-        probe = _CompatProbe()
-        with pytest.warns(DeprecationWarning, match="dict-style access"):
-            value = probe["status"]
-        assert value == "completed"
-
-    def test_on_raises_typeerror_not_subscriptable(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
-        probe = _CompatProbe()
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            with pytest.raises(TypeError, match="not subscriptable"):
-                probe["status"]
-
-    def test_on_message_matches_plain_dataclass(self, monkeypatch):
-        # The previewed error must read like the real v0.8.0 one: a plain
-        # dataclass with no __getitem__ raises "'X' object is not subscriptable".
-        @dataclass(frozen=True)
-        class _Plain:
-            status: str = "completed"
-
-        plain_msg = ""
-        try:
-            _Plain()["status"]  # type: ignore[index]
-        except TypeError as exc:
-            plain_msg = str(exc)
-
-        monkeypatch.setenv(_FLAG, "1")
-        with pytest.raises(TypeError) as caught:
-            _CompatProbe()["status"]
-        # Same shape: "'<Type>' object is not subscriptable" (only the type name
-        # differs between the plain dataclass and the mixin subclass).
-        assert "object is not subscriptable" in plain_msg
-        assert "object is not subscriptable" in str(caught.value)
-
-    def test_on_full_mapping_surface_raises(self, monkeypatch):
-        # In v0.8.0 the mixin is gone, so EVERY mapping op breaks — not just
-        # subscript. The flag previews each with the exact error a bare
-        # attribute-only dataclass raises: AttributeError for the method-style
-        # shims, TypeError for the operator-style ones (#1251).
-        monkeypatch.setenv(_FLAG, "1")
-        probe = _CompatProbe()
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            with pytest.raises(AttributeError, match="has no attribute 'get'"):
-                probe.get("status")
-            with pytest.raises(AttributeError, match="has no attribute 'keys'"):
-                probe.keys()
-            with pytest.raises(AttributeError, match="has no attribute 'items'"):
-                probe.items()
-            with pytest.raises(AttributeError, match="has no attribute 'values'"):
-                probe.values()
-            with pytest.raises(TypeError, match="has no len"):
-                len(probe)
-            with pytest.raises(TypeError, match="not iterable"):
-                assert "status" in probe
-            with pytest.raises(TypeError, match="not iterable"):
-                iter(probe)
-
-    def test_off_mapping_surface_stays_silent(self, monkeypatch):
-        # Off the flag the shape-probe surface is unchanged (no warning storm):
-        # get/keys/in/iter/len keep returning the legacy dict shape quietly.
-        monkeypatch.delenv(_FLAG, raising=False)
-        monkeypatch.delenv(_QUIET, raising=False)
-        probe = _CompatProbe()
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            assert probe.get("status") == "completed"
-            assert "status" in probe
-            assert list(probe.keys()) == ["status"]
-            assert len(probe) == 1
-            assert list(iter(probe)) == ["status"]
 
 
 # ---------------------------------------------------------------------------
@@ -311,11 +218,11 @@ class TestDeprecatedKwargFlip:
 
 
 class TestFutureErrorsTakesPrecedenceOverQuiet:
-    def test_subscript_raises_even_when_quiet(self, monkeypatch):
+    def test_resolve_get_raises_even_when_quiet(self, monkeypatch):
         monkeypatch.setenv(_FLAG, "1")
         monkeypatch.setenv(_QUIET, "1")
-        with pytest.raises(TypeError, match="not subscriptable"):
-            _CompatProbe()["status"]
+        with pytest.raises(_Sentinel):
+            resolve_get(None, not_found=_Sentinel())
 
     def test_deprecated_kwarg_raises_even_when_quiet(self, monkeypatch):
         monkeypatch.setenv(_FLAG, "1")
@@ -337,7 +244,17 @@ class TestFutureErrorsTakesPrecedenceOverQuiet:
         monkeypatch.setenv(_QUIET, "1")
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
-            assert _CompatProbe()["status"] == "completed"
+            assert (
+                deprecated_kwarg(
+                    2.0,
+                    _UNSET,
+                    old="interval",
+                    new="initial_interval",
+                    owner="X.m",
+                    sentinel=_UNSET,
+                )
+                == 2.0
+            )
 
 
 # ---------------------------------------------------------------------------

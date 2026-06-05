@@ -649,8 +649,10 @@ class TestSourcesAPI:
         async with NotebookLMClient(auth_tokens) as client:
             guide = await client.sources.get_guide("nb_123", "src_001")
 
-        assert "summary" in guide
-        assert "keywords" in guide
+        # Attribute-only typed return (#1251): the dict-membership bridge was
+        # dropped; summary/keywords are plain attributes.
+        assert hasattr(guide, "summary")
+        assert hasattr(guide, "keywords")
         assert "**summary**" in guide.summary
         assert guide.keywords == ("keyword1", "keyword2", "keyword3")
 

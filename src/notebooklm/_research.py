@@ -342,8 +342,7 @@ class ResearchAPI:
         Returns:
             A :class:`~notebooklm._types.research.ResearchStart` (``task_id`` /
             ``report_id`` / ``notebook_id`` / ``query`` / ``mode``), or ``None``
-            when the backend returned no task (legacy ``result["task_id"]`` dict
-            access still works with a warning until v0.8.0). Under
+            when the backend returned no task. Under
             ``NOTEBOOKLM_FUTURE_ERRORS`` (#1342) an empty/non-list payload or
             falsey ``task_id`` raises ``DecodingError`` instead.
 
@@ -442,8 +441,7 @@ class ResearchAPI:
             - ``task.tasks``: all parsed research tasks visible at this poll
               (filtered to the matched task when ``task_id`` is set)
 
-            Legacy ``result["status"]`` dict access still works (with a warning)
-            until v0.8.0; prefer ``result.status``.
+            Use attribute access (``result.status``).
 
             When a non-empty ``task_id`` is supplied but no in-flight task
             matches, the return is ``ResearchTask.not_found(task_id)`` (status
@@ -522,8 +520,7 @@ class ResearchAPI:
             ``NOT_FOUND`` — a pinned task that is temporarily absent from a poll
             is treated as a transient replication-lag condition and keeps
             polling until it appears, reaches a terminal state, or times out.
-            Legacy ``result["status"]`` dict-subscript access still works (with
-            a ``DeprecationWarning``) until v0.8.0.
+            Use attribute access (``result.status``).
 
         Raises:
             ResearchTimeoutError: If research does not reach a terminal status

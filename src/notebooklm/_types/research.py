@@ -1,11 +1,11 @@
 """Public typed models for the research namespace (issue #1209).
 
 These dataclasses replace the ``dict[str, Any]`` returns of
-``ResearchAPI.poll`` / ``start`` / ``wait_for_completion``. They mix in
-:class:`~notebooklm._deprecation.MappingCompatMixin` so legacy
-``result["status"]`` dict-subscript access keeps working (emitting a
-``DeprecationWarning``) for one MINOR cycle; the dict-subscript bridge is
-removed in v0.8.0 (see ``docs/deprecations.md``).
+``ResearchAPI.poll`` / ``start`` / ``wait_for_completion``. They are
+attribute-only frozen dataclasses: use ``result.status`` (the dict-subscript
+back-compat bridge that warned in v0.7.0 was removed in v0.8.0, issue #1251).
+The ``to_public_dict()`` method survives — it builds the historical JSON shape
+for CLI output and is unrelated to the dropped subscript bridge.
 
 The models live here (rather than in ``_research_task_parser``) so they are
 public typed surface; the parser re-imports them and stays the home of the
@@ -17,9 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any, ClassVar
-
-from .._deprecation import MappingCompatMixin
+from typing import Any
 
 # Numeric ``result_type`` tags carried on a research source row. Web is the
 # default; deep-research report entries use the report tag.
@@ -69,7 +67,7 @@ class ResearchStatus(str, Enum):
 
 
 @dataclass(frozen=True)
-class ResearchSource(MappingCompatMixin):
+class ResearchSource:
     """One parsed research source (web result, drive file, or report entry)."""
 
     url: str
@@ -77,18 +75,6 @@ class ResearchSource(MappingCompatMixin):
     result_type: ResearchResultType = RESEARCH_RESULT_TYPE_WEB
     research_task_id: str | None = None
     report_markdown: str = ""
-
-    # Legacy dict keys are only emitted when non-empty in ``to_public_dict``;
-    # the mixin maps every key it knows to its attribute. ``research_task_id``
-    # and ``report_markdown`` are still listed so ``source["report_markdown"]``
-    # keeps working even though the dict-builder omits them when falsy.
-    _COMPAT_KEYS: ClassVar[dict[str, str]] = {
-        "url": "url",
-        "title": "title",
-        "result_type": "result_type",
-        "research_task_id": "research_task_id",
-        "report_markdown": "report_markdown",
-    }
 
     @classmethod
     def from_public_dict(cls, source: Mapping[str, Any]) -> ResearchSource:
@@ -134,7 +120,7 @@ ResearchSourceInput = ResearchSource | Mapping[str, Any]
 
 
 @dataclass(frozen=True)
-class ResearchTask(MappingCompatMixin):
+class ResearchTask:
     """A research task and, at the top level, the sibling tasks seen in a poll.
 
     Returned by :meth:`ResearchAPI.poll` and
@@ -143,10 +129,8 @@ class ResearchTask(MappingCompatMixin):
     visible at the poll (the top-level result carries it, sub-tasks leave it
     empty).
 
-    Use attribute access (``task.status``, ``task.sources``). Legacy
-    ``task["status"]`` dict-subscript access still works via
-    :class:`~notebooklm._deprecation.MappingCompatMixin` but emits a
-    ``DeprecationWarning``; it is removed in v0.8.0.
+    Use attribute access (``task.status``, ``task.sources``); the dict-subscript
+    back-compat bridge was removed in v0.8.0 (issue #1251).
     """
 
     task_id: str
@@ -156,19 +140,6 @@ class ResearchTask(MappingCompatMixin):
     summary: str = ""
     report: str = ""
     tasks: tuple[ResearchTask, ...] = ()
-
-    # ``tasks`` is intentionally part of the legacy dict shape only for the
-    # top-level poll result; sub-tasks emit ``tasks: []`` historically too,
-    # so listing it here for every instance matches the old behavior.
-    _COMPAT_KEYS: ClassVar[dict[str, str]] = {
-        "task_id": "task_id",
-        "status": "status",
-        "query": "query",
-        "sources": "sources",
-        "summary": "summary",
-        "report": "report",
-        "tasks": "tasks",
-    }
 
     @classmethod
     def empty(cls) -> ResearchTask:
@@ -210,11 +181,9 @@ class ResearchTask(MappingCompatMixin):
     def to_public_dict(self) -> dict[str, Any]:
         """Return the historical top-level result dictionary shape.
 
-        Used internally to build legacy JSON output and to back the
-        :class:`~notebooklm._deprecation.MappingCompatMixin` dict-subscript
-        bridge. The ``no_research`` placeholder mirrors the old empty-poll
-        dict, which omitted the per-task fields and carried only ``status`` +
-        ``tasks``.
+        Used internally to build legacy JSON output. The ``no_research``
+        placeholder mirrors the old empty-poll dict, which omitted the per-task
+        fields and carried only ``status`` + ``tasks``.
         """
         sibling_tasks = [task._to_task_dict() for task in self.tasks]
         if self.status == ResearchStatus.NO_RESEARCH and not self.task_id:
@@ -223,12 +192,11 @@ class ResearchTask(MappingCompatMixin):
 
 
 @dataclass(frozen=True)
-class ResearchStart(MappingCompatMixin):
+class ResearchStart:
     """Result of :meth:`ResearchAPI.start` — identifiers for a started task.
 
-    Use attribute access (``result.task_id``). Legacy ``result["task_id"]``
-    dict-subscript access still works (with a ``DeprecationWarning``) until
-    v0.8.0.
+    Use attribute access (``result.task_id``); the dict-subscript back-compat
+    bridge was removed in v0.8.0 (issue #1251).
     """
 
     task_id: str
@@ -249,7 +217,7 @@ class ResearchStart(MappingCompatMixin):
 
 
 @dataclass(frozen=True)
-class MindMapResult(MappingCompatMixin):
+class MindMapResult:
     """Result of :meth:`ArtifactsAPI.generate_mind_map`.
 
     ``mind_map`` is the parsed mind-map structure (a dict when the backend
@@ -257,9 +225,8 @@ class MindMapResult(MappingCompatMixin):
     ``note_id`` is the id of the note the mind map was persisted to, or
     ``None`` when persistence did not yield a usable id.
 
-    Use attribute access (``result.mind_map``). Legacy ``result["mind_map"]``
-    dict-subscript access still works (with a ``DeprecationWarning``) until
-    v0.8.0.
+    Use attribute access (``result.mind_map``); the dict-subscript back-compat
+    bridge was removed in v0.8.0 (issue #1251).
     """
 
     mind_map: Any = None
@@ -271,7 +238,7 @@ class MindMapResult(MappingCompatMixin):
 
 
 @dataclass(frozen=True)
-class SourceGuide(MappingCompatMixin):
+class SourceGuide:
     """Result of :meth:`SourcesAPI.get_guide` — the AI "Source Guide".
 
     ``summary`` is the AI-generated markdown summary (with ``**bold**``
@@ -279,9 +246,8 @@ class SourceGuide(MappingCompatMixin):
     a list, so the frozen dataclass stays genuinely immutable — matching
     :attr:`ResearchTask.sources` / :attr:`ResearchTask.tasks`).
 
-    Use attribute access (``guide.summary``). Legacy ``guide["summary"]``
-    dict-subscript access still works (with a ``DeprecationWarning``) until
-    v0.8.0; ``guide["keywords"]`` keeps returning a ``list`` for back-compat.
+    Use attribute access (``guide.summary``, ``guide.keywords``); the
+    dict-subscript back-compat bridge was removed in v0.8.0 (issue #1251).
     """
 
     summary: str = ""
@@ -299,6 +265,6 @@ class SourceGuide(MappingCompatMixin):
 
         ``keywords`` is materialized as a fresh ``list`` so a caller mutating
         the returned dict cannot corrupt the frozen dataclass's state, and so
-        the legacy ``guide["keywords"]`` shape stays a ``list``.
+        the JSON shape stays a ``list``.
         """
         return {"summary": self.summary, "keywords": list(self.keywords)}

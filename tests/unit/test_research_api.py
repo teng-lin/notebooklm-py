@@ -155,7 +155,9 @@ class TestResearchAPI:
         assert result.sources[0].title == "Quantum Guide"
         assert result.sources[0].result_type == 1
         assert "Summary" in result.summary
-        assert "report" in result
+        # The dict-subscript/membership bridge was dropped in v0.8.0 (#1251):
+        # ``report`` is now a plain attribute on the attribute-only dataclass.
+        assert hasattr(result, "report")
 
     @pytest.mark.asyncio
     async def test_poll_in_progress(

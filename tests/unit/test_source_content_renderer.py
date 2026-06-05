@@ -230,12 +230,13 @@ async def test_get_guide_uses_exact_rpc_shape_and_parses_summary_keywords() -> N
 
     guide = await renderer.get_guide("nb_1", "src_1")
 
-    # Typed return; attribute access is the new way (keywords is a tuple).
+    # Typed return; attribute access is the only way (keywords is a tuple).
     assert guide.summary == "Summary"
     assert guide.keywords == ("keyword1", "keyword2")
-    # Legacy dict-subscript access still works (with a DeprecationWarning).
-    with pytest.warns(DeprecationWarning):
-        assert guide["summary"] == "Summary"
+    # The dict-subscript back-compat bridge was dropped in v0.8.0 (#1251): the
+    # dataclass is now attribute-only, so subscript raises a plain TypeError.
+    with pytest.raises(TypeError, match="not subscriptable"):
+        guide["summary"]  # type: ignore[index]
     assert guide.to_public_dict() == {
         "summary": "Summary",
         "keywords": ["keyword1", "keyword2"],
@@ -268,6 +269,8 @@ async def test_get_guide_shape_variants_return_stable_defaults(response: Any) ->
 
     guide = await renderer.get_guide("nb_1", "src_1")
 
-    assert set(guide) == {"summary", "keywords"}
+    # Attribute-only typed return (#1251): the historical key set lives in the
+    # to_public_dict() JSON shape, not on the dataclass's (removed) mapping API.
+    assert set(guide.to_public_dict()) == {"summary", "keywords"}
     assert isinstance(guide.summary, str)
     assert isinstance(guide.keywords, tuple)

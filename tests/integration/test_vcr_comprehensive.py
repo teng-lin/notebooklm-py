@@ -1013,7 +1013,7 @@ class TestResearchAPI:
                 mode="fast",
             )
         assert result is not None
-        assert "task_id" in result
+        assert result.task_id
         assert result.mode == "fast"
 
     @pytest.mark.vcr
@@ -1029,7 +1029,7 @@ class TestResearchAPI:
                 source="web",
                 mode="fast",
             )
-            if not start_result or not start_result.get("task_id"):
+            if not start_result or not start_result.task_id:
                 pytest.skip("Could not start research")
 
             # Poll for results
@@ -1038,7 +1038,7 @@ class TestResearchAPI:
                 task_id=start_result.task_id,
             )
         assert result is not None
-        assert "status" in result
+        assert result.status
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -1053,7 +1053,7 @@ class TestResearchAPI:
                 source="web",
                 mode="fast",
             )
-            if not start_result or not start_result.get("task_id"):
+            if not start_result or not start_result.task_id:
                 pytest.skip("Could not start research")
 
             # Poll until we have sources (with timeout via cassette)
@@ -1061,7 +1061,7 @@ class TestResearchAPI:
                 MUTABLE_NOTEBOOK_ID,
                 task_id=start_result.task_id,
             )
-            if not poll_result.get("sources"):
+            if not poll_result.sources:
                 pytest.skip("No research sources found")
 
             # Import first source
@@ -1085,5 +1085,5 @@ class TestResearchAPI:
                 mode="deep",
             )
         assert result is not None
-        assert "task_id" in result
+        assert result.task_id
         assert result.mode == "deep"

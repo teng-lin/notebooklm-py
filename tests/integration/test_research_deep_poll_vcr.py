@@ -276,9 +276,9 @@ class TestDeepResearchPollReplay:
                     mode="deep",
                 )
                 assert start_result is not None
-                task_id = start_result.get("task_id")
+                task_id = start_result.task_id
                 assert task_id, "research.start must return a task_id"
-                assert start_result.get("mode") == "deep"
+                assert start_result.mode == "deep"
 
                 # 4. Polling iteration path. Drives RECORD_POLL_COUNT polls
                 #    in record mode; during replay the cassette plays each
@@ -298,13 +298,15 @@ class TestDeepResearchPollReplay:
                     #  * ``in_progress`` / ``pending`` / ``running`` — once
                     #    the task is visible the poll echoes ``task_id``
                     #    back so callers can correlate.
-                    assert "status" in poll
+                    assert poll.status
                     # When ``task_id`` is present it must round-trip the
-                    # value returned by ``start()``. When absent the poll
-                    # is in the early ``no_research`` window before Deep
-                    # Research has populated the task entry.
-                    poll_task_id = poll.get("task_id")
-                    if poll_task_id is not None:
+                    # value returned by ``start()``. When absent (empty) the
+                    # poll is in the early ``no_research`` window before Deep
+                    # Research has populated the task entry. (#1251: the typed
+                    # return is attribute-only — ``no_research`` carries an
+                    # empty ``task_id`` rather than omitting the key.)
+                    poll_task_id = poll.task_id
+                    if poll_task_id:
                         assert poll_task_id == task_id
             finally:
                 # 5. Cleanup — runs in record AND replay (the cassette has a

@@ -692,9 +692,7 @@ class ArtifactsAPI:
             A :class:`~notebooklm._types.research.MindMapResult` with
             ``mind_map`` (the parsed mind-map structure, or ``None`` on an
             empty response) and ``note_id`` (the persisted note id, or
-            ``None``). Use attribute access (``result.mind_map``). Legacy
-            ``result["mind_map"]`` dict-subscript access still works (with a
-            ``DeprecationWarning``) until v0.8.0.
+            ``None``). Use attribute access (``result.mind_map``).
         """
         if language is None:
             language = get_default_language()

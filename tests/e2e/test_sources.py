@@ -101,9 +101,9 @@ class TestSourceRetrieval:
             pytest.skip("No sources available for guide")
 
         guide = await client.sources.get_guide(read_only_notebook_id, sources[0].id)
-        # get_guide returns a SourceGuide dataclass (#1209). Use attribute access,
-        # which is forward-compatible with v0.8.0 (it removes the deprecated
-        # dict-subscript MappingCompat bridge — guide["summary"] — per #1251).
+        # get_guide returns a SourceGuide dataclass (#1209). Use attribute access:
+        # v0.8.0 removed the deprecated dict-subscript MappingCompat bridge
+        # (guide["summary"]) so the dataclass is now attribute-only (#1251).
         assert isinstance(guide, SourceGuide)
         # Verify values are actually populated (not empty due to parsing bugs)
         assert guide.summary, "Expected non-empty summary from source guide"

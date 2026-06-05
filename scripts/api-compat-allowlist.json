@@ -356,6 +356,206 @@
       "code": "changed-return",
       "object": "notebooklm.client.NotebookLMClient.mind_maps.get",
       "reason": "Same break as notebooklm.NotebookLMClient.mind_maps.get above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchTask.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchTask.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchTask.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchTask.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchStart.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchStart.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchStart.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchStart.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.MindMapResult.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.MindMapResult.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.MindMapResult.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.MindMapResult.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.SourceGuide.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.SourceGuide.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.SourceGuide.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.SourceGuide.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchSource.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchSource.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchSource.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.ResearchSource.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchTask.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchTask.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchTask.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchTask.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchStart.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchStart.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchStart.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchStart.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.MindMapResult.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.MindMapResult.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.MindMapResult.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.MindMapResult.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.SourceGuide.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.SourceGuide.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.SourceGuide.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.SourceGuide.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchSource.get",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchSource.items",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchSource.keys",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.ResearchSource.values",
+      "reason": "v0.8.0 #1251: MappingCompatMixin dropped; the typed return is now attribute-only, removing the deprecated dict-style get/keys/items/values shims (warned in v0.7.0). See CHANGELOG.md and docs/deprecations.md."
     }
   ]
 }

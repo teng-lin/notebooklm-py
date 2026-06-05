@@ -1,13 +1,13 @@
-"""Tests for the typed research/mind-map/guide returns + dict-compat bridge.
+"""Tests for the typed research/mind-map/guide returns (attribute-only).
 
-Covers issue #1209:
+Covers issue #1209 (typed returns) and issue #1251 (the dict-subscript
+back-compat bridge dropped in v0.8.0):
 
 * ``ResearchStatus`` str-enum comparisons.
 * Typed attribute access on the new return dataclasses.
-* The :class:`MappingCompatMixin` dict-subscript backward-compat bridge
-  (subscript warns; ``get``/``keys``/``in`` stay silent; legacy nested dict
-  shape preserved).
-* ``NOTEBOOKLM_QUIET_DEPRECATIONS`` suppression.
+* The dataclasses are pure attribute-only frozen dataclasses: subscript raises
+  :class:`TypeError`; ``get``/``keys``/``items``/``values`` raise
+  :class:`AttributeError`; ``in``/``iter``/``len`` raise :class:`TypeError`.
 * The library never self-warns on its own internal attribute access.
 """
 
@@ -25,7 +25,6 @@ from notebooklm import (
     ResearchTask,
     SourceGuide,
 )
-from notebooklm._deprecation import DEFAULT_REMOVAL
 
 
 class TestResearchStatusEnum:
@@ -117,107 +116,66 @@ class TestTypedAttributeAccess:
         }
 
 
-class TestDictSubscriptCompat:
-    def test_subscript_warns_and_returns_legacy_value(self):
+class TestAttributeOnlyNoDictAccess:
+    """The dict-subscript bridge was dropped in v0.8.0 (#1251).
+
+    Each typed return is now a pure attribute-only frozen dataclass: subscript
+    raises :class:`TypeError`; the method-style mapping shims
+    (``get``/``keys``/``items``/``values``) raise :class:`AttributeError`; and
+    ``in``/``iter``/``len`` raise :class:`TypeError`. No ``DeprecationWarning``
+    is emitted on any of these paths — they are plain attribute-error / type-
+    error failures, exactly as a bare dataclass produces.
+    """
+
+    @pytest.mark.parametrize(
+        "obj",
+        [
+            SourceGuide(summary="hi", keywords=["a", "b"]),
+            MindMapResult(mind_map={"name": "Root"}, note_id="n1"),
+            ResearchStart(task_id="t1", report_id=None, notebook_id="nb", query="q", mode="fast"),
+            ResearchTask(task_id="t1", status=ResearchStatus.COMPLETED),
+            ResearchSource(url="http://x", title="T", result_type=1),
+        ],
+    )
+    def test_subscript_raises_typeerror_not_subscriptable(self, obj):
+        with pytest.raises(TypeError, match="not subscriptable"):
+            obj["summary"]  # type: ignore[index]
+
+    def test_subscript_never_warns(self):
+        # The dropped bridge no longer emits a DeprecationWarning; the failure
+        # is a plain TypeError (a warning would fail under simplefilter("error")).
         guide = SourceGuide(summary="hi", keywords=["a"])
-        with pytest.warns(DeprecationWarning) as record:
-            value = guide["summary"]
-        assert value == "hi"
-        msg = str(record[0].message)
-        assert "dict-style access is deprecated" in msg
-        assert f"v{DEFAULT_REMOVAL}" in msg
-        assert ".summary" in msg
-        assert "NOTEBOOKLM_QUIET_DEPRECATIONS" in msg
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(TypeError):
+                guide["summary"]  # type: ignore[index]
 
-    def test_unknown_key_raises_keyerror(self):
-        guide = SourceGuide(summary="hi", keywords=[])
-        with pytest.raises(KeyError), warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            _ = guide["does_not_exist"]
-
-    def test_read_mapping_surface_is_silent(self):
+    def test_method_style_shims_raise_attributeerror(self):
         guide = SourceGuide(summary="hi", keywords=["a", "b"])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # any warning fails the test
-            assert guide.get("summary") == "hi"
-            assert guide.get("missing", "default") == "default"
-            assert "summary" in guide
-            assert set(guide.keys()) == {"summary", "keywords"}
-            assert list(guide.items()) == [("summary", "hi"), ("keywords", ["a", "b"])]
-            assert list(guide.values()) == ["hi", ["a", "b"]]
-            assert len(guide) == 2
-            assert set(iter(guide)) == {"summary", "keywords"}
+        for name in ("get", "keys", "items", "values"):
+            with pytest.raises(AttributeError):
+                getattr(guide, name)
 
-    def test_dict_constructor_round_trips_via_subscript(self):
-        # ``dict(result)`` uses keys() + __getitem__, so it warns (per key) but
-        # still reconstructs the legacy dict shape.
+    def test_membership_iter_and_len_raise_typeerror(self):
         guide = SourceGuide(summary="hi", keywords=["a", "b"])
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            assert dict(guide) == {"summary": "hi", "keywords": ["a", "b"]}
+        with pytest.raises(TypeError):
+            "summary" in guide  # type: ignore[operator]  # noqa: B015
+        with pytest.raises(TypeError):
+            iter(guide)  # type: ignore[call-overload]
+        with pytest.raises(TypeError):
+            len(guide)  # type: ignore[arg-type]
 
-    def test_research_task_nested_dict_shape_preserved(self):
-        # Legacy callers do result["sources"][0]["url"] — the subscript must
-        # yield the old dict-of-dicts shape, not the typed ResearchSource.
-        src = ResearchSource(url="http://x", title="T", result_type=1)
-        task = ResearchTask(task_id="t1", status=ResearchStatus.COMPLETED, sources=(src,))
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            sources = task["sources"]
-        assert isinstance(sources, list)
-        assert sources[0]["url"] == "http://x"
-
-    def test_research_task_tasks_key_is_list(self):
-        # ``result["tasks"]`` must be a list (the historical shape), not the
-        # typed tuple.
-        sub = ResearchTask(task_id="t1", status=ResearchStatus.COMPLETED)
-        task = ResearchTask(task_id="t1", status=ResearchStatus.COMPLETED, tasks=(sub,))
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            tasks = task["tasks"]
-        assert isinstance(tasks, list)
-        assert tasks[0]["task_id"] == "t1"
-        # Sub-task dicts do not carry a nested ``tasks`` key.
-        assert "tasks" not in tasks[0]
-
-    def test_mind_map_result_subscript(self):
+    def test_to_public_dict_still_works(self):
+        # to_public_dict() is NOT part of the dropped bridge — it survives and
+        # builds the historical JSON shape for CLI output.
+        guide = SourceGuide(summary="hi", keywords=["a", "b"])
+        assert guide.to_public_dict() == {"summary": "hi", "keywords": ["a", "b"]}
         result = MindMapResult(mind_map={"name": "Root"}, note_id="n1")
-        with pytest.warns(DeprecationWarning):
-            assert result["mind_map"] == {"name": "Root"}
-        with pytest.warns(DeprecationWarning):
-            assert result["note_id"] == "n1"
-
-    def test_research_start_subscript(self):
+        assert result.to_public_dict() == {"mind_map": {"name": "Root"}, "note_id": "n1"}
         start = ResearchStart(
             task_id="t1", report_id=None, notebook_id="nb", query="q", mode="fast"
         )
-        with pytest.warns(DeprecationWarning):
-            assert start["task_id"] == "t1"
-        with pytest.warns(DeprecationWarning):
-            assert start["report_id"] is None
-
-
-class TestQuietDeprecations:
-    def test_env_var_suppresses_subscript_warning(self, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", "1")
-        guide = SourceGuide(summary="hi", keywords=[])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # a warning would fail
-            assert guide["summary"] == "hi"
-
-    @pytest.mark.parametrize("value", ["1", "true", "yes", "on", "TRUE", "On"])
-    def test_truthy_spellings_suppress(self, monkeypatch, value):
-        monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", value)
-        guide = SourceGuide(summary="hi", keywords=[])
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            assert guide["summary"] == "hi"
-
-    def test_falsy_value_keeps_warning(self, monkeypatch):
-        monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", "0")
-        guide = SourceGuide(summary="hi", keywords=[])
-        with pytest.warns(DeprecationWarning):
-            _ = guide["summary"]
+        assert start.to_public_dict()["task_id"] == "t1"
 
 
 class TestNoInternalSelfWarn:
