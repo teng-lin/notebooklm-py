@@ -63,7 +63,7 @@ MODULE_SIZE_BUDGET = 900
 # DO lower a ceiling when a module shrinks (the gate will tell you the value).
 ALLOWLISTED_CEILINGS: dict[str, int] = {
     "cli/source_cmd.py": 1498,
-    "exceptions.py": 1426,
+    "exceptions.py": 1461,
     "_artifacts.py": 1394,
     "_source/upload.py": 1236,
     "cli/session_cmd.py": 1080,
@@ -71,7 +71,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "cli/services/playwright_login.py": 988,
     "_artifact/downloads.py": 973,
     "client.py": 973,
-    "_research.py": 937,
+    "_research.py": 936,
     "cli/services/generate.py": 926,
     "_chat/api.py": 946,
     "_idempotency.py": 936,

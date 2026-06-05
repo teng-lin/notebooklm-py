@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+import reprlib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -1350,7 +1351,7 @@ class AmbiguousResearchTaskError(ResearchError):
             f"ResearchAPI poll on notebook {notebook_id!r} is ambiguous: "
             f"{len(task_ids)} research tasks are in flight but no task_id was "
             f"supplied to select one. Pass task_id=<id> (from research.start) "
-            f"to choose explicitly. In-flight task ids: {task_ids!r}."
+            f"to choose explicitly. In-flight task ids: {reprlib.repr(task_ids)}."
         )
 
 
