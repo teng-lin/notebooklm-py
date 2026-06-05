@@ -748,6 +748,11 @@ class TestDownloadMindMap:
                 "list_mind_maps",
                 new=AsyncMock(return_value=[["other_id", [None, "{}"], None, None, "Other"]]),
             ),
+            # The studio backend is empty; the requested id is absent from the
+            # note-backed list above, so the lookup misses across both backends.
+            # (_list_raw must resolve to a real empty list, not the fixture's bare
+            # AsyncMock, which now reads as drift -> DecodingError per #1344.)
+            patch.object(api._downloads, "_list_raw", new=AsyncMock(return_value=[])),
             pytest.raises(ArtifactNotFoundError),
         ):
             await api.download_mind_map("nb_123", "/tmp/mindmap.json", artifact_id="mindmap_001")

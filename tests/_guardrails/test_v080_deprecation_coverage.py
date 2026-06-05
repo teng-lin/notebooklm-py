@@ -190,6 +190,11 @@ V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
         summary="mutate-existing fail-loud (notes.update + rename(return_object=False) raise on miss)",
         exemption=_DELIBERATE_CLEAN_BREAK,
     ),
+    BreakingChange(
+        issue=1344,
+        summary="derived-read + lister drift-tightening: malformed payloads raise DecodingError",
+        exemption=_DELIBERATE_CLEAN_BREAK,
+    ),
 )
 
 
@@ -386,26 +391,30 @@ def test_issue_numbers_are_unique() -> None:
     assert dupes == [], f"duplicate issue numbers in V080_BREAKING_CHANGES: {dupes}"
 
 
-def test_three_silent_breaks_are_exempted_today() -> None:
-    """#1290 / #1342 / #1362 are the *only* exemptions and are reason-tagged.
+def test_silent_break_exemptions_match_baseline() -> None:
+    """The value-level silent breaks are exactly the reason-tagged exemptions.
 
-    Pins today's baseline: the three value-level behavioral breaks are exempted
-    (green on main), and the exemption set is *exactly* those three. If a future
-    break is exempted, this test fails and forces a review of whether it truly
-    cannot be runwayed (the set is meant to shrink, not grow). If one of the
-    three gains a runway, this also fails — a prompt to drop it from the
-    exemption baseline.
+    Pins today's baseline: the value-level behavioral breaks that cannot ship a
+    v0.7.0 warning runway are exempted (green on main), and the exemption set is
+    *exactly* this list. If a future break is exempted, this test fails and forces
+    a review of whether it truly cannot be runwayed (the set is meant to shrink,
+    not grow). If one of these gains a runway, this also fails — a prompt to drop
+    it from the exemption baseline.
+
+    #1344 (derived-read / lister drift -> DecodingError) joins the original three
+    (#1290 / #1342 / #1362): a "this future payload shape will be rejected" break
+    has no value-level warning it could emit in v0.7.0, so it is a clean break.
     """
     # Match ``_tag``'s blank-reason handling: a whitespace-only exemption is "no
     # reason" (it would already fail ``test_every_entry_is_runwayed_or_exempted``),
     # so it must not be counted toward the baseline here either.
     exempted = sorted(c.issue for c in V080_BREAKING_CHANGES if c.exemption and c.exemption.strip())
-    assert exempted == [1290, 1342, 1362], (
+    assert exempted == [1290, 1342, 1344, 1362], (
         "The v0.8.0 silent-break exemption set changed. It is meant to SHRINK as "
         "runways are added, never to grow silently. If you added a NEW exemption, "
         "confirm in review that the break genuinely cannot warn at the value level "
-        "(ADR-0019) before updating this baseline; if you RUNWAYED one of the "
-        f"three, drop it here. Current exemptions: {exempted}"
+        "(ADR-0019) before updating this baseline; if you RUNWAYED one, drop it "
+        f"here. Current exemptions: {exempted}"
     )
 
 

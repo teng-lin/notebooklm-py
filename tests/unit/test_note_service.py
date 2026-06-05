@@ -22,7 +22,7 @@ import pytest
 
 from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._note_service import NoteRowKind, NoteService
-from notebooklm.exceptions import RPCError
+from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
 
@@ -80,6 +80,18 @@ class TestFetchNoteRows:
     ) -> None:
         mock_session.rpc_executor.rpc_call.return_value = payload
         assert await service.fetch_note_rows("nb_123") == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", ["drift-string", {"oops": 1}, 42])
+    async def test_fetch_note_rows_raises_on_truthy_non_list_drift(
+        self, service: NoteService, mock_session: FakeSession, payload: object
+    ) -> None:
+        # A truthy non-list payload is schema drift, not an empty notebook (#1344):
+        # raise so notes/mind_maps get()/get_or_none can tell a miss from drift
+        # instead of silently collapsing to ``[]``.
+        mock_session.rpc_executor.rpc_call.return_value = payload
+        with pytest.raises(DecodingError):
+            await service.fetch_note_rows("nb_123")
 
     @pytest.mark.asyncio
     async def test_fetch_note_rows_accepts_flat_row_container(

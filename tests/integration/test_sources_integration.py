@@ -18,7 +18,7 @@ from pytest_httpx import HTTPXMock
 
 import notebooklm._sources as _sources_mod
 from notebooklm import NotebookLMClient, Source, SourceType
-from notebooklm.exceptions import RPCError
+from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import SourceAddError, SourceNotFoundError
 
@@ -1888,41 +1888,42 @@ class TestAddDriveWait:
 
 
 class TestCheckFreshnessEdgeCases:
-    """Tests for check_freshness() edge cases (lines 624, 657->667, 659->667)."""
+    """check_freshness() shape handling: recognized shapes yield a bool;
+    genuinely-unrecognized shapes raise DecodingError (drift, #1344)."""
 
     @pytest.mark.asyncio
-    async def test_check_freshness_none_result_returns_false(
+    async def test_check_freshness_none_result_raises_decoding_error(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test check_freshness() returns False when result is None (line 624)."""
-        # None is not True, not False, not a list - falls through to return False
+        """None is not a recognized freshness signal -> drift (#1344)."""
+        # None is not True/False/list - structurally unrecognized, so we can't
+        # tell fresh from stale: raise rather than silently report "stale".
         response = build_rpc_response(RPCMethod.CHECK_SOURCE_FRESHNESS, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            is_fresh = await client.sources.check_freshness("nb_123", "src_001")
-
-        assert is_fresh is False
+            with pytest.raises(DecodingError):
+                await client.sources.check_freshness("nb_123", "src_001")
 
     @pytest.mark.asyncio
-    async def test_check_freshness_list_first_element_not_list(
+    async def test_check_freshness_list_first_element_not_list_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test check_freshness() returns False when result list's first item is not a list (line 624)."""
-        # result is ["some_string"] - first is a string, isinstance(first, list) is False
+        """A list whose first element is a non-list scalar is drift (#1344)."""
+        # result is ["some_value"] - first is a string, not a nested freshness
+        # row: the canonical "genuinely unrecognized" shape.
         response = build_rpc_response(RPCMethod.CHECK_SOURCE_FRESHNESS, ["some_value"])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            is_fresh = await client.sources.check_freshness("nb_123", "src_001")
-
-        assert is_fresh is False
+            with pytest.raises(DecodingError):
+                await client.sources.check_freshness("nb_123", "src_001")
 
     @pytest.mark.asyncio
     async def test_check_freshness_drive_nested_false_value(
@@ -1931,8 +1932,9 @@ class TestCheckFreshnessEdgeCases:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test check_freshness() returns False when nested Drive structure has first[1] != True (lines 657->667, 659->667)."""
-        # result is [[None, False, ...]] - first[1] is False, not True
+        """Recognized stale Drive shape [[None, False, ...]] still returns False."""
+        # result is [[None, False, ...]] - first[1] is False: a recognized stale
+        # shape, NOT drift. Must stay False (does not raise).
         response = build_rpc_response(
             RPCMethod.CHECK_SOURCE_FRESHNESS, [[None, False, ["src_001"]]]
         )
@@ -1944,21 +1946,21 @@ class TestCheckFreshnessEdgeCases:
         assert is_fresh is False
 
     @pytest.mark.asyncio
-    async def test_check_freshness_drive_nested_list_too_short(
+    async def test_check_freshness_drive_nested_list_too_short_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test check_freshness() returns False when nested Drive list has only one element."""
-        # result is [[None]] - first has only 1 element, so len(first) > 1 check fails
+        """A nested list too short to carry the freshness flag is drift (#1344)."""
+        # result is [[None]] - first has only 1 element, so we can't read the
+        # freshness flag at first[1]: unrecognized shape -> raise.
         response = build_rpc_response(RPCMethod.CHECK_SOURCE_FRESHNESS, [[None]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            is_fresh = await client.sources.check_freshness("nb_123", "src_001")
-
-        assert is_fresh is False
+            with pytest.raises(DecodingError):
+                await client.sources.check_freshness("nb_123", "src_001")
 
 
 class TestGetFulltextEdgeCases:

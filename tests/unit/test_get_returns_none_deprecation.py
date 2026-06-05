@@ -131,7 +131,10 @@ class TestWarnGetReturnsNone:
 def notes_api():
     from _fixtures.fake_core import make_fake_core
 
-    core = make_fake_core(rpc_call=AsyncMock())
+    # ``None`` is the empty-notebook payload (``fetch_note_rows`` resolves it to
+    # ``[]``) — the realistic miss shape. A truthy non-list payload would now
+    # raise ``DecodingError`` as drift (#1344), so it can no longer mean "empty".
+    core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     note_service = NoteService(core)
     mind_maps = NoteBackedMindMapService(note_service)
     return NotesAPI(

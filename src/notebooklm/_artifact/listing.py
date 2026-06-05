@@ -10,6 +10,7 @@ import httpx
 
 from .._row_adapters.artifacts import ArtifactRow
 from .._runtime.contracts import RpcCaller
+from ..exceptions import DecodingError
 from ..rpc import (
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
@@ -113,7 +114,14 @@ class ArtifactListingService:
                 return inner
         if isinstance(result, list):
             return result
-        return []
+        if not result:
+            return []
+        # A truthy non-list payload is schema drift, not an empty notebook —
+        # raise so callers can tell a miss from drift instead of an empty list.
+        raise DecodingError(
+            f"Unrecognized LIST_ARTIFACTS payload shape: {result!r}",
+            method_id=RPCMethod.LIST_ARTIFACTS.value,
+        )
 
     async def list_artifacts(
         self,
@@ -134,6 +142,10 @@ class ArtifactListingService:
                         artifact_type,
                     )
                 )
+            except DecodingError:
+                # Schema drift is not a transient outage: surface it (#1344)
+                # rather than masking drifted mind-map rows as "no mind maps".
+                raise
             except (RPCError, httpx.HTTPError) as e:
                 # Network/API errors - log and continue with studio artifacts.
                 # This ensures users can see audio/video/reports even if the

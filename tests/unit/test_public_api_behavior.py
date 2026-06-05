@@ -109,7 +109,11 @@ def _make_artifacts_api() -> ArtifactsAPI:
 def _make_notes_api() -> NotesAPI:
     from _fixtures.fake_core import make_fake_core
 
-    core = make_fake_core(rpc_call=AsyncMock())
+    # ``None`` is the empty-notebook payload (a notebook with no notes); it is
+    # the realistic miss shape that ``fetch_note_rows`` resolves to ``[]``. A
+    # truthy non-list payload would now raise ``DecodingError`` as drift (#1344),
+    # so it can no longer stand in for "empty".
+    core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     note_service = NoteService(core)
     mind_maps = NoteBackedMindMapService(note_service)
     return NotesAPI(notes=note_service, mind_maps=mind_maps)
@@ -150,8 +154,8 @@ def _arrange_list_miss(api: object) -> None:
     ``_get_all_notes_and_mind_maps`` → ``fetch_note_rows``, **not** ``self.list``,
     so the assigned ``api.list`` stub is a harmless no-op for it. The notes miss
     comes from its factory (``_make_notes_api``) wiring a fake core whose
-    ``rpc_call`` returns a non-list ``MagicMock`` that ``fetch_note_rows``'
-    container-extraction treats as empty — so the ``get`` still misses. Keeping
+    ``rpc_call`` returns ``None`` — the empty-notebook payload that
+    ``fetch_note_rows`` resolves to ``[]`` — so the ``get`` still misses. Keeping
     one shared arranger across all four rows is deliberate: it stays a single
     table lever even though one namespace reaches the empty result by a different
     internal path.

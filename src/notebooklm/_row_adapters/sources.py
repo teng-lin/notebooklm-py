@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, ClassVar
 
 from .._types.common import _datetime_from_timestamp
+from ..exceptions import DecodingError
 from ..rpc import RPCMethod, safe_index
 from ..rpc.types import SourceStatus
 
@@ -525,3 +526,32 @@ class SourceRow:
             return SourceStatus(status_code)
         except ValueError:
             return SourceStatus.READY
+
+
+def interpret_source_freshness(result: Any) -> bool:
+    """Decode a ``CHECK_SOURCE_FRESHNESS`` payload into a freshness bool.
+
+    Shapes by source type: ``[]`` or ``[[null, true, [id]]]`` = fresh
+    (URL / Drive); bare ``True`` = fresh; bare ``False`` / ``[[null, false,
+    ...]]`` = stale. A recognized nested shape always yields a bool — including
+    the stale case, which returns ``False`` rather than falling through.
+
+    A structurally-unrecognized payload (``None``, a bare scalar, a list whose
+    first element is a non-list scalar like ``["x"]``, or a nested list too
+    short to carry the flag at index ``[1]``) is schema drift, not "stale":
+    raise ``DecodingError`` so callers can tell a miss from drift (#1344).
+    """
+    if result is True:
+        return True
+    if result is False:
+        return False
+    if isinstance(result, list):
+        if len(result) == 0:
+            return True  # empty array = fresh
+        first = result[0]
+        if isinstance(first, list) and len(first) > 1:
+            return first[1] is True
+    raise DecodingError(
+        f"Unrecognized CHECK_SOURCE_FRESHNESS payload shape: {result!r}",
+        method_id=RPCMethod.CHECK_SOURCE_FRESHNESS.value,
+    )

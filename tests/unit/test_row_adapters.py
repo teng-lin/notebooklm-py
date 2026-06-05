@@ -34,8 +34,12 @@ import pytest
 
 from notebooklm._row_adapters.artifacts import ArtifactRow
 from notebooklm._row_adapters.notes import NoteRow
-from notebooklm._row_adapters.sources import SourceRow, SourceRowShape
-from notebooklm.exceptions import UnknownRPCMethodError
+from notebooklm._row_adapters.sources import (
+    SourceRow,
+    SourceRowShape,
+    interpret_source_freshness,
+)
+from notebooklm.exceptions import DecodingError, UnknownRPCMethodError
 from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode, SourceStatus
 
 # ---------------------------------------------------------------------------
@@ -1702,3 +1706,22 @@ class TestSourceRowImmutability:
         _ = row.has_id
 
         assert raw == snapshot
+
+
+class TestInterpretSourceFreshness:
+    """Decodes recognized freshness shapes; raises ``DecodingError`` on drift (#1344)."""
+
+    @pytest.mark.parametrize("payload", [True, [], [[None, True, ["src"]]]])
+    def test_fresh_shapes_return_true(self, payload: object) -> None:
+        assert interpret_source_freshness(payload) is True
+
+    @pytest.mark.parametrize("payload", [False, [[None, False, ["src"]]]])
+    def test_stale_shapes_return_false(self, payload: object) -> None:
+        assert interpret_source_freshness(payload) is False
+
+    @pytest.mark.parametrize("payload", [None, "some_value", ["some_value"], [[None]]])
+    def test_unrecognized_shapes_raise(self, payload: object) -> None:
+        # None, a bare scalar, a list whose first element is a non-list scalar,
+        # and a too-short nested list are all drift -> raise, not a silent bool.
+        with pytest.raises(DecodingError):
+            interpret_source_freshness(payload)

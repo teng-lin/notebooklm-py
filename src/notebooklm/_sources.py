@@ -13,6 +13,7 @@ import httpx
 
 from ._deprecation import future_errors_enabled
 from ._lookup import resolve_get
+from ._row_adapters.sources import interpret_source_freshness
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
@@ -709,6 +710,11 @@ class SourcesAPI:
 
         Returns:
             True if source is fresh, False if it needs refresh.
+
+        Raises:
+            DecodingError: If the freshness payload has a structurally
+                unrecognized shape (schema drift) — so callers can tell a miss
+                from drift instead of a silent "stale" (#1344).
         """
         params = [None, [source_id], [2]]
         result = await self._rpc.rpc_call(
@@ -717,21 +723,7 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        # Shapes by source type: ``[]`` or ``[[null, true, [id]]]`` = fresh
-        # (URL / Drive); bare ``True`` = fresh; bare ``False`` = stale.
-        if result is True:
-            return True
-        if result is False:
-            return False
-        if isinstance(result, list):
-            # Empty array means fresh
-            if len(result) == 0:
-                return True
-            # Check for nested structure [[null, true, ...]] from Drive sources
-            first = result[0]
-            if isinstance(first, list) and len(first) > 1 and first[1] is True:
-                return True
-        return False
+        return interpret_source_freshness(result)
 
     async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
         """Get AI-generated summary and keywords for a specific source.

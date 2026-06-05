@@ -28,7 +28,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from ._row_adapters.notes import NoteRow
-from .exceptions import RPCError
+from .exceptions import DecodingError, RPCError
 from .rpc.types import RPCMethod
 from .types import Note
 
@@ -124,8 +124,16 @@ class NoteService:
         responses use the same first response field for rows and a second
         timestamp field, so this helper also accepts a flat row list.
         """
-        if not result or not isinstance(result, list):
+        if not result:
             return []
+        if not isinstance(result, list):
+            # A truthy non-list payload is schema drift, not a legitimately empty
+            # notebook — raise so notes/mind_maps get()/get_or_none can tell a
+            # miss from drift instead of silently collapsing to ``[]``.
+            raise DecodingError(
+                f"Unrecognized GET_NOTES_AND_MIND_MAPS payload shape: {result!r}",
+                method_id=RPCMethod.GET_NOTES_AND_MIND_MAPS.value,
+            )
 
         first = result[0]
         if self._is_note_row_like(first):
