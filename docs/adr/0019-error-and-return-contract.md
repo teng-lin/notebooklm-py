@@ -219,7 +219,7 @@ enforcement floor**:
   removed by Tier 1 (#1342 makes refusals raise), so a returned `failed` now
   means only *started-then-failed*. The residual `not_found`/`removed`/rate-limit
   juggling is poll-loop interpretation (`removed` is `wait_for_completion`'s
-  conclusion over a sustained miss run, not a result property), cause
+  conclusion over a sustained run of missed polls, not a result property), cause
   classification (`is_rate_limited` is a `Failed`/`Removed` detail, not a
   lifecycle state), and a CLI-local DTO string (`cli/services/artifact_generation.py`
   synthesizes `"rate_limited"`) — none of which a union dissolves; it relocates
