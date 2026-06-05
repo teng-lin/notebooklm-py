@@ -117,8 +117,8 @@ class NotesAPI:
         """Get a note by ID, returning ``None`` when it does not exist.
 
         The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
-        — which is slated to raise ``NoteNotFoundError`` on a miss in v0.8.0
-        (issue #1247) — this returns ``None`` for a genuine absence and emits no
+        — which now raises ``NoteNotFoundError`` on a miss (#1247) — this
+        returns ``None`` for a genuine absence and emits no
         deprecation warning. Transport, auth, and decode faults raised by the
         underlying note listing are **not** swallowed; only a real "not found"
         yields ``None``.
@@ -136,8 +136,8 @@ class NotesAPI:
                 return self._parse_note(item, notebook_id)
         return None
 
-    # Internal optional-lookup alias: kept as a stable private name so existing
-    # internal call sites and tests can probe without the public deprecation.
+    # Internal optional-lookup alias: a stable private name so internal call
+    # sites and tests use the ``None``-on-miss lookup rather than the raising get().
     _get_or_none = get_or_none
 
     async def create(

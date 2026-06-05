@@ -175,9 +175,9 @@ class SourcesAPI:
         """Get a source by ID, returning ``None`` when it does not exist.
 
         The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
-        — which is slated to raise :class:`~notebooklm.exceptions.SourceNotFoundError`
-        on a miss in v0.8.0 (issue #1247) — this returns ``None`` for a genuine
-        absence and emits no deprecation warning. Transport, auth, and decode
+        — which now raises :class:`~notebooklm.exceptions.SourceNotFoundError`
+        on a miss (#1247) — this returns ``None`` for a genuine absence and
+        emits no deprecation warning. Transport, auth, and decode
         faults are **not** swallowed; only a real "not found" yields ``None``.
 
         Args:

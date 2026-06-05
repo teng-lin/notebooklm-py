@@ -224,9 +224,9 @@ class ArtifactsAPI:
         """Get an artifact by ID, returning ``None`` when it does not exist.
 
         The sanctioned ``None``-on-miss lookup (ADR-0019): unlike :meth:`get`
-        — which is slated to raise
-        :class:`~notebooklm.exceptions.ArtifactNotFoundError` on a miss in
-        v0.8.0 (issue #1247) — this returns ``None`` for a genuine absence and
+        — which now raises
+        :class:`~notebooklm.exceptions.ArtifactNotFoundError` on a miss
+        (#1247) — this returns ``None`` for a genuine absence and
         emits no deprecation warning. This method neither catches nor synthesizes
         a miss itself; it lists once and id-matches, inheriting :meth:`list`'s
         behavior unchanged. (Per ADR-0019 Rule 3, ``list`` keeps its deliberate
@@ -247,8 +247,8 @@ class ArtifactsAPI:
         logger.debug("Getting artifact %s from notebook %s", artifact_id, notebook_id)
         return await self._listing.get(notebook_id, artifact_id, list_artifacts=self.list)
 
-    # Internal optional-lookup alias: kept as a stable private name so existing
-    # internal call sites and tests can probe without the public deprecation.
+    # Internal optional-lookup alias: a stable private name so internal call
+    # sites and tests use the ``None``-on-miss lookup rather than the raising get().
     _get_or_none = get_or_none
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:

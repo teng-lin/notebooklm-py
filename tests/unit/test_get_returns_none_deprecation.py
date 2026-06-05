@@ -1,14 +1,15 @@
-"""Tests for the get()-returns-``None`` deprecation layer (#1206).
+"""Tests for the get()-not-found contract (#1206, flipped to raise in #1247).
 
-The deprecation layer makes ``sources.get`` / ``artifacts.get`` / ``notes.get``
-emit a :class:`DeprecationWarning` when they are about to return ``None`` on a
-miss, while keeping the ``None``-returning *behavior* unchanged. The actual flip
-to raising ``*NotFoundError`` lands separately in v0.8.0 (issue #1247).
+As of the v0.8.0 flip (#1247) ``sources.get`` / ``artifacts.get`` / ``notes.get``
+/ ``mind_maps.get`` raise their matching ``*NotFoundError`` on a miss, matching
+``notebooks.get``; ``get_or_none`` is the unchanged ``None``-on-miss lookup. The
+``warn_get_returns_none`` helper (the retired v0.7.0 runway) still has its own
+unit coverage here until it is deleted at the v0.8.0 capstone (#1365).
 
 Covered here:
   * ``warn_get_returns_none`` message shape + ``NOTEBOOKLM_QUIET_DEPRECATIONS``
     suppression (the helper in isolation).
-  * Each public ``get()`` warns on a miss and still returns ``None``.
+  * Each public ``get()`` raises its ``*NotFoundError`` on a miss.
   * The private ``_get_or_none()`` never warns (internal optional-lookup path).
   * ``notebooks.get`` still *raises* ``NotebookNotFoundError`` (unchanged).
   * No internal CLI not-found path self-warns (warnings escalated to errors).

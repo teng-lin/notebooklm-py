@@ -217,9 +217,9 @@ class MindMapsAPI:
 
         The sanctioned ``None``-on-miss lookup (ADR-0019), spanning both
         backings (note-backed JSON + interactive studio-artifact). Unlike
-        :meth:`get` — which is slated to raise
-        :class:`~notebooklm.exceptions.MindMapNotFoundError` on a miss in v0.8.0
-        (issue #1247) — this returns ``None`` for an absence and emits no
+        :meth:`get` — which now raises
+        :class:`~notebooklm.exceptions.MindMapNotFoundError` on a miss
+        (#1247) — this returns ``None`` for an absence and emits no
         deprecation warning. It scans :meth:`list`, so it reflects only what
         ``list`` confirms: a just-created interactive map whose variant slot has
         not yet populated is briefly excluded from ``list`` and therefore reads
@@ -241,7 +241,7 @@ class MindMapsAPI:
 
     # Private alias for internal optional-lookup callers, mirroring
     # ``sources``/``artifacts``/``notes``: the library calls ``_get_or_none``
-    # so it never trips its own ``get()`` deprecation warning (issue #1358).
+    # for a ``None``-on-miss lookup rather than the raising ``get()`` (#1358).
     _get_or_none = get_or_none
 
     async def generate(
