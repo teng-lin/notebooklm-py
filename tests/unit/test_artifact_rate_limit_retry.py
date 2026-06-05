@@ -86,6 +86,24 @@ class TestWithRateLimitRetry:
         assert generate_fn.call_count == 1
 
     @pytest.mark.asyncio
+    async def test_exhausts_retry_budget_and_raises_rate_limit(self) -> None:
+        # v0.8.0 (#1342): when every attempt raises RateLimitError, the budget is
+        # exhausted and the final RateLimitError is RE-RAISED — it is no longer
+        # swallowed into a returned rate-limited 'failed' status.
+        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
+        sleep = AsyncMock()
+
+        with pytest.raises(RateLimitError) as exc_info:
+            await with_rate_limit_retry(
+                generate_fn, max_retries=2, initial_delay=60.0, sleep=sleep
+            )
+
+        assert exc_info.value is error
+        assert generate_fn.call_count == 3  # initial attempt + 2 retries
+        assert [c.args[0] for c in sleep.await_args_list] == [60.0, 120.0]
+
+    @pytest.mark.asyncio
     async def test_supports_async_retry_callback_and_custom_sleep(self) -> None:
         # The retry is driven by a raised RateLimitError (#1342); a custom sleep
         # and an async on_retry callback are both honored.
