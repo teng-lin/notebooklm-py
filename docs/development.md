@@ -359,7 +359,7 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
 ```
 tests/
 ├── unit/                            # No network, fast, mock everything
-├── _guardrails/                           # Architecture/invariant gates (custom AST + filesystem lint)
+├── _guardrails/                     # Architecture/invariant gates (custom AST + filesystem lint)
 ├── integration/                     # Mocked HTTP responses + VCR cassettes
 │   ├── test_artifacts_integration.py # ArtifactsAPI integration
 │   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
