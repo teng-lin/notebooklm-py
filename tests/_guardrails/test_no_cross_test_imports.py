@@ -22,6 +22,7 @@ import has since been extracted must be removed (``test_allowlist_is_shrink_only
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
 
 import pytest
@@ -62,8 +63,13 @@ def _imported_test_modules(tree: ast.AST) -> set[str]:
     return found
 
 
-def _scan() -> set[tuple[str, str]]:
-    """Every (file-relative-to-tests, imported-test-module) pair in the suite."""
+@functools.cache
+def _scan() -> frozenset[tuple[str, str]]:
+    """Every (file-relative-to-tests, imported-test-module) pair in the suite.
+
+    Cached (and returned immutable) because both gate tests call it; the test
+    tree does not change within a session.
+    """
     found: set[tuple[str, str]] = set()
     for path in TESTS_ROOT.rglob("*.py"):
         rel = path.relative_to(TESTS_ROOT).as_posix()
@@ -73,7 +79,7 @@ def _scan() -> set[tuple[str, str]]:
             continue
         for module in _imported_test_modules(tree):
             found.add((rel, module))
-    return found
+    return frozenset(found)
 
 
 def test_no_new_cross_test_module_imports() -> None:
@@ -94,8 +100,20 @@ def test_allowlist_is_shrink_only() -> None:
 
 
 def test_detector_flags_each_import_form() -> None:
-    sample = "from test_foo import BAR\nimport pkg.test_baz\nfrom a.b.test_qux import Z\n"
-    assert _imported_test_modules(ast.parse(sample)) == {"test_foo", "test_baz", "test_qux"}
+    sample = (
+        "from test_foo import BAR\n"  # bare absolute from-import
+        "import pkg.test_baz\n"  # dotted plain import
+        "from a.b.test_qux import Z\n"  # dotted from-import
+        "import test_bare\n"  # bare plain import
+        "from .test_rel import Q\n"  # relative from-import (the allowlisted form)
+    )
+    assert _imported_test_modules(ast.parse(sample)) == {
+        "test_foo",
+        "test_baz",
+        "test_qux",
+        "test_bare",
+        "test_rel",
+    }
 
 
 def test_detector_ignores_non_test_imports() -> None:
