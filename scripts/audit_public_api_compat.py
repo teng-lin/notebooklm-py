@@ -363,22 +363,26 @@ main()
 """
 
 
-_ADDRESS_RE = re.compile(r" at 0x[0-9a-fA-F]+")
+_OBJECT_SENTINEL_REPR_RE = re.compile(r"<object object at 0x[0-9a-fA-F]+>")
 
 
 def normalize_default_repr(default_repr: str | None) -> str | None:
-    """Strip the memory address from a captured default repr for stable comparison.
+    """Collapse a bare object() sentinel default repr to an address-free form.
 
     A bare object() sentinel default (e.g. the wait_for_completion
     initial_interval sentinel) reprs as <object object at 0xADDR>; the hex
     address differs between the baseline collector process and the current one,
-    so identical code would otherwise read as a changed default. Normalizing the
-    address lets two same-identity sentinels compare equal, while a genuine
-    default change (which differs in more than the address) is still caught.
+    so identical code would otherwise read as a changed default. Only the bare
+    object() sentinel (matching the whole repr) is normalized, so two
+    same-identity sentinels compare equal while every other default — including
+    an address-bearing instance or function repr — is left intact and a genuine
+    change is still caught.
     """
     if default_repr is None:
         return None
-    return _ADDRESS_RE.sub(" at 0x...", default_repr)
+    if _OBJECT_SENTINEL_REPR_RE.fullmatch(default_repr):
+        return "<object object at 0x...>"
+    return default_repr
 
 
 def collect_manifest(

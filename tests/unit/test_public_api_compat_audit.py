@@ -280,6 +280,16 @@ def test_normalize_default_repr_strips_object_addresses(script):
     # a genuine default differs in more than the address and is preserved verbatim
     assert script.normalize_default_repr("5") == "5"
     assert script.normalize_default_repr(None) is None
+    # ONLY the bare object() sentinel is normalized — an address-bearing instance
+    # or function default is left intact, so a real change to it is still caught.
+    assert script.normalize_default_repr("<Foo object at 0x7f00>") == "<Foo object at 0x7f00>"
+    assert (
+        script._signature_breakage(
+            _signature(_param("cb", default=True, default_repr="<function f at 0x1>")),
+            _signature(_param("cb", default=True, default_repr="<function g at 0x2>")),
+        )
+        == "default for parameter 'cb' changed from <function f at 0x1> to <function g at 0x2>"
+    )
 
 
 def test_signature_compare_rejects_positional_parameter_reordering(script):
