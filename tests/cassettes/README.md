@@ -65,7 +65,7 @@ Tests that reference them must use the subpath:
 
 The subdirectory placement keeps illustrative fixtures out of the cassette
 loops in `tests/integration/conftest.py` (`_real_cassettes`),
-`tests/unit/test_cassette_shapes.py`, and
+`tests/_guardrails/test_cassette_shapes.py`, and
 `tests/scripts/check_cassettes_clean.py`, all of which scan the top level
 of `tests/cassettes/` non-recursively. Adding a new example only needs to
 land in `examples/` — no allowlist or filter edits required.

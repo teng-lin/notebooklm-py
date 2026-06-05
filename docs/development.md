@@ -146,32 +146,41 @@ services.
 ### Boundary Guardrails
 
 These are the same family as the *Architecture & invariant gates* (`tests/_guardrails/`)
-described below. The **pure** ones (e.g. `test_cli_boundary.py`) are being
+described below. The **pure** ones (e.g. `test_cli_boundary.py`) have been
 consolidated into `tests/_guardrails/`; the **hybrids** that pair a gate with
-behavioral tests (e.g. `test_public_shims.py`) keep their behavioral half here.
+behavioral tests (e.g. `test_public_shims.py`) keep their behavioral half in
+`tests/unit/` and split the gate half into a dedicated `tests/_guardrails/`
+file.
 
 The architecture tests encode the current layer contract:
 
-- `tests/unit/test_public_shims.py` has a documented public import manifest.
-  When a docs change adds or removes a supported import path, update the
-  manifest in the same PR so public API drift is intentional and reviewable.
-- `tests/unit/test_cli_boundary.py` parses `src/notebooklm/cli/**/*.py` and
-  rejects CLI imports from `notebooklm._*`, `notebooklm.rpc.*`, or `_private`
-  names exposed by public modules. Promote needed symbols through a public
-  facade (`notebooklm.types`, `notebooklm.auth`, `notebooklm.research`, etc.)
-  before using them from the CLI.
+- `tests/_guardrails/test_public_surface_manifest.py` has a documented public
+  import manifest. When a docs change adds or removes a supported import path,
+  update the manifest in the same PR so public API drift is intentional and
+  reviewable. The behavioral half of the public-shim suite (the
+  `select_cited_sources` / `ResearchAPI` back-compat delegations, the
+  `UnknownTypeWarning` filter behaviour, and `NotebookLMClient.rpc_call`
+  forwarding) stays in `tests/unit/test_public_shims.py`.
+- `tests/_guardrails/test_cli_boundary.py` parses `src/notebooklm/cli/**/*.py`
+  and rejects CLI imports from `notebooklm._*`, `notebooklm.rpc.*`, or
+  `_private` names exposed by public modules. Promote needed symbols through a
+  public facade (`notebooklm.types`, `notebooklm.auth`, `notebooklm.research`,
+  etc.) before using them from the CLI.
 - Auth internals may move under `notebooklm._auth` during architecture work,
   but first-party callers continue to import through `notebooklm.auth`. The
-  compatibility manifest in `tests/unit/test_public_shims.py` enforces the
-  current first-party surface for that move; it is not a broader public API
-  decision, and removing a listed name needs a separate deprecation plan.
-- `tests/unit/test_init_order.py` guards the notebook-composition
-  boundaries: `NotebookLMClient` constructs `SourcesAPI` before `NotebooksAPI`
-  and passes it through the legacy `sources_api=` slot; notebook metadata
-  services must not import or construct `SourcesAPI`; artifact/source/notebook
-  composition services must not runtime-import facade APIs.
-  Add new private services to those guard lists when they take ownership of
-  cross-facade behavior.
+  compatibility manifest in `tests/_guardrails/test_public_surface_manifest.py`
+  enforces the current first-party surface for that move; it is not a broader
+  public API decision, and removing a listed name needs a separate deprecation
+  plan.
+- `tests/_guardrails/test_no_facade_reach_in.py` holds the AST reach-in /
+  runtime-import boundary gates: notebook metadata services must not import or
+  construct `SourcesAPI`; artifact/source/notebook composition services must
+  not runtime-import facade APIs. Add new private services to those guard
+  lists when they take ownership of cross-facade behavior. The construction /
+  init-order behaviour tests — `NotebookLMClient` constructs `SourcesAPI`
+  before `NotebooksAPI` and passes it through the legacy `sources_api=` slot,
+  plus the mind-map decoupling flows — stay in
+  `tests/unit/test_init_order.py`.
 
 ### Key Design Decisions
 
@@ -411,9 +420,10 @@ is the failure mode this directory exists to prevent).
 gate — a file whose whole purpose is enforcing a repo-wide invariant, with no
 module-under-test. A unit test that only *embeds* a boundary assertion among
 behavioral checks stays in `tests/unit/` (see *Boundary Guardrails* above). Pure
-architecture gates still living under `tests/unit/` — e.g. `test_cli_boundary.py`,
-`test_cassette_shapes.py`, `test_public_surface.py` — are being consolidated into
-this directory.
+architecture gates — e.g. `test_cli_boundary.py`, `test_cassette_shapes.py`,
+`test_public_surface.py` — have been consolidated into this directory; the gate
+halves of former hybrids live alongside them (e.g.
+`test_public_surface_manifest.py`, `test_no_facade_reach_in.py`).
 
 **How they differ from ruff / mypy.** Ruff and mypy run in the `quality` job and
 enforce *generic* rules (style, unused imports, types) from a fixed catalogue.
@@ -434,6 +444,8 @@ A representative slice (run `ls tests/_guardrails/` for the full set):
 | `test_module_size_ratchet.py` | No module grows past the size budget (ADR-0008) — a burn-down ratchet |
 | `test_v080_release_gate.py` | The v0.8.0 breaking-change set flips in lockstep at the version bump |
 | `test_adr_reference_format.py` | ADR references are 4-digit and resolve to a real `docs/adr/NNNN-*.md` |
+| `test_cli_boundary.py` | CLI modules import only public `notebooklm` surface — no `notebooklm._*` / `notebooklm.rpc.*` / `_private` reach-in |
+| `test_no_facade_reach_in.py` | Feature APIs and service modules don't reach into Session internals or runtime-import facade APIs |
 
 **Conventions when adding a gate:**
 

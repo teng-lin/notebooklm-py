@@ -292,7 +292,7 @@ than deferred to a future arc):
 
 The vocabulary is also centralized in
 `_middleware_context.ALLOWED_RPC_CONTEXT_KEYS`, and
-`tests/unit/test_middleware_context_contract.py` scans production
+`tests/_guardrails/test_middleware_context_contract.py` scans production
 middleware and transport code for non-approved literal context keys.
 Adding a key must update this table, `_middleware_context.py`, and the
 guard test in the same PR.

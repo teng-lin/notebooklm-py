@@ -216,7 +216,7 @@ runtimes. Concretely:
   the new keyword-only collaborator arguments. The migration steps in
   `docs/refactor-history.md` pair each feature retyping with its same-commit
   test fixture update so the build stays green.
-- The `_core.py` compatibility shim was removed in Phase 4 ([#889](https://github.com/teng-lin/notebooklm-py/pull/889)); see `tests/unit/test_public_shims.py` (search for `Tier-10 PR-A re-export identity pins for ``notebooklm._core`` were deleted`) for the removal pin.
+- The `_core.py` compatibility shim was removed in Phase 4 ([#889](https://github.com/teng-lin/notebooklm-py/pull/889)); see `tests/_guardrails/test_public_surface_manifest.py` (search for `Tier-10 PR-A re-export identity pins for ``notebooklm._core`` were deleted`) for the removal pin.
 - Two `RpcCaller` Protocols coexist briefly: the shared *object*
   protocol in `_runtime_contracts.py` (symbol `RpcCaller`, used by every
   feature API) and a pre-existing local *callable* protocol in

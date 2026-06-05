@@ -224,7 +224,7 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     by Google's chunked batchexecute responses. Scrubbing frequently changes
     payload length (e.g. ``21_digit_account_id`` -> ``SCRUBBED_USER_ID``); if
     we left the original counts in place the cassette would fail the byte-count
-    assertion in ``tests/unit/test_cassette_shapes.py`` and the decoder's
+    assertion in ``tests/_guardrails/test_cassette_shapes.py`` and the decoder's
     tolerance branch would log a warning on every replay. The helper is a
     no-op on bodies that don't look chunked, so it's safe to call
     unconditionally.

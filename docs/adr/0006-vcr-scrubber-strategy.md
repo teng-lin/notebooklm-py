@@ -18,7 +18,7 @@ The codebase ships a layered scrubber:
 
 - **Cassette patterns** (`tests/cassette_patterns.py`) define `SCRUB_PLACEHOLDERS` — the canonical replacement strings (`<SCRUBBED_COOKIE>`, `<SCRUBBED_BEARER_TOKEN>`, `<SCRUBBED_EMAIL>`, etc.) and the regex set that matches each provider-specific leak class.
 - **VCR config** (`tests/vcr_config.py`) wires the scrubber into `vcrpy`'s `before_record_request` / `before_record_response` hooks, plus a body scrubber that operates on decoded JSON / urlencoded payloads.
-- **Sanitizer unit tests** (`tests/unit/test_cassette_sanitizer.py`, `tests/unit/test_cassette_shapes.py`) verify scrubbing on a fixed corpus of synthetic payloads.
+- **Sanitizer unit tests** (`tests/unit/test_cassette_sanitizer.py`, `tests/_guardrails/test_cassette_shapes.py`) verify scrubbing on a fixed corpus of synthetic payloads.
 - **Pre-commit guard** (`tests/scripts/check_cassettes_clean.py`) re-scans every cassette in `tests/cassettes/` and rejects any cassette whose payload contains a known leak pattern. The guard runs as a standalone script — it is not invoked by `pytest`, so contributors must run it explicitly before pushing. The guard has caught regressions that pytest alone did not surface.
 - **Re-scrub script** (`scripts/rescrub-cassettes.py`, covered by `tests/unit/test_rescrub_cassettes_script.py`) re-runs the scrubber across the entire cassette corpus when a new leak class is added to the regex set, so older cassettes are upgraded in place.
 

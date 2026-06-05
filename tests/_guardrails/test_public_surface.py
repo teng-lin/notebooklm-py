@@ -37,7 +37,7 @@ import notebooklm.client as client_module
 pytestmark = pytest.mark.repo_lint
 
 # Repository root, derived from this test file's location:
-# tests/unit/test_public_surface.py -> parents[2] == repo root.
+# tests/_guardrails/test_public_surface.py -> parents[2] == repo root.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SCAN_ROOTS = ("src", "tests", "docs")
 

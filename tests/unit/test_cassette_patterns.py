@@ -1095,13 +1095,17 @@ def test_is_clean_recognizes_display_name_avatar_placeholders() -> None:
 def test_display_name_false_positives_mirror_shape_lint() -> None:
     """The scrub-registry allowlist must stay in sync with the shape-lint allowlist.
 
-    ``tests/unit/test_cassette_shapes.py`` carries the same set under a
+    ``tests/_guardrails/test_cassette_shapes.py`` carries the same set under a
     slightly different name (``DISPLAY_NAME_FALSE_POSITIVES``), with each
     entry wrapped in the cassette's escape-quote form. If the two drift,
     a real cassette could pass shape-lint but trip the scrub detector (or
     vice versa) — this test forces both lists to be updated together.
     """
-    from test_cassette_shapes import DISPLAY_NAME_FALSE_POSITIVES as SHAPE_LINT_FPS
+    # ``test_cassette_shapes`` lives in the ``tests/_guardrails`` package (it has
+    # an ``__init__.py``), so pytest imports it package-qualified as
+    # ``_guardrails.test_cassette_shapes`` with ``tests/`` on ``sys.path`` — the
+    # bare ``import test_cassette_shapes`` form no longer resolves.
+    from _guardrails.test_cassette_shapes import DISPLAY_NAME_FALSE_POSITIVES as SHAPE_LINT_FPS
 
     # Shape-lint stores entries as ``\"Name\"``; the scrub registry stores
     # bare names. Strip the escape wrapping to compare apples-to-apples.
@@ -1110,5 +1114,5 @@ def test_display_name_false_positives_mirror_shape_lint() -> None:
     )
     assert shape_lint_bare == DISPLAY_NAME_FALSE_POSITIVES, (
         "Display-name false-positive allowlist drifted from shape-lint allowlist; "
-        "update BOTH tests/cassette_patterns.py and tests/unit/test_cassette_shapes.py"
+        "update BOTH tests/cassette_patterns.py and tests/_guardrails/test_cassette_shapes.py"
     )

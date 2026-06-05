@@ -371,7 +371,7 @@ SCRUB_PLACEHOLDERS: frozenset[str] = frozenset(
 # being corrupted during replay.
 #
 # This list intentionally mirrors ``DISPLAY_NAME_FALSE_POSITIVES`` in
-# ``tests/unit/test_cassette_shapes.py``. The two lists are NOT
+# ``tests/_guardrails/test_cassette_shapes.py``. The two lists are NOT
 # imported from each other to keep ``cassette_patterns.py`` a leaf module —
 # the shape-lint module already depends on this registry, and a back-edge
 # would create a cycle. New entries must be added to BOTH lists. The unit

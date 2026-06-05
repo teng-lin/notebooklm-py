@@ -150,7 +150,7 @@ class TestLimitRange:
 #
 # ``alias_command`` lives in ``cli/options.py`` because ``cli/helpers.py`` is
 # constrained to a compatibility-facade surface (see
-# ``tests/unit/test_cli_boundary.py``). These tests use direct construction
+# ``tests/_guardrails/test_cli_boundary.py``). These tests use direct construction
 # (no monkeypatching, per task spec) — they build a tiny throwaway group +
 # source command and verify static and runtime properties via Click's
 # ``CliRunner``. The cinematic-video aliases on the real ``generate`` and

@@ -606,7 +606,7 @@ The cross-command helpers form a small internal CLI stack:
 | [`cli/helpers.py`](../src/notebooklm/cli/helpers.py) | Backward-compatible facade for historical imports and test patch targets. New production code should import from the owning helper module instead. |
 
 The boundary is enforced statically by
-[`tests/unit/test_cli_boundary.py`](../tests/unit/test_cli_boundary.py):
+[`tests/_guardrails/test_cli_boundary.py`](../tests/_guardrails/test_cli_boundary.py):
 CLI modules may import public `notebooklm` modules and their own
 intra-CLI private helpers, but not `notebooklm._*`, `notebooklm.rpc.*`,
 or private names from public modules. The same test keeps low-level

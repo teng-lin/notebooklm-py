@@ -205,7 +205,8 @@ After migration, `Session` owns:
 - Lifecycle (`open`, `close`, keepalive task, `is_open`, drain-on-close).
 - The collaborator graph held as attributes.
 - The few methods downstream tests still pin via AST-guard
-  (`tests/unit/test_public_shims.py`, `tests/unit/test_concurrency_refresh_race.py`).
+  (`tests/_guardrails/test_public_surface_manifest.py`,
+  `tests/unit/test_concurrency_refresh_race.py`).
 - **Live middleware-chain seams that legitimately route through `Session`.**
   **Chain-ownership carve-out (post-refactoring plan 2026-05-27 Stage B2):**
   the storage backing the chain's tunables — `_authed_post_chain_terminal`,
