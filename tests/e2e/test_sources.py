@@ -146,8 +146,8 @@ class TestSourceMutations:
         await asyncio.sleep(2)  # Wait for initial processing
 
         result = await client.sources.refresh(temp_notebook.id, source.id)
-        # refresh() always returns True if successful
-        assert result is True
+        # v0.8.0 (#1290): refresh() returns None on success
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_check_freshness(self, client, temp_notebook):

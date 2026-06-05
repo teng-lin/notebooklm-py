@@ -1,6 +1,6 @@
 """Unit tests for NotesAPI private helpers and edge cases."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -549,6 +549,9 @@ class TestUpdateNote:
     @pytest.mark.asyncio
     async def test_update_calls_rpc_with_correct_params(self, notes_api, mock_core):
         """Test that update() passes correct parameters."""
+        # v0.8.0 (#1362): update() runs an existence preflight first; stub a hit
+        # so the UPDATE_NOTE RPC fires and we can pin its params.
+        notes_api.get_or_none = AsyncMock(return_value=MagicMock())
         mock_core.rpc_executor.rpc_call.return_value = None
 
         await notes_api.update("nb_123", "note_456", "New content", "New title")

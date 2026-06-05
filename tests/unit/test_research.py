@@ -705,15 +705,18 @@ class TestResearch:
                 )
 
     @pytest.mark.asyncio
-    async def test_start_research_returns_none(self, auth_tokens, httpx_mock, build_rpc_response):
-        """Test start returns None on empty response."""
+    async def test_start_research_empty_payload_raises(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """v0.8.0 (#1342): start raises DecodingError on an empty response."""
+        from notebooklm.exceptions import DecodingError
+
         response_body = build_rpc_response(RPCMethod.START_FAST_RESEARCH, [])
         httpx_mock.add_response(content=response_body.encode(), method="POST")
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.research.start(notebook_id="nb_123", query="test", mode="fast")
-
-        assert result is None
+            with pytest.raises(DecodingError):
+                await client.research.start(notebook_id="nb_123", query="test", mode="fast")
 
     @pytest.mark.asyncio
     async def test_poll_no_research(self, auth_tokens, httpx_mock, build_rpc_response):

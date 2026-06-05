@@ -544,7 +544,7 @@ class TestSourcesAPI:
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.sources.refresh("nb_123", "src_001")
 
-        assert result is True
+        assert result is None  # v0.8.0 (#1290): returns None on success
         request = httpx_mock.get_request()
         assert RPCMethod.REFRESH_SOURCE in str(request.url)
 
@@ -778,18 +778,20 @@ class TestSourcesAPI:
                 await client.sources.rename("nb_123", "src_001", "New Title")
 
     @pytest.mark.asyncio
-    async def test_rename_source_return_object_false_skips_fetch(self, auth_tokens):
-        """return_object=False returns None and issues no hydrate fetch on a null echo."""
+    async def test_rename_source_return_object_false_raises_on_miss(self, auth_tokens):
+        """v0.8.0 (#1362): return_object=False runs the existence preflight too.
+
+        A null UPDATE_SOURCE echo plus an absent source means the target is
+        missing, so the False path raises SourceNotFoundError instead of
+        silently returning None.
+        """
         async with NotebookLMClient(auth_tokens) as client:
             rpc = AsyncMock(return_value=None)
             client._rpc_executor.rpc_call = rpc
-            result = await client.sources.rename(
-                "nb_123", "src_001", "New Title", return_object=False
-            )
-
-        assert result is None
-        # Only the UPDATE_SOURCE call — no hydrate fetch.
-        rpc.assert_awaited_once()
+            # The existence preflight resolves the source as a genuine miss.
+            client.sources._get_or_none = AsyncMock(return_value=None)
+            with pytest.raises(SourceNotFoundError):
+                await client.sources.rename("nb_123", "src_001", "New Title", return_object=False)
 
 
 class TestAddFileSource:

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
-from ._deprecation import future_errors_enabled, warn_deprecated
+from ._deprecation import warn_deprecated
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import parse_research_task_models
 from ._runtime.contracts import RpcCaller
@@ -329,7 +329,7 @@ class ResearchAPI:
         query: str,
         source: str = "web",
         mode: str = "fast",
-    ) -> ResearchStart | None:
+    ) -> ResearchStart:
         """Start a research session.
 
         Args:
@@ -340,15 +340,18 @@ class ResearchAPI:
 
         Returns:
             A :class:`~notebooklm._types.research.ResearchStart` (``task_id`` /
-            ``report_id`` / ``notebook_id`` / ``query`` / ``mode``), or ``None``
-            when the backend returned no task. Under
-            ``NOTEBOOKLM_FUTURE_ERRORS`` (#1342) an empty/non-list payload or
-            falsey ``task_id`` raises ``DecodingError`` instead.
+            ``report_id`` / ``notebook_id`` / ``query`` / ``mode``).
 
         Raises:
             ValidationError: If source/mode combination is invalid.
-            DecodingError: Under the v0.8.0 preview, on an empty/non-list payload
-                or falsey ``task_id`` (no task created).
+            DecodingError: On a "couldn't-start" payload — an empty/non-list
+                result or a falsey ``task_id`` (no task created); #1342.
+
+        .. versionchanged:: 0.8.0
+            **Breaking change:** a "couldn't-start" payload now raises
+            :class:`DecodingError` instead of returning ``None``, and the return
+            type narrows from ``ResearchStart | None`` to ``ResearchStart``
+            (#1342).
         """
         logger.debug(
             "Starting %s research in notebook %s: %s",
@@ -384,9 +387,9 @@ class ResearchAPI:
 
         if result and isinstance(result, list) and len(result) > 0:
             task_id = result[0]
-            # v0.8.0 preview (#1342): a falsey ``task_id`` means no task was
-            # created — raise (mirrors ``_parse_generation_result``'s missing id).
-            if not task_id and future_errors_enabled():
+            # v0.8.0 (#1342): a falsey ``task_id`` means no task was created —
+            # raise (mirrors ``_parse_generation_result``'s missing id).
+            if not task_id:
                 raise DecodingError(
                     f"research.start returned no task id: {result!r}", method_id=rpc_id.value
                 )
@@ -398,12 +401,10 @@ class ResearchAPI:
                 query=query,
                 mode=mode_lower,
             )
-        # v0.8.0 preview (#1342): an empty / non-list payload is couldn't-start.
-        if future_errors_enabled():
-            raise DecodingError(
-                "research.start returned an empty / non-list payload", method_id=rpc_id.value
-            )
-        return None
+        # v0.8.0 (#1342): an empty / non-list payload is couldn't-start — raise.
+        raise DecodingError(
+            "research.start returned an empty / non-list payload", method_id=rpc_id.value
+        )
 
     async def poll(
         self,

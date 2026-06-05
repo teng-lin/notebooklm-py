@@ -514,13 +514,13 @@ def _render_source_refresh_result(
         return
 
     refreshed = result.result
-    if refreshed and refreshed is not True:
+    if isinstance(refreshed, Source):
         cli_print(f"[green]Source refreshed:[/green] {refreshed.id}", ctx=ctx)
         cli_print(f"[bold]Title:[/bold] {refreshed.title}", ctx=ctx)
-    elif refreshed is True:
-        cli_print(f"[green]Source refreshed:[/green] {result.source_id}", ctx=ctx)
     else:
-        cli_print("[yellow]Refresh returned no result[/yellow]", ctx=ctx)
+        # ``sources.refresh`` returns ``None`` on success (#1290); failures
+        # raise before reaching here, so ``None`` is the refreshed-OK case.
+        cli_print(f"[green]Source refreshed:[/green] {result.source_id}", ctx=ctx)
 
 
 def _render_source_add_drive_result(

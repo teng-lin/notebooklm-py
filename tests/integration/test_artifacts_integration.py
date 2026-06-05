@@ -630,17 +630,18 @@ class TestArtifactsAPI:
                 await client.artifacts.rename("nb_123", "art_001", "New Title")
 
     @pytest.mark.asyncio
-    async def test_rename_artifact_return_object_false_skips_fetch(self, auth_tokens):
-        """return_object=False returns None and issues no LIST_ARTIFACTS hydrate."""
+    async def test_rename_artifact_return_object_false_raises_on_miss(self, auth_tokens):
+        """v0.8.0 (#1362): return_object=False runs the existence preflight too.
+
+        A null RENAME echo plus an empty LIST_ARTIFACTS hydrate means the target
+        is missing, so the False path raises ArtifactNotFoundError instead of
+        silently returning None.
+        """
         async with NotebookLMClient(auth_tokens) as client:
             rpc = AsyncMock(return_value=None)
             client._rpc_executor.rpc_call = rpc
-            result = await client.artifacts.rename(
-                "nb_123", "art_001", "New Title", return_object=False
-            )
-
-        assert result is None
-        rpc.assert_awaited_once()
+            with pytest.raises(ArtifactNotFoundError):
+                await client.artifacts.rename("nb_123", "art_001", "New Title", return_object=False)
 
     @pytest.mark.asyncio
     async def test_export_artifact(
@@ -1738,13 +1739,13 @@ class TestReviseSlide:
         assert err.method_id == RPCMethod.REVISE_SLIDE.value
 
     @pytest.mark.asyncio
-    async def test_revise_slide_user_displayable_error_returns_failed_status(
+    async def test_revise_slide_user_displayable_error_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """revise_slide returns failed GenerationStatus on USER_DISPLAYABLE_ERROR."""
+        """v0.8.0 (#1342): revise_slide re-raises on a USER_DISPLAYABLE_ERROR refusal."""
         async with NotebookLMClient(auth_tokens) as client:
             err = RPCError("Rate limit exceeded")
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
@@ -1752,21 +1753,20 @@ class TestReviseSlide:
             # directly; the patch goes through ``_rpc`` (the
             # ``RpcExecutor``) since that is what ``rpc_call`` resolves
             # through.
-            with patch.object(
-                client.artifacts._rpc,
-                "rpc_call",
-                AsyncMock(side_effect=err),
+            with (
+                patch.object(
+                    client.artifacts._rpc,
+                    "rpc_call",
+                    AsyncMock(side_effect=err),
+                ),
+                pytest.raises(RPCError, match="Rate limit exceeded"),
             ):
-                result = await client.artifacts.revise_slide(
+                await client.artifacts.revise_slide(
                     notebook_id="nb_123",
                     artifact_id="artifact_456",
                     slide_index=2,
                     prompt="Make it simpler",
                 )
-
-        assert result is not None
-        assert result.status == "failed"
-        assert result.error_code == "USER_DISPLAYABLE_ERROR"
 
     @pytest.mark.asyncio
     async def test_revise_slide_other_rpc_error_reraises(
@@ -2411,13 +2411,13 @@ class TestCallGenerateErrorHandling:
     """Tests for _call_generate() error handling (USER_DISPLAYABLE_ERROR path)."""
 
     @pytest.mark.asyncio
-    async def test_generate_audio_user_displayable_error_returns_failed(
+    async def test_generate_audio_user_displayable_error_raises(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """_call_generate returns failed GenerationStatus on USER_DISPLAYABLE_ERROR."""
+        """v0.8.0 (#1342): _call_generate re-raises on a USER_DISPLAYABLE_ERROR refusal."""
         async with NotebookLMClient(auth_tokens) as client:
             err = RPCError("You have exceeded your quota")
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
@@ -2427,15 +2427,15 @@ class TestCallGenerateErrorHandling:
             # stores its three runtime collaborators directly, so the
             # patch target is ``_rpc`` — see the ``revise_slide``
             # siblings above for the same rationale.
-            with patch.object(
-                client.artifacts._rpc,
-                "rpc_call",
-                AsyncMock(side_effect=err),
+            with (
+                patch.object(
+                    client.artifacts._rpc,
+                    "rpc_call",
+                    AsyncMock(side_effect=err),
+                ),
+                pytest.raises(RPCError, match="exceeded your quota"),
             ):
-                result = await client.artifacts.generate_audio("nb_123", source_ids=["src_001"])
-
-        assert result.status == "failed"
-        assert result.error_code == "USER_DISPLAYABLE_ERROR"
+                await client.artifacts.generate_audio("nb_123", source_ids=["src_001"])
 
     @pytest.mark.asyncio
     async def test_generate_audio_other_rpc_error_reraises(

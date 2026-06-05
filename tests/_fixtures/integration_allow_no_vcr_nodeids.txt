@@ -140,7 +140,7 @@ tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_use
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_video_artifacts # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_rename_artifact # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestCallGenerateErrorHandling::test_generate_audio_other_rpc_error_reraises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestCallGenerateErrorHandling::test_generate_audio_user_displayable_error_returns_failed # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestCallGenerateErrorHandling::test_generate_audio_user_displayable_error_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDeleteStudioContent::test_delete_studio_content # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadAudioErrorPaths::test_download_audio_artifact_id_not_found_raises_not_ready # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadAudioErrorPaths::test_download_audio_empty_list_raises_not_ready # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -218,7 +218,7 @@ tests/integration/test_artifacts_integration.py::TestPollStatusVariousPaths::tes
 tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_negative_index_raises_validation_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_null_result_returns_generation_status # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_other_rpc_error_reraises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_user_displayable_error_returns_failed_status # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_user_displayable_error_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_generate_audio # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_generate_audio_with_format_and_length # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_generate_cinematic_video # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

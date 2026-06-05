@@ -130,11 +130,11 @@ class SourceRefreshResult:
 
     source_id: str
     notebook_id: str
-    result: Source | bool | None
+    result: Source | None
 
     @property
     def payload(self) -> dict[str, Any]:
-        if self.result and self.result is not True:
+        if isinstance(self.result, Source):
             return {
                 "action": "refresh",
                 "source_id": self.result.id,
@@ -142,18 +142,13 @@ class SourceRefreshResult:
                 "title": self.result.title,
                 "status": "refreshed",
             }
-        if self.result is True:
-            return {
-                "action": "refresh",
-                "source_id": self.source_id,
-                "notebook_id": self.notebook_id,
-                "status": "refreshed",
-            }
+        # ``sources.refresh`` returns ``None`` on success (#1290); any failure
+        # raises before reaching here, so ``None`` is the refreshed-OK case.
         return {
             "action": "refresh",
             "source_id": self.source_id,
             "notebook_id": self.notebook_id,
-            "status": "no_result",
+            "status": "refreshed",
         }
 
 
@@ -543,8 +538,10 @@ async def execute_source_refresh(
         client, plan.notebook_id, plan.source_id, json_output=plan.json_output
     )
 
-    src = await client.sources.refresh(plan.notebook_id, resolved_id)
-    return SourceRefreshResult(source_id=resolved_id, notebook_id=plan.notebook_id, result=src)
+    # ``sources.refresh`` returns ``None`` on success (#1290); any failure
+    # raises before reaching here.
+    await client.sources.refresh(plan.notebook_id, resolved_id)
+    return SourceRefreshResult(source_id=resolved_id, notebook_id=plan.notebook_id, result=None)
 
 
 # ---------------------------------------------------------------------------

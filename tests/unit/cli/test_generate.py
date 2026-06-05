@@ -1249,16 +1249,19 @@ class TestGenerateWithRetry:
 
     @pytest.mark.asyncio
     async def test_retry_on_rate_limit(self):
-        """Test that rate limit triggers retry."""
+        """Test that a raised RateLimitError triggers retry (#1342)."""
+        from notebooklm.exceptions import RateLimitError
         from notebooklm.types import GenerationStatus
 
-        rate_limited = GenerationStatus(
-            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
-        )
         success_result = GenerationStatus(
             task_id="task_123", status="pending", error=None, error_code=None
         )
-        generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
+        generate_fn = AsyncMock(
+            side_effect=[
+                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                success_result,
+            ]
+        )
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
@@ -1268,39 +1271,25 @@ class TestGenerateWithRetry:
         mock_sleep.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_retry_exhausted(self):
-        """Test that all retries being exhausted returns last result."""
-        from notebooklm.types import GenerationStatus
+    async def test_retry_exhausted_reraises(self):
+        """v0.8.0 (#1342): exhausting the budget re-raises the RateLimitError."""
+        from notebooklm.exceptions import RateLimitError
 
-        rate_limited = GenerationStatus(
-            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
-        )
-        generate_fn = AsyncMock(return_value=rate_limited)
+        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await generate_with_retry(generate_fn, max_retries=2, artifact_type="audio")
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(RateLimitError) as exc_info,
+        ):
+            await generate_with_retry(generate_fn, max_retries=2, artifact_type="audio")
 
-        assert result == rate_limited
+        assert exc_info.value is error
         assert generate_fn.call_count == 3  # initial + 2 retries
 
     @pytest.mark.asyncio
-    async def test_no_retry_when_max_retries_zero(self):
-        """Test that max_retries=0 means no retry attempts."""
-        from notebooklm.types import GenerationStatus
-
-        rate_limited = GenerationStatus(
-            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
-        )
-        generate_fn = AsyncMock(return_value=rate_limited)
-
-        result = await generate_with_retry(generate_fn, max_retries=0, artifact_type="audio")
-
-        assert result == rate_limited
-        assert generate_fn.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_retry_delays_increase_exponentially(self):
-        """Verify delays follow exponential backoff pattern (60s, 120s, 240s)."""
+    async def test_returned_rate_limited_status_returns_without_retry(self):
+        """v0.8.0 (#1342): a returned rate-limited status is no longer a retry signal."""
         from notebooklm.types import GenerationStatus
 
         rate_limited = GenerationStatus(
@@ -1309,6 +1298,37 @@ class TestGenerateWithRetry:
         generate_fn = AsyncMock(return_value=rate_limited)
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
+
+        assert result == rate_limited
+        assert generate_fn.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_max_retries_zero(self):
+        """Test that max_retries=0 means no retry attempts (re-raises immediately)."""
+        from notebooklm.exceptions import RateLimitError
+
+        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
+
+        with pytest.raises(RateLimitError):
+            await generate_with_retry(generate_fn, max_retries=0, artifact_type="audio")
+
+        assert generate_fn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_delays_increase_exponentially(self):
+        """Verify delays follow exponential backoff pattern (60s, 120s, 240s)."""
+        from notebooklm.exceptions import RateLimitError
+
+        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitError),
+        ):
             await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
 
         # Verify delays: 60s, 120s, 240s (3 retries = 3 sleeps)
@@ -1318,14 +1338,15 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_delay_caps_at_max(self):
         """Verify delay caps at 300s even with many retries."""
-        from notebooklm.types import GenerationStatus
+        from notebooklm.exceptions import RateLimitError
 
-        rate_limited = GenerationStatus(
-            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
-        )
-        generate_fn = AsyncMock(return_value=rate_limited)
+        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        generate_fn = AsyncMock(side_effect=error)
 
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitError),
+        ):
             await generate_with_retry(generate_fn, max_retries=10, artifact_type="audio")
 
         # Verify no delay exceeds RETRY_MAX_DELAY (300s)
@@ -2139,17 +2160,22 @@ class TestGenerateWithRetryConsoleOutput:
 
     @pytest.mark.asyncio
     async def test_retry_shows_console_message_when_not_json(self):
-        """Line 111: console.print shown during retry when json_output=False."""
+        """Line 111: console.print shown during retry when json_output=False.
 
+        v0.8.0 (#1342): the retry is driven by a raised RateLimitError.
+        """
+        from notebooklm.exceptions import RateLimitError
         from notebooklm.types import GenerationStatus
 
-        rate_limited = GenerationStatus(
-            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
-        )
         success_result = GenerationStatus(
             task_id="task_123", status="pending", error=None, error_code=None
         )
-        generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
+        generate_fn = AsyncMock(
+            side_effect=[
+                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                success_result,
+            ]
+        )
 
         retry_sink = MagicMock()
         with patch("asyncio.sleep", new_callable=AsyncMock):

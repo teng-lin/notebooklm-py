@@ -19,6 +19,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -286,6 +287,11 @@ class TestNotesAPI:
                 content="Original content.",
             )
             assert note is not None
+            # v0.8.0 (#1362): update() runs an existence preflight; stub the
+            # just-created note as a hit so the cassette (recorded pre-flip,
+            # without the extra GET_NOTES_AND_MIND_MAPS round-trip) still
+            # replays the create+update interactions only.
+            client.notes.get_or_none = AsyncMock(return_value=note)
             await client.notes.update(
                 MUTABLE_NOTEBOOK_ID,
                 note.id,
@@ -818,8 +824,8 @@ class TestSourcesAdditionalAPI:
             if not url_source:
                 pytest.skip("No WEB_PAGE source available for refresh")
             result = await client.sources.refresh(MUTABLE_NOTEBOOK_ID, url_source.id)
-        # refresh() returns True if initiated successfully (no exception)
-        assert result is True, "refresh() should return True on success"
+        # v0.8.0 (#1290): refresh() returns None on success (no exception)
+        assert result is None, "refresh() should return None on success"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -948,12 +954,15 @@ class TestArtifactsAdditionalAPI:
                 pytest.skip("No artifacts available")
             artifact = artifacts[0]
             original_title = artifact.title
-            # Rename. return_object=False skips the post-rename re-fetch so the
-            # existing cassette (rename RPC only) keeps replaying (issue #1255).
+            # v0.8.0 (#1362): return_object=False now runs the existence
+            # preflight too. Stub it as a hit (the artifact came from the list
+            # above, so it exists) so no extra LIST_ARTIFACTS round-trip fires
+            # and the existing cassette (rename RPC only) keeps replaying.
+            client.artifacts._listing.get_studio_only = AsyncMock(return_value=artifact)
+            # Rename, then restore the original name.
             await client.artifacts.rename(
                 MUTABLE_NOTEBOOK_ID, artifact.id, "VCR Renamed Artifact", return_object=False
             )
-            # Restore original name
             await client.artifacts.rename(
                 MUTABLE_NOTEBOOK_ID, artifact.id, original_title, return_object=False
             )

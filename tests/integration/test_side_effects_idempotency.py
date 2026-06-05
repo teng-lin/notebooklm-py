@@ -304,7 +304,7 @@ async def test_refresh_source_emits_rate_limited_warn(
         with caplog.at_level(logging.WARNING, logger="notebooklm._idempotency"):
             for _ in range(invocations):
                 ok = await client.sources.refresh("nb_x", "src_x")
-                assert ok is True
+                assert ok is None  # v0.8.0 (#1290): returns None on success
     finally:
         await client._collaborators.kernel.get_http_client().aclose()
 

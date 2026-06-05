@@ -143,14 +143,16 @@ class TestRenderSourceDeleteResult:
 
 
 # ---------------------------------------------------------------------------
-# _render_source_refresh_result — result is True branch (line 519)
+# _render_source_refresh_result — None-success branch
 # ---------------------------------------------------------------------------
 
 
 class TestRenderSourceRefreshResult:
-    def test_result_is_true_prints_source_id(self, capsys):
+    def test_result_none_prints_source_id(self, capsys):
+        # v0.8.0 (#1290): refresh() returns None on success; the renderer prints
+        # "Source refreshed: <source_id>" for the non-Source success path.
         ctx = click.Context(click.Command("x"))
-        result = SourceRefreshResult(source_id="src_1", notebook_id="nb_1", result=True)
+        result = SourceRefreshResult(source_id="src_1", notebook_id="nb_1", result=None)
         source_cmd._render_source_refresh_result(result, json_output=False, ctx=ctx)
         out = capsys.readouterr().out
         assert "Source refreshed" in out

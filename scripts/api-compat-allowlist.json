@@ -220,12 +220,32 @@
     {
       "code": "changed-return",
       "object": "notebooklm.NotebookLMClient.research.start",
-      "reason": "v0.7.0 #1209: now returns the typed ResearchStart | None dataclass instead of dict[str, Any] | None. MappingCompatMixin preserves dict-subscript access (warned, dropped in v0.8.0). See CHANGELOG.md [Unreleased] 'Added' and docs/deprecations.md."
+      "reason": "v0.7.0 #1209: now returns the typed ResearchStart dataclass instead of dict[str, Any] (MappingCompatMixin preserved dict-subscript access, dropped in v0.8.0). v0.8.0 #1342: the return type narrows from ResearchStart | None to ResearchStart — a 'couldn't-start' payload (empty/non-list or falsey task_id) now raises DecodingError instead of returning None. See CHANGELOG.md and docs/deprecations.md."
     },
     {
       "code": "changed-return",
       "object": "notebooklm.client.NotebookLMClient.research.start",
       "reason": "Same break as notebooklm.NotebookLMClient.research.start above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.NotebookLMClient.sources.refresh",
+      "reason": "v0.8.0 #1290: the uninformative always-True return becomes None; the -> bool annotation is dropped. Any failure raises before the return, so the bool carried no information. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.client.NotebookLMClient.sources.refresh",
+      "reason": "Same break as notebooklm.NotebookLMClient.sources.refresh above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.NotebookLMClient.chat.delete_conversation",
+      "reason": "v0.8.0 #1290: the uninformative always-True return becomes None; the -> bool annotation is dropped. Any failure raises before the return, so the bool carried no information. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.client.NotebookLMClient.chat.delete_conversation",
+      "reason": "Same break as notebooklm.NotebookLMClient.chat.delete_conversation above; this entry covers the audit's dotted-module-path view of the same callable."
     },
     {
       "code": "changed-return",

@@ -307,24 +307,16 @@ def _make_artifacts_api(rpc_call: AsyncMock) -> ArtifactsAPI:
 
 
 class TestBoolReturnsBecomeNone:
-    """``sources.refresh`` / ``chat.delete_conversation`` return ``None`` flag-on.
+    """``sources.refresh`` / ``chat.delete_conversation`` return ``None`` (#1290).
 
-    The ``True`` they return today carries no information (any failure raises
-    first), so under the flag they preview the v0.8.0 ``-> None`` return. The
-    ``-> bool`` annotation is intentionally preserved at runtime; only the
-    returned *value* flips. ``chat.clear_cache`` is deliberately NOT gated — its
+    The ``True`` they used to return carried no information (any failure raises
+    first), so v0.8.0 makes them return ``None`` unconditionally and drops the
+    ``-> bool`` annotation. ``chat.clear_cache`` is deliberately UNCHANGED — its
     bool is meaningful (the cache reports whether the id was present).
     """
 
     @pytest.mark.asyncio
-    async def test_sources_refresh_off_returns_true(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = SourcesAPI(MagicMock(rpc_call=AsyncMock(return_value=None)), uploader=MagicMock())
-        assert await api.refresh("nb_1", "src_1") is True
-
-    @pytest.mark.asyncio
-    async def test_sources_refresh_on_returns_none(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_sources_refresh_returns_none(self):
         api = SourcesAPI(MagicMock(rpc_call=AsyncMock(return_value=None)), uploader=MagicMock())
         assert await api.refresh("nb_1", "src_1") is None
 
@@ -337,24 +329,15 @@ class TestBoolReturnsBecomeNone:
         )
 
     @pytest.mark.asyncio
-    async def test_delete_conversation_off_returns_true(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = self._chat_api()
-        assert await api.delete_conversation("nb_1", "conv_1") is True
-
-    @pytest.mark.asyncio
-    async def test_delete_conversation_on_returns_none(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_delete_conversation_returns_none(self):
         api = self._chat_api()
         assert await api.delete_conversation("nb_1", "conv_1") is None
 
-    def test_clear_cache_is_never_gated(self, monkeypatch):
-        # clear_cache's bool is meaningful (id present/absent), so it must NOT
-        # be touched by the flag in either mode.
-        monkeypatch.setenv(_FLAG, "1")
+    def test_clear_cache_is_unchanged(self):
+        # clear_cache's bool is meaningful (id present/absent), so it stays bool.
         api = self._chat_api()
         api._cache.cache_conversation_turn("conv_1", "Q?", "A.", turn_number=1)
-        assert api.clear_cache("conv_1") is True  # present -> True even under the flag
+        assert api.clear_cache("conv_1") is True  # present -> True
         assert api.clear_cache("conv_missing") is False  # absent -> meaningful False
 
 
@@ -364,23 +347,10 @@ class TestBoolReturnsBecomeNone:
 
 
 class TestRefusalRaises:
-    """A synchronous refusal raises under the flag instead of soft-failing."""
+    """A synchronous refusal raises instead of soft-failing (#1342)."""
 
     @pytest.mark.asyncio
-    async def test_call_generate_off_swallows_to_failed_status(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        rpc = AsyncMock(
-            side_effect=RateLimitError("Rate limit exceeded", rpc_code="USER_DISPLAYABLE_ERROR")
-        )
-        api = _make_artifacts_api(rpc)
-        result = await api.generate_video("nb_1")
-        assert result.status == "failed"
-        assert result.error_code == "USER_DISPLAYABLE_ERROR"
-        assert result.is_rate_limited is True
-
-    @pytest.mark.asyncio
-    async def test_call_generate_on_raises_rate_limit(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_call_generate_raises_rate_limit(self):
         rpc = AsyncMock(
             side_effect=RateLimitError("Rate limit exceeded", rpc_code="USER_DISPLAYABLE_ERROR")
         )
@@ -389,55 +359,29 @@ class TestRefusalRaises:
             await api.generate_video("nb_1")
 
     @pytest.mark.asyncio
-    async def test_call_generate_non_refusal_propagates_both_modes(self, monkeypatch):
-        # A non-USER_DISPLAYABLE_ERROR RPCError always propagates, flag or not.
-        for value in ("1", None):
-            if value is None:
-                monkeypatch.delenv(_FLAG, raising=False)
-            else:
-                monkeypatch.setenv(_FLAG, value)
-            rpc = AsyncMock(side_effect=RPCError("Server error", rpc_code="INTERNAL_ERROR"))
-            api = _make_artifacts_api(rpc)
-            with pytest.raises(RPCError, match="Server error"):
-                await api.generate_video("nb_1")
-
-    @pytest.mark.asyncio
-    async def test_revise_slide_off_swallows_to_failed_status(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        rpc = AsyncMock(side_effect=RPCError("Refused", rpc_code="USER_DISPLAYABLE_ERROR"))
+    async def test_call_generate_non_refusal_propagates(self):
+        # A non-USER_DISPLAYABLE_ERROR RPCError always propagates.
+        rpc = AsyncMock(side_effect=RPCError("Server error", rpc_code="INTERNAL_ERROR"))
         api = _make_artifacts_api(rpc)
-        result = await api.revise_slide("nb_1", "art_1", 0, "make it pop")
-        assert result.status == "failed"
-        assert result.error_code == "USER_DISPLAYABLE_ERROR"
+        with pytest.raises(RPCError, match="Server error"):
+            await api.generate_video("nb_1")
 
     @pytest.mark.asyncio
-    async def test_revise_slide_on_raises(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_revise_slide_raises(self):
         rpc = AsyncMock(side_effect=RPCError("Refused", rpc_code="USER_DISPLAYABLE_ERROR"))
         api = _make_artifacts_api(rpc)
         with pytest.raises(RPCError, match="Refused"):
             await api.revise_slide("nb_1", "art_1", 0, "make it pop")
 
-    def test_parse_generation_result_null_id_off_returns_failed(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
+    def test_parse_generation_result_null_id_raises_feature_unavailable(self):
         api = _make_artifacts_api(AsyncMock())
         # A well-structured row whose artifact id (result[0][0]) is null.
-        status = api._parse_generation_result(
-            [[None, "Title", 1, None, 1]], method_id=RPCMethod.CREATE_ARTIFACT.value
-        )
-        assert status.status == "failed"
-        assert status.task_id == ""
-
-    def test_parse_generation_result_null_id_on_raises_feature_unavailable(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
-        api = _make_artifacts_api(AsyncMock())
         with pytest.raises(ArtifactFeatureUnavailableError):
             api._parse_generation_result(
                 [[None, "Title", 1, None, 1]], method_id=RPCMethod.CREATE_ARTIFACT.value
             )
 
-    def test_parse_generation_result_empty_id_on_raises_decoding(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    def test_parse_generation_result_empty_id_raises_decoding(self):
         api = _make_artifacts_api(AsyncMock())
         # A falsey-but-non-null id (``""``) is degenerate shape drift -> DecodingError.
         with pytest.raises(DecodingError):
@@ -446,43 +390,22 @@ class TestRefusalRaises:
             )
 
     @pytest.mark.asyncio
-    async def test_research_start_empty_payload_off_returns_none(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = ResearchAPI(MagicMock(rpc_call=AsyncMock(return_value=[])))
-        assert await api.start("nb_1", "query") is None
-
-    @pytest.mark.asyncio
-    async def test_research_start_empty_payload_on_raises_decoding(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_research_start_empty_payload_raises_decoding(self):
         api = ResearchAPI(MagicMock(rpc_call=AsyncMock(return_value=[])))
         with pytest.raises(DecodingError):
             await api.start("nb_1", "query")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("falsey_id", [None, "", 0])
-    async def test_research_start_falsey_task_id_off_builds_handle(self, monkeypatch, falsey_id):
-        # A non-empty payload whose task_id is falsey still builds a (degenerate)
-        # ResearchStart on the v0.7.0 default path — byte-for-byte unchanged.
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = ResearchAPI(MagicMock(rpc_call=AsyncMock(return_value=[falsey_id, "report_1"])))
-        result = await api.start("nb_1", "query")
-        assert result is not None
-        assert result.task_id == falsey_id
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("falsey_id", [None, "", 0])
-    async def test_research_start_falsey_task_id_on_raises_decoding(self, monkeypatch, falsey_id):
-        # Under the flag a falsey task_id means no task was created — raise
+    async def test_research_start_falsey_task_id_raises_decoding(self, falsey_id):
+        # A falsey task_id means no task was created — raise
         # (mirrors _parse_generation_result's missing-id branch).
-        monkeypatch.setenv(_FLAG, "1")
         api = ResearchAPI(MagicMock(rpc_call=AsyncMock(return_value=[falsey_id, "report_1"])))
         with pytest.raises(DecodingError):
             await api.start("nb_1", "query")
 
     @pytest.mark.asyncio
-    async def test_research_start_real_task_id_on_returns_handle(self, monkeypatch):
-        # A truthy task_id is unaffected by the flag.
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_research_start_real_task_id_returns_handle(self):
         api = ResearchAPI(MagicMock(rpc_call=AsyncMock(return_value=["task_1", "report_1"])))
         result = await api.start("nb_1", "query")
         assert result is not None
@@ -495,7 +418,7 @@ class TestRefusalRaises:
 
 
 class TestMutateExistingFailLoud:
-    """``notes.update`` and ``rename(return_object=False)`` raise on a miss."""
+    """``notes.update`` and ``rename(return_object=False)`` raise on a miss (#1362)."""
 
     def _notes_api(self) -> NotesAPI:
         from _fixtures.fake_core import make_fake_core
@@ -506,19 +429,7 @@ class TestMutateExistingFailLoud:
         return NotesAPI(notes=note_service, mind_maps=mind_maps)
 
     @pytest.mark.asyncio
-    async def test_notes_update_off_silently_noops_on_miss(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = self._notes_api()
-        # No preflight on the off path: a missing note must NOT trigger a lookup.
-        api.get_or_none = AsyncMock(return_value=None)
-        api._notes.update_note = AsyncMock(return_value=None)
-        await api.update("nb_1", "missing", "content", "Title")
-        api.get_or_none.assert_not_awaited()
-        api._notes.update_note.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_notes_update_on_raises_on_miss(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_notes_update_raises_on_miss(self):
         api = self._notes_api()
         api.get_or_none = AsyncMock(return_value=None)
         api._notes.update_note = AsyncMock(return_value=None)
@@ -528,8 +439,7 @@ class TestMutateExistingFailLoud:
         api._notes.update_note.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_notes_update_on_succeeds_when_present(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_notes_update_succeeds_when_present(self):
         api = self._notes_api()
         api.get_or_none = AsyncMock(return_value=MagicMock())  # hit
         api._notes.update_note = AsyncMock(return_value=None)
@@ -538,58 +448,37 @@ class TestMutateExistingFailLoud:
 
     def _sources_api(self, *, echo: object) -> SourcesAPI:
         # ``echo`` is the UPDATE_SOURCE return; ``None`` forces the existence
-        # preflight on the future-errors path.
+        # preflight on the null-echo path.
         return SourcesAPI(MagicMock(rpc_call=AsyncMock(return_value=echo)), uploader=MagicMock())
 
     @pytest.mark.asyncio
-    async def test_sources_rename_no_object_off_skips_detection(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = self._sources_api(echo=None)
-        api._get_or_none = AsyncMock(return_value=None)  # would-be miss
-        # Off path short-circuits to None WITHOUT probing existence.
-        assert await api.rename("nb_1", "missing", "T", return_object=False) is None
-        api._get_or_none.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_sources_rename_no_object_on_raises_on_miss(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_sources_rename_no_object_raises_on_miss(self):
         api = self._sources_api(echo=None)
         api._get_or_none = AsyncMock(return_value=None)  # miss
         with pytest.raises(SourceNotFoundError):
             await api.rename("nb_1", "missing", "T", return_object=False)
 
     @pytest.mark.asyncio
-    async def test_sources_rename_no_object_on_returns_none_when_present(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_sources_rename_no_object_returns_none_when_present(self):
         api = self._sources_api(echo=None)
         api._get_or_none = AsyncMock(return_value=Source(id="src_1", title="T"))  # hit
-        # The flag controls miss-detection, not the return: still None on a hit.
+        # Miss-detection runs, but the return is still None on a hit.
         assert await api.rename("nb_1", "src_1", "T", return_object=False) is None
 
     def _artifacts_api_for_rename(self) -> ArtifactsAPI:
         # UPDATE/RENAME echo is None so the False path reaches the studio-only
-        # existence preflight under the flag.
+        # existence preflight.
         return _make_artifacts_api(AsyncMock(return_value=None))
 
     @pytest.mark.asyncio
-    async def test_artifacts_rename_no_object_off_skips_detection(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        api = self._artifacts_api_for_rename()
-        api._listing.get_studio_only = AsyncMock(return_value=None)  # would-be miss
-        assert await api.rename("nb_1", "missing", "T", return_object=False) is None
-        api._listing.get_studio_only.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_artifacts_rename_no_object_on_raises_on_miss(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_artifacts_rename_no_object_raises_on_miss(self):
         api = self._artifacts_api_for_rename()
         api._listing.get_studio_only = AsyncMock(return_value=None)  # miss
         with pytest.raises(ArtifactNotFoundError):
             await api.rename("nb_1", "missing", "T", return_object=False)
 
     @pytest.mark.asyncio
-    async def test_artifacts_rename_no_object_on_returns_none_when_present(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
+    async def test_artifacts_rename_no_object_returns_none_when_present(self):
         api = self._artifacts_api_for_rename()
         api._listing.get_studio_only = AsyncMock(return_value=MagicMock())  # hit
         assert await api.rename("nb_1", "art_1", "T", return_object=False) is None

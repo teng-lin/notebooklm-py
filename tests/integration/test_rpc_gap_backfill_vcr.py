@@ -81,7 +81,7 @@ async def test_refresh_source_rpc_has_cassette_coverage():
     async with vcr_client() as client:
         refreshed = await client.sources.refresh(MUTABLE_NOTEBOOK_ID, "source_backfill_001")
 
-    assert refreshed is True
+    assert refreshed is None  # v0.8.0 (#1290): returns None on success
     # Rotation-proof: assert the replayed interaction targeted REFRESH_SOURCE by
     # its constant (rpc/types.py is the single source of truth), not a literal.
     assert RPCMethod.REFRESH_SOURCE.value in _cassette_request_rpcids("sources_refresh_direct.yaml")

@@ -55,10 +55,12 @@ class TestWithRateLimitRetry:
         assert generate_fn.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_retries_rate_limited_status_then_returns_success(self) -> None:
+    async def test_returned_rate_limited_status_returns_immediately(self) -> None:
+        # v0.8.0 (#1342): a *returned* rate-limited status is no longer a retry
+        # signal — only a raised RateLimitError drives a retry. The returned
+        # status is surfaced immediately, with no sleep and no on_retry event.
         rate_limited = _rate_limited_status()
-        success = GenerationStatus(task_id="task_123", status="pending")
-        generate_fn = AsyncMock(side_effect=[rate_limited, success])
+        generate_fn = AsyncMock(return_value=rate_limited)
         events: list[RateLimitRetryEvent] = []
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
@@ -68,31 +70,10 @@ class TestWithRateLimitRetry:
                 on_retry=events.append,
             )
 
-        assert result == success
-        assert generate_fn.call_count == 2
-        mock_sleep.assert_awaited_once_with(60.0)
-        assert events == [
-            RateLimitRetryEvent(
-                result=rate_limited,
-                next_attempt_number=2,
-                total_attempts=4,
-                retry_number=1,
-                max_retries=3,
-                delay=60.0,
-            )
-        ]
-
-    @pytest.mark.asyncio
-    async def test_exhausts_retry_budget_and_returns_last_rate_limited_status(self) -> None:
-        rate_limited = _rate_limited_status()
-        generate_fn = AsyncMock(return_value=rate_limited)
-
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await with_rate_limit_retry(generate_fn, max_retries=2)
-
         assert result == rate_limited
-        assert generate_fn.call_count == 3
-        assert [call.args[0] for call in mock_sleep.await_args_list] == [60.0, 120.0]
+        assert generate_fn.call_count == 1
+        mock_sleep.assert_not_awaited()
+        assert events == []
 
     @pytest.mark.asyncio
     async def test_does_not_retry_non_rate_limit_failure(self) -> None:
@@ -106,9 +87,15 @@ class TestWithRateLimitRetry:
 
     @pytest.mark.asyncio
     async def test_supports_async_retry_callback_and_custom_sleep(self) -> None:
-        rate_limited = _rate_limited_status()
+        # The retry is driven by a raised RateLimitError (#1342); a custom sleep
+        # and an async on_retry callback are both honored.
         success = GenerationStatus(task_id="task_123", status="pending")
-        generate_fn = AsyncMock(side_effect=[rate_limited, success])
+        generate_fn = AsyncMock(
+            side_effect=[
+                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                success,
+            ]
+        )
         on_retry = AsyncMock()
         sleep = AsyncMock()
 

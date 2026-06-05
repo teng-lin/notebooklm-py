@@ -154,24 +154,26 @@ class TestDeleteConversationVCR:
     @pytest.mark.vcr
     @pytest.mark.asyncio
     async def test_delete_conversation_round_trips(self) -> None:
-        """``delete_conversation`` returns True and produces no error envelope."""
+        """``delete_conversation`` returns None and produces no error envelope."""
         auth = await get_vcr_auth()
         async with NotebookLMClient(auth) as client:
             if _vcr_record_mode:
                 notebook_id, conversation_id = await _seed_scratch_conversation(client)
                 try:
                     with notebooklm_vcr.use_cassette(CASSETTE_NAME):
+                        # v0.8.0 (#1290): delete_conversation returns None on success.
                         assert (
                             await client.chat.delete_conversation(notebook_id, conversation_id)
-                            is True
+                            is None
                         )
                 finally:
                     await _teardown_scratch_notebook(client, notebook_id)
             else:
                 notebook_id, conversation_id = _load_cassette_inputs()
                 with notebooklm_vcr.use_cassette(CASSETTE_NAME):
+                    # v0.8.0 (#1290): delete_conversation returns None on success.
                     assert (
-                        await client.chat.delete_conversation(notebook_id, conversation_id) is True
+                        await client.chat.delete_conversation(notebook_id, conversation_id) is None
                     )
 
     def test_cassette_carries_expected_wire_shape(self) -> None:

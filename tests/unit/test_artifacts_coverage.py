@@ -196,8 +196,8 @@ class TestCallGenerateRateLimit:
     """Test _call_generate handling of rate limit errors."""
 
     @pytest.mark.asyncio
-    async def test_rate_limit_returns_failed_status(self, mock_artifacts_api):
-        """Test that USER_DISPLAYABLE_ERROR returns failed status."""
+    async def test_rate_limit_refusal_raises(self, mock_artifacts_api):
+        """v0.8.0 (#1342): a USER_DISPLAYABLE_ERROR refusal re-raises the error."""
         api, mock_core = mock_artifacts_api
 
         # Simulate rate limit error from RPC
@@ -205,12 +205,8 @@ class TestCallGenerateRateLimit:
             "Rate limit exceeded", rpc_code="USER_DISPLAYABLE_ERROR"
         )
 
-        result = await api.generate_video("nb_123")
-
-        assert result.status == "failed"
-        assert result.error is not None
-        assert "Rate limit" in result.error
-        assert result.error_code == "USER_DISPLAYABLE_ERROR"
+        with pytest.raises(RPCError, match="Rate limit"):
+            await api.generate_video("nb_123")
 
     @pytest.mark.asyncio
     async def test_other_rpc_error_propagates(self, mock_artifacts_api):

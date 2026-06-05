@@ -1,9 +1,11 @@
 """Public artifact-generation helpers.
 
-The client methods on ``client.artifacts`` return ``GenerationStatus`` objects
-directly when Google rejects generation with a user-displayable rate-limit or
-quota error. This module provides the same retry policy used by the CLI so
-Python API callers do not need to duplicate the backoff loop.
+The client methods on ``client.artifacts`` raise
+:class:`~notebooklm.exceptions.RateLimitError` when Google rejects a
+synchronous generation kickoff with a user-displayable rate-limit or quota
+error (v0.8.0, #1342). This module provides the same retry policy used by the
+CLI — retrying on a raised ``RateLimitError`` — so Python API callers do not
+need to duplicate the backoff loop.
 """
 
 from __future__ import annotations
@@ -74,23 +76,19 @@ async def with_rate_limit_retry(
 ) -> GenerationStatus | None:
     """Run an artifact-generation callable with rate-limit retry.
 
-    The callable is always invoked at least once. A retry is scheduled when an
-    attempt signals a rate limit in **either** of these two ways:
+    The callable is always invoked at least once. A retry is scheduled only
+    when an attempt raises :class:`~notebooklm.exceptions.RateLimitError` — the
+    ADR-0019 "async kickoff" contract where a synchronous rate-limit refusal
+    propagates as an exception (v0.8.0, #1342). A *returned* ``GenerationStatus``
+    — including one whose ``is_rate_limited`` property is true — is no longer a
+    retry signal and is returned immediately.
 
-    * it returns a ``GenerationStatus`` whose ``is_rate_limited`` property is
-      true (the legacy ``generate_*`` path, which swallows a rate-limit refusal
-      into ``status="failed"`` until v0.8.0); **or**
-    * it raises :class:`~notebooklm.exceptions.RateLimitError` (the ADR-0019
-      "async kickoff" path used by ``retry_failed``, where a synchronous
-      refusal propagates as an exception rather than a returned status).
+    Successful statuses, non-rate-limit failures, returned rate-limited statuses,
+    and ``None`` return immediately. Non-``RateLimitError`` exceptions propagate
+    unchanged.
 
-    Successful statuses, non-rate-limit failures, and ``None`` return
-    immediately. Non-``RateLimitError`` exceptions propagate unchanged.
-
-    When the retry budget is exhausted, the final outcome is surfaced the same
-    way it arrived: a returned rate-limited ``GenerationStatus`` is returned,
-    and a raised ``RateLimitError`` is re-raised. (Removing the returned-status
-    path is the v0.8.0 break — not done here.)
+    When the retry budget is exhausted, the final attempt's ``RateLimitError``
+    is re-raised.
 
     Args:
         generate_fn: Async callable that starts an artifact-generation request.
@@ -100,21 +98,18 @@ async def with_rate_limit_retry(
         multiplier: Exponential backoff multiplier.
         sleep: Async sleep function. Defaults to ``asyncio.sleep``.
         on_retry: Optional callback invoked before each retry sleep. The
-            event's ``result`` is the returned rate-limited ``GenerationStatus``
-            for the returned-status path, or a synthesized
+            event's ``result`` is a synthesized
             ``GenerationStatus(status="failed", error_code="USER_DISPLAYABLE_ERROR")``
-            standing in for the raised ``RateLimitError`` so the callback shape
+            standing in for the caught ``RateLimitError`` so the callback shape
             is uniform.
 
     Returns:
-        The first non-rate-limited result, or the final rate-limited
-        ``GenerationStatus`` when the retry budget is exhausted on the
-        returned-status path.
+        The first returned result (the callable may still return ``None``).
 
     Raises:
         ValueError: If retry or delay parameters are invalid.
-        RateLimitError: When the retry budget is exhausted on the raised-error
-            path (the final attempt's ``RateLimitError`` is re-raised).
+        RateLimitError: When the retry budget is exhausted (the final attempt's
+            ``RateLimitError`` is re-raised).
     """
     if max_retries < 0:
         raise ValueError("max_retries must be non-negative")
@@ -130,10 +125,9 @@ async def with_rate_limit_retry(
     attempt = 0
     while True:
         # ``event_result`` carries the rate-limited GenerationStatus passed to
-        # ``on_retry``. For the raised-error path it is synthesized from the
-        # caught exception so the callback shape stays uniform across both
-        # rate-limit signals.
-        event_result: GenerationStatus
+        # ``on_retry``. It is synthesized from the caught ``RateLimitError`` so
+        # the callback shape is uniform — a *returned* status is never a retry
+        # signal (v0.8.0, #1342).
         try:
             result = await generate_fn()
         except RateLimitError as exc:
@@ -154,11 +148,10 @@ async def with_rate_limit_retry(
                 ),
             )
         else:
-            if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
-                return result
-            if attempt >= max_retries:
-                return result
-            event_result = result
+            # Any returned result (success, non-rate-limit failure, a returned
+            # rate-limited status, or ``None``) returns immediately — only a
+            # raised ``RateLimitError`` drives a retry (#1342).
+            return result
 
         delay = calculate_backoff_delay(
             attempt,

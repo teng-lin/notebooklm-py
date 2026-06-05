@@ -1436,7 +1436,7 @@ class TestGenerationStatus:
         other_failure = GenerationStatus(
             task_id="",
             status="failed",
-            error="Generation failed - no artifact_id returned",
+            error="Some unrelated generation error",
         )
         assert other_failure.is_rate_limited is False
 

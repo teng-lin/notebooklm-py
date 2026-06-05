@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ._deprecation import future_errors_enabled
 from ._lookup import resolve_get
 from ._row_adapters.sources import interpret_source_freshness
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
@@ -634,23 +633,25 @@ class SourcesAPI:
             return_object: When ``True`` (default), return the renamed
                 :class:`~notebooklm.types.Source` (preferring the
                 ``UPDATE_SOURCE`` echo, fetching only on a null echo). When
-                ``False``, return ``None`` without hydrating. Under the v0.8.0
-                preview ``False`` still returns ``None`` but adds miss-detection
-                (the flag gates detection, not return — see ``Raises``).
+                ``False``, return ``None`` without hydrating. Miss-detection
+                runs in both modes (``False`` returns ``None`` but raises a miss).
 
         Returns:
             The renamed :class:`~notebooklm.types.Source`, or ``None`` when
             ``return_object=False``.
 
         Raises:
-            SourceNotFoundError: if the source does not exist (detected via a
-                content/list fetch, not a 404). Always when ``return_object=True``;
-                also on ``False`` under ``NOTEBOOKLM_FUTURE_ERRORS``.
+            SourceNotFoundError: if the source does not exist (a content/list
+                fetch, not a 404, detects it), in both ``return_object`` modes.
 
         .. versionchanged:: 0.7.0
             **Breaking change:** no longer fabricates an unverified
             ``Source(id, title)`` on a null echo; it hydrates and raises
             :class:`SourceNotFoundError` (#1255), plus ``return_object``.
+
+        .. versionchanged:: 0.8.0
+            **Breaking change:** ``return_object=False`` now runs the existence
+            preflight on a null echo too, raising on a miss (#1362).
         """
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
@@ -663,16 +664,16 @@ class SourcesAPI:
         if result and return_object:
             return Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
         # Null echo: hydrate via the internal lookup (never public ``get()`` —
-        # #1247) so a miss raises. ``False`` skips it when existence is proven
-        # (echo) or flag-off; the v0.8.0 preview (#1362) runs it to detect a miss.
-        if not return_object and (result or not future_errors_enabled()):
+        # #1247) so a miss raises. ``False`` skips it only when existence is
+        # proven by the echo; v0.8.0 (#1362) runs it to detect a miss.
+        if not return_object and result:
             return None
         source = await self._get_or_none(notebook_id, source_id)
         if source is None:
             raise SourceNotFoundError(source_id, method_id=RPCMethod.UPDATE_SOURCE.value)
         return None if not return_object else source
 
-    async def refresh(self, notebook_id: str, source_id: str) -> bool:
+    async def refresh(self, notebook_id: str, source_id: str) -> None:
         """Refresh a source to get updated content (for URL/Drive sources).
 
         Args:
@@ -680,9 +681,11 @@ class SourcesAPI:
             source_id: The source ID to refresh.
 
         Returns:
-            ``True`` if refresh was initiated (failures raise first, so it is
-            uninformative). Under ``NOTEBOOKLM_FUTURE_ERRORS`` (#1290) returns
-            ``None``; ``-> bool`` stays until v0.8.0.
+            ``None`` on success; any failure raises first.
+
+        .. versionchanged:: 0.8.0
+            **Breaking change:** returns ``None`` (not always-``True``); the
+            ``-> bool`` annotation is dropped (#1290).
         """
         params = [None, [source_id], [2]]
         await self._rpc.rpc_call(
@@ -691,10 +694,7 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        # v0.8.0 preview (#1290): uninformative ``True`` -> ``None`` (runtime-only).
-        if future_errors_enabled():
-            return None  # type: ignore[return-value]
-        return True
+        return None
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
         """Check if a source needs to be refreshed.

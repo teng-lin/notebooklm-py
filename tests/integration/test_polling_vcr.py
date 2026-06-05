@@ -73,6 +73,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -182,10 +183,13 @@ class TestPollingReplay:
 
             # 4. Rename leg — exercises RENAME_ARTIFACT regardless of whether
             #    the artifact ended ``completed`` or ``failed``. We pass
-            #    ``return_object=False`` to skip the post-rename re-fetch
-            #    (issue #1255), which would otherwise require an additional
-            #    cassette interaction; the regression we care about is "the
+            #    ``return_object=False`` so the regression we care about is "the
             #    rename RPC fires without error".
+            #    v0.8.0 (#1362): return_object=False now runs the existence
+            #    preflight too; stub it as a hit (the artifact was generated
+            #    above, so it exists) so no extra LIST_ARTIFACTS interaction is
+            #    required beyond what the cassette already captured.
+            client.artifacts._listing.get_studio_only = AsyncMock(return_value=final_status)
             await client.artifacts.rename(
                 MUTABLE_NOTEBOOK_ID,
                 task_id,

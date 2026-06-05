@@ -198,15 +198,22 @@ class TestNotesAPI:
         build_rpc_response,
     ):
         """Test updating an existing note."""
+        # v0.8.0 (#1362): update() runs a GET_NOTES_AND_MIND_MAPS existence
+        # preflight first; the note must be present so the UPDATE_NOTE RPC fires.
+        preflight = build_rpc_response(
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
+            [[["note_001", ["note_001", "Existing", None, None, "Note"]]]],
+        )
+        httpx_mock.add_response(content=preflight.encode())
         response = build_rpc_response(RPCMethod.UPDATE_NOTE, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.notes.update("nb_123", "note_001", "Updated content", "Updated title")
 
-        request = httpx_mock.get_request()
-        assert RPCMethod.UPDATE_NOTE in str(request.url)
-        assert "source-path=%2Fnotebook%2Fnb_123" in str(request.url)
+        update_request = httpx_mock.get_requests()[-1]
+        assert RPCMethod.UPDATE_NOTE in str(update_request.url)
+        assert "source-path=%2Fnotebook%2Fnb_123" in str(update_request.url)
 
     @pytest.mark.asyncio
     async def test_delete_note(

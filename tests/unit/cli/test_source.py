@@ -919,7 +919,9 @@ class TestSourceRefresh:
             assert result.exit_code == 0
             assert "Source refreshed" in result.output
 
-    def test_source_refresh_no_result(self, runner, mock_auth):
+    def test_source_refresh_none_prints_refreshed(self, runner, mock_auth):
+        # v0.8.0 (#1290): refresh() returns None on success; the CLI must still
+        # render "Source refreshed", not "no result".
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
@@ -936,7 +938,8 @@ class TestSourceRefresh:
                 result = runner.invoke(cli, ["source", "refresh", "src_123", "-n", "nb_123"])
 
             assert result.exit_code == 0
-            assert "Refresh returned no result" in result.output
+            assert "Source refreshed" in result.output
+            assert "no result" not in result.output
 
 
 # =============================================================================
@@ -2787,29 +2790,8 @@ class TestSourceJsonOutput:
             assert data["status"] == "renamed"
 
     def test_source_refresh_json(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Original")]
-            )
-            mock_client.sources.refresh = AsyncMock(
-                return_value=Source(id="src_123", title="Refreshed")
-            )
-            mock_client_cls.return_value = mock_client
-
-            with self._patch_fetch_tokens():
-                result = runner.invoke(
-                    cli, ["source", "refresh", "src_123", "-n", "nb_123", "--json"]
-                )
-
-            assert result.exit_code == 0, result.output
-            data = json.loads(result.output)
-            assert data["action"] == "refresh"
-            assert data["source_id"] == "src_123"
-            assert data["title"] == "Refreshed"
-            assert data["status"] == "refreshed"
-
-    def test_source_refresh_json_no_result(self, runner, mock_auth):
+        # v0.8.0 (#1290): refresh() returns None on success; the --json path must
+        # render status "refreshed" (keyed on the resolved source id).
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -2827,7 +2809,30 @@ class TestSourceJsonOutput:
             data = json.loads(result.output)
             assert data["action"] == "refresh"
             assert data["source_id"] == "src_123"
-            assert data["status"] == "no_result"
+            assert data["status"] == "refreshed"
+
+    def test_source_refresh_json_none_is_refreshed_not_no_result(self, runner, mock_auth):
+        # Regression guard for the hidden CLI bug (#1290): once refresh() returns
+        # None on success, the --json path must NOT fall through to "no_result".
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[Source(id="src_123", title="Original")]
+            )
+            mock_client.sources.refresh = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens():
+                result = runner.invoke(
+                    cli, ["source", "refresh", "src_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 0, result.output
+            data = json.loads(result.output)
+            assert data["action"] == "refresh"
+            assert data["source_id"] == "src_123"
+            assert data["status"] == "refreshed"
+            assert data["status"] != "no_result"
 
     def test_source_add_drive_json(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
