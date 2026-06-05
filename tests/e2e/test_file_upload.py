@@ -710,13 +710,15 @@ class TestFileUpload:
         try:
             ready = await client.sources.wait_until_ready(temp_notebook.id, source.id, timeout=120)
         except SourceProcessingError as exc:
-            pytest.fail(
+            # Re-raise (not pytest.fail) with `from exc` so the original
+            # SourceProcessingError traceback is preserved as the cause for triage.
+            raise AssertionError(
                 f"EPUB reached terminal SourceStatus.ERROR ({exc}). Upload and "
                 "registration succeeded (asserted above), so this is NotebookLM's "
                 "server-side EPUB processing failing — the known intermittent "
                 "Google-side outage (#1204) or a content-level rejection — NOT a "
                 "client upload/registration regression. Verify EPUB ingestion is up "
                 "before treating this as a client bug."
-            )
+            ) from exc
 
         assert ready.kind == SourceType.EPUB
