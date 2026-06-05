@@ -130,16 +130,11 @@ def _has_bytecount_drift(cassette: Path) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
 # Leak patterns (assertion D — applies to ALL interactions, including
-# non-batchexecute). The minimal leak-pattern detectors and the
-# ``DISPLAY_NAME_FALSE_POSITIVES`` allowlist now live in the shared non-test
-# helper ``_guardrails._cassette_shape_lint`` (``_find_leaks`` is imported at
-# the top of this module) so that ``tests/unit/test_cassette_patterns.py``
-# (which cross-checks the allowlist against the scrub registry) can import them
-# from a non-test module instead of from this gate file (issue #1431). The
-# canonical scrub registry lives in tests/cassette_patterns.py.
-# ---------------------------------------------------------------------------
+# non-batchexecute): the minimal detectors and the DISPLAY_NAME_FALSE_POSITIVES
+# allowlist live in the shared non-test helper _guardrails._cassette_shape_lint
+# (``_find_leaks`` is imported at the top of this module); the canonical scrub
+# registry lives in tests/cassette_patterns.py.
 
 
 # ---------------------------------------------------------------------------
