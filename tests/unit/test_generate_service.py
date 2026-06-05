@@ -206,6 +206,19 @@ _PLAN_HAPPY_CASES: list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any
         {"instructions": "summarize", "kind": "note-backed"},
     ),
     (
+        # Omitting --kind now defaults to interactive (#1272); interactive drops
+        # --instructions (none passed here), so params carry instructions=None.
+        "mind-map",
+        {"language": "en"},
+        {
+            "display_name": "mind map",
+            "wait": False,
+            "max_retries": 0,
+            "language": "en",
+        },
+        {"instructions": None, "kind": "interactive"},
+    ),
+    (
         "report",
         {
             "report_format": "study-guide",
