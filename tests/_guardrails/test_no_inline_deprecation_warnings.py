@@ -17,7 +17,10 @@ Why a lint and not vigilance: issue #1369 found four inline
 (``client.py`` ``__await__``, ``_auth/storage.py`` ``save_cookies_to_storage``,
 ``_research.py`` ``poll(task_id=None)``, ``_notebooks.py`` ``NotebooksAPI.share()``)
 that bypassed the suppression gate, so ``NOTEBOOKLM_QUIET_DEPRECATIONS=1`` did
-**not** silence them. Tellingly, **3 of 4 independent ADR-compliance audit
+**not** silence them. (Two of those sites were later removed in v0.8.0 / #1363 —
+``poll(task_id=None)`` ambiguity now raises ``AmbiguousResearchTaskError`` and
+``NotebooksAPI.share()`` is gone — but the lint still guards the remaining and
+all future sites.) Tellingly, **3 of 4 independent ADR-compliance audit
 passes reported ADR-0018 "clean"** and missed this entire class — exactly the
 kind of blind spot that human/agent review keeps missing. The durable fix is a
 gate on the right dimension (call shape), not another round of vigilance.

@@ -3,7 +3,6 @@
 import logging
 from typing import Any
 
-from ._deprecation import warn_deprecated
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -671,62 +670,11 @@ class NotebooksAPI:
             source_path=f"/notebook/{notebook_id}",
         )
 
-    async def share(
-        self, notebook_id: str, public: bool = True, artifact_id: str | None = None
-    ) -> dict:
-        """Toggle notebook sharing.
-
-        .. deprecated:: 0.5.0
-            Use :meth:`client.sharing.set_public` instead, which is the
-            canonical notebook-level public-sharing toggle and is paired
-            with the rest of the sharing surface (``add_user``,
-            ``set_view_level``, ``get_status``). This wrapper is
-            preserved as a no-behavior-change shim and will be removed
-            in a future major release.
-
-        Migration::
-
-            # before
-            await client.notebooks.share(notebook_id, public=True)
-
-            # after
-            await client.sharing.set_public(notebook_id, True)
-
-        Note: This method uses SHARE_ARTIFACT for artifact-level sharing.
-        For notebook-level sharing with user management, use client.sharing instead:
-
-            await client.sharing.set_public(notebook_id, True)
-            await client.sharing.add_user(notebook_id, email, SharePermission.VIEWER)
-
-        Sharing is a NOTEBOOK-LEVEL setting. When enabled, ALL artifacts in the
-        notebook become accessible via their URLs.
-
-        Args:
-            notebook_id: The notebook ID.
-            public: If True, enable sharing. If False, disable sharing.
-            artifact_id: Optional artifact ID for generating a deep-link URL.
-
-        Returns:
-            Dict with 'public' status, 'url', and 'artifact_id'.
-        """
-        warn_deprecated(
-            "NotebooksAPI.share() is deprecated; use client.sharing.set_public() "
-            "for the canonical notebook-level public-sharing toggle (paired with "
-            "client.sharing.add_user(), set_view_level(), get_status()). Return "
-            "shape is unchanged in this release; the wrapper will be removed in "
-            "a future major release.",
-            # No pinned removal version yet (re-pin tracked by #1363); the
-            # message already says "a future major release".
-            removal=None,
-            stacklevel=3,
-        )
-        return await self._share_manager.share(notebook_id, public, artifact_id)
-
     def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
         """Get share URL for a notebook or artifact.
 
         This does NOT toggle sharing - it just returns the URL format.
-        Use share() to enable/disable sharing.
+        Use :meth:`client.sharing.set_public` to enable/disable sharing.
 
         Args:
             notebook_id: The notebook ID.

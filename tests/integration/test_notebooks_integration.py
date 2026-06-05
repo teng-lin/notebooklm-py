@@ -362,27 +362,16 @@ class TestNotebooksAPIAdditional:
     """Additional integration tests for NotebooksAPI."""
 
     @pytest.mark.asyncio
-    async def test_share_notebook(
-        self,
-        auth_tokens,
-        httpx_mock: HTTPXMock,
-        build_rpc_response,
-    ):
-        """Test sharing a notebook."""
-        response = build_rpc_response(
-            RPCMethod.SHARE_ARTIFACT,
-            None,  # Share returns null, we build the URL
-        )
-        httpx_mock.add_response(content=response.encode())
+    async def test_share_method_removed(self, auth_tokens):
+        """NotebooksAPI.share() was removed in v0.8.0 (#1363).
 
+        Callers must use ``client.sharing.set_public`` for the public-sharing
+        toggle and ``client.notebooks.get_share_url`` for the deep-link URL.
+        """
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-                result = await client.notebooks.share("nb_123", public=True)
-
-        assert result["public"] is True
-        assert "nb_123" in result["url"]
-        request = httpx_mock.get_request()
-        assert RPCMethod.SHARE_ARTIFACT.value in str(request.url)
+            assert not hasattr(client.notebooks, "share")
+            with pytest.raises(AttributeError):
+                await client.notebooks.share("nb_123", public=True)  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_get_summary_additional(
@@ -723,44 +712,13 @@ class TestDescribeEdgeCases:
 
 
 class TestShareEdgeCases:
-    """Tests for share() and get_share_url() branch edge cases."""
+    """Tests for get_share_url() branch edge cases.
 
-    @pytest.mark.asyncio
-    async def test_share_with_artifact_id(
-        self,
-        auth_tokens,
-        httpx_mock: HTTPXMock,
-        build_rpc_response,
-    ):
-        """Line 260: share() public=True with artifact_id builds deep-link URL."""
-        response = build_rpc_response(RPCMethod.SHARE_ARTIFACT, None)
-        httpx_mock.add_response(content=response.encode())
-
-        async with NotebookLMClient(auth_tokens) as client:
-            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-                result = await client.notebooks.share("nb_123", public=True, artifact_id="art_456")
-
-        assert result["public"] is True
-        assert result["url"] == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
-        assert result["artifact_id"] == "art_456"
-
-    @pytest.mark.asyncio
-    async def test_share_public_false_returns_none_url(
-        self,
-        auth_tokens,
-        httpx_mock: HTTPXMock,
-        build_rpc_response,
-    ):
-        """Line 264: share() public=False sets url to None."""
-        response = build_rpc_response(RPCMethod.SHARE_ARTIFACT, None)
-        httpx_mock.add_response(content=response.encode())
-
-        async with NotebookLMClient(auth_tokens) as client:
-            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-                result = await client.notebooks.share("nb_123", public=False)
-
-        assert result["public"] is False
-        assert result["url"] is None
+    ``share()`` was removed in v0.8.0 (#1363); its deep-link URL building and the
+    public=False url-is-None behavior are covered by ``ShareManager`` unit tests
+    and the ``get_share_url`` cases below. Use ``client.sharing.set_public`` for
+    the public-sharing toggle.
+    """
 
     @pytest.mark.asyncio
     async def test_get_share_url_without_artifact(

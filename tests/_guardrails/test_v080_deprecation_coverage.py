@@ -155,6 +155,14 @@ V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
         summary="derived-read + lister drift-tightening: malformed payloads raise DecodingError",
         exemption=_DELIBERATE_CLEAN_BREAK,
     ),
+    BreakingChange(
+        issue=1363,
+        summary=(
+            "remove NotebooksAPI.share() + research poll/wait raise "
+            "AmbiguousResearchTaskError on task_id=None with >=2 in-flight tasks"
+        ),
+        exemption=_DELIBERATE_CLEAN_BREAK,
+    ),
 )
 
 
@@ -364,12 +372,16 @@ def test_silent_break_exemptions_match_baseline() -> None:
     #1344 (derived-read / lister drift -> DecodingError) joins the original three
     (#1290 / #1342 / #1362): a "this future payload shape will be rejected" break
     has no value-level warning it could emit in v0.7.0, so it is a clean break.
+    #1363 (remove NotebooksAPI.share() + research poll/wait raise on ambiguous
+    task_id=None) is one issue covering two breaks: both v0.7.0 warn runways are
+    *deleted* this release, so no live signal remains to verify — it is exempted
+    rather than runwayed.
     """
     # Match ``_tag``'s blank-reason handling: a whitespace-only exemption is "no
     # reason" (it would already fail ``test_every_entry_is_runwayed_or_exempted``),
     # so it must not be counted toward the baseline here either.
     exempted = sorted(c.issue for c in V080_BREAKING_CHANGES if c.exemption and c.exemption.strip())
-    assert exempted == [1290, 1342, 1344, 1362], (
+    assert exempted == [1290, 1342, 1344, 1362, 1363], (
         "The v0.8.0 silent-break exemption set changed. It is meant to SHRINK as "
         "runways are added, never to grow silently. If you added a NEW exemption, "
         "confirm in review that the break genuinely cannot warn at the value level "

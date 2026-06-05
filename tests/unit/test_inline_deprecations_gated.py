@@ -4,11 +4,15 @@ Four sites used to call ``warnings.warn(..., DeprecationWarning)`` inline,
 bypassing the suppression gate ADR-0018 promises. The fix split them by what
 they actually are:
 
-* **Three genuine scheduled deprecations** — awaiting ``from_storage(...)``,
-  ambiguous ``research.poll(task_id=None)``, and ``NotebooksAPI.share()`` — now
-  route through ``notebooklm._deprecation.warn_deprecated``, so each fires a
+* **Genuine scheduled deprecations** — historically awaiting
+  ``from_storage(...)``, ambiguous ``research.poll(task_id=None)``, and
+  ``NotebooksAPI.share()`` — route through
+  ``notebooklm._deprecation.warn_deprecated``, so each fires a
   ``DeprecationWarning`` by default and goes silent under
-  ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
+  ``NOTEBOOKLM_QUIET_DEPRECATIONS``. In v0.8.0 (#1363) the
+  ``research.poll(task_id=None)`` ambiguity and ``NotebooksAPI.share()`` sites
+  were removed (the former now raises ``AmbiguousResearchTaskError``; the latter
+  is gone entirely), so only the ``from_storage`` await remains here.
 * **One permanent back-compat shim** — ``save_cookies_to_storage`` without
   ``original_snapshot`` — was a category error. It is not a scheduled removal;
   it is a runtime safety advisory about the stale-overwrite-fresh race
@@ -22,25 +26,14 @@ user-visible category + suppression behavior the lint can't observe.
 
 from __future__ import annotations
 
-import asyncio
 import warnings
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
 from notebooklm._auth.storage import save_cookies_to_storage
-from notebooklm._research import ResearchAPI
-from notebooklm._types.research import ResearchStatus, ResearchTask
 from notebooklm.client import NotebookLMClient, _FromStorageContext
-
-
-def _two_inflight_tasks() -> list[ResearchTask]:
-    return [
-        ResearchTask(task_id="task_A", status=ResearchStatus.COMPLETED, query="A"),
-        ResearchTask(task_id="task_B", status=ResearchStatus.COMPLETED, query="B"),
-    ]
 
 
 def _from_storage_await_warns() -> None:
@@ -51,32 +44,11 @@ def _from_storage_await_warns() -> None:
     gen.close()
 
 
-def _research_poll_ambiguous_warns() -> None:
-    ResearchAPI._select_polled_tasks(
-        _two_inflight_tasks(),
-        notebook_id="nb_ambig",
-        task_id=None,
-        warn_on_ambiguous=True,
-    )
-
-
-def _share_warns() -> None:
-    from notebooklm._notebooks import NotebooksAPI
-
-    api = NotebooksAPI.__new__(NotebooksAPI)
-    share_manager = AsyncMock()
-    share_manager.share.return_value = {"public": True}
-    api._share_manager = share_manager
-    asyncio.run(api.share("nb_123", public=True))
-
-
-# (trigger, message-substring) for the three genuine gated deprecations.
+# (trigger, message-substring) for the surviving gated deprecation.
 DEPRECATION_SITES = [
     pytest.param(
         _from_storage_await_warns, "Awaiting NotebookLMClient.from_storage", id="from_storage_await"
     ),
-    pytest.param(_research_poll_ambiguous_warns, "no task_id", id="research_poll_ambiguous"),
-    pytest.param(_share_warns, "NotebooksAPI.share", id="notebooks_share"),
 ]
 
 

@@ -248,46 +248,20 @@ async def test_get_metadata_does_not_warn_when_empty_notebook_listing_is_empty(
     assert caplog.records == []
 
 
-@pytest.mark.asyncio
-async def test_share_sends_exact_share_artifact_payload_and_returns_deep_link(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
+def test_share_method_removed_in_v080() -> None:
+    """NotebooksAPI.share() was removed in v0.8.0 (#1363).
+
+    The deprecated no-behavior-change wrapper over ``client.sharing.set_public``
+    is gone; the SHARE_ARTIFACT payload wiring it forwarded to lives in
+    ``ShareManager.share`` (independently tested). Callers use
+    ``client.sharing.set_public`` for the toggle and ``get_share_url`` for the
+    deep-link URL.
+    """
     api = _make_api()
 
-    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-        result = await api.share("nb_123", public=True, artifact_id="art_456")
-
-    assert result == {
-        "public": True,
-        "url": "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456",
-        "artifact_id": "art_456",
-    }
-    api._rpc.rpc_call.assert_awaited_once_with(
-        RPCMethod.SHARE_ARTIFACT,
-        [[1], "nb_123", "art_456"],
-        source_path="/notebook/nb_123",
-        allow_null=True,
-    )
-
-
-@pytest.mark.asyncio
-async def test_share_private_sends_disable_payload_and_returns_no_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
-    api = _make_api()
-
-    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-        result = await api.share("nb_123", public=False)
-
-    assert result == {"public": False, "url": None, "artifact_id": None}
-    api._rpc.rpc_call.assert_awaited_once_with(
-        RPCMethod.SHARE_ARTIFACT,
-        [[0], "nb_123"],
-        source_path="/notebook/nb_123",
-        allow_null=True,
-    )
+    assert not hasattr(api, "share")
+    with pytest.raises(AttributeError):
+        api.share  # type: ignore[attr-defined]  # noqa: B018
 
 
 def test_get_share_url_remains_sync_url_formatter(monkeypatch: pytest.MonkeyPatch) -> None:

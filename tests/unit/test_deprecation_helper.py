@@ -35,8 +35,10 @@ class TestWarnDeprecated:
         assert msg.count("v1.0") == 1
 
     def test_no_removal_emits_message_verbatim(self):
-        # The removal=None callers (NotebooksAPI.share(), ambiguous poll) have
-        # no pinned removal version yet, so the message is emitted verbatim.
+        # ``warn_deprecated(removal=None)`` emits the message verbatim (no
+        # synthesized removal-version clause). The former removal=None callers
+        # (NotebooksAPI.share(), ambiguous poll) were removed in v0.8.0 (#1363);
+        # awaiting from_storage(...) remains a removal=None caller.
         with pytest.warns(DeprecationWarning) as record:
             warn_deprecated("Permanent shim warning with no version.", removal=None)
         msg = str(record[0].message)

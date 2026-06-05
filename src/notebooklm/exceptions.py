@@ -117,6 +117,7 @@ __all__ = [
     "ResearchError",
     "ResearchTimeoutError",
     "ResearchTaskMismatchError",
+    "AmbiguousResearchTaskError",
     # Domain: Notes
     "NoteError",
     "NoteNotFoundError",
@@ -1317,6 +1318,39 @@ class ResearchTaskMismatchError(ValidationError):
             f"research_task_id={source_research_task_id!r} but caller passed "
             f"task_id={task_id!r}. Sources discovered under one research "
             f"task cannot be imported under another."
+        )
+
+
+class AmbiguousResearchTaskError(ResearchError):
+    """Two or more research tasks are in flight but no ``task_id`` was given.
+
+    Raised by :meth:`ResearchAPI.poll` / :meth:`ResearchAPI.wait_for_completion`
+    when ``task_id`` is ``None`` and the notebook has two or more in-flight
+    tasks: with no discriminator the call would have to guess, risking the wrong
+    task, so it fails loud (ADR-0019: "ambiguous -> raise, never silently
+    guess"). Pass the ``task_id`` from :meth:`ResearchAPI.start`; a single
+    in-flight task is unambiguous and still returned silently.
+
+    .. versionchanged:: 0.8.0 previously warned and returned the latest task.
+
+    Inherits from :class:`ResearchError` and deliberately NOT from
+    :class:`ValidationError` — the counterpoint to
+    :class:`ResearchTaskMismatchError` (which IS a ``ValidationError``), so
+    ``except ValidationError`` does not catch this; catch ``except ResearchError``.
+
+    Attributes:
+        notebook_id: Notebook containing the ambiguous in-flight tasks.
+        task_ids: The ``task_id`` of every in-flight task observed at poll time.
+    """
+
+    def __init__(self, *, notebook_id: str, task_ids: list[str]):
+        self.notebook_id = notebook_id
+        self.task_ids = task_ids
+        super().__init__(
+            f"ResearchAPI poll on notebook {notebook_id!r} is ambiguous: "
+            f"{len(task_ids)} research tasks are in flight but no task_id was "
+            f"supplied to select one. Pass task_id=<id> (from research.start) "
+            f"to choose explicitly. In-flight task ids: {task_ids!r}."
         )
 
 

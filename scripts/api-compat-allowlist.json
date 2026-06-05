@@ -73,6 +73,16 @@
       "reason": "Same break as notebooklm.Note.from_api_response above; this entry covers the audit's dotted-module-path view of the same callable."
     },
     {
+      "code": "removed-member",
+      "object": "notebooklm.NotebookLMClient.notebooks.share",
+      "reason": "v0.8.0 #1363: removed the v0.5.0-deprecated NotebooksAPI.share() no-behavior-change wrapper over client.sharing.set_public. Use client.sharing.set_public(notebook_id, public) for the public-sharing toggle and client.notebooks.get_share_url(notebook_id, artifact_id) for the deep-link URL (get_share_url stays). See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.client.NotebookLMClient.notebooks.share",
+      "reason": "Same break as notebooklm.NotebookLMClient.notebooks.share above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
       "code": "changed-signature",
       "object": "notebooklm.NotebookLMClient.artifacts.generate_audio",
       "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."

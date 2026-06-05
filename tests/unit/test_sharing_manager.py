@@ -129,6 +129,15 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 
 @pytest.mark.asyncio
 async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_call() -> None:
+    """The auto-built ``_share_manager`` late-binds the executor's rpc_call.
+
+    ``NotebooksAPI.share()`` was removed in v0.8.0 (#1363), but the default
+    ``ShareManager`` it constructed (still backing ``get_share_url``) keeps the
+    late-binding contract: ShareManager binds to the executor's ``rpc_call``
+    attribute lazily, so swapping it after construction must be honored. Driven
+    directly through ``_share_manager.share`` (the manager stays; only the public
+    wrapper was cut).
+    """
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     api = NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
     replacement_rpc = AsyncMock(return_value=None)
@@ -137,8 +146,7 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
     # under test, not the forbidden pattern (we're testing the binding).
     core.rpc_executor.rpc_call = replacement_rpc
 
-    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-        result = await api.share("nb_123", public=True, artifact_id="art_456")
+    result = await api._share_manager.share("nb_123", public=True, artifact_id="art_456")
 
     assert result["url"] == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
     replacement_rpc.assert_awaited_once_with(
@@ -149,18 +157,19 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
     )
 
 
-@pytest.mark.asyncio
-async def test_notebooks_api_share_delegates_to_injected_share_manager() -> None:
+def test_notebooks_api_share_method_removed_in_v080() -> None:
+    """NotebooksAPI.share() was removed in v0.8.0 (#1363).
+
+    The public wrapper that delegated to the injected ``ShareManager.share`` is
+    gone; callers use ``client.sharing.set_public`` (toggle) and
+    ``get_share_url`` (deep-link URL). The manager-delegation contract is still
+    exercised by ``ShareManager.share`` tests above and ``get_share_url`` below.
+    """
     core = MagicMock()
     share_manager = MagicMock()
-    share_manager.share = AsyncMock(return_value={"public": True, "url": "u", "artifact_id": None})
     api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
 
-    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
-        result = await api.share("nb_123", public=True)
-
-    assert result == {"public": True, "url": "u", "artifact_id": None}
-    share_manager.share.assert_awaited_once_with("nb_123", True, None)
+    assert not hasattr(api, "share")
 
 
 def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> None:

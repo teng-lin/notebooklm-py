@@ -10,10 +10,10 @@ task B (the "cross-wire" bug).
 
 The fix adds an OPTIONAL ``task_id`` discriminator to ``poll()`` and a
 per-source ``research_task_id`` mismatch guard to ``import_sources()``.
-Optional, not required: making it required would be a breaking change for
-every existing caller. Old behavior is preserved when ``task_id`` is None,
-with a ``DeprecationWarning`` raised on the actually-broken case (multiple
-in-flight tasks + no discriminator).
+Optional, not required: the signature stays unchanged so single-task callers
+keep working. When ``task_id`` is None and a single task is in flight, the only
+task is returned silently; when two or more are in flight, the call raises
+:class:`AmbiguousResearchTaskError` (v0.8.0, #1363) rather than guessing.
 
 Four scenarios:
 
@@ -21,11 +21,10 @@ A. **Explicit discriminator**: ``poll(nb, task_id="A")`` returns task A
    even when task B is also in flight; ``poll(nb, task_id="B")`` returns
    task B. No warning fires.
 B. **Single in-flight, no discriminator**: ``poll(nb)`` returns the only
-   task without any deprecation warning (old behavior, no ambiguity).
-C. **Multiple in-flight, no discriminator**: ``poll(nb)`` emits a
-   ``DeprecationWarning`` AND returns whatever old code returned (the
-   latest task), preserving compatibility for legacy callers while
-   surfacing the now-explicit hazard.
+   task without any deprecation warning (no ambiguity).
+C. **Multiple in-flight, no discriminator**: ``poll(nb)`` raises
+   :class:`AmbiguousResearchTaskError` (v0.8.0, #1363) instead of silently
+   guessing the latest task — the caller must pass an explicit ``task_id``.
 D. **import_sources mismatch**: passing ``task_id="A"`` together with a
    source whose ``research_task_id="B"`` raises
    :class:`ResearchTaskMismatchError` instead of silently importing
@@ -43,7 +42,7 @@ import warnings
 import pytest
 
 from notebooklm import NotebookLMClient
-from notebooklm.exceptions import ResearchTaskMismatchError
+from notebooklm.exceptions import AmbiguousResearchTaskError, ResearchTaskMismatchError
 from notebooklm.rpc import RPCMethod
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
@@ -143,15 +142,16 @@ async def test_scenario_b_no_task_id_single_in_flight_no_warning(
 
 
 @pytest.mark.asyncio
-async def test_scenario_c_no_task_id_multiple_in_flight_warns(
+async def test_scenario_c_no_task_id_multiple_in_flight_raises(
     auth_tokens, httpx_mock, build_rpc_response
 ):
-    """C. ``poll(nb)`` with multiple in-flight tasks: warn + old return.
+    """C. ``poll(nb)`` with multiple in-flight tasks: raises (v0.8.0; #1363).
 
-    The actually-broken case (cross-wire). We warn (don't error) to
-    preserve back-compat — callers on the old API keep working until
-    they migrate. The returned task must match the old "first task in
-    list" behavior so existing consumers see no functional change.
+    The actually-broken case (cross-wire). In v0.8.0 this no longer warns and
+    silently guesses the latest task — it raises
+    :class:`AmbiguousResearchTaskError` so the caller must pass an explicit
+    ``task_id`` discriminator rather than risk acting on the wrong task's
+    results.
     """
     task_a = _build_completed_task_payload("query A", "https://a.example", "Result A")
     task_b = _build_completed_task_payload("query B", "https://b.example", "Result B")
@@ -162,24 +162,14 @@ async def test_scenario_c_no_task_id_multiple_in_flight_warns(
 
     httpx_mock.add_response(content=response_body.encode(), method="POST")
     async with NotebookLMClient(auth_tokens) as client:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = await client.research.poll("nb_ambig")
+        with pytest.raises(AmbiguousResearchTaskError) as excinfo:
+            await client.research.poll("nb_ambig")
 
-    # Old behavior: latest (first) task wins.
-    assert result.task_id == "task_A"
-    assert result.query == "query A"
-    # All parsed tasks remain in ``tasks`` (old shape).
-    assert [t.task_id for t in result.tasks] == ["task_A", "task_B"]
-
-    # DeprecationWarning must fire exactly once for this ambiguity.
-    deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert len(deprecation_warnings) == 1, (
-        f"Expected one DeprecationWarning on ambiguous poll, got "
-        f"{len(deprecation_warnings)}: {[str(w.message) for w in deprecation_warnings]}"
-    )
-    msg = str(deprecation_warnings[0].message)
-    assert "task_id" in msg, f"Warning should mention task_id discriminator: {msg!r}"
+    err = excinfo.value
+    assert err.notebook_id == "nb_ambig"
+    assert err.task_ids == ["task_A", "task_B"]
+    # The error must steer the caller toward the task_id discriminator.
+    assert "task_id" in str(err)
 
 
 @pytest.mark.asyncio
