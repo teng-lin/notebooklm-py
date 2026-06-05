@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm import SourceType
+from notebooklm import SourceProcessingError, SourceType
 
 from .conftest import requires_auth
 
@@ -673,19 +673,50 @@ class TestFileUpload:
 
     @pytest.mark.asyncio
     async def test_add_epub_file(self, client, temp_notebook, tmp_path):
-        """Test uploading an EPUB file."""
+        """Upload an EPUB, separating the client contract from server processing.
+
+        The terminal-``ERROR`` processing failure is deliberately left **loud**
+        (#1204): NotebookLM's server-side EPUB ingestion intermittently fails
+        Google-side, and the nightly E2E should surface that — and catch a real
+        client regression in the EPUB path — rather than silently ``xfail`` it.
+        ``xfail(raises=SourceProcessingError)`` would be wrong here because the
+        *same* terminal ``SourceStatus.ERROR`` is raised both for a Google-side
+        outage and for a client bug (bad MIME routing, corrupt upload), so it
+        would mask exactly the regression this test exists to catch.
+
+        The split below makes the two attributable:
+        - **Client contract** (``wait=False``): upload + registration must
+          succeed. A client-side regression fails here, distinctly ours.
+        - **Server processing** (``wait_until_ready``): a terminal ``ERROR``
+          fails loudly with a triage note; on success, ``kind == EPUB`` confirms
+          the server classified our upload correctly (catching a MIME/routing
+          regression as ``kind != EPUB`` rather than a processing error).
+        """
         test_epub = tmp_path / "test_book.epub"
         create_minimal_epub(test_epub)
 
-        # wait=True ensures we get the processed source type
+        # --- Client contract: registration + upload must succeed (no waiting). ---
         source = await client.sources.add_file(
             temp_notebook.id,
             test_epub,
             mime_type="application/epub+zip",
-            wait=True,
-            wait_timeout=120,
+            wait=False,
         )
         assert source is not None
         assert source.id is not None
         assert source.title == "test_book.epub"
-        assert source.kind == SourceType.EPUB
+
+        # --- Server processing: stay loud on terminal ERROR, with triage. ---
+        try:
+            ready = await client.sources.wait_until_ready(temp_notebook.id, source.id, timeout=120)
+        except SourceProcessingError as exc:
+            pytest.fail(
+                f"EPUB reached terminal SourceStatus.ERROR ({exc}). Upload and "
+                "registration succeeded (asserted above), so this is NotebookLM's "
+                "server-side EPUB processing failing — the known intermittent "
+                "Google-side outage (#1204) or a content-level rejection — NOT a "
+                "client upload/registration regression. Verify EPUB ingestion is up "
+                "before treating this as a client bug."
+            )
+
+        assert ready.kind == SourceType.EPUB
