@@ -405,8 +405,8 @@ is the failure mode this directory exists to prevent).
 **How they differ from ruff / mypy.** Ruff and mypy run in the `quality` job and
 enforce *generic* rules (style, unused imports, types) from a fixed catalogue.
 The `tests/_lint/` gates are collected by the normal `uv run pytest` run and
-enforce *bespoke* rules by doing their own analysis: most `ast.parse` the source
-(or scan files with regex / `rglob`), and some **import the module and reflect on
+enforce *bespoke* rules by doing their own analysis: most parse the source with
+`ast.parse` (or scan files with regex / `rglob`), and some **import the module and reflect on
 the live object** — something a purely-static linter cannot do.
 
 A representative slice (run `ls tests/_lint/` for the full set):
@@ -417,7 +417,7 @@ A representative slice (run `ls tests/_lint/` for the full set):
 | `test_rpc_method_ids_only_in_types.py` | Obfuscated RPC IDs live only in `rpc/types.py` (the source of truth) |
 | `test_no_forbidden_monkeypatches.py` | The forbidden monkeypatch shapes under `tests/` (ADR-0007) |
 | `test_no_inline_deprecation_warnings.py` | No inline `warnings.warn(..., DeprecationWarning)` outside `_deprecation.py` (ADR-0018) |
-| `test_cli_rpc_envelope.py` | Every Click leaf command routes its errors into the JSON envelope |
+| `test_cli_rpc_envelope.py` | Every *RPC-touching* Click leaf command (call graph reaches `NotebookLMClient`) routes its errors into the JSON envelope |
 | `test_module_size_ratchet.py` | No module grows past the size budget (ADR-0008) — a burn-down ratchet |
 | `test_v080_release_gate.py` | The v0.8.0 breaking-change set flips in lockstep at the version bump |
 | `test_adr_reference_format.py` | ADR references are 4-digit and resolve to a real `docs/adr/NNNN-*.md` |
