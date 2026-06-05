@@ -674,7 +674,8 @@ class NotebooksAPI:
         """Get share URL for a notebook or artifact.
 
         This does NOT toggle sharing - it just returns the URL format.
-        Use :meth:`client.sharing.set_public` to enable/disable sharing.
+        Use :meth:`SharingAPI.set_public` (``client.sharing.set_public``) to
+        enable/disable sharing.
 
         Args:
             notebook_id: The notebook ID.
