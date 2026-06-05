@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0]
 
-This release lands the **breaking half** of the ADR-0019 error contract (umbrella
-#1346): "absence and refusal **raise**; only success and async-lifecycle state are
-returned." Every flip previewed under `NOTEBOOKLM_FUTURE_ERRORS` in v0.7.0 is now
+This release lands the **breaking half** of the ADR-0019 error contract
+(umbrella #1346): "absence and refusal **raise**; only success and
+async-lifecycle state are returned." Every flip previewed under
+`NOTEBOOKLM_FUTURE_ERRORS` in v0.7.0 is now
 the default, and the preview flag — together with the dict-subscript / get-returns-
 None / kwarg-alias deprecation machinery — has been **removed** (#1365). See the
 [Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md) guide.
@@ -44,7 +45,7 @@ None / kwarg-alias deprecation machinery — has been **removed** (#1365). See t
 - **`generate mind-map` defaults to interactive** (#1272). The CLI
   `notebooklm generate mind-map <nb>` (and `artifact`/`download` mind-map paths)
   now default `--kind` to `interactive` instead of the note-backed JSON map. Pass
-  `--kind note` to keep the note-backed behavior.
+  `--kind note-backed` to keep the note-backed behavior.
 - **`sources.refresh()` / `chat.delete_conversation()` return `None`** (#1290).
   Both previously returned `True` on success (uninformative — any failure raised
   first); they now return `None` and their annotations change from `-> bool` to
