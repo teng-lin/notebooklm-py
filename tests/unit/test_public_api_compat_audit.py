@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -525,3 +526,147 @@ def test_load_policy_rejects_unsupported_schema_version(tmp_path, script):
 
     with pytest.raises(RuntimeError, match="unsupported schema_version"):
         script.load_policy(policy)
+
+
+def test_stale_allowances_flags_entries_matching_no_break(script):
+    # An allowance whose (code, object) matches a current break is live; one that
+    # matches nothing is stale — it is already baked into the baseline.
+    live_break = script.ApiBreak(
+        code="removed-export",
+        object="notebooklm.RealRemoval",
+        detail="removed",
+    )
+    live = script.Allowance(
+        code="removed-export",
+        object="notebooklm.RealRemoval",
+        reason="intentional removal pending next release",
+    )
+    stale = script.Allowance(
+        code="removed-export",
+        object="notebooklm.AlreadyInBaseline",
+        reason="removed before the current baseline; matches nothing today",
+    )
+
+    result = script.stale_allowances([live_break], [live, stale])
+
+    assert result == [stale]
+
+
+def test_stale_allowances_returns_empty_when_every_entry_matches(script):
+    brk = script.ApiBreak(code="changed-return", object="notebooklm.X.get", detail="narrowed")
+    allowance = script.Allowance(
+        code="changed-return", object="notebooklm.X.get", reason="documented narrowing"
+    )
+
+    assert script.stale_allowances([brk], [allowance]) == []
+
+
+def test_stale_allowances_honors_glob_allowances(script):
+    # A glob allowance that still covers a break is not stale.
+    brk = script.ApiBreak(
+        code="removed-member", object="notebooklm.Source.source_type", detail="removed"
+    )
+    glob = script.Allowance(
+        code="removed-*", object="notebooklm.Source.*", reason="documented family removal"
+    )
+
+    assert script.stale_allowances([brk], [glob]) == []
+
+
+def test_stale_allowances_treats_path_view_pair_as_one_unit(script):
+    # Only the bare re-export view matches a break; the dotted client view does
+    # not. The pair is still LIVE because either view matching keeps both — the
+    # caveat the issue calls out (a single-view-detected break must not flag its
+    # load-bearing sibling).
+    bare_break = script.ApiBreak(
+        code="changed-signature",
+        object="notebooklm.NotebookLMClient.research.wait_for_completion",
+        detail="removed interval=",
+    )
+    bare_view = script.Allowance(
+        code="changed-signature",
+        object="notebooklm.NotebookLMClient.research.wait_for_completion",
+        reason="removed interval= alias",
+    )
+    client_view = script.Allowance(
+        code="changed-signature",
+        object="notebooklm.client.NotebookLMClient.research.wait_for_completion",
+        reason="same break, dotted-module view",
+    )
+
+    assert script.stale_allowances([bare_break], [bare_view, client_view]) == []
+
+
+def test_stale_allowances_flags_pair_when_neither_view_matches(script):
+    # With no break at all, both views of a pair are stale and reported.
+    bare_view = script.Allowance(
+        code="removed-member", object="notebooklm.Old.gone", reason="stale"
+    )
+    client_view = script.Allowance(
+        code="removed-member", object="notebooklm.client.Old.gone", reason="stale"
+    )
+
+    result = script.stale_allowances([], [bare_view, client_view])
+
+    assert result == [bare_view, client_view]
+
+
+def test_sibling_object_round_trips_the_two_path_views(script):
+    bare = "notebooklm.NotebookLMClient.sources.get"
+    client = "notebooklm.client.NotebookLMClient.sources.get"
+    assert script._sibling_object(bare) == client
+    assert script._sibling_object(client) == bare
+    # An object outside the package prefix has no sibling.
+    assert script._sibling_object("other.thing") is None
+
+
+def test_audit_json_includes_stale_allowances_field(script, tmp_path, monkeypatch, capsys):
+    # End-to-end shape check of ``--json`` / ``--check-stale`` without shelling
+    # out to git: stub the manifest collection so a synthetic baseline removal
+    # surfaces as one break, then confirm a non-matching allowance lands in
+    # ``stale_allowances`` while a matching one lands in ``approved``.
+    baseline = _manifest({"GoneExport": _function(), "KeptExport": _function()})
+    current = _manifest({"KeptExport": _function()})
+
+    monkeypatch.setattr(script, "latest_release_tag", lambda repo_root: "v9.9.9")
+    monkeypatch.setattr(script, "export_git_ref", lambda repo_root, ref, dest: dest)
+
+    def _stub_manifests():
+        manifests = iter([baseline, current])
+        monkeypatch.setattr(script, "collect_manifest", lambda root, extra=None: next(manifests))
+
+    _stub_manifests()
+
+    allowlist = tmp_path / "allowlist.json"
+    allowlist.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "allowed_breaks": [
+                    {
+                        "code": "removed-export",
+                        "object": "notebooklm.GoneExport",
+                        "reason": "intentional, pending next release",
+                    },
+                    {
+                        "code": "removed-export",
+                        "object": "notebooklm.AlreadyBaked",
+                        "reason": "stale leftover",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = script.main(["--json", "--allowlist", str(allowlist)])
+    payload = json.loads(capsys.readouterr().out)
+
+    # ``--json`` without ``--check-stale`` reports stale entries but does not fail.
+    assert exit_code == 0
+    assert [item["object"] for item in payload["stale_allowances"]] == ["notebooklm.AlreadyBaked"]
+    assert [item["break"]["object"] for item in payload["approved"]] == ["notebooklm.GoneExport"]
+
+    # ``--check-stale`` promotes the same stale entry to a hard failure.
+    _stub_manifests()
+    assert script.main(["--check-stale", "--allowlist", str(allowlist)]) == 1

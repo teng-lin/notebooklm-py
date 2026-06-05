@@ -145,6 +145,13 @@ documented client namespace methods under `NotebookLMClient.notebooks`,
 `sharing`. Function signatures include positional/keyword compatibility and
 default values; changing a default is a public behavior change.
 
+The allowlist is **release-scoped**: each entry records a break pending the
+*next* tag, not a permanent exemption. Once `vX.Y.Z` ships, its entries are in
+the baseline and must be pruned — see
+[Prune the API-Compat Allowlist](#prune-the-api-compat-allowlist). The Code
+Quality job runs the audit with `--check-stale`, so a stale entry (one matching
+no break against the baseline) is a CI failure, not silent cruft.
+
 ### Changelog
 
 - [ ] Get commits since last release:
@@ -331,6 +338,43 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
   - Title: `vX.Y.Z`
   - Copy release notes from `CHANGELOG.md`
   - Publish release
+
+### Prune the API-Compat Allowlist
+
+Pushing the tag advances the audit baseline — `audit_public_api_compat.py`
+resolves it from `git describe --tags --abbrev=0`, so the breaks you just
+shipped are now part of the `vX.Y.Z` baseline and are **no longer breaks against
+it**. The baseline advances automatically; the allowlist is the manual half that
+must reset, or it accumulates dead entries that describe nothing.
+
+The lifecycle to keep in mind:
+
+- **baseline** = the last *released* version (automatic — it's the latest tag).
+- **allowlist** = the intentional breaks pending the *next* release. It should
+  reset to (near) empty at each release boundary.
+
+Concretely, **after the tag is pushed**, prune the entries that just shipped:
+
+- [ ] In a follow-up PR (on `main`, after the tag exists), remove from
+  `scripts/api-compat-allowlist.json` every `allowed_breaks` entry that
+  described a `vPREV → vX.Y.Z` change. These are now baked into the `vX.Y.Z`
+  baseline. List the stale entries with:
+  ```bash
+  uv run python scripts/audit_public_api_compat.py --json \
+    | python -c "import json,sys; print('\n'.join(f\"{e['code']}  {e['object']}\" for e in json.load(sys.stdin)['stale_allowances']))"
+  ```
+- [ ] Re-run the gate in strict mode — it must report **no stale entries**:
+  ```bash
+  uv run python scripts/audit_public_api_compat.py --check-stale
+  ```
+
+> **Forcing function:** the Code Quality job runs the audit with `--check-stale`,
+> which **fails** on any allowlist entry that matches no break against the
+> baseline. So the moment `vX.Y.Z` is tagged, the just-shipped entries become
+> stale and CI goes red until this prune PR lands — the prune is mandatory, not
+> a checklist nicety. The pair-aware rule keeps the two path-views of a callable
+> (`notebooklm.X` and `notebooklm.client.X`) together: a unit is pruned only when
+> *neither* view still matches a break.
 
 ---
 

@@ -85,7 +85,11 @@ jobs:
       run: uv run python scripts/check_docs_module_refs.py
 
     - name: Audit public API compatibility
-      run: uv run python scripts/audit_public_api_compat.py
+      # ``--check-stale`` also fails when an allowlist entry matches no break
+      # against the baseline (it is already in the baseline). This forces the
+      # allowlist to be pruned at each release boundary instead of silently
+      # accumulating cruft. See docs/releasing.md → prune-allowlist-at-release.
+      run: uv run python scripts/audit_public_api_compat.py --check-stale
 
     - name: Assert per-method RPC coverage
       # Static check: each RPCMethod member must have at least one test
