@@ -502,6 +502,57 @@ def create_minimal_epub(path: Path) -> None:
     path.write_bytes(buffer.getvalue())
 
 
+async def assert_file_source(
+    client,
+    notebook_id,
+    path,
+    *,
+    expected_kind,
+    mime_type=None,
+    expected_title=None,
+    process=True,
+    timeout=120.0,
+):
+    """Upload ``path``, then assert the client contract and (optionally) processing.
+
+    Splits the two concerns so a failure is attributable (see #1204):
+
+    - **Client contract** (always): ``add_file(wait=False)`` must return a source
+      with an id — and ``expected_title`` when given. A client-side regression (bad
+      MIME routing, malformed/corrupt upload) fails here, distinctly ours.
+    - **Server processing** (``process=True``): wait for READY and assert
+      ``kind == expected_kind``. A terminal ``SourceStatus.ERROR`` fails **loudly**
+      with a triage note (server-side processing failure, not a client regression),
+      chaining the original ``SourceProcessingError`` as the cause.
+    - ``process=False`` (e.g. a dummy media file that can't transcribe):
+      registration-only — assert the initial ``kind == expected_kind`` (usually
+      ``SourceType.UNKNOWN``) without waiting.
+    """
+    source = await client.sources.add_file(notebook_id, path, mime_type=mime_type, wait=False)
+    assert source is not None
+    assert source.id is not None
+    if expected_title is not None:
+        assert source.title == expected_title
+
+    if not process:
+        assert source.kind == expected_kind
+        return source
+
+    try:
+        ready = await client.sources.wait_until_ready(notebook_id, source.id, timeout=timeout)
+    except SourceProcessingError as exc:
+        # Re-raise (not pytest.fail) with ``from exc`` so the original
+        # SourceProcessingError traceback is preserved as the failure cause.
+        raise AssertionError(
+            f"{Path(path).name} reached terminal SourceStatus.ERROR ({exc}). Upload "
+            "and registration succeeded (asserted above), so this is NotebookLM's "
+            "server-side processing failing — verify the service before treating it "
+            "as a client upload/registration regression."
+        ) from exc
+    assert ready.kind == expected_kind
+    return ready
+
+
 @requires_auth
 class TestFileUpload:
     """File upload tests.
@@ -515,19 +566,14 @@ class TestFileUpload:
         """Test uploading a PDF file."""
         test_pdf = tmp_path / "test_upload.pdf"
         create_minimal_pdf(test_pdf)
-
-        # wait=True ensures we get the processed source type
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_pdf,
             mime_type="application/pdf",
-            wait=True,
-            wait_timeout=120,
+            expected_title="test_upload.pdf",
+            expected_kind=SourceType.PDF,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.title == "test_upload.pdf"
-        assert source.kind == SourceType.PDF
 
     @pytest.mark.asyncio
     async def test_add_text_file(self, client, temp_notebook):
@@ -539,16 +585,12 @@ class TestFileUpload:
             temp_path = f.name
 
         try:
-            # wait=True ensures we get the processed source type
-            source = await client.sources.add_file(
+            await assert_file_source(
+                client,
                 temp_notebook.id,
                 temp_path,
-                wait=True,
-                wait_timeout=120,
+                expected_kind=SourceType.PASTED_TEXT,
             )
-            assert source is not None
-            assert source.id is not None
-            assert source.kind == SourceType.PASTED_TEXT
         finally:
             os.unlink(temp_path)
 
@@ -564,17 +606,13 @@ class TestFileUpload:
             temp_path = f.name
 
         try:
-            # wait=True ensures we get the processed source type
-            source = await client.sources.add_file(
+            await assert_file_source(
+                client,
                 temp_notebook.id,
                 temp_path,
                 mime_type="text/markdown",
-                wait=True,
-                wait_timeout=120,
+                expected_kind=SourceType.MARKDOWN,
             )
-            assert source is not None
-            assert source.id is not None
-            assert source.kind == SourceType.MARKDOWN
         finally:
             os.unlink(temp_path)
 
@@ -583,142 +621,87 @@ class TestFileUpload:
         """Test uploading a CSV file."""
         test_csv = tmp_path / "test_data.csv"
         test_csv.write_text("Header1,Header2\nValue1,Value2")
-
-        # wait=True ensures we get the processed source type
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_csv,
             mime_type="text/csv",
-            wait=True,
-            wait_timeout=120,
+            expected_title="test_data.csv",
+            expected_kind=SourceType.CSV,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.title == "test_data.csv"
-        assert source.kind == SourceType.CSV
 
     @pytest.mark.asyncio
     async def test_add_mp3_file(self, client, temp_notebook, tmp_path):
-        """Test uploading an MP3 file."""
+        """Test uploading an MP3 file (registration only — a dummy MP3 won't transcribe)."""
         test_mp3 = tmp_path / "test_audio.mp3"
-        # Minimal dummy MP3 content (ID3 header) to pass initial validation
-        # In real E2E, this might fail "processing" step if not valid audio,
-        # but verifies the upload type mapping.
+        # Minimal dummy MP3 (ID3 header): passes initial validation but won't process.
         test_mp3.write_bytes(b"ID3\x03\x00\x00\x00\x00\x00\n")
-
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_mp3,
             mime_type="audio/mpeg",
-            wait=False,  # Don't wait for processing as dummy file might fail transcription
+            expected_kind=SourceType.UNKNOWN,  # initial type before processing
+            process=False,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.kind == SourceType.UNKNOWN  # Initial type before processing
 
     @pytest.mark.asyncio
     async def test_add_mp4_file(self, client, temp_notebook, tmp_path):
-        """Test uploading an MP4 file."""
+        """Test uploading an MP4 file (registration only — a dummy MP4 won't process)."""
         test_mp4 = tmp_path / "test_video.mp4"
-        # Minimal dummy MP4 ftyp atom
+        # Minimal dummy MP4 ftyp atom: passes initial validation but won't process.
         test_mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
-
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_mp4,
             mime_type="video/mp4",
-            wait=False,  # Don't wait for processing as dummy file might fail
+            expected_kind=SourceType.UNKNOWN,  # initial type before processing
+            process=False,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.kind == SourceType.UNKNOWN  # Initial type before processing
 
     @pytest.mark.asyncio
     async def test_add_docx_file(self, client, temp_notebook, tmp_path):
         """Test uploading a DOCX file."""
         test_docx = tmp_path / "test_document.docx"
         create_minimal_docx(test_docx)
-
-        # wait=True ensures we get the processed source type
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_docx,
             mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            wait=True,
-            wait_timeout=120,
+            expected_title="test_document.docx",
+            expected_kind=SourceType.DOCX,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.title == "test_document.docx"
-        assert source.kind == SourceType.DOCX
 
     @pytest.mark.asyncio
     async def test_add_jpg_file(self, client, temp_notebook, tmp_path):
         """Test uploading a JPEG image file."""
         test_jpg = tmp_path / "test_image.jpg"
         create_minimal_jpg(test_jpg)
-
-        # wait=True ensures we get the processed source type
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_jpg,
             mime_type="image/jpeg",
-            wait=True,
-            wait_timeout=120,
+            expected_title="test_image.jpg",
+            expected_kind=SourceType.IMAGE,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.title == "test_image.jpg"
-        assert source.kind == SourceType.IMAGE
 
     @pytest.mark.asyncio
     async def test_add_epub_file(self, client, temp_notebook, tmp_path):
-        """Upload an EPUB, separating the client contract from server processing.
+        """Test uploading an EPUB file.
 
-        The terminal-``ERROR`` processing failure is deliberately left **loud**
-        (#1204): NotebookLM's server-side EPUB ingestion intermittently fails
-        Google-side, and the nightly E2E should surface that — and catch a real
-        client regression in the EPUB path — rather than silently ``xfail`` it.
-        ``xfail(raises=SourceProcessingError)`` would be wrong here because the
-        *same* terminal ``SourceStatus.ERROR`` is raised both for a Google-side
-        outage and for a client bug (bad MIME routing, corrupt upload), so it
-        would mask exactly the regression this test exists to catch.
-
-        The split below makes the two attributable:
-        - **Client contract** (``wait=False``): upload + registration must
-          succeed. A client-side regression fails here, distinctly ours.
-        - **Server processing** (``wait_until_ready``): a terminal ``ERROR``
-          fails loudly with a triage note; on success, ``kind == EPUB`` confirms
-          the server classified our upload correctly (catching a MIME/routing
-          regression as ``kind != EPUB`` rather than a processing error).
+        EPUB processing intermittently fails server-side (#1204); the helper keeps
+        that failure loud + attributable (not ``xfail``'d) — see ``assert_file_source``.
         """
         test_epub = tmp_path / "test_book.epub"
         create_minimal_epub(test_epub)
-
-        # --- Client contract: registration + upload must succeed (no waiting). ---
-        source = await client.sources.add_file(
+        await assert_file_source(
+            client,
             temp_notebook.id,
             test_epub,
             mime_type="application/epub+zip",
-            wait=False,
+            expected_title="test_book.epub",
+            expected_kind=SourceType.EPUB,
         )
-        assert source is not None
-        assert source.id is not None
-        assert source.title == "test_book.epub"
-
-        # --- Server processing: stay loud on terminal ERROR, with triage. ---
-        try:
-            ready = await client.sources.wait_until_ready(temp_notebook.id, source.id, timeout=120)
-        except SourceProcessingError as exc:
-            # Re-raise (not pytest.fail) with `from exc` so the original
-            # SourceProcessingError traceback is preserved as the cause for triage.
-            raise AssertionError(
-                f"EPUB reached terminal SourceStatus.ERROR ({exc}). Upload and "
-                "registration succeeded (asserted above), so this is NotebookLM's "
-                "server-side EPUB processing failing — the known intermittent "
-                "Google-side outage (#1204) or a content-level rejection — NOT a "
-                "client upload/registration regression. Verify EPUB ingestion is up "
-                "before treating this as a client bug."
-            ) from exc
-
-        assert ready.kind == SourceType.EPUB
