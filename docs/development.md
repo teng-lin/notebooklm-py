@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-04
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -354,6 +354,7 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
 ```
 tests/
 ├── unit/                            # No network, fast, mock everything
+├── _lint/                           # Architecture/invariant gates (custom AST + filesystem lint)
 ├── integration/                     # Mocked HTTP responses + VCR cassettes
 │   ├── test_artifacts_integration.py # ArtifactsAPI integration
 │   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
@@ -392,6 +393,63 @@ The `*_drift.py` tests are payload-shape canaries: they decode a recorded
 RPC response (or assemble a synthetic one) and assert the live decoder still
 produces the expected dataclass. They fail loudly when Google changes a
 payload field, so the failure shows up here before users hit it.
+
+### Architecture & invariant gates (`tests/_lint/`)
+
+`tests/_lint/` holds the project's **custom lint gates** — pytest tests that
+enforce architectural decisions a general-purpose linter can't express. They are
+not style checks; each file encodes one project-specific invariant, usually the
+executable half of an ADR ("enforce, don't document" — un-enforced consistency
+is the failure mode this directory exists to prevent).
+
+**How they differ from ruff / mypy.** Ruff and mypy run in the `quality` job and
+enforce *generic* rules (style, unused imports, types) from a fixed catalogue.
+The `tests/_lint/` gates are collected by the normal `uv run pytest` run and
+enforce *bespoke* rules by doing their own analysis: most `ast.parse` the source
+(or scan files with regex / `rglob`), and some **import the module and reflect on
+the live object** — something a purely-static linter cannot do.
+
+A representative slice (run `ls tests/_lint/` for the full set):
+
+| Gate | Enforces |
+|---|---|
+| `test_no_raw_positional_rpc_indexing.py` | No chained positional indexing (`x[0][9][3]`) of `batchexecute` payloads outside the sanctioned `_row_adapters/` — the project's #1 fragility class |
+| `test_rpc_method_ids_only_in_types.py` | Obfuscated RPC IDs live only in `rpc/types.py` (the source of truth) |
+| `test_no_forbidden_monkeypatches.py` | The forbidden monkeypatch shapes under `tests/` (ADR-0007) |
+| `test_no_inline_deprecation_warnings.py` | No inline `warnings.warn(..., DeprecationWarning)` outside `_deprecation.py` (ADR-0018) |
+| `test_cli_rpc_envelope.py` | Every Click leaf command routes its errors into the JSON envelope |
+| `test_module_size_ratchet.py` | No module grows past the size budget (ADR-0008) — a burn-down ratchet |
+| `test_v080_release_gate.py` | The v0.8.0 breaking-change set flips in lockstep at the version bump |
+| `test_adr_reference_format.py` | ADR references are 4-digit and resolve to a real `docs/adr/NNNN-*.md` |
+
+**Conventions when adding a gate:**
+
+- **One invariant per file**, with a module docstring that states the rule, *why*
+  it matters (cite the ADR), and how a violation is fixed. The assertion message
+  is the contributor's first — and often only — explanation, so make it
+  actionable.
+- **Make the detector a pure function and self-test it** against known good/bad
+  inputs in the same file, so the gate can't silently become vacuous (a regex
+  that matches nothing must fail its own self-test, not pass everything).
+- **Shrink-only allowlists.** A gate that would fail on pre-existing violations
+  may grandfather them in an allowlist — but it must be a *one-way ratchet* that
+  only shrinks (e.g. `test_module_size_ratchet.py`,
+  `tests/scripts/check_method_coverage.py`). The rule lands without a giant
+  cleanup PR, and the gate fails when an allowlisted entry becomes clean so it
+  gets removed.
+- **Scan yourself too.** A gate that shows the *wrong* form in its examples
+  should use placeholders (or build them at runtime) rather than excluding its
+  own file, so it still polices its own references
+  (`test_adr_reference_format.py`).
+
+Most gates are fast and run in the normal loop; the slow repo-wide cassette scan
+(`test_cassettes_clean.py`) carries the `repo_lint` marker (see
+[Quick Reference](#quick-reference)).
+
+**Trade-off.** Because some gates import internals and reflect on them, they
+couple more tightly to implementation than a static linter — a
+behavior-preserving refactor can still trip one. That coupling is deliberate: it
+catches architecture drift that ruff and mypy structurally cannot see.
 
 ### VCR Testing (Recorded HTTP)
 
