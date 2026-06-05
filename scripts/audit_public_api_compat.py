@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -362,6 +363,24 @@ main()
 """
 
 
+_ADDRESS_RE = re.compile(r" at 0x[0-9a-fA-F]+")
+
+
+def normalize_default_repr(default_repr: str | None) -> str | None:
+    """Strip the memory address from a captured default repr for stable comparison.
+
+    A bare object() sentinel default (e.g. the wait_for_completion
+    initial_interval sentinel) reprs as <object object at 0xADDR>; the hex
+    address differs between the baseline collector process and the current one,
+    so identical code would otherwise read as a changed default. Normalizing the
+    address lets two same-identity sentinels compare equal, while a genuine
+    default change (which differs in more than the address) is still caught.
+    """
+    if default_repr is None:
+        return None
+    return _ADDRESS_RE.sub(" at 0x...", default_repr)
+
+
 def collect_manifest(
     source_root: Path,
     extra_public_names: dict[str, list[str]] | None = None,
@@ -459,15 +478,10 @@ def _signature_breakage(old: dict[str, Any] | None, new: dict[str, Any] | None) 
                 return f"parameter {name!r} no longer accepts keyword calls"
             if old_param["has_default"] and not new_param["has_default"]:
                 return f"optional parameter {name!r} became required"
-            if (
-                old_param["has_default"]
-                and new_param["has_default"]
-                and old_param.get("default_repr") != new_param.get("default_repr")
-            ):
-                return (
-                    f"default for parameter {name!r} changed from "
-                    f"{old_param.get('default_repr')} to {new_param.get('default_repr')}"
-                )
+            old_default = normalize_default_repr(old_param.get("default_repr"))
+            new_default = normalize_default_repr(new_param.get("default_repr"))
+            if old_param["has_default"] and new_param["has_default"] and old_default != new_default:
+                return f"default for parameter {name!r} changed from {old_default} to {new_default}"
 
     old_positional = [param for param in old_params if _accepts_positional(param)]
     new_positional = [param for param in new_params if _accepts_positional(param)]

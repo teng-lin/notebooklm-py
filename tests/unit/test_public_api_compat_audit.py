@@ -257,6 +257,31 @@ def test_signature_compare_rejects_default_value_change(script):
     )
 
 
+def test_signature_compare_ignores_object_sentinel_default_address(script):
+    # A bare ``object()`` sentinel default (e.g. wait_for_completion's
+    # initial_interval) reprs as "<object object at 0xADDR>"; the hex address
+    # differs between the baseline collector process and the current one, so
+    # identical code must NOT read as a changed default (the v0.7.0 baseline
+    # regression that this normalization fixes).
+    old = _signature(
+        _param("initial_interval", default=True, default_repr="<object object at 0x7f00aaaa>")
+    )
+    new = _signature(
+        _param("initial_interval", default=True, default_repr="<object object at 0x55bbbbbb>")
+    )
+
+    assert script._signature_breakage(old, new) is None
+
+
+def test_normalize_default_repr_strips_object_addresses(script):
+    a = script.normalize_default_repr("<object object at 0x7f001234>")
+    b = script.normalize_default_repr("<object object at 0x55009999>")
+    assert a == b == "<object object at 0x...>"
+    # a genuine default differs in more than the address and is preserved verbatim
+    assert script.normalize_default_repr("5") == "5"
+    assert script.normalize_default_repr(None) is None
+
+
 def test_signature_compare_rejects_positional_parameter_reordering(script):
     old = _signature(_param("notebook_id"), _param("title"), _param("content"))
     new = _signature(_param("notebook_id"), _param("content"), _param("title"))
