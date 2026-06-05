@@ -397,10 +397,21 @@ def _status_from_code(
     ``None`` (no status reported yet) maps to ``none_status`` (``PENDING`` by
     default). Any recognized code maps via :func:`artifact_status_to_str`;
     unrecognized codes funnel to ``GenerationState.UNKNOWN``.
+
+    The range pin in ``tests/unit/test_generation_state.py`` proves that every
+    string ``artifact_status_to_str`` can return is a defined member today, so
+    the ``GenerationState(...)`` call cannot raise. The ``ValueError`` guard is
+    pure defense-in-depth against future schema drift (a new entry added to
+    ``_ARTIFACT_STATUS_MAP`` without a matching member): rather than blowing up
+    a poll loop, an unmapped string degrades to ``UNKNOWN``, mirroring
+    ``artifact_status_to_str``'s own "unknown for unrecognized codes" contract.
     """
     if code is None:
         return none_status
-    return GenerationState(artifact_status_to_str(code))
+    try:
+        return GenerationState(artifact_status_to_str(code))
+    except ValueError:  # pragma: no cover - unreachable today (range pin), future-drift guard
+        return GenerationState.UNKNOWN
 
 
 @dataclass

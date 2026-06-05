@@ -70,6 +70,15 @@ def test_member_is_a_str_instance(member: GenerationState):
     assert isinstance(member, str)
 
 
+def test_generation_state_values_are_unique():
+    # Iterate __members__ (not the class) so duplicate-value aliases — which
+    # Enum silently collapses when iterating the class — are still detected.
+    # A stray alias would shrink list(GenerationState) and silently weaken the
+    # parametrized member tests above.
+    values = [member.value for member in GenerationState.__members__.values()]
+    assert len(values) == len(set(values))
+
+
 def test_equality_and_membership_against_bare_strings():
     assert GenerationState.COMPLETED == "completed"
     assert GenerationState.FAILED in {"failed", "removed"}
@@ -208,6 +217,15 @@ def test_status_from_code_none_status_override():
 
 def test_status_from_code_unknown_code_is_unknown():
     assert _status_from_code(9999) is GenerationState.UNKNOWN
+
+
+def test_generation_state_rejects_unmapped_string():
+    # The ValueError that _status_from_code's defensive branch guards against:
+    # a status string with no matching member raises on direct construction.
+    # The range pin above proves artifact_status_to_str never produces such a
+    # string today, so the guard is purely future-drift insurance.
+    with pytest.raises(ValueError):
+        GenerationState("some_future_status")
 
 
 def test_status_from_code_never_returns_wait_only_states():
