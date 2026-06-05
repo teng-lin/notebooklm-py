@@ -759,7 +759,7 @@ def stale_allowances(
     unit is live (kept) if *either* view matches a break. So a non-stale
     allowance is one that itself matches a break, or whose sibling path-view has
     *any* matching allowance. Today both views always match together, but a
-    future change that only one view detects must not flag its still-load-bearing
+    future change that only one view detects must not flag its still load-bearing
     sibling.
     """
     # Per-allowance self-match, keyed by (code, object) so two allowances on the
