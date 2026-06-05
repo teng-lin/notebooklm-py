@@ -1719,9 +1719,21 @@ class TestInterpretSourceFreshness:
     def test_stale_shapes_return_false(self, payload: object) -> None:
         assert interpret_source_freshness(payload) is False
 
-    @pytest.mark.parametrize("payload", [None, "some_value", ["some_value"], [[None]]])
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            "some_value",
+            ["some_value"],
+            [[None]],
+            [[None, "unexpected", ["src"]]],
+            [[None, None, ["src"]]],
+            [[None, 1, ["src"]]],
+        ],
+    )
     def test_unrecognized_shapes_raise(self, payload: object) -> None:
         # None, a bare scalar, a list whose first element is a non-list scalar,
-        # and a too-short nested list are all drift -> raise, not a silent bool.
+        # a too-short nested list, and a nested list whose freshness flag is
+        # non-boolean are all drift -> raise, not a silent bool.
         with pytest.raises(DecodingError):
             interpret_source_freshness(payload)

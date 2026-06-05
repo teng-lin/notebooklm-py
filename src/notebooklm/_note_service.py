@@ -131,7 +131,8 @@ class NoteService:
             # notebook — raise so notes/mind_maps get()/get_or_none can tell a
             # miss from drift instead of silently collapsing to ``[]``.
             raise DecodingError(
-                f"Unrecognized GET_NOTES_AND_MIND_MAPS payload shape: {result!r}",
+                "Unrecognized GET_NOTES_AND_MIND_MAPS payload shape",
+                raw_response=repr(result),
                 method_id=RPCMethod.GET_NOTES_AND_MIND_MAPS.value,
             )
 

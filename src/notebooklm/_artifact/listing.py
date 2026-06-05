@@ -119,7 +119,8 @@ class ArtifactListingService:
         # A truthy non-list payload is schema drift, not an empty notebook —
         # raise so callers can tell a miss from drift instead of an empty list.
         raise DecodingError(
-            f"Unrecognized LIST_ARTIFACTS payload shape: {result!r}",
+            "Unrecognized LIST_ARTIFACTS payload shape",
+            raw_response=repr(result),
             method_id=RPCMethod.LIST_ARTIFACTS.value,
         )
 
