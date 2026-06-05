@@ -213,10 +213,7 @@ def test_collect_manifest_canonicalizes_pep563_return_annotation(script):
     manifest = script.collect_manifest(REPO_ROOT)
     members = manifest["modules"]["notebooklm"]["exports"]["NotebookLMClient"]["members"]
 
-    assert (
-        members["mind_maps.get"]["signature"]["return_annotation"]
-        == "notebooklm.types.MindMap"
-    )
+    assert members["mind_maps.get"]["signature"]["return_annotation"] == "notebooklm.types.MindMap"
 
 
 def test_collect_manifest_preserves_defaulted_dataclass_fields(script):
