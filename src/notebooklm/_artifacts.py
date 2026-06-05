@@ -44,6 +44,7 @@ from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._runtime.contracts import RpcCaller
+from ._types.artifacts import _status_from_code
 from ._types.research import MindMapResult
 from .exceptions import (
     ArtifactFeatureUnavailableError,
@@ -55,7 +56,6 @@ from .exceptions import (
 if TYPE_CHECKING:
     from ._runtime.lifecycle import ClientLifecycle
     from ._transport_drain import TransportDrainTracker
-from ._types.artifacts import _status_from_code
 from .rpc import (
     ArtifactTypeCode,
     AudioFormat,

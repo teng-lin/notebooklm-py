@@ -2016,6 +2016,24 @@ working unchanged. **Prefer the `.is_*` predicates** (`status.is_complete`,
 `status.is_failed`, …) over raw string comparison for new code; the raw
 `status == "completed"` form stays supported.
 
+| `GenerationState` member | Value | Emitted by |
+|---|---|---|
+| `PENDING` | `"pending"` | poll / generation parsers (also the default when no status code is reported yet) |
+| `IN_PROGRESS` | `"in_progress"` | poll / generation parsers |
+| `COMPLETED` | `"completed"` | poll / generation parsers |
+| `FAILED` | `"failed"` | poll / generation parsers; synthesized rate-limit retry events |
+| `NOT_FOUND` | `"not_found"` | `poll_status` when the artifact is absent from the list |
+| `UNKNOWN` | `"unknown"` | unrecognized status codes (future-proofing) |
+| `REMOVED` | `"removed"` | `wait_for_completion` after a sustained delisting |
+
+> **Note:** because `status` is now typed `GenerationState`, constructing
+> `GenerationStatus(..., status="completed")` with a bare string literal is a
+> `mypy` type error under strict settings — pass a member
+> (`GenerationState.COMPLETED`) instead. This only affects callers who build
+> `GenerationStatus` themselves; the library's own producers already do. All
+> *reading* comparisons (`status == "completed"`) remain valid because
+> `GenerationState` subclasses `str`.
+
 **`url` semantics:** `poll_status` populates `url` for media artifact types (audio, video, infographic, slide-deck PDF) as soon as the server reports the asset as ready. Slide decks expose the PDF URL here; for the editable PowerPoint, use `client.artifacts.download_slide_deck(..., output_format="pptx")` instead.
 
 ```python
