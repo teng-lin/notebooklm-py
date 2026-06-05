@@ -45,9 +45,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 
-# The single sanctioned home for the ``DeprecationWarning`` family. Every gated
-# helper (``warn_deprecated`` / ``warn_get_returns_none`` / ``deprecated_kwarg``
-# / ``MappingCompatMixin``) emits its warning from here.
+# The single sanctioned home for the ``DeprecationWarning`` family. The gated
+# ``warn_deprecated`` helper emits its warning from here.
 ALLOWED_FILE = SRC_ROOT / "_deprecation.py"
 
 

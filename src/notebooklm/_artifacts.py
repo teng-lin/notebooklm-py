@@ -38,7 +38,7 @@ from ._artifact.payloads import (
     build_video_artifact_params,
 )
 from ._env import get_default_language
-from ._lookup import resolve_get
+from ._lookup import unwrap_or_raise
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
@@ -211,11 +211,11 @@ class ArtifactsAPI:
                 (matches ``notebooks.get``; issue #1247). Use :meth:`get_or_none`
                 for the sanctioned ``None``-on-miss lookup.
         """
-        # ``resolve_get`` single-sources the raise-on-miss decision (#1247).
+        # ``unwrap_or_raise`` single-sources the raise-on-miss decision (#1247).
         # Internal callers needing the silent lookup use get_or_none.
-        return resolve_get(
+        return unwrap_or_raise(
             await self.get_or_none(notebook_id, artifact_id),
-            not_found=ArtifactNotFoundError(artifact_id),
+            ArtifactNotFoundError(artifact_id),
         )
 
     async def get_or_none(self, notebook_id: str, artifact_id: str) -> Artifact | None:

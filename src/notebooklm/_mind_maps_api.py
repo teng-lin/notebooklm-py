@@ -17,7 +17,7 @@ import reprlib
 from typing import TYPE_CHECKING, Any
 
 from ._artifact.payloads import build_interactive_mind_map_artifact_params
-from ._lookup import resolve_get
+from ._lookup import unwrap_or_raise
 from ._row_adapters.notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
 from .exceptions import (
@@ -204,12 +204,12 @@ class MindMapsAPI:
                 (matches ``notebooks.get``; issue #1247). Use :meth:`get_or_none`
                 for the sanctioned ``None``-on-miss lookup.
         """
-        # ``_lookup.resolve_get`` single-sources the raise-on-miss decision
+        # ``_lookup.unwrap_or_raise`` single-sources the raise-on-miss decision
         # (#1247). Internal callers that need the silent optional-lookup must
         # use ``_get_or_none`` directly.
-        return resolve_get(
+        return unwrap_or_raise(
             await self.get_or_none(notebook_id, mind_map_id),
-            not_found=MindMapNotFoundError(mind_map_id),
+            MindMapNotFoundError(mind_map_id),
         )
 
     async def get_or_none(self, notebook_id: str, mind_map_id: str) -> MindMap | None:

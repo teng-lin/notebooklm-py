@@ -1,89 +1,56 @@
 # Upgrading to v0.8.0
 
 **Status:** Active
-**Last Updated:** 2026-06-04
+**Last Updated:** 2026-06-05
 
-`notebooklm-py` v0.8.0 lands a batch of **breaking** error-and-return contract
-changes under [ADR-0019](adr/0019-error-and-return-contract.md) (umbrella
+`notebooklm-py` v0.8.0 **landed** a batch of **breaking** error-and-return
+contract changes under [ADR-0019](adr/0019-error-and-return-contract.md) (umbrella
 [#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). The guiding
 principle: *a return value encodes only success and genuine async-lifecycle
 state; resource absence, server refusal, and shape-drift **raise**.* `None`,
-`""`, empty sentinels, `"not_found"` strings, and `ValueError` stop being used
+`""`, empty sentinels, `"not_found"` strings, and `ValueError` are no longer used
 to signal that an error happened.
 
 This guide is the single consolidated reference for moving your code across the
-0.7.0 → 0.8.0 boundary. **Nothing here is required to keep working on 0.7.0** —
-every change below is still in its compatibility window. The goal is to let you
-adopt the **forward-compatible** form *now*, so your code works on **both**
-0.7.0 and 0.8.0 with no flag day.
+0.7.0 → 0.8.0 boundary. Each migration below shows the **forward-compatible**
+form, which works on **both** 0.7.0 and 0.8.0 — so you can adopt it before
+upgrading and cross the boundary with no flag day.
 
-For the canonical deprecation registry (with removal-version pins), see
+For the canonical deprecation registry, see
 [docs/deprecations.md](deprecations.md). For the design rationale, see
 [ADR-0019](adr/0019-error-and-return-contract.md).
 
 ---
 
-## Test your code against 0.8.0 early
+## Migrating from 0.7.x
 
-> **Availability.** The **`NOTEBOOKLM_FUTURE_ERRORS`** preview flag ships as part
-> of the v0.8.0 program (a dedicated PR under umbrella
-> [#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). Once it lands
-> in a 0.7.x patch, the workflow below works on the 0.7.x line; check the
-> [CHANGELOG](../CHANGELOG.md) / [docs/configuration.md](configuration.md) for
-> the exact patch that introduces it. On a 0.7.x build without the flag, setting
-> it has no effect — fall back to the per-change `DeprecationWarning`s (the
-> ✅ rows in the [summary table](#summary-table)) to drive your migration.
+> **`NOTEBOOKLM_FUTURE_ERRORS` is gone.** The v0.7.0 forward-compat preview flag
+> that let you opt into the v0.8.0 contract early was **removed in v0.8.0** now
+> that every break it staged is the default; setting it is a no-op. If you wired
+> it into CI, drop it.
 
-You don't have to wait for the 0.8.0 release to find out whether your code is
-ready. Set **`NOTEBOOKLM_FUTURE_ERRORS=1`** and 0.7.x will **adopt the v0.8.0
-contract today** — `get()` raises `*NotFoundError`, synchronous generation refusals
-raise instead of returning `status="failed"`, mutate-existing ops raise on a
-missing target, and the always-`True` bool returns (`sources.refresh` /
-`chat.delete_conversation`) become `None`. (The ambiguous `research.poll`
-selection is **not** previewed by the flag — it keeps warning on 0.7.x and raises
-only on 0.8.0.) Everything else stays on the 0.7.x code path.
+If you are still on 0.7.x, drive your migration off the per-change
+`DeprecationWarning`s (the ✅ rows in the [summary table](#summary-table)). Python
+**hides `DeprecationWarning` by default** outside `__main__`, so enable them
+explicitly to surface the runways:
 
 ```bash
-# Run your test suite (or your app) against v0.8.0 behavior, on 0.7.0:
-NOTEBOOKLM_FUTURE_ERRORS=1 pytest
-NOTEBOOKLM_FUTURE_ERRORS=1 python my_app.py
+python -W error::DeprecationWarning -m pytest          # turn them into errors
+PYTHONWARNINGS=default::DeprecationWarning python app.py  # just print them
 ```
 
-```yaml
-# Or wire it into CI so you catch a regression before upgrading:
-env:
-  NOTEBOOKLM_FUTURE_ERRORS: "1"
-```
-
-The flag is a **preview/opt-in** switch — it does not change the default 0.7.0
-behavior for anyone who doesn't set it, and it goes away once 0.8.0 makes the new
-behavior unconditional. Use it to drive your migration: turn it on, run your
-tests, fix what breaks using the migrations below, and you're ready for 0.8.0.
-
-> `NOTEBOOKLM_FUTURE_ERRORS` and `NOTEBOOKLM_QUIET_DEPRECATIONS` are
-> complementary: the first opts you **into** future *raising* behavior to test
-> it; the second silences the *warnings* the current behavior emits while you
-> migrate. They can be set together.
-
-> **Surfacing the warnings.** Python **hides `DeprecationWarning` by default**
-> outside `__main__`, so the per-change runways may be invisible in a normal run.
-> To see them, enable them explicitly:
-> ```bash
-> python -W error::DeprecationWarning -m pytest          # turn them into errors
-> PYTHONWARNINGS=default::DeprecationWarning python app.py  # just print them
-> ```
-> But `NOTEBOOKLM_FUTURE_ERRORS=1` is the more reliable forward-test: it
-> **raises** (not warns), so it surfaces regardless of your warning filters — and
-> it is the **only** 0.7.0 signal for the silent behavioral breaks (return-value
-> flips, refusal-raises, mutate-existing fail-loud) that emit no
-> `DeprecationWarning` at all.
+The ❌ rows in the summary table are **silent** clean breaks (return-value flips,
+refusal-raises, mutate-existing fail-loud) that emit no `DeprecationWarning` — for
+those, apply the forward-compatible migration below and verify against 0.8.0
+directly. `NOTEBOOKLM_QUIET_DEPRECATIONS=1` still silences the warnings while you
+migrate.
 
 ---
 
 ## Summary table
 
-| Change | Warns today? | Migration (forward-compatible) | Breaks in |
-|--------|--------------|--------------------------------|-----------|
+| Change | Warned in 0.7.0? | Migration (forward-compatible) | Broke in |
+|--------|------------------|--------------------------------|----------|
 | `sources` / `artifacts` / `notes` / `mind_maps` `.get()` returns `None` on a miss | ✅ on a miss | `get_or_none()`, or `try/except *NotFoundError` | v0.8.0 |
 | Dict-subscript (`result["key"]`) on typed research / mind-map / source-guide returns | ✅ on subscript | Attribute access (`result.status`, `guide.summary`) | v0.8.0 |
 | `research.wait_for_completion(interval=...)` | ✅ on use | `initial_interval=...` | v0.8.0 |
@@ -94,9 +61,8 @@ tests, fix what breaks using the migrations below, and you're ready for 0.8.0.
 | `notes.update` / `rename(return_object=False)` silently no-op on a missing target | ❌ silent | `try/except *NotFoundError` | v0.8.0 |
 | `sources.refresh` / `chat.delete_conversation` return `bool` (always `True`) | ❌ silent | Stop relying on the return value | v0.8.0 |
 
-Legend: ✅ emits a `DeprecationWarning` (or a stderr notice) in 0.7.0 you can see
-today; ❌ is a **silent** clean break — `NOTEBOOKLM_FUTURE_ERRORS=1` is the only
-way to surface it before upgrading.
+Legend: ✅ emitted a `DeprecationWarning` (or a stderr notice) in 0.7.0; ❌ was a
+**silent** clean break with no v0.7.0 warning.
 
 ---
 
@@ -233,12 +199,12 @@ Tracked by [#1254](https://github.com/teng-lin/notebooklm-py/issues/1254)
 
 ---
 
-## 4. `generate mind-map` default `--kind` flips to interactive
+## 4. `generate mind-map` default `--kind` flipped to interactive
 
-**What changes (CLI).** `notebooklm generate mind-map` defaults to the
-`note-backed` kind today; in v0.8.0 the default flips to `interactive` (matching
-what NotebookLM's web app now creates). Note-backed stays available via an
-explicit `--kind note-backed` — it is **not** deprecated.
+**What changed (CLI).** `notebooklm generate mind-map` defaulted to the
+`note-backed` kind in 0.7.0; in v0.8.0 the default **flipped** to `interactive`
+(matching what NotebookLM's web app now creates). Note-backed stays available via
+an explicit `--kind note-backed` — it is **not** deprecated.
 
 **Notice in 0.7.0** (printed to stderr when you don't pass `--kind`):
 
@@ -352,8 +318,8 @@ produces. (A poll that observes a *started-then-failed* task still returns a
 terminal `failed` status — that is real async data, unchanged.)
 
 **Warning in 0.7.0:** **None — this is a silent clean break.** There is no
-`DeprecationWarning`; the only way to surface it before upgrading is
-`NOTEBOOKLM_FUTURE_ERRORS=1`.
+`DeprecationWarning`; apply the forward-compatible migration below and verify
+against 0.8.0 directly.
 
 **Migration.** Catch `RateLimitError` (and/or `RPCError`) around the kickoff
 instead of inspecting a returned `status`. This pattern is valid on both
@@ -410,8 +376,8 @@ raising `*NotFoundError` instead of silently no-op'ing:
   missing target. (`return_object=True` already fails loud on 0.7.0;
   `mind_maps.rename` already fails loud in both modes.)
 
-**Warning in 0.7.0:** **None — this is a silent clean break.** Surface it with
-`NOTEBOOKLM_FUTURE_ERRORS=1`.
+**Warning in 0.7.0:** **None — this is a silent clean break.** Apply the
+forward-compatible migration below and verify against 0.8.0 directly.
 
 **Migration.** Wrap the mutation in `try/except *NotFoundError`. The classes
 exist today, so this is forward-compatible — on 0.7.0 the missing-target case is
@@ -453,11 +419,9 @@ shipped on the 0.7.0 breaking line — they become `-> None` in v0.8.0.
 > *not raising*, not by the return — which is correct on both releases.
 
 **Warning in 0.7.0:** **None — this is a silent clean break** (a return-type
-change with no `DeprecationWarning`). But `NOTEBOOKLM_FUTURE_ERRORS=1` **does**
-surface it: under the flag these methods already return `None` on 0.7.x (the
-#1290 preview), so a truthiness check like `if await client.sources.refresh(...):`
-flips under the flag exactly as it will on 0.8.0. Set the flag — or grep for the
-call sites — to find affected code.
+change with no `DeprecationWarning`). Grep for truthiness checks like
+`if await client.sources.refresh(...):` / `if await client.chat.delete_conversation(...):`
+to find affected code, and apply the migration below.
 
 **Migration.** Drop the truthiness check; rely on the call not raising:
 

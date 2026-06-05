@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ._lookup import resolve_get
+from ._lookup import unwrap_or_raise
 from ._row_adapters.sources import interpret_source_freshness
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._runtime.contracts import RpcCaller
@@ -163,11 +163,11 @@ class SourcesAPI:
                 ``notebooks.get``; issue #1247). Use :meth:`get_or_none` for the
                 sanctioned ``None``-on-miss lookup.
         """
-        # ``resolve_get`` single-sources the raise-on-miss decision (#1247);
+        # ``unwrap_or_raise`` single-sources the raise-on-miss decision (#1247);
         # internal callers needing the silent lookup use ``get_or_none``.
-        return resolve_get(
+        return unwrap_or_raise(
             await self.get_or_none(notebook_id, source_id),
-            not_found=SourceNotFoundError(source_id),
+            SourceNotFoundError(source_id),
         )
 
     async def get_or_none(self, notebook_id: str, source_id: str) -> Source | None:

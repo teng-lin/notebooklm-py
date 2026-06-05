@@ -18,7 +18,7 @@ import builtins
 import logging
 from typing import Any
 
-from ._lookup import resolve_get
+from ._lookup import unwrap_or_raise
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
 from ._row_adapters.notes import NoteRow
@@ -104,12 +104,12 @@ class NotesAPI:
                 ``notebooks.get``; issue #1247). Use :meth:`get_or_none` for the
                 sanctioned ``None``-on-miss lookup.
         """
-        # ``_lookup.resolve_get`` single-sources the raise-on-miss decision
+        # ``_lookup.unwrap_or_raise`` single-sources the raise-on-miss decision
         # (#1247). Internal callers that need the silent optional-lookup must
         # use ``get_or_none`` directly.
-        return resolve_get(
+        return unwrap_or_raise(
             await self.get_or_none(notebook_id, note_id),
-            not_found=NoteNotFoundError(note_id),
+            NoteNotFoundError(note_id),
         )
 
     async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:

@@ -302,8 +302,8 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         # emits the typed ``NOT_FOUND`` envelope (matching the per-command
         # ``source``/``artifact``/``note get`` convention) instead of the
         # generic ``NOTEBOOKLM_ERROR``. This makes the central handler faithful
-        # to the v0.8.0 raise-sites previewed by ``NOTEBOOKLM_FUTURE_ERRORS``
-        # (e.g. ``get()`` -> raise, ``rename``/``update`` on a missing target).
+        # to the v0.8.0 raise-sites (e.g. ``get()`` -> raise,
+        # ``rename``/``update`` on a missing target).
         nf_extra = _not_found_extra(e)
         if verbose and isinstance(e, RPCError) and e.method_id:
             nf_extra["method_id"] = e.method_id

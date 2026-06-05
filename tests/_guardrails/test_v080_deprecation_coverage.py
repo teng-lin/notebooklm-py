@@ -27,13 +27,13 @@ tracked v0.8.0 break, each tagged with **exactly one** of:
   or should not warn at the value level. This set is meant to **shrink** as
   runways are added; it must never silently grow.
 
-The three breaks exempted today (#1290 bool-always-True returns, #1342
-synchronous-refusal-suppression, #1362 update/rename fail-loud) are *value-level
-behavioral changes with no clean warning point* — per ADR-0019 they are
-deliberate clean breaks covered by the ADR + upgrade guide, not by a runtime
-warning. They are exempted (not omitted) so the gate is green on ``main`` today
-while still forcing a deliberate {runway, exemption} decision for any FUTURE
-v0.8.0 break someone adds to the table.
+The v0.8.0 program has now shipped, so :data:`V080_BREAKING_CHANGES` is drained
+to ``()`` (#1365) and the bidirectional release gate
+(``test_v080_release_gate.py``) requires it to STAY empty at/after the 0.8.0
+bump. The detector and its self-checks remain live so the gate keeps biting for
+the NEXT breaking-change program that re-populates the registry: a re-added break
+must again carry exactly one of {runway, exemption}, and a claimed-but-absent
+runway is still caught.
 
 Self-tests below prove the detector is not a no-op (a planted silent entry is
 caught; a claimed-but-absent runway is caught) and that the table stays honest
@@ -112,20 +112,6 @@ class BreakingChange:
     exemption: str | None = None
 
 
-# Shared exemption reason for the value-level behavioral breaks that have no
-# clean runtime warning point. Per ADR-0019 these are deliberate clean breaks in
-# the already-breaking 0.8.0, covered by the ADR + the upgrade guide rather than
-# by a v0.7.0 DeprecationWarning. Single-sourced so the three entries read
-# identically and a reviewer sees one consistent justification.
-_DELIBERATE_CLEAN_BREAK = (
-    "documented: value-level behavioral change with no clean value-level warning "
-    "(flipping a return type / re-raising a previously-swallowed refusal / adding "
-    "a miss-detection raise cannot signal at the call site) — covered by ADR-0019 "
-    "(docs/adr/0019-error-and-return-contract.md) + docs/deprecations.md upgrade "
-    "guide. Deliberate clean break in the already-breaking 0.8.0."
-)
-
-
 # The registry. Anchored to the ADR-0019 contract (umbrella #1346) and the
 # tracked v0.8.0 issues. Each entry carries EITHER a verified runway OR a
 # reason-tagged exemption — never both, never neither.
@@ -133,37 +119,13 @@ _DELIBERATE_CLEAN_BREAK = (
 # DO NOT add a silent entry. A new v0.8.0 break must either ship a v0.7.0 runway
 # (and cite the module that wires it) or carry an explicit exemption reason.
 # The exemption set is meant to SHRINK as runways are added.
-V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
-    # ---- Exempted today (no clean value-level warning; shrink this set) -----
-    BreakingChange(
-        issue=1290,
-        summary="bool-always-True returns -> None (refresh / delete_conversation / clear_cache)",
-        exemption=_DELIBERATE_CLEAN_BREAK,
-    ),
-    BreakingChange(
-        issue=1342,
-        summary="synchronous generation refusal raises (drop status='failed' suppression)",
-        exemption=_DELIBERATE_CLEAN_BREAK,
-    ),
-    BreakingChange(
-        issue=1362,
-        summary="mutate-existing fail-loud (notes.update + rename(return_object=False) raise on miss)",
-        exemption=_DELIBERATE_CLEAN_BREAK,
-    ),
-    BreakingChange(
-        issue=1344,
-        summary="derived-read + lister drift-tightening: malformed payloads raise DecodingError",
-        exemption=_DELIBERATE_CLEAN_BREAK,
-    ),
-    BreakingChange(
-        issue=1363,
-        summary=(
-            "remove NotebooksAPI.share() + research poll/wait raise "
-            "AmbiguousResearchTaskError on task_id=None with >=2 in-flight tasks"
-        ),
-        exemption=_DELIBERATE_CLEAN_BREAK,
-    ),
-)
+#
+# Emptied at the v0.8.0 release (#1365): every tracked break has shipped, so the
+# table is empty and the bidirectional release gate
+# (``test_v080_release_gate.py``) now requires it to STAY empty at/after 0.8.0.
+# The detector + self-checks below stay live so the gate keeps biting for any
+# FUTURE breaking-change program that re-populates this table.
+V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = ()
 
 
 # --- Pure detector (no I/O) ---------------------------------------------------
@@ -275,16 +237,19 @@ def _cited_modules() -> dict[str, str]:
 # --- Public gate tests --------------------------------------------------------
 
 
-@pytest.mark.parametrize("change", V080_BREAKING_CHANGES, ids=lambda c: f"#{c.issue}")
-def test_every_entry_is_runwayed_or_exempted(change: BreakingChange) -> None:
+def test_every_entry_is_runwayed_or_exempted() -> None:
     """Every v0.8.0 break carries exactly one of {runway, exemption}.
 
     The core invariant: no entry may be silent-and-unexplained (no tag) or
     over-tagged (both). :func:`_tag` raises on either, so a new break added to
     the table without a deliberate {runway | exemption} decision fails here.
+    Vacuously true now that the table is drained (#1365); the per-entry tag check
+    re-bites the moment a future program re-populates the registry — proven by
+    :func:`test_gate_catches_a_planted_silent_break_in_the_table_shape`.
     """
     # Raises ValueError (surfaced as a test failure) on a both/neither entry.
-    assert _tag(change) in {"runway", "exemption"}
+    for change in V080_BREAKING_CHANGES:
+        assert _tag(change) in {"runway", "exemption"}
 
 
 def test_claimed_runways_actually_exist() -> None:
@@ -359,35 +324,17 @@ def test_issue_numbers_are_unique() -> None:
     assert dupes == [], f"duplicate issue numbers in V080_BREAKING_CHANGES: {dupes}"
 
 
-def test_silent_break_exemptions_match_baseline() -> None:
-    """The value-level silent breaks are exactly the reason-tagged exemptions.
+def test_table_is_empty_after_the_v080_release() -> None:
+    """The break table is empty now that every v0.8.0 break has shipped (#1365).
 
-    Pins today's baseline: the value-level behavioral breaks that cannot ship a
-    v0.7.0 warning runway are exempted (green on main), and the exemption set is
-    *exactly* this list. If a future break is exempted, this test fails and forces
-    a review of whether it truly cannot be runwayed (the set is meant to shrink,
-    not grow). If one of these gains a runway, this also fails — a prompt to drop
-    it from the exemption baseline.
-
-    #1344 (derived-read / lister drift -> DecodingError) joins the original three
-    (#1290 / #1342 / #1362): a "this future payload shape will be rejected" break
-    has no value-level warning it could emit in v0.7.0, so it is a clean break.
-    #1363 (remove NotebooksAPI.share() + research poll/wait raise on ambiguous
-    task_id=None) is one issue covering two breaks: both v0.7.0 warn runways are
-    *deleted* this release, so no live signal remains to verify — it is exempted
-    rather than runwayed.
+    The five tracked breaks (#1290 / #1342 / #1344 / #1362 / #1363) all landed in
+    the v0.8.0 release, so the registry is drained to ``()``. The bidirectional
+    release gate (``test_v080_release_gate.py``) enforces that this stays empty
+    at/after the 0.8.0 bump — a re-populated table at >= 0.8.0 fails there. This
+    test pins the post-release baseline directly; the detector + self-checks
+    below stay live so the gate keeps biting for the NEXT breaking program.
     """
-    # Match ``_tag``'s blank-reason handling: a whitespace-only exemption is "no
-    # reason" (it would already fail ``test_every_entry_is_runwayed_or_exempted``),
-    # so it must not be counted toward the baseline here either.
-    exempted = sorted(c.issue for c in V080_BREAKING_CHANGES if c.exemption and c.exemption.strip())
-    assert exempted == [1290, 1342, 1344, 1362, 1363], (
-        "The v0.8.0 silent-break exemption set changed. It is meant to SHRINK as "
-        "runways are added, never to grow silently. If you added a NEW exemption, "
-        "confirm in review that the break genuinely cannot warn at the value level "
-        "(ADR-0019) before updating this baseline; if you RUNWAYED one, drop it "
-        f"here. Current exemptions: {exempted}"
-    )
+    assert V080_BREAKING_CHANGES == ()
 
 
 # --- Self-checks: prove the detector is not a no-op ---------------------------

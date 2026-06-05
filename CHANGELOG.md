@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0]
+
+This release lands the **breaking half** of the ADR-0019 error contract (umbrella
+#1346): "absence and refusal **raise**; only success and async-lifecycle state are
+returned." Every flip previewed under `NOTEBOOKLM_FUTURE_ERRORS` in v0.7.0 is now
+the default, and the preview flag — together with the dict-subscript / get-returns-
+None / kwarg-alias deprecation machinery — has been **removed** (#1365). See the
+[Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md) guide.
+
+> **⚠ `NOTEBOOKLM_FUTURE_ERRORS` is gone.** It was the v0.7.0 forward-compat
+> preview gate; its target behavior is now unconditional, so the flag is a no-op
+> (setting it changes nothing). Remove it from your environment / CI config.
+
+### Breaking
+
+- **`sources` / `artifacts` / `notes` / `mind_maps` `.get()` raise on a miss**
+  (#1247). A genuine miss now raises the matching `*NotFoundError`
+  (`SourceNotFoundError` / `ArtifactNotFoundError` / `NoteNotFoundError` /
+  `MindMapNotFoundError`) instead of returning `None` (and the v0.7.0
+  `DeprecationWarning` is gone), matching `notebooks.get`. Return annotations
+  narrow from `X | None` to `X`. Use the unchanged, warning-free `get_or_none()`
+  for the sanctioned `None`-on-miss lookup, or wrap in `try/except *NotFoundError`.
+- **Typed research / mind-map / guide returns are attribute-only** (#1251). The
+  `MappingCompatMixin` dict-subscript bridge is removed from `ResearchTask` /
+  `ResearchStart` / `MindMapResult` / `SourceGuide` / `ResearchSource`:
+  `result["key"]` raises `TypeError`; `result.get(...)` / `.keys()` / `.items()` /
+  `.values()` raise `AttributeError`; `"k" in result` / `iter(result)` /
+  `len(result)` raise `TypeError`. Only attribute access (`result.status`,
+  `guide.keywords`, …) and `to_public_dict()` survive. `ResearchStatus` stays a
+  `str`-enum, so `status == "completed"` keeps working.
+- **`research.wait_for_completion(interval=...)` removed** (#1254). The deprecated
+  `interval=` keyword alias is gone (its v0.7.0 `DeprecationWarning` cycle is
+  complete); passing it now raises the standard `TypeError` for an unexpected
+  keyword. Use `initial_interval=` (same poll cadence).
+- **`generate mind-map` defaults to interactive** (#1272). The CLI
+  `notebooklm generate mind-map <nb>` (and `artifact`/`download` mind-map paths)
+  now default `--kind` to `interactive` instead of the note-backed JSON map. Pass
+  `--kind note` to keep the note-backed behavior.
+- **`sources.refresh()` / `chat.delete_conversation()` return `None`** (#1290).
+  Both previously returned `True` on success (uninformative — any failure raised
+  first); they now return `None` and their annotations change from `-> bool` to
+  `-> None`. `chat.clear_cache(...)` is deliberately unchanged and stays `-> bool`
+  (its bool is meaningful).
+- **Synchronous generation-kickoff refusals raise** (#1342). `artifacts.generate_*`
+  and `revise_slide` no longer swallow a `USER_DISPLAYABLE_ERROR` refusal into a
+  `GenerationStatus(status="failed")` — they re-raise the underlying
+  `RateLimitError` / `RPCError`. `_parse_generation_result` raises
+  `ArtifactFeatureUnavailableError` / `DecodingError` on a missing artifact id.
+  `research.start` raises `DecodingError` on an empty / non-list payload or a
+  falsey `task_id` (return type narrows from `ResearchStart | None` to
+  `ResearchStart`). The public `artifacts.with_rate_limit_retry` helper retries
+  only on a *raised* `RateLimitError` and re-raises on budget exhaustion (a
+  returned rate-limited status is no longer a retry signal).
+- **Derived-read / lister drift raises `DecodingError`** (#1344). A
+  structurally-unrecognized RPC payload that previously collapsed to an empty
+  value now raises `DecodingError`, so callers can distinguish a genuine miss from
+  server-side shape drift: `sources.check_freshness()`, the note lister, and the
+  artifact raw lister reject malformed-but-truthy payloads. Legitimate
+  empty / stale shapes are unchanged.
+- **Mutate-existing ops fail loud on a missing target** (#1362). `notes.update`
+  preflights existence and raises `NoteNotFoundError` before firing the update
+  RPC; `sources.rename(..., return_object=False)` and
+  `artifacts.rename(..., return_object=False)` run the existence preflight on the
+  `False` path and raise `SourceNotFoundError` / `ArtifactNotFoundError` on a miss.
+  `return_object=False` still returns `None` on success.
+- **`NotebooksAPI.share()` removed + research poll/wait raise on ambiguity**
+  (#1363). The deprecated `client.notebooks.share()` is gone — use
+  `client.sharing.set_public(...)` + `client.notebooks.get_share_url(...)`.
+  `research.poll(task_id=None)` / `wait_for_completion(task_id=None)` now raise the
+  new `AmbiguousResearchTaskError` when two or more tasks are in flight (instead of
+  warning and guessing); with a single in-flight task they resolve it silently.
+- **Removed `NOTEBOOKLM_FUTURE_ERRORS` and the deprecation machinery** (#1365).
+  The forward-compat preview gate and the `warn_get_returns_none` /
+  `deprecated_kwarg` / `MappingCompatMixin` deprecation helpers are deleted now
+  that every break they previewed is the default. `warn_deprecated` and
+  `NOTEBOOKLM_QUIET_DEPRECATIONS` remain for future one-off deprecations.
+
 ## [0.7.0] - 2026-06-04
 
 ### Highlights
@@ -1105,7 +1182,8 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.4.1...v0.5.0
