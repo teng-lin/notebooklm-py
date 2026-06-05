@@ -284,7 +284,7 @@ class ResearchAPI:
         *,
         notebook_id: str,
         task_id: str | None,
-        warn_on_ambiguous: bool,
+        raise_on_ambiguous: bool,
     ) -> list[ResearchTask]:
         # Task-id discriminator: when supplied, filter parsed_tasks down to
         # the matched task so callers iterating ``tasks`` don't see siblings.
@@ -295,7 +295,7 @@ class ResearchAPI:
         # unambiguous and still returned silently for convenience.
         if task_id is not None:
             return [task for task in parsed_tasks if task.task_id == task_id]
-        if warn_on_ambiguous and len(parsed_tasks) > 1:
+        if raise_on_ambiguous and len(parsed_tasks) > 1:
             raise AmbiguousResearchTaskError(
                 notebook_id=notebook_id,
                 task_ids=[task.task_id for task in parsed_tasks],
@@ -448,11 +448,11 @@ class ResearchAPI:
             await self._poll_task_models(notebook_id),
             notebook_id=notebook_id,
             task_id=task_id,
-            # The ambiguity warning only applies to the unfiltered (task_id is
+            # The ambiguity raise only applies to the unfiltered (task_id is
             # None) path; when a discriminator is pinned, _select_polled_tasks
-            # filters before the warn branch. Gating it here matches
+            # filters before the raise branch. Gating it here matches
             # wait_for_completion and keeps the intent explicit.
-            warn_on_ambiguous=task_id is None,
+            raise_on_ambiguous=task_id is None,
         )
 
         if parsed_tasks:
@@ -547,7 +547,7 @@ class ResearchAPI:
                 await self._poll_task_models(notebook_id),
                 notebook_id=notebook_id,
                 task_id=pinned_task_id,
-                warn_on_ambiguous=pinned_task_id is None,
+                raise_on_ambiguous=pinned_task_id is None,
             )
             selected_task = parsed_tasks[0] if parsed_tasks else None
             if pinned_task_id is None and selected_task is not None:
