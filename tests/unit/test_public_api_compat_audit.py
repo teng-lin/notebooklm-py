@@ -670,3 +670,64 @@ def test_audit_json_includes_stale_allowances_field(script, tmp_path, monkeypatc
     # ``--check-stale`` promotes the same stale entry to a hard failure.
     _stub_manifests()
     assert script.main(["--check-stale", "--allowlist", str(allowlist)]) == 1
+
+
+def test_stale_allowances_does_not_collide_on_same_object_different_codes(script):
+    # Two allowances for the SAME object but different codes must be tracked
+    # independently. Keying the match map by object alone would let the second
+    # entry overwrite the first, wrongly flagging the live one as stale.
+    brk = script.ApiBreak(code="removed-member", object="notebooklm.X", detail="removed")
+    live = script.Allowance(
+        code="removed-member", object="notebooklm.X", reason="intentional removal"
+    )
+    stale = script.Allowance(
+        code="changed-signature", object="notebooklm.X", reason="describes no current break"
+    )
+
+    # Order-independent: the live entry stays live whether it is processed first
+    # or last in the comprehension that builds the match map.
+    assert script.stale_allowances([brk], [live, stale]) == [stale]
+    assert script.stale_allowances([brk], [stale, live]) == [stale]
+
+
+def test_check_stale_does_not_print_ok_when_stale_blocks(script, tmp_path, monkeypatch, capsys):
+    # When the compat surface is clean but --check-stale finds a stale entry, the
+    # run exits 1 and must NOT print an "OK:" line that contradicts the failure.
+    baseline = _manifest({"GoneExport": _function(), "KeptExport": _function()})
+    current = _manifest({"KeptExport": _function()})
+
+    monkeypatch.setattr(script, "latest_release_tag", lambda repo_root: "v9.9.9")
+    monkeypatch.setattr(script, "export_git_ref", lambda repo_root, ref, dest: dest)
+    manifests = iter([baseline, current])
+    monkeypatch.setattr(script, "collect_manifest", lambda root, extra=None: next(manifests))
+
+    allowlist = tmp_path / "allowlist.json"
+    allowlist.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "allowed_breaks": [
+                    {
+                        "code": "removed-export",
+                        "object": "notebooklm.GoneExport",
+                        "reason": "live: matches the synthetic removal",
+                    },
+                    {
+                        "code": "removed-export",
+                        "object": "notebooklm.AlreadyBaked",
+                        "reason": "stale: matches nothing",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = script.main(["--check-stale", "--allowlist", str(allowlist)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "OK:" not in captured.out
+    assert "OK:" not in captured.err
+    assert "stale" in captured.err.lower()
+    assert "notebooklm.AlreadyBaked" in captured.err
