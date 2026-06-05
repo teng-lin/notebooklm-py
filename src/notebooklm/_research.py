@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
-from ._deprecation import deprecated_kwarg, future_errors_enabled, warn_deprecated
+from ._deprecation import future_errors_enabled, warn_deprecated
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import parse_research_task_models
 from ._runtime.contracts import RpcCaller
@@ -53,16 +53,15 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 # Sentinel marking "the canonical ``initial_interval`` keyword was not passed"
-# in ``wait_for_completion``. The deprecated ``interval`` keyword keeps its
-# original default of ``5`` (so the public-API compatibility audit sees an
-# unchanged signature), while ``initial_interval`` is a newly-added keyword
-# that defaults to this sentinel. Resolution prefers ``initial_interval`` when
-# the caller supplied it and otherwise falls back to ``interval``.
+# in ``wait_for_completion``. The default stays this ``object()`` sentinel (not a
+# literal ``5.0``) so the public-API compatibility audit's default-repr check
+# sees no changed-default break; when the caller leaves it unset we resolve the
+# cadence to ``_DEFAULT_RESEARCH_POLL_INTERVAL`` below.
 _INITIAL_INTERVAL_UNSET: Any = object()
 
-# Original default cadence for the legacy ``interval`` keyword (seconds between
-# status checks). Preserved verbatim so default-shape callers keep the same
-# behavior and the API-compat audit sees no default change.
+# Default poll cadence (seconds between status checks) used when
+# ``initial_interval`` is left unset. Preserved verbatim so default-shape callers
+# keep the same behavior.
 _DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
 
 
@@ -482,7 +481,6 @@ class ResearchAPI:
         task_id: str | None = None,
         *,
         timeout: float = 1800,
-        interval: float = 5,
         initial_interval: float = _INITIAL_INTERVAL_UNSET,
     ) -> ResearchTask:
         """Poll until research reaches a terminal state or times out.
@@ -501,14 +499,6 @@ class ResearchAPI:
                 is the canonical poll-interval keyword, matching
                 :meth:`SourcesAPI.wait_until_ready` and
                 :meth:`ArtifactsAPI.wait_for_completion`.
-            interval: **Deprecated** alias for ``initial_interval`` (removed in
-                v0.8.0). Passing a non-default value emits a
-                :class:`DeprecationWarning`; passing both a non-default
-                ``interval`` and an explicit ``initial_interval`` raises
-                :class:`TypeError`. Default-shape calls stay silent — note that
-                ``interval=5`` (the exact default) does *not* warn, since it is
-                indistinguishable from not passing the keyword at all; only
-                non-default ``interval`` values trigger the migration prompt.
 
         Returns:
             The final :meth:`poll` result (a
@@ -529,43 +519,23 @@ class ResearchAPI:
                 so ``except TimeoutError`` continues to catch it.
             ValueError: If ``timeout`` is negative or the poll interval is not
                 positive.
-            TypeError: If both a non-default ``interval`` and an explicit
-                ``initial_interval`` are passed, or if the resolved poll
-                interval is not a number.
+            TypeError: If the resolved poll interval is not a number.
         """
-        # ``interval`` keeps its original default of ``5`` so the public-API
-        # compatibility audit sees no signature change; we treat it as
-        # "provided" only when the caller changed it from that default. This
-        # keeps default-shape calls silent while still warning on legacy use.
-        legacy_interval: Any = (
-            interval if interval != _DEFAULT_RESEARCH_POLL_INTERVAL else _INITIAL_INTERVAL_UNSET
-        )
-        resolved_interval = deprecated_kwarg(
-            legacy_interval,
-            initial_interval,
-            old="interval",
-            new="initial_interval",
-            owner="ResearchAPI.wait_for_completion",
-            sentinel=_INITIAL_INTERVAL_UNSET,
-            stacklevel=3,
-        )
-        # Only the sentinel means "neither keyword supplied" — fall back to the
-        # default cadence. An *explicit* non-numeric value (e.g. interval=None
-        # or initial_interval="1") is a caller bug; fail fast with TypeError
-        # rather than silently coercing it back to the default, matching the
-        # old ``interval`` path which would have raised on such a value.
-        if resolved_interval is _INITIAL_INTERVAL_UNSET:
+        # The sentinel default means "``initial_interval`` was not supplied" —
+        # fall back to the default cadence. An *explicit* non-numeric value
+        # (e.g. initial_interval=None or initial_interval="1") is a caller bug;
+        # fail fast with TypeError rather than silently coercing it back to the
+        # default.
+        if initial_interval is _INITIAL_INTERVAL_UNSET:
             poll_interval = _DEFAULT_RESEARCH_POLL_INTERVAL
-        elif isinstance(resolved_interval, bool) or not isinstance(resolved_interval, (int, float)):
+        elif isinstance(initial_interval, bool) or not isinstance(initial_interval, (int, float)):
             raise TypeError("poll interval must be a number")
         else:
-            poll_interval = float(resolved_interval)
+            poll_interval = float(initial_interval)
 
         if timeout < 0:
             raise ValueError("timeout must be non-negative")
         if poll_interval <= 0:
-            # Neutral wording: the caller may have used the deprecated
-            # ``interval`` alias rather than ``initial_interval``.
             raise ValueError("poll interval must be positive")
 
         loop = asyncio.get_running_loop()

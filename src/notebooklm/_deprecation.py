@@ -24,11 +24,12 @@ Four families live here:
   a miss as deprecated (issue #1247).
 * ``deprecated_kwarg`` — the keyword-alias pattern used when a public method
   renames a parameter but keeps the old name working for one MINOR cycle. The
-  canonical case is the wait/poll timeout standardization (issue #1208):
+  canonical case was the wait/poll timeout standardization (issue #1208):
   ``ResearchAPI.wait_for_completion`` renamed ``interval`` to
   ``initial_interval`` (matching ``SourcesAPI.wait_until_ready`` /
-  ``ArtifactsAPI.wait_for_completion``) and accepts the old name as a
-  deprecated alias removed in v0.8.0.
+  ``ArtifactsAPI.wait_for_completion``) and accepted the old name as a
+  deprecated alias; that alias was removed in v0.8.0 (issue #1254), but the
+  helper remains a generic primitive for future keyword renames.
 
 * ``MappingCompatMixin`` — the dict-subscript backward-compat bridge used when
   a public method that historically returned ``dict[str, Any]`` is upgraded to

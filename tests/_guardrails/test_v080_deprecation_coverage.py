@@ -134,16 +134,6 @@ _DELIBERATE_CLEAN_BREAK = (
 # (and cite the module that wires it) or carry an explicit exemption reason.
 # The exemption set is meant to SHRINK as runways are added.
 V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
-    # ---- Runwayed today (a v0.7.0 signal verified present) -----------------
-    BreakingChange(
-        issue=1254,
-        summary="remove deprecated 'interval' kwarg alias on research.wait_for_completion",
-        runway=Runway(
-            module="_research.py",
-            description="passing interval=... warns via deprecated_kwarg (DeprecationWarning)",
-            symbol="deprecated_kwarg",
-        ),
-    ),
     # ---- Exempted today (no clean value-level warning; shrink this set) -----
     BreakingChange(
         issue=1290,
