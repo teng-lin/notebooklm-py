@@ -425,6 +425,34 @@ class TestResearch:
         assert result.to_public_dict() == {"status": "no_research", "tasks": []}
 
     @pytest.mark.asyncio
+    async def test_wait_for_completion_raises_on_ambiguous_first_poll(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """wait_for_completion(nb) with >=2 tasks in flight and no task_id raises.
+
+        wait_for_completion shares the _select_polled_tasks discriminator with
+        poll(): on the first iteration with no pinned task_id and two or more
+        in-flight tasks, the selection is ambiguous, so it raises
+        AmbiguousResearchTaskError (v0.8.0; #1363) rather than guessing. Pins the
+        contract the wait_for_completion docstring documents.
+        """
+        task_a = _build_research_task_payload("query A", "https://a.example", "A", status_code=1)
+        task_b = _build_research_task_payload("query B", "https://b.example", "B", status_code=1)
+        response_body = build_rpc_response(
+            RPCMethod.POLL_RESEARCH,
+            [[["task_A", task_a], ["task_B", task_b]]],
+        )
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(AmbiguousResearchTaskError) as excinfo:
+                await client.research.wait_for_completion("nb_123", timeout=10)
+
+        err = excinfo.value
+        assert err.notebook_id == "nb_123"
+        assert err.task_ids == ["task_A", "task_B"]
+
+    @pytest.mark.asyncio
     async def test_wait_for_completion_retries_transient_no_research_for_initial_task_id(
         self, auth_tokens, httpx_mock, build_rpc_response, monkeypatch
     ):
