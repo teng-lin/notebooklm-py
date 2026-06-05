@@ -95,9 +95,7 @@ class TestWithRateLimitRetry:
         sleep = AsyncMock()
 
         with pytest.raises(RateLimitError) as exc_info:
-            await with_rate_limit_retry(
-                generate_fn, max_retries=2, initial_delay=60.0, sleep=sleep
-            )
+            await with_rate_limit_retry(generate_fn, max_retries=2, initial_delay=60.0, sleep=sleep)
 
         assert exc_info.value is error
         assert generate_fn.call_count == 3  # initial attempt + 2 retries
