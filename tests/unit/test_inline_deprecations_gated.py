@@ -16,7 +16,7 @@ they actually are:
   inline, outside ADR-0018's scope: NOT gated by ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
 
 The structural recurrence guard lives in
-``tests/_lint/test_no_inline_deprecation_warnings.py``; this file pins the
+``tests/_guardrails/test_no_inline_deprecation_warnings.py``; this file pins the
 user-visible category + suppression behavior the lint can't observe.
 """
 

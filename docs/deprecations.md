@@ -174,7 +174,7 @@ the rest of the break-set (one release; #1344 is not split to 0.9.0).
 | Derived-read drift + lister drift-tightening | malformed / unknown payloads collapse to empty / `None` | raise `DecodingError` | _(no flag preview yet)_ | [#1344](https://github.com/teng-lin/notebooklm-py/issues/1344) |
 
 The flip happens in lockstep at the version bump, enforced by the
-`tests/_lint/test_v080_release_gate.py` no-orphans gate (umbrella
+`tests/_guardrails/test_v080_release_gate.py` no-orphans gate (umbrella
 [#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)).
 
 ## Removed in v0.7.0
@@ -210,7 +210,7 @@ The flip happens in lockstep at the version bump, enforced by the
   (awaiting `from_storage(...)`, ambiguous `research.poll`, `NotebooksAPI.share()`).
   All mechanics live in `_deprecation.py`; ADR-0018 forbids inline
   `warnings.warn(..., DeprecationWarning)` elsewhere and a lint
-  (`tests/_lint/test_no_inline_deprecation_warnings.py`) enforces it. See
+  (`tests/_guardrails/test_no_inline_deprecation_warnings.py`) enforces it. See
   `docs/configuration.md`.
 * Not every inline `warnings.warn(...)` is a deprecation. The
   `save_cookies_to_storage(original_snapshot=None)` legacy full-merge path is a

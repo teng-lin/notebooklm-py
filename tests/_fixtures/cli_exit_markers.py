@@ -1,6 +1,6 @@
 """Shared marker-scanning helpers for the CLI exit-path lint gates.
 
-Both ``tests/_lint/test_error_handler_allowlist.py`` (``# cli-input-validation:``
+Both ``tests/_guardrails/test_error_handler_allowlist.py`` (``# cli-input-validation:``
 / ``# cli-raw-exit:`` markers on ``click.ClickException`` / raw ``SystemExit``
 calls) and ``tests/unit/cli/test_quiet_enforcement.py`` (``# quiet-ok:`` waivers
 on error-path ``cli_print`` / ``emit_status`` calls) scan inline marker comments

@@ -30,7 +30,7 @@ their call site (ADR-0018 only governs deprecations). For example
 back-compat shim, not a scheduled removal, so it is a ``RuntimeWarning`` emitted
 inline and this lint correctly leaves it alone.
 
-Modelled after the AST-based lints in ``tests/_lint/`` (e.g.
+Modelled after the AST-based lints in ``tests/_guardrails/`` (e.g.
 ``test_no_core_imports.py`` / ``test_asyncio_loop_affinity_guard.py``).
 """
 

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # NOTE: ``click.ClickException`` / raw ``raise SystemExit`` sites outside this
 # module are governed by inline marker comments
 # (``# cli-input-validation: <reason>`` / ``# cli-raw-exit: <reason>``), checked
-# by ``tests/_lint/test_error_handler_allowlist.py``. The previous
+# by ``tests/_guardrails/test_error_handler_allowlist.py``. The previous
 # ``ALLOWED_*_SITES`` line-number allowlists were removed in issue #1298 because
 # any edit above a site shifted its line and failed CI with no behavior change.
 

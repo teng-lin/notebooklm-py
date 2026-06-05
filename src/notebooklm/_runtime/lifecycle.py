@@ -57,7 +57,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 Field names (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
 ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
 ``_connect_timeout``, ``_limits``) are kept stable for grep-discoverability
-across the test suite (see ``tests/_lint/test_no_session_compat_bridges.py``);
+across the test suite (see ``tests/_guardrails/test_no_session_compat_bridges.py``);
 callers reach the storage through the client-owned lifecycle collaborator.
 ``_http_client`` is a thin accessor returning the live ``httpx.AsyncClient``
 from the concrete Kernel.

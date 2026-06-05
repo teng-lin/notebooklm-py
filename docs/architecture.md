@@ -579,7 +579,7 @@ Command modules are named `*_cmd.py` (e.g. `source_cmd.py`,
 `notebook_cmd.py`) to avoid Python's package-attribute shadowing — the
 historical short names (`source`, `notebook`, …) are re-exported from
 `cli/__init__.py` so existing imports keep working. The shadowing
-invariant is pinned by `tests/_lint/test_no_module_shadowing.py`.
+invariant is pinned by `tests/_guardrails/test_no_module_shadowing.py`.
 
 CLI services are organised by feature family; notable examples include
 `cli/services/login/` (browser-profile enumeration split across Chromium
@@ -663,7 +663,7 @@ Concretely, the client-owned runtime retains:
    `compose_client_internals(...)` through write-once binders. Pre-binding
    access trips the `ClientComposed` guard. `ClientComposed` exposes
    `runtime_collaborators`, not a broad `collaborators` alias.
-   [`tests/_lint/test_client_composition.py`](../tests/_lint/test_client_composition.py)
+   [`tests/_guardrails/test_client_composition.py`](../tests/_guardrails/test_client_composition.py)
    guards against inlining holder state back onto `NotebookLMClient`.
 2. **Middleware-chain seams.** The chain leaf
    (`_authed_post_chain_terminal`), the chain slot (`_authed_post_chain`),
@@ -710,7 +710,7 @@ constructor argument, so unit tests can inject narrow
 `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style fakes
 directly via those constructors.
 
-The meta-lint at `tests/_lint/test_no_forbidden_monkeypatches.py`
+The meta-lint at `tests/_guardrails/test_no_forbidden_monkeypatches.py`
 enforces the policy; the file-level allowlist shrinks as legacy tests
 migrate. See [ADR-0007](./adr/0007-test-monkeypatch-policy.md).
 
@@ -725,7 +725,7 @@ migrate. See [ADR-0007](./adr/0007-test-monkeypatch-policy.md).
 
 Pin tests that lock architectural invariants (chain ordering, narrow
 Protocol membership, no forbidden monkeypatch) live in `tests/unit/`
-and `tests/_lint/` — changing the underlying invariant without updating
+and `tests/_guardrails/` — changing the underlying invariant without updating
 the pin is a bug.
 
 A fuller taxonomy can be generated with
@@ -748,13 +748,13 @@ one of the named modules.
 ## Boundary moratorium
 
 New architectural carve-outs are expensive: every ADR amendment and
-`tests/_lint/` pin becomes load-bearing for contributors who have
+`tests/_guardrails/` pin becomes load-bearing for contributors who have
 to read the docs before touching the relevant seam. To keep that
 surface from drifting upward without bound, the following discipline
 applies to any future change that would *expand* the documented
 boundary set:
 
-- **Justify by failure mode.** A new ADR amendment or `tests/_lint/` pin
+- **Justify by failure mode.** A new ADR amendment or `tests/_guardrails/` pin
   must cite a concrete user-visible failure mode
   it prevents (loop-affinity break, auth-snapshot tear, transport drain
   regression, public-API breakage, etc.). "Future-proofing" or "in case
@@ -792,7 +792,7 @@ Vocabulary that recurs in this document and the surrounding code.
 - [ADR-0004](./adr/0004-loop-affinity-contract.md) — Loop-affinity contract (Accepted; enforced by `_loop_affinity.assert_bound_loop`).
 - [ADR-0005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_idempotency.IdempotencyRegistry`).
 - [ADR-0006](./adr/0006-vcr-scrubber-strategy.md) — VCR cassette scrubber strategy (Accepted).
-- [ADR-0007](./adr/0007-test-monkeypatch-policy.md) — Constructor-injection test pattern via `tests/_fixtures/` (Accepted; enforced by `tests/_lint/test_no_forbidden_monkeypatches.py`).
+- [ADR-0007](./adr/0007-test-monkeypatch-policy.md) — Constructor-injection test pattern via `tests/_fixtures/` (Accepted; enforced by `tests/_guardrails/test_no_forbidden_monkeypatches.py`).
 - [ADR-0008](./adr/0008-cli-services-extraction-pattern.md) — `cli/services/` extraction pattern (Accepted).
 - [ADR-0009](./adr/0009-middleware-chain.md) — Middleware chain ordering (Accepted; load-bearing).
 - [ADR-0010](./adr/0010-session-kernel-split.md) — Session/Kernel split (Superseded by ADR-0013).

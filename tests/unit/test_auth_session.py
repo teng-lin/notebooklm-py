@@ -383,7 +383,7 @@ def test_auth_session_has_no_runtime_class_imports() -> None:
 
     Module-level guards against importing ``notebooklm.client`` /
     ``notebooklm._core`` modules live in
-    ``tests/_lint/test_no_core_imports.py``; this test covers the
+    ``tests/_guardrails/test_no_core_imports.py``; this test covers the
     type-name axis (import the *class* by name from anywhere), which the
     module-level lint can't see.
     """

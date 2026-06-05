@@ -9,8 +9,8 @@ helpers; ``browser_accounts`` sits above both as the dispatcher;
 ``refresh`` is the top of the graph).
 
 Module body intentionally re-exports only. The AST guard
-``tests/_lint/test_login_init_is_reexport_only.py`` enforces this; the
-DAG guard ``tests/_lint/test_login_package_dag.py`` enforces the
+``tests/_guardrails/test_login_init_is_reexport_only.py`` enforces this; the
+DAG guard ``tests/_guardrails/test_login_package_dag.py`` enforces the
 leaf-ward shape.
 
 The re-exports cover three concerns:

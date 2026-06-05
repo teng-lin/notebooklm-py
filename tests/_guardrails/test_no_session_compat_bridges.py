@@ -7,7 +7,7 @@ and migrated tests to the owning collaborators or ``make_fake_core(...)``.
 This lint is now a strict regression guard; :data:`ALLOWLIST` must stay
 empty.
 
-Lint shape (modeled after :mod:`tests._lint.test_no_core_imports`):
+Lint shape (modeled after :mod:`tests._guardrails.test_no_core_imports`):
 
 * ``ast.parse`` + ``ast.walk`` (true AST, no regex).
 * Catches :class:`ast.Attribute` nodes in ``Load`` + ``Store`` + ``Del``

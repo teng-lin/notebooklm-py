@@ -28,7 +28,7 @@ by the sibling gate, so it is excluded here.
 The detector core (:func:`find_violations`) is pure and IO-free — it takes the
 already-read doc text plus a ``resolver(ref) -> bool`` — so the public test and
 these CLI self-checks exercise the same logic, exactly like
-``tests/_lint/test_v080_deprecation_coverage.py``.
+``tests/_guardrails/test_v080_deprecation_coverage.py``.
 
 Usage:
     python scripts/check_docs_module_refs.py

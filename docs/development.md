@@ -354,7 +354,7 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
 ```
 tests/
 ├── unit/                            # No network, fast, mock everything
-├── _lint/                           # Architecture/invariant gates (custom AST + filesystem lint)
+├── _guardrails/                           # Architecture/invariant gates (custom AST + filesystem lint)
 ├── integration/                     # Mocked HTTP responses + VCR cassettes
 │   ├── test_artifacts_integration.py # ArtifactsAPI integration
 │   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
@@ -394,9 +394,9 @@ RPC response (or assemble a synthetic one) and assert the live decoder still
 produces the expected dataclass. They fail loudly when Google changes a
 payload field, so the failure shows up here before users hit it.
 
-### Architecture & invariant gates (`tests/_lint/`)
+### Architecture & invariant gates (`tests/_guardrails/`)
 
-`tests/_lint/` holds the project's **custom lint gates** — pytest tests that
+`tests/_guardrails/` holds the project's **custom lint gates** — pytest tests that
 enforce architectural decisions a general-purpose linter can't express. They are
 not style checks; each file encodes one project-specific invariant, usually the
 executable half of an ADR ("enforce, don't document" — un-enforced consistency
@@ -404,12 +404,12 @@ is the failure mode this directory exists to prevent).
 
 **How they differ from ruff / mypy.** Ruff and mypy run in the `quality` job and
 enforce *generic* rules (style, unused imports, types) from a fixed catalogue.
-The `tests/_lint/` gates are collected by the normal `uv run pytest` run and
+The `tests/_guardrails/` gates are collected by the normal `uv run pytest` run and
 enforce *bespoke* rules by doing their own analysis: most parse the source with
 `ast.parse` (or scan files with regex / `rglob`), and some **import the module and reflect on
 the live object** — something a purely-static linter cannot do.
 
-A representative slice (run `ls tests/_lint/` for the full set):
+A representative slice (run `ls tests/_guardrails/` for the full set):
 
 | Gate | Enforces |
 |---|---|

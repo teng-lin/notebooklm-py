@@ -209,7 +209,7 @@ Concretely:
    These are tracked exhaustively by
    `ALLOWED_CLICK_EXCEPTION_SITES` in
    [`src/notebooklm/cli/error_handler.py`](../../src/notebooklm/cli/error_handler.py)
-   and pinned by `tests/_lint/test_error_handler_allowlist.py`. New sites
+   and pinned by `tests/_guardrails/test_error_handler_allowlist.py`. New sites
    require an allowlist entry with a justification; the default for any
    *other* post-parse validation failure is rule 2.
 

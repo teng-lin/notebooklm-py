@@ -14,7 +14,7 @@ cannot. "Enforce, don't document" — a documented transition that nothing check
 re-accretes the moment someone adds the next break without a runway.
 
 This is a registry lint in the self-draining-allowlist idiom already used across
-``tests/_lint/`` (``test_no_raw_positional_rpc_indexing.py``,
+``tests/_guardrails/`` (``test_no_raw_positional_rpc_indexing.py``,
 ``test_module_size_ratchet.py``, ``tests/unit/test_public_api_contract.py``'s
 ``GET_OPTIONAL_EXEMPTIONS``). :data:`V080_BREAKING_CHANGES` declares every
 tracked v0.8.0 break, each tagged with **exactly one** of:

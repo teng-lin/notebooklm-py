@@ -82,7 +82,7 @@ _TESTS_ROOT = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _TESTS_ROOT.parent
 
 # Skip these subtrees:
-#  - ``tests/_lint``: this file itself contains the regex literals as
+#  - ``tests/_guardrails``: this file itself contains the regex literals as
 #    string data; matching them would be a false positive.
 #  - ``tests/_fixtures``: the policy's substrate; tests inside use the
 #    factory directly and do not (and must not) demonstrate the forbidden
@@ -91,7 +91,7 @@ _REPO_ROOT = _TESTS_ROOT.parent
 #    containing VCR cassettes and HTML/JSON fixtures, no Python source.
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        "_lint",
+        "_guardrails",
         "_fixtures",
         "cassettes",
         "fixtures",
@@ -286,7 +286,7 @@ def test_no_forbidden_monkeypatches_outside_allowlist() -> None:
             "ADR-0007 allowlist. Migrate the test(s) to constructor "
             "injection via ``tests/_fixtures/make_fake_core(...)`` or, "
             "if migration must defer, add the file path to "
-            "``tests/_lint/test_no_forbidden_monkeypatches.py::_ALLOWLIST`` "
+            "``tests/_guardrails/test_no_forbidden_monkeypatches.py::_ALLOWLIST`` "
             "with a justification in the PR description.\n\n"
             f"Violations ({len(violations)}):\n{formatted}"
         )

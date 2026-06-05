@@ -36,7 +36,7 @@ The ceilings below were *measured*, not estimated. To regenerate them::
 Line counting uses ``str.splitlines()`` to match the diagnostic in
 ``scripts/audit_test_suite.py`` (``big_files``), so the two never disagree.
 
-Modelled after the AST/path lints in ``tests/_lint/`` (e.g.
+Modelled after the AST/path lints in ``tests/_guardrails/`` (e.g.
 ``test_no_inline_deprecation_warnings.py`` / ``test_no_module_shadowing.py``).
 """
 

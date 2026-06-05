@@ -189,7 +189,7 @@ lets mypy flag keyword-name typos at the call site.
 > `RpcCaller`.
 
 This convention is guarded by
-`tests/_lint/test_no_legacy_rpc_callable_aliases.py`: `RpcCall` and `ShareRpc`
+`tests/_guardrails/test_no_legacy_rpc_callable_aliases.py`: `RpcCall` and `ShareRpc`
 must stay deleted, and `RpcCallback` must stay local to `_source/upload.py`.
 
 ---

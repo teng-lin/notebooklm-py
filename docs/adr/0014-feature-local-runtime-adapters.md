@@ -493,7 +493,7 @@ auth/lifecycle forwards (`Session.lifecycle`, `Session.update_auth_tokens`,
 `NotebookLMClient.auth` now reads `self._auth` directly (set in
 `__init__`) and `SourceUploadPipeline(auth=self._auth)` is wired the
 same way. Wave 4 (PR for this revision) added regression lints under
-`tests/_lint/test_session_runtime_boundaries.py` plus extensions to
+`tests/_guardrails/test_session_runtime_boundaries.py` plus extensions to
 `test_client_composition.py` and `test_no_session.py` so neither host
 Protocol nor the deleted Session forwards can quietly come back.
 The auth-refresh path is now fully explicit-collaborator-driven and

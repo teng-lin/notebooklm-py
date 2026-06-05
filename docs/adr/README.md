@@ -54,7 +54,7 @@ The ADR Index table utilizes four eras of Status notation to reflect the lifecyc
 | [0018](0018-deprecation-strategy.md) | Deprecation strategy (`_deprecation.py` + `MappingCompatMixin`) | Accepted (retroactive) |
 | [0019](0019-error-and-return-contract.md) | Error-and-return contract for the public API | Accepted; v0.8.0 implementation tracked separately |
 
-ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
+ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 
 ## Related references
 

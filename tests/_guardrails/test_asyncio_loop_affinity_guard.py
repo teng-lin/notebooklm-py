@@ -25,7 +25,7 @@ Without this guard, a sibling primitive added later silently regresses the
 #1196 class: nothing fails until a user reopens a client on a fresh loop in
 production. The lint fails loudly the moment a new unguarded primitive lands.
 
-Modelled after the AST-based lints in ``tests/_lint/`` (e.g.
+Modelled after the AST-based lints in ``tests/_guardrails/`` (e.g.
 ``test_error_handler_allowlist.py``).
 """
 
@@ -351,7 +351,7 @@ def test_every_asyncio_primitive_is_loop_affinity_guarded() -> None:
             "Lock/Semaphore/Event/Condition binds to the loop it is first built "
             "on; an owning class must expose the #1196 loop-affinity protocol "
             "(set_bound_loop + reset_after_open) or be allowlisted in "
-            "tests/_lint/test_asyncio_loop_affinity_guard.py::ALLOWLIST.\n\n"
+            "tests/_guardrails/test_asyncio_loop_affinity_guard.py::ALLOWLIST.\n\n"
             + "\n".join(violations)
         )
 

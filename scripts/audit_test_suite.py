@@ -68,7 +68,7 @@ def bucket_counts() -> list[tuple[str, int]]:
         ("tests/integration/concurrency/", TESTS / "integration" / "concurrency", True),
         ("tests/integration/cli_vcr/", TESTS / "integration" / "cli_vcr", True),
         ("tests/e2e/", TESTS / "e2e", True),
-        ("tests/_lint/", TESTS / "_lint", True),
+        ("tests/_guardrails/", TESTS / "_guardrails", True),
     ]
     out = []
     for label, path, recursive in buckets:

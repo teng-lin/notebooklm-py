@@ -12,7 +12,7 @@ swallowed.
 Lineage
 -------
 This is the network-command sibling of the exit-path marker gates
-(``tests/_lint/test_error_handler_allowlist.py``):
+(``tests/_guardrails/test_error_handler_allowlist.py``):
 
 * #1298 / #1299 -- markered, line-shift-immune exit-path allowlist (the
   inline-marker convention reused here).

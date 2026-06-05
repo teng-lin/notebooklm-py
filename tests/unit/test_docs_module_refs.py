@@ -1,7 +1,7 @@
 """Self-tests + the real gate for ``scripts/check_docs_module_refs.py``.
 
 Mirrors the sibling ``tests/unit/test_claude_md_freshness.py`` (CLAUDE.md map)
-and the pure-detector idiom of ``tests/_lint/test_v080_deprecation_coverage.py``:
+and the pure-detector idiom of ``tests/_guardrails/test_v080_deprecation_coverage.py``:
 the detector core :func:`find_violations` is IO-free, so the synthetic
 self-checks below feed crafted doc text + a dict-backed ``resolver`` while the
 real-gate test (:func:`test_real_docs_have_no_violations`) drives the same code

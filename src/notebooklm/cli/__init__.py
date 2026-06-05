@@ -4,7 +4,7 @@ This package provides the command-line interface for NotebookLM automation.
 
 Command groups are organized into separate ``*_cmd`` modules (named to
 break Python's package-attribute shadowing — see
-``tests/_lint/test_no_module_shadowing.py`` for the invariant this protects):
+``tests/_guardrails/test_no_module_shadowing.py`` for the invariant this protects):
 
 - ``source_cmd``: Source management commands (includes add-research)
 - ``artifact_cmd``: Artifact management commands

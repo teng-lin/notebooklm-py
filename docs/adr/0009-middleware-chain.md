@@ -455,7 +455,7 @@ across the chain (intentional), is trivially mockable in tests, and shows
 up plainly in `repr(request)`. `contextvars` would: (a) require every
 middleware to import the var; (b) be invisible in the request repr; (c)
 leak state across tests if not cleared. The audit work that goes into
-`tests/_lint/` to enforce `RpcRequest.context` key discipline is cheaper
+`tests/_guardrails/` to enforce `RpcRequest.context` key discipline is cheaper
 than the audit work to enforce `ContextVar` reset discipline.
 
 **Build the chain per-call instead of once at Session init.** Rejected.

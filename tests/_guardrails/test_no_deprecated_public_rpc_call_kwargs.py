@@ -34,7 +34,7 @@ _ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
 
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        "tests/_lint",  # this file itself contains the kwarg literals
+        "tests/_guardrails",  # this file itself contains the kwarg literals
         "tests/cassettes",  # data only
         "tests/fixtures",  # data only
     }
