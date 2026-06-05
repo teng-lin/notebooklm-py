@@ -209,9 +209,7 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 | `mind-map` | - | `--kind [interactive\|note-backed]`, `--instructions TEXT` *(no `--wait` / `--timeout` / `--interval` / `--retry` / `--prompt-file`)* | `generate mind-map --kind interactive` |
 | `report [description]` | Instructions | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append TEXT` (no effect with `--format custom`) | `generate report --format study-guide` |
 
-> **Two kinds of mind map (issue #1256).** NotebookLM has two distinct mind-map objects. `generate mind-map --kind note-backed` (today's default) builds the **note-backed** kind — a JSON node tree stored as a note, generated synchronously. `generate mind-map --kind interactive` builds the newer **interactive** kind — a studio artifact (the one the web app now creates) that is polled to completion. Both produce the same `{mind_map, note_id, kind}` output, appear in `artifact list --type mind-map`, and download via `download mind-map`. `--instructions` applies only to the note-backed kind (ignored with a warning for interactive).
->
-> **The default `--kind` switches to `interactive` in v0.8.0** (NotebookLM's web app already creates interactive maps). Until then, omitting `--kind` prints a one-time transition notice to stderr — pass `--kind` explicitly to pin your choice, or set `NOTEBOOKLM_QUIET_DEPRECATIONS=1` to silence it.
+> **Two kinds of mind map (issue #1256).** NotebookLM has two distinct mind-map objects. `generate mind-map --kind interactive` (the default) builds the **interactive** kind — a studio artifact (the one the web app now creates) that is polled to completion. `generate mind-map --kind note-backed` builds the **note-backed** kind — a JSON node tree stored as a note, generated synchronously. Both produce the same `{mind_map, note_id, kind}` output, appear in `artifact list --type mind-map`, and download via `download mind-map`. `--instructions` applies only to the note-backed kind (ignored with a warning for interactive).
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 

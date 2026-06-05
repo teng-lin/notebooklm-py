@@ -86,6 +86,8 @@ class TestGenerateCommands:
                 [
                     "generate",
                     "mind-map",
+                    "--kind",
+                    "note-backed",
                     "-n",
                     "bb00c9e3-656c-4fd2-b890-2b71e1cf3814",
                     "--source",

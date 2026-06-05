@@ -165,15 +165,6 @@ V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
             symbol="deprecated_kwarg",
         ),
     ),
-    BreakingChange(
-        issue=1272,
-        summary="flip `generate mind-map` default --kind to interactive",
-        runway=Runway(
-            module="cli/services/generate.py",
-            description="omitting --kind prints a stderr transition notice about the v0.8.0 switch",
-            notice="default switches to interactive in v0.8.0",
-        ),
-    ),
     # ---- Exempted today (no clean value-level warning; shrink this set) -----
     BreakingChange(
         issue=1290,

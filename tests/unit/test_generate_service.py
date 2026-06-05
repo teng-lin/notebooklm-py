@@ -196,14 +196,14 @@ _PLAN_HAPPY_CASES: list[tuple[str, dict[str, Any], dict[str, Any], dict[str, Any
     ),
     (
         "mind-map",
-        {"instructions": "summarize", "language": "en"},
+        {"map_kind": "note-backed", "instructions": "summarize", "language": "en"},
         {
             "display_name": "mind map",
             "wait": False,
             "max_retries": 0,
             "language": "en",
         },
-        {"instructions": "summarize"},
+        {"instructions": "summarize", "kind": "note-backed"},
     ),
     (
         "report",
@@ -593,7 +593,9 @@ async def test_execute_generation_mind_map_dispatches_and_returns_typed_result(
     monkeypatch.setattr(resolve_module, "resolve_source_ids", fake_resolve_source_ids)
     plan = build_generation_plan(
         "mind-map",
-        _base_args(instructions="summarize", language="en", json_output=True),
+        _base_args(
+            map_kind="note-backed", instructions="summarize", language="en", json_output=True
+        ),
         parameter_explicit=_default_source,
         language_resolver=_identity_language,
     )

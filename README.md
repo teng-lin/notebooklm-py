@@ -147,7 +147,7 @@ notebooklm generate quiz --difficulty hard
 notebooklm generate flashcards --quantity more
 notebooklm generate slide-deck
 notebooklm generate infographic --orientation portrait
-notebooklm generate mind-map --kind interactive   # newer studio map; note-backed JSON is the default kind
+notebooklm generate mind-map                       # interactive studio map (default); --kind note-backed for the JSON tree
 notebooklm generate data-table "compare key concepts"
 
 # 5. Download artifacts

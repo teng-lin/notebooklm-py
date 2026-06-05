@@ -72,7 +72,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "_artifact/downloads.py": 973,
     "client.py": 973,
     "_research.py": 969,
-    "cli/services/generate.py": 954,
+    "cli/services/generate.py": 926,
     "_chat/api.py": 948,
     "_idempotency.py": 936,
 }

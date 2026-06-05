@@ -4932,10 +4932,10 @@
           }
         },
         {
-          "default": "note-backed",
+          "default": "interactive",
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Which mind map to generate: 'interactive' (studio artifact, polled to completion) or 'note-backed' (JSON tree, synchronous). The default becomes 'interactive' in v0.8.0.",
+          "help": "Which mind map to generate: 'interactive' (studio artifact, polled to completion) or 'note-backed' (JSON tree, synchronous).",
           "is_flag": false,
           "kind": "option",
           "multiple": false,

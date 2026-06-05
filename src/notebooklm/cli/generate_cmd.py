@@ -796,12 +796,11 @@ def generate_data_table(
     "--kind",
     "map_kind",
     type=click.Choice(["interactive", "note-backed"]),
-    default="note-backed",
+    default="interactive",
     show_default=True,
     help=(
         "Which mind map to generate: 'interactive' (studio artifact, polled to "
-        "completion) or 'note-backed' (JSON tree, synchronous). The default "
-        "becomes 'interactive' in v0.8.0."
+        "completion) or 'note-backed' (JSON tree, synchronous)."
     ),
 )
 @json_option
@@ -813,14 +812,10 @@ def generate_mind_map(
 
     \b
     Two kinds (issue #1256):
-      --kind note-backed   JSON tree, synchronous (default)
-      --kind interactive   interactive studio artifact, polled to completion
+      --kind interactive   interactive studio artifact, polled to completion (default)
+      --kind note-backed   JSON tree, synchronous
     Both export the same JSON node tree via 'download mind-map'.
-
-    \b
-    Heads up: the default --kind will switch to 'interactive' in v0.8.0
-    (NotebookLM's web app already creates interactive maps). Pass --kind
-    explicitly to pin your choice. --instructions applies to note-backed only.
+    --instructions applies to note-backed only.
 
     \b
     Use --json for machine-readable output.

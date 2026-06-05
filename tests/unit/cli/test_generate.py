@@ -718,7 +718,8 @@ class TestGenerateInfographic:
 
 
 class TestGenerateMindMap:
-    def test_generate_mind_map(self, runner, mock_auth):
+    def test_generate_mind_map_note_backed(self, runner, mock_auth):
+        """--kind note-backed routes through client.artifacts.generate_mind_map."""
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_mind_map = AsyncMock(
@@ -732,9 +733,13 @@ class TestGenerateMindMap:
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "mind-map", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["generate", "mind-map", "--kind", "note-backed", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 0
+            mock_client.artifacts.generate_mind_map.assert_awaited_once()
+            mock_client.mind_maps.generate.assert_not_called()
 
     def test_generate_mind_map_interactive(self, runner, mock_auth):
         """--interactive routes through client.mind_maps.generate(kind=INTERACTIVE)."""
@@ -897,13 +902,18 @@ class TestGenerateMindMap:
             mock_client.mind_maps.generate.assert_awaited_once()
             assert not mock_client.mind_maps.generate.await_args.kwargs.get("instructions")
 
-    def test_generate_mind_map_default_kind_emits_transition_notice(self, runner, mock_auth):
-        """Omitting --kind warns that the default flips to interactive in v0.8.0."""
+    def test_generate_mind_map_default_routes_interactive(self, runner, mock_auth):
+        """Omitting --kind now defaults to the interactive studio-artifact path (#1272)."""
+        from notebooklm.types import MindMap, MindMapKind
+
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.artifacts.generate_mind_map = AsyncMock(
-                return_value=mind_map_result(
-                    {"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+            mock_client.mind_maps.generate = AsyncMock(
+                return_value=MindMap(
+                    id="art_42",
+                    notebook_id="nb_123",
+                    title="Interactive Mind Map",
+                    kind=MindMapKind.INTERACTIVE,
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -913,32 +923,16 @@ class TestGenerateMindMap:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "mind-map", "-n", "nb_123"])
+
             assert result.exit_code == 0
-            assert "switches to interactive in v0.8.0" in result.output
-
-            # An explicit --kind suppresses the transition notice.
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result2 = runner.invoke(
-                    cli, ["generate", "mind-map", "--kind", "note-backed", "-n", "nb_123"]
-                )
-            assert result2.exit_code == 0
-            assert "switches to interactive in v0.8.0" not in result2.output
-
-            # The transition notice is *informational* (no input dropped), so
-            # --json suppresses it entirely — it must not leak onto stdout or
-            # stderr, keeping machine-readable output clean (design decision).
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result3 = runner.invoke(cli, ["generate", "mind-map", "-n", "nb_123", "--json"])
-            assert result3.exit_code == 0
-            assert "switches to interactive in v0.8.0" not in result3.stdout
-            assert "switches to interactive in v0.8.0" not in result3.stderr
-            json.loads(result3.stdout)  # stdout is pure, parseable JSON
+            # The bare default dispatches to the unified interactive API, not the
+            # note-backed artifacts.generate_mind_map.
+            mock_client.mind_maps.generate.assert_awaited_once()
+            assert (
+                mock_client.mind_maps.generate.await_args.kwargs["kind"] == MindMapKind.INTERACTIVE
+            )
+            mock_client.artifacts.generate_mind_map.assert_not_called()
+            assert "art_42" in result.output
 
 
 # =============================================================================
@@ -1097,8 +1091,8 @@ class TestGenerateReport:
 class TestGenerateJsonOutput:
     """JSON-output tests for commands whose envelope differs from the standard shape."""
 
-    def test_generate_mind_map_json_output(self, runner, mock_auth):
-        """Test --json for mind-map (different return structure)."""
+    def test_generate_mind_map_note_backed_json_output(self, runner, mock_auth):
+        """--kind note-backed --json emits the note-backed {mind_map, note_id} shape."""
         with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_mind_map = AsyncMock(
@@ -1112,7 +1106,9 @@ class TestGenerateJsonOutput:
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "mind-map", "--json", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["generate", "mind-map", "--kind", "note-backed", "--json", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 0
             data = json.loads(result.output)
