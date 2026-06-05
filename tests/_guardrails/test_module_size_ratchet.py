@@ -64,10 +64,10 @@ MODULE_SIZE_BUDGET = 900
 ALLOWLISTED_CEILINGS: dict[str, int] = {
     "cli/source_cmd.py": 1498,
     "exceptions.py": 1426,
-    "_artifacts.py": 1420,
+    "_artifacts.py": 1414,
     "_source/upload.py": 1236,
     "cli/session_cmd.py": 1080,
-    "_sources.py": 1015,
+    "_sources.py": 1010,
     "cli/services/playwright_login.py": 988,
     "_artifact/downloads.py": 973,
     "client.py": 973,

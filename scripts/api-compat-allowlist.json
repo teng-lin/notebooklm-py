@@ -65,7 +65,7 @@
     {
       "code": "removed-member",
       "object": "notebooklm.Note.from_api_response",
-      "reason": "Dead positional parser removed (#1389). Note rows are decoded through notebooklm._row_adapters.notes.NoteRow; the classmethod had no production callers (only test_types.py exercised it). Construct Note(...) directly from NoteRow's named properties — see NotesAPI._parse_note."
+      "reason": "Dead positional parser removed (#1389). Note rows are decoded through notebooklm._row_adapters.notes.NoteRow; the classmethod had no production callers (only test_types.py exercised it). Construct Note(...) directly from NoteRow's named properties \u2014 see NotesAPI._parse_note."
     },
     {
       "code": "removed-member",
@@ -316,6 +316,46 @@
       "code": "changed-return",
       "object": "notebooklm.client.NotebookLMClient.sources.rename",
       "reason": "Same break as notebooklm.NotebookLMClient.sources.rename above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.NotebookLMClient.sources.get",
+      "reason": "v0.8.0 #1247: get() now raises SourceNotFoundError on a miss instead of returning None; the return annotation narrows from 'notebooklm.types.Source | None' to 'notebooklm.types.Source' (matches notebooks.get). Use get_or_none() for the None-on-miss lookup. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.client.NotebookLMClient.sources.get",
+      "reason": "Same break as notebooklm.NotebookLMClient.sources.get above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.NotebookLMClient.artifacts.get",
+      "reason": "v0.8.0 #1247: get() now raises ArtifactNotFoundError on a miss instead of returning None; the return annotation narrows from 'notebooklm.types.Artifact | None' to 'notebooklm.types.Artifact' (matches notebooks.get). Use get_or_none() for the None-on-miss lookup. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.client.NotebookLMClient.artifacts.get",
+      "reason": "Same break as notebooklm.NotebookLMClient.artifacts.get above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.NotebookLMClient.notes.get",
+      "reason": "v0.8.0 #1247: get() now raises NoteNotFoundError on a miss instead of returning None; the return annotation narrows from 'notebooklm.types.Note | None' to 'notebooklm.types.Note' (matches notebooks.get). Use get_or_none() for the None-on-miss lookup. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.client.NotebookLMClient.notes.get",
+      "reason": "Same break as notebooklm.NotebookLMClient.notes.get above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.NotebookLMClient.mind_maps.get",
+      "reason": "v0.8.0 #1247: get() now raises MindMapNotFoundError on a miss instead of returning None; the return annotation narrows from 'notebooklm.types.MindMap | None' to 'notebooklm.types.MindMap' (matches notebooks.get). Use get_or_none() for the None-on-miss lookup. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "changed-return",
+      "object": "notebooklm.client.NotebookLMClient.mind_maps.get",
+      "reason": "Same break as notebooklm.NotebookLMClient.mind_maps.get above; this entry covers the audit's dotted-module-path view of the same callable."
     }
   ]
 }

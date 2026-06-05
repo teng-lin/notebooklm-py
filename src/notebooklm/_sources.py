@@ -149,7 +149,7 @@ class SourcesAPI:
         """
         return await self._lister.list(notebook_id, strict=strict)
 
-    async def get(self, notebook_id: str, source_id: str) -> Source | None:
+    async def get(self, notebook_id: str, source_id: str) -> Source:
         """Get details of a specific source.
 
         Args:
@@ -157,23 +157,18 @@ class SourcesAPI:
             source_id: The source ID.
 
         Returns:
-            Source object with current status, or None if not found.
+            The :class:`~notebooklm.types.Source` with its current status.
 
-        .. deprecated:: 0.7.0
-            Returning ``None`` for a missing source is deprecated and emits a
-            :class:`DeprecationWarning`. In **v0.8.0** this method will raise
-            :class:`~notebooklm.exceptions.SourceNotFoundError` instead, to match
-            ``notebooks.get`` (issue #1247); wrap in ``try/except
-            SourceNotFoundError`` to keep handling missing sources. Suppress with
-            ``NOTEBOOKLM_QUIET_DEPRECATIONS``, or set ``NOTEBOOKLM_FUTURE_ERRORS=1``
-            to preview the v0.8.0 raise now.
+        Raises:
+            SourceNotFoundError: If no source with ``source_id`` exists (matches
+                ``notebooks.get``; issue #1247). Use :meth:`get_or_none` for the
+                sanctioned ``None``-on-miss lookup.
         """
-        # ``resolve_get`` single-sources the warn-vs-raise decision (#1247);
+        # ``resolve_get`` single-sources the raise-on-miss decision (#1247);
         # internal callers needing the silent lookup use ``get_or_none``.
         return resolve_get(
             await self.get_or_none(notebook_id, source_id),
             not_found=SourceNotFoundError(source_id),
-            resource="source",
         )
 
     async def get_or_none(self, notebook_id: str, source_id: str) -> Source | None:

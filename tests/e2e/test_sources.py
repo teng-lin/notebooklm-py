@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from notebooklm import Source, SourceGuide, SourceStatus
+from notebooklm import Source, SourceGuide, SourceNotFoundError, SourceStatus
 
 from .conftest import requires_auth
 
@@ -88,12 +88,10 @@ class TestSourceRetrieval:
 
     @pytest.mark.asyncio
     async def test_get_source_not_found(self, client, read_only_notebook_id):
-        """Test getting a non-existent source returns None (with deprecation)."""
-        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
-        # (flips to raising SourceNotFoundError in v0.8.0, issue #1247).
-        with pytest.warns(DeprecationWarning, match="SourceNotFoundError"):
-            source = await client.sources.get(read_only_notebook_id, "nonexistent_source_id")
-        assert source is None
+        """Test getting a non-existent source raises SourceNotFoundError."""
+        # v0.8.0: a miss now raises SourceNotFoundError (issue #1247).
+        with pytest.raises(SourceNotFoundError):
+            await client.sources.get(read_only_notebook_id, "nonexistent_source_id")
 
     @pytest.mark.asyncio
     async def test_get_guide(self, client, read_only_notebook_id):

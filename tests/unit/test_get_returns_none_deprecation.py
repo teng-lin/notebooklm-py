@@ -27,6 +27,12 @@ from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
+from notebooklm.exceptions import (
+    ArtifactNotFoundError,
+    MindMapNotFoundError,
+    NoteNotFoundError,
+    SourceNotFoundError,
+)
 from notebooklm.types import Source
 
 # ---------------------------------------------------------------------------
@@ -185,32 +191,30 @@ def mind_maps_api():
 
 
 # ---------------------------------------------------------------------------
-# Each public get() warns on a miss but still returns None
+# Each public get() raises its *NotFoundError on a miss (v0.8.0 flip, #1247)
 # ---------------------------------------------------------------------------
 #
 # Parametrised over every #1247-cohort namespace (sources / notes / artifacts /
-# mind_maps) so the missing-warning gap that #1358 closed for mind_maps cannot
-# silently recur for any of them: each get() must emit the deprecation warning
-# on a miss. All four lookups iterate ``self.list(...)``, so a mocked-empty
+# mind_maps) so the not-found contract stays uniform across all four — matching
+# notebooks.get. All four lookups iterate ``self.list(...)``, so a mocked-empty
 # ``list`` forces the miss uniformly.
 
-_GET_WARN_CASES = [
-    pytest.param("sources_api", "SourceNotFoundError", id="sources"),
-    pytest.param("notes_api", "NoteNotFoundError", id="notes"),
-    pytest.param("artifacts_api", "ArtifactNotFoundError", id="artifacts"),
-    pytest.param("mind_maps_api", "MindMapNotFoundError", id="mind_maps"),
+_GET_MISS_CASES = [
+    pytest.param("sources_api", SourceNotFoundError, id="sources"),
+    pytest.param("notes_api", NoteNotFoundError, id="notes"),
+    pytest.param("artifacts_api", ArtifactNotFoundError, id="artifacts"),
+    pytest.param("mind_maps_api", MindMapNotFoundError, id="mind_maps"),
 ]
 
 
-class TestPublicGetWarnsOnMiss:
+class TestPublicGetRaisesOnMiss:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(("api_fixture", "exc_name"), _GET_WARN_CASES)
-    async def test_get_warns_and_returns_none(self, request, api_fixture, exc_name):
+    @pytest.mark.parametrize(("api_fixture", "exc_type"), _GET_MISS_CASES)
+    async def test_get_raises_on_miss(self, request, api_fixture, exc_type):
         api = request.getfixturevalue(api_fixture)
         api.list = AsyncMock(return_value=[])
-        with pytest.warns(DeprecationWarning, match=exc_name):
-            result = await api.get("nb_1", "missing")
-        assert result is None
+        with pytest.raises(exc_type):
+            await api.get("nb_1", "missing")
 
 
 # ---------------------------------------------------------------------------

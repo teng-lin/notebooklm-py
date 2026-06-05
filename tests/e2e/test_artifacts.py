@@ -12,7 +12,7 @@ import asyncio
 import pytest
 
 from notebooklm import Artifact, ArtifactType, ReportSuggestion
-from notebooklm.exceptions import RPCTimeoutError
+from notebooklm.exceptions import ArtifactNotFoundError, RPCTimeoutError
 
 from .conftest import assert_generation_started, requires_auth
 
@@ -45,12 +45,10 @@ class TestArtifactRetrieval:
     @pytest.mark.asyncio
     @pytest.mark.readonly
     async def test_get_artifact_not_found(self, client, read_only_notebook_id):
-        """Test getting a non-existent artifact returns None (with deprecation)."""
-        # v0.7.0: a miss still returns None but now emits a DeprecationWarning
-        # (flips to raising ArtifactNotFoundError in v0.8.0, issue #1247).
-        with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
-            artifact = await client.artifacts.get(read_only_notebook_id, "nonexistent_artifact_id")
-        assert artifact is None
+        """Test getting a non-existent artifact raises ArtifactNotFoundError."""
+        # v0.8.0: a miss now raises ArtifactNotFoundError (issue #1247).
+        with pytest.raises(ArtifactNotFoundError):
+            await client.artifacts.get(read_only_notebook_id, "nonexistent_artifact_id")
 
 
 @requires_auth

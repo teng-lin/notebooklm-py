@@ -483,7 +483,7 @@ class TestSourcesAPI:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test getting a non-existent source."""
+        """Test getting a non-existent source raises SourceNotFoundError."""
         response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -500,13 +500,9 @@ class TestSourcesAPI:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            # v0.7.0: a miss still returns None but now emits a
-            # DeprecationWarning (flips to raising SourceNotFoundError in
-            # v0.8.0, issue #1247).
-            with pytest.warns(DeprecationWarning, match="SourceNotFoundError"):
-                source = await client.sources.get("nb_123", "nonexistent")
-
-        assert source is None
+            # v0.8.0: a miss now raises SourceNotFoundError (issue #1247).
+            with pytest.raises(SourceNotFoundError):
+                await client.sources.get("nb_123", "nonexistent")
 
     @pytest.mark.asyncio
     async def test_add_drive_source(

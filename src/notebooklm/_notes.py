@@ -90,7 +90,7 @@ class NotesAPI:
 
         return notes
 
-    async def get(self, notebook_id: str, note_id: str) -> Note | None:
+    async def get(self, notebook_id: str, note_id: str) -> Note:
         """Get a specific note by ID.
 
         Args:
@@ -98,26 +98,19 @@ class NotesAPI:
             note_id: The note ID.
 
         Returns:
-            Note object, or None if not found.
+            The :class:`~notebooklm.types.Note`.
 
-        .. deprecated:: 0.7.0
-            Returning ``None`` for a missing note is deprecated and emits a
-            :class:`DeprecationWarning`. In **v0.8.0** this method will raise
-            ``NoteNotFoundError`` instead, to match ``notebooks.get`` (issue
-            #1247). Wrap the call in ``try/except NoteNotFoundError`` to keep
-            handling missing notes. Suppress the warning with
-            ``NOTEBOOKLM_QUIET_DEPRECATIONS``, or set
-            ``NOTEBOOKLM_FUTURE_ERRORS=1`` to preview the v0.8.0 raise now.
+        Raises:
+            NoteNotFoundError: If no note with ``note_id`` exists (matches
+                ``notebooks.get``; issue #1247). Use :meth:`get_or_none` for the
+                sanctioned ``None``-on-miss lookup.
         """
-        # The warn-runway / raise decision is single-sourced in
-        # ``_lookup.resolve_get``: it warns and returns ``None`` today, or
-        # raises ``NoteNotFoundError`` under ``NOTEBOOKLM_FUTURE_ERRORS`` (the
-        # v0.8.0 flip, issue #1247). Internal callers that need the silent
-        # optional-lookup must use ``get_or_none`` directly.
+        # ``_lookup.resolve_get`` single-sources the raise-on-miss decision
+        # (#1247). Internal callers that need the silent optional-lookup must
+        # use ``get_or_none`` directly.
         return resolve_get(
             await self.get_or_none(notebook_id, note_id),
             not_found=NoteNotFoundError(note_id),
-            resource="note",
         )
 
     async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:

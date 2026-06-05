@@ -136,18 +136,6 @@ _DELIBERATE_CLEAN_BREAK = (
 V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = (
     # ---- Runwayed today (a v0.7.0 signal verified present) -----------------
     BreakingChange(
-        issue=1247,
-        summary="sources/artifacts/notes/mind_maps.get() flip None-on-miss to raise *NotFoundError",
-        runway=Runway(
-            # The warn-on-miss signal for all four namespaces is centralized in
-            # resolve_get() (issue #1406), so the symbol lives in _lookup.py —
-            # not the per-namespace _sources.py/_artifacts.py/etc. get() bodies.
-            module="_lookup.py",
-            description="public get() warns on a miss via warn_get_returns_none, centralized in resolve_get (DeprecationWarning)",
-            symbol="warn_get_returns_none",
-        ),
-    ),
-    BreakingChange(
         issue=1251,
         summary="remove dict-subscript MappingCompat from research/mind_map/guide typed returns",
         runway=Runway(

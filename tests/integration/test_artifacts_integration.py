@@ -532,14 +532,11 @@ class TestArtifactsAPI:
             api, "list", new=AsyncMock(return_value=[other, found])
         ) as list_artifacts:
             result = await api.get("nb_123", "art_found")
-            # v0.7.0: a miss still returns None but now emits a
-            # DeprecationWarning (flips to raising ArtifactNotFoundError in
-            # v0.8.0, issue #1247).
-            with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
-                missing = await api.get("nb_123", "art_missing")
+            # v0.8.0: a miss now raises ArtifactNotFoundError (issue #1247).
+            with pytest.raises(ArtifactNotFoundError):
+                await api.get("nb_123", "art_missing")
 
         assert result is found
-        assert missing is None
         assert list_artifacts.await_count == 2
         list_artifacts.assert_awaited_with("nb_123")
 
@@ -903,13 +900,13 @@ class TestArtifactsAPI:
         assert result.task_id == "dt_123"
 
     @pytest.mark.asyncio
-    async def test_get_artifact_not_found(
+    async def test_get_artifact_raises_when_not_found(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test getting a non-existent artifact returns None."""
+        """Test getting a non-existent artifact raises ArtifactNotFoundError."""
         # Response for LIST_ARTIFACTS (gArtLc) - empty
         response1 = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [])
         # Response for GET_NOTES_AND_MIND_MAPS (cFji9) - empty
@@ -918,13 +915,9 @@ class TestArtifactsAPI:
         httpx_mock.add_response(content=response2.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            # v0.7.0: a miss still returns None but now emits a
-            # DeprecationWarning (flips to raising ArtifactNotFoundError in
-            # v0.8.0, issue #1247).
-            with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
-                result = await client.artifacts.get("nb_123", "nonexistent")
-
-        assert result is None
+            # v0.8.0: a miss now raises ArtifactNotFoundError (issue #1247).
+            with pytest.raises(ArtifactNotFoundError):
+                await client.artifacts.get("nb_123", "nonexistent")
 
     @pytest.mark.asyncio
     async def test_list_audio_artifacts(
@@ -1656,17 +1649,17 @@ class TestListMindMapErrorHandling:
         assert any(a.id == "art_002" for a in result)
 
 
-class TestGetArtifactReturnsNone:
-    """Tests for get() returning None (lines 312-313)."""
+class TestGetArtifactRaisesWhenNotFound:
+    """Tests for get() raising ArtifactNotFoundError on a miss (lines 312-313)."""
 
     @pytest.mark.asyncio
-    async def test_get_returns_none_when_not_found(
+    async def test_get_raises_when_not_found(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """get() returns None when the artifact_id is not in the list."""
+        """get() raises ArtifactNotFoundError when the artifact_id is not in the list."""
         # Return one artifact with a different ID
         artifact_data = ["art_exists", "My Report", 2, None, 3]
         list_response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[artifact_data]])
@@ -1675,13 +1668,9 @@ class TestGetArtifactReturnsNone:
         httpx_mock.add_response(content=notes_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            # v0.7.0: a miss still returns None but now emits a
-            # DeprecationWarning (flips to raising ArtifactNotFoundError in
-            # v0.8.0, issue #1247).
-            with pytest.warns(DeprecationWarning, match="ArtifactNotFoundError"):
-                result = await client.artifacts.get("nb_123", "art_does_not_exist")
-
-        assert result is None
+            # v0.8.0: a miss now raises ArtifactNotFoundError (issue #1247).
+            with pytest.raises(ArtifactNotFoundError):
+                await client.artifacts.get("nb_123", "art_does_not_exist")
 
     @pytest.mark.asyncio
     async def test_get_returns_artifact_when_found(

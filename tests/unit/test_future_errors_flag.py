@@ -123,50 +123,16 @@ class _Sentinel(Exception):
 
 
 class TestResolveGet:
-    def test_hit_returns_value_no_warn_no_raise_off(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            result = resolve_get("found", not_found=_Sentinel(), resource="source")
-        assert result == "found"
+    # As of the v0.8.0 flip (#1247) resolve_get always raises on a miss and no
+    # longer consults NOTEBOOKLM_FUTURE_ERRORS — its raise-on-miss / hit contract
+    # is the flag-agnostic behavior below; the full public miss-contract lives in
+    # test_public_api_behavior.py::TestGetMissContract.
+    def test_hit_returns_value(self):
+        assert resolve_get("found", not_found=_Sentinel()) == "found"
 
-    def test_hit_returns_value_no_raise_on(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
-        # A hit never raises, even under future-errors: the flip is miss-only.
-        result = resolve_get("found", not_found=_Sentinel(), resource="source")
-        assert result == "found"
-
-    def test_miss_off_warns_and_returns_none(self, monkeypatch):
-        monkeypatch.delenv(_FLAG, raising=False)
-        monkeypatch.delenv(_QUIET, raising=False)
-        with pytest.warns(DeprecationWarning, match="sources.get()") as record:
-            result = resolve_get(None, not_found=_Sentinel(), resource="source")
-        assert result is None
-        assert len(record) == 1
-
-    def test_miss_on_raises_the_not_found(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            with pytest.raises(_Sentinel):
-                resolve_get(None, not_found=_Sentinel(), resource="source")
-
-    def test_warning_points_at_caller_through_bridge(self, monkeypatch):
-        # stacklevel bookkeeping: resolve_get bumps warn_get_returns_none to
-        # stacklevel=4 to account for the extra bridge frame
-        # (warn (1) -> resolve_get (2) -> public get() (3) -> user (4)). The
-        # ``_fake_public_get`` wrapper stands in for the public ``get()`` frame
-        # so the warning is attributed to the *caller of get()* — this line —
-        # not to _lookup.py / _deprecation.py.
-        monkeypatch.delenv(_FLAG, raising=False)
-        monkeypatch.delenv(_QUIET, raising=False)
-
-        def _fake_public_get() -> object:
-            return resolve_get(None, not_found=_Sentinel(), resource="source")
-
-        with pytest.warns(DeprecationWarning) as record:
-            _fake_public_get()
-        assert record[0].filename == __file__
+    def test_miss_raises_the_not_found(self):
+        with pytest.raises(_Sentinel):
+            resolve_get(None, not_found=_Sentinel())
 
 
 # ---------------------------------------------------------------------------
@@ -345,12 +311,6 @@ class TestDeprecatedKwargFlip:
 
 
 class TestFutureErrorsTakesPrecedenceOverQuiet:
-    def test_resolve_get_raises_even_when_quiet(self, monkeypatch):
-        monkeypatch.setenv(_FLAG, "1")
-        monkeypatch.setenv(_QUIET, "1")
-        with pytest.raises(_Sentinel):
-            resolve_get(None, not_found=_Sentinel(), resource="source")
-
     def test_subscript_raises_even_when_quiet(self, monkeypatch):
         monkeypatch.setenv(_FLAG, "1")
         monkeypatch.setenv(_QUIET, "1")
@@ -377,7 +337,6 @@ class TestFutureErrorsTakesPrecedenceOverQuiet:
         monkeypatch.setenv(_QUIET, "1")
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
-            assert resolve_get(None, not_found=_Sentinel(), resource="source") is None
             assert _CompatProbe()["status"] == "completed"
 
 

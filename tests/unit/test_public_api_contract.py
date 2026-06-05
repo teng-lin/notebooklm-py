@@ -78,12 +78,9 @@ LOOKUP_NAMESPACES = frozenset({"notebooks", "sources", "artifacts", "notes", "mi
 # Reason-tagged so every gap is visible; this set must SHRINK as #1247 lands and
 # must never gain an entry. (``notebooks.get`` already returns the non-Optional
 # ``Notebook`` and is intentionally absent.)
-GET_OPTIONAL_EXEMPTIONS: dict[str, str] = {
-    "sources": "get() still returns Source | None; flip to raise deferred to #1247",
-    "artifacts": "get() still returns Artifact | None; flip to raise deferred to #1247",
-    "notes": "get() still returns Note | None; flip to raise deferred to #1247",
-    "mind_maps": "get() still returns MindMap | None; flip to raise deferred to #1247",
-}
+# Empty as of #1247: every namespace ``get()`` now returns a non-Optional type
+# and raises its ``*NotFoundError`` on a miss. The set can never gain an entry.
+GET_OPTIONAL_EXEMPTIONS: dict[str, str] = {}
 
 
 def _method(namespace: str, name: str) -> Callable[..., object]:
@@ -240,6 +237,16 @@ def test_get_optional_exemptions_are_live(namespace: str) -> None:
     assert _is_optional(annotation), (
         f"GET_OPTIONAL_EXEMPTIONS lists {namespace}.get as Optional, but it is "
         f"now {annotation!r}; remove the stale exemption (#1247)."
+    )
+
+
+def test_get_optional_exemptions_is_empty() -> None:
+    """#1247 has landed: every namespace get() is non-Optional, so the
+    exemption set must stay empty — it can shrink to empty but never regain a
+    member (re-adding one re-introduces an Optional get())."""
+    assert GET_OPTIONAL_EXEMPTIONS == {}, (
+        "GET_OPTIONAL_EXEMPTIONS must stay empty after #1247: every namespace "
+        f"get() raises *NotFoundError and is non-Optional. Found: {GET_OPTIONAL_EXEMPTIONS}"
     )
 
 

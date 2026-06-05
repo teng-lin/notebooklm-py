@@ -10,7 +10,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm.exceptions import RPCError
+from notebooklm.exceptions import NoteNotFoundError, RPCError
 from notebooklm.rpc import RPCMethod
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -126,7 +126,7 @@ class TestNotesAPI:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test getting a note that doesn't exist."""
+        """Test getting a note that doesn't exist raises NoteNotFoundError."""
         response = build_rpc_response(
             RPCMethod.GET_NOTES_AND_MIND_MAPS,
             [
@@ -138,13 +138,9 @@ class TestNotesAPI:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            # v0.7.0: a miss still returns None but now emits a
-            # DeprecationWarning (flips to raising NoteNotFoundError in v0.8.0,
-            # issue #1247).
-            with pytest.warns(DeprecationWarning, match="NoteNotFoundError"):
-                note = await client.notes.get("nb_123", "nonexistent")
-
-        assert note is None
+            # v0.8.0: a miss now raises NoteNotFoundError (issue #1247).
+            with pytest.raises(NoteNotFoundError):
+                await client.notes.get("nb_123", "nonexistent")
 
     @pytest.mark.asyncio
     async def test_create_note(

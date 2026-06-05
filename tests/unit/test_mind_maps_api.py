@@ -435,12 +435,11 @@ async def test_get_returns_matching_mind_map():
 
 
 @pytest.mark.asyncio
-async def test_get_warns_and_returns_none_when_absent():
-    # Neither backing contains the id -> None, but with a DeprecationWarning
-    # naming the v0.8.0 MindMapNotFoundError flip (#1358 runway for #1247).
+async def test_get_raises_when_absent():
+    # Neither backing contains the id -> MindMapNotFoundError (v0.8.0 flip, #1247).
     api, *_ = _make_api(note_rows=[["note_mm", "{}"]])
-    with pytest.warns(DeprecationWarning, match="MindMapNotFoundError"):
-        assert await api.get("nb", "ghost") is None
+    with pytest.raises(MindMapNotFoundError):
+        await api.get("nb", "ghost")
 
 
 @pytest.mark.asyncio
