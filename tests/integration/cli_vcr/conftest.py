@@ -321,6 +321,7 @@ def _assert_url_field(item: dict[str, Any], field: str) -> None:
     value = item.get(field)
     if value is None:
         return
+    assert isinstance(value, str), f"{field}={value!r} is not a string URL"
     parsed = urlparse(value)
     assert parsed.scheme and parsed.netloc, (
         f"{field}={value!r} does not parse as a URL (needs scheme + netloc)"
@@ -345,8 +346,11 @@ def _assert_timestamp_field(item: dict[str, Any], field: str) -> None:
     if value is None:
         return
     assert isinstance(value, str), f"{field}={value!r} is not a string timestamp"
+    # ``datetime.fromisoformat`` only learned to parse a trailing ``Z`` in 3.11;
+    # the CI matrix includes 3.10, so normalize ``Z`` -> ``+00:00`` first.
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
-        datetime.fromisoformat(value)
+        datetime.fromisoformat(normalized)
     except ValueError as exc:
         raise AssertionError(f"{field}={value!r} does not parse as a timestamp: {exc}") from exc
 

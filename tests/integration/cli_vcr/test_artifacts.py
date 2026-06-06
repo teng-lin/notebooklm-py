@@ -44,7 +44,10 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 _LIST_ARTIFACTS_RPC_ID = "gArtLc"
 
 _KNOWN_ARTIFACT_TYPE_CODES = frozenset(member.value for member in ArtifactTypeCode)
-_KNOWN_ARTIFACT_STATUS_CODES = frozenset(member.value for member in ArtifactStatus)
+# ``0`` is the "unknown" status the CLI degrades an unrecognized code to (see
+# ``conftest._ARTIFACT_STATUS_STR_VALUES`` which keeps ``artifact_status_to_str(0)``);
+# tolerate it here so a re-record carrying a status-0 row is not a spurious failure.
+_KNOWN_ARTIFACT_STATUS_CODES = frozenset(member.value for member in ArtifactStatus) | {0}
 
 
 class TestArtifactListCommand:
@@ -89,7 +92,9 @@ class TestArtifactListCommand:
         proj = project_artifact_list(payload)
         assert proj.count > 0, "projection found no artifacts — cassette/projection drift"
 
-        cli_ids = {art["id"] for art in cli_items}
+        for art in cli_items:
+            assert art.get("id"), f"artifact item is missing a non-empty id: {art!r}"
+        cli_ids = {art.get("id") for art in cli_items}
         assert len(cli_ids) == len(cli_items), "CLI emitted a duplicate artifact id"
         # Count floor: the CLI list is the gArtLc rows PLUS merged note-backed
         # mind maps, so it can only be >= the projection's row count.
@@ -114,7 +119,6 @@ class TestArtifactListCommand:
         # Per-field semantic invariants: type_id/status are known enum values and
         # created_at parses — for EVERY CLI item, not just the projected subset.
         for art in cli_items:
-            assert art.get("id"), "artifact id must be non-empty"
             assert_semantic_invariants(art, "artifact")
 
         # Type/status histogram consistency: every type code the projection saw

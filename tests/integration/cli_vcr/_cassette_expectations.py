@@ -46,9 +46,6 @@ _CASSETTE_DIR = Path(__file__).resolve().parents[2] / "cassettes"
 # (not imported) from ``tests/_guardrails/test_cassette_shapes.py``.
 _XSSI_PREFIX = ")]}'"
 
-# WRB envelope tags that are housekeeping, not RPC responses.
-_HOUSEKEEPING_WRB_TAGS = frozenset({"di", "af.httprm", "e"})
-
 
 def _strip_xssi(body: str) -> str:
     """Drop the Google anti-XSSI ``)]}'`` prefix and the blank line after it."""
@@ -103,12 +100,14 @@ def _wrb_payloads(body: str, rpc_id: str) -> list[str]:
         if not isinstance(chunk, list):
             continue
         for envelope in chunk:
+            # Matching ``envelope[1] == rpc_id`` already excludes the
+            # housekeeping ``di`` / ``af.httprm`` / ``e`` envelopes (a real rpc id
+            # is never one of those), so no separate housekeeping filter is needed.
             if (
                 isinstance(envelope, list)
                 and len(envelope) >= 3
                 and envelope[0] == "wrb.fr"
                 and envelope[1] == rpc_id
-                and envelope[1] not in _HOUSEKEEPING_WRB_TAGS
                 and isinstance(envelope[2], str)
             ):
                 payloads.append(envelope[2])
