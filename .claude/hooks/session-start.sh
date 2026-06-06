@@ -13,3 +13,6 @@ uv sync --frozen --extra browser --extra dev --extra markdown
 
 # Activate the venv for this session
 echo "source $CLAUDE_PROJECT_DIR/.venv/bin/activate" >> "$CLAUDE_ENV_FILE"
+
+# Install the NotebookLM Claude Code skill so /notebooklm is available this session
+"$CLAUDE_PROJECT_DIR/.venv/bin/notebooklm" skill install >/dev/null 2>&1 || true
