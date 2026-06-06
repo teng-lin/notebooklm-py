@@ -14,10 +14,12 @@ DIFFERENT notebook with different data:
   ids/urls/count are checked against an INDEPENDENT shallow projection of the
   recorded ``GET_NOTEBOOK`` payload (``_cassette_expectations``). This catches
   fabrication / drop / duplicate / miscount: ``count == proj.count``, the CLI id
-  set equals ``proj.ids``, every CLI url is in ``proj.urls``. The projection
-  reads the cassette with stdlib + yaml only (no production decoder), so the
-  assert is a real oracle, not a tautology — and it stays re-record-safe because
-  both sides are read from the *same* cassette.
+  set equals ``proj.ids``, and every url the shallow projection found is present
+  in the CLI render (``proj.urls ⊆ cli_urls`` — the shallow read may miss a url
+  the deep decoder finds, so it must be the subset side). The projection reads
+  the cassette with stdlib + yaml only (no production decoder), so the assert is
+  a real oracle, not a tautology — and it stays re-record-safe because both sides
+  are read from the *same* cassette.
 * **Tier 2c — Per-field semantic invariants.** ``assert_semantic_invariants``
   pins per-field meaning (url parses, enum value is known, timestamp parses) —
   catching a "valid type but wrong field" read.
@@ -154,21 +156,22 @@ class TestSourceListCommand:
         )
         # Id set: every CLI id is in the cassette and vice versa (no fabricated
         # id, no dropped source). Source ids are reliably UUID-shaped.
-        cli_ids = {src["id"] for src in cli_items}
+        cli_ids = {src.get("id") for src in cli_items}
         assert cli_ids == proj.ids, (
             "CLI source id set differs from the cassette projection "
             f"(only-in-CLI={sorted(cli_ids - proj.ids)}, "
             f"only-in-cassette={sorted(proj.ids - cli_ids)})"
         )
-        # Urls: every url the CLI rendered came from the recorded payload (no
-        # fabricated url). Containment, not equality — the projection's shallow
-        # url read may miss a url the deep decoder finds, but never invents one.
-        for src in cli_items:
-            url = src.get("url")
-            if url:
-                assert url in proj.urls, (
-                    f"CLI rendered url {url!r} that is not present in the cassette projection"
-                )
+        # Urls: every url the shallow projection found must surface in the CLI
+        # output. Containment in THIS direction (proj ⊆ cli) is the re-record-safe
+        # one: the shallow projection may MISS a url the deep decoder finds (so it
+        # must not be the superset side), but it never invents one — so any url it
+        # did extract from the recorded payload must appear in the CLI's render.
+        cli_urls = {url for src in cli_items if (url := src.get("url"))}
+        assert proj.urls <= cli_urls, (
+            "cassette-projected urls missing from the CLI output "
+            f"(missing={sorted(proj.urls - cli_urls)})"
+        )
 
     @notebooklm_vcr.use_cassette("sources_list.yaml", allow_playback_repeats=True)
     def test_source_list_text_and_json_agree(self, runner, mock_auth_for_vcr, mock_context):
