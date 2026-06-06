@@ -94,16 +94,31 @@ class TestArtifactListByType:
         """`artifact list --type mind-map` surfaces an interactive (studio-artifact) map.
 
         Reuses the interactive recording (``mind_maps_interactive.yaml``,
-        ``ARTIFACT_NOTEBOOK_ID`` / artifact ``47523923``). Stays on the table
-        renderer (no ``--json``) so it needs only ``LIST_ARTIFACTS`` +
-        ``GET_NOTES_AND_MIND_MAPS``, both present in the cassette — proving the
-        type-4/variant-4 map is recognized end-to-end through the CLI (#1256).
+        ``ARTIFACT_NOTEBOOK_ID``). Stays on the table renderer (no ``--json``) so
+        it needs only ``LIST_ARTIFACTS`` + ``GET_NOTES_AND_MIND_MAPS``, both
+        present in the cassette — proving the type-4/variant-4 map is recognized
+        end-to-end through the CLI (#1256).
+
+        Re-record-safe assertion: the rendered table must carry the mind-map
+        **type display** (``get_artifact_type_display`` → ``Mind Map``), which
+        the renderer only emits for a row whose parsed kind is
+        ``ArtifactType.MIND_MAP``. That proves the type-4/variant-4 artifact was
+        recognized as a mind map and survived the ``--type mind-map`` filter,
+        without pinning the recorded artifact id/title (which change on a
+        re-record against a different notebook). The empty-state path prints
+        ``No mind-map artifacts found`` instead, so the marker also proves the
+        filter returned a non-empty row.
         """
         nb = ARTIFACT_NOTEBOOK_ID
         with notebooklm_vcr.use_cassette("mind_maps_interactive.yaml", allow_playback_repeats=True):
             result = runner.invoke(cli, ["artifact", "list", "--type", "mind-map", "-n", nb])
             assert_command_success(result)
-            assert "47523923" in result.output
+            assert "Mind Map" in result.output, (
+                "Expected the rendered table to carry the mind-map type display, "
+                "proving the type-4/variant-4 interactive map was recognized and "
+                f"passed the --type mind-map filter; output was:\n{result.output}"
+            )
+            assert "No mind-map artifacts found" not in result.output
 
 
 class TestArtifactSuggestionsCommand:

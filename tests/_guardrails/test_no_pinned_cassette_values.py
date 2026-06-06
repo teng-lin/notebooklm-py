@@ -26,23 +26,36 @@ So the lint's rule is narrow and unambiguous:
 
     FAIL if an ``assert`` statement (or a value-comparing ``assert*`` unittest
     call — ``assertEqual`` / ``assertIn`` / ``assertDictEqual`` / …, but not the
-    ``assertRaises``-style context managers) contains an **inline UUID-shaped
-    string literal**.
+    ``assertRaises``-style context managers) contains an **inline string literal
+    whose value is opaque-recorded-id-shaped** (see :func:`_is_opaque_recorded_id`).
 
-A UUID literal is the concrete, notebook-tied, re-record-fragile shape. The
-input-echo case never trips this because it compares to a ``_fixtures``
+An opaque-recorded-id literal is the concrete, notebook-tied, re-record-fragile
+shape. Three families count (issue #1452, codex review of #1460):
+
+* a **UUID** (``8-4-4-4-12`` hex) — the original case;
+* a run of **≥6 consecutive digits** — a numeric recorded id such as the
+  mind-map artifact ``47523923`` that slipped the UUID-only lint and is what
+  this widening was written to catch;
+* a **≥16-char opaque base64/hex blob** — a single high-entropy token (a cursor
+  page-token, a content hash) that carries at least one digit and is *not* a
+  readable ``snake_case`` / ``kebab-case`` / ``SCREAMING_CASE`` identifier.
+
+The input-echo case never trips this because it compares to a ``_fixtures``
 placeholder *name*, not an inline literal — so there is nothing to allow-list in
-practice. Schema/enum literals (``"pass"``, ``"RATE_LIMITED"``, ``"delete"``)
-and input-echo string literals (a language code, an email the test passed) are
-**not** UUIDs and are intentionally out of scope: pinning a server-returned UUID
-is the unambiguous violation worth gating, and widening to "any literal" would
-fire on every legitimate schema/enum assertion.
+practice. The shape tests are deliberately tuned so legitimate literals do NOT
+match: schema/enum/status values (``"ready"``, ``"NOTEBOOKLM_ERROR"``,
+``"synced_to_server"``, ``"briefing_doc"``), type filters (``"mind-map"``), CLI
+flags (``"--json"``), small numbers, short tokens, and prose assert-messages all
+stay below the digit-run / blob thresholds or read as identifiers. Pinning a
+server-returned id is the unambiguous violation worth gating; widening to "any
+literal" would fire on every legitimate schema/enum assertion.
 
-This is a forward ratchet: Phase 1 (#1458) already migrated every inline UUID in
-the ``cli_vcr`` tests onto ``_fixtures`` placeholder names, so the gate is GREEN
-on ``main`` today and stays green unless someone re-introduces a pinned recorded
-value. If a genuinely-legitimate inline UUID literal ever appears (none is known
-today), add it to :data:`ALLOWLIST` with a one-line justification.
+This is a forward ratchet: every inline recorded id in the ``cli_vcr`` tests has
+been migrated onto ``_fixtures`` placeholder names or replaced with a
+shape/invariant assertion, so the gate is GREEN on ``main`` today and stays green
+unless someone re-introduces a pinned recorded value. If a genuinely-legitimate
+opaque-shaped inline literal ever appears (none is known today), add it to
+:data:`ALLOWLIST` with a one-line justification.
 
 Modelled on the AST/path lints in ``tests/_guardrails/`` (e.g.
 ``test_no_raw_positional_rpc_indexing.py``).
@@ -66,11 +79,81 @@ _UUID_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A run of >=6 consecutive digits anywhere in the literal — a numeric recorded
+# id (e.g. the mind-map artifact ``47523923``). Six digits is comfortably above
+# any legitimate small number a cli_vcr assertion compares against (exit codes,
+# counts, page sizes, HTTP statuses), so it is the re-record-fragile shape.
+_NUMERIC_ID_RE = re.compile(r"\d{6,}")
+
+# An opaque base64/hex blob: the whole literal is one >=16-char token drawn from
+# the base64/hex alphabet (incl. ``+`` ``/`` ``=`` padding and ``_`` ``-`` of the
+# URL-safe variant), anchored so prose/sentence assert-messages (which contain
+# spaces) never match.
+_BLOB_RE = re.compile(r"^[A-Za-z0-9+/=_-]{16,}$")
+_HAS_DIGIT_RE = re.compile(r"\d")
+# A readable identifier segment: an alpha word with an optional short digit tail
+# (``study``, ``guide``, ``v2``, ``h264``). A blob token split on ``_``/``-`` whose
+# every segment reads like this is a field name / enum value, NOT a recorded id.
+_WORD_SEGMENT_RE = re.compile(r"^[A-Za-z]+[0-9]{0,3}$")
+
+
+def _is_readable_identifier(value: str) -> bool:
+    """True if ``value`` reads as a ``snake_case`` / ``kebab-case`` identifier.
+
+    Splits on ``_``/``-`` and checks every non-empty segment is a short word
+    (alpha + optional <=3-digit tail). ``"synced_to_server"``, ``"briefing_doc"``,
+    ``"NOTEBOOKLM_ERROR"`` and ``"x264_high_profile"`` all read as identifiers;
+    a hash (``"f8cb37228518a4c33b744"``) or base64 token does not.
+    """
+    return all(_WORD_SEGMENT_RE.match(seg) for seg in re.split(r"[_-]", value) if seg)
+
+
+def _is_opaque_blob(value: str) -> bool:
+    """True if ``value`` is a >=16-char high-entropy base64/hex recorded blob.
+
+    Distinguishes an opaque recorded token (a cursor page-token, a content hash)
+    from a long-but-readable identifier/field-name/enum value. A blob must:
+
+    * be a single 16+ char token over the base64/hex(-safe) alphabet (anchored,
+      so prose assert-messages with spaces never match);
+    * carry at least one digit (recorded ids do; pure-word identifiers do not);
+    * either use base64 ``+``/``/``/``=`` (never an identifier) or fail the
+      readable-identifier shape.
+    """
+    if not _BLOB_RE.match(value):
+        return False
+    if not _HAS_DIGIT_RE.search(value):
+        return False
+    if "=" in value or "+" in value or "/" in value:
+        return True
+    return not _is_readable_identifier(value)
+
+
+def _is_opaque_recorded_id(value: str) -> bool:
+    """True if ``value`` has the shape of a value pinned from a recording.
+
+    Three families, any of which is re-record-fragile: a UUID, a >=6-digit
+    numeric id, or an opaque >=16-char base64/hex blob. Tuned so schema/enum
+    literals, CLI flags, type filters, small numbers and prose stay out of scope
+    (see the module docstring).
+    """
+    return (
+        bool(_UUID_RE.match(value)) or bool(_NUMERIC_ID_RE.search(value)) or _is_opaque_blob(value)
+    )
+
+
+# Inline opaque-id literals that are legitimately pinned (NOT recorded-response
+# values). Empty today: every inline recorded id has been removed, and the
+# input-echo case compares to a ``_fixtures`` placeholder *name*, never an inline
+# literal. Add an entry as ``"relpath:lineno"`` only with a justifying comment.
+ALLOWLIST: frozenset[str] = frozenset()
+
+
 # ``unittest`` ``assert*`` methods that do NOT compare values for equality:
 # context managers (``assertRaises`` / ``assertWarns`` / ``assertLogs`` and
 # their ``*Regex`` variants). Every *other* ``assert*`` method
 # (``assertEqual``, ``assertIn``, ``assertDictEqual``, …) takes the asserted
-# value as a positional arg, so a UUID literal in any of those is a pinned
+# value as a positional arg, so an opaque-id literal in any of those is a pinned
 # value and must be flagged. Excluding by this small denylist (rather than
 # allow-listing the comparison methods) keeps the gate robust as new
 # ``assert*`` helpers appear.
@@ -85,15 +168,9 @@ _NON_COMPARISON_ASSERT_METHODS = frozenset(
     }
 )
 
-# Inline UUID literals that are legitimately pinned (NOT recorded-response
-# values). Empty today: Phase 1 (#1458) removed every inline UUID, and the
-# input-echo case compares to a ``_fixtures`` placeholder *name*, never an inline
-# literal. Add an entry as ``"relpath:lineno"`` only with a justifying comment.
-ALLOWLIST: frozenset[str] = frozenset()
 
-
-def _is_uuid_literal(node: ast.AST) -> TypeGuard[ast.Constant]:
-    """True if ``node`` is a string constant whose value is UUID-shaped.
+def _is_opaque_id_literal(node: ast.AST) -> TypeGuard[ast.Constant]:
+    """True if ``node`` is a string constant whose value is opaque-recorded-id-shaped.
 
     A ``TypeGuard`` so callers can read ``node.lineno`` after a positive check
     (it narrows ``ast.AST`` -> ``ast.Constant``, which carries position info).
@@ -101,7 +178,7 @@ def _is_uuid_literal(node: ast.AST) -> TypeGuard[ast.Constant]:
     return (
         isinstance(node, ast.Constant)
         and isinstance(node.value, str)
-        and bool(_UUID_RE.match(node.value))
+        and _is_opaque_recorded_id(node.value)
     )
 
 
@@ -127,15 +204,16 @@ def _is_assert_call(node: ast.Call) -> bool:
     )
 
 
-class _UUIDAssertVisitor(ast.NodeVisitor):
-    """Collect line numbers of inline UUID literals that sit inside an assertion.
+class _OpaqueIdAssertVisitor(ast.NodeVisitor):
+    """Collect line numbers of opaque-id literals that sit inside an assertion.
 
     Single-pass over the tree: a depth counter (``_depth``) tracks whether the
     current node is nested inside an ``assert`` statement or an ``assert*``
-    call. Any UUID-shaped string constant seen while ``_depth > 0`` is a value
-    pinned from a specific recording, wherever in the asserted expression it
-    sits (a comparison operand, a set/list member, a call arg). Visiting once
-    avoids the nested-``ast.walk`` re-scan of every subtree.
+    call. Any opaque-recorded-id string constant seen while ``_depth > 0`` is a
+    value pinned from a specific recording, wherever in the asserted expression
+    it sits (a comparison operand, a membership left operand, a set/list member,
+    a call arg). Visiting once avoids the nested-``ast.walk`` re-scan of every
+    subtree.
     """
 
     def __init__(self) -> None:
@@ -156,19 +234,19 @@ class _UUIDAssertVisitor(ast.NodeVisitor):
             self.generic_visit(node)
 
     def generic_visit(self, node: ast.AST) -> None:
-        if self._depth > 0 and _is_uuid_literal(node):
+        if self._depth > 0 and _is_opaque_id_literal(node):
             self.lines.add(node.lineno)
         super().generic_visit(node)
 
 
-def _uuid_literal_lines(tree: ast.AST) -> list[int]:
-    """Return sorted line numbers of inline UUID literals inside assertions.
+def _opaque_id_literal_lines(tree: ast.AST) -> list[int]:
+    """Return sorted line numbers of opaque-id literals inside assertions.
 
     An "assertion" is an ``assert`` statement or a value-comparing ``assert*``
     unittest call (see :func:`_is_assert_call`). Pure on its input so a planted
     fixture can exercise it without touching the filesystem.
     """
-    visitor = _UUIDAssertVisitor()
+    visitor = _OpaqueIdAssertVisitor()
     visitor.visit(tree)
     return sorted(visitor.lines)
 
@@ -188,26 +266,29 @@ def _offending_sites() -> dict[str, list[int]]:
     for path in _cli_vcr_test_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         rel = _rel(path)
-        lines = [line for line in _uuid_literal_lines(tree) if f"{rel}:{line}" not in ALLOWLIST]
+        lines = [
+            line for line in _opaque_id_literal_lines(tree) if f"{rel}:{line}" not in ALLOWLIST
+        ]
         if lines:
             offenders[rel] = lines
     return offenders
 
 
-def test_no_pinned_uuid_literals_in_cli_vcr_asserts() -> None:
-    """No ``cli_vcr`` assertion may pin an inline UUID-shaped literal.
+def test_no_pinned_recorded_id_literals_in_cli_vcr_asserts() -> None:
+    """No ``cli_vcr`` assertion may pin an inline opaque-recorded-id literal.
 
-    A UUID came out of a specific recording; pinning it breaks the moment the
-    cassette is re-recorded against a different notebook. Compare to a
-    ``cli_vcr/_fixtures.py`` placeholder constant instead (the input-echo case),
-    or assert the re-record-safe invariant (UUID *shape*, ``count > 0``) rather
-    than the exact value.
+    A UUID / numeric id / opaque blob came out of a specific recording; pinning
+    it breaks the moment the cassette is re-recorded against a different
+    notebook. Compare to a ``cli_vcr/_fixtures.py`` placeholder constant instead
+    (the input-echo case), or assert the re-record-safe invariant (the id
+    *shape*, ``count > 0``, a type-display string) rather than the exact value.
     """
     offenders = _offending_sites()
     assert offenders == {}, (
-        "Inline UUID-shaped literal(s) found in cli_vcr assertions (issue #1452). "
-        "Assertions must survive a re-record against a different notebook, so a "
-        "value pinned from the recorded response is forbidden. Compare to a "
+        "Inline opaque-recorded-id literal(s) found in cli_vcr assertions (issue "
+        "#1452). Assertions must survive a re-record against a different "
+        "notebook, so a value pinned from the recorded response (a UUID, a "
+        "numeric id, or an opaque base64/hex blob) is forbidden. Compare to a "
         "cli_vcr/_fixtures.py placeholder constant (input-echo) or assert the "
         "shape/invariant instead:\n"
         + "\n".join(
@@ -234,45 +315,61 @@ def test_allowlist_entries_are_well_formed() -> None:
     )
 
 
-def test_detector_flags_pinned_uuid_in_assert() -> None:
-    """The detector flags an inline UUID literal in any value-comparing assertion.
+def test_detector_flags_pinned_recorded_ids_in_assert() -> None:
+    """The detector flags every opaque-recorded-id shape in a value-comparing assertion.
 
-    Covers a bare ``assert ==`` (UUID on either side), and the ``assert*``
-    unittest helpers beyond ``assertEqual`` — ``assertIn`` / ``assertDictEqual``
-    must NOT bypass the gate (the broadened-method case from PR #1460 review).
+    Covers all three families across the assertion surface: a UUID (either side
+    of ``==``, in a set member, via ``assertEqual`` / ``assertIn`` /
+    ``assertDictEqual``), a >=6-digit numeric id (the ``47523923`` mind-map case
+    the UUID-only lint missed, incl. the ``in result.output`` membership form),
+    and an opaque >=16-char base64/hex blob.
     """
     src = "\n".join(
         [
-            "assert data['notebook_id'] == 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'",  # 1
-            "assert 'C3F6285F-1709-44C4-9CD6-E95CF0EA4F5E' == data['id']",  # 2 (uppercase)
-            "self.assertEqual(out['id'], 'fdfc8ac4-3237-4f2a-8a79-3e24297a7040')",  # 3
-            "assert src['id'] in {'00000000-0000-0000-0000-000000000000'}",  # 4 (set member)
-            "self.assertIn('11111111-1111-1111-1111-111111111111', ids)",  # 5 (assertIn)
-            "self.assertDictEqual(d, {'id': '22222222-2222-2222-2222-222222222222'})",  # 6
+            "assert data['notebook_id'] == 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'",  # 1 UUID
+            "assert 'C3F6285F-1709-44C4-9CD6-E95CF0EA4F5E' == data['id']",  # 2 UUID (upper)
+            "self.assertEqual(out['id'], 'fdfc8ac4-3237-4f2a-8a79-3e24297a7040')",  # 3 UUID
+            "assert src['id'] in {'00000000-0000-0000-0000-000000000000'}",  # 4 UUID (set)
+            "self.assertIn('11111111-1111-1111-1111-111111111111', ids)",  # 5 UUID assertIn
+            "self.assertDictEqual(d, {'id': '22222222-2222-2222-2222-222222222222'})",  # 6 UUID
+            "assert '47523923' in result.output",  # 7 numeric id (the landmine shape)
+            "assert data['count'] == '1234567'",  # 8 numeric id (>=6 digits)
+            "assert 'MTc4MDEzMzM5OS01ODQyMjkwMDA=' in result.output",  # 9 base64 blob
+            "self.assertIn('f8cb37228518a4c33b744ef1', tokens)",  # 10 hex blob
         ]
     )
-    assert _uuid_literal_lines(ast.parse(src)) == [1, 2, 3, 4, 5, 6]
+    assert _opaque_id_literal_lines(ast.parse(src)) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 def test_detector_ignores_re_record_safe_assertions() -> None:
-    """Placeholder names, schema/enum literals, and non-assert UUIDs are NOT flagged.
+    """Placeholder names, schema/enum literals, and non-assert ids are NOT flagged.
 
     These are the re-record-safe shapes the gate must tolerate:
 
-    * comparison to a ``_fixtures`` placeholder *name* (the input-echo case);
-    * schema/enum string literals (``"pass"`` / ``"RATE_LIMITED"`` / ``"delete"``)
-      and input-echo non-UUID literals (a language code, an email);
-    * a UUID literal that is *not* inside an assertion (e.g. a command argument
+    * comparison/membership against a ``_fixtures`` placeholder *name* (the
+      input-echo case — the ``Name`` operand carries the recorded-safe id);
+    * schema/enum/status/field literals (``"pass"`` / ``"NOTEBOOKLM_ERROR"`` /
+      ``"synced_to_server"`` / ``"briefing_doc"``), type filters (``"mind-map"``),
+      CLI flags (``"--json"``), small numbers (``"200"``) and prose
+      assert-messages — none reach the digit-run / blob thresholds;
+    * an opaque id literal that is *not* inside an assertion (a command argument
       passed to ``runner.invoke`` or a module-level placeholder definition).
     """
     benign = "\n".join(
         [
             "assert data['notebook_id'] == MUTATION_NOTEBOOK_ID",  # input-echo (Name)
+            "assert ARTIFACT_NOTEBOOK_ID in result.output",  # input-echo membership (Name)
             "assert data['checks']['auth']['status'] == 'pass'",  # schema enum
-            "assert data.get('code') == 'RATE_LIMITED'",  # error enum
-            "assert data['action'] == 'delete'",  # command action
+            "assert data.get('code') == 'NOTEBOOKLM_ERROR'",  # error-code enum (16-char ident)
+            "assert data.get('synced_to_server') is True",  # field name (16-char ident)
+            "assert data['type_id'] == 'briefing_doc'",  # report subtype enum
+            "assert 'mind-map' in args",  # kebab type filter
+            "assert data['action'] == 'delete'",  # command action",
             "assert data.get('language') == 'en'",  # input-echo language code
+            "assert result.exit_code == 0, 'expected the command to succeed cleanly'",  # prose msg
             "assert data.get('added_user') == VCR_SHARE_EMAIL",  # input-echo (Name)
+            "assert 'Mind Map' in result.output",  # type-display marker (the landmine fix)
+            "assert data['count'] == '200'",  # small number
             "result = runner.invoke(cli, ['source', 'get', 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'])",
             "PLACEHOLDER_NOTEBOOK_ID = 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'",
             # A context-manager assert takes no asserted *value* — a UUID inside
@@ -281,4 +378,4 @@ def test_detector_ignores_re_record_safe_assertions() -> None:
             "    runner.invoke(cli, ['source', 'get', 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'])",
         ]
     )
-    assert _uuid_literal_lines(ast.parse(benign)) == []
+    assert _opaque_id_literal_lines(ast.parse(benign)) == []
