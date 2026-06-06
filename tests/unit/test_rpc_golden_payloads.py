@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -47,11 +48,16 @@ from notebooklm._artifact.payloads import (
     build_suggest_reports_params,
     build_video_artifact_params,
 )
+from notebooklm._row_adapters.artifacts import ArtifactRow
+from notebooklm._row_adapters.notes import NoteRow
+from notebooklm._row_adapters.sources import SourceRow, SourceRowShape
 from notebooklm._source.upload_payloads import (
     build_register_file_source_params,
     build_rename_source_params,
     build_resumable_upload_start_request,
 )
+from notebooklm._types.artifacts import Artifact, ArtifactType
+from notebooklm._types.sources import Source, SourceType
 from notebooklm.exceptions import (
     ClientError,
     RateLimitError,
@@ -66,6 +72,11 @@ from notebooklm.rpc.decoder import (
 )
 from notebooklm.rpc.encoder import encode_rpc_request
 from notebooklm.rpc.types import (
+    FLASHCARDS_VARIANT,
+    INTERACTIVE_MIND_MAP_VARIANT,
+    QUIZ_VARIANT,
+    ArtifactStatus,
+    ArtifactTypeCode,
     AudioFormat,
     AudioLength,
     InfographicDetail,
@@ -77,6 +88,7 @@ from notebooklm.rpc.types import (
     RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
+    SourceStatus,
     VideoFormat,
     VideoStyle,
 )
@@ -1214,3 +1226,505 @@ def test_decoder_drift_case_behaviour(method: RPCMethod, case: dict[str, Any]) -
         f"that does not match expected_decoded.\n"
         f"Got: {decoded!r}\nExpected: {expected!r}"
     )
+
+
+# ===========================================================================
+# Adapter field-position ground truth (PR-C, #1452)
+# ===========================================================================
+#
+# The cli_vcr cassette-derived deep asserts (PR-B) catch fabrication, drop, and
+# miscount, but they CANNOT catch *field-position* errors — a title<->url swap,
+# a wrong nesting depth, a type<->status confusion all keep the right *count* of
+# values, so a per-field equality on a recorded cassette would still pass while
+# the wrong field was read. That residual is closed here with PINNED synthetic
+# rows: every slot carries a DISTINCT, self-identifying literal (id="ID_AT_0",
+# title="TITLE_AT_1", url="URL_AT_7_0", ...) so a wrong-slot read produces an
+# obviously-wrong value, and a MUTATION half that swaps/shifts slots and proves
+# the adapter reacts — i.e. "if the decoder regressed to read the wrong slot,
+# THIS test would fail."
+#
+# These are unit tests over synthetic arrays (not cli_vcr cassettes), so the
+# re-record-safety lint does not apply and pinned literals are correct here.
+#
+# Historical break-classes covered (the repo's #1 breakage class — see CLAUDE.md
+# "Common Pitfalls": source id [id] vs [[[[id]]]], url precedence, type/status):
+#   * Source id nesting ([id] vs drive [None, True, [id]] vs deeper fallback)
+#   * Source URL precedence (metadata[7] > metadata[5] youtube > bare metadata[0])
+#   * Source kind (type code -> SourceType) + status block (raw[3][1])
+#   * Artifact variant ([9][1][0]) + media-url slots (audio [6][5], slide [16][3]/[4])
+#   * Note current vs deleted vs legacy shapes (+ mind-map from_mind_map)
+#
+# Already covered elsewhere (intentionally NOT duplicated here):
+#   * Position-constant pins + soft-degrade/strict edges live in
+#     tests/unit/test_row_adapters.py (TestPositionContract, TestNoteRow*, ...).
+#     This module adds the *planted-distinct-value* + *mutation-pair* angle the
+#     constant pins do not: a constant pin proves "_URL_POS == 7", but not that a
+#     real title and a real url cannot be confused at decode time.
+
+
+def _make_source_metadata(
+    *,
+    bare0: Any = None,
+    timestamp: float | None = None,
+    type_code: int | None = None,
+    youtube_url: Any = None,
+    canonical_url: Any = None,
+) -> list[Any]:
+    """Build a source ``metadata`` sub-list with distinct values per slot.
+
+    Mirrors the ``SourceRow`` metadata contract: ``[0]`` bare (legacy http),
+    ``[2][0]`` timestamp, ``[4]`` type code, ``[5][0]`` youtube url, ``[7][0]``
+    canonical url. Every other slot is left ``None`` so a wrong-slot read lands
+    on a recognisably empty position.
+    """
+    meta: list[Any] = [None] * 8
+    meta[0] = bare0
+    meta[2] = [timestamp] if timestamp is not None else None
+    meta[4] = type_code
+    meta[5] = [youtube_url] if youtube_url is not None else None
+    meta[7] = [canonical_url] if canonical_url is not None else None
+    return meta
+
+
+def _make_artifact_row(
+    *,
+    artifact_id: str = "ID_AT_0",
+    title: str = "TITLE_AT_1",
+    type_code: int = ArtifactTypeCode.AUDIO.value,
+    status: int = ArtifactStatus.COMPLETED.value,
+    variant: int | None = None,
+    audio_media: list[Any] | None = None,
+    slide_pdf: Any = None,
+    slide_pptx: Any = None,
+) -> list[Any]:
+    """Build an artifact row long enough to carry every pinned slot.
+
+    Slots filled at their canonical ``ArtifactRow`` positions: id ``[0]``,
+    title ``[1]``, type ``[2]``, status ``[4]``, variant ``[9][1][0]``, audio
+    media list ``[6][5]``, slide-deck pdf ``[16][3]`` / pptx ``[16][4]``.
+    """
+    row: list[Any] = [None] * 19
+    row[0] = artifact_id
+    row[1] = title
+    row[2] = type_code
+    row[4] = status
+    if variant is not None:
+        row[9] = [None, [variant]]
+    if audio_media is not None:
+        audio_block: list[Any] = [None] * 6
+        audio_block[5] = audio_media
+        row[6] = audio_block
+    if slide_pdf is not None or slide_pptx is not None:
+        row[16] = [None, None, None, slide_pdf, slide_pptx]
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Source: id nesting ground truth ([id] vs drive [None, True, [id]] vs fallback)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceIdNestingGroundTruth:
+    """Pin the id at each nesting depth the ``SourceRow`` id-unwrap supports."""
+
+    def test_plain_id_envelope_at_slot_0(self) -> None:
+        # Typical wrapping: raw[0] == ["id"], id read at envelope plain pos 0.
+        row = SourceRow.from_entry([["ID_AT_PLAIN_0"], "TITLE_AT_1", None])
+        assert row.id == "ID_AT_PLAIN_0"
+
+    def test_bare_string_id_envelope_flat_shape(self) -> None:
+        # Flat shape: raw[0] is the bare id string itself.
+        row = SourceRow.from_unknown_shape(["BARE_ID", "TITLE_AT_1"])
+        assert row.shape is SourceRowShape.FLAT
+        assert row.id == "BARE_ID"
+
+    def test_drive_backed_id_nested_at_2_0(self) -> None:
+        # Drive-backed entries nest the id one level deeper at raw[0][2][0].
+        row = SourceRow.from_entry([[None, True, ["DRIVE_ID_AT_2_0"]], "TITLE_AT_1", None])
+        assert row.id == "DRIVE_ID_AT_2_0"
+
+    def test_medium_nested_dispatch_unwraps_one_level(self) -> None:
+        # Medium nested [[[id], title, meta]] -> entry at data[0].
+        row = SourceRow.from_unknown_shape([[["MED_ID"], "TITLE_AT_1", None]])
+        assert row.shape is SourceRowShape.MEDIUM_NESTED
+        assert row.id == "MED_ID"
+
+    def test_deeply_nested_dispatch_unwraps_two_levels(self) -> None:
+        # Deeply nested [[[[id], title, meta]]] -> entry at data[0][0]. This is
+        # the [[[[id]]]]-style fallback called out in CLAUDE.md pitfall #3.
+        row = SourceRow.from_unknown_shape([[[["DEEP_ID"], "TITLE_AT_1", None]]])
+        assert row.shape is SourceRowShape.DEEPLY_NESTED
+        assert row.id == "DEEP_ID"
+
+
+# ---------------------------------------------------------------------------
+# Source: URL precedence + youtube fallback ground truth
+# ---------------------------------------------------------------------------
+
+
+class TestSourceUrlPrecedenceGroundTruth:
+    """Pin the url-resolution order: canonical[7] > youtube[5] > bare[0]."""
+
+    def test_canonical_url_at_7_wins_over_youtube_at_5(self) -> None:
+        meta = _make_source_metadata(
+            canonical_url="https://canonical.example/AT_7_0",
+            youtube_url="https://youtu.be/AT_5_0",
+        )
+        row = SourceRow.from_entry([["ID"], "TITLE_AT_1", meta])
+        assert row.url == "https://canonical.example/AT_7_0"
+
+    def test_youtube_at_5_used_when_canonical_absent(self) -> None:
+        # No metadata[7] -> youtube block at metadata[5][0] is the fallback.
+        meta = _make_source_metadata(youtube_url="https://youtu.be/AT_5_0")
+        row = SourceRow.from_entry([["ID"], "TITLE_AT_1", meta])
+        assert row.url == "https://youtu.be/AT_5_0"
+
+    def test_bare_http_at_0_only_on_deeply_nested(self) -> None:
+        # Bare http at metadata[0] is honored ONLY on the deeply-nested shape
+        # (url_allow_bare_http=True). On a medium/entry shape it must be ignored.
+        meta = _make_source_metadata(bare0="https://bare.example/AT_0")
+        entry = SourceRow.from_entry([["ID"], "TITLE_AT_1", meta])
+        assert entry.url is None
+        deep = SourceRow.from_unknown_shape([[[["ID"], "TITLE_AT_1", meta]]])
+        assert deep.url_allow_bare_http is True
+        assert deep.url == "https://bare.example/AT_0"
+
+    def test_youtube_block_non_string_first_element_not_a_url(self) -> None:
+        # The youtube block's first element must be a *string* to count as a url;
+        # a non-string (e.g. a video-id int) at [5][0] is not a url.
+        meta: list[Any] = [None] * 8
+        meta[5] = [12345, "ignored"]
+        row = SourceRow.from_entry([["ID"], "TITLE_AT_1", meta])
+        assert row.url is None
+
+
+# ---------------------------------------------------------------------------
+# Source: kind (type code -> SourceType) + status block ground truth
+# ---------------------------------------------------------------------------
+
+
+class TestSourceKindAndStatusGroundTruth:
+    """Pin the type-code -> SourceType mapping and the status-block decode."""
+
+    @pytest.mark.parametrize(
+        ("type_code", "expected_kind"),
+        [
+            (1, SourceType.GOOGLE_DOCS),
+            (3, SourceType.PDF),
+            (4, SourceType.PASTED_TEXT),
+            (5, SourceType.WEB_PAGE),
+            (9, SourceType.YOUTUBE),
+        ],
+    )
+    def test_type_code_at_metadata_4_maps_to_kind(
+        self, type_code: int, expected_kind: SourceType
+    ) -> None:
+        meta = _make_source_metadata(type_code=type_code)
+        row = SourceRow.from_entry([["ID"], "TITLE_AT_1", meta])
+        assert row.type_code == type_code
+        # The kind enum is derived from the same metadata[4] slot.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            source = Source.from_row(row)
+        assert source.kind is expected_kind
+
+    @pytest.mark.parametrize(
+        ("status_code", "expected_status"),
+        [
+            (1, SourceStatus.PROCESSING),
+            (2, SourceStatus.READY),
+            (3, SourceStatus.ERROR),
+            (5, SourceStatus.PREPARING),
+        ],
+    )
+    def test_status_code_at_raw_3_1_maps_to_status(
+        self, status_code: int, expected_status: SourceStatus
+    ) -> None:
+        # The status code lives at raw[3][1]; raw[3][0] is a decoy that must be
+        # ignored so a [3][0]/[3][1] confusion would be caught.
+        row = SourceRow.from_entry([["ID"], "TITLE_AT_1", None, ["DECOY_AT_3_0", status_code]])
+        assert row.status is expected_status
+
+    def test_unknown_status_code_falls_back_to_ready(self) -> None:
+        row = SourceRow.from_entry([["ID"], "TITLE_AT_1", None, [None, 99]])
+        assert row.status is SourceStatus.READY
+
+
+# ---------------------------------------------------------------------------
+# Artifact: variant + media-url position ground truth
+# ---------------------------------------------------------------------------
+
+
+class TestArtifactVariantGroundTruth:
+    """Pin the quiz/flashcards/mind-map variant code at [9][1][0]."""
+
+    @pytest.mark.parametrize(
+        ("variant", "expected_kind"),
+        [
+            (FLASHCARDS_VARIANT, ArtifactType.FLASHCARDS),
+            (QUIZ_VARIANT, ArtifactType.QUIZ),
+            (INTERACTIVE_MIND_MAP_VARIANT, ArtifactType.MIND_MAP),
+        ],
+    )
+    def test_variant_at_9_1_0_drives_type4_kind(
+        self, variant: int, expected_kind: ArtifactType
+    ) -> None:
+        row = _make_artifact_row(type_code=ArtifactTypeCode.QUIZ.value, variant=variant)
+        assert ArtifactRow(row).variant == variant
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            artifact = Artifact.from_api_response(row)
+        assert artifact.kind is expected_kind
+
+
+class TestArtifactMediaUrlGroundTruth:
+    """Pin the media-url slots: audio [6][5], slide-deck pdf [16][3]/pptx [16][4]."""
+
+    def test_audio_url_prefers_mp4_entry_in_6_5(self) -> None:
+        media = [
+            ["https://media.example/OGG_AT_0", 1, "audio/ogg"],
+            ["https://media.example/MP4_AT_0", 2, "audio/mp4"],
+        ]
+        row = _make_artifact_row(type_code=ArtifactTypeCode.AUDIO.value, audio_media=media)
+        assert ArtifactRow(row).audio_url == "https://media.example/MP4_AT_0"
+
+    def test_slide_deck_pdf_and_pptx_read_distinct_slots(self) -> None:
+        row = _make_artifact_row(
+            type_code=ArtifactTypeCode.SLIDE_DECK.value,
+            slide_pdf="https://slides.example/PDF_AT_16_3",
+            slide_pptx="https://slides.example/PPTX_AT_16_4",
+        )
+        ar = ArtifactRow(row)
+        assert ar.slide_deck_pdf_url == "https://slides.example/PDF_AT_16_3"
+        assert ar.slide_deck_pptx_url == "https://slides.example/PPTX_AT_16_4"
+
+    def test_infographic_url_scans_url_bearing_content_block(self) -> None:
+        # infographic_url scans for item[2][0][1] -> a url-bearing list.
+        row = _make_artifact_row(type_code=ArtifactTypeCode.INFOGRAPHIC.value)
+        row[7] = [None, None, [[None, ["https://infographic.example/IMG_URL"]]]]
+        assert ArtifactRow(row).infographic_url == "https://infographic.example/IMG_URL"
+
+
+# ---------------------------------------------------------------------------
+# Note: current vs deleted vs legacy shape ground truth
+# ---------------------------------------------------------------------------
+
+
+class TestNoteShapeGroundTruth:
+    """Pin the three note wire shapes the ``NoteRow`` adapter absorbs."""
+
+    def test_legacy_shape_content_at_1(self) -> None:
+        # Legacy: [id, content_string]. No title slot -> "".
+        row = NoteRow(["NOTE_ID", "CONTENT_AT_1"])
+        assert row.id == "NOTE_ID"
+        assert row.content == "CONTENT_AT_1"
+        assert row.title == ""
+        assert row.is_deleted is False
+
+    def test_current_shape_content_at_1_1_title_at_1_4(self) -> None:
+        # Current: [id, [id, content, meta, None, title]].
+        inner = ["NOTE_ID", "CONTENT_AT_1_1", [1, "u", [1700000000, 0]], None, "TITLE_AT_1_4"]
+        row = NoteRow(["NOTE_ID", inner])
+        assert row.id == "NOTE_ID"
+        assert row.content == "CONTENT_AT_1_1"
+        assert row.title == "TITLE_AT_1_4"
+        assert row.is_deleted is False
+
+    def test_deleted_shape_sentinel_at_2(self) -> None:
+        # Deleted: [id, None, 2] -> is_deleted, content/title degrade.
+        row = NoteRow(["NOTE_ID", None, 2])
+        assert row.is_deleted is True
+        assert row.content is None
+        assert row.title == ""
+
+    def test_mind_map_current_shape_via_from_mind_map(self) -> None:
+        inner = ["MM_ID", '{"nodes": []}', [1, "u", [1700000000, 0]], None, "MM_TITLE_AT_1_4"]
+        artifact = Artifact.from_mind_map(["MM_ID", inner])
+        assert artifact is not None
+        assert artifact.id == "MM_ID"
+        assert artifact.title == "MM_TITLE_AT_1_4"
+        assert artifact.kind is ArtifactType.MIND_MAP
+
+    def test_mind_map_deleted_shape_returns_none(self) -> None:
+        assert Artifact.from_mind_map(["MM_ID", None, 2]) is None
+
+
+# ===========================================================================
+# MUTATION tests — prove the field-position contracts have TEETH
+# ===========================================================================
+#
+# Each mutation takes a CORRECT synthetic row, moves one value to a different
+# slot (or shifts a nesting depth), and asserts the adapter reacts: a swapped
+# value is now read from the wrong place, a shifted id is NOT silently
+# mis-extracted, a swapped type/status flips the decoded enums. If the decoder
+# ever regressed to read the (now-mutated) wrong slot, the paired assertion
+# would fail.
+
+
+class TestSourceFieldConfusionHasTeeth:
+    """A title<->url swap and an id-nesting shift must be detectable."""
+
+    def test_title_url_swap_is_detectable(self) -> None:
+        url = "https://real.example/page"
+        title = "My Source Title"
+        # Correct row: title at [1], url at metadata[7][0].
+        correct = SourceRow.from_entry([["ID"], title, _make_source_metadata(canonical_url=url)])
+        assert correct.title == title
+        assert correct.url == url
+        assert (correct.url or "").startswith("http")
+
+        # Mutated row: the two values are swapped between their slots. A decoder
+        # that confused title<->url would now surface the title where the url
+        # belongs — so the url no longer parses as a URL.
+        mutated = SourceRow.from_entry([["ID"], url, _make_source_metadata(canonical_url=title)])
+        assert mutated.title == url
+        assert mutated.url == title
+        assert not (mutated.url or "").startswith("http"), (
+            "field-confusion teeth: a title in the url slot must NOT pass as a URL"
+        )
+
+    def test_id_nesting_shift_is_not_silently_mis_extracted(self) -> None:
+        # Correct: id is a bare string inside the plain envelope ["id"].
+        correct = SourceRow.from_entry([["GOOD_ID"], "T", None])
+        assert correct.id == "GOOD_ID"
+
+        # Mutation A: id nested one level too deep -> [["TOO_DEEP"]]. The adapter
+        # must NOT silently surface "TOO_DEEP"; it stringifies the wrong-shaped
+        # envelope instead, so the corruption is visible.
+        too_deep = SourceRow.from_entry([[["TOO_DEEP_ID"]], "T", None])
+        assert too_deep.id != "TOO_DEEP_ID"
+
+        # Mutation B: a drive-style envelope with the id shifted OUT of [2][0]
+        # (placed shallow at [1]) must not be picked up from the wrong slot.
+        drive_shifted = SourceRow.from_entry([[None, "SHALLOW_ID", []], "T", None])
+        assert drive_shifted.id != "SHALLOW_ID"
+        assert drive_shifted.id == ""
+
+    @pytest.mark.parametrize(
+        ("type_code", "status_code", "expected_kind", "expected_status"),
+        [
+            # correct pairing
+            (9, 1, SourceType.YOUTUBE, SourceStatus.PROCESSING),
+            # swapped: the YOUTUBE code now sits in the status slot and vice
+            # versa, so kind/status must change accordingly.
+            (1, 9, SourceType.GOOGLE_DOCS, SourceStatus.READY),
+        ],
+    )
+    def test_type_status_swap_flips_decoded_enums(
+        self,
+        type_code: int,
+        status_code: int,
+        expected_kind: SourceType,
+        expected_status: SourceStatus,
+    ) -> None:
+        meta = _make_source_metadata(type_code=type_code)
+        row = SourceRow.from_entry([["ID"], "T", meta, [None, status_code]])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            source = Source.from_row(row)
+        assert source.kind is expected_kind
+        assert source.status is expected_status
+
+
+class TestArtifactFieldConfusionHasTeeth:
+    """A type<->status swap and a variant-nesting shift must be detectable."""
+
+    @pytest.mark.parametrize(
+        ("type_code", "status_code", "expected_type", "expected_status"),
+        [
+            # correct: AUDIO type, COMPLETED status
+            (
+                ArtifactTypeCode.AUDIO.value,
+                ArtifactStatus.COMPLETED.value,
+                ArtifactTypeCode.AUDIO.value,
+                ArtifactStatus.COMPLETED.value,
+            ),
+            # swapped: the codes trade slots ([2] type <-> [4] status), so the
+            # decoded type_code and status must trade too.
+            (
+                ArtifactStatus.COMPLETED.value,
+                ArtifactTypeCode.AUDIO.value,
+                ArtifactStatus.COMPLETED.value,
+                ArtifactTypeCode.AUDIO.value,
+            ),
+        ],
+    )
+    def test_type_status_swap_flips_decoded_codes(
+        self,
+        type_code: int,
+        status_code: int,
+        expected_type: int,
+        expected_status: int,
+    ) -> None:
+        row = _make_artifact_row(type_code=type_code, status=status_code)
+        ar = ArtifactRow(row)
+        assert ar.type_code == expected_type
+        assert ar.status == expected_status
+
+    def test_variant_nesting_shift_raises_strict_drift(self) -> None:
+        # Correct: variant at [9][1][0].
+        correct = _make_artifact_row(type_code=ArtifactTypeCode.QUIZ.value, variant=QUIZ_VARIANT)
+        assert ArtifactRow(correct).variant == QUIZ_VARIANT
+
+        # Mutation: shift the variant one level shallower so [9] == [None, 2].
+        # The adapter descends [1][0] through ``safe_index`` and the int at [1]
+        # is not indexable -> strict-mode UnknownRPCMethodError. A regression
+        # that read [9][1] directly would silently return 2 instead of raising.
+        shifted = _make_artifact_row(type_code=ArtifactTypeCode.QUIZ.value)
+        shifted[9] = [None, QUIZ_VARIANT]
+        with pytest.raises(UnknownRPCMethodError):
+            _ = ArtifactRow(shifted).variant
+
+    def test_slide_deck_pdf_pptx_slot_swap_is_detectable(self) -> None:
+        # Correct: pdf at [16][3], pptx at [16][4].
+        correct = _make_artifact_row(
+            type_code=ArtifactTypeCode.SLIDE_DECK.value,
+            slide_pdf="https://slides.example/PDF",
+            slide_pptx="https://slides.example/PPTX",
+        )
+        ar = ArtifactRow(correct)
+        assert ar.slide_deck_pdf_url == "https://slides.example/PDF"
+        assert ar.slide_deck_pptx_url == "https://slides.example/PPTX"
+
+        # Mutation: swap the two urls between [16][3] and [16][4]. The pdf
+        # accessor now returns the PPTX url and vice versa — a [3]/[4] confusion
+        # is visible.
+        swapped = _make_artifact_row(
+            type_code=ArtifactTypeCode.SLIDE_DECK.value,
+            slide_pdf="https://slides.example/PPTX",
+            slide_pptx="https://slides.example/PDF",
+        )
+        sw = ArtifactRow(swapped)
+        assert sw.slide_deck_pdf_url == "https://slides.example/PPTX"
+        assert sw.slide_deck_pptx_url == "https://slides.example/PDF"
+
+
+class TestNoteShapeConfusionHasTeeth:
+    """A current/deleted shape confusion must change the decoded classification."""
+
+    def test_deleted_sentinel_shift_changes_classification(self) -> None:
+        # Correct deleted shape: [id, None, 2].
+        assert NoteRow(["ID", None, 2]).is_deleted is True
+
+        # Mutation A: move the sentinel off slot 2 -> not deleted.
+        assert NoteRow(["ID", None, 99]).is_deleted is False
+
+        # Mutation B: a non-None content slot with the sentinel at [2] is also
+        # not a delete (deletion requires BOTH the None content and the
+        # sentinel) -> the [1]-is-None half of the contract has teeth.
+        assert NoteRow(["ID", "still here", 2]).is_deleted is False
+
+    def test_content_title_inner_slot_swap_is_detectable(self) -> None:
+        # Correct current shape: content at [1][1], title at [1][4].
+        good_inner = ["ID", "REAL_CONTENT", [1, "u", [0, 0]], None, "REAL_TITLE"]
+        good = NoteRow(["ID", good_inner])
+        assert good.content == "REAL_CONTENT"
+        assert good.title == "REAL_TITLE"
+
+        # Mutation: swap content<->title between [1][1] and [1][4]. A decoder
+        # that confused the inner content/title slots would now surface the
+        # title as content and vice versa.
+        swapped_inner = ["ID", "REAL_TITLE", [1, "u", [0, 0]], None, "REAL_CONTENT"]
+        swapped = NoteRow(["ID", swapped_inner])
+        assert swapped.content == "REAL_TITLE"
+        assert swapped.title == "REAL_CONTENT"
