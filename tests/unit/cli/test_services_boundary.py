@@ -129,6 +129,7 @@ GUARDED_PATHS = {
     "cli/services/login/refresh.py": SERVICES_ROOT / "login" / "refresh.py",
     "cli/services/login/rookiepy_errors.py": SERVICES_ROOT / "login" / "rookiepy_errors.py",
     "cli/services/playwright_login.py": SERVICES_ROOT / "playwright_login.py",
+    "cli/services/playwright_redaction.py": SERVICES_ROOT / "playwright_redaction.py",
     "cli/services/polling.py": SERVICES_ROOT / "polling.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",

@@ -372,6 +372,7 @@ src/notebooklm/
         │   ├── refresh.py
         │   └── rookiepy_errors.py
         ├── playwright_login.py  # Playwright-driven Google login service
+        ├── playwright_redaction.py # Subprocess-output redaction helpers for the Playwright login service
         ├── polling.py           # Shared polling helpers for CLI wait commands
         ├── research.py          # Service layer for `research wait`
         ├── session_context.py   # Notebook-context services for `use`/`status`/`auth logout`
