@@ -67,11 +67,20 @@ from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import ERROR_SCHEMA, assert_json_envelope, notebooklm_vcr, parse_json_output
+from .conftest import (
+    ERROR_SCHEMA,
+    assert_json_envelope,
+    notebooklm_vcr,
+    parse_json_output,
+    skip_no_cassettes,
+)
 
-# All tests replay cassettes; skipped when cassettes are absent and we're not in
-# record mode (the synthetic cassettes are committed, so they normally run).
-pytestmark = [pytest.mark.vcr]
+# All tests replay cassettes. ``skip_no_cassettes`` matches every other cli_vcr
+# module: although the synthetic error cassettes are committed (so these
+# normally run), the marker turns an absent-cassettes environment (partial
+# checkout, future repo restructure) into a descriptive skip instead of a
+# cryptic ``CassetteNotFoundError``.
+pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 
 def _zero_retry_client(*args: Any, **kwargs: Any) -> NotebookLMClient:
@@ -227,13 +236,16 @@ class TestServerError5xx:
         mock_auth_for_vcr: Any,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """``list`` (no ``--json``) on a 500 exits 1 with an ``Error:`` line."""
+        """``list`` (no ``--json``) on a 500 exits 1 with the server-error line."""
         _install_zero_retry_seam(monkeypatch)
         with notebooklm_vcr.use_cassette("error_synthetic_500_server.yaml"):
             result = runner.invoke(cli, ["list"])
 
         assert result.exit_code == 1
-        assert "Error:" in result.output
+        # Tighter than a bare ``"Error:"``: pin the ``ServerError`` message
+        # fragment so an unrelated error (e.g. an auth-setup failure) can't
+        # satisfy the assertion.
+        assert "Server error" in result.output
         assert parse_json_output(result.output) is None
 
 
@@ -286,7 +298,9 @@ class TestExpiredCsrf400:
             result = runner.invoke(cli, ["list"])
 
         assert result.exit_code == 1
-        assert "Error:" in result.output
+        # The post-refresh 400 surfaces as ``ClientError``; pin that fragment so
+        # an unrelated error cannot satisfy the assertion.
+        assert "Client error" in result.output
         assert parse_json_output(result.output) is None
         assert len(refresh_calls) == 1
         assert cassette.play_count == 2
