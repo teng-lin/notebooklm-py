@@ -91,21 +91,33 @@ _NUMERIC_ID_RE = re.compile(r"\d{6,}")
 # spaces) never match.
 _BLOB_RE = re.compile(r"^[A-Za-z0-9+/=_-]{16,}$")
 _HAS_DIGIT_RE = re.compile(r"\d")
-# A readable identifier segment: an alpha word with an optional short digit tail
-# (``study``, ``guide``, ``v2``, ``h264``). A blob token split on ``_``/``-`` whose
-# every segment reads like this is a field name / enum value, NOT a recorded id.
-_WORD_SEGMENT_RE = re.compile(r"^[A-Za-z]+[0-9]{0,3}$")
+# A readable identifier segment is either purely alphabetic (any length, e.g.
+# ``synced`` / ``NOTEBOOKLM``) or a short (<=8-char) alphanumeric wordlet (e.g.
+# ``v2`` / ``h264`` / ``v1beta1`` / ``x86`` / ``1st``). A blob token split on
+# ``_``/``-`` whose every segment reads like this is a field name / enum / version
+# string, NOT a recorded id; a high-entropy hash/base64 token has a long
+# no-separator alphanumeric run that fails both shapes.
+_ALPHA_SEGMENT_RE = re.compile(r"^[A-Za-z]+$")
+_SHORT_ALNUM_SEGMENT_RE = re.compile(r"^[A-Za-z0-9]{1,8}$")
 
 
 def _is_readable_identifier(value: str) -> bool:
     """True if ``value`` reads as a ``snake_case`` / ``kebab-case`` identifier.
 
-    Splits on ``_``/``-`` and checks every non-empty segment is a short word
-    (alpha + optional <=3-digit tail). ``"synced_to_server"``, ``"briefing_doc"``,
-    ``"NOTEBOOKLM_ERROR"`` and ``"x264_high_profile"`` all read as identifiers;
-    a hash (``"f8cb37228518a4c33b744"``) or base64 token does not.
+    Splits on ``_``/``-`` and checks every non-empty segment is either purely
+    alphabetic (any length) or a short (<=8-char) alphanumeric wordlet. This
+    tolerates digits anywhere in a segment, so common identifiers stay readable:
+    ``"synced_to_server"``, ``"briefing_doc"``, ``"NOTEBOOKLM_ERROR"``,
+    ``"x264_high_profile"``, ``"v1beta1_api_client"`` and ``"x86_64_ubuntu"`` all
+    read as identifiers; a hash (``"f8cb37228518a4c33b744"``) or base64 token has
+    a long (>8) non-alpha run and does not.
     """
-    return all(_WORD_SEGMENT_RE.match(seg) for seg in re.split(r"[_-]", value) if seg)
+    for seg in re.split(r"[_-]", value):
+        if not seg:
+            continue
+        if not (_ALPHA_SEGMENT_RE.match(seg) or _SHORT_ALNUM_SEGMENT_RE.match(seg)):
+            return False
+    return True
 
 
 def _is_opaque_blob(value: str) -> bool:
@@ -350,8 +362,10 @@ def test_detector_ignores_re_record_safe_assertions() -> None:
       input-echo case — the ``Name`` operand carries the recorded-safe id);
     * schema/enum/status/field literals (``"pass"`` / ``"NOTEBOOKLM_ERROR"`` /
       ``"synced_to_server"`` / ``"briefing_doc"``), type filters (``"mind-map"``),
-      CLI flags (``"--json"``), small numbers (``"200"``) and prose
-      assert-messages — none reach the digit-run / blob thresholds;
+      version-bearing identifiers (``"v1beta1_api_client"`` / ``"x86_64_ubuntu"``,
+      the digit-in-segment cases from PR #1461 review), CLI flags (``"--json"``),
+      small numbers (``"200"``) and prose assert-messages — none reach the
+      digit-run / blob thresholds or all read as identifiers;
     * an opaque id literal that is *not* inside an assertion (a command argument
       passed to ``runner.invoke`` or a module-level placeholder definition).
     """
@@ -363,6 +377,8 @@ def test_detector_ignores_re_record_safe_assertions() -> None:
             "assert data.get('code') == 'NOTEBOOKLM_ERROR'",  # error-code enum (16-char ident)
             "assert data.get('synced_to_server') is True",  # field name (16-char ident)
             "assert data['type_id'] == 'briefing_doc'",  # report subtype enum
+            "assert data['client'] == 'v1beta1_api_client'",  # version-bearing identifier
+            "assert data['image'] == 'x86_64_ubuntu_image'",  # arch identifier (digit-in-segment)
             "assert 'mind-map' in args",  # kebab type filter
             "assert data['action'] == 'delete'",  # command action",
             "assert data.get('language') == 'en'",  # input-echo language code
