@@ -355,7 +355,8 @@ src/notebooklm/
         ├── auth_source.py       # Single source of truth for the active CLI auth source
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
         ├── download.py          # Pure-logic download plan + executor
-        ├── generate.py          # Service layer for `notebooklm generate` commands
+        ├── generate.py          # Service layer for `notebooklm generate` commands (executor + re-exports)
+        ├── generate_plans.py    # Plan-building half of `generate`: maps, GenerationPlan, build_generation_plan
         ├── listing.py           # Shared list-command pipeline for CLI resources
         ├── login/               # Browser-cookie login helper package
         │   ├── __init__.py      # re-export-only patch surface
