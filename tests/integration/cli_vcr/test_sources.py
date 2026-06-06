@@ -155,8 +155,11 @@ class TestSourceListCommand:
             f"CLI emitted {len(cli_items)} sources but the cassette payload holds {proj.count}"
         )
         # Id set: every CLI id is in the cassette and vice versa (no fabricated
-        # id, no dropped source). Source ids are reliably UUID-shaped.
-        cli_ids = {src.get("id") for src in cli_items}
+        # id, no dropped source). Source ids are reliably UUID-shaped. Filter out
+        # a (schema-forbidden) ``None`` id so a missing id surfaces as a clean
+        # set-difference rather than a ``TypeError`` while ``sorted()``-ing the
+        # diff in the message.
+        cli_ids = {id_ for src in cli_items if (id_ := src.get("id")) is not None}
         assert cli_ids == proj.ids, (
             "CLI source id set differs from the cassette projection "
             f"(only-in-CLI={sorted(cli_ids - proj.ids)}, "
