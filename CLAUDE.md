@@ -320,6 +320,7 @@ src/notebooklm/
     ├── _encoding.py             # Encoding-safe CLI output helpers
     ├── _firefox_containers.py   # Container-aware Firefox cookie extraction
     ├── _session_render.py       # Session-command render helpers (status/auth tables)
+    ├── _source_render.py        # Source CLI render/validation helpers (extracted from source_cmd.py)
     ├── agent_cmd.py             # agent show commands
     ├── agent_templates.py       # agent prompts and configurations
     ├── artifact_cmd.py          # artifact commands

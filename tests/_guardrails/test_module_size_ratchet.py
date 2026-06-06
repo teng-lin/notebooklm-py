@@ -62,7 +62,7 @@ MODULE_SIZE_BUDGET = 900
 # DO NOT raise a ceiling to make room for new code in a fat module — split it.
 # DO lower a ceiling when a module shrinks (the gate will tell you the value).
 ALLOWLISTED_CEILINGS: dict[str, int] = {
-    "cli/source_cmd.py": 1498,
+    "cli/source_cmd.py": 947,
     "exceptions.py": 1460,
     "_artifacts.py": 1393,
     "_source/upload.py": 1236,
