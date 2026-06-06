@@ -1,16 +1,50 @@
 """CLI integration tests for artifact commands.
 
 These tests exercise the full CLI → Client → RPC path using VCR cassettes.
+
+The ``artifact list --json`` test carries the depth-2 re-record-safe tiers
+(issue #1452), adapted for artifacts:
+
+* **Schema/invariants.** The ``--json`` envelope is an object with a list of
+  artifact items; ids are non-empty (but NOT forced UUID — some artifact ids are
+  numeric).
+* **Cassette-derived value correctness (depth-2).** The CLI's emitted ids/count
+  are checked against an INDEPENDENT shallow projection of the recorded
+  ``LIST_ARTIFACTS`` payload (``_cassette_expectations``). Because the CLI list
+  merges note-backed mind maps from a *separate* RPC, the CLI output is a
+  superset of the ``gArtLc`` projection — so this uses CONTAINMENT and a count
+  floor (``proj.ids ⊆ cli_ids``, ``len(cli) >= proj.count``), not equality.
+* **Per-field semantic invariants.** ``assert_semantic_invariants`` pins per-field
+  meaning (``type_id``/``status`` are known enum values, ``created_at`` parses).
 """
 
 import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+# Enum *code* sets — an allowed-membership floor for the projection's raw integer
+# type/status codes (a set-membership check, not a decode; see #1452).
+from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
+
+from ._cassette_expectations import load_rpc_payload, project_artifact_list
 from ._fixtures import ARTIFACT_NOTEBOOK_ID
-from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
+from .conftest import (
+    assert_command_success,
+    assert_semantic_invariants,
+    notebooklm_vcr,
+    parse_json_dict,
+    parse_json_output,
+    skip_no_cassettes,
+)
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
+
+# ``artifact list`` reads the recorded ``LIST_ARTIFACTS`` (``gArtLc``) payload —
+# the same RPC the projection helper reads independently.
+_LIST_ARTIFACTS_RPC_ID = "gArtLc"
+
+_KNOWN_ARTIFACT_TYPE_CODES = frozenset(member.value for member in ArtifactTypeCode)
+_KNOWN_ARTIFACT_STATUS_CODES = frozenset(member.value for member in ArtifactStatus)
 
 
 class TestArtifactListCommand:
@@ -31,6 +65,70 @@ class TestArtifactListCommand:
             data = parse_json_output(result.output)
             assert data is not None, "Expected valid JSON output"
             assert isinstance(data, list | dict)
+
+    @notebooklm_vcr.use_cassette("artifacts_list.yaml")
+    def test_artifact_list_matches_cassette_projection(
+        self, runner, mock_auth_for_vcr, mock_context
+    ):
+        """Depth-2: the CLI's artifact ids/count + per-field meaning are checked
+        against an INDEPENDENT projection of the recorded ``LIST_ARTIFACTS`` payload.
+
+        Containment, not equality: ``artifact list`` merges note-backed mind maps
+        from a separate RPC, so the CLI output is a superset of the ``gArtLc``
+        projection. Artifact ids are also not all UUID-shaped, so this anchors on
+        id CONTAINMENT + a count floor (never a recorded value), which stays
+        re-record-safe — both sides are read from the same cassette.
+        """
+        result = runner.invoke(cli, ["artifact", "list", "--json"])
+        assert_command_success(result)
+        data = parse_json_dict(result.output)
+        cli_items = data["artifacts"]
+        assert isinstance(cli_items, list)
+
+        payload = load_rpc_payload("artifacts_list.yaml", _LIST_ARTIFACTS_RPC_ID)
+        proj = project_artifact_list(payload)
+        assert proj.count > 0, "projection found no artifacts — cassette/projection drift"
+
+        cli_ids = {art["id"] for art in cli_items}
+        assert len(cli_ids) == len(cli_items), "CLI emitted a duplicate artifact id"
+        # Count floor: the CLI list is the gArtLc rows PLUS merged note-backed
+        # mind maps, so it can only be >= the projection's row count.
+        assert len(cli_items) >= proj.count, (
+            f"CLI emitted {len(cli_items)} artifacts, fewer than the "
+            f"{proj.count} recorded LIST_ARTIFACTS rows (a drop)"
+        )
+        # Containment: every recorded gArtLc artifact id must surface in the CLI
+        # output (none dropped); the projection ids are a subset of the CLI's.
+        assert proj.ids <= cli_ids, (
+            "recorded LIST_ARTIFACTS ids missing from CLI output (a drop): "
+            f"{sorted(proj.ids - cli_ids)}"
+        )
+        # No duplicate id within the recorded rows: each projected row has a
+        # distinct id, so the id set is exactly as large as the row count (a
+        # server-side duplicate would collapse the set below ``count``).
+        assert len(proj.ids) == proj.count, (
+            "recorded LIST_ARTIFACTS rows carry a duplicate id "
+            f"({proj.count} rows, {len(proj.ids)} distinct ids)"
+        )
+
+        # Per-field semantic invariants: type_id/status are known enum values and
+        # created_at parses — for EVERY CLI item, not just the projected subset.
+        for art in cli_items:
+            assert art.get("id"), "artifact id must be non-empty"
+            assert_semantic_invariants(art, "artifact")
+
+        # Type/status histogram consistency: every type code the projection saw
+        # is a known artifact type code, and likewise for status — the projection
+        # is coarser than the CLI's variant-aware mapping, so this checks the
+        # codes are in-range rather than equal to the CLI histogram.
+        for status_id in proj.status_codes:
+            assert status_id in _KNOWN_ARTIFACT_STATUS_CODES, (
+                f"recorded artifact status code {status_id} is not a known code"
+            )
+        for type_code in proj.type_codes:
+            assert type_code in _KNOWN_ARTIFACT_TYPE_CODES, (
+                f"recorded artifact type code {type_code} is not a known code"
+            )
 
 
 class TestArtifactListByType:

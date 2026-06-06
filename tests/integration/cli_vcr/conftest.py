@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 import pytest
 from click.testing import CliRunner
@@ -31,6 +34,19 @@ from click.testing import CliRunner
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from integration.conftest import _is_vcr_record_mode, skip_no_cassettes  # noqa: E402
+
+# Enum value *sets* only — an allowed-membership definition, NOT a decoder. Reading
+# the canonical enum values from the public ``notebooklm`` types keeps the membership
+# floor in lock-step with the source of truth without importing the decode path
+# (``assert_semantic_invariants`` only checks ``value in <set>``). See issue #1452.
+from notebooklm.rpc.types import SourceStatus  # noqa: E402
+from notebooklm.types import (  # noqa: E402
+    ArtifactStatus,
+    ArtifactType,
+    SourceType,
+    artifact_status_to_str,
+    source_status_to_str,
+)
 from vcr_config import notebooklm_vcr  # noqa: E402
 
 from ._fixtures import (  # noqa: E402
@@ -47,7 +63,9 @@ __all__ = [
     "notebooklm_vcr",
     "assert_command_success",
     "assert_json_envelope",
+    "assert_semantic_invariants",
     "parse_json_output",
+    "parse_json_dict",
     "VCR_READONLY_NOTEBOOK_ID",
     "VCR_READONLY_SOURCE_ID",
     "SOURCE_LIST_SCHEMA",
@@ -168,6 +186,19 @@ def parse_json_output(output: str) -> list | dict | None:
     return None
 
 
+def parse_json_dict(output: str) -> dict[str, Any]:
+    """Parse CLI ``--json`` output and assert it is a JSON object.
+
+    A typed convenience over :func:`parse_json_output` for the common
+    ``--json``-envelope case: narrows the ``list | dict | None`` union to a
+    ``dict`` (so callers can index fields without a type-checker complaint) and
+    fails loudly when the output is not a single JSON object.
+    """
+    data = parse_json_output(output)
+    assert isinstance(data, dict), f"Expected a JSON object, got: {output!r}"
+    return data
+
+
 # ---------------------------------------------------------------------------
 # ``--json`` envelope shape validation (issue #1452)
 # ---------------------------------------------------------------------------
@@ -245,6 +276,112 @@ def assert_json_envelope(result, *, schema: dict[str, FieldSpec]) -> None:
     data = parse_json_output(result.output)
     assert isinstance(data, dict), f"Expected a JSON object, got: {result.output!r}"
     _assert_schema("$", data, schema)
+
+
+# ---------------------------------------------------------------------------
+# Per-field semantic invariants (issue #1452, depth-2)
+# ---------------------------------------------------------------------------
+# Where ``assert_json_envelope`` pins *types*, ``assert_semantic_invariants``
+# pins per-field *meaning* — catching the "valid type but wrong field" class
+# (e.g. a title read out of the url slot: a ``str`` that satisfies the schema but
+# fails to parse as a URL). All of these are notebook-agnostic: a ``url`` parses,
+# an enum value is in the known set, a timestamp parses, a source id is
+# UUID-shaped. None pins a *recorded value*, so they survive a re-record.
+#
+# The enum *value sets* below are read from the public ``notebooklm`` types as an
+# allowed-membership definition. That is a set-membership check, NOT a decode —
+# importing the enum's allowed values is fine; importing the positional decoder
+# would make the assertion a tautology (the rule the projection helper obeys).
+
+# 8-4-4-4-12 hex UUID, anchored. Source ids are reliably UUID-shaped; artifact
+# ids are NOT (some are numeric), so the UUID invariant is opt-in per ``kind``.
+_UUID_INVARIANT_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+# Allowed string-enum value sets, derived from the canonical enums.
+_SOURCE_TYPE_VALUES = frozenset(member.value for member in SourceType)
+_ARTIFACT_TYPE_VALUES = frozenset(member.value for member in ArtifactType)
+_SOURCE_STATUS_STR_VALUES = frozenset(
+    source_status_to_str(member.value) for member in SourceStatus
+) | {source_status_to_str(0)}
+_ARTIFACT_STATUS_STR_VALUES = frozenset(
+    artifact_status_to_str(member.value) for member in ArtifactStatus
+) | {artifact_status_to_str(0)}
+
+
+def _assert_url_field(item: dict[str, Any], field: str) -> None:
+    """When ``item[field]`` is a present non-null string, it must parse as a URL.
+
+    A URL must carry both a scheme and a netloc (``https`` + ``example.com``).
+    This is the field-confusion canary: a title accidentally read out of the url
+    slot is a valid ``str`` (passes the schema) but lacks a scheme/netloc.
+    """
+    value = item.get(field)
+    if value is None:
+        return
+    parsed = urlparse(value)
+    assert parsed.scheme and parsed.netloc, (
+        f"{field}={value!r} does not parse as a URL (needs scheme + netloc)"
+    )
+
+
+def _assert_enum_field(item: dict[str, Any], field: str, allowed: frozenset[str]) -> None:
+    """When ``item[field]`` is present and non-null, it must be in ``allowed``."""
+    value = item.get(field)
+    if value is None:
+        return
+    assert value in allowed, f"{field}={value!r} not in known enum values {sorted(allowed)}"
+
+
+def _assert_timestamp_field(item: dict[str, Any], field: str) -> None:
+    """When ``item[field]`` is a present non-null string, it must parse as a datetime.
+
+    The CLI emits ``datetime.isoformat()`` for ``created_at``; a value that is a
+    ``str`` but not parseable as an ISO timestamp means the wrong slot was read.
+    """
+    value = item.get(field)
+    if value is None:
+        return
+    assert isinstance(value, str), f"{field}={value!r} is not a string timestamp"
+    try:
+        datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise AssertionError(f"{field}={value!r} does not parse as a timestamp: {exc}") from exc
+
+
+def assert_semantic_invariants(item: dict[str, Any], kind: str) -> None:
+    """Assert per-field semantic invariants on one decoded ``--json`` list item.
+
+    ``kind`` selects the field rules:
+
+    * ``"source"`` — ``id`` is UUID-shaped; ``type`` (when present) is a known
+      :class:`~notebooklm.types.SourceType` value; ``status`` (when present) is a
+      known source status string; ``url`` (when present) parses as a URL;
+      ``created_at`` (when present) parses as a timestamp.
+    * ``"artifact"`` — ``type_id`` (when present) is a known
+      :class:`~notebooklm.types.ArtifactType` value; ``status`` (when present) is
+      a known artifact status string; ``created_at`` (when present) parses. The
+      ``id`` is deliberately NOT UUID-checked — artifact ids are not all UUIDs.
+
+    All rules are notebook-agnostic (no recorded values), so they survive a
+    re-record. They catch the "valid type but wrong field" defect that a pure
+    shape check (``assert_json_envelope``) cannot.
+    """
+    assert kind in {"source", "artifact"}, f"unknown semantic-invariant kind: {kind!r}"
+    _assert_timestamp_field(item, "created_at")
+    if kind == "source":
+        source_id = item.get("id")
+        assert isinstance(source_id, str) and _UUID_INVARIANT_RE.match(source_id), (
+            f"source id is not UUID-shaped: {source_id!r}"
+        )
+        _assert_enum_field(item, "type", _SOURCE_TYPE_VALUES)
+        _assert_enum_field(item, "status", _SOURCE_STATUS_STR_VALUES)
+        _assert_url_field(item, "url")
+    else:  # "artifact"
+        _assert_enum_field(item, "type_id", _ARTIFACT_TYPE_VALUES)
+        _assert_enum_field(item, "status", _ARTIFACT_STATUS_STR_VALUES)
 
 
 # Per-family schemas. ``str()``-typed ids/titles are shape-only — value

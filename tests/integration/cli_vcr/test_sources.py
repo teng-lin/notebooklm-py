@@ -10,6 +10,17 @@ DIFFERENT notebook with different data:
   ``SOURCE_LIST_SCHEMA`` (via ``assert_json_envelope``).
 * **Tier 2 — Invariants.** ``count > 0``; each id is UUID-shaped; each title is
   non-empty. Never ``== N`` and never a recorded value.
+* **Tier 2b — Cassette-derived value correctness (depth-2).** The CLI's emitted
+  ids/urls/count are checked against an INDEPENDENT shallow projection of the
+  recorded ``GET_NOTEBOOK`` payload (``_cassette_expectations``). This catches
+  fabrication / drop / duplicate / miscount: ``count == proj.count``, the CLI id
+  set equals ``proj.ids``, every CLI url is in ``proj.urls``. The projection
+  reads the cassette with stdlib + yaml only (no production decoder), so the
+  assert is a real oracle, not a tautology — and it stays re-record-safe because
+  both sides are read from the *same* cassette.
+* **Tier 2c — Per-field semantic invariants.** ``assert_semantic_invariants``
+  pins per-field meaning (url parses, enum value is known, timestamp parses) —
+  catching a "valid type but wrong field" read.
 * **Tier 3 — Cross-render.** ``source list`` text mode and ``--json`` of the
   same cassette agree on the row count.
 * **Tier 5 — Input-echo.** ``source delete --json`` echoes the source/notebook
@@ -27,18 +38,24 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+from ._cassette_expectations import load_rpc_payload, project_source_list
 from ._fixtures import DELETE_NOTEBOOK_ID, DELETE_SOURCE_ID, VCR_READONLY_SOURCE_ID
 from .conftest import (
     SOURCE_LIST_SCHEMA,
     SOURCE_MUTATION_SCHEMA,
     assert_command_success,
     assert_json_envelope,
+    assert_semantic_invariants,
     notebooklm_vcr,
-    parse_json_output,
+    parse_json_dict,
     skip_no_cassettes,
 )
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
+
+# ``source list`` resolves the source list out of the ``GET_NOTEBOOK`` (``rLM1Ne``)
+# payload — the same RPC the projection helper reads independently.
+_GET_NOTEBOOK_RPC_ID = "rLM1Ne"
 
 # Loose UUID shape check (8-4-4-4-12 hex). Deliberately not anchored to a
 # specific value — a re-record yields different ids that must still be UUIDs.
@@ -80,14 +97,15 @@ class TestSourceListCommand:
 
     @notebooklm_vcr.use_cassette("sources_list.yaml")
     def test_source_list_json_schema(self, runner, mock_auth_for_vcr, mock_context):
-        """Tier 1 + 2: ``source list --json`` matches the schema + invariants."""
+        """Tier 1 + 2 + 2c: ``source list --json`` matches the schema, invariants,
+        and per-field semantic rules."""
         result = runner.invoke(cli, ["source", "list", "--json"])
         assert_command_success(result, allow_no_context=False)
 
         # Tier 1 — envelope shape (field names + types).
         assert_json_envelope(result, schema=SOURCE_LIST_SCHEMA)
 
-        data = parse_json_output(result.output)
+        data = parse_json_dict(result.output)
         sources = data["sources"]
 
         # Tier 2 — value invariants, never pinned to recorded values.
@@ -105,6 +123,52 @@ class TestSourceListCommand:
             title = src.get("title")
             if title is not None:
                 assert title.strip(), "a present source title must be non-blank"
+            # Tier 2c — per-field semantic invariants (url parses, enum value is
+            # known, timestamp parses): catches a "valid type but wrong field".
+            assert_semantic_invariants(src, "source")
+
+    @notebooklm_vcr.use_cassette("sources_list.yaml")
+    def test_source_list_matches_cassette_projection(self, runner, mock_auth_for_vcr, mock_context):
+        """Tier 2b: the CLI's ids/urls/count match an INDEPENDENT projection of
+        the recorded ``GET_NOTEBOOK`` payload.
+
+        The projection (``_cassette_expectations``) reads the cassette with
+        stdlib + yaml only — it does NOT import the production decoder — so this
+        is a real fabrication/drop/duplicate/miscount oracle rather than a
+        tautology. Both sides are read from the *same* cassette, so the assert is
+        re-record-safe: a re-record against a different notebook re-reads both
+        the CLI output and the projection, and they still must agree.
+        """
+        result = runner.invoke(cli, ["source", "list", "--json"])
+        assert_command_success(result, allow_no_context=False)
+        cli_items = parse_json_dict(result.output)["sources"]
+
+        payload = load_rpc_payload("sources_list.yaml", _GET_NOTEBOOK_RPC_ID)
+        proj = project_source_list(payload)
+
+        assert proj.count > 0, "projection found no sources — cassette/projection drift"
+        # Count: the CLI must emit exactly as many rows as the cassette holds
+        # (no drop, no duplicate, no miscount).
+        assert len(cli_items) == proj.count, (
+            f"CLI emitted {len(cli_items)} sources but the cassette payload holds {proj.count}"
+        )
+        # Id set: every CLI id is in the cassette and vice versa (no fabricated
+        # id, no dropped source). Source ids are reliably UUID-shaped.
+        cli_ids = {src["id"] for src in cli_items}
+        assert cli_ids == proj.ids, (
+            "CLI source id set differs from the cassette projection "
+            f"(only-in-CLI={sorted(cli_ids - proj.ids)}, "
+            f"only-in-cassette={sorted(proj.ids - cli_ids)})"
+        )
+        # Urls: every url the CLI rendered came from the recorded payload (no
+        # fabricated url). Containment, not equality — the projection's shallow
+        # url read may miss a url the deep decoder finds, but never invents one.
+        for src in cli_items:
+            url = src.get("url")
+            if url:
+                assert url in proj.urls, (
+                    f"CLI rendered url {url!r} that is not present in the cassette projection"
+                )
 
     @notebooklm_vcr.use_cassette("sources_list.yaml", allow_playback_repeats=True)
     def test_source_list_text_and_json_agree(self, runner, mock_auth_for_vcr, mock_context):
@@ -117,7 +181,7 @@ class TestSourceListCommand:
         """
         json_result = runner.invoke(cli, ["source", "list", "--json"])
         assert_command_success(json_result, allow_no_context=False)
-        json_count = parse_json_output(json_result.output)["count"]
+        json_count = parse_json_dict(json_result.output)["count"]
 
         text_result = runner.invoke(cli, ["source", "list", "--no-truncate"])
         assert_command_success(text_result, allow_no_context=False)
@@ -221,7 +285,7 @@ class TestSourceDeleteCommand:
         # Tier 1 — envelope shape.
         assert_json_envelope(result, schema=SOURCE_MUTATION_SCHEMA)
 
-        data = parse_json_output(result.output)
+        data = parse_json_dict(result.output)
         # Tier 5 — input-echo.
         assert data["action"] == "delete"
         assert data["source_id"] == DELETE_SOURCE_ID
