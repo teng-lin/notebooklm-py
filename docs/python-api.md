@@ -245,19 +245,17 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 it is the prerequisite type for the note not-found work landing in **v0.8.0**
 (issue #1346).
 
-Use the table to pick the right level of catch. `client.sources.get(...)`,
-`client.artifacts.get(...)`, `client.notes.get(...)`, and
-`client.mind_maps.get(...)` currently return
-`None` for a missing entity rather than raising — **but this is deprecated.**
-They now emit a `DeprecationWarning` on a miss and, in **v0.8.0**, will raise
-the matching `*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
-`NoteNotFoundError` / `MindMapNotFoundError`) to match `client.notebooks.get(...)`,
-which already raises
-`NotebookNotFoundError`. Migrate any `if result is None:` check to
-`try/except <Resource>NotFoundError` before v0.8.0 (suppress the warning
-meanwhile with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`); see
-[`deprecations.md`](deprecations.md) and issue #1247. `client.mind_maps.get(...)`
-joined this warned deprecation in v0.7.0 (issue #1358) — it was the last
+Use the table to pick the right level of catch. As of **v0.8.0** (the #1247
+flip), `client.sources.get(...)`, `client.artifacts.get(...)`,
+`client.notes.get(...)`, and `client.mind_maps.get(...)` **raise** the matching
+`*NotFoundError` (`SourceNotFoundError` / `ArtifactNotFoundError` /
+`NoteNotFoundError` / `MindMapNotFoundError`) on a missing entity — matching
+`client.notebooks.get(...)`, which raises `NotebookNotFoundError`. The previous
+`None`-on-miss return (deprecated with a `DeprecationWarning` through v0.7.0) is
+gone; migrate any `if result is None:` check to `try/except
+<Resource>NotFoundError`, or use the paired `get_or_none(...)` (below) for the
+sanctioned `None`-on-miss contract. See [`deprecations.md`](deprecations.md) and
+issue #1247. `client.mind_maps.get(...)` was the last
 namespace in the #1247 cohort without a runway; use `client.mind_maps.get_or_none(...)`
 for the warning-free `None`-on-miss contract. If you genuinely want
 `None`-on-miss after the flip, every namespace now offers a paired
@@ -443,17 +441,15 @@ event loop on which it was opened. A loop-affinity guard checks
 the active loop on the authed POST hot path — `rpc_call()` →
 `query_post()` → `_perform_authed_post()` — and raises a clear `RuntimeError`
 when the instance is re-used from a different loop. **Scope limitation:** the
-guard fires on the hot path only. Two cold paths reach asyncio primitives
-before the guard runs:
+guard fires on the hot path only. `ChatAPI.ask` adds its own
+`assert_bound_loop()` check as its first statement, so cross-loop chat raises the
+same friendly loop-affinity `RuntimeError`. One cold path remains:
 
-- `ChatAPI.ask` calls `next_reqid()` before its `query_post() →
-  _perform_authed_post` chain. The first cross-loop call's `_reqid_lock` will
-  raise a deep asyncio `RuntimeError` (not the friendly loop-affinity message).
 - `close()` awaits `save_cookies` + `aclose` and never routes through
-  `_perform_authed_post`; cross-loop close gets a deep asyncio error.
+  `_perform_authed_post` or a loop guard; a cross-loop close gets a deep asyncio
+  `RuntimeError` — opaque, not the friendly loop-affinity message.
 
-In both cases you still get a `RuntimeError` — just an opaque one. **Best
-practice:** one client per loop, full stop.
+**Best practice:** one client per loop, full stop.
 
 **Refresh deduplication**. Concurrent RPCs that all
 trigger a token refresh share a single underlying refresh attempt via

@@ -14,7 +14,7 @@ This directory holds the canonical decisions that shape the `notebooklm-py` code
 
 The pull-request template asks contributors to confirm that any change to the _architectural shape_ of the codebase carries an ADR addition or update. "Architectural shape" means any of:
 
-- New / removed / relocated modules in `src/notebooklm/_core*.py`, `src/notebooklm/_capabilities.py`, `src/notebooklm/auth.py`, `src/notebooklm/_auth/`, `src/notebooklm/cli/services/`.
+- New / removed / relocated modules in `src/notebooklm/_runtime/`, `src/notebooklm/_middleware/`, `src/notebooklm/auth.py`, `src/notebooklm/_auth/`, `src/notebooklm/cli/services/`.
 - Changes to the contracts between layers (CLI ↔ Client ↔ Core ↔ RPC).
 - New or retired test patterns (fixtures, monkeypatch policy, conformance tests).
 - New cross-cutting policies (retry, idempotency, scrubbing, loop affinity).

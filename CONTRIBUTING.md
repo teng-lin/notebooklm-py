@@ -97,7 +97,7 @@ When you bump a cap (e.g. moving `pytest>=8.0,<10` to `pytest>=8.0,<11`):
 2. Run the full pre-commit one-liner above.
 3. Mention the upgrade rationale in the PR description.
 
-The `dependency-audit` workflow (`.github/workflows/dependency-audit.yml`) runs `pip-audit --strict` against the locked env on every push to `main` and nightly. It is currently in soft-launch mode (`continue-on-error: true`) and will be flipped to a hard merge gate after the first release cycle. New deps should still pass `pip-audit` cleanly when introduced.
+The `dependency-audit` workflow (`.github/workflows/dependency-audit.yml`) runs `pip-audit --strict --require-hashes` against the locked env on every push to `main` and nightly. It is a **hard gate** (no `continue-on-error`): a CVE in the locked environment fails the workflow. New deps must pass `pip-audit` cleanly when introduced; pin a fixed version or record a tracked exception via `pip-audit`'s `--ignore-vuln` if no fix is yet available.
 
 ### Test tiers
 

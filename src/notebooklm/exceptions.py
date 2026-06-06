@@ -161,18 +161,18 @@ class NotFoundError(NotebookLMError):
             await client.artifacts.download_audio(nb_id, dest, audio_id)
         except NotFoundError as e:
             # Catches NotebookNotFoundError, SourceNotFoundError,
-            # ArtifactNotFoundError, and MindMapNotFoundError uniformly (and
-            # NoteNotFoundError once its not-found paths land in v0.8.0).
+            # ArtifactNotFoundError, NoteNotFoundError, and MindMapNotFoundError
+            # uniformly (all namespace get() raise their *NotFoundError as of v0.8.0).
             handle_missing_resource(e)
 
     The example uses methods that *raise* a ``*NotFoundError`` on missing
-    IDs (:meth:`NotebooksAPI.get`, :meth:`SourcesAPI.wait_until_ready`,
-    the artifact download / content paths). :meth:`SourcesAPI.get` and
-    :meth:`ArtifactsAPI.get` instead return ``None`` for missing IDs — use
-    them when you want a lookup that does not trigger the umbrella.
-    :class:`MindMapNotFoundError` is raised by the ``client.mind_maps``
-    mutation paths (issue #1291); :class:`NoteNotFoundError` is defined but
-    not raised by any method yet (the prerequisite for the v0.8.0 work).
+    IDs. As of v0.8.0 (the #1247 flip) **every** namespace ``get()`` —
+    :meth:`NotebooksAPI.get`, :meth:`SourcesAPI.get`, :meth:`ArtifactsAPI.get`,
+    :meth:`NotesAPI.get`, and :meth:`MindMapsAPI.get` — raises its matching
+    ``*NotFoundError`` on a miss; use the paired ``get_or_none()`` when you want
+    a ``None``-on-miss lookup that does not trigger the umbrella.
+    :class:`MindMapNotFoundError` is also raised by the ``client.mind_maps``
+    mutation paths (issue #1291).
 
     Subclasses retain their existing type-specific bases — for example,
     :class:`SourceNotFoundError` is still a :class:`SourceError`, and
