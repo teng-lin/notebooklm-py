@@ -1293,7 +1293,7 @@ def _make_artifact_row(
     type_code: int = ArtifactTypeCode.AUDIO.value,
     status: int = ArtifactStatus.COMPLETED.value,
     variant: int | None = None,
-    audio_media: list[Any] | None = None,
+    audio_media_list: list[Any] | None = None,
     slide_pdf: Any = None,
     slide_pptx: Any = None,
 ) -> list[Any]:
@@ -1302,6 +1302,10 @@ def _make_artifact_row(
     Slots filled at their canonical ``ArtifactRow`` positions: id ``[0]``,
     title ``[1]``, type ``[2]``, status ``[4]``, variant ``[9][1][0]``, audio
     media list ``[6][5]``, slide-deck pdf ``[16][3]`` / pptx ``[16][4]``.
+
+    ``audio_media_list`` is the media list that lands at ``[6][5]`` (the inner
+    list of ``[url, kind, mime]`` entries), NOT the outer ``[6]`` audio-metadata
+    block — the factory wraps it under a fresh ``[6]`` envelope.
     """
     row: list[Any] = [None] * 19
     row[0] = artifact_id
@@ -1310,9 +1314,9 @@ def _make_artifact_row(
     row[4] = status
     if variant is not None:
         row[9] = [None, [variant]]
-    if audio_media is not None:
+    if audio_media_list is not None:
         audio_block: list[Any] = [None] * 6
-        audio_block[5] = audio_media
+        audio_block[5] = audio_media_list
         row[6] = audio_block
     if slide_pdf is not None or slide_pptx is not None:
         row[16] = [None, None, None, slide_pdf, slide_pptx]
@@ -1485,7 +1489,7 @@ class TestArtifactMediaUrlGroundTruth:
             ["https://media.example/OGG_AT_0", 1, "audio/ogg"],
             ["https://media.example/MP4_AT_0", 2, "audio/mp4"],
         ]
-        row = _make_artifact_row(type_code=ArtifactTypeCode.AUDIO.value, audio_media=media)
+        row = _make_artifact_row(type_code=ArtifactTypeCode.AUDIO.value, audio_media_list=media)
         assert ArtifactRow(row).audio_url == "https://media.example/MP4_AT_0"
 
     def test_slide_deck_pdf_and_pptx_read_distinct_slots(self) -> None:
@@ -1500,6 +1504,14 @@ class TestArtifactMediaUrlGroundTruth:
 
     def test_infographic_url_scans_url_bearing_content_block(self) -> None:
         # infographic_url scans for item[2][0][1] -> a url-bearing list.
+        #
+        # No paired mutation test exists for the infographic accessor (unlike
+        # audio / slide-deck / variant): it does not read a single pinned slot
+        # but scans every top-level item for the first ``item[2][0][1]``
+        # url-bearing list, so there is no fixed index to "shift" for a
+        # slot-confusion mutation. The pinned ground truth here — a distinct
+        # IMG_URL literal recovered from a precise nested shape — is the
+        # available field-position assertion for this accessor.
         row = _make_artifact_row(type_code=ArtifactTypeCode.INFOGRAPHIC.value)
         row[7] = [None, None, [[None, ["https://infographic.example/IMG_URL"]]]]
         assert ArtifactRow(row).infographic_url == "https://infographic.example/IMG_URL"
@@ -1578,6 +1590,11 @@ class TestSourceFieldConfusionHasTeeth:
         # belongs — so the url no longer parses as a URL.
         mutated = SourceRow.from_entry([["ID"], url, _make_source_metadata(canonical_url=title)])
         assert mutated.title == url
+        # The teeth are in the line above: the title string now occupies the url
+        # slot, so ``mutated.url`` returns it verbatim. The ``startswith`` check
+        # below is a derived property of that planted title literal (not a probe
+        # of any adapter url-validation logic) — kept only as a human-readable
+        # restatement that a title in the url slot is not URL-shaped.
         assert mutated.url == title
         assert not (mutated.url or "").startswith("http"), (
             "field-confusion teeth: a title in the url slot must NOT pass as a URL"
