@@ -28,7 +28,9 @@ from ..types import Source
 # Render/validation helpers live in ``_source_render``; re-exported here so the
 # historical ``source_cmd.<helper>`` import/patch surface (and the retained command
 # bodies below) keep resolving them. The F401 suppression marks every name an
-# intentional re-export (three are used only by sibling helpers in that module).
+# intentional re-export — three (``_available_output_path``,
+# ``_exit_with_add_research_status``, ``_print_add_research_task_ids``) are used
+# only by sibling helpers in ``_source_render`` and have no caller here.
 from ._source_render import (  # noqa: F401
     _available_output_path,
     _classify_junk_sources,
