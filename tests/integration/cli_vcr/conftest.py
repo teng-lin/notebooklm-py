@@ -282,10 +282,18 @@ CHAT_ANSWER_SCHEMA: dict[str, FieldSpec] = {
 }
 
 # The ADR-0015 error envelope. Consumed by the Phase-2 error-contract tests
-# (429 / 5xx / expired-csrf → JSON error body); named here so the per-family
-# schema set (list / detail / mutation / error) is complete from Phase 1.
+# (429 / 5xx / expired-csrf → JSON error body). The shape is fixed by
+# ``cli/error_handler.py::_output_error``: ``{"error": true, "code": "<CODE>",
+# "message": "<text>", ...command-specific extras}``. ``error`` is the literal
+# boolean sentinel ``true`` (NOT a nested object), ``code`` is the machine
+# ADR-0015 error code, and ``message`` is the human string. Extra fields
+# (``retry_after`` on a rate-limit, ``method_id`` under ``-vv``) are intentionally
+# NOT pinned here — a schema is a structural floor, so per-test assertions cover
+# the variable extras.
 ERROR_SCHEMA: dict[str, FieldSpec] = {
-    "error": FieldSpec(dict),
+    "error": FieldSpec(bool),
+    "code": FieldSpec(str),
+    "message": FieldSpec(str),
 }
 
 
