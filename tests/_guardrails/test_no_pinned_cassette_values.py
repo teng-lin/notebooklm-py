@@ -24,8 +24,10 @@ literal — the CLI is echoing the test's input back, not the recording.
 
 So the lint's rule is narrow and unambiguous:
 
-    FAIL if an ``assert`` comparison (or an ``assertEqual``-style call) has an
-    operand that is an **inline UUID-shaped string literal**.
+    FAIL if an ``assert`` statement (or a value-comparing ``assert*`` unittest
+    call — ``assertEqual`` / ``assertIn`` / ``assertDictEqual`` / …, but not the
+    ``assertRaises``-style context managers) contains an **inline UUID-shaped
+    string literal**.
 
 A UUID literal is the concrete, notebook-tied, re-record-fragile shape. The
 input-echo case never trips this because it compares to a ``_fixtures``
@@ -51,6 +53,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import TypeGuard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI_VCR_DIR = REPO_ROOT / "tests" / "integration" / "cli_vcr"
@@ -63,9 +66,24 @@ _UUID_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ``assertEqual``-style unittest methods whose first two positional args are
-# compared for equality (so a UUID literal in either is a pinned value too).
-_ASSERT_EQ_METHODS = frozenset({"assertEqual", "assertEquals", "assertNotEqual"})
+# ``unittest`` ``assert*`` methods that do NOT compare values for equality:
+# context managers (``assertRaises`` / ``assertWarns`` / ``assertLogs`` and
+# their ``*Regex`` variants). Every *other* ``assert*`` method
+# (``assertEqual``, ``assertIn``, ``assertDictEqual``, …) takes the asserted
+# value as a positional arg, so a UUID literal in any of those is a pinned
+# value and must be flagged. Excluding by this small denylist (rather than
+# allow-listing the comparison methods) keeps the gate robust as new
+# ``assert*`` helpers appear.
+_NON_COMPARISON_ASSERT_METHODS = frozenset(
+    {
+        "assertRaises",
+        "assertRaisesRegex",
+        "assertWarns",
+        "assertWarnsRegex",
+        "assertLogs",
+        "assertNoLogs",
+    }
+)
 
 # Inline UUID literals that are legitimately pinned (NOT recorded-response
 # values). Empty today: Phase 1 (#1458) removed every inline UUID, and the
@@ -74,8 +92,12 @@ _ASSERT_EQ_METHODS = frozenset({"assertEqual", "assertEquals", "assertNotEqual"}
 ALLOWLIST: frozenset[str] = frozenset()
 
 
-def _is_uuid_literal(node: ast.expr) -> bool:
-    """True if ``node`` is a string constant whose value is UUID-shaped."""
+def _is_uuid_literal(node: ast.AST) -> TypeGuard[ast.Constant]:
+    """True if ``node`` is a string constant whose value is UUID-shaped.
+
+    A ``TypeGuard`` so callers can read ``node.lineno`` after a positive check
+    (it narrows ``ast.AST`` -> ``ast.Constant``, which carries position info).
+    """
     return (
         isinstance(node, ast.Constant)
         and isinstance(node.value, str)
@@ -83,36 +105,72 @@ def _is_uuid_literal(node: ast.expr) -> bool:
     )
 
 
+def _is_assert_call(node: ast.Call) -> bool:
+    """True if ``node`` is a value-comparing ``unittest`` ``assert*`` call.
+
+    Any method whose name starts with ``assert`` (called as ``self.assertX`` or
+    a bare ``assertX``) counts, except the context-manager forms in
+    :data:`_NON_COMPARISON_ASSERT_METHODS`, which take no asserted *value*.
+    """
+    func = node.func
+    name = (
+        func.attr
+        if isinstance(func, ast.Attribute)
+        else func.id
+        if isinstance(func, ast.Name)
+        else None
+    )
+    return (
+        name is not None
+        and name.startswith("assert")
+        and name not in _NON_COMPARISON_ASSERT_METHODS
+    )
+
+
+class _UUIDAssertVisitor(ast.NodeVisitor):
+    """Collect line numbers of inline UUID literals that sit inside an assertion.
+
+    Single-pass over the tree: a depth counter (``_depth``) tracks whether the
+    current node is nested inside an ``assert`` statement or an ``assert*``
+    call. Any UUID-shaped string constant seen while ``_depth > 0`` is a value
+    pinned from a specific recording, wherever in the asserted expression it
+    sits (a comparison operand, a set/list member, a call arg). Visiting once
+    avoids the nested-``ast.walk`` re-scan of every subtree.
+    """
+
+    def __init__(self) -> None:
+        self.lines: set[int] = set()
+        self._depth = 0
+
+    def visit_Assert(self, node: ast.Assert) -> None:
+        self._depth += 1
+        self.generic_visit(node)
+        self._depth -= 1
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if _is_assert_call(node):
+            self._depth += 1
+            self.generic_visit(node)
+            self._depth -= 1
+        else:
+            self.generic_visit(node)
+
+    def generic_visit(self, node: ast.AST) -> None:
+        if self._depth > 0 and _is_uuid_literal(node):
+            self.lines.add(node.lineno)
+        super().generic_visit(node)
+
+
 def _uuid_literal_lines(tree: ast.AST) -> list[int]:
     """Return sorted line numbers of inline UUID literals inside assertions.
 
-    An "assertion" is either an ``assert`` statement or a call to an
-    ``assertEqual``-style unittest method. A UUID literal *anywhere* in the
-    asserted expression (a comparison operand, a set/list member, a call arg)
-    counts — it is a value pinned from a specific recording regardless of where
-    in the expression it sits. Pure on its input so a planted fixture can
-    exercise it without touching the filesystem.
+    An "assertion" is an ``assert`` statement or a value-comparing ``assert*``
+    unittest call (see :func:`_is_assert_call`). Pure on its input so a planted
+    fixture can exercise it without touching the filesystem.
     """
-    lines: set[int] = set()
-    for node in ast.walk(tree):
-        asserted: ast.AST | None = None
-        if isinstance(node, ast.Assert):
-            asserted = node.test
-        elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in _ASSERT_EQ_METHODS
-        ):
-            # Only the compared operands (positional args), not the optional msg.
-            asserted = ast.Module(
-                body=[ast.Expr(value=arg) for arg in node.args[:2]], type_ignores=[]
-            )
-        if asserted is None:
-            continue
-        for inner in ast.walk(asserted):
-            if isinstance(inner, ast.expr) and _is_uuid_literal(inner):
-                lines.add(inner.lineno)
-    return sorted(lines)
+    visitor = _UUIDAssertVisitor()
+    visitor.visit(tree)
+    return sorted(visitor.lines)
 
 
 def _cli_vcr_test_files() -> list[Path]:
@@ -177,11 +235,11 @@ def test_allowlist_entries_are_well_formed() -> None:
 
 
 def test_detector_flags_pinned_uuid_in_assert() -> None:
-    """The detector flags an inline UUID literal in an ``assert`` comparison.
+    """The detector flags an inline UUID literal in any value-comparing assertion.
 
-    Covers both a bare ``assert ==`` and an ``assertEqual`` call, and a UUID on
-    either side of the comparison — the recorded value is just as pinned whether
-    it is the left or right operand.
+    Covers a bare ``assert ==`` (UUID on either side), and the ``assert*``
+    unittest helpers beyond ``assertEqual`` — ``assertIn`` / ``assertDictEqual``
+    must NOT bypass the gate (the broadened-method case from PR #1460 review).
     """
     src = "\n".join(
         [
@@ -189,9 +247,11 @@ def test_detector_flags_pinned_uuid_in_assert() -> None:
             "assert 'C3F6285F-1709-44C4-9CD6-E95CF0EA4F5E' == data['id']",  # 2 (uppercase)
             "self.assertEqual(out['id'], 'fdfc8ac4-3237-4f2a-8a79-3e24297a7040')",  # 3
             "assert src['id'] in {'00000000-0000-0000-0000-000000000000'}",  # 4 (set member)
+            "self.assertIn('11111111-1111-1111-1111-111111111111', ids)",  # 5 (assertIn)
+            "self.assertDictEqual(d, {'id': '22222222-2222-2222-2222-222222222222'})",  # 6
         ]
     )
-    assert _uuid_literal_lines(ast.parse(src)) == [1, 2, 3, 4]
+    assert _uuid_literal_lines(ast.parse(src)) == [1, 2, 3, 4, 5, 6]
 
 
 def test_detector_ignores_re_record_safe_assertions() -> None:
@@ -215,6 +275,10 @@ def test_detector_ignores_re_record_safe_assertions() -> None:
             "assert data.get('added_user') == VCR_SHARE_EMAIL",  # input-echo (Name)
             "result = runner.invoke(cli, ['source', 'get', 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'])",
             "PLACEHOLDER_NOTEBOOK_ID = 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'",
+            # A context-manager assert takes no asserted *value* — a UUID inside
+            # the managed block is a command arg, not a pinned comparison.
+            "with self.assertRaises(ValueError):\n"
+            "    runner.invoke(cli, ['source', 'get', 'c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e'])",
         ]
     )
     assert _uuid_literal_lines(ast.parse(benign)) == []

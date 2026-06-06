@@ -145,7 +145,7 @@ def test_covered_groups_have_an_existing_test_file() -> None:
     }
     assert broken == {}, (
         "GROUP_COVERAGE has entries whose group no longer exists or whose test "
-        f"file is missing — fix or remove them {{group: file}}: {broken}"
+        f"file is missing — fix or remove them (group -> file): {broken}"
     )
 
 
@@ -188,7 +188,7 @@ def test_every_exemption_has_a_known_reason() -> None:
     bad = {g: r for g, r in COVERAGE_EXEMPT.items() if r not in _VALID_REASONS}
     assert bad == {}, (
         "COVERAGE_EXEMPT entries with an unrecognised reason — use one of "
-        f"{sorted(_VALID_REASONS)} {{group: reason}}: {bad}"
+        f"{sorted(_VALID_REASONS)} (group -> reason): {bad}"
     )
 
 
