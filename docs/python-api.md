@@ -338,11 +338,12 @@ except NotFoundError as e:
     print(f"Missing resource: {e}")
 ```
 
-Methods that *raise* (rather than return `None`) on not-found include
-`client.notebooks.get`, `client.sources.get_fulltext`,
-`client.sources.wait_until_ready`, and the artifact download paths.
-`client.sources.get` and `client.artifacts.get` return `None` on missing
-IDs; use those when you want a lookup that does *not* trigger the umbrella.
+Methods that *raise* a `*NotFoundError` on not-found include every namespace
+`get()` (as of v0.8.0 — `client.notebooks.get`, `client.sources.get`,
+`client.artifacts.get`, `client.notes.get`, `client.mind_maps.get`),
+`client.sources.get_fulltext`, `client.sources.wait_until_ready`, and the
+artifact download paths. For a `None`-on-miss lookup that does *not* trigger the
+umbrella, use the paired `get_or_none(...)`.
 
 ##### Ordering matters
 

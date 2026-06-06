@@ -162,7 +162,7 @@ class NotFoundError(NotebookLMError):
         except NotFoundError as e:
             # Catches NotebookNotFoundError, SourceNotFoundError,
             # ArtifactNotFoundError, NoteNotFoundError, and MindMapNotFoundError
-            # uniformly (all namespace get() raise their *NotFoundError as of v0.8.0).
+            # uniformly (all namespace get() methods raise their *NotFoundError as of v0.8.0).
             handle_missing_resource(e)
 
     The example uses methods that *raise* a ``*NotFoundError`` on missing
@@ -866,10 +866,10 @@ class SourceNotFoundError(NotFoundError, RPCError, SourceError):
     RPC layer. ``except NotFoundError`` catches it alongside
     :class:`NotebookNotFoundError` and :class:`ArtifactNotFoundError`.
 
-    Note that ``client.sources.get`` returns ``None`` for a missing source
-    rather than raising — only the workflows that need a concrete source to
-    proceed (e.g. ``get_fulltext``, ``wait_until_ready``) surface the missing
-    source as an exception.
+    As of v0.8.0 ``client.sources.get`` **raises** this error for a missing
+    source; use ``client.sources.get_or_none`` for a ``None``-on-miss lookup.
+    Workflows that need a concrete source to proceed (e.g. ``get_fulltext``,
+    ``wait_until_ready``) also surface the missing source as this exception.
 
     .. note::
        **v0.6.0 BREAKING CHANGE:** prior to v0.6.0, :class:`SourceNotFoundError`
