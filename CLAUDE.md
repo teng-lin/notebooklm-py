@@ -317,6 +317,7 @@ src/notebooklm/
     ├── _download_specs.py       # Registry data for `download <type>` leaf commands
     ├── _encoding.py             # Encoding-safe CLI output helpers
     ├── _firefox_containers.py   # Container-aware Firefox cookie extraction
+    ├── _session_render.py       # Session-command render helpers (status/auth tables)
     ├── agent_cmd.py             # agent show commands
     ├── agent_templates.py       # agent prompts and configurations
     ├── artifact_cmd.py          # artifact commands
