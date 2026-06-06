@@ -30,7 +30,8 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import notebooklm_vcr, skip_no_cassettes
+from ._fixtures import CHAT_NOTEBOOK_ID
+from .conftest import CHAT_ANSWER_SCHEMA, assert_json_envelope, notebooklm_vcr, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -51,12 +52,12 @@ class TestAskCommand:
         result = runner.invoke(cli, ["ask", "--json", "What is this notebook about?"])
         assert result.exit_code == 0, result.output
 
+        # Tier 1 — envelope shape (answer string + references list).
+        assert_json_envelope(result, schema=CHAT_ANSWER_SCHEMA)
+
         # Parse strictly: a ``--json`` command's whole stdout must be valid
         # JSON with no stray prefix.
         data = json.loads(result.output)
-        assert isinstance(data, dict), f"Expected JSON object, got: {result.output!r}"
-        assert "answer" in data, f"Expected an 'answer' key: {data!r}"
-        assert "references" in data, f"Expected a 'references' key: {data!r}"
         # ``raw_response`` is deliberately stripped from CLI output for brevity.
         assert "raw_response" not in data
 
@@ -91,8 +92,7 @@ class TestGetConversationTurnsCommand:
     """Test conversation turns fetching via GET_CONVERSATION_TURNS (khqZz) RPC.
 
     Cassette: chat_get_conversation_turns.yaml
-    Notebook: f59447f4-2a13-4d64-9df8-bc89c615c7bd
-    Conversation: b1556695-010e-4fe3-a841-a6efa7fe0697
+    Notebook: ``CHAT_NOTEBOOK_ID`` (decorative placeholder; see ``_fixtures``).
 
     The cassette captures two sequential batchexecute calls:
       1. hPTbtc (GET_LAST_CONVERSATION_ID) -> returns one conversation ID
@@ -103,7 +103,7 @@ class TestGetConversationTurnsCommand:
     def test_history_shows_qa_previews(self, runner, mock_auth_for_vcr, mock_context):
         """history command shows Q&A preview columns populated from khqZz turns API."""
         # Use the full UUID directly so resolve_notebook_id skips LIST_NOTEBOOKS
-        result = runner.invoke(cli, ["history", "-n", "f59447f4-2a13-4d64-9df8-bc89c615c7bd"])
+        result = runner.invoke(cli, ["history", "-n", CHAT_NOTEBOOK_ID])
         assert result.exit_code == 0, result.output
         assert "What question should I" in result.output
         assert "Based on the sources" in result.output

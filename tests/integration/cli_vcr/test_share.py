@@ -47,21 +47,16 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+from ._fixtures import VCR_SHARE_NOTEBOOK_ID
 from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-# Full UUID of the throwaway notebook the sharing cassettes were recorded
-# against. A full ID keeps ``resolve_notebook_id`` on its fast path so each
-# cassette captures only the sharing RPC chain.
-#
-# This happens to share the same literal value as
-# ``test_notebook.py::VCR_MUTABLE_NOTEBOOK_ID``, but the two are independent:
-# each file owns its own single-purpose cassettes, the value is never matched
-# against the recorded body (VCR matches batchexecute on ``rpcids`` + decoded
-# shape, not the notebook UUID), and neither file imports the other's
-# constant. The duplication is cosmetic, not a shared fixture.
-VCR_SHARE_NOTEBOOK_ID = "b8d6f2a1-4c3e-4a9b-8f7d-1e2c3a4b5c6d"
+# ``VCR_SHARE_NOTEBOOK_ID`` is an alias of ``MUTATION_NOTEBOOK_ID`` in
+# ``_fixtures`` (the same alias ``test_notebook.py`` uses); a full UUID passed
+# with ``-n`` keeps ``resolve_notebook_id`` on its fast path so each cassette
+# captures only the sharing RPC chain. The value is never matched against the
+# recorded body (VCR matches batchexecute on ``rpcids`` + decoded shape).
 
 # Synthetic, non-routable collaborator address (RFC 2606 reserved domain).
 VCR_SHARE_EMAIL = "vcr-share-test@example.com"

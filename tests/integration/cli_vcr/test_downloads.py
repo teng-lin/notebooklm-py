@@ -9,8 +9,8 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+from ._fixtures import ARTIFACT_NOTEBOOK_ID, VCR_READONLY_NOTEBOOK_ID
 from .conftest import (
-    VCR_READONLY_NOTEBOOK_ID,
     assert_command_success,
     notebooklm_vcr,
     skip_no_cassettes,
@@ -69,15 +69,16 @@ class TestDownloadCommands:
     def test_download_mind_map_interactive(self, runner, mock_auth_for_vcr, mock_context, tmp_path):
         """`download mind-map <interactive_id>` exports the interactive map's tree.
 
-        Reuses the interactive recording (``mind_maps_interactive.yaml``, notebook
-        ``f7d1e2b6`` / artifact ``47523923``) captured for the API-level
-        ``client.mind_maps`` tests. The CLI download flow lists studio artifacts
-        twice — once to resolve the id, once inside ``download_mind_map`` — so the
-        ``LIST_ARTIFACTS`` interaction must be replayable (``allow_playback_repeats``).
-        The tree itself comes from the real ``GET_INTERACTIVE_HTML`` (``[0][9][3]``)
-        response in the cassette (issue #1256).
+        Reuses the interactive recording (``mind_maps_interactive.yaml``,
+        ``ARTIFACT_NOTEBOOK_ID`` / artifact ``47523923``) captured for the
+        API-level ``client.mind_maps`` tests. The CLI download flow lists studio
+        artifacts twice — once to resolve the id, once inside
+        ``download_mind_map`` — so the ``LIST_ARTIFACTS`` interaction must be
+        replayable (``allow_playback_repeats``). The tree itself comes from the
+        real ``GET_INTERACTIVE_HTML`` (``[0][9][3]``) response in the cassette
+        (issue #1256).
         """
-        nb = "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6"
+        nb = ARTIFACT_NOTEBOOK_ID
         art_id = "47523923"
         output_file = tmp_path / "interactive_mindmap.json"
         with notebooklm_vcr.use_cassette("mind_maps_interactive.yaml", allow_playback_repeats=True):

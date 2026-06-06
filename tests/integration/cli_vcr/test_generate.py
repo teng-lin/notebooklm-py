@@ -7,6 +7,13 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+from ._fixtures import (
+    ARTIFACT_NOTEBOOK_ID,
+    GENERATE_NOTEBOOK_ID,
+    GENERATE_PLACEHOLDER_NOTEBOOK_ID,
+    GENERATE_PLACEHOLDER_SOURCE_ID,
+    GENERATE_SOURCE_ID,
+)
 from .conftest import assert_command_success, notebooklm_vcr, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
@@ -49,9 +56,9 @@ class TestGenerateCommands:
                     "revise-slide",
                     "Move the title up",
                     "-n",
-                    "00000000-0000-0000-0000-000000000000",
+                    GENERATE_PLACEHOLDER_NOTEBOOK_ID,
                     "--artifact",
-                    "00000000-0000-0000-0000-000000000001",
+                    GENERATE_PLACEHOLDER_SOURCE_ID,
                     "--slide",
                     "0",
                 ],
@@ -89,9 +96,9 @@ class TestGenerateCommands:
                     "--kind",
                     "note-backed",
                     "-n",
-                    "bb00c9e3-656c-4fd2-b890-2b71e1cf3814",
+                    GENERATE_NOTEBOOK_ID,
                     "--source",
-                    "466b9ee3-c1ce-45ef-861c-1d4bfcd939ad",
+                    GENERATE_SOURCE_ID,
                 ],
             )
             assert_command_success(result)
@@ -117,7 +124,7 @@ class TestGenerateCommands:
                     "interactive",
                     "--json",
                     "-n",
-                    "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6",
+                    ARTIFACT_NOTEBOOK_ID,
                 ],
             )
             assert_command_success(result)

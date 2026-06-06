@@ -7,6 +7,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+from ._fixtures import ARTIFACT_NOTEBOOK_ID
 from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
@@ -92,13 +93,13 @@ class TestArtifactListByType:
     def test_artifact_list_type_mind_map_interactive(self, runner, mock_auth_for_vcr, mock_context):
         """`artifact list --type mind-map` surfaces an interactive (studio-artifact) map.
 
-        Reuses the interactive recording (``mind_maps_interactive.yaml``, notebook
-        ``f7d1e2b6`` / artifact ``47523923``). Stays on the table renderer (no
-        ``--json``) so it needs only ``LIST_ARTIFACTS`` + ``GET_NOTES_AND_MIND_MAPS``,
-        both present in the cassette — proving the type-4/variant-4 map is
-        recognized end-to-end through the CLI (issue #1256).
+        Reuses the interactive recording (``mind_maps_interactive.yaml``,
+        ``ARTIFACT_NOTEBOOK_ID`` / artifact ``47523923``). Stays on the table
+        renderer (no ``--json``) so it needs only ``LIST_ARTIFACTS`` +
+        ``GET_NOTES_AND_MIND_MAPS``, both present in the cassette — proving the
+        type-4/variant-4 map is recognized end-to-end through the CLI (#1256).
         """
-        nb = "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6"
+        nb = ARTIFACT_NOTEBOOK_ID
         with notebooklm_vcr.use_cassette("mind_maps_interactive.yaml", allow_playback_repeats=True):
             result = runner.invoke(cli, ["artifact", "list", "--type", "mind-map", "-n", nb])
             assert_command_success(result)

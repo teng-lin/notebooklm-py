@@ -38,17 +38,18 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
+from ._fixtures import VCR_MUTABLE_NOTEBOOK_ID
 from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-# Full UUID of the throwaway notebook used while recording the mutation
-# cassettes. Passing the full ID with ``-n`` keeps ``resolve_notebook_id`` on
-# its fast path (no ``LIST_NOTEBOOKS`` preflight), so each cassette below holds
-# exactly one RPC. ``test_share.py`` reuses the same literal value for its own,
-# independent cassettes — see the note there; the UUID is never matched against
-# the recorded body (VCR matches batchexecute on ``rpcids`` + decoded shape).
-VCR_MUTABLE_NOTEBOOK_ID = "b8d6f2a1-4c3e-4a9b-8f7d-1e2c3a4b5c6d"
+# ``VCR_MUTABLE_NOTEBOOK_ID`` (an alias of ``MUTATION_NOTEBOOK_ID`` in
+# ``_fixtures``) is a full UUID passed with ``-n`` so ``resolve_notebook_id``
+# stays on its fast path (no ``LIST_NOTEBOOKS`` preflight) and each cassette
+# below holds exactly one RPC. The value is never matched against the recorded
+# body (VCR matches batchexecute on ``rpcids`` + decoded shape); it *is*
+# load-bearing for the input-echo asserts below, where the CLI threads the id
+# back into its own ``--json`` output.
 
 
 class TestListCommand:
