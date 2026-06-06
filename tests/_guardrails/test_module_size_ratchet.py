@@ -48,7 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 
 # Any *new* module is forbidden from exceeding this many lines. Chosen to sit
-# just below the smallest currently-allowlisted module (``_idempotency.py`` at
+# just below the smallest currently-allowlisted module (``_research.py`` at
 # 936) so the allowlist is the *complete* set of modules over budget today and
 # the gate is green on main. New work must come in at or under this budget or
 # split before merge.
@@ -74,7 +74,6 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "_research.py": 936,
     "cli/services/generate.py": 926,
     "_chat/api.py": 946,
-    "_idempotency.py": 936,
 }
 
 

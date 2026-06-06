@@ -27,6 +27,24 @@ from notebooklm._idempotency import (
 from notebooklm.exceptions import IdempotencyVariantError
 from notebooklm.rpc import RPCMethod
 
+
+class SeedSpyRegistry(IdempotencyRegistry):
+    """An :class:`IdempotencyRegistry` that counts ``_seed_defaults`` calls.
+
+    Used to assert that ``register_default_policies`` runs the totality seed
+    pass exactly once — the one regression the per-method lookups cannot catch
+    while every current ``RPCMethod`` is explicitly classified.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seed_calls = 0
+
+    def _seed_defaults(self) -> None:
+        self.seed_calls += 1
+        super()._seed_defaults()
+
+
 # ---------------------------------------------------------------------------
 # Coverage: every RPCMethod has an explicit production classification
 # ---------------------------------------------------------------------------
@@ -44,6 +62,61 @@ def test_registry_classifies_every_rpc_method_at_variant_none() -> None:
             "idempotency classification"
         )
         assert entry.notes.strip(), f"{method.name} classification must document its rationale"
+
+
+def test_seed_defaults_makes_unregistered_methods_resolve_unclassified() -> None:
+    """A method with NO explicit ``.register()`` MUST resolve to UNCLASSIFIED.
+
+    This pins the seed *semantics* directly: a fresh registry seeded only by
+    ``_seed_defaults`` (no explicit registrations) classifies every method as
+    UNCLASSIFIED. The seeding pass is what guarantees the registry is a *total*
+    function over ``RPCMethod`` by filling the UNCLASSIFIED placeholder for
+    every method the explicit registrations leave untouched.
+    """
+    seeded = IdempotencyRegistry()
+    seeded._seed_defaults()
+
+    for method in RPCMethod:
+        entry = seeded.get_entry(method)
+        assert entry.policy is IdempotencyPolicy.UNCLASSIFIED, (
+            f"{method.name} did not resolve to UNCLASSIFIED after _seed_defaults; "
+            "the totality seed pass is broken"
+        )
+
+
+def test_register_default_policies_runs_the_totality_seed_pass() -> None:
+    """``register_default_policies`` MUST run the ``_seed_defaults`` totality pass.
+
+    The seed pass is what guarantees the registry is a *total* function over
+    ``RPCMethod`` for any method the explicit registrations leave untouched
+    (today every method is classified, so a dropped seed would NOT regress any
+    currently-classified method — only a future, unregistered one). That makes
+    the seed invisible to every per-method ``lookup()`` against today's enum, so
+    the only way to catch a dropped/misordered seed is to assert it actually
+    fires. A spy registry counts the ``_seed_defaults`` calls, and a separate
+    fresh registry confirms the applied result is total over ``RPCMethod``.
+    """
+    from notebooklm._idempotency_policy import register_default_policies
+
+    # (a) The seed pass fires exactly once during policy application.
+    spy = SeedSpyRegistry()
+    register_default_policies(spy)
+    assert spy.seed_calls == 1, (
+        "register_default_policies did not invoke _seed_defaults exactly once; "
+        "the totality seed pass was dropped or duplicated"
+    )
+
+    # (b) The applied registry is total: every method resolves (a dropped seed
+    # would KeyError for any method left unregistered).
+    registry = IdempotencyRegistry()
+    register_default_policies(registry)
+    for method in RPCMethod:
+        entry = registry.get_entry(method)
+        assert isinstance(entry, IdempotencyEntry)
+        assert entry.policy is not IdempotencyPolicy.UNCLASSIFIED, (
+            f"{method.name} kept UNCLASSIFIED after register_default_policies; "
+            "add an explicit classification"
+        )
 
 
 def test_registry_has_no_unclassified_production_entries() -> None:
