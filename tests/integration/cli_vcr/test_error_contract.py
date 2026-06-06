@@ -161,11 +161,13 @@ class TestRateLimited429:
         assert_json_envelope(result, schema=ERROR_SCHEMA)
         data = parse_json_output(result.output)
         assert data is not None
-        assert data["error"] is True
-        assert data["code"] == "RATE_LIMITED"
+        # ``.get()`` (not ``data[...]``) so a regression that drops a field
+        # surfaces as a clean value mismatch instead of a ``KeyError`` traceback.
+        assert data.get("error") is True
+        assert data.get("code") == "RATE_LIMITED"
         # The Retry-After header (``1`` in the cassette) is threaded into the
         # envelope as a structural extra so automation can back off correctly.
-        assert data["retry_after"] == 1
+        assert data.get("retry_after") == 1
         # Exactly one POST: the failing one. Equality (not ``>=``) catches a
         # regression where the zeroed retry budget silently re-enables itself.
         assert cassette.play_count == 1
@@ -215,8 +217,8 @@ class TestServerError5xx:
         assert_json_envelope(result, schema=ERROR_SCHEMA)
         data = parse_json_output(result.output)
         assert data is not None
-        assert data["error"] is True
-        assert data["code"] == "NOTEBOOKLM_ERROR"
+        assert data.get("error") is True
+        assert data.get("code") == "NOTEBOOKLM_ERROR"
         assert cassette.play_count == 1
 
     def test_text_exit_code(
@@ -263,8 +265,8 @@ class TestExpiredCsrf400:
         assert_json_envelope(result, schema=ERROR_SCHEMA)
         data = parse_json_output(result.output)
         assert data is not None
-        assert data["error"] is True
-        assert data["code"] == "NOTEBOOKLM_ERROR"
+        assert data.get("error") is True
+        assert data.get("code") == "NOTEBOOKLM_ERROR"
         # The auth-refresh branch fired exactly once for the one stale-CSRF call.
         assert len(refresh_calls) == 1
         # Two POSTs: the initial 400 and the post-refresh retry 400.
