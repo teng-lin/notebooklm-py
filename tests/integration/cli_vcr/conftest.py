@@ -74,7 +74,7 @@ def mock_context(tmp_path: Path):
     that VCR matches batchexecute calls by ``rpcids``.
     """
     context_file = tmp_path / "context.json"
-    context_file.write_text(json.dumps({"notebook_id": PLACEHOLDER_NOTEBOOK_ID}))
+    context_file.write_text(json.dumps({"notebook_id": PLACEHOLDER_NOTEBOOK_ID}), encoding="utf-8")
 
     with (
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
@@ -182,19 +182,23 @@ class FieldSpec:
     """Type/nullability/nesting spec for a single ``--json`` envelope field.
 
     ``types`` is the tuple of acceptable Python types for the value.
-    ``nullable`` permits an explicit ``None``. ``item_schema`` (only meaningful
-    when ``list`` is among ``types``) validates each element of a list of
-    objects. A hand-rolled spec on purpose — no ``jsonschema`` dependency.
+    ``nullable`` permits an explicit ``None``; ``optional`` permits the field to
+    be *absent* from the payload entirely (some payloads omit a field rather
+    than emit ``null``). ``item_schema`` (only meaningful when ``list`` is among
+    ``types``) validates each element of a list of objects. A hand-rolled spec
+    on purpose — no ``jsonschema`` dependency.
     """
 
     def __init__(
         self,
         *types: type,
         nullable: bool = False,
+        optional: bool = False,
         item_schema: dict[str, FieldSpec] | None = None,
     ) -> None:
         self.types = types
         self.nullable = nullable
+        self.optional = optional
         self.item_schema = item_schema
 
 
@@ -218,10 +222,16 @@ def _assert_field(path: str, value: Any, spec: FieldSpec) -> None:
 
 
 def _assert_schema(path: str, payload: dict[str, Any], schema: dict[str, FieldSpec]) -> None:
-    """Assert every schema field is present in ``payload`` with the right shape."""
+    """Assert every schema field is present in ``payload`` with the right shape.
+
+    A field marked ``optional`` may be absent entirely; a field marked
+    ``nullable`` must be present but may be ``None``.
+    """
     for name, spec in schema.items():
         field_path = f"{path}.{name}"
-        assert name in payload, f"{field_path}: missing required field"
+        if name not in payload:
+            assert spec.optional, f"{field_path}: missing required field"
+            continue
         _assert_field(field_path, payload[name], spec)
 
 

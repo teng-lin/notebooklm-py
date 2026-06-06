@@ -95,9 +95,16 @@ class TestSourceListCommand:
         assert data["count"] == len(sources), "count must match the array length"
         assert _UUID_RE.match(data["notebook_id"]), "notebook_id must be UUID-shaped"
         for index, src in enumerate(sources, 1):
-            assert src["index"] == index, "index must be 1-based and contiguous"
-            assert _UUID_RE.match(src["id"]), f"source id not UUID-shaped: {src['id']!r}"
-            assert src["title"] and src["title"].strip(), "source title must be non-empty"
+            assert src.get("index") == index, "index must be 1-based and contiguous"
+            assert _UUID_RE.match(src.get("id", "")), (
+                f"source id not UUID-shaped: {src.get('id')!r}"
+            )
+            # ``title`` is nullable in the schema; a source *may* be untitled.
+            # When a title is present it must be non-blank — that is the
+            # re-record-safe invariant (never pin the recorded title value).
+            title = src.get("title")
+            if title is not None:
+                assert title.strip(), "a present source title must be non-blank"
 
     @notebooklm_vcr.use_cassette("sources_list.yaml", allow_playback_repeats=True)
     def test_source_list_text_and_json_agree(self, runner, mock_auth_for_vcr, mock_context):
