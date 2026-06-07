@@ -125,6 +125,9 @@ __all__ = [
     # Domain: Mind maps
     "MindMapError",
     "MindMapNotFoundError",
+    # Domain: Source labels
+    "LabelError",
+    "LabelNotFoundError",
 ]
 
 
@@ -1455,6 +1458,58 @@ class MindMapNotFoundError(NotFoundError, RPCError, MindMapError):
         self.mind_map_id = mind_map_id
         super().__init__(
             f"Mind map not found: {mind_map_id}",
+            method_id=method_id,
+            raw_response=raw_response,
+        )
+
+
+# =============================================================================
+# Domain: Source labels
+# =============================================================================
+
+
+class LabelError(NotebookLMError):
+    """Base for source-label operations.
+
+    Gives the label domain a catchable base mirroring :class:`SourceError` /
+    :class:`NoteError`. :class:`LabelNotFoundError` inherits from it.
+    """
+
+
+class LabelNotFoundError(NotFoundError, RPCError, LabelError):
+    """Source label not found in notebook.
+
+    Raised by ``client.labels.get`` and the label mutation paths
+    (``rename``/``set_emoji``/``update``/``add_sources``/``sources``) on a
+    missing target. Absence is detected via a label list lookup, not a transport
+    404 (the ``LIST_LABELS`` payload simply omits the id). The idempotent
+    ``delete`` interprets the same absence as a no-op returning ``None``
+    (ADR-0019); ``get_or_none`` returns ``None``.
+
+    Inherits from :class:`NotFoundError` (cross-domain umbrella),
+    :class:`RPCError` (transport-level catchability), and :class:`LabelError`
+    (domain base), so ``except RPCError`` keeps working at call sites that handle
+    transport-level failures, ``except LabelError`` works at domain-level call
+    sites, and ``except NotFoundError`` catches it alongside the other
+    not-found errors.
+
+    Attributes:
+        label_id: The ID that was not found.
+        method_id: The RPC method ID (inherited from :class:`RPCError`).
+        raw_response: First 80 chars of the raw response, if any
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
+    """
+
+    def __init__(
+        self,
+        label_id: str,
+        *,
+        method_id: str | None = None,
+        raw_response: str | None = None,
+    ):
+        self.label_id = label_id
+        super().__init__(
+            f"Label not found: {label_id}",
             method_id=method_id,
             raw_response=raw_response,
         )

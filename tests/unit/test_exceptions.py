@@ -21,6 +21,8 @@ from notebooklm.exceptions import (
     ClientError,
     ConfigurationError,
     DecodingError,
+    LabelError,
+    LabelNotFoundError,
     MindMapError,
     MindMapNotFoundError,
     NetworkError,
@@ -90,6 +92,8 @@ class TestExceptionHierarchy:
             NoteNotFoundError,
             MindMapError,
             MindMapNotFoundError,
+            LabelError,
+            LabelNotFoundError,
         ]
         for exc_class in exceptions:
             assert issubclass(exc_class, NotebookLMError), (

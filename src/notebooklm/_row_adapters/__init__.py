@@ -5,16 +5,19 @@ Re-exports the typed row views; importers may also reach submodules directly
 (``from .._row_adapters.sources import SourceRow``).
 """
 
-from . import artifacts, notes, sources
+from . import artifacts, labels, notes, sources
 from .artifacts import ArtifactRow
+from .labels import LabelRow
 from .notes import NoteRow
 from .sources import SourceRow, SourceRowShape
 
 __all__ = [
     "artifacts",
+    "labels",
     "notes",
     "sources",
     "ArtifactRow",
+    "LabelRow",
     "NoteRow",
     "SourceRow",
     "SourceRowShape",
