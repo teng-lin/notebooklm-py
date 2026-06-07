@@ -46,6 +46,7 @@ EXTRA_PUBLIC_PACKAGES = ("rpc",)
 CLIENT_NAMESPACE_ATTRIBUTES = (
     "artifacts",
     "chat",
+    "labels",
     "mind_maps",
     "notes",
     "notebooks",

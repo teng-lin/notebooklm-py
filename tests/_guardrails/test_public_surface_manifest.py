@@ -221,6 +221,7 @@ _FROZEN_TYPES_ALL = [
     "GenerationStatus",
     "ReportSuggestion",
     "Note",
+    "Label",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
@@ -250,6 +251,8 @@ _FROZEN_TYPES_ALL = [
     "ArtifactTimeoutError",
     "ArtifactPendingTimeoutError",
     "ArtifactInProgressTimeoutError",
+    "LabelError",
+    "LabelNotFoundError",
     "UnknownTypeWarning",
     "SourceType",
     "ArtifactType",
@@ -301,6 +304,7 @@ _TOP_LEVEL_TYPE_EXPORTS = [
     "InfographicDetail",
     "InfographicOrientation",
     "InfographicStyle",
+    "Label",
     "MindMapResult",
     "Note",
     "Notebook",
@@ -349,6 +353,8 @@ _TYPES_EXCEPTION_REEXPORTS = [
     "ArtifactTimeoutError",
     "ArtifactPendingTimeoutError",
     "ArtifactInProgressTimeoutError",
+    "LabelError",
+    "LabelNotFoundError",
 ]
 
 _TOP_LEVEL_EXCEPTION_EXPORTS = [
@@ -369,6 +375,8 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "ClientError",
     "ConfigurationError",
     "DecodingError",
+    "LabelError",
+    "LabelNotFoundError",
     "MindMapError",
     "MindMapNotFoundError",
     "NetworkError",

@@ -75,6 +75,9 @@ from .exceptions import (
     # Validation/Config
     ConfigurationError,
     DecodingError,
+    # Domain: Source labels
+    LabelError,
+    LabelNotFoundError,
     MindMapError,
     MindMapNotFoundError,
     # Network
@@ -135,6 +138,7 @@ from .types import (
     InfographicDetail,
     InfographicOrientation,
     InfographicStyle,
+    Label,
     MindMap,
     MindMapKind,
     MindMapResult,
@@ -208,6 +212,7 @@ __all__ = [
     "MindMapKind",
     "MindMapResult",
     "Note",
+    "Label",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
@@ -275,6 +280,9 @@ __all__ = [
     # Domain Exceptions: Mind maps
     "MindMapError",
     "MindMapNotFoundError",
+    # Domain Exceptions: Source labels
+    "LabelError",
+    "LabelNotFoundError",
     # Cross-domain umbrella: wait/poll timeouts
     "WaitTimeoutError",
     # Warnings

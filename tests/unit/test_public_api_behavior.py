@@ -47,6 +47,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._labels import LabelsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
@@ -55,6 +56,7 @@ from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
+    LabelNotFoundError,
     MindMapNotFoundError,
     NotebookNotFoundError,
     NoteNotFoundError,
@@ -62,7 +64,7 @@ from notebooklm.exceptions import (
 )
 
 # This behavioural table is the executable companion of the static
-# ``LOOKUP_NAMESPACES`` set in ``test_public_api_contract.py``: the same five
+# ``LOOKUP_NAMESPACES`` set in ``test_public_api_contract.py``: the same six
 # namespaces that expose the ``get`` / ``get_or_none`` pair.
 # ``test_table_covers_all_lookup_namespaces`` below pins the two in lock-step so
 # a namespace can never gain the lookup pair without also gaining behavioural
@@ -130,6 +132,13 @@ def _make_mind_maps_api() -> MindMapsAPI:
         artifacts=artifacts,
         notebooks=notebooks,
     )
+
+
+def _make_labels_api() -> LabelsAPI:
+    # ``_arrange_list_miss`` overrides ``api.list`` before any RPC path is reached
+    # (``labels.get`` scans ``self.list``), so the rpc collaborator and
+    # ``list_sources`` are never called on the miss path.
+    return LabelsAPI(MagicMock(), list_sources=AsyncMock(return_value=[]))
 
 
 def _make_notebooks_api() -> NotebooksAPI:
@@ -253,6 +262,15 @@ LOOKUP_CASES: tuple[LookupCase, ...] = (
         resource="mind_map",
         not_found_error=MindMapNotFoundError,
         get_warns=False,  # flipped: raises *NotFoundError on a miss (#1247)
+    ),
+    LookupCase(
+        namespace="labels",
+        factory=_make_labels_api,
+        arrange_miss=_arrange_list_miss,
+        get_args=("nb_1", "missing"),
+        resource="label",
+        not_found_error=LabelNotFoundError,
+        get_warns=False,  # v0.8.0: labels.get raises LabelNotFoundError on a miss
     ),
 )
 

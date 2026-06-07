@@ -44,6 +44,7 @@ import pytest
 # the walk needs no auth, event loop, or network.
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat.api import ChatAPI
+from notebooklm._labels import LabelsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
@@ -60,18 +61,21 @@ NAMESPACES: dict[str, type] = {
     "artifacts": ArtifactsAPI,
     "notes": NotesAPI,
     "mind_maps": MindMapsAPI,
+    "labels": LabelsAPI,
     "chat": ChatAPI,
     "research": ResearchAPI,
     "sharing": SharingAPI,
     "settings": SettingsAPI,
 }
 
-# The five namespaces that expose the resource-lookup surface (``get`` /
+# The six namespaces that expose the resource-lookup surface (``get`` /
 # ``get_or_none`` / ``delete``). ``chat``/``research``/``sharing``/``settings``
 # are intentionally absent — they expose none of the three. Pinned so a rename or
 # removal that makes a method silently undiscoverable fails loudly rather than
 # shrinking the parametrisation to a still-green subset.
-LOOKUP_NAMESPACES = frozenset({"notebooks", "sources", "artifacts", "notes", "mind_maps"})
+LOOKUP_NAMESPACES = frozenset(
+    {"notebooks", "sources", "artifacts", "notes", "mind_maps", "labels"}
+)
 
 # Public ``get()`` methods still annotated ``X | None`` because the flip to
 # raising ``*NotFoundError`` (and dropping ``| None``) is deferred to #1247.

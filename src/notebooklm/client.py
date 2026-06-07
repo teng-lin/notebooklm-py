@@ -42,6 +42,7 @@ from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
+from ._labels import LabelsAPI
 from ._mind_map import NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
 from ._note_service import NoteService
@@ -84,6 +85,7 @@ class NotebookLMClient:
     - notes: Create and manage user notes
     - settings: Manage user settings (output language, etc.)
     - sharing: Manage notebook sharing and permissions
+    - labels: AI-group sources into topic labels (auto-label / reorganize)
 
     Usage:
         # Create from saved authentication (canonical idiom)
@@ -104,6 +106,7 @@ class NotebookLMClient:
         notes: NotesAPI for user notes
         settings: SettingsAPI for user settings
         sharing: SharingAPI for notebook sharing
+        labels: LabelsAPI for source labels (topic grouping)
         auth: The AuthTokens used for authentication
     """
 
@@ -447,6 +450,10 @@ class NotebookLMClient:
         self.research = ResearchAPI(internals.executor)
         self.settings = SettingsAPI(internals.executor)
         self.sharing = SharingAPI(internals.executor)
+        # Source labels. Takes a narrow ``list_sources`` callable (not the whole
+        # SourcesAPI) for the membership->Source join in ``labels.sources()``;
+        # wired after ``self.sources`` exists. Same client/bound loop (ADR-0004).
+        self.labels = LabelsAPI(internals.executor, list_sources=self.sources.list)
 
     @property
     def auth(self) -> AuthTokens:

@@ -34,6 +34,7 @@ from ._types.common import (
     RpcTelemetryEvent,
     UnknownTypeWarning,
 )
+from ._types.labels import Label
 from ._types.mind_maps import MindMap, MindMapKind
 from ._types.notebooks import (
     Notebook,
@@ -70,6 +71,8 @@ from .exceptions import (
     ArtifactParseError,
     ArtifactPendingTimeoutError,
     ArtifactTimeoutError,
+    LabelError,
+    LabelNotFoundError,
     SourceAddError,
     SourceError,
     SourceNotFoundError,
@@ -151,6 +154,7 @@ __all__ = [
     "GenerationStatus",
     "ReportSuggestion",
     "Note",
+    "Label",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
@@ -181,6 +185,8 @@ __all__ = [
     "ArtifactTimeoutError",
     "ArtifactPendingTimeoutError",
     "ArtifactInProgressTimeoutError",
+    "LabelError",
+    "LabelNotFoundError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)
@@ -237,6 +243,7 @@ for _public_moved_type in (
     ConversationTurn,
     GenerationState,
     GenerationStatus,
+    Label,
     MindMap,
     MindMapKind,
     MindMapResult,
