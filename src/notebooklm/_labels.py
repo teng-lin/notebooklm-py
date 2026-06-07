@@ -270,8 +270,11 @@ class LabelsAPI:
         """
         if not source_ids:
             raise ValueError("add_sources requires at least one source id")
-        logger.debug("Adding %d source(s) to label %s", len(source_ids), label_id)
-        for source_id in source_ids:
+        # Dedupe (order-preserving): one le8sX per id, so duplicates would be
+        # redundant round-trips (and append-twice on the wire).
+        unique_ids = list(dict.fromkeys(source_ids))
+        logger.debug("Adding %d source(s) to label %s", len(unique_ids), label_id)
+        for source_id in unique_ids:
             await self._rpc.rpc_call(
                 RPCMethod.UPDATE_LABEL,
                 build_update_label_params(notebook_id, label_id, add_source_id=source_id),
@@ -317,8 +320,11 @@ class LabelsAPI:
         """
         if not source_ids:
             raise ValueError("remove_sources requires at least one source id")
-        logger.debug("Removing %d source(s) from label %s", len(source_ids), label_id)
-        for source_id in source_ids:
+        # Dedupe (order-preserving): one le8sX per id, so duplicates are
+        # redundant round-trips.
+        unique_ids = list(dict.fromkeys(source_ids))
+        logger.debug("Removing %d source(s) from label %s", len(unique_ids), label_id)
+        for source_id in unique_ids:
             await self._rpc.rpc_call(
                 RPCMethod.UPDATE_LABEL,
                 build_update_label_params(notebook_id, label_id, remove_source_id=source_id),

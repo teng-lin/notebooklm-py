@@ -383,3 +383,16 @@ async def test_add_sources_is_not_atomic_partial_failure_propagates() -> None:
     updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]
     assert len(updates) == 2  # first applied, failed on the second, never reached the third
     assert all(c.method != RPCMethod.LIST_LABELS for c in rpc.calls)  # no final re-fetch
+
+
+async def test_add_sources_dedupes_ids_preserving_order() -> None:
+    """Duplicate ids collapse to one le8sX each (order preserved) — no redundant calls."""
+    api, rpc, _ = _api(
+        {
+            RPCMethod.LIST_LABELS: _list_env(_label_tuple("A", "l1")),
+            RPCMethod.UPDATE_LABEL: [],
+        }
+    )
+    await api.add_sources("nb", "l1", ["s1", "s2", "s1"])
+    updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]
+    assert [u.params[3] for u in updates] == [[[None, [["s1"]]]], [[None, [["s2"]]]]]

@@ -1836,10 +1836,11 @@ carries no back-reference. The dataclass is `Label` (importable as
 | `rename(notebook_id, label_id, name, *, return_object=True)` | `str, str, str, *, bool` | `Label \| None` | Rename a label (preserves the existing emoji). Raises `LabelNotFoundError` if missing |
 | `set_emoji(notebook_id, label_id, emoji, *, return_object=True)` | `str, str, str, *, bool` | `Label \| None` | Set a label's emoji |
 | `update(notebook_id, label_id, *, name=None, emoji=None, return_object=True)` | `str, str, *, str \| None, str \| None, bool` | `Label \| None` | Set name and/or emoji. Raises `ValueError` if both are `None`; raises `LabelNotFoundError` if the label is missing (in both `return_object` modes) |
-| `add_sources(notebook_id, label_id, source_ids, *, return_object=True)` | `str, str, list[str], *, bool` | `Label \| None` | Add source(s) to a label. **Appends** — existing members survive and overlap with other labels is allowed. Raises `ValueError` on an empty list |
+| `add_sources(notebook_id, label_id, source_ids, *, return_object=True)` | `str, str, list[str], *, bool` | `Label \| None` | Add source(s) to a label. **Appends** — existing members survive and overlap with other labels is allowed. One RPC per id (deduped); not atomic across ids. Raises `ValueError` on an empty list |
+| `remove_sources(notebook_id, label_id, source_ids, *, return_object=True)` | `str, str, list[str], *, bool` | `Label \| None` | Un-assign source(s) from a label only — the sources survive in the notebook, and a source in another label stays there. Removing a non-member is a no-op. One RPC per id (deduped). Raises `ValueError` on an empty list |
 | `delete(notebook_id, label_ids)` | `str, str \| list[str]` | `None` | Delete one or more labels (batch). Idempotent — an absent target is a no-op returning `None`. Deleting a label does not delete its sources |
 
-For `rename`/`set_emoji`/`update`/`add_sources`, `return_object=False` returns
+For `rename`/`set_emoji`/`update`/`add_sources`/`remove_sources`, `return_object=False` returns
 `None` without re-hydrating, but the existence preflight still runs and raises
 `LabelNotFoundError` on a missing target.
 
@@ -1878,8 +1879,10 @@ await client.labels.set_emoji(nb_id, papers.id, "📚")
 await client.labels.delete(nb_id, papers.id)
 ```
 
-> **Note:** there is no captured "remove source from a label" RPC, so the API
-> has no `remove_sources`. `add_sources` only ever appends.
+> **Note:** `add_sources` appends; `remove_sources` un-assigns the source from
+> the label only (it is **not** deleted from the notebook, and stays in any other
+> label it belongs to). Both issue one `UPDATE_LABEL` per id (the wire honours
+> only the first id per call) and are not atomic across ids.
 
 ---
 

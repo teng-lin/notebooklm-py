@@ -202,9 +202,10 @@ def _label_serialize(label: Label, titles: dict[str, str | None]) -> dict[str, A
         "name": label.name,
         "emoji": label.emoji,
         "source_ids": list(label.source_ids),
-        "sources": [
-            {"id": sid, "title": titles.get(sid)} for sid in label.source_ids if sid in titles
-        ],
+        # Include EVERY member id (title=None for any source missing from the
+        # notebook list — a benign concurrent-delete race) so ``sources`` stays
+        # 1:1 with ``source_ids`` and a consumer can rely on equal lengths.
+        "sources": [{"id": sid, "title": titles.get(sid)} for sid in label.source_ids],
     }
 
 
