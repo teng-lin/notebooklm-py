@@ -675,7 +675,14 @@ def test_set_cookie_scrub_preserves_attributes() -> None:
     scrubbed = scrub_set_cookie(sc)
     assert "realtoken_value_123" not in scrubbed
     assert "NID=SCRUBBED" in scrubbed
-    for attr in ("expires=Thu", "path=/", "domain=.google.com", "HttpOnly", "Secure", "SameSite=none"):
+    for attr in (
+        "expires=Thu",
+        "path=/",
+        "domain=.google.com",
+        "HttpOnly",
+        "Secure",
+        "SameSite=none",
+    ):
         assert attr in scrubbed, f"Set-Cookie attribute {attr!r} was disturbed:\n{scrubbed}"
     # Idempotent.
     assert scrub_set_cookie(scrubbed) == scrubbed
@@ -754,5 +761,7 @@ def test_guard_flags_a_cassette_with_unscrubbed_analytics_cookie(tmp_path: Path)
     cassette_path.write_text(yaml.dump(cassette), encoding="utf-8")
 
     result = _run_guard(str(cassette_path))
-    assert result.returncode == 1, f"guard failed to flag _ga leak:\n{result.stdout}\n{result.stderr}"
+    assert result.returncode == 1, (
+        f"guard failed to flag _ga leak:\n{result.stdout}\n{result.stderr}"
+    )
     assert "_ga" in result.stdout, f"leak not named in report:\n{result.stdout}"

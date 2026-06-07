@@ -73,9 +73,7 @@ NAMESPACES: dict[str, type] = {
 # are intentionally absent — they expose none of the three. Pinned so a rename or
 # removal that makes a method silently undiscoverable fails loudly rather than
 # shrinking the parametrisation to a still-green subset.
-LOOKUP_NAMESPACES = frozenset(
-    {"notebooks", "sources", "artifacts", "notes", "mind_maps", "labels"}
-)
+LOOKUP_NAMESPACES = frozenset({"notebooks", "sources", "artifacts", "notes", "mind_maps", "labels"})
 
 # Public ``get()`` methods still annotated ``X | None`` because the flip to
 # raising ``*NotFoundError`` (and dropping ``| None``) is deferred to #1247.

@@ -696,8 +696,7 @@ def find_cookie_leaks(header_value: str, *, set_cookie: bool = False) -> list[st
         is_pair_position = (not set_cookie) or pair_index == 0
         if is_pair_position and value not in SCRUB_PLACEHOLDERS:
             leaks.append(
-                f"Leak ({shape}): cookie {name!r} value {value!r} is not a"
-                f" known scrub placeholder"
+                f"Leak ({shape}): cookie {name!r} value {value!r} is not a known scrub placeholder"
             )
         if is_pair_position:
             pair_index += 1
@@ -1052,6 +1051,8 @@ def find_cookie_header_leaks(text: str) -> list[str]:
             seen.add(run)
             leaks.extend(find_cookie_leaks(run))
     return leaks
+
+
 _DETECT_COOKIE_JSON_NAME_FIRST = re.compile(
     rf'"name"\s*:\s*"(?P<name>{_COOKIE_NAMES_GROUP})"\s*,\s*"value"\s*:\s*"'
     r'(?P<value>(?:[^"\\]|\\.)*)"'
