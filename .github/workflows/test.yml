@@ -5,9 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      custom_branch:
+        description: 'Branch/ref to test (leave empty to use the triggering ref). Use this to run the full gate against a release branch that conflicts with main and so cannot run via pull_request.'
+        required: false
+        default: ''
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Include the dispatch input so a manual run against a release branch gets its
+  # own group instead of sharing (and cancelling) the push/PR run on the
+  # triggering ref. Empty for push/pull_request, so their behavior is unchanged.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.custom_branch }}
   cancel-in-progress: true
 
 permissions:
@@ -20,6 +29,9 @@ jobs:
     steps:
     - uses: actions/checkout@v6
       with:
+        # Honor the workflow_dispatch custom_branch input; falls back to the
+        # triggering ref for push/pull_request (input is empty there).
+        ref: ${{ inputs.custom_branch || github.ref }}
         fetch-depth: 0
 
     - name: Set up Python
@@ -121,6 +133,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        # Honor the workflow_dispatch custom_branch input; falls back to the
+        # triggering ref for push/pull_request (input is empty there).
+        ref: ${{ inputs.custom_branch || github.ref }}
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v6
