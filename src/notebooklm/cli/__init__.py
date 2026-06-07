@@ -60,6 +60,7 @@ from .helpers import (
     # Decorators
     with_client,
 )
+from .label_cmd import label
 from .language_cmd import get_language, language
 from .note_cmd import note
 from .notebook_cmd import register_notebook_commands
@@ -89,6 +90,7 @@ __all__ = [
     "generate",
     "download",
     "note",
+    "label",
     "share",
     "skill",
     "research",

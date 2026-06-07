@@ -64,6 +64,7 @@ CLI_COMMAND_MODULES = {
     "doctor",
     "download",
     "generate",
+    "label",
     "language",
     "note",
     "notebook",

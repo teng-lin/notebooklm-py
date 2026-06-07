@@ -76,6 +76,7 @@ class SectionedGroup(click.Group):
                     "source",
                     "artifact",
                     "note",
+                    "label",
                     "share",
                     "research",
                     "profile",

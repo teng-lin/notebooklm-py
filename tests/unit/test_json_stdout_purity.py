@@ -36,6 +36,7 @@ from notebooklm.rpc.types import ShareAccess, ShareViewLevel
 from notebooklm.types import (
     Artifact,
     AskResult,
+    Label,
     Note,
     Notebook,
     ResearchSource,
@@ -143,6 +144,18 @@ def _stub_notes() -> list[Note]:
     ]
 
 
+def _stub_labels() -> list[Label]:
+    return [
+        Label(
+            id="lbl123def456ghi789jkl",
+            name="Papers",
+            notebook_id="abc123def456ghi789jkl",
+            emoji="📄",
+            source_ids=["src123def456ghi789jkl"],
+        ),
+    ]
+
+
 def _stub_share_status(notebook_id: str = "abc123def456ghi789jkl") -> ShareStatus:
     return ShareStatus(
         notebook_id=notebook_id,
@@ -173,6 +186,7 @@ def _make_client(extra_setup=None) -> MagicMock:
         "research",
         "notes",
         "sharing",
+        "labels",
     ):
         setattr(client, ns, MagicMock())
 
@@ -225,6 +239,18 @@ def _make_client(extra_setup=None) -> MagicMock:
     client.chat.get_conversation_id = AsyncMock(return_value=None)
     client.chat.get_history = AsyncMock(return_value=[])
 
+    # label group: list/generate echo the label set; sources expands a label to
+    # its sources; the CRUD verbs return a Label (delete -> None). resolve_label_id
+    # also walks labels.list, so the canned list backs the resolver too.
+    client.labels.list = AsyncMock(return_value=_stub_labels())
+    client.labels.generate = AsyncMock(return_value=_stub_labels())
+    client.labels.sources = AsyncMock(return_value=_stub_sources())
+    client.labels.create = AsyncMock(return_value=_stub_labels()[0])
+    client.labels.rename = AsyncMock(return_value=_stub_labels()[0])
+    client.labels.set_emoji = AsyncMock(return_value=_stub_labels()[0])
+    client.labels.add_sources = AsyncMock(return_value=_stub_labels()[0])
+    client.labels.delete = AsyncMock(return_value=None)
+
     if extra_setup is not None:
         extra_setup(client)
     return client
@@ -245,6 +271,7 @@ def _patch_modules() -> list:
         "notebooklm.cli.artifact_cmd",
         "notebooklm.cli.research_cmd",
         "notebooklm.cli.note_cmd",
+        "notebooklm.cli.label_cmd",
         "notebooklm.cli.generate_cmd",
         "notebooklm.cli.download_cmd",
     ]
@@ -489,6 +516,76 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
     ),
     # note group
     ("note_list", ["note", "list", "-n", "abc123def456ghi789jkl", "--json"], None),
+    # label group — list/sources/generate echo the label set; CRUD verbs return
+    # a Label (delete -> None). The fake client.labels is wired in _make_client.
+    ("label_list", ["label", "list", "-n", "abc123def456ghi789jkl", "--json"], None),
+    (
+        "label_sources",
+        ["label", "sources", "lbl123def456ghi789jkl", "-n", "abc123def456ghi789jkl", "--json"],
+        None,
+    ),
+    (
+        "label_generate",
+        ["label", "generate", "-n", "abc123def456ghi789jkl", "--json"],
+        None,
+    ),
+    (
+        "label_create",
+        ["label", "create", "Papers", "-n", "abc123def456ghi789jkl", "--json"],
+        None,
+    ),
+    (
+        "label_rename",
+        [
+            "label",
+            "rename",
+            "lbl123def456ghi789jkl",
+            "Articles",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "label_emoji",
+        [
+            "label",
+            "emoji",
+            "lbl123def456ghi789jkl",
+            "🔬",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "label_add",
+        [
+            "label",
+            "add",
+            "lbl123def456ghi789jkl",
+            "src123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "label_delete",
+        [
+            "label",
+            "delete",
+            "lbl123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--yes",
+            "--json",
+        ],
+        None,
+    ),
     # notebook group (top-level via session/notebook modules)
     ("notebook_list", ["list", "--json"], None),
     ("notebook_metadata", ["metadata", "-n", "abc123def456ghi789jkl", "--json"], None),

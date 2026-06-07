@@ -42,6 +42,7 @@ TRACKED_GROUPS = (
     "notebook",
     "chat",
     "note",
+    "label",
     "share",
     "research",
 )
@@ -55,6 +56,7 @@ CLICK_GROUPS = (
     "language",
     "profile",
     "note",
+    "label",
     "share",
     "research",
     "skill",
@@ -76,6 +78,7 @@ HELP_SNIPPETS = {
     "source add": ("--follow-symlinks", "--mime-type", "--json"),
     "share public": ("--enable", "--disable", "--json"),
     "research wait": ("--import-all", "--cited-only", "--timeout"),
+    "label generate": ("--scope", "all", "unlabeled", "--yes"),
 }
 
 
@@ -443,6 +446,14 @@ _JSON_CONTRACT_DUMMY_ARGS = {
     "code": "en",
     "email": "person@example.com",
     "content": "body",
+    # label group positional ARGUMENTS only (Click options like --scope/--emoji/
+    # --yes do NOT get entries here — this table is for arguments).
+    "label_ref": "lbl_1",
+    "label_refs": "lbl_1",
+    "name": "My Label",
+    "new_name": "Renamed",
+    "emoji_value": "📄",
+    "source_ids": "src_1",
 }
 
 

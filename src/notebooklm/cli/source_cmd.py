@@ -55,7 +55,7 @@ from ._source_render import (  # noqa: F401
     _validate_upload_path,
 )
 from .auth_runtime import with_client
-from .error_handler import _output_error, exit_with_code
+from .error_handler import _output_error, exit_with_code, output_error
 from .input import read_stdin_text, resolve_prompt
 from .options import (
     json_option,
@@ -76,6 +76,7 @@ from .rendering import (
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
 from .services import source_add as source_add_service
+from .services.label_listing import LabelResolutionError
 from .services.source_add import SourceAddExecutionPlan, execute_source_add
 from .services.source_clean import (
     SourceCleanResult,
@@ -146,15 +147,22 @@ def source():
 @source.command("list")
 @notebook_option
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option(
+    "--label",
+    "label_filter",
+    default=None,
+    help="Only list sources in this label (label id, partial prefix, or exact name).",
+)
 @list_options
 @with_client
-def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
+def source_list(ctx, notebook_id, json_output, label_filter, limit, no_truncate, client_auth):
     """List all sources in a notebook.
 
     \b
     Pagination & display:
       --limit N         Show at most N sources (default: unlimited).
       --no-truncate     Do not truncate the Title column in the table view.
+      --label <id|name> Restrict the listing to a label's sources (read-only).
     """
     nb_id = require_notebook(notebook_id)
 
@@ -167,8 +175,20 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
                 limit=limit,
                 no_truncate=no_truncate,
                 source_type_display=get_source_type_display,
+                label_filter=label_filter,
             )
-            render_list(await execute_source_list(client, plan))
+            try:
+                render = await execute_source_list(client, plan)
+            except LabelResolutionError as exc:
+                output_error(
+                    exc.message,
+                    code=exc.code,
+                    json_output=json_output,
+                    exit_code=1,
+                    extra=dict(exc.extra) if exc.extra else None,
+                )
+                raise AssertionError("unreachable") from None  # pragma: no cover
+            render_list(render)
 
     return _run()
 

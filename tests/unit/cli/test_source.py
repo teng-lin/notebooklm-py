@@ -178,6 +178,80 @@ class TestSourceList:
             assert result.output.count("X") < 200
             assert "…" in result.output
 
+    @pytest.mark.parametrize("output_mode", ["text", "json"])
+    def test_source_list_label_filter_restricts_to_group(self, runner, mock_auth, output_mode):
+        """`source list --label <id>` returns only the label's sources.
+
+        The filter is injected into the fetch closure so the JSON ``count``/rows
+        match the filtered set (no post-filter desync). Resolution reuses
+        ``client.labels.sources()`` for the membership set.
+        """
+        from notebooklm.types import Label
+
+        all_sources = [
+            Source(id="src_1", title="In Group"),
+            Source(id="src_2", title="Not In Group"),
+        ]
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(return_value=all_sources)
+            mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test"))
+            mock_client.labels = MagicMock()
+            mock_client.labels.list = AsyncMock(
+                return_value=[Label(id="lblaaa111", name="Papers", source_ids=["src_1"])]
+            )
+            mock_client.labels.sources = AsyncMock(return_value=[all_sources[0]])
+            mock_client_cls.return_value = mock_client
+
+            args = ["source", "list", "-n", "nb_123", "--label", "lblaaa111"]
+            if output_mode == "json":
+                args.append("--json")
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, args)
+
+            assert result.exit_code == 0, result.output
+            if output_mode == "json":
+                data = json.loads(result.output)
+                # Envelope key stays "sources"; count + rows match filtered set.
+                assert "sources" in data
+                assert data["count"] == 1
+                assert [s["id"] for s in data["sources"]] == ["src_1"]
+            else:
+                assert "src_1" in result.output
+                assert "src_2" not in result.output
+
+    def test_source_list_label_filter_by_name(self, runner, mock_auth):
+        """`source list --label <name>` resolves the label name before filtering."""
+        from notebooklm.types import Label
+
+        all_sources = [Source(id="src_1", title="In Group"), Source(id="src_2", title="Out")]
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(return_value=all_sources)
+            mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test"))
+            mock_client.labels = MagicMock()
+            mock_client.labels.list = AsyncMock(
+                return_value=[Label(id="lblaaa111", name="Papers", source_ids=["src_1"])]
+            )
+            mock_client.labels.sources = AsyncMock(return_value=[all_sources[0]])
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["source", "list", "-n", "nb_123", "--label", "Papers", "--json"]
+                )
+
+            assert result.exit_code == 0, result.output
+            mock_client.labels.sources.assert_awaited_once_with("nb_123", "lblaaa111")
+            data = json.loads(result.output)
+            assert [s["id"] for s in data["sources"]] == ["src_1"]
+
 
 # =============================================================================
 # SOURCE ADD TESTS

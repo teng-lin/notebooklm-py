@@ -90,6 +90,11 @@ GROUP_COVERAGE: dict[str, str] = {
 COVERAGE_EXEMPT: dict[str, str] = {
     "research": _REASON_NEEDS_RECORDING,
     "auth": _REASON_NEEDS_RECORDING,
+    # ``label`` builds a NotebookLMClient (RPC path: list/generate/create/update/
+    # delete) but has no cassettes yet — it flips on when a maintainer records
+    # the ``label`` cli_vcr cassettes (#1452 Phase 3 / source-labels follow-up),
+    # mirroring the ``research``/``auth`` needs-recording posture.
+    "label": _REASON_NEEDS_RECORDING,
     "agent": _REASON_LOCAL_ONLY,
     "skill": _REASON_LOCAL_ONLY,
 }

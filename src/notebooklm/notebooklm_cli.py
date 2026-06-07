@@ -98,6 +98,7 @@ from .cli import (
     artifact,
     download,
     generate,
+    label,
     language,
     note,
     profile,
@@ -244,6 +245,7 @@ cli.add_command(agent)
 cli.add_command(generate)
 cli.add_command(download)
 cli.add_command(note)
+cli.add_command(label)
 cli.add_command(share)
 cli.add_command(skill)
 cli.add_command(research)

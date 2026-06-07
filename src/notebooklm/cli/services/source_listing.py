@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ...types import Source, SourceType, source_status_to_str
+from .label_listing import resolve_label_id
 from .listing import ListRender, ListSpec, prepare_list
 from .source_serializers import source_summary_payload
 
@@ -30,24 +31,46 @@ class SourceListPlan:
     limit: int | None
     no_truncate: bool
     source_type_display: Callable[[SourceType], str]
+    # When set, restrict the listing to the sources in this label (id or name).
+    # The filter is applied INSIDE the fetch closure so ``prepare_list``'s
+    # ``count``/rows match the filtered set (no post-filter desync).
+    label_filter: str | None = None
 
 
-def _build_spec(source_type_display: Callable[[SourceType], str]) -> ListSpec[Source]:
+def _build_spec(
+    source_type_display: Callable[[SourceType], str],
+    *,
+    label_filter: str | None = None,
+    json_output: bool = False,
+) -> ListSpec[Source]:
     """Build the ``ListSpec`` for ``source list``.
 
     Factored out of ``execute_source_list`` so unit tests can introspect
     the column / serialize shape directly without running the full
-    pipeline.
+    pipeline. When ``label_filter`` is set, the ``fetch`` closure resolves the
+    label ``<id|name>`` and returns ``client.labels.sources()`` (the group's
+    members) instead of the full notebook source list — so the filter is applied
+    before ``prepare_list`` counts/slices.
     """
 
     async def envelope_extras(client: NotebookLMClient, notebook_id: str) -> dict[str, str | None]:
         nb = await client.notebooks.get(notebook_id)
         return {"notebook_id": notebook_id, "notebook_title": nb.title if nb else None}
 
+    async def fetch(client: NotebookLMClient, notebook_id: str) -> list[Source]:
+        if label_filter is not None:
+            label_id = await resolve_label_id(
+                client, notebook_id, label_filter, json_output=json_output
+            )
+            # ``labels.sources()`` returns the group's members (joined from a
+            # single ``sources.list()``), so the filtered set is fetched once.
+            return await client.labels.sources(notebook_id, label_id)
+        return await client.sources.list(notebook_id)
+
     return ListSpec(
         title="Sources in {notebook_id}",
         items_key="sources",
-        fetch=lambda client, notebook_id: client.sources.list(notebook_id),
+        fetch=fetch,
         serialize=lambda src: {
             **source_summary_payload(src),
             "status": source_status_to_str(src.status),
@@ -68,7 +91,11 @@ def _build_spec(source_type_display: Callable[[SourceType], str]) -> ListSpec[So
 
 async def execute_source_list(client: NotebookLMClient, plan: SourceListPlan) -> ListRender[Source]:
     """Fetch and prepare the source list render payload."""
-    spec = _build_spec(plan.source_type_display)
+    spec = _build_spec(
+        plan.source_type_display,
+        label_filter=plan.label_filter,
+        json_output=plan.json_output,
+    )
     return await prepare_list(
         spec,
         client,

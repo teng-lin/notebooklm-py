@@ -44,6 +44,7 @@ RENAMED_MODULES = (
     "doctor",
     "download",
     "generate",
+    "label",
     "language",
     "note",
     "notebook",
@@ -55,7 +56,7 @@ RENAMED_MODULES = (
     "source",
 )
 
-# Of those 15, the click groups still re-exported under their historical names
+# Of those 16, the click groups still re-exported under their historical names
 # from ``cli/__init__.py`` (`__all__`). ``chat``/``doctor``/``notebook`` and
 # ``session`` instead expose ``register_*`` helpers, so the click group is
 # attached at registration time rather than re-exported as a top-level name.
@@ -64,6 +65,7 @@ CLICK_GROUPS_PUBLIC = (
     "artifact",
     "download",
     "generate",
+    "label",
     "language",
     "note",
     "profile",
