@@ -39,11 +39,15 @@ README_LINK_RE = re.compile(r"\]\((?!https?://|#|mailto:)([^)]+)\)")
 def _readme_relative_targets() -> set[str]:
     text = README_MD.read_text(encoding="utf-8")
     targets: set[str] = set()
-    for raw in README_LINK_RE.findall(text):
-        # Drop any anchor/query suffix; we only care about the path prefix.
-        path = raw.split("#", 1)[0].split("?", 1)[0]
-        if path:
-            targets.add(path)
+    for target in README_LINK_RE.findall(text):
+        # Keep the literal link target as written (including any ``#anchor`` or
+        # ``?query`` suffix). hatch-fancy-pypi-readme runs its substitution
+        # regexes against the raw README text, and the exact-file patterns are
+        # ``)``-anchored (e.g. ``\]\(AGENTS\.md\)``), so ``](AGENTS.md#x)`` is
+        # NOT rewritten and would 404. Stripping the suffix here would mask that
+        # exact regression the guardrail exists to catch.
+        if target:
+            targets.add(target)
     return targets
 
 
