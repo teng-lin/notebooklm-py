@@ -117,7 +117,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     assert call["url"] == "https://fake/url"
     assert call["headers"] == {}
     assert call["body"] == b"body"
-    assert call["read_timeout"] is None
+    assert call.get("read_timeout") is None
 
 
 @pytest.mark.asyncio
@@ -160,7 +160,7 @@ async def test_chain_routes_rpc_executor_path_to_transport() -> None:
     assert call["url"] == "https://fake/rpc"
     assert call["headers"] == {"X-Goog-AuthUser": "0"}
     assert call["body"] == b"rpc-body"
-    assert call["read_timeout"] is None
+    assert call.get("read_timeout") is None
 
 
 @pytest.mark.asyncio
@@ -380,7 +380,7 @@ async def test_chain_terminal_forwards_read_timeout_context() -> None:
     result = await core._composed.chain_host._authed_post_chain_terminal(request)
 
     assert result.response is expected_response
-    assert fake.calls[0]["read_timeout"] == 123.0
+    assert fake.calls[0].get("read_timeout") == 123.0
 
 
 def test_build_chain_empty_returns_terminal_unchanged() -> None:

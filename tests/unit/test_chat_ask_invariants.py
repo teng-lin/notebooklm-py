@@ -117,9 +117,10 @@ class TestChatTimeoutRouting:
         )
 
         assert result.answer == "Refactor answer is long enough."
-        assert transport.perform_authed_post.await_args.kwargs["read_timeout"] == 45.0
+        assert transport.perform_authed_post.await_args.kwargs.get("read_timeout") == 45.0
         assert (
-            transport.perform_authed_post.await_args.kwargs["disable_read_timeout_retries"] is True
+            transport.perform_authed_post.await_args.kwargs.get("disable_read_timeout_retries")
+            is True
         )
 
 
