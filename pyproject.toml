@@ -97,6 +97,14 @@ replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/L
 pattern = '\]\(SKILL\.md\)'
 replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/SKILL.md)'
 
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\(AGENTS\.md\)'
+replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/AGENTS.md)'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\(CONTRIBUTING\.md\)'
+replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/CONTRIBUTING.md)'
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/notebooklm"]
 force-include = {"SKILL.md" = "notebooklm/data/SKILL.md", "AGENTS.md" = "notebooklm/data/CODEX.md"}
