@@ -1,7 +1,13 @@
 # Source Labels — Proposed API Design
 
 **Status:** Proposed (design only — not implemented)
-**Last Updated:** 2026-06-07 (AI-grouping primitive named `generate(scope="all"|"unlabeled")` — the UI's "Reorganize" verb — replacing the earlier `auto_label`; safe default `scope="unlabeled"`. RPCMethod names follow the enum convention — singular mutations `CREATE_LABEL` / `UPDATE_LABEL` / `DELETE_LABEL` (the multi-mode `CREATE_LABEL`, id `agX4Bc`, backs both `generate` and `create`), plural `LIST_LABELS`. Oracle/momus fix pass folded in: root re-exports of `Label`/`LabelError`/`LabelNotFoundError` from `notebooklm/__init__.py`; `delete()` idempotent-no-op contract and `rename()` emoji-preservation contract clarified; CLI confirm standardized on `--yes/-y`; `safe_index` wording softened for the `NOTEBOOKLM_STRICT_DECODE=0` opt-out.)
+**Last Updated:** 2026-06-07 (**source removal added**: live capture confirmed `le8sX`
+removes via the third fieldmask slot `sources_remove`, so the design now includes
+`labels.remove_sources()` + a `label remove` CLI command + a `remove_sources`
+idempotency variant `IDEMPOTENT_SET_OP`. Also confirmed **one source per le8sX
+call** — `add_sources`/`remove_sources` loop per id, and the prior multi-id add
+builder shape was corrected to singular. See `rpc.md` "Confirmed (2026-06-07)".)
+**Earlier (2026-06-07):** (AI-grouping primitive named `generate(scope="all"|"unlabeled")` — the UI's "Reorganize" verb — replacing the earlier `auto_label`; safe default `scope="unlabeled"`. RPCMethod names follow the enum convention — singular mutations `CREATE_LABEL` / `UPDATE_LABEL` / `DELETE_LABEL` (the multi-mode `CREATE_LABEL`, id `agX4Bc`, backs both `generate` and `create`), plural `LIST_LABELS`. Oracle/momus fix pass folded in: root re-exports of `Label`/`LabelError`/`LabelNotFoundError` from `notebooklm/__init__.py`; `delete()` idempotent-no-op contract and `rename()` emoji-preservation contract clarified; CLI confirm standardized on `--yes/-y`; `safe_index` wording softened for the `NOTEBOOKLM_STRICT_DECODE=0` opt-out.)
 **Wire source of truth:** [`rpc.md`](./rpc.md) (reverse-engineered RPC capture)
 **Convention sources:** `docs/conventions.md`, `docs/python-api.md`,
 `docs/rpc-development.md`, the ADRs in `docs/adr/`, and the existing `SharingAPI`
@@ -42,9 +48,12 @@ resource-API conventions, and designs forward-compat for **artifact labels**
    empty label — acceptable, and identical to every existing row adapter; **name
    and id drift still raise** regardless of the opt-out.
 5. **Honor observed semantics.** Source assignment is **append**, labels may
-   **overlap** sources, and there is **no captured "remove source from label"**
-   RPC (see `rpc.md`). The API reflects this and refuses to guess
-   uncaptured wire.
+   **overlap** sources, and source **removal** is supported via the third
+   `le8sX` fieldmask slot (`sources_remove`) even though the web UI never sends
+   it — confirmed empirically 2026-06-07 (see `rpc.md`). Both add and remove are
+   **one source per call** (the server honours only the first id), so the API
+   loops per id. The API reflects exactly what the wire was proven to do and
+   refuses to guess anything still uncaptured.
 
 ---
 
@@ -56,7 +65,8 @@ resource-API conventions, and designs forward-compat for **artifact labels**
 | `agX4Bc` (slot `[5]` manual) | `CREATE_LABEL` (same id) | `labels.create(nb, name, emoji="")` |
 | `I3xc3c` | `LIST_LABELS` | `labels.list(nb)`, `labels.get(nb, id)`, `labels.get_or_none(nb, id)` |
 | `le8sX` (name_emoji group) | `UPDATE_LABEL` | `labels.rename(...)`, `labels.set_emoji(...)`, `labels.update(...)` |
-| `le8sX` (sources group) | `UPDATE_LABEL` (same id, variant `add_sources`) | `labels.add_sources(...)` |
+| `le8sX` (`sources_add` group) | `UPDATE_LABEL` (same id, variant `add_sources`) | `labels.add_sources(...)` |
+| `le8sX` (`sources_remove` group) | `UPDATE_LABEL` (same id, variant `remove_sources`) | `labels.remove_sources(...)` |
 | `GyzE7e` | `DELETE_LABEL` | `labels.delete(nb, ids)` |
 
 ---
@@ -105,7 +115,9 @@ registry.register(
     notes="Batch delete-by-id; already-absent retry behavior unverified.",
 )
 # UPDATE_LABEL: rename/emoji are set-state (idempotent); add_sources APPENDS
-# (re-adding on retry may double-insert — dedup-on-retry unverified).
+# (re-adding on retry may double-insert — dedup-on-retry unverified);
+# remove_sources is naturally idempotent (removing an absent member is a
+# confirmed no-op, rpc.md 2026-06-07), so it is retry-safe.
 registry.register(
     RPCMethod.UPDATE_LABEL, IdempotencyPolicy.IDEMPOTENT_SET_OP,
     notes="Default variant: rename / set-emoji are set-state.",
@@ -114,6 +126,11 @@ registry.register(
     RPCMethod.UPDATE_LABEL, IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
     variant="add_sources",
     notes="Membership append; dedup-on-retry unverified (rpc.md).",
+)
+registry.register(
+    RPCMethod.UPDATE_LABEL, IdempotencyPolicy.IDEMPOTENT_SET_OP,
+    variant="remove_sources",
+    notes="Membership remove; no-op on an absent member (confirmed), so retry-safe.",
 )
 # CREATE_LABEL: manual-create has no client dedupe key; scope='all'
 # regenerates every label with NEW ids (destructive). Neither is retry-safe.
@@ -124,15 +141,17 @@ registry.register(
 ```
 
 The `add_sources` method (§7) passes `operation_variant="add_sources"` so the
-executor selects the `NON_IDEMPOTENT_NO_RETRY` variant policy.
+executor selects the `NON_IDEMPOTENT_NO_RETRY` variant policy; `remove_sources`
+(§7) passes `operation_variant="remove_sources"` for its `IDEMPOTENT_SET_OP`
+policy.
 
 > **Variant threading (required):** once a method has *any* explicit variant row,
 > `IdempotencyRegistry` raises `IdempotencyVariantError` for an *unknown* non-None
 > variant. `rename`, `set_emoji`, and `update` therefore pass
 > `operation_variant=None` (resolving to the `IDEMPOTENT_SET_OP` default) — do
-> **not** invent a `"rename"`/`"emoji"` variant string. Only `add_sources` passes
-> a registered variant (`"add_sources"`). (Mirrors `CREATE_NOTE`, which registers
-> `None` + named variants explicitly.)
+> **not** invent a `"rename"`/`"emoji"` variant string. Only `add_sources` and
+> `remove_sources` pass registered variant strings. (Mirrors `CREATE_NOTE`, which
+> registers `None` + named variants explicitly.)
 
 ---
 
@@ -180,23 +199,33 @@ def build_update_label_params(
     *,
     name: str | None = None,
     emoji: str | None = None,
-    add_source_ids: list[str] | None = None,
+    add_source_id: str | None = None,
+    remove_source_id: str | None = None,
 ) -> list[Any]:
-    """UPDATE_LABEL (le8sX). Fieldmask slot[3] = [[ name_emoji, sources ]]:
+    """UPDATE_LABEL (le8sX). Fieldmask slot[3] = [[ name_emoji, add, remove ]]:
       * name_emoji = [name, emoji] — positional. A rename sends a length-1
         [name] (matches the captured rename). Whether a length-1 name_emoji
         PRESERVES an existing emoji vs clears it is UNVERIFIED (§15) — the
         capture only proves rename and emoji-set in isolation. Until confirmed,
         treat name-only update as "name set; emoji effect unknown".
-      * sources    = [[source_id], ...] — APPENDS; omit leaves unchanged
+      * add        = [[source_id]] at slot[3][0][1] — APPENDS one source.
+      * remove     = [[source_id]] at slot[3][0][2] — un-assigns one source
+        (confirmed 2026-06-07); the source is NOT deleted from the notebook.
+
+    SINGULAR by design: the server honours only the FIRST id of each group per
+    call (confirmed 2026-06-07), so this builder takes one add id and/or one
+    remove id; the API loops one call per source (§7). A combined add+remove in
+    one call dropped the add on the wire — the API never sends both together.
     """
-    group: list[Any] = []
+    name_emoji: Any = None
     if name is not None or emoji is not None:
-        group.append([name] if emoji is None else [name, emoji])
-    else:
-        group.append(None)
-    if add_source_ids:
-        group.append([[sid] for sid in add_source_ids])  # each id in its own 1-list
+        name_emoji = [name] if emoji is None else [name, emoji]
+    group: list[Any] = [name_emoji]
+    if remove_source_id is not None:
+        group.append([[add_source_id]] if add_source_id is not None else None)  # slot[1]
+        group.append([[remove_source_id]])                                      # slot[2]
+    elif add_source_id is not None:
+        group.append([[add_source_id]])                                         # slot[1]
     return [_opts(), notebook_id, label_id, [group]]
 
 
@@ -487,24 +516,55 @@ async def add_sources(self, notebook_id, label_id, source_ids, *, return_object=
     Raises ValueError on an empty `source_ids` BEFORE issuing any RPC — an empty
     add is a no-op fieldmask and must fail loud, never round-trip to the wire.
 
-    NOTE: this is intentionally a **2-RPC** op — the write, then a
-    contract-load-bearing preflight re-fetch (`get_or_none`) that backs the
-    ADR-0019 return/not-found contract (`le8sX` echoes `[]`, carrying no label to
-    return, and the existence check must raise on a missing label even when
-    `return_object=False`). The second fetch is **NOT removable** — unlike
+    ONE le8sX call PER source: the server honours only the first id of the add
+    group per call (confirmed 2026-06-07), so a single multi-id call would
+    silently drop all but the first. The method therefore loops `len(source_ids)`
+    writes, then a contract-load-bearing preflight re-fetch (`get_or_none`) that
+    backs the ADR-0019 return/not-found contract (`le8sX` echoes `[]`, carrying no
+    label to return, and the existence check must raise on a missing label even
+    when `return_object=False`). The final fetch is **NOT removable** — unlike
     `sources.rename`'s 1-RPC fast path, the label wire gives no return payload."""
     if not source_ids:
         raise ValueError("add_sources requires at least one source id")
     logger.debug("Adding %d source(s) to label %s", len(source_ids), label_id)
-    await self._rpc.rpc_call(
-        RPCMethod.UPDATE_LABEL,
-        build_update_label_params(notebook_id, label_id, add_source_ids=source_ids),
-        source_path=f"/notebook/{notebook_id}",
-        allow_null=True,                       # decode tolerance for the [] echo
-        operation_variant="add_sources",       # → NON_IDEMPOTENT_NO_RETRY (§4)
-    )
+    for sid in source_ids:                     # one call per source (wire honours first id only)
+        await self._rpc.rpc_call(
+            RPCMethod.UPDATE_LABEL,
+            build_update_label_params(notebook_id, label_id, add_source_id=sid),
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,                   # decode tolerance for the [] echo
+            operation_variant="add_sources",   # → NON_IDEMPOTENT_NO_RETRY (§4)
+        )
     # le8sX echoes [] — re-fetch to honor the return contract. The existence
     # check runs even when return_object=False (raises on a missing label).
+    label = await self.get_or_none(notebook_id, label_id)
+    if label is None:
+        raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)
+    return label if return_object else None
+
+async def remove_sources(self, notebook_id, label_id, source_ids, *, return_object=True) -> Label | None:
+    """Un-assign source(s) from a label (UPDATE_LABEL, variant 'remove_sources').
+
+    Removes via the third fieldmask slot (`sources_remove`); the source is NOT
+    deleted from the notebook (un-assign only) and removal is label-scoped — a
+    source belonging to other labels stays in them (overlap preserved). Removing
+    a source that is not a member is a confirmed no-op (idempotent). Removing the
+    last member leaves the label present but empty.
+
+    Mirrors `add_sources`: ValueError on empty `source_ids` before any RPC; ONE
+    le8sX call PER source (first-id-only wire); a trailing `get_or_none` preflight
+    backing the ADR-0019 return/not-found contract."""
+    if not source_ids:
+        raise ValueError("remove_sources requires at least one source id")
+    logger.debug("Removing %d source(s) from label %s", len(source_ids), label_id)
+    for sid in source_ids:                     # one call per source (wire honours first id only)
+        await self._rpc.rpc_call(
+            RPCMethod.UPDATE_LABEL,
+            build_update_label_params(notebook_id, label_id, remove_source_id=sid),
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,                   # decode tolerance for the [] echo
+            operation_variant="remove_sources",  # → IDEMPOTENT_SET_OP (§4)
+        )
     label = await self.get_or_none(notebook_id, label_id)
     if label is None:
         raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)
@@ -666,11 +726,18 @@ per above, the source-label public surface does not move.
   retry-safety is the §4 registry classification.
 - **Append, not replace.** `add_sources` sends only the new IDs; existing members
   survive (confirmed). No `set_sources` (full-replace) until the wire supports it.
+- **One source per le8sX call.** Both add and remove honour only the first id of
+  their group per call (confirmed 2026-06-07), so `add_sources`/`remove_sources`
+  loop one call per id. A combined add+remove in one call dropped the add — the
+  API never sends both groups together.
 - **Overlap allowed.** A source can be in multiple labels; `add_sources` never
-  removes from other labels.
-- **No "remove source from label" RPC captured.** Do not ship a `remove_sources`
-  that guesses the wire. The source-row "Remove source" UI action deletes the
-  source from the *notebook* (that's `sources.delete`, RPC `tGMBJ`) — different op.
+  removes from other labels, and `remove_sources` only touches the target label.
+- **Source removal IS supported (confirmed 2026-06-07).** `remove_sources` writes
+  the third `le8sX` fieldmask slot (`sources_remove`) — un-assigns the source
+  without deleting it (idempotent no-op on a non-member; emptying a label leaves
+  it present). The web UI has no control for it. This is distinct from the
+  source-row "Remove source" UI action, which deletes the source from the
+  *notebook* (`sources.delete`, RPC `tGMBJ`).
 - **`scope="all"` wipes labels** (regenerates with new ids). Surface the risk in
   docstring + a CLI `--yes/-y` confirm gate.
 - **`at` CSRF token** auto-injected by `encoder.py`; no API concern.
@@ -702,9 +769,16 @@ notebooklm label generate   -n <nb> [--scope all|unlabeled] [--yes]  # confirm o
 notebooklm label create  -n <nb> <name> [--emoji 📄]
 notebooklm label rename  -n <nb> <id|name> <new_name>
 notebooklm label emoji   -n <nb> <id|name> <emoji>
-notebooklm label add     -n <nb> <id|name> <source_id>...       # add_sources (append)
+notebooklm label add     -n <nb> <id|name> <source_id>...       # add_sources (append; one call/source)
+notebooklm label remove  -n <nb> <id|name> <source_id>...       # remove_sources (un-assign; NOT delete source)
 notebooklm label delete  -n <nb> <id|name>... [--yes]           # deletes the LABEL only, not its sources
 ```
+
+`label remove` un-assigns sources from the label via `client.labels.remove_sources()`;
+it is the inverse of `label add` and is **distinct from `label delete`** (which
+deletes the label entity). It does **not** delete the sources from the notebook, so
+it needs no `--yes` gate (non-destructive — the sources survive). Its `<source_id>...`
+go through `resolve_source_ids` like `label add`.
 
 `label sources` (CLI) **delegates to `client.labels.sources()`** (§7) — the
 membership→Source join is single-sourced in the API, not re-implemented in the
@@ -788,11 +862,12 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
 ## 13. Implementation checklist
 
 1. `rpc/types.py` — add 4 `RPCMethod` members (§3).
-2. `_idempotency_policy.py` — register all 4 (incl. `add_sources` variant) (§4). **[CI gate]**
+2. `_idempotency_policy.py` — register all 4 (incl. `add_sources` + `remove_sources` variants) (§4). **[CI gate]**
 3. `_types/labels.py` — `Label` model (§6); re-export via `types.py` (+`__module__`, `__all__`).
 4. `_label/params.py` — builders w/ `_opts()` (§5).
 5. `_row_adapters/labels.py` — strict `LabelRow` via `safe_index` (§6).
-6. `_labels.py` — `LabelsAPI(rpc, *, list_sources)`, incl. read-only `sources()` (§7).
+6. `_labels.py` — `LabelsAPI(rpc, *, list_sources)`, incl. read-only `sources()`,
+   `add_sources`/`remove_sources` (both loop one call per source) (§7).
 7. `exceptions.py` — `LabelError`, `LabelNotFoundError` + `__all__` + `NotFoundError` doc (§8).
 8. `client.py` — `self.labels = LabelsAPI(internals.executor, list_sources=self.sources.list)`
    (after `self.sources`) + docstring (§9). (`_labels.py`/`LabelsAPI` stay private;
@@ -805,9 +880,10 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
 10. `cli/services/label_listing.py` — the join (members→titles) + composite
     `resolve_label_id()` (id/prefix OR exact-name, ambiguity error) (§12, ADR-0008).
 11. `cli/label_cmd.py` (thin shell; `sources` via `client.labels.sources()`;
-    `label add` ids via `resolve_source_ids`); export from `cli/__init__.py`; bin in
-    `cli/grouped.py` `command_groups`. Add `label_filter` to `SourceListPlan` +
-    intersect in `cli/services/source_listing.py` for `source list --label` (§12).
+    `label add`/`label remove` ids via `resolve_source_ids`); export from
+    `cli/__init__.py`; bin in `cli/grouped.py` `command_groups`. Add `label_filter`
+    to `SourceListPlan` + intersect in `cli/services/source_listing.py` for
+    `source list --label` (§12).
 12. `docs/rpc-reference.md`, `docs/python-api.md`, `docs/stability.md` updates (§9).
 13. `CLAUDE.md` — **HARD gate** (`tests/unit/test_claude_md_freshness.py`): every
     new src file must appear in **both** CLAUDE.md's file-table **and** the
@@ -820,9 +896,10 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
 ## 14. Testing
 
 - **Idempotency registry (ADR-0005 gate):** the 4 methods are classified —
-  `test_idempotency_registry.py` passes. Add an **explicit** assertion that
-  `(UPDATE_LABEL, "add_sources") == NON_IDEMPOTENT_NO_RETRY` — the default-entry
-  test won't catch a missing variant because lookup falls back to the default.
+  `test_idempotency_registry.py` passes. Add **explicit** assertions that
+  `(UPDATE_LABEL, "add_sources") == NON_IDEMPOTENT_NO_RETRY` **and**
+  `(UPDATE_LABEL, "remove_sources") == IDEMPOTENT_SET_OP` — the default-entry test
+  won't catch a missing/wrong variant because lookup falls back to the default.
 - **Public-API contract + behavior (ADR-0019):** register `labels` in **both**
   `test_public_api_contract.py` (static: `get → Label`, `get_or_none →
   Label | None`, `delete → None`) and `test_public_api_behavior.py` (behavioral:
@@ -830,19 +907,23 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
   `return_object=False`). Also add `"labels"` to `audit_public_api_compat.py`'s
   `CLIENT_NAMESPACE_ATTRIBUTES` so method-level drift is audited.
 - **Unit (builders):** exact payloads incl. fresh `_opts()`, scope flags,
-  append-only fieldmask, `[[id],...]` wrapping.
+  single-source add fieldmask `[[None, [[id]]]]`, single-source remove fieldmask
+  `[[None, None, [[id]]]]`, `[[id]]` wrapping.
 - **Unit (row adapter):** canary tests for tuple positions; `sources is None`
   empty-label case; **drift raises** (missing/typed-wrong slots), not sentinels;
   separate envelope tests for `agX4Bc` (`[None,[...]]`) vs `I3xc3c` (`[[...]]`).
 - **Integration:** mock `RpcCaller`; assert each method → right `RPCMethod` +
-  params + `source_path` (+ `operation_variant="add_sources"`); `labels.sources()`
+  params + `source_path` (+ `operation_variant="add_sources"` /
+  `"remove_sources"`); assert `add_sources`/`remove_sources` issue **one
+  `rpc_call` per source id** (multi-id → N calls, not 1); `labels.sources()`
   joins membership with the source list.
 - **CLI/agent (§12):** `resolve_label_id` errors on an ambiguous name (lists
   candidates) and id-vs-name precedence (incl. a UUID-shaped name); `label sources`
   and `source list --label` (via `SourceListPlan.label_filter`) return the group's
-  sources; `label list --json` uses the `{"labels":[...],"count":N}` envelope with
-  member ids + titles from a single `sources.list()` (no N+1); grouped-help
-  registration (`test_grouped.py` — no orphan command).
+  sources; `label add`/`label remove` round-trip through `client.labels`; `label
+  list --json` uses the `{"labels":[...],"count":N}` envelope with member ids +
+  titles from a single `sources.list()` (no N+1); grouped-help registration
+  (`test_grouped.py` — no orphan command).
 - **E2E:** read-only `list` on a fixture notebook; mutations manual/gated per
   `docs/rpc-development.md`.
 
@@ -861,6 +942,10 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
   documenting `update(name=...)` as emoji-preserving.
 - **`create` echo** — confirm locating the new label in the returned full set
   (match on the id not present pre-call rather than by name).
-- **Source removal from a label** — wire uncaptured (no API until then).
+- ~~**Source removal from a label**~~ — **RESOLVED 2026-06-07.** `le8sX` removes
+  via the third fieldmask slot (`sources_remove`); `remove_sources` ships it (§7,
+  §11). Residual: combined add+remove in one call dropped the add (the API never
+  sends both groups together), and the one-source-per-call wire limit means both
+  add and remove loop per id — both reflected in the design, not open risks.
 - **Artifact-label wire shape** — capture when the feature ships (§10); drives
   the `LabelService` extraction + `ArtifactLabelsAPI`.

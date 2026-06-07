@@ -188,12 +188,16 @@ you want to change.
 params = [OPTS, notebook_id, label_id, fieldmask]
 
 # fieldmask shape:
-#   [[ name_emoji, sources ]]
-#      └ slot[3][0][0]   └ slot[3][0][1]
+#   [[ name_emoji, sources_add, sources_remove ]]
+#      └ slot[3][0][0]   └ slot[3][0][1]   └ slot[3][0][2]
 #
-#   name_emoji = [name, emoji]   positional; None (or omit) = leave unchanged
-#   sources    = [[source_id], ...]   each source UUID wrapped in a 1-element list;
-#                                      absent = leave unchanged
+#   name_emoji     = [name, emoji]    positional; None (or omit) = leave unchanged
+#   sources_add    = [[source_id]]    source UUID wrapped in a 1-element list; absent = no add
+#   sources_remove = [[source_id]]    source UUID wrapped in a 1-element list; absent = no remove
+#
+# IMPORTANT: each call processes only ONE source — the server honours just the
+# FIRST entry of sources_add and the FIRST entry of sources_remove. To touch N
+# sources, make N calls. (Confirmed 2026-06-07; see "one source per call" below.)
 ```
 
 ### Variants
@@ -205,25 +209,45 @@ params = [OPTS, notebook_id, label_id, [[[new_name]]]]
 # Set emoji (name slot None, emoji set; sources omitted)
 params = [OPTS, notebook_id, label_id, [[[None, emoji]]]]
 
-# Add source(s) to the label (name_emoji = None, sources set)
+# Add ONE source to the label (name_emoji = None, sources_add set)
 params = [OPTS, notebook_id, label_id, [[None, [[source_id]]]]]
+
+# Remove ONE source from the label (name_emoji = None, sources_add = None, sources_remove set)
+params = [OPTS, notebook_id, label_id, [[None, None, [[source_id]]]]]
 ```
 
-This is how a source is added to a label (the UI's source-row **"Move to"**
-action). Set the `sources` group while leaving `name_emoji` as `None`.
+Adding a source is the UI's source-row **"Move to"** action. **Removing** a
+source from a label has **no UI control** (the source-row "Remove source"
+deletes the source from the *notebook*), but the RPC supports it via the third
+fieldmask slot — confirmed empirically (2026-06-07, see below).
 
-> **`sources` is APPEND, not replace — confirmed (2026-06-06).** Adding one
+> **`sources_add` is APPEND, not replace — confirmed (2026-06-06).** Adding one
 > source to a label that already had 3 sent only the single new ID
-> (`sources = [["<new>"]]`) and the label went from 3 → 4 sources — the existing
-> members were preserved. So send **only the source(s) you want to add**, not the
-> full list.
+> (`sources_add = [["<new>"]]`) and the label went from 3 → 4 sources — the
+> existing members were preserved. So send **only the source you want to add**.
 
-> **Labels may overlap — confirmed (2026-06-06).** The source added above
-> remained in its original label as well, so it ended up in **two** labels at
-> once. Only one `le8sX` (the append) fired; no removal occurred. The model is
-> effectively **many-to-many** — a label owns a list of source IDs and nothing
-> enforces a source belonging to a single label. (The source-row menu is labeled
-> "Move to" but behaved as "add to".)
+> **Source removal works via `sources_remove` (slot `[3][0][2]`) — confirmed
+> (2026-06-07).** Sending `[[None, None, [[source_id]]]]` against a label holding
+> `{A, B, C}` removed exactly that source, leaving `{A, B}`. The removed source
+> **still exists in the notebook** (it is un-assigned, not deleted), and removal
+> is **isolated to the target label** — a source that also belongs to another
+> label stays in that other label (overlap preserved). Removing a non-member is a
+> silent no-op (`[]`, no error). Removing the last member leaves the label present
+> but empty. The web UI simply never sends this slot.
+
+> **One source per call — confirmed (2026-06-07).** `le8sX` honours only the
+> **first** entry of `sources_add` and the **first** of `sources_remove`. Sending
+> `sources_add = [[A], [B], [C]]` added only `A`; sending `sources_remove =
+> [[A], [B]]` removed only `A`. To add/remove N sources, issue N separate calls.
+> A combined add+remove in one call is also unreliable — `[[None, [[C]], [[A]]]]`
+> against `{A, B}` removed `A` but did **not** add `C` (ended `{B}`); keep adds
+> and removes in separate calls.
+
+> **Labels may overlap — confirmed (2026-06-06).** A source added to a second
+> label remained in its original label too, so it ended up in **two** labels at
+> once. The model is effectively **many-to-many** — a label owns a list of source
+> IDs and nothing enforces a source belonging to a single label. (The source-row
+> menu is labeled "Move to" but behaves as "add to".)
 
 **Response:** `[]` on success.
 
@@ -272,25 +296,51 @@ labels.list(notebook_id)                           # -> I3xc3c
 
 # Mutate (all via le8sX; set only the fields you want to change)
 labels.update(notebook_id, label_id, name=None, emoji=None)  # -> le8sX (name_emoji group)
-labels.add_sources(notebook_id, label_id, source_ids)        # -> le8sX (sources group; APPENDS)
+labels.add_sources(notebook_id, label_id, source_ids)        # -> le8sX (sources_add; one call PER source)
+labels.remove_sources(notebook_id, label_id, source_ids)     # -> le8sX (sources_remove; one call PER source)
 labels.delete(notebook_id, label_ids)              # -> GyzE7e (accepts a list)
 ```
 
-> `add_sources` appends — it does **not** remove the sources from any other label
-> (sources may belong to multiple labels).
+> Both `add_sources` and `remove_sources` must issue **one `le8sX` call per
+> source** (the server honours only the first id per call — see "one source per
+> call"). `add_sources` appends and `remove_sources` un-assigns; neither touches
+> any *other* label's membership (sources may belong to multiple labels).
 
 ---
 
 ## Confirmed (2026-06-06)
 
-- **`sources` group is append**, not replace (3 → 4 sources sending only the new ID).
+- **`sources_add` group is append**, not replace (3 → 4 sources sending only the new ID).
 - **Labels may overlap** — a source can be in multiple labels at once.
 - **`I3xc3c` response nesting** is `[[label, ...]]`.
 
+## Confirmed (2026-06-07)
+
+Verified against a live throwaway notebook with raw `le8sX` payloads:
+
+- **Source removal exists** via the third fieldmask slot
+  `slot[3][0][2]` (`sources_remove`): `[[None, None, [[source_id]]]]`. The web UI
+  has no control for it, but the RPC honours it.
+- **Removal un-assigns, it does not delete** — the removed source still exists in
+  the notebook's source list.
+- **Removal is label-scoped** — a source in two labels, removed from one, remains
+  in the other (overlap preserved).
+- **Removing a non-member** is a silent no-op (`[]`, no error); **removing the
+  last member** leaves the label present but empty.
+- **One source per call** — `le8sX` honours only the first entry of `sources_add`
+  and the first of `sources_remove`. Multi-element lists silently drop all but the
+  first. A combined add+remove in one call dropped the add. Do one mutation per call.
+
+> ⚠️ **Client-code implication:** the current `add_sources` /
+> `build_update_label_params` pack a multi-id add into a single `le8sX` call
+> (`sources_add = [[a], [b], [c]]`), which the server truncates to the first id.
+> Multi-id `client.labels.add_sources(nb, lbl, [a, b, c])` therefore only adds
+> `a`. A correct implementation must loop one call per source (and the same holds
+> for any future `remove_sources`).
+
 ## Open items (not yet captured)
 
-- **Removing a source from a label** (un-assign, without deleting the source).
-  The source-row menu's "Remove source" **deletes the source from the notebook**,
-  not from the label — no dedicated "remove from label" action was found. Since
-  the `sources` group appends, removal likely needs a different flag/field or a
-  separate RPC; unconfirmed.
+- None outstanding for the membership lifecycle. Combined add+remove ordering /
+  precedence within one call is only partially characterised (add was dropped when
+  both groups were set); not pursued further since one-mutation-per-call is the
+  reliable contract.

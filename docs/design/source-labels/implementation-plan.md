@@ -1,7 +1,19 @@
 # Source Labels — Implementation Plan
 
 **Status:** Proposed (execution plan; not started)
-**Last Updated:** 2026-06-07 (rev 12 — three-lens momus corrections)
+**Last Updated:** 2026-06-07 (rev 13 — source-removal capability folded in)
+- **rev 13** — live capture (2026-06-07, `rpc.md` "Confirmed (2026-06-07)") proved
+  `le8sX` supports **source removal** via the third fieldmask slot (`sources_remove`)
+  and that **only the first id per group is honoured per call**. Plan changes:
+  Phase 1.1 registers a `remove_sources` idempotency variant (`IDEMPOTENT_SET_OP` —
+  removal is a confirmed no-op on absent members, so retry-safe; do **not** add it to
+  the NO_RETRY `expected` dict); Phase 1.2 builder goes **singular** (`add_source_id` /
+  `remove_source_id`) and the prior multi-id `[[sid] for sid in …]` add shape is
+  **dropped** (it silently kept only the first id — a real bug); Phase 2.1 adds
+  `remove_sources` and makes both `add_sources`/`remove_sources` **loop one `le8sX`
+  call per id**; Phase 3.2 adds a `label remove` CLI command (inverse of `label add`,
+  **no `--yes` gate** — un-assign is non-destructive, distinct from `label delete`);
+  §3.4 + Files-map extend the CLI inventory/JSON gates for `label remove`.
 - **rev 12** — three-lens momus (claude+codex; agy stalled/0-output, timeout-killed)
   corrections: moved the `PREEXISTING_GAPS` names edit into **Phase 1.1b** (it must land
   with the enum members, else the Phase-1 CI method-coverage gate goes RED); aligned
@@ -146,21 +158,27 @@ api.md refs: §3–§6, §8.
   notes=...)`, `_idempotency.py:289`): `LIST_LABELS`→`IDEMPOTENT_SET_OP`;
   `DELETE_LABEL`→`NON_IDEMPOTENT_NO_RETRY` (conservative, api.md §15);
   `UPDATE_LABEL`→`IDEMPOTENT_SET_OP` default **+** `variant="add_sources"`→
-  `NON_IDEMPOTENT_NO_RETRY`; `CREATE_LABEL`→`NON_IDEMPOTENT_NO_RETRY`. Each
-  with a non-empty `notes=` (required by `test_registry_classifies_every_rpc_method_at_variant_none`).
+  `NON_IDEMPOTENT_NO_RETRY` **+** `variant="remove_sources"`→`IDEMPOTENT_SET_OP`
+  (removal is a confirmed no-op on an absent member, so retry-safe — api.md §4);
+  `CREATE_LABEL`→`NON_IDEMPOTENT_NO_RETRY`. Each with a non-empty `notes=`
+  (required by `test_registry_classifies_every_rpc_method_at_variant_none`).
 - **Gate edit (exact):** in `tests/unit/test_idempotency_registry.py`
   `test_retry_disabled_entries_are_intentional_and_documented` (~:135), add to the
   `expected` dict: `(RPCMethod.DELETE_LABEL, None): NON_IDEMPOTENT_NO_RETRY`,
   `(RPCMethod.CREATE_LABEL, None): NON_IDEMPOTENT_NO_RETRY`,
   `(RPCMethod.UPDATE_LABEL, "add_sources"): NON_IDEMPOTENT_NO_RETRY`. **Do NOT** add
-  `(UPDATE_LABEL, None)` — it is `IDEMPOTENT_SET_OP`, excluded by this table's filter.
-- **Test add:** an explicit case asserting
+  `(UPDATE_LABEL, None)` **nor** `(UPDATE_LABEL, "remove_sources")` — both are
+  `IDEMPOTENT_SET_OP`, excluded by this table's NO_RETRY/PROBE filter.
+- **Test add:** explicit cases asserting
   `IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.UPDATE_LABEL, "add_sources").policy is
-  IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY` (use the singleton; `get_entry` is
+  IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY` **and**
+  `get_entry(RPCMethod.UPDATE_LABEL, "remove_sources").policy is
+  IdempotencyPolicy.IDEMPOTENT_SET_OP` (use the singleton; `get_entry` is
   defined on the registry at `_idempotency.py:320`). Variant threading: `get_entry`
   raises `IdempotencyVariantError` for an unknown variant once a method has any
   explicit variant row (the variant-error branch is `_idempotency.py:341-356`) — so
-  `rename`/`set_emoji`/`update` MUST pass `operation_variant=None` (§7).
+  `rename`/`set_emoji`/`update` MUST pass `operation_variant=None`, and only
+  `add_sources`/`remove_sources` pass their registered variant strings (§7).
 - **Forward-only (won't RED):** `test_non_idempotent_no_retry_entries_document_dedupe_gap`
   (`test_idempotency_registry.py:180`) iterates a fixed `expected_terms` set, so the 3
   new `NON_IDEMPOTENT_NO_RETRY` entries don't trip it — add their dedupe-gap note terms
@@ -204,8 +222,12 @@ member (and the Phase-1-exit command `-m "not repo_lint"` collects them). Edit *
 
 ### 1.2 Param builders
 - **Test first:** `tests/unit/test_label_params.py` — exact payloads (scope `[]`/`[0]`;
-  create slot[5] `[[name,emoji]]`; update name-only/emoji-only/add_source_ids→`[[id],…]`;
-  delete batch); assert `_opts()` returns a **distinct** object each call.
+  create slot[5] `[[name,emoji]]`; update name-only→`[[[name]]]`, emoji-only,
+  **single** `add_source_id`→`[[None,[[id]]]]`, **single** `remove_source_id`→
+  `[[None,None,[[id]]]]`; delete batch); assert `_opts()` returns a **distinct**
+  object each call. The builder is **singular** (one `add_source_id` and/or one
+  `remove_source_id`, positionally at slot[3][0][1]/[2]) — there is **no** multi-id
+  list arg (the wire honours only the first id; api.md §5).
 - **Add** `src/notebooklm/_label/__init__.py`, `src/notebooklm/_label/params.py` (§5).
 - **Verify:** `uv run pytest tests/unit/test_label_params.py`
 
@@ -274,10 +296,15 @@ api.md refs: §7, §9.
   - `create` finds the new label by **id-diff** vs a pre-call `list` snapshot;
     raises `LabelError` on 0/>1 new ids.
   - `rename`/`set_emoji`/`update` send `operation_variant=None`; `add_sources`
-    sends `operation_variant="add_sources"`; **all run the existence preflight and
+    sends `operation_variant="add_sources"`; `remove_sources` sends
+    `operation_variant="remove_sources"`; **all run the existence preflight and
     raise on a missing label even with `return_object=False`**. (Test note: prime
     the mock to return an **empty** `LIST_LABELS` envelope `[[]]` so the preflight
     raises.)
+  - `add_sources([a,b,c])` and `remove_sources([a,b,c])` each issue **one
+    `rpc_call` per id** (assert call count == 3, one per source — NOT a single
+    multi-id call), then one preflight re-fetch. Empty `source_ids` → `ValueError`
+    before any `rpc_call`. `remove_sources` of a non-member does not raise (no-op).
   - `rename` **preserves emoji** (api.md A3): with the preflight returning a label
     whose `emoji="📄"`, `rename(name="X")` sends `[[[X, "📄"]]]` (name+current emoji),
     not `[[[X]]]` — assert the emoji is carried over from the preflight fetch.
@@ -296,7 +323,9 @@ api.md refs: §7, §9.
   use a narrow `list_sources` callable (not `SourcesAPI`).
   **Exact return annotations** (required by the contract gates): `list -> list[Label]`,
   `get -> Label` (non-Optional), `get_or_none -> Label | None`, `delete -> None`,
-  `sources -> list[Source]`, mutations `-> Label | None`.
+  `sources -> list[Source]`, mutations (`rename`/`set_emoji`/`update`/`add_sources`/
+  `remove_sources`) `-> Label | None`. Both `add_sources` and `remove_sources` loop
+  one `build_update_label_params(...)` call per id (api.md §7).
 - **Facade-reach-in guard: no edit needed — `_labels.py` is auto-covered.**
   `test_no_facade_reach_in.py::test_feature_apis_do_not_add_direct_core_private_state_access`
   globs **every** top-level `src/notebooklm/_*.py` (`:214`), so a new `_labels.py`
@@ -390,11 +419,14 @@ api.md refs: §12. ADR-0008: logic in `cli/services/`, commands thin
 ### 3.2 `label` command group
 - **Test first:** `tests/unit/cli/test_label_cmd.py` (CliRunner): `list`
   (`--json`→`{"labels":[…],"count":N}` with member ids+titles), `sources`
-  (delegates to `client.labels.sources()`), `create`/`rename`/`emoji`/`add`
+  (delegates to `client.labels.sources()`), `create`/`rename`/`emoji`/`add`/`remove`
   (ids via `resolve_source_ids`, `cli/resolve.py:489`)/`delete`/`generate`
   (`--yes/-y` gate on `--scope all`, the repo-standard confirm flag — `delete` is
-  `--yes/-y`-gated too). **`tests/unit/cli/test_grouped.py`** — `label` is binned (no
-  orphan). [Path corrected: this test is in `tests/unit/cli/`, not `_guardrails/`.]
+  `--yes/-y`-gated too; **`remove` is NOT gated** — un-assign is non-destructive,
+  the sources survive). `remove` → `client.labels.remove_sources()`, the inverse of
+  `add`, and is distinct from `delete` (which deletes the label entity).
+  **`tests/unit/cli/test_grouped.py`** — `label` is binned (no orphan). [Path
+  corrected: this test is in `tests/unit/cli/`, not `_guardrails/`.]
 - **Add** `src/notebooklm/cli/label_cmd.py` (thin shell → service; route through
   `handle_errors`); export from `src/notebooklm/cli/__init__.py`.
 - **Register the group (REQUIRED — otherwise `notebooklm label` does not exist):**
@@ -413,7 +445,7 @@ api.md refs: §12. ADR-0008: logic in `cli/services/`, commands thin
   script's must-not-grow ratchet (`:90-95`) — justified in the PR. **Nothing to add here**
   for gate (b). The **follow-up PR (needs maintainer auth)** records the CLI VCR cassettes
   for the `label` group (and one `source list --label`) exercising
-  list/generate/create/update/delete via `NOTEBOOKLM_VCR_RECORD=1` under
+  list/generate/create/rename/emoji/add/remove/delete via `NOTEBOOKLM_VCR_RECORD=1` under
   `tests/cassettes/*.yaml` + `tests/integration/cli_vcr/`, then **REMOVES** the 4 names
   from `PREEXISTING_GAPS` (whose `STALE` check then confirms real coverage). Do
   **not** use `COVERAGE_EXEMPT` — exemption ships no cassette and is the wrong tool.
@@ -471,8 +503,10 @@ RED — edit **every** one:
   - **Asserted in `JSON_COMMANDS` (:424)** — the read/CRUD commands that emit the
     standard envelope on success: `label list --json`, `label sources --json`,
     `label create --json`, `label rename --json`, `label emoji --json`,
-    `label add --json`, `label delete --json`, `label generate --json`. Each gets
-    an `_FS_SETUPS`/arrange tuple.
+    `label add --json`, `label remove --json`, `label delete --json`,
+    `label generate --json`. Each gets an `_FS_SETUPS`/arrange tuple. (`label
+    remove` reuses `label add`'s positional arg names `label_id`/`source_id`, so it
+    needs no new `_JSON_CONTRACT_DUMMY_ARGS` keys in `test_cli_contract.py`.)
   - **`JSON_SUCCESS_WAIVED` (:664)** — none expected; only waive a label command
     here with a written rationale if it legitimately cannot emit on the success
     path (none of the above qualify).
@@ -482,12 +516,12 @@ RED — edit **every** one:
   - **Fake arrangement:** add a fake `client.labels` to the `_FS_SETUPS` fixtures
     so each command's facade call returns a canned value — e.g. `labels.list`/
     `labels.sources` → a small `[Label(...)]`/`[Source(...)]`, `labels.create`/
-    `rename`/`set_emoji`/`add_sources` → a `Label`, `labels.delete` → `None`,
-    `labels.generate` → `[Label(...)]`. Add `notebooklm.cli.label_cmd` to the
-    mock-patch target list (~:240–249) so the fake `NotebookLMClient` is injected.
+    `rename`/`set_emoji`/`add_sources`/`remove_sources` → a `Label`, `labels.delete`
+    → `None`, `labels.generate` → `[Label(...)]`. Add `notebooklm.cli.label_cmd` to
+    the mock-patch target list (~:240–249) so the fake `NotebookLMClient` is injected.
 - `tests/unit/test_json_error_exit.py`: add label error cases to `JSON_ERROR_CASES`
   (:323) — at minimum a `LabelNotFoundError` case per lookup-bearing command
-  (`sources`/`rename`/`emoji`/`add`/`delete`) plus an ambiguous-name resolver error;
+  (`sources`/`rename`/`emoji`/`add`/`remove`/`delete`) plus an ambiguous-name resolver error;
   arrange the fake `client.labels` to raise the matching exception. Add
   `notebooklm.cli.label_cmd` to its patch-target list (~:123–132).
 - **Forward-only (good hygiene, won't RED):** `tests/_guardrails/test_no_module_shadowing.py`
@@ -554,9 +588,16 @@ RED — edit **every** one:
 - **UUID-shaped label name misresolved as id.** → disable full-id passthrough in
   `resolve_label_id` (id/prefix pass), then fall back to explicit exact-name matching
   (NOT `title_of`, which is diagnostics-only — see §3.1).
+- **One source per `le8sX` call (confirmed).** The server honours only the first
+  id of the add/remove group per call — a multi-id payload silently drops the rest
+  (the bug the singular builder + per-id loop fixes). → builder is singular;
+  `add_sources`/`remove_sources` loop per id; tests assert call-count == len(ids).
+- **Combined add+remove in one call drops the add (confirmed).** → the API never
+  sets both fieldmask groups in one call; add and remove are separate calls.
 - **Unverified wire semantics** (delete already-absent; add_sources dedup;
   name-only emoji). → ship conservative defaults (api.md §15); post-merge
-  capture items, do not block.
+  capture items, do not block. (Source **removal** is now confirmed, not
+  unverified — `remove_sources` ships it.)
 - **`pre-commit` mutates files.** → treat as fix-then-verify; confirm clean tree.
 
 ## Rollback
