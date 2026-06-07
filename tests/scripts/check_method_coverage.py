@@ -89,22 +89,13 @@ _TEST_REFERENCE_EXCLUDES: frozenset[Path] = frozenset(
 
 # Pre-existing gaps grandfathered in when this gate landed; new methods
 # must NOT be added here. See module docstring for the one-way-ratchet
-# policy. The script's bootstrap step (run once locally before commit)
-# populated this set. Each entry is the ``RPCMethod.<NAME>`` member name
-# (without the ``RPCMethod.`` prefix).
-# ⚠️ TEMPORARY DEVIATION from the one-way-ratchet above (source-labels feature;
-# see docs/design/source-labels/). The 4 label RPCs land in the enum + golden
-# fixtures in this PR, but their CLI VCR cassettes need maintainer auth to
-# record. They are listed here so the main PR is green; the follow-up cassette
-# PR records tests/cassettes/ + tests/integration/cli_vcr/ and REMOVES all four.
-PREEXISTING_GAPS: frozenset[str] = frozenset(
-    {
-        "CREATE_LABEL",
-        "LIST_LABELS",
-        "UPDATE_LABEL",
-        "DELETE_LABEL",
-    }
-)
+# policy. Each entry is the ``RPCMethod.<NAME>`` member name (without the
+# ``RPCMethod.`` prefix).
+# Intentionally empty: every RPCMethod has full coverage (a test reference +
+# a cassette). The source-label RPCs' cassettes were recorded in this change,
+# so the temporary grandfather entries were removed. Record a cassette for any
+# new method rather than re-adding it here.
+PREEXISTING_GAPS: frozenset[str] = frozenset()
 
 
 def _iter_test_files() -> list[Path]:
