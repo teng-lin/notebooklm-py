@@ -52,6 +52,12 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
+          append_system_prompt: |
+            You have full access to the `notebooklm` CLI. It is already installed and authenticated
+            via the NOTEBOOKLM_AUTH_JSON environment variable. When asked to do anything with
+            NotebookLM (list notebooks, create notebooks, add sources, generate audio/video/quizzes,
+            download artifacts, etc.) — use the `notebooklm` CLI directly via Bash. Do not tell the
+            user to run commands themselves. Run them and report the results.
         env:
           NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
 
