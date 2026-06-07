@@ -77,17 +77,29 @@ def test_update_emoji_only_sends_null_name_slot() -> None:
     ]
 
 
-def test_update_add_sources_only_wraps_each_id() -> None:
-    assert build_update_label_params(NB, LID, add_source_ids=["s1", "s2"]) == [
+def test_update_add_single_source_wraps_the_id() -> None:
+    # The builder is SINGULAR: one id, double-nested in the sources_add slot[1].
+    assert build_update_label_params(NB, LID, add_source_id="s1") == [
         OPTS,
         NB,
         LID,
-        [[None, [["s1"], ["s2"]]]],
+        [[None, [["s1"]]]],
     ]
 
 
-def test_update_name_and_add_sources() -> None:
-    assert build_update_label_params(NB, LID, name="New", add_source_ids=["s1"]) == [
+def test_update_remove_single_source_uses_third_slot() -> None:
+    # sources_remove rides slot[3][0][2]; with no add, slot[1] is None so the
+    # remove group keeps its positional third slot.
+    assert build_update_label_params(NB, LID, remove_source_id="s1") == [
+        OPTS,
+        NB,
+        LID,
+        [[None, None, [["s1"]]]],
+    ]
+
+
+def test_update_name_and_add_source() -> None:
+    assert build_update_label_params(NB, LID, name="New", add_source_id="s1") == [
         OPTS,
         NB,
         LID,
@@ -95,13 +107,12 @@ def test_update_name_and_add_sources() -> None:
     ]
 
 
-def test_update_empty_add_sources_is_ignored() -> None:
-    # An empty list is falsy -> no sources group appended (no-op guard lives in the API).
-    assert build_update_label_params(NB, LID, name="New", add_source_ids=[]) == [
+def test_update_name_and_remove_source() -> None:
+    assert build_update_label_params(NB, LID, name="New", remove_source_id="s1") == [
         OPTS,
         NB,
         LID,
-        [[["New"]]],
+        [[["New"], None, [["s1"]]]],
     ]
 
 

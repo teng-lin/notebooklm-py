@@ -175,7 +175,7 @@ async def test_set_emoji_sends_null_name_slot_variant_none() -> None:
     assert upd.params[3] == [[[None, "\U0001f525"]]]
 
 
-async def test_add_sources_is_two_rpc_with_variant() -> None:
+async def test_add_sources_single_id_is_one_update_plus_refetch() -> None:
     api, rpc, _ = _api(
         {
             RPCMethod.LIST_LABELS: _list_env(_label_tuple("A", "l1", src=["s1"])),
@@ -189,6 +189,81 @@ async def test_add_sources_is_two_rpc_with_variant() -> None:
     assert upd.params[3] == [[None, [["s2"]]]]
 
 
+async def test_add_sources_multi_id_issues_one_update_per_id() -> None:
+    # The wire honours only the first id per call, so a 3-id add MUST be 3
+    # le8sX calls (one per source), then ONE preflight re-fetch.
+    api, rpc, _ = _api(
+        {
+            RPCMethod.LIST_LABELS: _list_env(_label_tuple("A", "l1", src=["a", "b", "c"])),
+            RPCMethod.UPDATE_LABEL: [],
+        }
+    )
+    await api.add_sources("nb", "l1", ["a", "b", "c"])
+    assert rpc.methods() == [
+        RPCMethod.UPDATE_LABEL,
+        RPCMethod.UPDATE_LABEL,
+        RPCMethod.UPDATE_LABEL,
+        RPCMethod.LIST_LABELS,
+    ]
+    updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]
+    assert [u.operation_variant for u in updates] == ["add_sources"] * 3
+    assert [u.params[3] for u in updates] == [
+        [[None, [["a"]]]],
+        [[None, [["b"]]]],
+        [[None, [["c"]]]],
+    ]
+
+
+async def test_remove_sources_single_id_is_one_update_plus_refetch() -> None:
+    api, rpc, _ = _api(
+        {
+            RPCMethod.LIST_LABELS: _list_env(_label_tuple("A", "l1", src=["s1", "s2"])),
+            RPCMethod.UPDATE_LABEL: [],
+        }
+    )
+    await api.remove_sources("nb", "l1", ["s2"])
+    assert rpc.methods() == [RPCMethod.UPDATE_LABEL, RPCMethod.LIST_LABELS]
+    upd = rpc.calls[0]
+    assert upd.operation_variant == "remove_sources"
+    assert upd.params[3] == [[None, None, [["s2"]]]]
+
+
+async def test_remove_sources_multi_id_issues_one_update_per_id() -> None:
+    api, rpc, _ = _api(
+        {
+            RPCMethod.LIST_LABELS: _list_env(_label_tuple("A", "l1", src=["a"])),
+            RPCMethod.UPDATE_LABEL: [],
+        }
+    )
+    await api.remove_sources("nb", "l1", ["a", "b", "c"])
+    assert rpc.methods() == [
+        RPCMethod.UPDATE_LABEL,
+        RPCMethod.UPDATE_LABEL,
+        RPCMethod.UPDATE_LABEL,
+        RPCMethod.LIST_LABELS,
+    ]
+    updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]
+    assert [u.operation_variant for u in updates] == ["remove_sources"] * 3
+    assert [u.params[3] for u in updates] == [
+        [[None, None, [["a"]]]],
+        [[None, None, [["b"]]]],
+        [[None, None, [["c"]]]],
+    ]
+
+
+async def test_remove_sources_of_non_member_does_not_raise() -> None:
+    # Removing an absent member is a no-op on the wire; the API still succeeds
+    # (the preflight finds the label, just unchanged).
+    api, _, _ = _api(
+        {
+            RPCMethod.LIST_LABELS: _list_env(_label_tuple("A", "l1", src=["s1"])),
+            RPCMethod.UPDATE_LABEL: [],
+        }
+    )
+    out = await api.remove_sources("nb", "l1", ["not-a-member"])
+    assert out is not None and out.id == "l1"
+
+
 async def test_mutations_raise_on_missing_even_when_not_returning_object() -> None:
     api, _, _ = _api({RPCMethod.LIST_LABELS: _list_env(), RPCMethod.UPDATE_LABEL: []})
     with pytest.raises(LabelNotFoundError):
@@ -197,6 +272,8 @@ async def test_mutations_raise_on_missing_even_when_not_returning_object() -> No
         await api.update("nb", "missing", emoji="\U0001f525", return_object=False)
     with pytest.raises(LabelNotFoundError):
         await api.add_sources("nb", "missing", ["s1"], return_object=False)
+    with pytest.raises(LabelNotFoundError):
+        await api.remove_sources("nb", "missing", ["s1"], return_object=False)
 
 
 async def test_noop_mutations_raise_value_error_before_any_rpc() -> None:
@@ -205,6 +282,8 @@ async def test_noop_mutations_raise_value_error_before_any_rpc() -> None:
         await api.update("nb", "l1")  # both name and emoji None
     with pytest.raises(ValueError):
         await api.add_sources("nb", "l1", [])
+    with pytest.raises(ValueError):
+        await api.remove_sources("nb", "l1", [])
     assert rpc.calls == []  # nothing reached the wire
 
 

@@ -249,6 +249,7 @@ def _make_client(extra_setup=None) -> MagicMock:
     client.labels.rename = AsyncMock(return_value=_stub_labels()[0])
     client.labels.set_emoji = AsyncMock(return_value=_stub_labels()[0])
     client.labels.add_sources = AsyncMock(return_value=_stub_labels()[0])
+    client.labels.remove_sources = AsyncMock(return_value=_stub_labels()[0])
     client.labels.delete = AsyncMock(return_value=None)
 
     if extra_setup is not None:
@@ -565,6 +566,19 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
         [
             "label",
             "add",
+            "lbl123def456ghi789jkl",
+            "src123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        None,
+    ),
+    (
+        "label_remove",
+        [
+            "label",
+            "remove",
             "lbl123def456ghi789jkl",
             "src123def456ghi789jkl",
             "-n",

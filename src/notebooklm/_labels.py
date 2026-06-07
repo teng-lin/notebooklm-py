@@ -114,16 +114,14 @@ class LabelsAPI:
     async def sources(self, notebook_id: str, label_id: str) -> builtins.list[Source]:
         """Expand a label to its ``Source`` objects — the group-as-collection accessor.
 
-        Read-only convenience: one ``get_or_none(label)`` + one
+        Read-only convenience: one ``get(label)`` + one
         ``self._list_sources(nb)``, joined client-side (two reads, not N+1). Raises
         ``LabelNotFoundError`` if the label is absent. Order follows the label's
         ``source_ids`` (membership order), not notebook order. A member id missing
         from the source list (concurrent deletion between the two reads) is
         skipped, not raised — a benign race, not schema drift.
         """
-        label = await self.get_or_none(notebook_id, label_id)
-        if label is None:
-            raise LabelNotFoundError(label_id, method_id=RPCMethod.LIST_LABELS.value)
+        label = await self.get(notebook_id, label_id)
         by_id = {source.id: source for source in await self._list_sources(notebook_id)}
         return [by_id[sid] for sid in label.source_ids if sid in by_id]
 
@@ -243,22 +241,69 @@ class LabelsAPI:
 
         Raises ``ValueError`` on an empty ``source_ids`` BEFORE issuing any RPC.
 
-        Intentionally a **2-RPC** op — the write, then a contract-load-bearing
-        ``get_or_none`` re-fetch backing the ADR-0019 return/not-found contract
-        (``le8sX`` echoes ``[]``, carrying no label; the existence check must raise
-        on a missing label even when ``return_object=False``). The second fetch is
-        NOT removable — the label wire gives no return payload.
+        Issues **one ``le8sX`` call per source id** — the server honours only the
+        first id of ``sources_add`` per call (confirmed 2026-06-07, rpc.md), so a
+        single multi-id call would silently add only the first source. After all
+        per-id writes, a single contract-load-bearing ``get_or_none`` re-fetch
+        backs the ADR-0019 return/not-found contract (``le8sX`` echoes ``[]``,
+        carrying no label; the existence check must raise on a missing label even
+        when ``return_object=False``). The re-fetch is NOT removable — the label
+        wire gives no return payload.
         """
         if not source_ids:
             raise ValueError("add_sources requires at least one source id")
         logger.debug("Adding %d source(s) to label %s", len(source_ids), label_id)
-        await self._rpc.rpc_call(
-            RPCMethod.UPDATE_LABEL,
-            build_update_label_params(notebook_id, label_id, add_source_ids=source_ids),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            operation_variant="add_sources",  # → NON_IDEMPOTENT_NO_RETRY (§4)
-        )
+        for source_id in source_ids:
+            await self._rpc.rpc_call(
+                RPCMethod.UPDATE_LABEL,
+                build_update_label_params(notebook_id, label_id, add_source_id=source_id),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                operation_variant="add_sources",  # → NON_IDEMPOTENT_NO_RETRY (§4)
+            )
+        label = await self.get_or_none(notebook_id, label_id)
+        if label is None:
+            raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)
+        return label if return_object else None
+
+    async def remove_sources(
+        self,
+        notebook_id: str,
+        label_id: str,
+        source_ids: builtins.list[str],
+        *,
+        return_object: bool = True,
+    ) -> Label | None:
+        """Un-assign source(s) from a label (``UPDATE_LABEL``, variant
+        ``'remove_sources'``).
+
+        Removal is **label-scoped un-assignment**: it removes the membership only,
+        it does NOT delete the source from the notebook, and a source that also
+        belongs to another label stays in that other label (overlap preserved).
+        Removing a source that is not a member is a silent no-op (set-op
+        semantics, confirmed 2026-06-07, rpc.md).
+
+        Raises ``ValueError`` on an empty ``source_ids`` BEFORE issuing any RPC.
+
+        Issues **one ``le8sX`` call per source id** — the server honours only the
+        first id of ``sources_remove`` per call, so a single multi-id call would
+        silently remove only the first source. After all per-id writes, a single
+        contract-load-bearing ``get_or_none`` re-fetch backs the ADR-0019
+        return/not-found contract (``le8sX`` echoes ``[]``, carrying no label; the
+        existence check must raise on a missing label even when
+        ``return_object=False``).
+        """
+        if not source_ids:
+            raise ValueError("remove_sources requires at least one source id")
+        logger.debug("Removing %d source(s) from label %s", len(source_ids), label_id)
+        for source_id in source_ids:
+            await self._rpc.rpc_call(
+                RPCMethod.UPDATE_LABEL,
+                build_update_label_params(notebook_id, label_id, remove_source_id=source_id),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                operation_variant="remove_sources",  # → IDEMPOTENT_SET_OP (§4)
+            )
         label = await self.get_or_none(notebook_id, label_id)
         if label is None:
             raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)

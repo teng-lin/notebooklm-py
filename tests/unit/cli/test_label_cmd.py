@@ -5,8 +5,8 @@ patching ``NotebookLMClient`` at the module-level seam
 (``notebooklm.cli.label_cmd.NotebookLMClient``). Covers ``list`` (with the
 member-id + title join in ``--json``), ``sources`` (delegates to
 ``client.labels.sources()``), the CRUD verbs (``create`` / ``rename`` /
-``emoji`` / ``add`` / ``delete``), and ``generate`` (the ``--yes/-y`` gate on
-``--scope all``).
+``emoji`` / ``add`` / ``remove`` / ``delete``), and ``generate`` (the
+``--yes/-y`` gate on ``--scope all``).
 """
 
 from __future__ import annotations
@@ -219,6 +219,59 @@ def test_label_add_resolves_source_ids(runner, mock_auth, mock_fetch_tokens) -> 
 
 
 # ---------------------------------------------------------------------------
+# label remove (inverse of add; NO --yes gate — un-assign is non-destructive)
+# ---------------------------------------------------------------------------
+
+
+def test_label_remove_resolves_source_ids(runner, mock_auth, mock_fetch_tokens) -> None:
+    labels = [Label(id="lblaaa111", name="Papers", source_ids=["src_1"])]
+    client = _client_with_labels(labels=labels, sources=[Source(id="src_1", title="Source One")])
+    client.labels.remove_sources = AsyncMock(
+        return_value=Label(id="lblaaa111", name="Papers", source_ids=[])
+    )
+
+    result = _run(
+        runner,
+        mock_auth,
+        mock_fetch_tokens,
+        ["label", "remove", "lblaaa111", "src_1", "-n", "nb_123", "--json"],
+        client,
+    )
+
+    assert result.exit_code == 0, result.output
+    # No confirmation prompt — remove runs straight through.
+    client.labels.remove_sources.assert_awaited_once_with("nb_123", "lblaaa111", ["src_1"])
+    payload = json.loads(result.stdout)
+    assert payload["id"] == "lblaaa111"
+    assert payload["removed_source_ids"] == ["src_1"]
+
+
+def test_label_remove_not_found_routes_through_envelope(
+    runner, mock_auth, mock_fetch_tokens
+) -> None:
+    from notebooklm.exceptions import LabelNotFoundError
+
+    labels = [Label(id="lblaaa111", name="Papers", source_ids=["src_1"])]
+    client = _client_with_labels(labels=labels, sources=[Source(id="src_1", title="Source One")])
+    client.labels.remove_sources = AsyncMock(
+        side_effect=LabelNotFoundError("lblaaa111", method_id="le8sX")
+    )
+
+    result = _run(
+        runner,
+        mock_auth,
+        mock_fetch_tokens,
+        ["label", "remove", "lblaaa111", "src_1", "-n", "nb_123", "--json"],
+        client,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["error"] is True
+    assert payload["code"] == "NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
 # label delete (--yes gate)
 # ---------------------------------------------------------------------------
 
@@ -356,7 +409,8 @@ def test_label_module_level_client_seam_is_patchable() -> None:
 
 
 @pytest.mark.parametrize(
-    "subcmd", ["list", "sources", "generate", "create", "rename", "emoji", "add", "delete"]
+    "subcmd",
+    ["list", "sources", "generate", "create", "rename", "emoji", "add", "remove", "delete"],
 )
 def test_label_subcommands_exist(subcmd) -> None:
     import click

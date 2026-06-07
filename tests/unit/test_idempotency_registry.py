@@ -180,6 +180,32 @@ def test_retry_disabled_entries_are_intentional_and_documented() -> None:
         )
 
 
+def test_update_label_remove_sources_variant_is_idempotent_set_op() -> None:
+    """The ``remove_sources`` UPDATE_LABEL variant is a retry-safe set-op.
+
+    Removing an already-absent member is a confirmed silent no-op (rpc.md
+    2026-06-07), so a blind transport retry that lands twice leaves the same
+    final state — it MUST classify as ``IDEMPOTENT_SET_OP`` (not the NO_RETRY
+    bucket that ``add_sources`` lives in). This is asserted as a positive case
+    rather than via the NO_RETRY ``expected`` table, which filters set-ops out.
+    """
+    entry = IDEMPOTENCY_REGISTRY.get_entry(
+        RPCMethod.UPDATE_LABEL, operation_variant="remove_sources"
+    )
+    assert entry.policy is IdempotencyPolicy.IDEMPOTENT_SET_OP
+    assert entry.notes.strip()
+    # Set-op semantics keep the transport retry loop enabled (caller-False stays False).
+    assert (
+        resolve_effective_disable_internal_retries(
+            IDEMPOTENCY_REGISTRY,
+            RPCMethod.UPDATE_LABEL,
+            caller_disable_internal_retries=False,
+            operation_variant="remove_sources",
+        )
+        is False
+    )
+
+
 def test_non_idempotent_no_retry_entries_document_dedupe_gap() -> None:
     """Hard no-retry methods must explain why blind retry cannot be safe."""
     expected_terms = {

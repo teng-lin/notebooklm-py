@@ -464,3 +464,14 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "double-append"
         ),
     )
+    registry.register(
+        RPCMethod.UPDATE_LABEL,
+        IdempotencyPolicy.IDEMPOTENT_SET_OP,
+        variant="remove_sources",
+        notes=(
+            "remove_sources UN-ASSIGNS a source via the sources_remove fieldmask slot; "
+            "removing an already-absent member is a confirmed silent no-op (rpc.md "
+            "2026-06-07), so a blind transport retry that lands twice leaves the same "
+            "final state — retry-safe set-op semantics like DELETE_SOURCE"
+        ),
+    )

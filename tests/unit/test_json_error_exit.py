@@ -571,6 +571,11 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         _label_not_found,
     ),
     (
+        "label_remove_not_found",
+        ["label", "remove", "lbl_missing", "src_1", "-n", "abc", "--json"],
+        _label_not_found,
+    ),
+    (
         "label_delete_not_found",
         ["label", "delete", "lbl_missing", "-n", "abc", "--yes", "--json"],
         _label_not_found,

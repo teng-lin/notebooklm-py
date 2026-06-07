@@ -15,12 +15,13 @@ Commands:
     rename    Rename a label
     emoji     Set a label's emoji
     add       Add source(s) to a label
+    remove    Un-assign source(s) from a label
     delete    Delete one or more labels
 """
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import click
 
@@ -40,7 +41,7 @@ from .services.label_listing import (
 )
 
 
-def _handle_label_resolution_error(exc: LabelResolutionError, *, json_output: bool) -> None:
+def _handle_label_resolution_error(exc: LabelResolutionError, *, json_output: bool) -> NoReturn:
     """Render a typed label-resolution error through the CLI error contract."""
     output_error(
         exc.message,
@@ -75,6 +76,7 @@ def label():
       rename    Rename a label
       emoji     Set a label's emoji
       add       Add source(s) to a label
+      remove    Un-assign source(s) from a label (the sources survive)
       delete    Delete one or more labels (the label only, not its sources)
 
     \b
@@ -358,6 +360,63 @@ def label_add(ctx, label_ref, source_ids, notebook_id, json_output, client_auth)
     return _run()
 
 
+@label.command("remove")
+@click.argument("label_ref")
+@click.argument("source_ids", nargs=-1, required=True)
+@notebook_option
+@json_option
+@with_client
+def label_remove(ctx, label_ref, source_ids, notebook_id, json_output, client_auth):
+    """Un-assign source(s) from a label (the inverse of ``add``).
+
+    Removal un-assigns the source from this label only; it does NOT delete the
+    source from the notebook (that is what ``source delete`` does) and leaves the
+    source in any other label it belongs to. Because un-assigning is
+    non-destructive, there is no ``--yes`` gate (unlike ``label delete``).
+
+    LABEL_REF can be a label id (or partial prefix) or an exact label name.
+    SOURCE_IDS accept partial-prefix matching like every other source-id command.
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            try:
+                label_id = await resolve_label_id(
+                    client, nb_id_resolved, label_ref, json_output=json_output
+                )
+            except LabelResolutionError as exc:
+                _handle_label_resolution_error(exc, json_output=json_output)
+            resolved_source_ids = await resolve_source_ids(
+                client, nb_id_resolved, source_ids, json_output=json_output
+            )
+            label_ = cast(
+                Label,
+                await client.labels.remove_sources(
+                    nb_id_resolved, label_id, resolved_source_ids or []
+                ),
+            )
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "removed_source_ids": resolved_source_ids or [],
+                        **_label_payload(label_),
+                    }
+                )
+                return
+
+            cli_print(
+                f"[green]Removed {len(resolved_source_ids or [])} source(s) from:[/green] "
+                f"{label_id}",
+                ctx=ctx,
+            )
+
+    return _run()
+
+
 @label.command("delete")
 @click.argument("label_refs", nargs=-1, required=True)
 @notebook_option
@@ -423,13 +482,10 @@ def label_delete(ctx, label_refs, notebook_id, yes, json_output, client_auth):
                 json_output=json_output,
                 confirmer=click.confirm,
             )
-            if result.status == "cancelled":
-                if json_output:
-                    json_output_response(result.payload)
-                return
-
             if json_output:
                 json_output_response(result.payload)
+                return
+            if result.status == "cancelled":
                 return
 
             cli_print(

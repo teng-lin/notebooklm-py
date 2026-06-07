@@ -3,8 +3,8 @@
 These exercise the full CLI -> Client -> RPC path using VCR cassettes, mirroring
 ``test_share.py`` (the other pure-RPC, ``client.<api>``-backed group). They cover
 the ``label`` happy paths (``list`` / ``sources`` / ``create`` / ``rename`` /
-``emoji`` / ``add`` / ``delete`` / ``generate``) plus the ``source list --label``
-read filter.
+``emoji`` / ``add`` / ``remove`` / ``delete`` / ``generate``) plus the
+``source list --label`` read filter.
 
 .. note::
 
@@ -34,8 +34,11 @@ RPC fan-out per command
   preflight ``LIST_LABELS``, ``UPDATE_LABEL`` (``le8sX``), then a re-read
   ``LIST_LABELS``.
 * ``add``      -> the resolver's ``LIST_LABELS``, source-id resolution
-  (``GET_NOTEBOOK``), ``UPDATE_LABEL`` (variant ``add_sources``), then the
-  contract re-fetch ``LIST_LABELS``.
+  (``GET_NOTEBOOK``), ``UPDATE_LABEL`` (variant ``add_sources``, one call per
+  id), then the contract re-fetch ``LIST_LABELS``.
+* ``remove``   -> the resolver's ``LIST_LABELS``, source-id resolution
+  (``GET_NOTEBOOK``), ``UPDATE_LABEL`` (variant ``remove_sources``, one call per
+  id), then the contract re-fetch ``LIST_LABELS``.
 * ``delete``   -> the resolver's ``LIST_LABELS`` per ref, then ``DELETE_LABEL``
   (``GyzE7e``).
 * ``generate`` -> ``CREATE_LABEL`` (multi-mode; ``agX4Bc`` echoes the full set).
@@ -140,6 +143,12 @@ LABEL_MUTATION_SCHEMA: dict[str, FieldSpec] = {
 LABEL_ADD_SCHEMA: dict[str, FieldSpec] = {
     **LABEL_MUTATION_SCHEMA,
     "added_source_ids": FieldSpec(list),
+}
+
+# ``label remove --json`` mirrors ``add`` but echoes ``removed_source_ids``.
+LABEL_REMOVE_SCHEMA: dict[str, FieldSpec] = {
+    **LABEL_MUTATION_SCHEMA,
+    "removed_source_ids": FieldSpec(list),
 }
 
 # ``label sources --json`` envelope.
@@ -389,6 +398,54 @@ class TestLabelAddCommand:
         # Tier 5 — input-echo: the resolved source ids round-trip into the result.
         assert data["notebook_id"] == VCR_LABEL_NOTEBOOK_ID
         assert isinstance(data["added_source_ids"], list)
+
+
+class TestLabelRemoveCommand:
+    """Test ``notebooklm label remove <ref> <source_ids...>`` (un-assign).
+
+    The inverse of ``add`` — un-assigns the source from the label only (the
+    source survives in the notebook). No ``--yes`` gate (non-destructive).
+    """
+
+    @notebooklm_vcr.use_cassette("label_remove.yaml", allow_playback_repeats=True)
+    def test_label_remove(self, runner, mock_auth_for_vcr):
+        """``label remove`` runs resolve + source-resolve + UPDATE_LABEL + re-read."""
+        result = runner.invoke(
+            cli,
+            [
+                "label",
+                "remove",
+                VCR_READONLY_SOURCE_ID,
+                VCR_READONLY_SOURCE_ID,
+                "-n",
+                VCR_LABEL_NOTEBOOK_ID,
+            ],
+        )
+        assert_command_success(result, allow_no_context=False)
+
+    @notebooklm_vcr.use_cassette("label_remove.yaml", allow_playback_repeats=True)
+    def test_label_remove_json(self, runner, mock_auth_for_vcr):
+        """Tier 1 + 5: ``label remove --json`` matches the schema; echoes the ids."""
+        result = runner.invoke(
+            cli,
+            [
+                "label",
+                "remove",
+                VCR_READONLY_SOURCE_ID,
+                VCR_READONLY_SOURCE_ID,
+                "-n",
+                VCR_LABEL_NOTEBOOK_ID,
+                "--json",
+            ],
+        )
+        assert_command_success(result, allow_no_context=False)
+
+        assert_json_envelope(result, schema=LABEL_REMOVE_SCHEMA)
+
+        data = parse_json_dict(result.output)
+        # Tier 5 — input-echo: the resolved source ids round-trip into the result.
+        assert data["notebook_id"] == VCR_LABEL_NOTEBOOK_ID
+        assert isinstance(data["removed_source_ids"], list)
 
 
 class TestLabelDeleteCommand:

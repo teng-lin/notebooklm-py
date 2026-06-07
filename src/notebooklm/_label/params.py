@@ -49,23 +49,37 @@ def build_update_label_params(
     *,
     name: str | None = None,
     emoji: str | None = None,
-    add_source_ids: list[str] | None = None,
+    add_source_id: str | None = None,
+    remove_source_id: str | None = None,
 ) -> list[Any]:
-    """UPDATE_LABEL (le8sX). Fieldmask slot ``[3]`` = ``[[ name_emoji, sources ]]``:
+    """UPDATE_LABEL (le8sX). Fieldmask slot ``[3]`` =
+    ``[[ name_emoji, sources_add, sources_remove ]]`` (a THREE-slot group):
 
-    * ``name_emoji`` = ``[name, emoji]`` (positional). A rename sends a length-1
-      ``[name]``. Whether a length-1 ``name_emoji`` PRESERVES an existing emoji
-      or clears it is unverified on the wire (rpc.md open item) — the API layer
-      preserves the current emoji by passing it explicitly.
-    * ``sources`` = ``[[source_id], ...]`` — APPENDS; omitted leaves unchanged.
+    * ``name_emoji`` (slot ``[0]``) = ``[name, emoji]`` (positional). A rename
+      sends a length-1 ``[name]``. Whether a length-1 ``name_emoji`` PRESERVES an
+      existing emoji or clears it is unverified on the wire (rpc.md open item) —
+      the API layer preserves the current emoji by passing it explicitly.
+    * ``sources_add`` (slot ``[1]``) = ``[[source_id]]`` — ASSIGNS one source.
+    * ``sources_remove`` (slot ``[2]``) = ``[[source_id]]`` — UN-ASSIGNS one
+      source (confirmed 2026-06-07; rpc.md). It does NOT delete the source from
+      the notebook.
+
+    The wire honours only the FIRST id per group per call, so the builder is
+    **singular** — pass at most one ``add_source_id`` and one ``remove_source_id``
+    (the API layer loops one call per id). When removing without adding, slot
+    ``[1]`` is ``None`` so ``sources_remove`` keeps its positional slot ``[2]``.
     """
     group: list[Any] = []
     if name is not None or emoji is not None:
         group.append([name] if emoji is None else [name, emoji])
     else:
         group.append(None)
-    if add_source_ids:
-        group.append([[sid] for sid in add_source_ids])  # each id in its own 1-list
+    if add_source_id is not None:
+        group.append([[add_source_id]])
+    if remove_source_id is not None:
+        if add_source_id is None:
+            group.append(None)  # keep sources_remove at positional slot [2]
+        group.append([[remove_source_id]])
     return [_opts(), notebook_id, label_id, [group]]
 
 
