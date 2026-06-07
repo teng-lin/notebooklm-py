@@ -832,6 +832,7 @@ class NotebookLMClient:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
+        chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
     ):
 
     async def refresh_auth(self) -> AuthTokens:
