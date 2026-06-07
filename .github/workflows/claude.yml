@@ -23,40 +23,50 @@ jobs:
     # the author check pins both the trigger and the prompt to the same
     # trusted account.
     if: |
-      github.event.sender.login == 'teng-lin' && (
+      github.event.sender.login == 'ngk0125' && (
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-        (github.event_name == 'issues' && github.event.issue.user.login == 'teng-lin' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+        (github.event_name == 'issues' && github.event.issue.user.login == 'ngk0125' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
       )
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
+      - name: Install notebooklm-py
+        run: pip install "notebooklm-py"
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+
+      - name: Verify notebooklm auth
+        run: notebooklm auth check --json
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@787c5a0ce96a9a6cfb050ea0c8f4c05f2447c251  # @ v1.0.133
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-
-          # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
-
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
-
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr *)'
+          system_prompt: |
+            You have full access to the `notebooklm` CLI. It is already installed and
+            authenticated via the NOTEBOOKLM_AUTH_JSON environment variable (verified in
+            the previous step). When asked to do anything with NotebookLM — list notebooks,
+            create notebooks, add sources, generate audio/video/quizzes, download artifacts,
+            etc. — run the `notebooklm` CLI directly using the Bash tool. Do NOT tell the
+            user to run commands themselves. Execute them and report the results.
+            Example: for "list my notebooks" run `notebooklm list --json` and show the output.
+        env:
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
 
