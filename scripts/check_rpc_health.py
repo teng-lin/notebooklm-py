@@ -511,6 +511,13 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.LIST_ARTIFACTS:
         return [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
 
+    # LIST_LABELS: list a notebook's source labels (read-only; OPTS wrapper + nb id)
+    if method == RPCMethod.LIST_LABELS:
+        return [
+            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            notebook_id,
+        ]
+
     # Notebook operations (read-only - rename to same name is a no-op)
     if method == RPCMethod.RENAME_NOTEBOOK:
         return [notebook_id, "RPC Health Check Test", None, None, None]

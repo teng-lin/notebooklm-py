@@ -377,6 +377,12 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "set user settings to caller-supplied values; replay leaves the same state"
         ),
         RPCMethod.GET_USER_TIER: "read-only account tier fetch; replay does not mutate account state",
+        RPCMethod.LIST_LABELS: "read-only label list; replay does not mutate label state",
+        RPCMethod.UPDATE_LABEL: (
+            "default (rename / set-emoji) sets label fields to caller-supplied values; "
+            "replay leaves the same state. The add_sources variant is classified "
+            "separately as NON_IDEMPOTENT_NO_RETRY"
+        ),
     }
 
     for _method, _notes in _IDEMPOTENT_READ_OR_SET_OP_NOTES.items():
@@ -418,5 +424,43 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "not the kickoff committed, so a blind transport retry could re-launch "
             "generation twice. Surface the first failure and let the caller decide "
             "whether to re-invoke (issue #1319)"
+        ),
+    )
+
+    # ----------------------------------------------------------------------------
+    # Source labels (multi-mode CREATE_LABEL / batch DELETE_LABEL / fieldmask
+    # UPDATE_LABEL add_sources). LIST_LABELS and the default rename/emoji
+    # UPDATE_LABEL are idempotent set-ops registered above; the writes below have
+    # no caller-supplied client-token slot. See docs/design/source-labels/.
+    # ----------------------------------------------------------------------------
+    registry.register(
+        RPCMethod.CREATE_LABEL,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "multi-mode label create/auto-group (agX4Bc) with no client-token slot; "
+            "the server allocates label ids and echoes the full set, so a blind retry "
+            "on commit-lost could create a duplicate manual label or regenerate every "
+            "label with fresh ids — surface the first failure"
+        ),
+    )
+    registry.register(
+        RPCMethod.DELETE_LABEL,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "batch label delete with no client-token slot; conservative until the "
+            "already-absent wire behavior is captured (rpc.md open item) — no blind "
+            "retry until a committed-then-retried delete is proven to no-op, then "
+            "downgrade to IDEMPOTENT_SET_OP like DELETE_SOURCE/DELETE_ARTIFACT"
+        ),
+    )
+    registry.register(
+        RPCMethod.UPDATE_LABEL,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        variant="add_sources",
+        notes=(
+            "add_sources APPENDS source ids via the fieldmask, with no client-token "
+            "slot; whether a blind retry that lands twice dedupes server-side is "
+            "unverified (rpc.md), so surface the first failure rather than risk a "
+            "double-append"
         ),
     )

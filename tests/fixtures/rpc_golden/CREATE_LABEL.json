@@ -1,0 +1,89 @@
+{
+  "method_name": "CREATE_LABEL",
+  "method_id": "agX4Bc",
+  "description": "AI auto-group / manual create labels (multi-mode; generate scope=unlabeled shown). Returns the full label set [None,[label,...]].",
+  "request": {
+    "params": [
+      [
+        2,
+        null,
+        null,
+        [
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1
+          ]
+        ]
+      ],
+      "SCRUBBED_NB_001",
+      null,
+      null,
+      [
+        0
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "agX4Bc",
+          "[[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]],\"SCRUBBED_NB_001\",null,null,[0]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "agX4Bc",
+          "[null,[[\"Scrubbed Topic A\",[[\"SCRUBBED_SRC_001\"],[\"SCRUBBED_SRC_002\"]],\"SCRUBBED_LABEL_001\",\"\"],[\"Scrubbed Topic B\",[[\"SCRUBBED_SRC_003\"]],\"SCRUBBED_LABEL_002\",\"\\ud83d\\udcc1\"]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      null,
+      [
+        [
+          "Scrubbed Topic A",
+          [
+            [
+              "SCRUBBED_SRC_001"
+            ],
+            [
+              "SCRUBBED_SRC_002"
+            ]
+          ],
+          "SCRUBBED_LABEL_001",
+          ""
+        ],
+        [
+          "Scrubbed Topic B",
+          [
+            [
+              "SCRUBBED_SRC_003"
+            ]
+          ],
+          "SCRUBBED_LABEL_002",
+          "📁"
+        ]
+      ]
+    ]
+  }
+}

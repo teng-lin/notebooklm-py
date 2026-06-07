@@ -151,6 +151,9 @@ def test_retry_disabled_entries_are_intentional_and_documented() -> None:
         (RPCMethod.CREATE_NOTE, "plain"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.CREATE_NOTE, "saved_from_chat"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.SHARE_NOTEBOOK, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.CREATE_LABEL, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.DELETE_LABEL, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.UPDATE_LABEL, "add_sources"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
     }
     actual = {
         (method, variant): entry.policy
@@ -194,6 +197,9 @@ def test_non_idempotent_no_retry_entries_document_dedupe_gap() -> None:
             "no client-token",
             "no client-visible note_id",
         ),
+        (RPCMethod.CREATE_LABEL, None): ("no client-token", "blind retry"),
+        (RPCMethod.DELETE_LABEL, None): ("no client-token", "blind retry"),
+        (RPCMethod.UPDATE_LABEL, "add_sources"): ("no client-token", "blind retry"),
     }
 
     for (method, variant), terms in expected_terms.items():

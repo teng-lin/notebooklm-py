@@ -96,6 +96,13 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         # probed in either quick or full mode (see ALWAYS_SKIP_METHODS in
         # scripts/check_rpc_health.py).
         "START_DEEP_RESEARCH",
+        # AI auto-groups / creates source labels (multi-mode write) — write op,
+        # --full only. LIST_LABELS (read) is probed via get_test_params.
+        "CREATE_LABEL",
+        # Renames / sets emoji / adds sources to a label — write op, --full only.
+        "UPDATE_LABEL",
+        # Batch-deletes labels — write op, --full only.
+        "DELETE_LABEL",
     }
 )
 

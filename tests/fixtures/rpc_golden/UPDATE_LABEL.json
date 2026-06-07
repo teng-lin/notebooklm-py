@@ -1,0 +1,65 @@
+{
+  "method_name": "UPDATE_LABEL",
+  "method_id": "le8sX",
+  "description": "Rename / set emoji / add sources via fieldmask (rename variant shown). Returns [] on success.",
+  "request": {
+    "params": [
+      [
+        2,
+        null,
+        null,
+        [
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1
+          ]
+        ]
+      ],
+      "SCRUBBED_NB_001",
+      "SCRUBBED_LABEL_001",
+      [
+        [
+          [
+            "Scrubbed Renamed Topic"
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "le8sX",
+          "[[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]],\"SCRUBBED_NB_001\",\"SCRUBBED_LABEL_001\",[[[\"Scrubbed Renamed Topic\"]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "le8sX",
+          "[]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": []
+  }
+}
