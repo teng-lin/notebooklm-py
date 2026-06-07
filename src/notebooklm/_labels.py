@@ -262,6 +262,11 @@ class LabelsAPI:
         carrying no label; the existence check must raise on a missing label even
         when ``return_object=False``). The re-fetch is NOT removable — the label
         wire gives no return payload.
+
+        **Not atomic across ids:** each id is a separate write, so a mid-loop RPC
+        failure leaves the already-written ids assigned and then raises (this
+        variant is ``NON_IDEMPOTENT_NO_RETRY`` — the transport does not auto-retry).
+        The caller can re-issue with the remaining ids.
         """
         if not source_ids:
             raise ValueError("add_sources requires at least one source id")
@@ -305,6 +310,10 @@ class LabelsAPI:
         return/not-found contract (``le8sX`` echoes ``[]``, carrying no label; the
         existence check must raise on a missing label even when
         ``return_object=False``).
+
+        **Not atomic across ids**, but ``remove_sources`` is ``IDEMPOTENT_SET_OP``,
+        so a mid-loop failure is safely recovered by re-calling with the full set
+        (removing an already-absent member is a no-op).
         """
         if not source_ids:
             raise ValueError("remove_sources requires at least one source id")

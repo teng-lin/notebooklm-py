@@ -341,3 +341,45 @@ async def test_sources_missing_label_raises() -> None:
     api, _, _ = _api({RPCMethod.LIST_LABELS: _list_env()})
     with pytest.raises(LabelNotFoundError):
         await api.sources("nb", "missing")
+
+
+# -- non-atomicity contract (per-id loop) ------------------------------------
+
+
+async def test_add_sources_is_not_atomic_partial_failure_propagates() -> None:
+    """Multi-id add is non-atomic: a mid-loop RPC failure leaves the earlier ids
+    written and propagates the error without the final re-fetch."""
+
+    class _RaiseOnSecondUpdate(FakeRpc):
+        async def rpc_call(
+            self,
+            method: RPCMethod,
+            params: list[Any],
+            source_path: str = "/",
+            allow_null: bool = False,
+            _is_retry: bool = False,
+            *,
+            disable_internal_retries: bool = False,
+            operation_variant: str | None = None,
+        ) -> Any:
+            await super().rpc_call(
+                method,
+                params,
+                source_path,
+                allow_null,
+                _is_retry,
+                disable_internal_retries=disable_internal_retries,
+                operation_variant=operation_variant,
+            )
+            if sum(c.method == RPCMethod.UPDATE_LABEL for c in self.calls) == 2:
+                raise RuntimeError("wire blip on the 2nd add")
+            return None
+
+    rpc = _RaiseOnSecondUpdate()
+    api = LabelsAPI(rpc, list_sources=AsyncMock(return_value=[]))
+    with pytest.raises(RuntimeError):
+        await api.add_sources("nb", "l1", ["s1", "s2", "s3"])
+
+    updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]
+    assert len(updates) == 2  # first applied, failed on the second, never reached the third
+    assert all(c.method != RPCMethod.LIST_LABELS for c in rpc.calls)  # no final re-fetch
