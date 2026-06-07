@@ -560,12 +560,6 @@ _SET_COOKIE_ATTR_NAMES: frozenset[str] = frozenset(
 # scrubbed.
 _COOKIE_VALUE_PLACEHOLDER = "SCRUBBED"
 
-# A single ``name=value`` cookie pair inside a cookie-header value. ``name`` is a
-# cookie-token run (RFC 6265 token chars, conservatively ``[^=;\s]``); ``value``
-# is everything up to the next ``;`` or end-of-string. ``\s*`` around the
-# separators tolerates the optional space after each ``;``.
-_COOKIE_PAIR_RE = re.compile(r"(?P<name>[^=;\s]+)=(?P<value>[^;]*)")
-
 
 def _scrub_cookie_pairs(header_value: str, *, first_pair_only: bool) -> str:
     """Replace cookie-pair VALUES in a logical cookie-header value, name-agnostic.

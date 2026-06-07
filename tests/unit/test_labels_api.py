@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from notebooklm._labels import LabelsAPI
-from notebooklm.exceptions import LabelError, LabelNotFoundError
+from notebooklm.exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 
 
@@ -92,6 +92,24 @@ async def test_generate_scope_all_is_destructive_slot() -> None:
     api, rpc, _ = _api({RPCMethod.CREATE_LABEL: _create_env()})
     await api.generate("nb", scope="all")
     assert rpc.calls[0].params[4] == []
+
+
+async def test_generate_rejects_invalid_scope_before_any_rpc() -> None:
+    # A runtime-invalid scope must raise ValueError BEFORE the wire — the param
+    # builder treats anything != "all" as "unlabeled", so without this guard an
+    # invalid value would silently build the (unintended) "unlabeled" payload.
+    api, rpc, _ = _api({RPCMethod.CREATE_LABEL: _create_env()})
+    with pytest.raises(ValueError):
+        await api.generate("nb", scope="bogus")  # type: ignore[arg-type]
+    assert rpc.calls == []
+
+
+async def test_list_truthy_non_list_envelope_raises_drift() -> None:
+    # A present-but-non-list envelope is schema drift, not an empty label set —
+    # it must raise rather than masking the drift as ``[]``.
+    api, _, _ = _api({RPCMethod.LIST_LABELS: "unexpected-string"})
+    with pytest.raises(UnknownRPCMethodError):
+        await api.list("nb")
 
 
 async def test_list_and_create_envelopes_differ() -> None:

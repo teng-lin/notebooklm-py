@@ -32,6 +32,7 @@ def test_empty_sources_none_is_empty_tuple_not_drift() -> None:
         pytest.param(["Topic", None, 5, ""], id="non_str_id"),
         pytest.param(["Topic", ["s1"], "l1", ""], id="member_not_wrapped"),
         pytest.param(["Topic", [[]], "l1", ""], id="member_empty_list"),
+        pytest.param(["Topic", [["s1", "extra"]], "l1", ""], id="member_over_long"),
         pytest.param(["Topic", [[5]], "l1", ""], id="member_non_str_id"),
         pytest.param(["Topic", "nope", "l1", ""], id="sources_wrong_type"),
         pytest.param(["Topic", None, "l1", 5], id="non_str_emoji"),

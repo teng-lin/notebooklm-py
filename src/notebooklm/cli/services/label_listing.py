@@ -13,8 +13,10 @@ Two responsibilities live here:
   id/prefix pass with full-id passthrough **disabled**, then falls back to an
   explicit exact-**name** match over ``client.labels.list()`` (a name pass —
   ``resolve_partial_id_in_items``'s ``title_of`` is diagnostics-only and does
-  not make names matchable). An ambiguous name (>1 match) raises with the
-  candidate ids, emojis, and source counts; it never guesses.
+  not make names matchable). An ambiguous *prefix* (>1 id match) raises with the
+  candidate list (code ``AMBIGUOUS_ID``) BEFORE the name fallback — without this
+  it would wrongly fall through to a NOT_FOUND. An ambiguous *name* (>1 match)
+  raises with the candidate ids, emojis, and source counts; it never guesses.
 * The members→titles join + :func:`execute_label_list` — one ``labels.list()``
   plus one ``sources.list()`` build the ``{source_id: title}`` map, so each
   label's members carry resolved titles without an N+1 fan-out.
@@ -37,9 +39,10 @@ class LabelResolutionError(Exception):
     """Typed label-resolution error for command-layer rendering and exit policy.
 
     Mirrors ``SourceMutationError``: carries a human ``message``, an
-    ADR-0015 ``code`` (``NOT_FOUND`` / ``AMBIGUOUS_NAME`` / ``VALIDATION_ERROR``),
-    and an optional ``extra`` payload. The command layer maps it through
-    ``output_error`` so the typed ``--json`` envelope is preserved.
+    ADR-0015 ``code`` (``NOT_FOUND`` / ``AMBIGUOUS_ID`` / ``AMBIGUOUS_NAME`` /
+    ``VALIDATION_ERROR``), and an optional ``extra`` payload. The command layer
+    maps it through ``output_error`` so the typed ``--json`` envelope is
+    preserved.
     """
 
     def __init__(
@@ -65,8 +68,10 @@ async def resolve_label_id(
 
     Resolution order: id / unambiguous-prefix first (full-id passthrough
     **disabled** so a UUID-shaped *name* is not blindly accepted as an id),
-    then an explicit exact-name match. An ambiguous name (>1 match) raises
-    :class:`LabelResolutionError` listing each candidate's id, emoji, and
+    then an explicit exact-name match. An ambiguous *prefix* (>1 id match)
+    raises with code ``AMBIGUOUS_ID`` BEFORE the name fallback; an ambiguous
+    *name* (>1 match) raises with code ``AMBIGUOUS_NAME``. Both
+    :class:`LabelResolutionError` paths list each candidate's id, emoji, and
     source count.
     """
     token = validate_id(token, "label")
@@ -89,8 +94,32 @@ async def resolve_label_id(
             allow_full_id_passthrough=False,
         )
     except _IdPassMiss:
+        # ``resolve_partial_id_in_items`` raises ``_IdPassMiss`` for BOTH "no
+        # match" AND "ambiguous prefix" (see ``cli/resolve.py``). Distinguish the
+        # ambiguous-prefix case here so it surfaces its candidate list (mirroring
+        # ``resolve_source_id``) instead of silently falling through to the name
+        # pass and reporting a misleading NOT_FOUND. Exact-id matches already
+        # returned from pass 1 above, so a >1 prefix-match count here is a true
+        # ambiguity, not a short-but-complete id.
+        token_lower = token.lower()
+        prefix_matches = [label for label in labels if label.id.lower().startswith(token_lower)]
+        if len(prefix_matches) > 1:
+            raise LabelResolutionError(
+                _ambiguous_id_message(token, prefix_matches),
+                "AMBIGUOUS_ID",
+                {
+                    "id": token,
+                    "candidates": [
+                        {
+                            "id": label.id,
+                            "emoji": label.emoji,
+                            "source_count": len(label.source_ids),
+                        }
+                        for label in prefix_matches
+                    ],
+                },
+            ) from None
         # No id / prefix match — fall through to the explicit name pass.
-        pass
 
     # Pass 2: explicit exact-name match (``title_of`` is diagnostics-only in
     # ``resolve_partial_id_in_items`` and does not make names matchable).
@@ -133,14 +162,27 @@ class _IdPassMiss(Exception):
 def _ambiguous_name_message(name: str, matches: list[Label]) -> str:
     """Build the ambiguous-name error listing each candidate (id + emoji + count)."""
     lines = [f"Name '{name}' matches {len(matches)} labels. Use a label id instead:"]
+    _append_candidate_lines(lines, matches)
+    lines.append("Specify the label id to disambiguate.")
+    return "\n".join(lines)
+
+
+def _ambiguous_id_message(partial_id: str, matches: list[Label]) -> str:
+    """Build the ambiguous-prefix error listing each candidate (id + emoji + count)."""
+    lines = [f"Ambiguous label id '{partial_id}' matches {len(matches)} labels:"]
+    _append_candidate_lines(lines, matches)
+    lines.append("Specify more characters to disambiguate.")
+    return "\n".join(lines)
+
+
+def _append_candidate_lines(lines: list[str], matches: list[Label]) -> None:
+    """Append the per-candidate ``id emoji (N sources)`` lines (capped at 5)."""
     for label in matches[:5]:
         emoji = f"{label.emoji} " if label.emoji else ""
         count = len(label.source_ids)
         lines.append(f"  {label.id} {emoji}({count} source{'s' if count != 1 else ''})")
     if len(matches) > 5:
         lines.append(f"  ... and {len(matches) - 5} more")
-    lines.append("Specify the label id to disambiguate.")
-    return "\n".join(lines)
 
 
 @dataclass(frozen=True)

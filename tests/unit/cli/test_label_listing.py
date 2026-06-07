@@ -97,6 +97,35 @@ async def test_resolve_ambiguous_name_lists_candidates() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_ambiguous_prefix_lists_candidates() -> None:
+    """An ambiguous id *prefix* raises AMBIGUOUS_ID with candidates, not NOT_FOUND.
+
+    Regression guard: ``resolve_partial_id_in_items`` raises the id-pass miss
+    sentinel for both "no match" and "ambiguous prefix", so an ambiguous prefix
+    must be detected distinctly here instead of falling through to the name pass
+    (which would report a misleading NOT_FOUND and lose the candidate list).
+    """
+    labels = [
+        Label(id="lblaaa111", name="Papers", emoji="📄", source_ids=["s1", "s2"]),
+        Label(id="lblaaa222", name="Topics", emoji="🧠", source_ids=["s3"]),
+    ]
+    client = _make_client(labels=labels)
+    with pytest.raises(LabelResolutionError) as exc:
+        # ``lblaaa`` is a prefix of BOTH ids — ambiguous.
+        await resolve_label_id(client, "nb_1", "lblaaa")
+    assert exc.value.code == "AMBIGUOUS_ID"
+    # Candidate ids, emojis, and source counts are surfaced (message + extra).
+    message = str(exc.value)
+    assert "lblaaa111" in message
+    assert "lblaaa222" in message
+    assert "📄" in message
+    assert "🧠" in message
+    assert exc.value.extra is not None
+    candidate_ids = {c["id"] for c in exc.value.extra["candidates"]}
+    assert candidate_ids == {"lblaaa111", "lblaaa222"}
+
+
+@pytest.mark.asyncio
 async def test_resolve_no_match_raises() -> None:
     labels = [Label(id="lblaaa111", name="Papers")]
     client = _make_client(labels=labels)

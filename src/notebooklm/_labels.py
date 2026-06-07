@@ -70,7 +70,13 @@ class LabelsAPI:
         """
         if not result:
             return []
-        raw = result[index] if isinstance(result, list) and len(result) > index else None
+        if not isinstance(result, list):
+            raise UnknownRPCMethodError(
+                message="label set envelope is not a list",
+                method_id=method_id,
+                source=_SRC,
+            )
+        raw = result[index] if len(result) > index else None
         if raw is None:
             return []
         if not isinstance(raw, list):
@@ -137,7 +143,14 @@ class LabelsAPI:
         sources, preserving existing labels; ``scope='all'`` WIPES + regenerates
         EVERY label with new ids (destructive — the CLI gates it behind
         ``--yes/-y``). Returns the full post-op label set (``agX4Bc`` echoes it).
+
+        Raises ``ValueError`` on an unrecognized ``scope`` BEFORE issuing any RPC
+        — the param builder treats anything != ``"all"`` as ``"unlabeled"``, so a
+        runtime-invalid value would otherwise silently build the (safe but
+        unintended) ``"unlabeled"`` payload.
         """
+        if scope not in ("all", "unlabeled"):
+            raise ValueError(f"generate scope must be 'all' or 'unlabeled', got {scope!r}")
         result = await self._rpc.rpc_call(
             RPCMethod.CREATE_LABEL,
             build_generate_labels_params(notebook_id, scope=scope),

@@ -17,6 +17,7 @@ from notebooklm.exceptions import (
     ArtifactPendingTimeoutError,
     AuthError,
     ConfigurationError,
+    LabelNotFoundError,
     MindMapNotFoundError,
     NetworkError,
     NotebookLimitError,
@@ -255,6 +256,7 @@ class TestHandleErrorsNotFound:
         (ArtifactNotFoundError("art_789", "audio"), "artifact_id", "art_789"),
         (NoteNotFoundError("note_111"), "note_id", "note_111"),
         (MindMapNotFoundError("mm_222"), "mind_map_id", "mm_222"),
+        (LabelNotFoundError("label_333"), "label_id", "label_333"),
     ]
 
     @pytest.mark.parametrize(

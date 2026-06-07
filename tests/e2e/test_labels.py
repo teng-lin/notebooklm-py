@@ -249,6 +249,7 @@ class TestLabelsAPIAttributes:
             "rename",
             "set_emoji",
             "add_sources",
+            "remove_sources",
             "delete",
         ):
             assert hasattr(client.labels, method), f"labels.{method} missing"
