@@ -31,6 +31,10 @@
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
 | `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_source/content.py` |
+| `agX4Bc` | CREATE_LABEL | AI-generate label groupings and create manual labels | `_labels.py` |
+| `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_labels.py` |
+| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add sources | `_labels.py` |
+| `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) | `_labels.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
@@ -374,6 +378,107 @@ await rpc_call(
     source_path=f"/notebook/{notebook_id}",
 )
 ```
+
+---
+
+## Source Labels
+
+Source labels group a notebook's sources into AI-generated (or manually named)
+topic buckets. A label is a standalone entity — a source carries no
+back-reference; the label owns a list of source IDs, and membership is
+many-to-many (a source can belong to multiple labels). Every label RPC's first
+argument is the recurring request-options wrapper used by `_settings.py`:
+
+```python
+OPTS = [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]
+```
+
+### The Label Tuple (response shape)
+
+Each label is a 4-tuple `[name, sources, label_id, emoji]`:
+
+| Slot | Field | Notes |
+|------|-------|-------|
+| `[0]` | `name` | str |
+| `[1]` | `sources` | `[[source_id], ...]` (each UUID wrapped in its own 1-element list); **`None`** for a new empty label |
+| `[2]` | `label_id` | server-assigned UUID |
+| `[3]` | `emoji` | `""` when unset, else the emoji string |
+
+**Response envelopes differ by RPC:** `CREATE_LABEL` returns
+`[None, [label, ...]]` (label set at index `[1]`); `LIST_LABELS` returns
+`[[label, ...]]` (label set at index `[0]`); `UPDATE_LABEL` and `DELETE_LABEL`
+echo `[]` on success.
+
+### RPC: CREATE_LABEL (agX4Bc)
+
+**Source:** `_labels.py::generate()`, `_labels.py::create()` (builders in `_label/params.py`)
+
+A single multi-mode RPC; the mode is selected by which slot is populated. Slot
+`[4]` drives AI auto-labeling (`generate`); slot `[5]` creates manual labels
+(`create`).
+
+```python
+# Auto-label / Reorganize -> All sources (slot [4] = []) - WIPES + regenerates with new ids
+params = [OPTS, notebook_id, None, None, []]
+
+# Reorganize -> Unlabeled sources (slot [4] = [0]) - preserves existing labels
+params = [OPTS, notebook_id, None, None, [0]]
+
+# Manual create (slot [5] = [[name, emoji]])
+params = [OPTS, notebook_id, None, None, None, [["New Label", ""]]]
+```
+
+**Response (all modes):** the full post-op label set — `[None, [label, ...]]`.
+
+### RPC: LIST_LABELS (I3xc3c)
+
+**Source:** `_labels.py::list()`
+
+```python
+params = [OPTS, notebook_id]
+```
+
+**Response:** `[[label, ...]]` — a single-element outer list wrapping the labels
+(**not** `[None, [label, ...]]` like `agX4Bc`). Each label's slot `[1]` carries
+its source UUIDs, so one `list()` call gives the complete source→label mapping.
+
+### RPC: UPDATE_LABEL (le8sX)
+
+**Source:** `_labels.py::update()`, `rename()`, `set_emoji()`, `add_sources()`
+
+A unified label-update RPC covering rename, emoji, and source membership. Slot
+`[3]` is a fieldmask `[[name_emoji, sources]]`; populate only the group(s) you
+want to change.
+
+```python
+# Rename (name_emoji = [name]; sources omitted)
+params = [OPTS, notebook_id, label_id, [[[new_name]]]]
+
+# Set emoji (name slot None, emoji set; sources omitted)
+params = [OPTS, notebook_id, label_id, [[[None, emoji]]]]
+
+# Add source(s) (name_emoji None, sources set) - APPENDS, does not replace
+params = [OPTS, notebook_id, label_id, [[None, [[source_id]]]]]
+```
+
+**Note:** the `sources` group **appends** (send only the IDs to add — existing
+members survive) and labels may **overlap** (adding a source does not remove it
+from any other label). No "remove source from label" RPC has been captured.
+
+**Response:** `[]` on success.
+
+### RPC: DELETE_LABEL (GyzE7e)
+
+**Source:** `_labels.py::delete()`
+
+Batch-capable — label IDs are passed as an array. Deleting a label does **not**
+delete its sources (they become unlabeled).
+
+```python
+params = [OPTS, notebook_id, [label_id, ...]]
+```
+
+**Response:** `[]` on success.
 
 ---
 

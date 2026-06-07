@@ -128,7 +128,9 @@ RPC Layer (rpc/)
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
 | `paths.py`, `migration.py` | Profile-aware path resolution and locked migration from the legacy flat layout |
 | `_types/`, `types.py` | Dataclass implementation package and public type/re-export facade |
+| `_types/labels.py` | `Label` pure-value type (source-label topic grouping; `source_ids` only, no artifact members) re-exported by `types.py` |
 | `_row_adapters/artifacts.py` | `ArtifactRow` typed view over raw positional artifact RPC rows |
+| `_row_adapters/labels.py` | `LabelRow` strict typed view over the raw positional label tuple `[name, sources, id, emoji]` (fails loud on schema drift) |
 | `_row_adapters/notes.py` | `NoteRow` typed view over raw positional note and mind-map RPC rows |
 | `_row_adapters/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
@@ -140,6 +142,7 @@ RPC Layer (rpc/)
 | `_research.py` | `client.research` API |
 | `_notes.py` | `client.notes` API |
 | `_sharing.py` | `client.sharing` API |
+| `_labels.py` | `client.labels` API — source labels (topic groupings); pure-RPC like `SharingAPI`, plus a narrow `list_sources` callable for the membership→`Source` join in `sources()` (see docs/design/source-labels/) |
 | `_settings.py` | `client.settings` API |
 | `_note_service.py` | Service layer managing note CRUD, note-backed content generation, and sync |
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
@@ -155,6 +158,7 @@ RPC Layer (rpc/)
 | `_source/polling.py` | Poll coordination service for active source conversions |
 | `_source/upload.py` | Concurrency-gated upload pipeline for source files |
 | `_source/upload_payloads.py` | Stable source upload registration, rename, and resumable-upload request builders |
+| `_label/params.py` | Stable CREATE_LABEL / LIST_LABELS / UPDATE_LABEL / DELETE_LABEL request payload builders (with the shared `_opts()` request-options wrapper) |
 | `_notebook_metadata.py` | Metadata protocol schemas for sub-clients |
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
 | `_sharing_manager.py` | Direct sharing management logic |
@@ -171,6 +175,8 @@ RPC Layer (rpc/)
 | `_auth/headers.py` | HTTP header construction |
 | `_auth/cookies.py` | Cookie map manipulation + `_update_cookie_input` |
 | `_auth/cookie_policy.py` | Cookie-domain allowlist and policy decisions |
+| `cli/label_cmd.py` | `label` command group (list/sources/generate/create/rename/emoji/add/delete); thin Click shells over `client.labels` and the label-listing service (ADR-0008) |
+| `cli/services/label_listing.py` | `label` CLI service: composite `resolve_label_id()` (id/prefix OR exact-name, ambiguity error) + the `label list` members→source-titles join |
 
 ### Repository Structure
 
@@ -263,9 +269,13 @@ src/notebooklm/
 │   ├── payloads.py              # Stable artifact request payload builders
 │   ├── listing.py               # Artifact listing helper
 │   └── polling.py               # Artifact polling coordinator
+├── _label/                      # Source-label feature subpackage: stable RPC payload builders
+│   ├── __init__.py              # Re-exports the label param builders
+│   └── params.py                # Source-label RPC payload builders (CREATE/LIST/UPDATE/DELETE_LABEL)
 ├── _row_adapters/               # Positional-RPC-row adapters subpackage (promoted from flat _row_adapters_*.py, #1328)
 │   ├── __init__.py              # Re-exports the typed row views
 │   ├── artifacts.py             # Artifact row adapter
+│   ├── labels.py                # Source-label row adapter
 │   ├── notes.py                 # Note and mind-map row adapter
 │   └── sources.py               # Source row adapter
 ├── _chat/                       # Chat-feature subpackage — facade + helpers unified (#1328)
@@ -293,6 +303,7 @@ src/notebooklm/
 │   ├── artifacts.py
 │   ├── chat.py
 │   ├── common.py
+│   ├── labels.py                # Label pure-value type (source membership; no kind/artifact_ids)
 │   ├── mind_maps.py             # MindMap + MindMapKind pure-value types (#1256)
 │   ├── notebooks.py
 │   ├── notes.py
@@ -306,6 +317,7 @@ src/notebooklm/
 ├── _notes.py                    # NotesAPI
 ├── _sharing.py                  # SharingAPI
 ├── _settings.py                 # SettingsAPI
+├── _labels.py                   # LabelsAPI — client.labels (source labels: generate/create/list/…)
 ├── notebooklm_cli.py            # Entry-point assembler — imports + registers cli/ groups
 ├── rpc/                         # RPC protocol layer
 │   ├── types.py                 # Method IDs and enums
@@ -336,6 +348,7 @@ src/notebooklm/
     ├── grouped.py               # Custom Click group with sectioned help output
     ├── helpers.py               # Shared Click utilities
     ├── input.py                 # CLI prompt and stdin input helpers
+    ├── label_cmd.py             # label list/sources/generate/create/rename/emoji/add/delete
     ├── language_cmd.py          # Language configuration CLI commands
     ├── notebook_cmd.py          # list, create, delete, rename
     ├── note_cmd.py              # note commands
@@ -361,6 +374,7 @@ src/notebooklm/
         ├── download.py          # Pure-logic download plan + executor
         ├── generate.py          # Service layer for `notebooklm generate` commands (executor + re-exports)
         ├── generate_plans.py    # Plan-building half of `generate`: maps, GenerationPlan, build_generation_plan
+        ├── label_listing.py     # `label` resolve/join service (resolve_label_id + members→titles join)
         ├── listing.py           # Shared list-command pipeline for CLI resources
         ├── login/               # Browser-cookie login helper package
         │   ├── __init__.py      # re-export-only patch surface

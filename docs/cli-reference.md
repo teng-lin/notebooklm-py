@@ -40,7 +40,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 - **Session commands** - Authentication and context management
 - **Notebook commands** - CRUD operations on notebooks
 - **Chat commands** - Querying and conversation management
-- **Grouped commands** - `source`, `artifact`, `agent`, `generate`, `download`, `note`, `share`, `research`, `language`, `skill`, `auth`, `profile`
+- **Grouped commands** - `source`, `label`, `artifact`, `agent`, `generate`, `download`, `note`, `share`, `research`, `language`, `skill`, `auth`, `profile`
 - **Utility commands** - `metadata`, `doctor`
 
 ---
@@ -170,6 +170,27 @@ All `source` subcommands also accept `-n/--notebook ID` (resolves via flag > `NO
 `source fulltext -o FILE` auto-renames an existing output path by default (`FILE` -> `FILE (2)`, etc.) instead of overwriting it. Pass `--force` to overwrite intentionally, or `--no-clobber` to fail if the path exists.
 
 `source stale` reports whether a URL/Drive source needs a refresh. By default it follows the standard CLI exit convention (`0` on success, `1` on error); branch on the JSON `stale`/`fresh` fields (or stdout text) for the freshness verdict. Pass `--exit-on-stale` to opt into the back-compat inverted predicate (`0` = stale, `1` = fresh) for shell idioms like `if notebooklm source stale --exit-on-stale ID; then refresh; fi`.
+
+`source list` also accepts `--label <id|name>` to list only the sources in a given label (a saved selection). The selector resolves a label id (or partial prefix) **or** an exact label name; see [Label Commands](#label-commands-notebooklm-label-cmd).
+
+### Label Commands (`notebooklm label <cmd>`)
+
+Source labels group a notebook's sources into topic buckets. A `<id|name>` argument accepts a label id (or partial prefix) **or** an exact label name; an ambiguous name lists the matching ids so you can disambiguate.
+
+| Command | Arguments | Options | Example |
+|---------|-----------|---------|---------|
+| `list` | - | `--json` | `label list -n nb123` |
+| `sources <id\|name>` | Label id or name | `--json` | `label sources Papers` |
+| `generate` | - | `--scope [all\|unlabeled]`, `-y/--yes`, `--json` | `label generate --scope all -y` |
+| `create <name>` | Label name | `--emoji 📄`, `--json` | `label create "Papers" --emoji 📄` |
+| `rename <id\|name> <new_name>` | Label ref, new name | `--json` | `label rename Papers "Research Papers"` |
+| `emoji <id\|name> <emoji>` | Label ref, emoji | `--json` | `label emoji Papers 📚` |
+| `add <id\|name> <source_id>...` | Label ref, one+ source ids | `--json` | `label add Papers src123 src456` |
+| `delete <id\|name>...` | One+ label refs | `-y/--yes`, `--json` | `label delete Papers -y` |
+
+All `label` subcommands accept `-n/--notebook ID` (resolves via flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
+
+`label generate --scope all` (wipes and regenerates every label with new ids) and `label delete` are destructive and require `-y/--yes` to confirm (or an interactive prompt). `label generate --scope unlabeled` (the default) only labels currently-unlabeled sources and needs no confirmation. `label add` appends sources (existing members survive; labels may overlap) and `label delete` removes the label only — its sources become unlabeled, not deleted. `source_id` arguments to `label add` accept partial-prefix matching like every other source-id command.
 
 ### Research Commands (`notebooklm research <cmd>`)
 
@@ -553,6 +574,47 @@ notebooklm share remove user@example.com -y   # Skip confirmation
 |-------|-----------------|
 | `full` | Chat, sources, and notes |
 | `chat` | Chat interface only |
+
+### Label: `list`, `sources`, `generate`, `create`, `rename`, `emoji`, `add`, `delete`
+
+Manage source labels — AI-generated (or manually named) topic groupings of a notebook's sources.
+
+```bash
+# List labels (with member ids + resolved source titles)
+notebooklm label list
+
+# Expand a label to its source objects
+notebooklm label sources Papers
+
+# AI-group sources into topic labels (the UI's "Reorganize")
+notebooklm label generate                       # --scope unlabeled (default, safe)
+notebooklm label generate --scope all -y        # destructive: wipe + regenerate every label
+
+# Create an empty, manually-named label
+notebooklm label create "Papers" --emoji 📄
+
+# Rename a label (preserves its emoji) / set its emoji
+notebooklm label rename Papers "Research Papers"
+notebooklm label emoji Papers 📚
+
+# Add source(s) to a label (append; existing members preserved)
+notebooklm label add Papers src123 src456
+
+# Delete one or more labels (the label only, not its sources)
+notebooklm label delete Papers -y
+```
+
+**Options (all commands):**
+- `-n, --notebook ID` - Specify notebook (uses current if not set, supports partial IDs)
+- `--json` - Output as JSON
+
+**Confirmation gates:**
+- `label generate --scope all` wipes and regenerates **every** label with new ids — requires `-y/--yes` (or an interactive prompt).
+- `label delete` requires `-y/--yes` (or an interactive prompt).
+
+**Name-or-ID resolution:** `<id|name>` arguments accept a label id (or partial prefix) or an exact label name. An ambiguous name lists the matching ids (with emoji + source count) so you can re-run with the id.
+
+**Selecting sources by label:** `notebooklm source list --label <id|name>` lists only the sources in a label — a read-only saved-selection filter.
 
 ### Authentication: `auth check`
 

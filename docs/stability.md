@@ -66,10 +66,11 @@ NotebookLMClient.research
 NotebookLMClient.notes
 NotebookLMClient.settings
 NotebookLMClient.sharing
+NotebookLMClient.labels
 NotebookLMClient.rpc_call()
 
 # Types
-Notebook, Source, Artifact, Note
+Notebook, Source, Artifact, Note, Label
 GenerationStatus, AskResult
 NotebookDescription, ConversationTurn
 ShareStatus, SharedUser, SourceFulltext
@@ -102,6 +103,7 @@ ResearchError, ResearchTimeoutError, ResearchTaskMismatchError
 # the prerequisite for the note not-found work landing in v0.8.0 (umbrella #1346).
 NoteError, NoteNotFoundError
 MindMapError, MindMapNotFoundError
+LabelError, LabelNotFoundError
 ChatError
 
 # Enums
