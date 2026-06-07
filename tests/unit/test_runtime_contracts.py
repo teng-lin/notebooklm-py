@@ -59,6 +59,8 @@ class _KernelImpl:
         url: str,
         headers: Mapping[str, str],
         body: bytes,
+        *,
+        read_timeout: float | None = None,
     ) -> httpx.Response:
         return httpx.Response(200, content=body)
 
@@ -119,9 +121,11 @@ def test_rpc_caller_signature_matches_legacy_session_rpc_call() -> None:
 
 def test_kernel_protocol_signatures_are_pinned() -> None:
     post = inspect.signature(Kernel.post)
-    assert list(post.parameters) == ["self", "url", "headers", "body"]
+    assert list(post.parameters) == ["self", "url", "headers", "body", "read_timeout"]
     assert post.parameters["headers"].annotation == "Mapping[str, str]"
     assert post.parameters["body"].annotation == "bytes"
+    assert post.parameters["read_timeout"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert post.parameters["read_timeout"].default is None
     assert post.return_annotation == "httpx.Response"
 
     cookies = inspect.signature(Kernel.cookies.fget)

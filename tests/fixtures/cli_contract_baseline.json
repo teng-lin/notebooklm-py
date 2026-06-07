@@ -1019,7 +1019,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "HTTP request timeout in seconds (default: 30, from the library). Increase for long or complex prompts. (--timeout is a back-compat alias.)",
+          "help": "HTTP request/read timeout in seconds for this ask. Defaults to the library's chat timeout. (--timeout is a back-compat alias.)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,

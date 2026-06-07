@@ -18,7 +18,7 @@ correspondingly stub only ``perform_authed_post`` on the transport.
 As of Wave 8 of the session-decoupling plan (ADR-0014 Rule 2 Corollary),
 ``chat_aware_authed_post`` takes the :class:`RuntimeTransport` collaborator
 directly rather than a chat-local ``ChatRuntime`` Protocol, and calls
-``transport.perform_authed_post(build_request=..., log_label=parse_label)``
+``transport.perform_authed_post(build_request=..., log_label=parse_label, ...)``
 on it.
 
 The stub ``transport`` is a lightweight ``SimpleNamespace`` rather than a
@@ -116,6 +116,8 @@ async def test_chat_aware_authed_post_returns_response_and_balances_bookkeeping(
     transport.perform_authed_post.assert_awaited_once_with(
         build_request=_noop_build_request,
         log_label="chat.ask",
+        read_timeout=None,
+        disable_read_timeout_retries=False,
     )
 
 
@@ -249,26 +251,57 @@ async def test_transport_server_error_with_request_error_maps_to_network_error()
 
 
 @pytest.mark.asyncio
-async def test_transport_server_error_with_timeout_exception_keeps_timeout_message():
+async def test_transport_server_error_with_read_timeout_includes_chat_stall_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """Regression: ``httpx.TimeoutException`` is a subclass of
     ``httpx.RequestError``; without the explicit timeout branch the message
     would collapse to the generic "network error after retries" line."""
     original = httpx.ReadTimeout("read timed out", request=_make_request())
     transport_exc = TransportServerError("timeout", original=original)
     transport = _make_stub_transport(transport_side_effect=transport_exc)
+    monkeypatch.setenv("NOTEBOOKLM_BL", "boq_labs-tailwind-frontend_test_p0")
 
     with pytest.raises(NetworkError) as excinfo:
         await chat_aware_authed_post(
             transport,  # type: ignore[arg-type]
             build_request=_noop_build_request,
             parse_label="chat.ask",
+            read_timeout=30.0,
         )
 
     message = str(excinfo.value)
-    assert "timed out after retries" in message
+    assert "received no streamed chat bytes for 30s" in message
+    assert "slow-to-first-byte" in message
+    assert "chat-stream stall" in message
+    assert "shared notebooks" in message
+    assert "NOTEBOOKLM_BL='boq_labs-tailwind-frontend_test_p0'" in message
+    assert "--request-timeout 180" in message
     assert "network error after retries" not in message
     assert excinfo.value.original_error is original
     assert excinfo.value.__cause__ is transport_exc
+
+
+@pytest.mark.asyncio
+async def test_transport_server_error_with_blank_read_timeout_message_has_no_stray_colon(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    original = httpx.ReadTimeout("", request=_make_request())
+    transport_exc = TransportServerError("timeout", original=original)
+    transport = _make_stub_transport(transport_side_effect=transport_exc)
+    monkeypatch.setenv("NOTEBOOKLM_BL", "boq_labs-tailwind-frontend_test_p0")
+
+    with pytest.raises(NetworkError) as excinfo:
+        await chat_aware_authed_post(
+            transport,  # type: ignore[arg-type]
+            build_request=_noop_build_request,
+            parse_label="chat.ask",
+            read_timeout=3.0,
+        )
+
+    message = str(excinfo.value)
+    assert "received no streamed chat bytes for 3s. This points" in message
+    assert "for 3s: ." not in message
 
 
 @pytest.mark.asyncio

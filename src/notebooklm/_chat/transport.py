@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from .._env import get_default_bl
 from .._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
@@ -34,11 +35,34 @@ if TYPE_CHECKING:
     from .._runtime.transport import RuntimeTransport
 
 
+def _format_chat_read_timeout_message(
+    *,
+    parse_label: str,
+    read_timeout: float | None,
+    original: httpx.ReadTimeout,
+) -> str:
+    timeout_label = (
+        f"{read_timeout:g}s" if read_timeout is not None else "the configured read timeout"
+    )
+    original_text = str(original).strip()
+    original_suffix = f": {original_text}" if original_text else ""
+    return (
+        f"{parse_label} received no streamed chat bytes for {timeout_label}{original_suffix}. "
+        "This points to a server slow-to-first-byte or between-chunk chat-stream stall, "
+        "which is common on shared notebooks, not a batchexecute byte-count mismatch. "
+        f"Active NOTEBOOKLM_BL={get_default_bl()!r}. "
+        "If you overrode the timeout lower, rerun with --request-timeout 180; "
+        "otherwise try a higher value and compare owner vs viewer access."
+    )
+
+
 async def chat_aware_authed_post(
     transport: RuntimeTransport,
     *,
     build_request: BuildRequest,
     parse_label: str,
+    read_timeout: float | None = None,
+    disable_read_timeout_retries: bool = False,
 ) -> httpx.Response:
     """Chat-side semantic owner around :meth:`RuntimeTransport.perform_authed_post`.
 
@@ -74,6 +98,8 @@ async def chat_aware_authed_post(
         return await transport.perform_authed_post(
             build_request=build_request,
             log_label=parse_label,
+            read_timeout=read_timeout,
+            disable_read_timeout_retries=disable_read_timeout_retries,
         )
     except TransportAuthExpired as exc:
         raise ChatError(
@@ -101,10 +127,22 @@ async def chat_aware_authed_post(
                 f"Unexpected TransportServerError.original type: {type(exc.original)}. "
                 "Expected httpx.HTTPStatusError or httpx.RequestError."
             ) from exc
-        # Preserve the timeout-specific message: TimeoutException is a
+        # Preserve timeout-specific messages: TimeoutException is a
         # subclass of RequestError, so without this branch read/connect
         # timeouts would surface as a generic "network error after
-        # retries" line and lose the "timed out" signal callers rely on.
+        # retries" line and lose the timeout signal callers rely on. A
+        # streamed-chat read timeout is especially diagnostic: it means no
+        # response bytes arrived for the HTTPX read window, either before
+        # the first byte or between chunks.
+        if isinstance(exc.original, httpx.ReadTimeout):
+            raise NetworkError(
+                _format_chat_read_timeout_message(
+                    parse_label=parse_label,
+                    read_timeout=read_timeout,
+                    original=exc.original,
+                ),
+                original_error=exc.original,
+            ) from exc
         if isinstance(exc.original, httpx.TimeoutException):
             raise NetworkError(
                 f"{parse_label} timed out after retries: {exc.original}",

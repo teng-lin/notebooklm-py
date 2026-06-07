@@ -68,9 +68,9 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "_source/upload.py": 1236,
     "_sources.py": 1007,
     "_artifact/downloads.py": 973,
-    "client.py": 973,
+    "client.py": 986,
     "_research.py": 936,
-    "_chat/api.py": 946,
+    "_chat/api.py": 955,
 }
 
 

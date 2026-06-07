@@ -66,6 +66,64 @@ def _extract_query_param(url: str, key: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# chat timeout routing
+# ---------------------------------------------------------------------------
+
+
+class TestChatTimeoutRouting:
+    def test_client_uses_chat_specific_timeout_by_default(self):
+        auth = AuthTokens(cookies={"SID": "x"}, csrf_token="csrf", session_id="sid")
+        client = NotebookLMClient(auth, timeout=75.0)
+
+        assert client.chat._chat_timeout == 180.0
+
+    def test_client_chat_timeout_none_inherits_transport_timeout(self):
+        auth = AuthTokens(cookies={"SID": "x"}, csrf_token="csrf", session_id="sid")
+        client = NotebookLMClient(auth, timeout=75.0, chat_timeout=None)
+
+        assert client.chat._chat_timeout is None
+
+    def test_client_chat_timeout_override_wins(self):
+        auth = AuthTokens(cookies={"SID": "x"}, csrf_token="csrf", session_id="sid")
+        client = NotebookLMClient(auth, timeout=75.0, chat_timeout=180.0)
+
+        assert client.chat._chat_timeout == 180.0
+
+    @pytest.mark.asyncio
+    async def test_ask_passes_chat_read_timeout_and_disables_timeout_retry(self):
+        """``ask`` uses the chat-specific read window without retrying timed-out streams."""
+        transport = SimpleNamespace(
+            perform_authed_post=AsyncMock(
+                return_value=httpx.Response(
+                    200,
+                    request=httpx.Request("POST", "https://example.test/chat"),
+                    content=_make_answer_response_body(),
+                )
+            )
+        )
+        chat = ChatAPI(
+            rpc=SimpleNamespace(),
+            transport=transport,
+            reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
+            loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
+            chat_timeout=45.0,
+        )
+
+        result = await chat.ask(
+            "nb-1",
+            "Q?",
+            source_ids=["s1"],
+            conversation_id="conv-1",
+        )
+
+        assert result.answer == "Refactor answer is long enough."
+        assert transport.perform_authed_post.await_args.kwargs["read_timeout"] == 45.0
+        assert (
+            transport.perform_authed_post.await_args.kwargs["disable_read_timeout_retries"] is True
+        )
+
+
+# ---------------------------------------------------------------------------
 # authuser= URL parameter
 # ---------------------------------------------------------------------------
 

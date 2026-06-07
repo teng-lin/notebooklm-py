@@ -174,8 +174,8 @@ def register_chat_commands(cli):
         default=None,
         type=click.IntRange(min=1),
         help=(
-            "HTTP request timeout in seconds (default: 30, from the library). "
-            "Increase for long or complex prompts. (--timeout is a back-compat alias.)"
+            "HTTP request/read timeout in seconds for this ask. Defaults to the "
+            "library's chat timeout. (--timeout is a back-compat alias.)"
         ),
     )
     @with_client
@@ -235,7 +235,9 @@ def register_chat_commands(cli):
 
         client_kwargs: dict = {}
         if timeout is not None:
-            client_kwargs["timeout"] = float(timeout)
+            timeout_value = float(timeout)
+            client_kwargs["timeout"] = timeout_value
+            client_kwargs["chat_timeout"] = timeout_value
 
         async def _run():
             async with NotebookLMClient(client_auth, **client_kwargs) as client:

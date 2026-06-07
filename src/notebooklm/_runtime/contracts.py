@@ -47,6 +47,8 @@ class Kernel(Protocol):
         url: str,
         headers: Mapping[str, str],
         body: bytes,
+        *,
+        read_timeout: float | None = None,
     ) -> httpx.Response: ...
 
     @property

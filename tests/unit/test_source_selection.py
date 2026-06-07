@@ -86,7 +86,13 @@ def mock_core():
     # Individual tests that need to inspect the URL/body can read
     # ``core._last_chat_request`` after calling ``ChatAPI.ask``. The
     # chat-side ``parse_label`` is forwarded as ``log_label``.
-    async def _perform_authed_post_default(*, build_request, log_label):
+    async def _perform_authed_post_default(
+        *,
+        build_request,
+        log_label,
+        read_timeout=None,
+        disable_read_timeout_retries=False,
+    ):
         snapshot = AuthSnapshot(
             csrf_token=auth.csrf_token,
             session_id=auth.session_id,

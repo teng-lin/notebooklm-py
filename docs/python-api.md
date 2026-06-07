@@ -740,7 +740,7 @@ compatibility shim was removed in v0.5.0.
 | `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_runtime_contracts`). |
 | `_runtime_init` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
 | `_runtime_transport` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
-| `_runtime_config` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
+| `_runtime_config` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
 | `_runtime_helpers` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
 | `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
 | `_runtime_auth` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
@@ -811,6 +811,7 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+        chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
     ) -> "_FromStorageContext":
         # Returns an awaitable async-context-manager wrapper. Use as
         # `async with NotebookLMClient.from_storage(...) as client:`.

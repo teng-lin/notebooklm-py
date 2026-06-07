@@ -77,8 +77,11 @@ class FakeKernelPost:
         *,
         headers: Any,
         body: bytes,
+        read_timeout: float | None = None,
     ) -> httpx.Response:
-        self.calls.append({"url": url, "headers": headers, "body": body})
+        self.calls.append(
+            {"url": url, "headers": headers, "body": body, "read_timeout": read_timeout}
+        )
         return self.response
 
 
@@ -114,6 +117,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     assert call["url"] == "https://fake/url"
     assert call["headers"] == {}
     assert call["body"] == b"body"
+    assert call["read_timeout"] is None
 
 
 @pytest.mark.asyncio
@@ -156,6 +160,7 @@ async def test_chain_routes_rpc_executor_path_to_transport() -> None:
     assert call["url"] == "https://fake/rpc"
     assert call["headers"] == {"X-Goog-AuthUser": "0"}
     assert call["body"] == b"rpc-body"
+    assert call["read_timeout"] is None
 
 
 @pytest.mark.asyncio
@@ -197,6 +202,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
         "url": "https://fake/ctx",
         "headers": {"X-Test": "yes"},
         "body": b"ctx-body",
+        "read_timeout": None,
     }
 
 
@@ -237,6 +243,7 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
         *,
         headers: Any,
         body: bytes,
+        read_timeout: float | None = None,
     ) -> httpx.Response:
         request = httpx.Request("POST", url, headers=dict(headers), content=body)
         raise httpx.RequestError("boom", request=request)
@@ -350,6 +357,30 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     assert result.response is expected_response
     assert fake.call_count == 1
     assert fake.calls[0]["url"] == "https://fake/observe"
+
+
+@pytest.mark.asyncio
+async def test_chain_terminal_forwards_read_timeout_context() -> None:
+    """Per-request read timeout context reaches the concrete streaming POST."""
+    expected_response = httpx.Response(status_code=200, content=b"read-timeout")
+    fake = FakeKernelPost(response=expected_response)
+    core = _make_core()
+    _swap_kernel_post(core, fake)
+
+    request = RpcRequest(
+        url="https://fake/read-timeout",
+        headers={},
+        body=b"",
+        context={
+            "log_label": "read-timeout-test",
+            "read_timeout": 123.0,
+        },
+    )
+
+    result = await core._composed.chain_host._authed_post_chain_terminal(request)
+
+    assert result.response is expected_response
+    assert fake.calls[0]["read_timeout"] == 123.0
 
 
 def test_build_chain_empty_returns_terminal_unchanged() -> None:

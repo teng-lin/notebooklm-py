@@ -60,7 +60,9 @@ from .._middleware.context import (
     RPC_CONTEXT_AUTH_SNAPSHOT,
     RPC_CONTEXT_BUILD_REQUEST,
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
+    RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
+    RPC_CONTEXT_READ_TIMEOUT,
     RPC_CONTEXT_REFRESH_BUDGET,
     RPC_CONTEXT_RPC_METHOD,
     RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
@@ -218,12 +220,14 @@ class RuntimeTransport:
         request = await self.refresh_request_for_current_auth(request)
         context = request.context
         log_label = context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
+        read_timeout = context.get(RPC_CONTEXT_READ_TIMEOUT)
         start = time.perf_counter()
         try:
             response = await self._kernel.post(
                 request.url,
                 headers=request.headers,
                 body=request.body,
+                read_timeout=read_timeout,
             )
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             raise_mapped_post_error(
@@ -242,6 +246,8 @@ class RuntimeTransport:
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
         refresh_budget: RefreshBudget | None = None,
+        read_timeout: float | None = None,
+        disable_read_timeout_retries: bool = False,
     ) -> httpx.Response:
         """Authed POST entry point — routes through the middleware chain.
 
@@ -286,6 +292,10 @@ class RuntimeTransport:
             RPC_CONTEXT_DISABLE_INTERNAL_RETRIES: disable_internal_retries,
             RPC_CONTEXT_RPC_METHOD: rpc_method,
         }
+        if read_timeout is not None:
+            context[RPC_CONTEXT_READ_TIMEOUT] = read_timeout
+        if disable_read_timeout_retries:
+            context[RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES] = True
         # Only seed the shared refresh budget when one is supplied. Callers
         # that drive the chain without a budget (the chat path) leave the key
         # ABSENT, matching the ``RPC_CONTEXT_REFRESH_BUDGET`` docstring; the

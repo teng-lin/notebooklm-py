@@ -124,7 +124,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `ask --new --yes` (alias `-y`) | Skip the `--new` destructive-delete confirmation prompt. | `notebooklm ask --new --yes "..."` |
 | `ask -s <id>` | Limit to specific source IDs (repeatable) | `notebooklm ask "Summarize" -s src1 -s src2` |
 | `ask --json` | Get answer with source references | `notebooklm ask "Explain X" --json` |
-| `ask --request-timeout N` | Per-invocation HTTP request timeout in seconds (default: library default 30s). `--timeout` is a back-compat alias for the same flag. | `notebooklm ask "long prompt" --request-timeout 120` |
+| `ask --request-timeout N` | Per-invocation HTTP request/read timeout in seconds for chat. Defaults to the library chat timeout. `--timeout` is a back-compat alias for the same flag. | `notebooklm ask "long prompt" --request-timeout 120` |
 | `ask --save-as-note` | Save response as a note. When the answer contains `[N]` citations, the saved note preserves interactive hover-anchored citation links matching the NotebookLM web UI's "Save to note" behavior ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)). Answers without citations fall back to a plain-text note. | `notebooklm ask "Explain X" --save-as-note` |
 | `ask --save-as-note --note-title` | Save response with custom note title. The NotebookLM server may apply smart-title generation for citation-rich saves and override the requested title; the success message reflects what the server actually stored. | `notebooklm ask "Explain X" --save-as-note --note-title "Title"` |
 | `configure --mode` | Set predefined chat mode (`default`, `learning-guide`, `concise`, `detailed`) | `notebooklm configure --mode learning-guide` |

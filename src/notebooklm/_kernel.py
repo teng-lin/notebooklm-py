@@ -27,6 +27,8 @@ class Kernel:
     ) -> None:
         self._async_client_factory = async_client_factory
         self._http_client: httpx.AsyncClient | None = None
+        self._timeout: float | None = None
+        self._connect_timeout: float | None = None
 
     @property
     def http_client(self) -> httpx.AsyncClient | None:
@@ -80,6 +82,8 @@ class Kernel:
             write=timeout,
             pool=timeout,
         )
+        self._timeout = timeout
+        self._connect_timeout = connect_timeout
         cookies = (
             auth.cookie_jar
             if auth.cookie_jar is not None
@@ -113,13 +117,29 @@ class Kernel:
         url: str,
         headers: Mapping[str, str] | None,
         body: PostBody,
+        *,
+        read_timeout: float | None = None,
     ) -> httpx.Response:
         """Issue a raw buffered POST through the live HTTP client."""
+        timeout_override: httpx.Timeout | None = None
+        if read_timeout is not None:
+            # Widen ONLY the read (inactivity) slot; keep connect/write/pool at
+            # the stored base values verbatim — including ``None``, which httpx
+            # treats as "no timeout", so an explicit infinite-timeout client
+            # keeps that intent on its other slots instead of inheriting the
+            # chat read window.
+            timeout_override = httpx.Timeout(
+                connect=self._connect_timeout,
+                read=read_timeout,
+                write=self._timeout,
+                pool=self._timeout,
+            )
         return await stream_post_with_size_cap(
             self.get_http_client(),
             url,
             body=body,
             headers=dict(headers) if headers is not None else None,
+            timeout=timeout_override,
         )
 
     async def aclose(self) -> None:
@@ -131,6 +151,8 @@ class Kernel:
             await client.aclose()
         finally:
             self._http_client = None
+            self._timeout = None
+            self._connect_timeout = None
 
 
 __all__ = ["Kernel"]

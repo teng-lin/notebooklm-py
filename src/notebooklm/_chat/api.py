@@ -16,6 +16,7 @@ from .._logging import get_request_id, reset_request_id, set_request_id
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._request_types import AuthSnapshot
+from .._runtime.config import DEFAULT_CHAT_TIMEOUT
 from .._runtime.contracts import LoopGuard, RpcCaller
 from ..exceptions import ChatError, NetworkError, ValidationError
 from .notes import save_chat_answer_as_note
@@ -118,6 +119,7 @@ class ChatAPI(LoopBoundPrimitive):
         transport: RuntimeTransport,
         reqid: ReqidCounter,
         loop_guard: LoopGuard,
+        chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
         conversation_cache: ConversationCache | None = None,
         notebooks: NotebookSourceIdProvider | None = None,
     ):
@@ -148,6 +150,10 @@ class ChatAPI(LoopBoundPrimitive):
                 :meth:`assert_bound_loop` fires before :meth:`ask`
                 acquires the per-conversation lock so a cross-loop
                 follow-up doesn't hang on a lock bound to a dead loop.
+            chat_timeout: Per-read HTTP timeout, in seconds, for the streamed
+                chat endpoint. Defaults to the chat-specific shared-notebook
+                first-byte window. ``None`` inherits the underlying transport
+                timeout.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache`` (chat-domain state, no
                 other consumer).
@@ -161,6 +167,7 @@ class ChatAPI(LoopBoundPrimitive):
         self._transport = transport
         self._reqid = reqid
         self._loop_guard = loop_guard
+        self._chat_timeout = chat_timeout
         if notebooks is None:
             from .._notebooks import NotebooksAPI
 
@@ -391,6 +398,8 @@ class ChatAPI(LoopBoundPrimitive):
                     self._transport,
                     build_request=build_request,
                     parse_label="chat.ask",
+                    read_timeout=self._chat_timeout,
+                    disable_read_timeout_retries=True,
                 )
             finally:
                 if reqid_token is not None:

@@ -10,6 +10,7 @@ from . import auth, config, contracts, helpers, init, lifecycle, transport
 from .auth import AuthRefreshCoordinator
 from .config import (
     CORE_LOGGER_NAME,
+    DEFAULT_CHAT_TIMEOUT,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
@@ -54,6 +55,7 @@ __all__ = [
     "transport",
     "AuthRefreshCoordinator",
     "CORE_LOGGER_NAME",
+    "DEFAULT_CHAT_TIMEOUT",
     "DEFAULT_CONNECT_TIMEOUT",
     "DEFAULT_KEEPALIVE_MIN_INTERVAL",
     "DEFAULT_MAX_CONCURRENT_RPCS",

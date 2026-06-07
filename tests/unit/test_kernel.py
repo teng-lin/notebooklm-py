@@ -166,6 +166,44 @@ async def test_post_uses_live_http_client_streaming_post() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_read_timeout_override_preserves_other_timeout_slots() -> None:
+    seen_requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return httpx.Response(200, content=b"ok")
+
+    transport = httpx.MockTransport(handler)
+
+    def async_client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=transport, **kwargs)  # type: ignore[arg-type]
+
+    kernel = Kernel(async_client_factory=async_client_factory)
+    await kernel.open(
+        auth=_auth_tokens(),
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        capture_cookie_snapshot=lambda _: None,
+    )
+    try:
+        await kernel.post(
+            "https://example.com/chat",
+            headers={},
+            body=b"payload",
+            read_timeout=300.0,
+        )
+    finally:
+        await kernel.aclose()
+
+    timeout = seen_requests[0].extensions["timeout"]
+    assert timeout["connect"] == 10.0
+    assert timeout["read"] == 300.0
+    assert timeout["write"] == 30.0
+    assert timeout["pool"] == 30.0
+
+
+@pytest.mark.asyncio
 async def test_aclose_marks_kernel_closed_and_is_idempotent() -> None:
     kernel = Kernel()
     await kernel.open(

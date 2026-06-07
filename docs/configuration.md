@@ -353,19 +353,23 @@ effect.** Remove it from your environment / CI config. See
 
 ### Timeouts
 
-Every batchexecute RPC issued by the client (whether through `NotebookLMClient`
-or any of the CLI commands) uses a **30-second** HTTP request timeout by
-default, with a tighter **10-second** connection-establishment timeout. The
-shorter connect timeout helps surface network-level issues quickly while the
-longer read timeout accommodates slow server responses. The timeout is exposed as a
-constructor argument on `NotebookLMClient` (`timeout=`)
-for callers that need to tune it per-workload — see the
-`DEFAULT_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT` constants in
-`src/notebooklm/_runtime_config.py`. The chat streaming endpoint
-(`ChatAPI.ask`) keeps its own longer per-stream deadlines because individual
-chat responses can exceed 30 seconds, but this is configured at the client level
-(via the `timeout=` argument on the `NotebookLMClient` constructor or `from_storage` initializer),
-not on individual `ask` calls.
+Most batchexecute RPCs issued by the client (whether through `NotebookLMClient`
+or any of the CLI commands) use a **30-second** HTTP request timeout by default,
+with a tighter **10-second** connection-establishment timeout. The shorter
+connect timeout helps surface network-level issues quickly while the read
+timeout accommodates slow server responses. The timeout is exposed as a
+constructor argument on `NotebookLMClient` (`timeout=`) for callers that need to
+tune it per-workload — see the `DEFAULT_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`
+constants in `src/notebooklm/_runtime/config.py`.
+
+The chat streaming endpoint (`ChatAPI.ask`) also exposes a separate per-read
+silence window (`chat_timeout=`). It defaults to **180 seconds** because shared
+notebooks can be slow to send the first streamed chat byte; fast metadata RPCs
+stay on the normal **30-second** timeout. A chat read timeout means the server
+sent no stream bytes for that window, either before the first byte or between
+chunks; it does not mean total generation time exceeded 30 seconds. Pass
+`chat_timeout=None` to inherit the normal client timeout for chat. The CLI
+`ask --request-timeout N` flag overrides both values for that invocation.
 
 ### Decoder strictness
 

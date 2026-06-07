@@ -404,6 +404,7 @@ class TestAskTimeout:
             assert result.exit_code == 0, result.output
             mock_client_cls.assert_called_once()
             assert mock_client_cls.call_args.kwargs.get("timeout") == 300.0
+            assert mock_client_cls.call_args.kwargs.get("chat_timeout") == 300.0
 
     def test_ask_omits_timeout_kwarg_when_flag_not_set(self, runner, mock_auth):
         """When --timeout is not passed, the CLI must not override the library default."""
@@ -421,6 +422,7 @@ class TestAskTimeout:
 
             assert result.exit_code == 0, result.output
             assert "timeout" not in mock_client_cls.call_args.kwargs
+            assert "chat_timeout" not in mock_client_cls.call_args.kwargs
 
     def test_ask_rejects_non_positive_timeout(self, runner, mock_auth):
         result = runner.invoke(cli, ["ask", "What is 42?", "-n", "nb_123", "--timeout", "0"])
