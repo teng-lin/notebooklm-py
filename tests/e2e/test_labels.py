@@ -124,6 +124,58 @@ class TestLabelMembership:
         finally:
             await client.labels.delete(temp_notebook.id, label.id)
 
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_add_sources_adds_all_not_just_first(self, client, temp_notebook):
+        """Regression (wire truncation): ``add_sources([a, b])`` must add BOTH.
+
+        The server keeps only the first id per ``le8sX`` group, so the API loops
+        one call per id. Before the fix only the first source was assigned.
+        """
+        sources = await client.sources.list(temp_notebook.id)
+        if len(sources) < 2:
+            await client.sources.add_text(
+                temp_notebook.id,
+                title="Second Source",
+                content="A second test source so multi-source labeling can be exercised.",
+            )
+            sources = await client.sources.list(temp_notebook.id)
+        if len(sources) < 2:
+            pytest.skip("could not obtain two sources for the multi-add regression")
+        first, second = sources[0].id, sources[1].id
+
+        label = await client.labels.create(temp_notebook.id, "Multi", "")
+        try:
+            await client.labels.add_sources(temp_notebook.id, label.id, [first, second])
+            members = {item.id for item in await client.labels.sources(temp_notebook.id, label.id)}
+            assert {first, second} <= members, (
+                f"expected both {first} and {second} in {members} (truncation regression)"
+            )
+        finally:
+            await client.labels.delete(temp_notebook.id, label.id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_remove_sources_unassigns_without_deleting(self, client, temp_notebook):
+        """``remove_sources`` un-assigns a source from a label but leaves the
+        source in the notebook."""
+        sources = await client.sources.list(temp_notebook.id)
+        if not sources:
+            pytest.skip("temp_notebook has no sources to label")
+        source = sources[0]
+
+        label = await client.labels.create(temp_notebook.id, "Removable", "")
+        try:
+            await client.labels.add_sources(temp_notebook.id, label.id, [source.id])
+            assert source.id in (await client.labels.get(temp_notebook.id, label.id)).source_ids
+
+            await client.labels.remove_sources(temp_notebook.id, label.id, [source.id])
+            assert source.id not in (await client.labels.get(temp_notebook.id, label.id)).source_ids
+            # Un-assign, not delete: the source still exists in the notebook.
+            assert source.id in {s.id for s in await client.sources.list(temp_notebook.id)}
+        finally:
+            await client.labels.delete(temp_notebook.id, label.id)
+
 
 @requires_auth
 class TestLabelDelete:
