@@ -509,6 +509,201 @@ def _cookie_header_replacer(name: str) -> tuple[str, str]:
     )
 
 
+# =============================================================================
+# Name-AGNOSTIC cookie-header scrubbing + detection
+# =============================================================================
+# The name-anchored ``_cookie_header_replacer`` patterns above scrub only the
+# cookie NAMES they enumerate (``SESSION_COOKIES`` + the ``__Secure-*`` /
+# ``__Host-*`` umbrellas). Any cookie OUTSIDE those lists kept its real value in
+# the committed cassette — confirmed for Google Analytics cookies (``_ga``,
+# ``_ga_<id>``, ``_gcl_au``) and one-off cookies like ``AEC`` /
+# ``SEARCH_SAMESITE``. Analytics client-ids and timestamps are low-blast-radius
+# but they ARE real per-user values, so the bar is: NO cookie value anywhere in
+# a committed cassette retains a real value, name-agnostically.
+#
+# The functions below operate on a single LOGICAL cookie-header value (the
+# folded YAML scalar already joined into one string — the recorder hands
+# :func:`scrub_request` / :func:`scrub_response` exactly this form, and the gate
+# parses the YAML to recover it). They never run over the raw wrapped YAML text,
+# so a cookie pair split across a YAML line-wrap boundary can't corrupt anything.
+#
+# Cookie-header value shape (request ``Cookie:``):  ``name=value; name=value; …``
+#   — every ``;``-separated segment is a ``name=value`` cookie pair.
+# Set-Cookie value shape (response ``Set-Cookie:``): ``name=value; Attr=x; Attr; …``
+#   — ONLY the first segment is the cookie pair; the rest are attributes
+#     (``Path`` / ``Domain`` / ``Expires`` / ``Secure`` / ``HttpOnly`` /
+#     ``SameSite`` / ``Priority`` / ``Max-Age`` / ``SameParty``) and must be
+#     preserved verbatim.
+
+# Reserved Set-Cookie attribute names (lowercased). A segment after the first
+# whose key is in this set is an attribute, not a cookie pair, and is left
+# untouched. ``Secure`` / ``HttpOnly`` are valueless flags; the rest carry a
+# value we must NOT scrub (``Path=/``, ``Domain=.google.com``, ...).
+_SET_COOKIE_ATTR_NAMES: frozenset[str] = frozenset(
+    {
+        "path",
+        "domain",
+        "expires",
+        "max-age",
+        "secure",
+        "httponly",
+        "samesite",
+        "priority",
+        "sameparty",
+        "partitioned",
+    }
+)
+
+# Canonical placeholder a scrubbed cookie value collapses to. Reuses the bare
+# ``SCRUBBED`` sentinel the name-anchored patterns already emit so a cassette
+# carries one canonical cookie-value placeholder regardless of how the value was
+# scrubbed.
+_COOKIE_VALUE_PLACEHOLDER = "SCRUBBED"
+
+# A single ``name=value`` cookie pair inside a cookie-header value. ``name`` is a
+# cookie-token run (RFC 6265 token chars, conservatively ``[^=;\s]``); ``value``
+# is everything up to the next ``;`` or end-of-string. ``\s*`` around the
+# separators tolerates the optional space after each ``;``.
+_COOKIE_PAIR_RE = re.compile(r"(?P<name>[^=;\s]+)=(?P<value>[^;]*)")
+
+
+def _scrub_cookie_pairs(header_value: str, *, first_pair_only: bool) -> str:
+    """Replace cookie-pair VALUES in a logical cookie-header value, name-agnostic.
+
+    Every ``name=value`` pair has its value replaced with the canonical
+    :data:`_COOKIE_VALUE_PLACEHOLDER`, preserving the name and the surrounding
+    ``; `` separators verbatim. Already-scrubbed values (the placeholder) pass
+    through unchanged, so the function is idempotent.
+
+    Args:
+        header_value: One logical cookie-header value, e.g.
+            ``"SID=abc; _ga=GA1.1.x; NID=def"``.
+        first_pair_only: When ``True`` (the Set-Cookie case) only the FIRST
+            ``name=value`` segment is treated as a cookie pair; every later
+            ``;``-delimited segment is a cookie ATTRIBUTE (``Path`` / ``Domain``
+            / ``Expires`` / ``Secure`` / ...) and is preserved verbatim. When
+            ``False`` (the request ``Cookie:`` case) every segment is a pair.
+
+    Returns:
+        The header value with cookie values cleared. Whitespace and ``;``
+        layout are preserved exactly.
+    """
+    # Split on ";" but keep the separators so the original spacing round-trips.
+    segments = re.split(r"(;)", header_value)
+    out: list[str] = []
+    pair_index = 0
+    for segment in segments:
+        if segment == ";":
+            out.append(segment)
+            continue
+        # ``leading``/``core``/``trailing`` preserve surrounding whitespace so
+        # ``" _ga=x"`` stays ``" _ga=SCRUBBED"`` rather than losing its space.
+        stripped = segment.strip()
+        if not stripped:
+            out.append(segment)
+            continue
+        leading_len = len(segment) - len(segment.lstrip())
+        trailing_len = len(segment) - len(segment.rstrip())
+        leading = segment[:leading_len]
+        trailing = segment[len(segment) - trailing_len :] if trailing_len else ""
+        core = stripped
+
+        is_pair_position = (not first_pair_only) or pair_index == 0
+        if "=" in core:
+            name, _, value = core.partition("=")
+            key_lower = name.strip().lower()
+            if first_pair_only and pair_index > 0 and key_lower in _SET_COOKIE_ATTR_NAMES:
+                # Set-Cookie attribute carrying a value (Path=/, Domain=...): keep.
+                out.append(segment)
+                continue
+            if is_pair_position:
+                if value == _COOKIE_VALUE_PLACEHOLDER:
+                    out.append(segment)  # idempotent: already scrubbed.
+                else:
+                    out.append(f"{leading}{name}={_COOKIE_VALUE_PLACEHOLDER}{trailing}")
+                pair_index += 1
+                continue
+            # first_pair_only and we've passed the cookie pair: a non-reserved
+            # ``k=v`` attribute (rare). Leave it alone — it's not the cookie.
+            out.append(segment)
+            continue
+        # Valueless segment (a flag like ``Secure`` / ``HttpOnly``, or a bare
+        # cookie name with no value). Preserve verbatim; nothing to scrub.
+        out.append(segment)
+        if is_pair_position:
+            pair_index += 1
+    return "".join(out)
+
+
+def scrub_cookie_header(header_value: str) -> str:
+    """Scrub EVERY cookie value in a request ``Cookie:`` header, name-agnostic.
+
+    Each ``name=value`` pair's value is replaced with ``SCRUBBED`` while the
+    name and ``; `` layout are preserved. Idempotent on already-scrubbed input.
+    This is the name-agnostic complement to the name-anchored
+    ``_cookie_header_replacer`` patterns — it catches cookies (``_ga``,
+    ``_gcl_au``, ``AEC``, …) that are NOT on :data:`SESSION_COOKIES` and would
+    otherwise keep their real values in committed cassettes.
+    """
+    return _scrub_cookie_pairs(header_value, first_pair_only=False)
+
+
+def scrub_set_cookie(header_value: str) -> str:
+    """Scrub the cookie value in a response ``Set-Cookie:`` header, name-agnostic.
+
+    Only the leading ``name=value`` cookie pair is scrubbed; trailing attributes
+    (``Path`` / ``Domain`` / ``Expires`` / ``Secure`` / ``HttpOnly`` /
+    ``SameSite`` / ``Priority`` / ``Max-Age``) are preserved verbatim.
+    Idempotent on already-scrubbed input.
+    """
+    return _scrub_cookie_pairs(header_value, first_pair_only=True)
+
+
+def find_cookie_leaks(header_value: str, *, set_cookie: bool = False) -> list[str]:
+    """Return name-agnostic cookie-value leaks in a logical cookie-header value.
+
+    Flags any ``name=value`` cookie pair whose value is not the canonical
+    placeholder. For a ``Set-Cookie`` value (``set_cookie=True``) only the first
+    pair is a cookie; trailing attributes (``Path``/``Domain``/...) are skipped.
+    Each returned string is a human-readable ``"Leak (...): ..."`` description.
+
+    This is the field-agnostic detector that catches the ``_ga`` class going
+    forward — it does NOT depend on a cookie name being on any allowlist.
+    """
+    leaks: list[str] = []
+    shape = "Set-Cookie header" if set_cookie else "Cookie header"
+    segments = header_value.split(";")
+    pair_index = 0
+    for segment in segments:
+        core = segment.strip()
+        if not core or "=" not in core:
+            # Valueless flag (Secure/HttpOnly) or empty segment.
+            if core:
+                pair_index += 1
+            continue
+        name, _, value = core.partition("=")
+        name = name.strip()
+        key_lower = name.lower()
+        # Reserved Set-Cookie attribute names (``path`` / ``domain`` / ``expires``
+        # / ...) are NEVER real cookie names, so skip them unconditionally after
+        # the first pair. This keeps the detector correct even when the caller
+        # cannot tell a request ``Cookie:`` line from a ``Set-Cookie:`` line
+        # (the line-based ``is_clean`` path, where the header label is on a
+        # different physical line) — a Set-Cookie ``expires=...; path=/`` run is
+        # not mistaken for leaking cookies.
+        if pair_index > 0 and key_lower in _SET_COOKIE_ATTR_NAMES:
+            continue
+        is_pair_position = (not set_cookie) or pair_index == 0
+        if is_pair_position and value not in SCRUB_PLACEHOLDERS:
+            leaks.append(
+                f"Leak ({shape}): cookie {name!r} value {value!r} is not a"
+                f" known scrub placeholder"
+            )
+        if is_pair_position:
+            pair_index += 1
+    return leaks
+
+
 # Single cookie-name alternation reused by EVERY JSON-shape cookie scrubber
 # (storage_state name-first / value-first / bare-key forms). Derived from
 # :data:`SESSION_COOKIES` plus the ``__Secure-*`` / ``__Host-*`` umbrellas so a
@@ -791,6 +986,72 @@ _COOKIE_NAMES_GROUP = (
 _DETECT_COOKIE_HEADER = re.compile(
     rf"(?<![A-Za-z0-9_-])(?P<name>{_COOKIE_NAMES_GROUP})=(?P<value>[^;\s]+)"
 )
+
+# Anchor used by :func:`find_cookie_header_leaks` to identify a cookie-header
+# RUN inside arbitrary text. A cookie header is a ``;``-delimited run of
+# ``name=value`` pairs; we recognize one as a *cookie header* (rather than an
+# incidental ``k=v; k=v`` body fragment) when it contains at least one KNOWN
+# session-cookie pair. That keeps the name-agnostic value check from firing on
+# unrelated ``k=v`` content in response bodies while still catching every
+# off-allowlist cookie (``_ga`` / ``_gcl_au`` / ``AEC`` …) riding in the same
+# run. The recorder's :func:`scrub_request` / gate's YAML-aware pass operate on
+# the isolated logical value via :func:`find_cookie_leaks`; this string-level
+# helper is the in-text complement for :func:`is_clean`.
+_COOKIE_RUN_ANCHOR = re.compile(rf"(?<![A-Za-z0-9_-])(?:{_COOKIE_NAMES_GROUP})=")
+
+# Matches one cookie run on a SINGLE LINE: a chain of ``name=value`` pairs
+# joined by ``;`` (with optional spaces). Crucially the value class is
+# ``[^;\n]*`` — it must NOT cross a newline, or a greedy match would swallow the
+# entire YAML body (every ``k: v`` header line that happens to follow) and the
+# ``;``-split would then mis-read non-cookie header content (``ma=2592000``,
+# ``charset=utf-8``, ``Priority=HIGH`` …) as leaking cookies. Cookie runs are
+# line-local: a folded YAML cookie scalar that wraps a run across a physical
+# newline is still caught by the gate's authoritative YAML-aware pass
+# (:func:`tests.scripts.check_cassettes_clean._scan_cookie_headers_yaml`), which
+# stitches the logical value back together before calling :func:`find_cookie_leaks`.
+_COOKIE_RUN_RE = re.compile(r"[^=;\s]+=[^;\n]*(?:;[ \t]*[^=;\s]+=[^;\n]*)*")
+
+
+def find_cookie_header_leaks(text: str) -> list[str]:
+    """Name-agnostic cookie-value leak scan over ARBITRARY text (for is_clean).
+
+    Locates every single-line ``;``-delimited cookie RUN that contains at least
+    one known session-cookie pair (the :data:`_COOKIE_RUN_ANCHOR` discriminator
+    that keeps this from firing on incidental ``k=v; k=v`` body content), then
+    checks EVERY pair in that run — name-agnostically — via
+    :func:`find_cookie_leaks`. This is what makes :func:`is_clean` catch the
+    ``_ga`` class: a Google-Analytics cookie sharing a line with ``SID=`` /
+    ``__Secure-1PSID=`` is flagged even though its name is on no allowlist.
+
+    The run is line-local (the value class does not cross ``\\n``) so feeding
+    this whole-file text never over-matches across YAML header lines; a cookie
+    run a folded scalar split across physical lines is recovered by the gate's
+    YAML-aware pass instead. Returns human-readable
+    ``"Leak (Cookie header): ..."`` strings.
+    """
+    leaks: list[str] = []
+    seen: set[str] = set()
+    # Scan line-by-line and run the (backtracking-prone) cookie-run regex ONLY on
+    # physical lines that already carry a known session cookie. The cheap,
+    # non-backtracking ``_COOKIE_RUN_ANCHOR`` pre-filter keeps the expensive
+    # pair-extraction off large response-body lines — without it, ``finditer``
+    # over a multi-MB cassette body backtracks catastrophically (37s -> 0.05s on
+    # the 1.8MB flashcards cassette; identical results). Runs are line-local, so
+    # restricting to anchored lines finds exactly the same cookie pairs.
+    for line in text.splitlines():
+        if not _COOKIE_RUN_ANCHOR.search(line):
+            continue
+        for run_match in _COOKIE_RUN_RE.finditer(line):
+            run = run_match.group(0)
+            # Only treat this run as a cookie header if it carries a known session
+            # cookie — otherwise it's incidental ``k=v`` content, not a cookie line.
+            if not _COOKIE_RUN_ANCHOR.search(run):
+                continue
+            if run in seen:
+                continue
+            seen.add(run)
+            leaks.extend(find_cookie_leaks(run))
+    return leaks
 _DETECT_COOKIE_JSON_NAME_FIRST = re.compile(
     rf'"name"\s*:\s*"(?P<name>{_COOKIE_NAMES_GROUP})"\s*,\s*"value"\s*:\s*"'
     r'(?P<value>(?:[^"\\]|\\.)*)"'
@@ -1154,6 +1415,16 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
                     f"Leak ({shape}): cookie {name!r} value {value!r} is not"
                     f" a known scrub placeholder"
                 )
+
+    # --- 1b. Name-AGNOSTIC cookie-value scan -------------------------------
+    # The name-anchored shapes above only flag cookies on the allowlist. This
+    # pass flags ANY cookie pair (``_ga`` / ``_gcl_au`` / ``AEC`` / an unknown
+    # ``foo``) whose value is not a placeholder, scoped to a ``;``-delimited run
+    # that carries a known session cookie so it never fires on incidental
+    # ``k=v`` body content. This is the check that catches the ``_ga`` class
+    # going forward (the recorder + gate clear it via the name-agnostic
+    # scrubber). See :func:`find_cookie_header_leaks`.
+    leaks.extend(find_cookie_header_leaks(text))
 
     # --- 2. Real email addresses (any provider we redact) -------------------
     # Skip canonical placeholders so the provider-agnostic ``authuser=``

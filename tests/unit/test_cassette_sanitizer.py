@@ -38,7 +38,13 @@ TESTS_DIR = REPO_ROOT / "tests"
 # Other test modules add it to ``sys.path``; we follow the same convention.
 sys.path.insert(0, str(TESTS_DIR))
 
-from cassette_patterns import find_credential_leaks, is_clean  # noqa: E402
+from cassette_patterns import (  # noqa: E402
+    find_cookie_leaks,
+    find_credential_leaks,
+    is_clean,
+    scrub_cookie_header,
+    scrub_set_cookie,
+)
 from vcr_config import scrub_string  # noqa: E402
 
 GUARD_SCRIPT = TESTS_DIR / "scripts" / "check_cassettes_clean.py"
@@ -604,3 +610,149 @@ def test_python_guard_repo_allowlist_is_explicit_basename_list() -> None:
     # future regressions would re-introduce entries here.
     for required in ():
         assert required in entries, f"missing required allowlist entry: {required}"
+
+
+# ===========================================================================
+# Name-AGNOSTIC cookie-value scrubbing + detection
+# ===========================================================================
+#
+# Regression for the name-anchored-scrubber leak: cookies NOT on the
+# ``SESSION_COOKIES`` allowlist (Google Analytics ``_ga`` / ``_ga_<id>`` /
+# ``_gcl_au``, plus one-offs like ``AEC``) kept their REAL values in committed
+# cassettes because the recorder only scrubbed enumerated cookie NAMES. The
+# fix adds a name-agnostic pass: every cookie pair's value is cleared, names
+# preserved; and the clean-gate flags ANY non-placeholder cookie value going
+# forward.
+
+# Distinctive real-looking analytics values — if any byte survives the
+# name-agnostic scrub, the assertions below fail loudly.
+_GA_VALUE = "GA1.1.1567240762.1778846987"
+_GA_ID_VALUE = "GS2.1.s1778846986$o1$g0$t1778846986$j60$l0$h0"
+_GCL_VALUE = "1.1.1583381276.1778846987"
+
+
+def test_name_agnostic_scrub_clears_analytics_and_unknown_cookies() -> None:
+    """``scrub_cookie_header`` clears EVERY cookie value, name-agnostic.
+
+    Covers the confirmed-leak names (``_ga`` / ``_ga_W0LDH41ZCB`` / ``_gcl_au``)
+    plus an arbitrary unknown ``foo=bar`` cookie. Allowlisted session cookies
+    are still cleared, and every cookie NAME is preserved.
+    """
+    header = (
+        f"SID=SCRUBBED; _ga={_GA_VALUE}; _ga_W0LDH41ZCB={_GA_ID_VALUE}; "
+        f"_gcl_au={_GCL_VALUE}; foo=bar"
+    )
+    scrubbed = scrub_cookie_header(header)
+
+    # No real value survives.
+    for secret in (_GA_VALUE, _GA_ID_VALUE, _GCL_VALUE, "bar"):
+        assert secret not in scrubbed, f"value {secret!r} survived name-agnostic scrub:\n{scrubbed}"
+
+    # Every name preserved, every value the canonical placeholder.
+    for name in ("SID", "_ga", "_ga_W0LDH41ZCB", "_gcl_au", "foo"):
+        assert f"{name}=SCRUBBED" in scrubbed, f"cookie {name!r} not cleared to placeholder"
+
+
+def test_name_agnostic_cookie_scrub_is_idempotent() -> None:
+    """A second pass over already-scrubbed cookies is a no-op."""
+    header = f"SID=SCRUBBED; _ga={_GA_VALUE}; foo=bar"
+    once = scrub_cookie_header(header)
+    twice = scrub_cookie_header(once)
+    assert once == twice
+
+
+def test_set_cookie_scrub_preserves_attributes() -> None:
+    """``scrub_set_cookie`` clears only the cookie value, keeps attributes.
+
+    The leading ``name=value`` pair is scrubbed; ``Path`` / ``Domain`` /
+    ``Expires`` / ``Secure`` / ``HttpOnly`` / ``SameSite`` attributes survive
+    verbatim so cassette replay still sees a well-formed Set-Cookie.
+    """
+    sc = (
+        "NID=realtoken_value_123; expires=Thu, 23-Jul-2026 02:49:53 GMT; "
+        "path=/; domain=.google.com; HttpOnly; Secure; SameSite=none"
+    )
+    scrubbed = scrub_set_cookie(sc)
+    assert "realtoken_value_123" not in scrubbed
+    assert "NID=SCRUBBED" in scrubbed
+    for attr in ("expires=Thu", "path=/", "domain=.google.com", "HttpOnly", "Secure", "SameSite=none"):
+        assert attr in scrubbed, f"Set-Cookie attribute {attr!r} was disturbed:\n{scrubbed}"
+    # Idempotent.
+    assert scrub_set_cookie(scrubbed) == scrubbed
+
+
+def test_find_cookie_leaks_flags_unscrubbed_analytics_cookies() -> None:
+    """``find_cookie_leaks`` flags every non-placeholder cookie value."""
+    header = f"SID=SCRUBBED; _ga={_GA_VALUE}; _gcl_au={_GCL_VALUE}; foo=bar"
+    leaks = find_cookie_leaks(header)
+    flagged = {leak.split("cookie '")[1].split("'")[0] for leak in leaks}
+    assert {"_ga", "_gcl_au", "foo"} <= flagged, f"missed a leak: {leaks}"
+    # Allowlisted-but-scrubbed SID is NOT a leak.
+    assert "SID" not in flagged
+    # Fully-scrubbed header has zero leaks.
+    assert find_cookie_leaks(scrub_cookie_header(header)) == []
+
+
+def test_is_clean_flags_unscrubbed_cookie_value_name_agnostic() -> None:
+    """``is_clean`` flags an off-allowlist cookie sharing a session-cookie run.
+
+    The name-agnostic pass only fires inside a ``;``-delimited run carrying a
+    known session cookie (so it never false-positives on incidental body
+    ``k=v`` content). A leaked ``_ga`` riding next to ``SID=`` is flagged.
+    """
+    dirty = f"APISID=SCRUBBED; SID=SCRUBBED; _ga={_GA_VALUE}; _gcl_au={_GCL_VALUE}"
+    ok, leaks = is_clean(dirty)
+    assert not ok
+    assert any("_ga" in leak for leak in leaks)
+    assert any("_gcl_au" in leak for leak in leaks)
+
+    # Fully scrubbed cookie run is clean.
+    clean_ok, clean_leaks = is_clean("APISID=SCRUBBED; SID=SCRUBBED; _ga=SCRUBBED")
+    assert clean_ok, clean_leaks
+
+
+def test_is_clean_does_not_flag_incidental_body_key_value() -> None:
+    """A ``k=v; k=v`` body fragment WITHOUT a session cookie is not flagged."""
+    body = "width=100; height=200; color=red; charset=UTF-8"
+    ok, leaks = is_clean(body)
+    assert ok, f"name-agnostic cookie pass false-positived on body content: {leaks}"
+
+
+def test_guard_flags_a_cassette_with_unscrubbed_analytics_cookie(tmp_path: Path) -> None:
+    """End-to-end: the clean-gate FLAGS a cassette leaking ``_ga`` (folded scalar).
+
+    Builds a cassette whose request ``Cookie:`` header carries a scrubbed
+    session cookie alongside an UNSCRUBBED ``_ga`` analytics cookie, written
+    as a YAML list value (the recorded shape), and asserts the guard exits 1
+    and names the leak — proving the name-agnostic detection survives the
+    YAML-aware whole-file cookie pass too.
+    """
+    import yaml
+
+    cassette = {
+        "interactions": [
+            {
+                "request": {
+                    "body": "",
+                    "headers": {
+                        "Cookie": [f"SID=SCRUBBED; _ga={_GA_VALUE}; _gcl_au={_GCL_VALUE}"],
+                        "Host": ["notebooklm.google.com"],
+                    },
+                    "method": "GET",
+                    "uri": "https://notebooklm.google.com/",
+                },
+                "response": {
+                    "body": {"string": "{}"},
+                    "headers": {},
+                    "status": {"code": 200, "message": "OK"},
+                },
+            }
+        ],
+        "version": 1,
+    }
+    cassette_path = tmp_path / "leak_ga.yaml"
+    cassette_path.write_text(yaml.dump(cassette), encoding="utf-8")
+
+    result = _run_guard(str(cassette_path))
+    assert result.returncode == 1, f"guard failed to flag _ga leak:\n{result.stdout}\n{result.stderr}"
+    assert "_ga" in result.stdout, f"leak not named in report:\n{result.stdout}"

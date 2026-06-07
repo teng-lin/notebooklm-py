@@ -46,7 +46,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tests.cassette_patterns import find_credential_leaks, is_clean  # noqa: E402
+from tests.cassette_patterns import (  # noqa: E402
+    find_cookie_leaks,
+    find_credential_leaks,
+    is_clean,
+)
 
 DEFAULT_CASSETTE_DIR = _REPO_ROOT / "tests" / "cassettes"
 # Extensions scanned in ``--secrets-only`` mode. Golden RPC fixtures are
@@ -161,6 +165,64 @@ def _iter_cassettes(
     return resolved
 
 
+def _scan_cookie_headers_yaml(path: Path) -> list[tuple[int, str]]:
+    """YAML-aware, name-agnostic cookie-value leak scan over a cassette.
+
+    The line-by-line :func:`is_clean` pass below cannot see a cookie pair that a
+    folded YAML scalar split onto a continuation line (the session-cookie anchor
+    that scopes the name-agnostic check lives on a different physical line). This
+    pass parses the cassette with PyYAML, recovers each request ``Cookie:`` and
+    response ``Set-Cookie:`` header as its LOGICAL (joined) value, and runs the
+    name-agnostic :func:`tests.cassette_patterns.find_cookie_leaks` on it — so an
+    off-allowlist cookie (``_ga`` / ``_gcl_au`` / ``AEC`` …) whose real value
+    survives in a folded scalar is caught regardless of line wrapping.
+
+    Line number ``0`` is reported (the leak is logical, not tied to one physical
+    line of a folded scalar). A YAML parse failure is non-fatal — the
+    line-by-line pass still runs — so a malformed cassette degrades to the
+    streaming scan rather than crashing the guard.
+    """
+    leaks: list[tuple[int, str]] = []
+    try:
+        import yaml
+
+        try:
+            from yaml import CSafeLoader as _Loader
+        except ImportError:  # pragma: no cover - libyaml optional
+            from yaml import SafeLoader as _Loader  # type: ignore[assignment]
+
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        data = yaml.load(raw, Loader=_Loader)
+    except Exception:  # noqa: BLE001 - degrade to line-scan on any parse/read error
+        return leaks
+    if not isinstance(data, dict):
+        return leaks
+
+    def _values(header_block: object, key: str) -> list[str]:
+        if not isinstance(header_block, dict):
+            return []
+        for hk, hv in header_block.items():
+            if isinstance(hk, str) and hk.lower() == key.lower():
+                if isinstance(hv, list):
+                    return [v for v in hv if isinstance(v, str)]
+                if isinstance(hv, str):
+                    return [hv]
+        return []
+
+    for interaction in data.get("interactions") or []:
+        if not isinstance(interaction, dict):
+            continue
+        request = interaction.get("request") or {}
+        response = interaction.get("response") or {}
+        for value in _values(request.get("headers"), "Cookie"):
+            for desc in find_cookie_leaks(value):
+                leaks.append((0, desc))
+        for value in _values(response.get("headers"), "Set-Cookie"):
+            for desc in find_cookie_leaks(value, set_cookie=True):
+                leaks.append((0, desc))
+    return leaks
+
+
 def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
     """Return ``(line_number, leak_description)`` for each leak.
 
@@ -178,6 +240,12 @@ def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
     high-severity credential shapes (auth tokens + Google API keys), which never
     match legitimate placeholder fixture content. That is what makes scanning
     fixture directories full of ``"Scrubbed ..."`` placeholders viable.
+
+    For full (non-``secrets_only``) scans a SECOND, YAML-aware cookie pass
+    (:func:`_scan_cookie_headers_yaml`) runs name-agnostic cookie-value
+    detection on each cassette's joined ``Cookie:`` / ``Set-Cookie:`` header
+    values — catching off-allowlist cookies (``_ga`` …) that a folded YAML
+    scalar split across lines the streaming pass cannot stitch back together.
     """
     leaks: list[tuple[int, str]] = []
     try:
@@ -195,6 +263,16 @@ def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
                     leaks.append((line_no, description))
     except OSError as exc:
         print(f"{path}: could not read ({exc})", file=sys.stderr)
+
+    if not secrets_only:
+        # De-duplicate against the line-pass: the YAML pass catches folded-scalar
+        # cookie leaks the streaming pass cannot stitch together; an on-allowlist
+        # leak found by both is reported once.
+        seen = {desc for _, desc in leaks}
+        for line_no, desc in _scan_cookie_headers_yaml(path):
+            if desc not in seen:
+                seen.add(desc)
+                leaks.append((line_no, desc))
     return leaks
 
 

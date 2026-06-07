@@ -91,6 +91,8 @@ def _load_sibling(module_name: str, file_name: str) -> Any:
 _cassette_patterns = _load_sibling("tests_cassette_patterns", "cassette_patterns.py")
 recompute_chunk_prefix = _cassette_patterns.recompute_chunk_prefix
 scrub_string = _cassette_patterns.scrub_string
+scrub_cookie_header = _cassette_patterns.scrub_cookie_header
+scrub_set_cookie = _cassette_patterns.scrub_set_cookie
 build_synthetic_error_response = _cassette_patterns.build_synthetic_error_response
 synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
 SYNTHETIC_ERROR_CASSETTE_PREFIX = _cassette_patterns.SYNTHETIC_ERROR_CASSETTE_PREFIX
@@ -150,9 +152,15 @@ def scrub_request(request: Any) -> Any:
     - URL query parameters (session IDs)
     - Request body (CSRF tokens)
     """
-    # Scrub Cookie header
+    # Scrub Cookie header. ``scrub_string`` runs first for the name-anchored
+    # session-cookie / auth-token patterns and the JSON-shape coverage; then
+    # ``scrub_cookie_header`` makes a NAME-AGNOSTIC pass that clears EVERY
+    # remaining cookie pair's value (the ``_ga`` / ``_gcl_au`` / ``AEC`` class
+    # that is not on the cookie allowlist). Both are idempotent, so the order
+    # is safe and the name-agnostic pass adds coverage without weakening the
+    # existing scrubbing.
     if "Cookie" in request.headers:
-        request.headers["Cookie"] = scrub_string(request.headers["Cookie"])
+        request.headers["Cookie"] = scrub_cookie_header(scrub_string(request.headers["Cookie"]))
 
     # Scrub URL (contains f.sid session parameter)
     if request.uri:
@@ -258,14 +266,18 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
             rederived = recompute_chunk_prefix(scrubbed)
             body["string"] = rederived
 
-    # Scrub Set-Cookie headers (may contain session tokens)
+    # Scrub Set-Cookie headers (may contain session tokens). ``scrub_string``
+    # runs first for the name-anchored / auth-token patterns; then
+    # ``scrub_set_cookie`` makes a NAME-AGNOSTIC pass that clears the leading
+    # cookie pair's value while preserving the cookie attributes (Path / Domain
+    # / Expires / Secure / HttpOnly / ...). Both passes are idempotent.
     headers = response.get("headers", {})
     if "Set-Cookie" in headers:
         cookies = headers["Set-Cookie"]
         if isinstance(cookies, list):
-            headers["Set-Cookie"] = [scrub_string(c) for c in cookies]
+            headers["Set-Cookie"] = [scrub_set_cookie(scrub_string(c)) for c in cookies]
         elif isinstance(cookies, str):
-            headers["Set-Cookie"] = scrub_string(cookies)
+            headers["Set-Cookie"] = scrub_set_cookie(scrub_string(cookies))
 
     return response
 
