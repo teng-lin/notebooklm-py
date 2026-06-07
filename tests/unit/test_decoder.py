@@ -141,13 +141,14 @@ class TestParseChunkedResponse:
         assert mismatch_records[0].levelno == logging.DEBUG
         assert "payload is" in mismatch_records[0].message
 
-    def test_byte_count_mismatch_bumps_counter_and_warns_first_time(self, caplog):
-        """A byte-count mismatch is a drift signal: counter + one WARNING.
+    def test_byte_count_mismatch_bumps_counter_without_warning(self, caplog):
+        """A byte-count mismatch is the expected case: counter only, no WARNING.
 
         The tolerant parse is unchanged (valid JSON payloads are still
-        returned), but each mismatch increments the process-wide counter and
-        the first mismatch of the process emits a rate-limited WARNING so a
-        real framing-unit change rises above the per-chunk DEBUG noise.
+        returned) and each mismatch increments the process-wide counter, but no
+        WARNING is emitted: a mismatch trips on essentially every healthy live
+        multi-chunk response, so it is tracked silently and surfaced only via
+        ``byte_count_mismatch_total()`` (telemetry alerts on its rate-of-change).
         """
         reset_byte_count_mismatch_total()
         try:
@@ -155,32 +156,33 @@ class TestParseChunkedResponse:
             response = f"{len(payload) + 1}\n{payload}\n"
 
             assert byte_count_mismatch_total() == 0
-            with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+            with caplog.at_level(logging.DEBUG, logger="notebooklm.rpc.decoder"):
                 chunks = parse_chunked_response(response)
 
             # Tolerant parse preserved: valid JSON still returned.
             assert chunks == [["wrong-size"]]
             assert byte_count_mismatch_total() == 1
 
-            warnings = [
+            # No WARNING for the expected mismatch; the DEBUG line still fires.
+            assert not [
                 r
                 for r in caplog.records
-                if r.name == "notebooklm.rpc.decoder"
-                and r.levelno == logging.WARNING
-                and "Byte-count mismatch" in r.message
+                if r.name == "notebooklm.rpc.decoder" and r.levelno == logging.WARNING
             ]
-            assert len(warnings) == 1
-            assert "framing unit changed" in warnings[0].message
+            assert any(
+                r.levelno == logging.DEBUG and "declares" in r.message
+                for r in caplog.records
+                if r.name == "notebooklm.rpc.decoder"
+            )
         finally:
             reset_byte_count_mismatch_total()
 
-    def test_byte_count_mismatch_warning_is_rate_limited(self, caplog):
-        """Repeated mismatches keep counting but do not flood WARNING logs."""
+    def test_byte_count_mismatch_counts_silently_across_records(self, caplog):
+        """Repeated mismatches keep counting without ever emitting a WARNING."""
         reset_byte_count_mismatch_total()
         try:
             payload = json.dumps(["wrong-size"])
             record = f"{len(payload) + 1}\n{payload}"
-            # 50 mismatching records well under the WARN interval (500).
             response = "\n".join(record for _ in range(50)) + "\n"
 
             with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
@@ -188,16 +190,12 @@ class TestParseChunkedResponse:
 
             assert chunks == [["wrong-size"]] * 50
             assert byte_count_mismatch_total() == 50
-            warnings = [
+            # Mismatches are counted silently; none escalate to WARNING.
+            assert not [
                 r
                 for r in caplog.records
-                if r.name == "notebooklm.rpc.decoder"
-                and r.levelno == logging.WARNING
-                and "Byte-count mismatch" in r.message
+                if r.name == "notebooklm.rpc.decoder" and r.levelno == logging.WARNING
             ]
-            # Only the first mismatch of the process warns; the rest are
-            # counted silently (still DEBUG-logged).
-            assert len(warnings) == 1
         finally:
             reset_byte_count_mismatch_total()
 

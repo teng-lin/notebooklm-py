@@ -59,16 +59,9 @@ _BYTE_COUNT_MISMATCH_TOTAL = 0
 # threads (``run_in_executor`` / ``ThreadPoolExecutor``) or from several
 # per-thread ``NotebookLMClient`` instances at once. ``x += 1`` is a
 # read-modify-write over multiple bytecodes, so the GIL does not make it
-# atomic — without this lock increments could be lost and the "warn every N"
-# cadence could fire on a stale count.
+# atomic — without this lock increments could be lost and the counter read by
+# ``byte_count_mismatch_total`` could be stale.
 _BYTE_COUNT_MISMATCH_LOCK = threading.Lock()
-
-# Emit at most one byte-count-mismatch WARNING per this many observed
-# mismatches so a live multi-chunk response cannot flood CI logs while a real
-# drift event still surfaces above DEBUG. The counter is post-incremented
-# before the modulo test, so the first mismatch of a process always warns
-# (1 % interval == 1) and subsequent warnings land at interval + 1.
-_BYTE_COUNT_MISMATCH_WARN_INTERVAL = 500
 
 
 def byte_count_mismatch_total() -> int:
@@ -241,12 +234,11 @@ def parse_chunked_response(response: str) -> list[Any]:
         valid JSON, because recorded and proxy-transformed streams may not
         preserve Google's original byte count and live Google responses use a
         different unit (likely UTF-16 code units) than ``len(s.encode("utf-8"))``.
-        Each mismatch also increments the process-wide
-        ``byte_count_mismatch_total`` counter and emits a rate-limited WARNING
-        (one per ``_BYTE_COUNT_MISMATCH_WARN_INTERVAL`` mismatches) so a real
-        framing-unit change is a visible drift signal without the tolerant
-        parse changing or per-chunk DEBUG noise flooding CI logs.
-        A JSONDecodeError on the payload still emits a WARNING on the
+        Because a mismatch is the *expected* case on healthy live streams, it is
+        deliberately NOT a WARNING: it only increments the process-wide
+        ``byte_count_mismatch_total`` counter, which is the honest drift signal
+        (telemetry alerts on a sudden *rate-of-change*, not on the existence of
+        mismatches). A JSONDecodeError on the payload still emits a WARNING on the
         subsequent parse-failure path. If the malformed-payload rate exceeds
         10%, raises RPCError as this likely indicates API changes. Framing and
         mixed payload/framing corruption keep their own strict guards without
@@ -301,26 +293,13 @@ def parse_chunked_response(response: str) -> list[Any]:
                     actual_byte_count,
                     _truncate_response_preview(json_str),
                 )
-                # Surface the mismatch as a drift signal WITHOUT changing the
-                # tolerant parse: bump a process-wide counter (telemetry probes
-                # alert on a sudden rise) and emit a rate-limited WARNING so a
-                # real framing-unit change rises above the per-chunk DEBUG noise
-                # without flooding CI logs on every live multi-chunk response.
-                # Snapshot the count under the lock so the modulo decision and
-                # the logged total are consistent even under concurrent parses.
+                # Surface the mismatch as a drift signal without escalating to a
+                # WARNING (which would fire on essentially every multi-chunk
+                # response): bump only the process-wide counter. Telemetry probes
+                # alert on a sudden *rate-of-change* via
+                # ``byte_count_mismatch_total()``.
                 with _BYTE_COUNT_MISMATCH_LOCK:
                     _BYTE_COUNT_MISMATCH_TOTAL += 1
-                    mismatch_total = _BYTE_COUNT_MISMATCH_TOTAL
-                if mismatch_total % _BYTE_COUNT_MISMATCH_WARN_INTERVAL == 1:
-                    logger.warning(
-                        "Byte-count mismatch in chunked response (declared %d, "
-                        "actual %d bytes); tolerated. Total mismatches this "
-                        "process: %d — a sudden rise may indicate the "
-                        "batchexecute framing unit changed.",
-                        byte_count,
-                        actual_byte_count,
-                        mismatch_total,
-                    )
 
             try:
                 chunk = json.loads(json_str)
