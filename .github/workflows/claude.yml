@@ -59,7 +59,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
-          custom_instructions: |
+          system_prompt: |
             You have full access to the `notebooklm` CLI. It is already installed and
             authenticated via the NOTEBOOKLM_AUTH_JSON environment variable (verified in
             the previous step). When asked to do anything with NotebookLM — list notebooks,
