@@ -163,9 +163,9 @@ class NotFoundError(NotebookLMError):
             source = await client.sources.wait_until_ready(nb_id, src_id)
             await client.artifacts.download_audio(nb_id, dest, audio_id)
         except NotFoundError as e:
-            # Catches NotebookNotFoundError, SourceNotFoundError,
-            # ArtifactNotFoundError, NoteNotFoundError, and MindMapNotFoundError
-            # uniformly (all namespace get() methods raise their *NotFoundError as of v0.8.0).
+            # Catches NotebookNotFoundError, SourceNotFoundError, ArtifactNotFoundError,
+            # NoteNotFoundError, MindMapNotFoundError, and LabelNotFoundError uniformly
+            # (all namespace get() methods raise their *NotFoundError as of v0.8.0).
             handle_missing_resource(e)
 
     The example uses methods that *raise* a ``*NotFoundError`` on missing

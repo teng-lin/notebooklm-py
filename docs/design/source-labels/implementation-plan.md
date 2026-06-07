@@ -226,7 +226,7 @@ member (and the Phase-1-exit command `-m "not repo_lint"` collects them). Edit *
   **single** `add_source_id`→`[[None,[[id]]]]`, **single** `remove_source_id`→
   `[[None,None,[[id]]]]`; delete batch); assert `_opts()` returns a **distinct**
   object each call. The builder is **singular** (one `add_source_id` and/or one
-  `remove_source_id`, positionally at slot[3][0][1]/[2]) — there is **no** multi-id
+  `remove_source_id`, positionally at `slot[3][0][1]`/`[2]`) — there is **no** multi-id
   list arg (the wire honours only the first id; api.md §5).
 - **Add** `src/notebooklm/_label/__init__.py`, `src/notebooklm/_label/params.py` (§5).
 - **Verify:** `uv run pytest tests/unit/test_label_params.py`

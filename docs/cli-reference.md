@@ -186,11 +186,12 @@ Source labels group a notebook's sources into topic buckets. A `<id|name>` argum
 | `rename <id\|name> <new_name>` | Label ref, new name | `--json` | `label rename Papers "Research Papers"` |
 | `emoji <id\|name> <emoji>` | Label ref, emoji | `--json` | `label emoji Papers 📚` |
 | `add <id\|name> <source_id>...` | Label ref, one+ source ids | `--json` | `label add Papers src123 src456` |
+| `remove <id\|name> <source_id>...` | Label ref, one+ source ids | `--json` | `label remove Papers src123` |
 | `delete <id\|name>...` | One+ label refs | `-y/--yes`, `--json` | `label delete Papers -y` |
 
 All `label` subcommands accept `-n/--notebook ID` (resolves via flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
-`label generate --scope all` (wipes and regenerates every label with new ids) and `label delete` are destructive and require `-y/--yes` to confirm (or an interactive prompt). `label generate --scope unlabeled` (the default) only labels currently-unlabeled sources and needs no confirmation. `label add` appends sources (existing members survive; labels may overlap) and `label delete` removes the label only — its sources become unlabeled, not deleted. `source_id` arguments to `label add` accept partial-prefix matching like every other source-id command.
+`label generate --scope all` (wipes and regenerates every label with new ids) and `label delete` are destructive and require `-y/--yes` to confirm (or an interactive prompt). `label generate --scope unlabeled` (the default) only labels currently-unlabeled sources and needs no confirmation. `label add` appends sources (existing members survive; labels may overlap) and `label remove` un-assigns sources from the label only — the sources stay in the notebook (and in any other label). `label delete` removes the label only — its sources become unlabeled, not deleted. `source_id` arguments to `label add`/`label remove` accept partial-prefix matching like every other source-id command.
 
 ### Research Commands (`notebooklm research <cmd>`)
 
@@ -575,7 +576,7 @@ notebooklm share remove user@example.com -y   # Skip confirmation
 | `full` | Chat, sources, and notes |
 | `chat` | Chat interface only |
 
-### Label: `list`, `sources`, `generate`, `create`, `rename`, `emoji`, `add`, `delete`
+### Label: `list`, `sources`, `generate`, `create`, `rename`, `emoji`, `add`, `remove`, `delete`
 
 Manage source labels — AI-generated (or manually named) topic groupings of a notebook's sources.
 
@@ -599,6 +600,9 @@ notebooklm label emoji Papers 📚
 
 # Add source(s) to a label (append; existing members preserved)
 notebooklm label add Papers src123 src456
+
+# Remove source(s) from a label (un-assign only; source stays in the notebook)
+notebooklm label remove Papers src123
 
 # Delete one or more labels (the label only, not its sources)
 notebooklm label delete Papers -y

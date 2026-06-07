@@ -120,10 +120,16 @@ def main(argv: list[str] | None = None) -> int:
 
     # Verify: no cookie leak survives in any header of any target.
     residual = 0
+    parse_failures = 0
     for path in targets:
         try:
             data = yaml.load(path.read_text(encoding="utf-8"), Loader=Loader)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # A cassette we just rewrote no longer parses as YAML — treat that as
+            # a verification failure, not a silent skip, or the script could exit
+            # success after producing an unloadable cassette.
+            parse_failures += 1
+            print(f"FAILED to parse rewritten cassette {path}: {exc}", file=sys.stderr)
             continue
         if not isinstance(data, dict):
             continue
@@ -143,8 +149,10 @@ def main(argv: list[str] | None = None) -> int:
                         if isinstance(v, str) and find_cookie_leaks(v, set_cookie=True):
                             residual += len(find_cookie_leaks(v, set_cookie=True))
     print(f"Residual cookie leaks after re-scrub: {residual}")
+    if parse_failures:
+        print(f"Unparseable cassettes after re-scrub: {parse_failures}", file=sys.stderr)
     print(f"(known placeholders: {sorted(SCRUB_PLACEHOLDERS)[:3]} ...)")
-    return 1 if residual else 0
+    return 1 if (residual or parse_failures) else 0
 
 
 if __name__ == "__main__":

@@ -1817,7 +1817,7 @@ status = await client.sharing.set_public(notebook_id, False)
 
 ### LabelsAPI (`client.labels`)
 
-**CLI equivalent:** [Label Commands](cli-reference.md#label-commands-notebooklm-label-cmd) — `notebooklm label list`, `sources`, `generate`, `create`, `rename`, `emoji`, `add`, `delete`.
+**CLI equivalent:** [Label Commands](cli-reference.md#label-commands-notebooklm-label-cmd) — `notebooklm label list`, `sources`, `generate`, `create`, `rename`, `emoji`, `add`, `remove`, `delete`.
 
 Source labels group a notebook's sources into topic buckets. A label is a
 standalone, notebook-scoped entity: membership is many-to-many (a source can

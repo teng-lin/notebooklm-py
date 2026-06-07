@@ -463,7 +463,9 @@ params = [OPTS, notebook_id, label_id, [[None, [[source_id]]]]]
 
 **Note:** the `sources` group **appends** (send only the IDs to add — existing
 members survive) and labels may **overlap** (adding a source does not remove it
-from any other label). No "remove source from label" RPC has been captured.
+from any other label). Source **removal** is supported via the `UPDATE_LABEL`
+fieldmask's `sources_remove` slot (`[3][0][2]`) — un-assigning the source from
+this label only (it stays in the notebook and in any other label).
 
 **Response:** `[]` on success.
 
