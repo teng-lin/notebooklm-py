@@ -1,10 +1,20 @@
-"""Service for ``source list`` — fetch + prepare the source list payload.
+"""CLI adapter for ``source list`` — fetch + prepare the source list payload.
 
-Composes :class:`~notebooklm.cli.services.listing.ListSpec` so the Click
-handler in ``cli/source_cmd.py`` collapses to a one-call wrapper. The
-extracted executor stays a thin facade over the shared listing pipeline.
-Envelope-extras and column-row data live here, while actual JSON / Rich
-rendering stays in the command layer.
+The one piece of genuine business logic in this path — **which sources to
+fetch** under an optional label filter — now lives in the transport-neutral
+:func:`notebooklm._app.source_listing.fetch_sources`. This module is the
+CLI-side adapter that owns the presentation half:
+
+* builds the :class:`~notebooklm.cli.services.listing.ListSpec` (the JSON
+  ``serialize`` shape, the Rich-table ``columns`` / ``row`` shape, and the
+  ``envelope_extras``), and
+* drives the shared :func:`~notebooklm.cli.services.listing.prepare_list`
+  pipeline.
+
+The neutral fetch core takes the label ``<id|name>`` resolver as an injected
+callable; this adapter passes its own :func:`resolve_label_id` (read off this
+module at call time, so a ``monkeypatch.setattr`` against it still lands).
+Actual JSON / Rich rendering stays in the command layer.
 """
 
 from __future__ import annotations
@@ -13,6 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..._app.source_listing import fetch_sources
 from ...types import Source, SourceType, source_status_to_str
 from .label_listing import resolve_label_id
 from .listing import ListRender, ListSpec, prepare_list
@@ -47,10 +58,11 @@ def _build_spec(
 
     Factored out of ``execute_source_list`` so unit tests can introspect
     the column / serialize shape directly without running the full
-    pipeline. When ``label_filter`` is set, the ``fetch`` closure resolves the
-    label ``<id|name>`` and returns ``client.labels.sources()`` (the group's
-    members) instead of the full notebook source list — so the filter is applied
-    before ``prepare_list`` counts/slices.
+    pipeline. The ``fetch`` closure delegates to the neutral
+    :func:`notebooklm._app.source_listing.fetch_sources`, injecting this
+    module's :func:`resolve_label_id` as the label resolver — so the
+    ``label_filter`` set is fetched (and counted/sliced) before
+    ``prepare_list`` runs.
     """
 
     async def envelope_extras(client: NotebookLMClient, notebook_id: str) -> dict[str, str | None]:
@@ -58,14 +70,13 @@ def _build_spec(
         return {"notebook_id": notebook_id, "notebook_title": nb.title if nb else None}
 
     async def fetch(client: NotebookLMClient, notebook_id: str) -> list[Source]:
-        if label_filter is not None:
-            label_id = await resolve_label_id(
-                client, notebook_id, label_filter, json_output=json_output
-            )
-            # ``labels.sources()`` returns the group's members (joined from a
-            # single ``sources.list()``), so the filtered set is fetched once.
-            return await client.labels.sources(notebook_id, label_id)
-        return await client.sources.list(notebook_id)
+        return await fetch_sources(
+            client,
+            notebook_id,
+            label_filter=label_filter,
+            label_resolver=resolve_label_id,
+            json_output=json_output,
+        )
 
     return ListSpec(
         title="Sources in {notebook_id}",

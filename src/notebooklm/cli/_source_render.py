@@ -473,7 +473,19 @@ def _render_source_add_drive_result(
     ctx: click.Context,
 ) -> None:
     if json_output:
-        json_output_response(result.payload)
+        # The add-drive envelope embeds the ``source_summary_payload`` serializer
+        # (presentation), so it is built here rather than on the neutral result.
+        json_output_response(
+            {
+                "action": "add-drive",
+                "source": {
+                    **source_summary_payload(result.source),
+                    "drive_file_id": result.file_id,
+                    "mime_type": result.mime_type,
+                },
+                "notebook_id": result.notebook_id,
+            }
+        )
         return
 
     cli_print(f"[green]Added Drive source:[/green] {result.source.id}", ctx=ctx)
