@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.services.skill_install import report_mixed_no_clobber_up_to_date
 from notebooklm.notebooklm_cli import cli
 
 # Get the actual skill module (not the click group that shadows it)
@@ -470,38 +469,6 @@ class TestSkillInstallProjectHardening:
         assert calls[0][1] == target
 
 
-class TestSkillInstallReporting:
-    """Tests for service-level skill install reporting decisions."""
-
-    def test_reports_mixed_no_clobber_up_to_date_targets(self):
-        """No-write mixed --no-clobber state reports synced targets separately."""
-        messages: list[str] = []
-
-        report_mixed_no_clobber_up_to_date(
-            messages.append,
-            skipped_up_to_date=[object()],
-            skipped_no_clobber=[object()],
-            installed_paths=[],
-            failed_targets=[],
-        )
-
-        assert messages == ["[green]Up to date[/green] 1 target(s)"]
-
-    def test_skips_message_when_install_wrote_a_target(self):
-        """The mixed no-write message is suppressed after any install success."""
-        messages: list[str] = []
-
-        report_mixed_no_clobber_up_to_date(
-            messages.append,
-            skipped_up_to_date=[object()],
-            skipped_no_clobber=[object()],
-            installed_paths=[object()],
-            failed_targets=[],
-        )
-
-        assert messages == []
-
-
 class TestSkillStatus:
     """Tests for skill status command."""
 
@@ -650,38 +617,6 @@ class TestSkillShow:
         assert "not installed" in result.output.lower()
 
 
-class TestSkillVersionExtraction:
-    """Tests for version extraction logic."""
-
-    def test_get_skill_version_extracts_version(self, tmp_path):
-        """Test version extraction from skill file."""
-        from notebooklm.cli.skill_cmd import get_skill_version
-
-        skill_file = tmp_path / "SKILL.md"
-        skill_file.write_text("---\nname: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Test")
-
-        version = get_skill_version(skill_file)
-        assert version == "1.2.3"
-
-    def test_get_skill_version_no_version(self, tmp_path):
-        """Test version extraction when no version present."""
-        from notebooklm.cli.skill_cmd import get_skill_version
-
-        skill_file = tmp_path / "SKILL.md"
-        skill_file.write_text("# Test\nNo version here")
-
-        version = get_skill_version(skill_file)
-        assert version is None
-
-    def test_get_skill_version_file_not_exists(self, tmp_path):
-        """Test version extraction when file doesn't exist."""
-        from notebooklm.cli.skill_cmd import get_skill_version
-
-        skill_file = tmp_path / "nonexistent.md"
-        version = get_skill_version(skill_file)
-        assert version is None
-
-
 class TestSkillSourceFallback:
     """Tests for resolving the canonical repository skill."""
 
@@ -698,82 +633,9 @@ class TestSkillSourceFallback:
             assert skill_module.get_skill_source_content() is None
 
 
-class TestAddVersionComment:
-    """Tests for add_version_comment."""
-
-    def test_inserts_after_frontmatter(self):
-        """Version comment is inserted after closing --- preserving surrounding whitespace."""
-        from notebooklm.cli.skill_cmd import add_version_comment
-
-        content = "---\nname: notebooklm\n---\n# Body"
-        result = add_version_comment(content, "1.2.3")
-        assert result == "---\nname: notebooklm\n---\n<!-- notebooklm-py v1.2.3 -->\n# Body"
-
-    def test_prepends_when_no_frontmatter(self):
-        """Version comment is prepended when no frontmatter delimiters exist."""
-        from notebooklm.cli.skill_cmd import add_version_comment
-
-        content = "# No Frontmatter\nBody text"
-        result = add_version_comment(content, "2.0.0")
-        assert result == "<!-- notebooklm-py v2.0.0 -->\n# No Frontmatter\nBody text"
-
-    def test_prepends_with_incomplete_frontmatter(self):
-        """Version comment is prepended when only one --- delimiter exists."""
-        from notebooklm.cli.skill_cmd import add_version_comment
-
-        content = "---\nbroken frontmatter"
-        result = add_version_comment(content, "1.0.0")
-        assert result == "<!-- notebooklm-py v1.0.0 -->\n---\nbroken frontmatter"
-
-
-class TestRemoveEmptyParents:
-    """Tests for remove_empty_parents."""
-
-    def test_cleans_empty_intermediate_directories(self, tmp_path):
-        """Empty parent directories up to scope root are removed."""
-        from notebooklm.cli.skill_cmd import remove_empty_parents
-
-        home = tmp_path / "home"
-        skill_path = home / ".claude" / "skills" / "notebooklm" / "SKILL.md"
-        skill_path.parent.mkdir(parents=True)
-        skill_path.write_text("# Test")
-        skill_path.unlink()
-
-        with patch.object(skill_module.Path, "home", return_value=home):
-            remove_empty_parents(skill_path, "user")
-
-        assert not (home / ".claude" / "skills" / "notebooklm").exists()
-        assert not (home / ".claude" / "skills").exists()
-        assert home.exists()  # scope root must survive
-
-    def test_stops_at_non_empty_directory(self, tmp_path):
-        """Removal stops when a directory is non-empty."""
-        from notebooklm.cli.skill_cmd import remove_empty_parents
-
-        home = tmp_path / "home"
-        skill_path = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
-        skill_path.parent.mkdir(parents=True)
-        skill_path.write_text("# Test")
-        # Create a sibling file to make skills/ non-empty after notebooklm/ is gone
-        (home / ".agents" / "skills" / "other.md").write_text("keep me")
-        skill_path.unlink()
-        skill_path.parent.rmdir()  # notebooklm/ is empty, remove it manually
-
-        with patch.object(skill_module.Path, "home", return_value=home):
-            remove_empty_parents(skill_path.parent, "user")
-
-        assert (home / ".agents" / "skills").exists()  # non-empty, should not be removed
-
-    def test_scope_root_is_never_removed(self, tmp_path):
-        """The scope root directory itself is never deleted."""
-        from notebooklm.cli.skill_cmd import remove_empty_parents
-
-        home = tmp_path / "home"
-        home.mkdir()
-        # Simulate a skill directly one level inside home (no intermediates)
-        skill_path = home / "SKILL.md"
-
-        with patch.object(skill_module.Path, "home", return_value=home):
-            remove_empty_parents(skill_path, "user")
-
-        assert home.exists()
+# NOTE: ``TestSkillVersionExtraction`` / ``TestAddVersionComment`` /
+# ``TestRemoveEmptyParents`` (and ``TestSkillInstallReporting``) tested
+# functions that now live in the transport-neutral ``_app.skill`` core. They
+# were MOVED down to ``tests/unit/app/test_app_skill.py`` (direct calls, no
+# Click). ``TestSkillSourceFallback`` stays here because ``get_skill_source_content``
+# is CLI-owned (the packaged-source loader is not part of ``_app.skill``).
