@@ -232,6 +232,12 @@ src/notebooklm/
 ├── _sharing_manager.py          # Sharing management logic
 ├── _version_check.py            # Deprecation version guard
 ├── _research_task_parser.py     # Research task result-type parser
+├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
+│   ├── __init__.py              # Re-exports the Wave-0 neutral primitives
+│   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
+│   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
+│   ├── resolve.py               # Click-free validate_id + resolve_ref (AmbiguousIdError/Resolution)
+│   └── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public names
 │   ├── auth.py                  # AuthRefreshCoordinator (refresh task + auth-snapshot lock)
