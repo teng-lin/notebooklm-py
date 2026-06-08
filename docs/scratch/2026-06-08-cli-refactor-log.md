@@ -266,5 +266,21 @@ resolve (reserved for M2); KEEP genuinely-CLI tests; full suite collected count 
 M2 (serialized, AFTER M1 merges): resolve consolidation — collapse `cli/resolve.py` parallel impl into
 `_app/resolve.py`, delete the ~40 duplicate test_resolve.py tests, preserve the 29 ClickException patch seams.
 
+## M1 partial-merge: mig-misc/auth/crud merged clean (disjoint files; +172 app tests → 317 total, all green). dlgen+source pending.
+Per the disjoint-work principle: merged the 3 completed clusters immediately rather than waiting for the other 2.
+
+## DEDUP STAGE (user decision 2026-06-08: "targeted subsumption audit") — runs AFTER all M1 merges.
+The migration's SPLIT verdict was "add `_app` test AND slim the CLI test to a thin shell" — but several clusters
+(crud/auth) did pure-ADD and LEFT the full CLI tests intact, so some neutral logic is now asserted at BOTH layers.
+Most of the growth is INTENDED (23 modules had zero direct coverage; doctor/chat had none) — NOT waste. The genuine
+redundancy gets a TWO-part trim:
+1. **Resolve consolidation (M2):** collapse `cli/resolve.py` parallel impl into `_app/resolve.py`; delete the ~40
+   true-duplicate test_resolve.py tests; preserve the 29 ClickException patch seams.
+2. **Subsumption audit:** find CLI tests now FULLY subsumed by a new `_app` test → delete; slim partially-redundant
+   ones to CLI-only assertions (envelope/exit/render). KEEP cassette/integration tests (they prove the real
+   end-to-end path) + all net-new coverage for previously-untested modules.
+GATE for the trim (mandate flips from "never reduce coverage" to "reduce only REDUNDANT coverage"): `pytest --cov`
+must show NO `src/` coverage regression vs pre-trim — a dropped line/branch means it wasn't actually redundant.
+
 ## THEN (final integration): error_handler→`_app.classify` routing; the relocation ADR.
 ## DEFERRED (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
