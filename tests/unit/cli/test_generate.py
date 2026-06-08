@@ -173,7 +173,8 @@ class TestGenerateAudio:
             )
 
         assert result.exit_code == 0
-        assert "Audio ready" in result.output or "example.com" in result.output
+        assert "Audio ready" in result.output
+        assert "https://example.com/audio.mp3" in result.output
         mock_client.artifacts.wait_for_completion.assert_awaited_once()
         kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
         assert kwargs.get("timeout") == 1200.0
