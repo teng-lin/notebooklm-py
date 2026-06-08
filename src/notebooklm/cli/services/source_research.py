@@ -35,7 +35,7 @@ from ..._app.source_research import (
 from ..research_import import import_research_sources
 
 if TYPE_CHECKING:
-    from ....client import NotebookLMClient
+    from ...client import NotebookLMClient
 
 
 async def execute_source_add_research(

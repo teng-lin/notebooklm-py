@@ -175,7 +175,7 @@ async def run_auth_check(
     # Check 3: cookies present + SID lookup.
     try:
         cookies = extract_cookies_from_storage(storage_state)
-        checks["cookies_present"] = True
+        checks["cookies_present"] = bool(cookies)
         checks["sid_cookie"] = "SID" in cookies
         details["cookies_found"] = list(cookies.keys())
 

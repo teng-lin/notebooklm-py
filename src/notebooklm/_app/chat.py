@@ -292,7 +292,13 @@ async def execute_configure(
     contract.
     """
     if chat_mode:
-        await client.chat.set_mode(notebook_id, _MODE_MAP[chat_mode])
+        try:
+            mode = _MODE_MAP[chat_mode]
+        except KeyError as exc:
+            raise ValidationError(
+                f"Unknown chat mode {chat_mode!r}; expected one of {sorted(_MODE_MAP)}"
+            ) from exc
+        await client.chat.set_mode(notebook_id, mode)
         return ConfigureResult(
             notebook_id=notebook_id,
             mode=chat_mode,

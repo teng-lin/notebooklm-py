@@ -68,25 +68,19 @@ if TYPE_CHECKING:
 
 
 async def resolve_source_for_delete(
-    client: NotebookLMClient, notebook_id: str, source_id: str, *, json_output: bool = False
+    client: NotebookLMClient, notebook_id: str, source_id: str
 ) -> SourceIdResolution:
     """Resolve a delete source-id input, injecting the Click ``validate_id``.
 
     Thin adapter over the neutral resolver that passes this module's
     :func:`validate_id` (read at call time so a ``monkeypatch.setattr`` lands).
     """
-    return await _resolve_source_for_delete(
-        client, notebook_id, source_id, json_output=json_output, validate_id=validate_id
-    )
+    return await _resolve_source_for_delete(client, notebook_id, source_id, validate_id=validate_id)
 
 
-async def resolve_source_by_exact_title(
-    client: NotebookLMClient, notebook_id: str, title: str, *, json_output: bool = False
-):
+async def resolve_source_by_exact_title(client: NotebookLMClient, notebook_id: str, title: str):
     """Resolve a source by exact title, injecting the Click ``validate_id``."""
-    return await _resolve_source_by_exact_title(
-        client, notebook_id, title, json_output=json_output, validate_id=validate_id
-    )
+    return await _resolve_source_by_exact_title(client, notebook_id, title, validate_id=validate_id)
 
 
 async def execute_source_delete(

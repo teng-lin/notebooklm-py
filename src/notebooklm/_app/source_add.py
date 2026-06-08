@@ -233,7 +233,10 @@ def validate_upload_path(content: str, follow_symlinks: bool) -> Path:
         SourceAddValidationError: if the path is a refused symlink or is
             not a regular file.
     """
-    raw = Path(content)
+    # Expand ``~`` BEFORE the symlink check — otherwise a ``~``-prefixed path
+    # (e.g. ``~/evil_symlink``) passes the guard as a non-existent literal and
+    # only resolves to the real symlink afterwards, bypassing follow_symlinks.
+    raw = Path(content).expanduser()
 
     if not follow_symlinks:
         for component in [raw, *raw.parents]:
@@ -243,7 +246,7 @@ def validate_upload_path(content: str, follow_symlinks: bool) -> Path:
                     f"explicitly. Refusing to upload: {raw}"
                 )
 
-    file_path = raw.expanduser().resolve()
+    file_path = raw.resolve()
 
     if not file_path.is_file():
         raise SourceAddValidationError(f"Not a regular file: {content}")

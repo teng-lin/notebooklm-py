@@ -462,6 +462,14 @@ def build_download_plan(
         format_choice = (
             args.get(config.format_param_name, config.format_default) or config.format_default
         )
+        # Fail fast on an unknown format rather than silently falling back to the
+        # default extension (the CLI validates via a Click ``Choice``; a non-CLI
+        # adapter has no such guard).
+        if format_choice not in config.format_choices:
+            raise DownloadPlanValidationError(
+                f"Invalid {config.format_param_name} {format_choice!r}; "
+                f"expected one of {list(config.format_choices)}"
+            )
 
     file_extension, warnings = _resolve_format_extension(
         config,

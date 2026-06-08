@@ -164,6 +164,12 @@ async def run_source_clean(
         delete_tasks = [delete_source(notebook_id, sid) for sid in chunk]
         results = await asyncio.gather(*delete_tasks, return_exceptions=True)
         for sid, result in zip(chunk, results, strict=True):
+            # ``return_exceptions=True`` also captures non-``Exception``
+            # ``BaseException``s (``CancelledError`` / ``KeyboardInterrupt`` /
+            # ``SystemExit``). Never count those as a successful delete — re-raise
+            # so cancellation/interrupts propagate instead of being swallowed.
+            if isinstance(result, BaseException) and not isinstance(result, Exception):
+                raise result
             if isinstance(result, Exception):
                 failures.append((sid, str(result)))
             else:

@@ -277,6 +277,21 @@ class GenerationPlanValidationError(ValidationError):
         object.__setattr__(self, "args", (self.message,))
 
 
+def _require_choice(mapping: Mapping[str, Any], value: Any, *, flag: str) -> Any:
+    """Look up ``value`` in a choice ``mapping`` or raise a typed plan error.
+
+    The CLI validates these choices via Click ``Choice`` types, but a non-CLI
+    adapter (MCP/HTTP) may pass an unvalidated value — surface that as a typed
+    :class:`GenerationPlanValidationError` instead of a raw ``KeyError``.
+    """
+    try:
+        return mapping[value]
+    except KeyError as exc:
+        raise GenerationPlanValidationError(
+            f"Invalid --{flag} {value!r}; expected one of {sorted(mapping)}"
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # Plan building.
 # ---------------------------------------------------------------------------
@@ -377,8 +392,12 @@ def _build_audio_plan(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "audio_format": _AUDIO_FORMAT_MAP[raw_args["audio_format"]],
-            "audio_length": _AUDIO_LENGTH_MAP[raw_args["audio_length"]],
+            "audio_format": _require_choice(
+                _AUDIO_FORMAT_MAP, raw_args["audio_format"], flag="audio-format"
+            ),
+            "audio_length": _require_choice(
+                _AUDIO_LENGTH_MAP, raw_args["audio_length"], flag="audio-length"
+            ),
         },
     )
 
@@ -457,8 +476,8 @@ def _build_video_plan_for_kind(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "video_format": _VIDEO_FORMAT_MAP[video_format],
-            "video_style": _VIDEO_STYLE_MAP[style],
+            "video_format": _require_choice(_VIDEO_FORMAT_MAP, video_format, flag="format"),
+            "video_style": _require_choice(_VIDEO_STYLE_MAP, style, flag="style"),
             "style_prompt": normalized_style_prompt,
         },
     )
@@ -499,8 +518,12 @@ def _build_slide_deck_plan(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "slide_format": _SLIDE_FORMAT_MAP[raw_args["deck_format"]],
-            "slide_length": _SLIDE_LENGTH_MAP[raw_args["deck_length"]],
+            "slide_format": _require_choice(
+                _SLIDE_FORMAT_MAP, raw_args["deck_format"], flag="format"
+            ),
+            "slide_length": _require_choice(
+                _SLIDE_LENGTH_MAP, raw_args["deck_length"], flag="length"
+            ),
         },
     )
 
@@ -550,8 +573,10 @@ def _build_quiz_plan(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "quantity": _QUIZ_QUANTITY_MAP[raw_args["quantity"]],
-            "difficulty": _QUIZ_DIFFICULTY_MAP[raw_args["difficulty"]],
+            "quantity": _require_choice(_QUIZ_QUANTITY_MAP, raw_args["quantity"], flag="quantity"),
+            "difficulty": _require_choice(
+                _QUIZ_DIFFICULTY_MAP, raw_args["difficulty"], flag="difficulty"
+            ),
         },
     )
 
@@ -575,8 +600,10 @@ def _build_flashcards_plan(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "quantity": _QUIZ_QUANTITY_MAP[raw_args["quantity"]],
-            "difficulty": _QUIZ_DIFFICULTY_MAP[raw_args["difficulty"]],
+            "quantity": _require_choice(_QUIZ_QUANTITY_MAP, raw_args["quantity"], flag="quantity"),
+            "difficulty": _require_choice(
+                _QUIZ_DIFFICULTY_MAP, raw_args["difficulty"], flag="difficulty"
+            ),
         },
     )
 
@@ -600,9 +627,13 @@ def _build_infographic_plan(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "orientation": _INFOGRAPHIC_ORIENTATION_MAP[raw_args["orientation"]],
-            "detail_level": _INFOGRAPHIC_DETAIL_MAP[raw_args["detail"]],
-            "style": _INFOGRAPHIC_STYLE_MAP[raw_args["style"]],
+            "orientation": _require_choice(
+                _INFOGRAPHIC_ORIENTATION_MAP, raw_args["orientation"], flag="orientation"
+            ),
+            "detail_level": _require_choice(
+                _INFOGRAPHIC_DETAIL_MAP, raw_args["detail"], flag="detail"
+            ),
+            "style": _require_choice(_INFOGRAPHIC_STYLE_MAP, raw_args["style"], flag="style"),
         },
     )
 
@@ -710,7 +741,7 @@ def _build_report_plan(
         max_retries=common["max_retries"],
         json_output=common["json_output"],
         params={
-            "report_format": _REPORT_FORMAT_MAP[actual_format],
+            "report_format": _require_choice(_REPORT_FORMAT_MAP, actual_format, flag="format"),
             "custom_prompt": custom_prompt,
             "extra_instructions": append_instructions,
         },
