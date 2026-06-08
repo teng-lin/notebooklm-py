@@ -40,13 +40,13 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 
 from __future__ import annotations
 
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from ..exceptions import NotebookLMError
 from ..types import DriveMimeType, Source
+from .resolve import FULL_ID_PATTERN
 from .resolve import validate_id as _neutral_validate_id
 
 if TYPE_CHECKING:
@@ -95,7 +95,15 @@ class SourceMutationError(NotebookLMError):
 
 @dataclass(frozen=True)
 class SourceIdResolution:
-    """Resolved source-id data plus optional status prose for the command layer."""
+    """Resolved source-id data plus optional status prose for the command layer.
+
+    ``status_message`` is the "Matched: ..." hint for a partial-id expansion. It
+    currently carries CLI Rich markup (``[dim]...[/dim]``) — a known
+    transport-neutrality wrinkle: a non-CLI adapter (MCP/HTTP) must strip the
+    markup. The markup will move into the CLI render layer
+    (``cli/_source_render.py``) when the MCP adapter lands (the deferred MCP
+    rebase), leaving this field plain text.
+    """
 
     source_id: str
     status_message: str | None = None
@@ -190,13 +198,12 @@ def build_id_ambiguity_error(source_id: str, matches: list[Source]) -> str:
 
 
 def looks_like_full_source_id(source_id: str) -> bool:
-    """Return True for UUID-shaped source IDs that can skip list-based resolution."""
-    return bool(
-        re.fullmatch(
-            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-            source_id,
-        )
-    )
+    """Return True for UUID-shaped source IDs that can skip list-based resolution.
+
+    Reuses :data:`notebooklm._app.resolve.FULL_ID_PATTERN` so the full-id shape
+    rule has a single source of truth shared with the generic resolver.
+    """
+    return bool(FULL_ID_PATTERN.fullmatch(source_id))
 
 
 async def resolve_source_for_delete(
@@ -204,7 +211,6 @@ async def resolve_source_for_delete(
     notebook_id: str,
     source_id: str,
     *,
-    json_output: bool = False,
     validate_id: ValidateIdFn = _neutral_validate_id,
 ) -> SourceIdResolution:
     """Resolve source-id input for delete into a :class:`SourceIdResolution`.
@@ -257,7 +263,6 @@ async def resolve_source_by_exact_title(
     notebook_id: str,
     title: str,
     *,
-    json_output: bool = False,
     validate_id: ValidateIdFn = _neutral_validate_id,
 ) -> Source:
     """Resolve a source by exact title for the explicit delete-by-title flow."""
@@ -334,7 +339,6 @@ async def execute_source_delete(
         client,
         plan.notebook_id,
         plan.source_id,
-        json_output=plan.json_output,
         validate_id=validate_id,
     )
     # In --json mode, never prompt — automation cannot answer an interactive
@@ -402,7 +406,6 @@ async def execute_source_delete_by_title(
         client,
         plan.notebook_id,
         plan.title,
-        json_output=plan.json_output,
         validate_id=validate_id,
     )
     # Same JSON-mode confirmation contract as ``source delete``.

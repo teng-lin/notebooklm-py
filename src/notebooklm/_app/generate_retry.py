@@ -232,7 +232,7 @@ async def handle_generation_result(
     Returns:
         GenerationOutcome describing the final status.
     """
-    if not result:
+    if result is None:
         return GenerationOutcome(
             status="failed",
             artifact_type=artifact_type,
