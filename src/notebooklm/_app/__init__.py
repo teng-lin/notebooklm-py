@@ -50,6 +50,18 @@ from .download import (
 )
 from .errors import ClassifiedError, ErrorCategory, classify
 from .events import ProgressEvent, ProgressSink
+from .generate import (
+    GenerationExecutionResult,
+    GenerationKind,
+    GenerationOutcome,
+    GenerationPlan,
+    GenerationPlanValidationError,
+    build_generation_plan,
+    execute_generation,
+    generate_with_retry,
+    generation_outcome_from_status,
+    handle_generation_result,
+)
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
 from .serialize import source_summary, to_jsonable
 from .source_add import (
@@ -140,6 +152,17 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
+    # generate
+    "GenerationExecutionResult",
+    "GenerationKind",
+    "GenerationOutcome",
+    "GenerationPlan",
+    "GenerationPlanValidationError",
+    "build_generation_plan",
+    "execute_generation",
+    "generate_with_retry",
+    "generation_outcome_from_status",
+    "handle_generation_result",
     # download
     "FORMAT_EXTENSIONS",
     "ArtifactDict",

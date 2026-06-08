@@ -237,6 +237,9 @@ src/notebooklm/
 │   ├── download.py              # Click-free download core: DownloadPlan/Result/TypeSpec + build_download_plan/execute_download (injected resolvers; DownloadResult.to_envelope rebuilds the CLI --json envelope)
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
+│   ├── generate.py              # Click-free `generate` executor: execute_generation (injected notebook/source resolvers preserve the RPC fast paths) + GenerationExecutionResult; re-exports the plan/retry surface so `_app.generate` is the single import point
+│   ├── generate_plans.py        # Click-free `generate` plan-building: enum/format maps, GenerationPlan/GenerationKind/GenerationPlanValidationError, build_generation_plan + per-kind builders (parameter_explicit/language_resolver injected)
+│   ├── generate_retry.py        # Click-free `generate` retry/wait: GenerationOutcome, generate_with_retry, handle_generation_result, status extractors, spinner status-line formatter (wait_context/wait_start_sink neutral seams)
 │   ├── resolve.py               # Click-free validate_id + resolve_ref (AmbiguousIdError/Resolution)
 │   ├── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
 │   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; SourceAddResult.payload rebuilds the CLI --json source-summary inline)
@@ -381,13 +384,13 @@ src/notebooklm/
     ├── source_cmd.py            # source add, list, delete
     └── services/                # CLI-specific service layer (ADR-0008 Click-to-service extraction)
         ├── __init__.py
-        ├── artifact_generation.py # `generate` artifact orchestration service
+        ├── artifact_generation.py # `generate` retry/wait CLI adapter — thin re-export over `_app/generate_retry.py` (GenerationOutcome, generate_with_retry, handle_generation_result + the private _extract_*/`_format_status_message` symbols the tests reach for)
         ├── auth_diagnostics.py  # `auth check` diagnostic service
         ├── auth_source.py       # Single source of truth for the active CLI auth source
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
         ├── download.py          # CLI adapter over _app/download.py: re-exports plan types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
-        ├── generate.py          # Service layer for `notebooklm generate` commands (executor + re-exports)
-        ├── generate_plans.py    # Plan-building half of `generate`: maps, GenerationPlan, build_generation_plan
+        ├── generate.py          # `generate` CLI adapter over `_app/generate.py` — re-exports plan/result/error + build_generation_plan; injects cli.resolve resolve_notebook_id/resolve_source_ids (read at call time, preserving the resolve_module monkeypatch seam) into the neutral execute_generation
+        ├── generate_plans.py    # `generate` plan-building CLI adapter — thin re-export over `_app/generate_plans.py` (GenerationPlan/build_generation_plan + the _INFOGRAPHIC_STYLE_MAP private the command imports)
         ├── label_listing.py     # `label` resolve/join service (resolve_label_id + members→titles join)
         ├── listing.py           # Shared list-command pipeline for CLI resources
         ├── login/               # Browser-cookie login helper package
