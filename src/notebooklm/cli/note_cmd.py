@@ -14,6 +14,14 @@ from typing import Any
 
 import click
 
+from .._app.notes import (
+    execute_note_create,
+    execute_note_delete,
+    execute_note_get,
+    execute_note_rename,
+    execute_note_save,
+    resolve_note_for_delete,
+)
 from ..client import NotebookLMClient
 from ..types import Note
 from .auth_runtime import with_client
@@ -154,20 +162,19 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            result = await client.notes.create(nb_id_resolved, title, content)
-
-            # The notes.create RPC returns a nested list whose first element is
-            # the new note ID, e.g. ["note_xyz", ["note_xyz", content, ...]].
-            # Extract it defensively for the JSON shape.
-            new_id: str | None = None
-            if isinstance(result, list) and result:
-                first = result[0]
-                if isinstance(first, str):
-                    new_id = first
+            create_result = await execute_note_create(
+                client,
+                nb_id,
+                title,
+                content,
+                resolve_notebook_id=resolve_notebook_id,
+                json_output=json_output,
+            )
+            nb_id_resolved = create_result.notebook_id
+            new_id = create_result.note_id
 
             if json_output:
-                if result and new_id:
+                if create_result.created:
                     json_output_response(
                         {
                             "id": new_id,
@@ -188,9 +195,9 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
                     )
                 return
 
-            if result:
+            if create_result.raw:
                 cli_print("[green]Note created[/green]", ctx=ctx)
-                cli_print(result, ctx=ctx)
+                cli_print(create_result.raw, ctx=ctx)
             else:
                 cli_print("[yellow]Creation may have failed[/yellow]", ctx=ctx)
 
@@ -211,11 +218,17 @@ def note_get(ctx, note_id, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            resolved_id = await resolve_note_id(
-                client, nb_id_resolved, note_id, json_output=json_output
+            get_result = await execute_note_get(
+                client,
+                nb_id,
+                note_id,
+                resolve_notebook_id=resolve_notebook_id,
+                resolve_note_id=resolve_note_id,
+                json_output=json_output,
             )
-            n = await client.notes.get_or_none(nb_id_resolved, resolved_id)
+            nb_id_resolved = get_result.notebook_id
+            resolved_id = get_result.note_id
+            n = get_result.note
 
             # BREAKING: not-found exits 1 with a typed error instead of
             # the previous exit-0 ``found: false`` placeholder. The backend
@@ -302,11 +315,18 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            resolved_id = await resolve_note_id(
-                client, nb_id_resolved, note_id, json_output=json_output
+            save_result = await execute_note_save(
+                client,
+                nb_id,
+                note_id,
+                title=title,
+                content=content,
+                resolve_notebook_id=resolve_notebook_id,
+                resolve_note_id=resolve_note_id,
+                json_output=json_output,
             )
-            await client.notes.update(nb_id_resolved, resolved_id, content=content, title=title)
+            nb_id_resolved = save_result.notebook_id
+            resolved_id = save_result.note_id
 
             if json_output:
                 payload: dict[str, Any] = {
@@ -341,29 +361,29 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            resolved_id = await resolve_note_id(
-                client, nb_id_resolved, note_id, json_output=json_output
-            )
-            # Get current note to preserve content. The note may have
-            # disappeared between ``resolve_note_id`` and this ``get`` (e.g.
-            # a concurrent ``note delete`` won the race), in which case the
-            # backend returns ``None``. We funnel that through the same
-            # typed-error path as ``note get``'s Path B (resolve→missing)
-            # rather than the previous exit-0 ``{renamed: false, error: ...}``
+            # The rename core resolves both ids, fetches the current note to
+            # preserve its content, and performs the update. The note may have
+            # disappeared between ``resolve_note_id`` and the content-preserving
+            # ``get`` (e.g. a concurrent ``note delete`` won the race), in which
+            # case ``found`` is ``False``. We funnel that through the same
+            # typed-error path as ``note get``'s Path B (resolve→missing) rather
+            # than the previous exit-0 ``{renamed: false, error: ...}``
             # placeholder so ``set -e`` / ``check_call`` callers can branch on
             # the exit code without parsing prose. See
             # ``docs/cli-exit-codes.md`` and the BREAKING entry in
             # ``CHANGELOG.md`` (Unreleased → Changed).
-            #
-            # The trailing ``raise AssertionError`` is unreachable at runtime
-            # (``_output_error`` always exits) — it exists
-            # solely to narrow ``n`` from ``Note | None`` to ``Note`` for
-            # mypy without forcing a ``NoReturn`` annotation onto
-            # ``error_handler._output_error`` (which would change the shared
-            # helper's typing contract — same trick used by ``note get``).
-            n = await client.notes.get_or_none(nb_id_resolved, resolved_id)
-            if not isinstance(n, Note):
+            rename_result = await execute_note_rename(
+                client,
+                nb_id,
+                note_id,
+                new_title,
+                resolve_notebook_id=resolve_notebook_id,
+                resolve_note_id=resolve_note_id,
+                json_output=json_output,
+            )
+            nb_id_resolved = rename_result.notebook_id
+            resolved_id = rename_result.note_id
+            if not rename_result.found:
                 _output_error(
                     "Note not found",
                     code="NOT_FOUND",
@@ -372,10 +392,6 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
                     extra={"id": resolved_id, "notebook_id": nb_id_resolved},
                 )
                 raise AssertionError("unreachable")  # pragma: no cover
-
-            await client.notes.update(
-                nb_id_resolved, resolved_id, content=n.content or "", title=new_title
-            )
 
             if json_output:
                 json_output_response(
@@ -410,9 +426,13 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
         async with NotebookLMClient(client_auth) as client:
 
             async def resolve_delete(client):
-                nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-                resolved_id = await resolve_note_id(
-                    client, nb_id_resolved, note_id, json_output=json_output
+                nb_id_resolved, resolved_id = await resolve_note_for_delete(
+                    client,
+                    nb_id,
+                    note_id,
+                    resolve_notebook_id=resolve_notebook_id,
+                    resolve_note_id=resolve_note_id,
+                    json_output=json_output,
                 )
 
                 # In JSON mode, refuse to prompt: ``click.confirm`` writes to
@@ -431,7 +451,7 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
                 return {"notebook_id": nb_id_resolved, "note_id": resolved_id}
 
             async def execute_delete(client, resolved):
-                await client.notes.delete(resolved["notebook_id"], resolved["note_id"])
+                await execute_note_delete(client, resolved["notebook_id"], resolved["note_id"])
 
             plan = MutationPlan(
                 entity_label="note",

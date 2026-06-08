@@ -13,6 +13,13 @@ Note: Sharing commands moved to 'share' command group.
 
 import click
 
+from .._app.notebooks import (
+    execute_notebook_create,
+    execute_notebook_delete,
+    execute_notebook_describe,
+    execute_notebook_metadata,
+    execute_notebook_rename,
+)
 from ..client import NotebookLMClient
 from .auth_runtime import with_client
 from .context import clear_context, get_current_notebook, set_current_notebook
@@ -94,7 +101,7 @@ def register_notebook_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                nb = await client.notebooks.create(title)
+                nb = (await execute_notebook_create(client, title)).notebook
 
                 if switch_context:
                     created_str = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else None
@@ -164,10 +171,9 @@ def register_notebook_commands(cli):
                     return {"notebook_id": resolved_id, "success": False}
 
                 async def execute_delete(client, resolved):
-                    # delete() now returns None and raises on real failure
-                    # (issue #1211); reaching here without an exception means
-                    # success.
-                    await client.notebooks.delete(resolved["notebook_id"])
+                    # delete() returns None and raises on real failure (issue
+                    # #1211); reaching here without an exception means success.
+                    await execute_notebook_delete(client, resolved["notebook_id"])
                     resolved["success"] = True
 
                 plan = MutationPlan(
@@ -237,10 +243,14 @@ def register_notebook_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                resolved_id = await resolve_notebook_id(
-                    client, notebook_id, json_output=json_output
+                result = await execute_notebook_rename(
+                    client,
+                    notebook_id,
+                    new_title,
+                    resolve_notebook_id=resolve_notebook_id,
+                    json_output=json_output,
                 )
-                await client.notebooks.rename(resolved_id, new_title)
+                resolved_id = result.notebook_id
                 if json_output:
                     json_output_response(
                         {
@@ -275,10 +285,14 @@ def register_notebook_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                resolved_id = await resolve_notebook_id(
-                    client, notebook_id, json_output=json_output
+                describe_result = await execute_notebook_describe(
+                    client,
+                    notebook_id,
+                    resolve_notebook_id=resolve_notebook_id,
+                    json_output=json_output,
                 )
-                description = await client.notebooks.get_description(resolved_id)
+                resolved_id = describe_result.notebook_id
+                description = describe_result.description
 
                 if json_output:
                     payload: dict = {
@@ -340,13 +354,14 @@ def register_notebook_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                # Resolve partial ID
-                resolved_id = await resolve_notebook_id(
-                    client, notebook_id, json_output=json_output
+                # Resolve partial ID + fetch metadata (notebooks.get_metadata)
+                metadata_result = await execute_notebook_metadata(
+                    client,
+                    notebook_id,
+                    resolve_notebook_id=resolve_notebook_id,
+                    json_output=json_output,
                 )
-
-                # Get metadata (use notebooks.get_metadata)
-                metadata = await client.notebooks.get_metadata(resolved_id)
+                metadata = metadata_result.metadata
 
                 if json_output:
                     # JSON output

@@ -12,6 +12,14 @@ Commands:
 import click
 from rich.table import Table
 
+from .._app.sharing import (
+    execute_share_add_user,
+    execute_share_remove_user,
+    execute_share_set_public,
+    execute_share_set_view_level,
+    execute_share_status,
+    execute_share_update_user,
+)
 from ..client import NotebookLMClient
 from ..types import SharePermission, ShareViewLevel
 from .auth_runtime import with_client
@@ -81,8 +89,12 @@ def share_status(ctx, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            status = await client.sharing.get_status(resolved_id)
+            status = await execute_share_status(
+                client,
+                nb_id,
+                resolve_notebook_id=resolve_notebook_id,
+                json_output=json_output,
+            )
 
             if json_output:
                 data = {
@@ -158,8 +170,13 @@ def share_public(ctx, notebook_id, enable, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            status = await client.sharing.set_public(resolved_id, enable)
+            status = await execute_share_set_public(
+                client,
+                nb_id,
+                enable,
+                resolve_notebook_id=resolve_notebook_id,
+                json_output=json_output,
+            )
 
             if json_output:
                 data = {
@@ -205,8 +222,13 @@ def share_view_level(ctx, level, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            status = await client.sharing.set_view_level(resolved_id, view_level)
+            resolved_id, status = await execute_share_set_view_level(
+                client,
+                nb_id,
+                view_level,
+                resolve_notebook_id=resolve_notebook_id,
+                json_output=json_output,
+            )
 
             if json_output:
                 data = {
@@ -255,13 +277,15 @@ def share_add(ctx, email, notebook_id, permission, no_notify, message, json_outp
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            await client.sharing.add_user(
-                resolved_id,
+            resolved_id = await execute_share_add_user(
+                client,
+                nb_id,
                 email,
                 permission=perm,
                 notify=not no_notify,
                 welcome_message=message,
+                resolve_notebook_id=resolve_notebook_id,
+                json_output=json_output,
             )
 
             if json_output:
@@ -308,8 +332,14 @@ def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            await client.sharing.update_user(resolved_id, email, perm)
+            resolved_id = await execute_share_update_user(
+                client,
+                nb_id,
+                email,
+                perm,
+                resolve_notebook_id=resolve_notebook_id,
+                json_output=json_output,
+            )
 
             if json_output:
                 data = {
@@ -349,7 +379,7 @@ def share_remove(ctx, email, notebook_id, yes, json_output, client_auth):
                 return {"notebook_id": resolved_id, "email": email}
 
             async def execute_remove(client, resolved):
-                await client.sharing.remove_user(resolved["notebook_id"], resolved["email"])
+                await execute_share_remove_user(client, resolved["notebook_id"], resolved["email"])
 
             plan = MutationPlan(
                 entity_label="share",

@@ -48,8 +48,54 @@ from .download import (
 )
 from .errors import ClassifiedError, ErrorCategory, classify
 from .events import ProgressEvent, ProgressSink
+from .labels import (
+    LabelGenerateResult,
+    LabelMembershipResult,
+    LabelResolutionError,
+    execute_label_add_sources,
+    execute_label_create,
+    execute_label_delete,
+    execute_label_generate,
+    execute_label_remove_sources,
+    execute_label_rename,
+    execute_label_set_emoji,
+    execute_label_sources,
+    resolve_label_id,
+)
+from .notebooks import (
+    NotebookCreateResult,
+    NotebookDescribeResult,
+    NotebookMetadataResult,
+    NotebookRenameResult,
+    execute_notebook_create,
+    execute_notebook_delete,
+    execute_notebook_describe,
+    execute_notebook_metadata,
+    execute_notebook_rename,
+)
+from .notes import (
+    NoteCreateResult,
+    NoteGetResult,
+    NoteRenameResult,
+    NoteSaveResult,
+    execute_note_create,
+    execute_note_delete,
+    execute_note_get,
+    execute_note_rename,
+    execute_note_save,
+    extract_new_note_id,
+    resolve_note_for_delete,
+)
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
 from .serialize import to_jsonable
+from .sharing import (
+    execute_share_add_user,
+    execute_share_remove_user,
+    execute_share_set_public,
+    execute_share_set_view_level,
+    execute_share_status,
+    execute_share_update_user,
+)
 from .source_add import (
     SourceAddExecutionPlan,
     SourceAddFacade,
@@ -137,6 +183,48 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
+    # labels
+    "LabelGenerateResult",
+    "LabelMembershipResult",
+    "LabelResolutionError",
+    "execute_label_add_sources",
+    "execute_label_create",
+    "execute_label_delete",
+    "execute_label_generate",
+    "execute_label_remove_sources",
+    "execute_label_rename",
+    "execute_label_set_emoji",
+    "execute_label_sources",
+    "resolve_label_id",
+    # notebooks
+    "NotebookCreateResult",
+    "NotebookDescribeResult",
+    "NotebookMetadataResult",
+    "NotebookRenameResult",
+    "execute_notebook_create",
+    "execute_notebook_delete",
+    "execute_notebook_describe",
+    "execute_notebook_metadata",
+    "execute_notebook_rename",
+    # notes
+    "NoteCreateResult",
+    "NoteGetResult",
+    "NoteRenameResult",
+    "NoteSaveResult",
+    "execute_note_create",
+    "execute_note_delete",
+    "execute_note_get",
+    "execute_note_rename",
+    "execute_note_save",
+    "extract_new_note_id",
+    "resolve_note_for_delete",
+    # sharing
+    "execute_share_add_user",
+    "execute_share_remove_user",
+    "execute_share_set_public",
+    "execute_share_set_view_level",
+    "execute_share_status",
+    "execute_share_update_user",
     # download
     "FORMAT_EXTENSIONS",
     "ArtifactDict",
