@@ -260,8 +260,13 @@ def test_build_plan_happy_path(
 
 
 def test_build_plan_unknown_kind_raises() -> None:
-    """Plan builder rejects an unrecognized kind with ValueError."""
-    with pytest.raises(ValueError, match="Unknown generation kind"):
+    """Plan builder rejects an unrecognized kind with a typed validation error.
+
+    ``GenerationPlanValidationError`` subclasses
+    :class:`notebooklm.exceptions.ValidationError` so ``_app.errors.classify``
+    covers it uniformly (no bare ``ValueError`` escapes the ``_app`` boundary).
+    """
+    with pytest.raises(GenerationPlanValidationError, match="Unknown generation kind"):
         build_generation_plan("not-a-kind", _base_args())
 
 
