@@ -233,7 +233,8 @@ src/notebooklm/
 ├── _version_check.py            # Deprecation version guard
 ├── _research_task_parser.py     # Research task result-type parser
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
-│   ├── __init__.py              # Re-exports the Wave-0 neutral primitives
+│   ├── __init__.py              # Re-exports the neutral primitives
+│   ├── download.py              # Click-free download core: DownloadPlan/Result/TypeSpec + build_download_plan/execute_download (injected resolvers; DownloadResult.to_envelope rebuilds the CLI --json envelope)
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
 │   ├── resolve.py               # Click-free validate_id + resolve_ref (AmbiguousIdError/Resolution)
@@ -377,7 +378,7 @@ src/notebooklm/
         ├── auth_diagnostics.py  # `auth check` diagnostic service
         ├── auth_source.py       # Single source of truth for the active CLI auth source
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
-        ├── download.py          # Pure-logic download plan + executor
+        ├── download.py          # CLI adapter over _app/download.py: re-exports plan types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
         ├── generate.py          # Service layer for `notebooklm generate` commands (executor + re-exports)
         ├── generate_plans.py    # Plan-building half of `generate`: maps, GenerationPlan, build_generation_plan
         ├── label_listing.py     # `label` resolve/join service (resolve_label_id + members→titles join)

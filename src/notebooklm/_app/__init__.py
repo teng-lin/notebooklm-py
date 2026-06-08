@@ -30,20 +30,44 @@ The Wave-0 surface is the four foundation primitives every adapter needs:
 
 from __future__ import annotations
 
+from .download import (
+    FORMAT_EXTENSIONS,
+    ArtifactDict,
+    DownloadOutcome,
+    DownloadPlan,
+    DownloadPlanValidationError,
+    DownloadResult,
+    DownloadTypeSpec,
+    artifact_title_to_filename,
+    build_download_plan,
+    execute_download,
+    select_artifact,
+)
 from .errors import ClassifiedError, ErrorCategory, classify
 from .events import ProgressEvent, ProgressSink
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
 from .serialize import to_jsonable
 
 __all__ = [
+    "FORMAT_EXTENSIONS",
     "AmbiguousIdError",
+    "ArtifactDict",
     "ClassifiedError",
+    "DownloadOutcome",
+    "DownloadPlan",
+    "DownloadPlanValidationError",
+    "DownloadResult",
+    "DownloadTypeSpec",
     "ErrorCategory",
     "ProgressEvent",
     "ProgressSink",
     "Resolution",
+    "artifact_title_to_filename",
+    "build_download_plan",
     "classify",
+    "execute_download",
     "resolve_ref",
+    "select_artifact",
     "to_jsonable",
     "validate_id",
 ]
