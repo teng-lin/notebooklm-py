@@ -282,5 +282,20 @@ redundancy gets a TWO-part trim:
 GATE for the trim (mandate flips from "never reduce coverage" to "reduce only REDUNDANT coverage"): `pytest --cov`
 must show NO `src/` coverage regression vs pre-trim — a dropped line/branch means it wasn't actually redundant.
 
-## THEN (final integration): error_handler→`_app.classify` routing; the relocation ADR.
+## M1 COMPLETE — all 5 clusters merged. App tests 145 → 623 (+478 direct). Full suite 9238 passed / 0 failed.
+
+## DEDUP STAGE — RESOLVED (user 2026-06-08: "Keep suite; skip cutting"). Findings that drove it:
+- **Resolve consolidation DROPPED.** The map's "~40 true duplicates" did NOT survive code inspection: `cli/resolve.py`
+  is a legitimate rich ADAPTER (raises ClickException not ValidationError; adds entity_name/list_command hints to
+  messages; has `allow_full_id_passthrough`, `error_factory`, console `emit_status`) over the pure `_app/resolve.py`
+  CORE. `test_resolve.py` (59 tests) overwhelmingly tests THAT cli surface (82 refs) + `require_notebook`'s
+  env/context/SystemExit ladder — NOT the matching rules. It's an adapter/core split, not duplication. Consolidating
+  = behavior-touching refactor (case-differing exact-match emit, download no-passthrough path) for zero user benefit.
+- **No cutting.** Measured `_app` coverage: CLI tests alone 89% vs app tests 95%. The ~89% overlap is LAYERED
+  (unit + integration), not same-layer redundant — the `--cov` gate would block almost any deletion. The new app
+  tests add +6% unique coverage, run 5× faster (2s vs 10.6s), localize failures, and are the MCP/HTTP-reuse basis.
+  The growth is intended new direct coverage (doctor/chat had zero) + healthy defense-in-depth. Suite ~50s; runtime
+  is a non-issue. Decision: KEEP.
+
+## FINAL INTEGRATION (in progress): error_handler→`_app.classify` routing; the relocation ADR.
 ## DEFERRED (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
