@@ -21,10 +21,20 @@ Commands:
 
 from __future__ import annotations
 
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn
 
 import click
 
+from .._app.labels import (
+    execute_label_add_sources,
+    execute_label_create,
+    execute_label_delete,
+    execute_label_generate,
+    execute_label_remove_sources,
+    execute_label_rename,
+    execute_label_set_emoji,
+    execute_label_sources,
+)
 from ..client import NotebookLMClient
 from ..types import Label
 from .auth_runtime import with_client
@@ -129,7 +139,7 @@ def label_sources(ctx, label_ref, notebook_id, json_output, client_auth):
                 )
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
-            sources = await client.labels.sources(nb_id_resolved, label_id)
+            sources = await execute_label_sources(client, nb_id_resolved, label_id)
 
             if json_output:
                 json_output_response(
@@ -194,7 +204,7 @@ def label_generate(ctx, notebook_id, scope, yes, json_output, client_auth):
                     cli_print("[yellow]Cancelled[/yellow]", ctx=ctx)
                     return
 
-            labels = await client.labels.generate(nb_id_resolved, scope=scope)
+            labels = (await execute_label_generate(client, nb_id_resolved, scope)).labels
 
             if json_output:
                 json_output_response(
@@ -228,7 +238,7 @@ def label_create(ctx, name, notebook_id, emoji, json_output, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            label_ = await client.labels.create(nb_id_resolved, name, emoji)
+            label_ = await execute_label_create(client, nb_id_resolved, name, emoji)
 
             if json_output:
                 json_output_response({"notebook_id": nb_id_resolved, **_label_payload(label_)})
@@ -261,9 +271,7 @@ def label_rename(ctx, label_ref, new_name, notebook_id, json_output, client_auth
                 )
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
-            # ``return_object`` defaults to True, so the mutation returns a
-            # ``Label`` (or raises ``LabelNotFoundError``) — never ``None`` here.
-            label_ = cast(Label, await client.labels.rename(nb_id_resolved, label_id, new_name))
+            label_ = await execute_label_rename(client, nb_id_resolved, label_id, new_name)
 
             if json_output:
                 json_output_response({"notebook_id": nb_id_resolved, **_label_payload(label_)})
@@ -296,9 +304,7 @@ def label_emoji(ctx, label_ref, emoji_value, notebook_id, json_output, client_au
                 )
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
-            label_ = cast(
-                Label, await client.labels.set_emoji(nb_id_resolved, label_id, emoji_value)
-            )
+            label_ = await execute_label_set_emoji(client, nb_id_resolved, label_id, emoji_value)
 
             if json_output:
                 json_output_response({"notebook_id": nb_id_resolved, **_label_payload(label_)})
@@ -335,25 +341,23 @@ def label_add(ctx, label_ref, source_ids, notebook_id, json_output, client_auth)
             resolved_source_ids = await resolve_source_ids(
                 client, nb_id_resolved, source_ids, json_output=json_output
             )
-            label_ = cast(
-                Label,
-                await client.labels.add_sources(
-                    nb_id_resolved, label_id, resolved_source_ids or []
-                ),
+            membership = await execute_label_add_sources(
+                client, nb_id_resolved, label_id, resolved_source_ids or []
             )
+            label_ = membership.label
 
             if json_output:
                 json_output_response(
                     {
                         "notebook_id": nb_id_resolved,
-                        "added_source_ids": resolved_source_ids or [],
+                        "added_source_ids": membership.source_ids,
                         **_label_payload(label_),
                     }
                 )
                 return
 
             cli_print(
-                f"[green]Added {len(resolved_source_ids or [])} source(s) to:[/green] {label_id}",
+                f"[green]Added {len(membership.source_ids)} source(s) to:[/green] {label_id}",
                 ctx=ctx,
             )
 
@@ -391,26 +395,23 @@ def label_remove(ctx, label_ref, source_ids, notebook_id, json_output, client_au
             resolved_source_ids = await resolve_source_ids(
                 client, nb_id_resolved, source_ids, json_output=json_output
             )
-            label_ = cast(
-                Label,
-                await client.labels.remove_sources(
-                    nb_id_resolved, label_id, resolved_source_ids or []
-                ),
+            membership = await execute_label_remove_sources(
+                client, nb_id_resolved, label_id, resolved_source_ids or []
             )
+            label_ = membership.label
 
             if json_output:
                 json_output_response(
                     {
                         "notebook_id": nb_id_resolved,
-                        "removed_source_ids": resolved_source_ids or [],
+                        "removed_source_ids": membership.source_ids,
                         **_label_payload(label_),
                     }
                 )
                 return
 
             cli_print(
-                f"[green]Removed {len(resolved_source_ids or [])} source(s) from:[/green] "
-                f"{label_id}",
+                f"[green]Removed {len(membership.source_ids)} source(s) from:[/green] {label_id}",
                 ctx=ctx,
             )
 
@@ -456,7 +457,7 @@ def label_delete(ctx, label_refs, notebook_id, yes, json_output, client_auth):
                 return {"notebook_id": nb_id_resolved, "label_ids": label_ids}
 
             async def execute_delete(client, resolved):
-                await client.labels.delete(resolved["notebook_id"], resolved["label_ids"])
+                await execute_label_delete(client, resolved["notebook_id"], resolved["label_ids"])
 
             plan = MutationPlan(
                 entity_label="label",
