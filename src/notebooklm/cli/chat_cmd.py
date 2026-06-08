@@ -12,6 +12,19 @@ from typing import Any
 import click
 from rich.table import Table
 
+from .._app.chat import (
+    ClearCacheResult,
+    ConfigureResult,
+    determine_conversation_id,
+    execute_clear_cache,
+    execute_configure,
+    fetch_history,
+    format_history,
+    format_single_qa,
+    get_latest_conversation_from_server,
+    save_answer_as_note,
+    validate_ask_flags,
+)
 from .._app.events import ProgressEvent
 from ..client import NotebookLMClient
 from ..exceptions import ValidationError
@@ -27,19 +40,6 @@ from .rendering import (
     json_output_response,
 )
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
-from .services.chat import (
-    ClearCacheResult,
-    ConfigureResult,
-    determine_conversation_id,
-    execute_clear_cache,
-    execute_configure,
-    fetch_history,
-    format_history,
-    format_single_qa,
-    get_latest_conversation_from_server,
-    save_answer_as_note,
-    validate_ask_flags,
-)
 
 logger = logging.getLogger(__name__)
 

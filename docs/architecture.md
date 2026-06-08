@@ -599,7 +599,7 @@ invariant is pinned by `tests/_guardrails/test_no_module_shadowing.py`.
 CLI services are organised by feature family; notable examples include
 `cli/services/login/` (browser-profile enumeration split across Chromium
 and Firefox cookie jars), `cli/services/source_*` (URL/file/research
-source flows), and `cli/services/artifact_generation.py`. The CLI
+source flows), and `cli/services/generate.py`. The CLI
 service-layer boundary is guarded by
 [`tests/unit/cli/test_services_boundary.py`](../tests/unit/cli/test_services_boundary.py):
 new service modules must either be fully cleaned of Click/rendering/exit
@@ -1116,14 +1116,11 @@ src/notebooklm/
     ├── source_cmd.py            # source add, list, delete
     └── services/                # CLI-specific service layer (ADR-0008 Click-to-service extraction)
         ├── __init__.py
-        ├── artifact_generation.py # `generate` retry/wait CLI adapter — thin re-export over `_app/generate_retry.py` (GenerationOutcome, generate_with_retry, handle_generation_result + the private _extract_*/`_format_status_message` symbols the tests reach for)
         ├── auth_diagnostics.py  # `auth check` CLI adapter over `_app/auth_check.py` — re-exports AuthCheckPlan/Result; builds the plan from the AuthSource Click-context precedence (plan_from_click_context + the auth_source display label) and injects read_env_auth_json into the neutral run_auth_check
         ├── auth_source.py       # Single source of truth for the active CLI auth source (Click-context precedence resolver; stays in cli/ — reads ctx.obj + NOTEBOOKLM_AUTH_JSON)
-        ├── chat.py              # `ask`/`configure`/`history` CLI adapter over `_app/chat.py` — re-exports the neutral chat names + supplies the rich-coupled CliPrintStatusSink/EmitStatusSink that route status events through cli_print/emit_status
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
         ├── download.py          # CLI adapter over _app/download.py: re-exports plan types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
-        ├── generate.py          # `generate` CLI adapter over `_app/generate.py` — re-exports plan/result/error + build_generation_plan; injects cli.resolve resolve_notebook_id/resolve_source_ids (read at call time, preserving the resolve_module monkeypatch seam) into the neutral execute_generation
-        ├── generate_plans.py    # `generate` plan-building CLI adapter — thin re-export over `_app/generate_plans.py` (GenerationPlan/build_generation_plan + the _INFOGRAPHIC_STYLE_MAP private the command imports)
+        ├── generate.py          # `generate` CLI adapter over `_app/generate.py` — re-exports plan/result/error + build_generation_plan; injects cli.resolve resolve_notebook_id/resolve_source_ids (read at call time, preserving the resolve_module monkeypatch seam) into the neutral execute_generation; re-exports _INFOGRAPHIC_STYLE_MAP from `_app/generate_plans.py` for generate_cmd
         ├── label_listing.py     # `label list` members→titles join service; re-exports resolve_label_id + LabelResolutionError from _app/labels.py
         ├── listing.py           # Shared list-command pipeline for CLI resources
         ├── login/               # Browser-cookie login helper package
@@ -1145,7 +1142,6 @@ src/notebooklm/
         ├── polling.py           # Shared polling helpers for CLI wait commands
         ├── research.py          # `research wait` CLI adapter over `_app/research.py` — re-exports plan/result/outcome; injects cli.resolve.resolve_notebook_id + cli.research_import.import_research_sources defaults (preserves their patch seams)
         ├── session_context.py   # Notebook-context CLI adapter over `_app/session.py` for `use`/`status`/`auth logout` — re-exports the typed result classes; builds the injected StatusInputs/LogoutInputs bundles from its own session_context-namespace path helpers (read at call time, preserving the get_context_path/get_storage_path/clear_context patch seams)
-        ├── skill_install.py     # Skill-install CLI adapter — re-exports `report_mixed_no_clobber_up_to_date` from `_app/skill.py`
         ├── source_listing.py    # `source list` CLI adapter over `_app/source_listing.py` — owns the ListSpec/prepare_list presentation half; injects resolve_label_id into the neutral fetch_sources
         ├── source_mutations.py  # Source-mutation CLI adapter over `_app/source_mutations.py` — re-exports plan/result/error/helpers; injects cli.resolve validate_id + resolve_source_id (preserves the resolve_source_id monkeypatch seam) and the click.confirm confirmer
         ├── source_research.py   # `source add-research` CLI adapter — thin wrapper over `_app/source_research.py` (injects the rich-coupled importer; re-exports plan/result + validate_add_research_flags; preserves the import_research_sources monkeypatch seam)

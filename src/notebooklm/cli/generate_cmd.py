@@ -15,6 +15,9 @@ from typing import Any
 import click
 from click.core import ParameterSource
 
+from .._app.generate_retry import (
+    GenerationOutcome,
+)
 from ..client import NotebookLMClient
 from ..types import MindMap, MindMapResult
 from .auth_runtime import resolve_client_factory, with_client
@@ -40,9 +43,6 @@ from .rendering import (
     json_output_response,
 )
 from .resolve import require_notebook
-from .services.artifact_generation import (
-    GenerationOutcome,
-)
 from .services.generate import (
     _INFOGRAPHIC_STYLE_MAP,
     GenerationExecutionResult,

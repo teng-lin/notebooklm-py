@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.polling_ui import status_with_elapsed
-from notebooklm.cli.services.artifact_generation import (
+from notebooklm._app.generate_retry import (
     GenerationOutcome,
 )
+from notebooklm.cli.polling_ui import status_with_elapsed
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 
@@ -1178,9 +1178,8 @@ class TestGenerateLanguageValidation:
 #
 # The pure ``calculate_backoff_delay`` / ``generate_with_retry`` tests moved to
 # ``tests/unit/app/test_app_generate_retry.py`` (they call the ``_app`` function
-# directly; the function is defined in ``_app/generate_retry.py`` and only
-# re-exported via ``cli.services.artifact_generation``). The ``--retry`` Click
-# *option* surface stays here.
+# directly; the function is defined in ``_app/generate_retry.py``). The
+# ``--retry`` Click *option* surface stays here.
 # =============================================================================
 
 
@@ -1524,8 +1523,7 @@ class TestOutputGenerationOutcomeDirect:
 
 
 # ``TestExtractTaskIdDirect`` moved to ``tests/unit/app/test_app_generate_retry.py``
-# (``_extract_task_id`` is defined in ``_app/generate_retry.py`` and only
-# re-exported via ``cli.services.artifact_generation``).
+# (``_extract_task_id`` is defined in ``_app/generate_retry.py``).
 
 
 # =============================================================================

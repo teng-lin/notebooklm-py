@@ -8,7 +8,7 @@ boundary (independent of the Click adapter):
   ``tests/unit/cli/test_generate.py`` ``TestCalculateBackoffDelay`` /
   ``TestGenerateWithRetry`` / ``TestExtractTaskIdDirect`` /
   ``TestGenerateWithRetryConsoleOutput`` classes (they already called the
-  function directly through the ``cli.services.artifact_generation`` re-export);
+  function directly through the ``_app.generate_retry`` core);
 * the ``_format_status_message`` spinner-line formatter;
 * net-new direct coverage for :func:`generation_outcome_from_status` outcome
   classification and :func:`handle_generation_result` (None / rate-limited /

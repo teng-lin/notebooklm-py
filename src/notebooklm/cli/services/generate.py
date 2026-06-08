@@ -41,7 +41,7 @@ from ..._app.generate import (
 # ``_INFOGRAPHIC_STYLE_MAP`` is re-exported (via redundant alias, the explicit
 # re-export idiom) because ``cli/generate_cmd.py`` imports the private name
 # directly from this module.
-from .generate_plans import (
+from ..._app.generate_plans import (
     _INFOGRAPHIC_STYLE_MAP as _INFOGRAPHIC_STYLE_MAP,
 )
 
