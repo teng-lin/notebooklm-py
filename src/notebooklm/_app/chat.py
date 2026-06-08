@@ -308,7 +308,16 @@ async def execute_configure(
         )
 
     goal = ChatGoal.CUSTOM if persona else None
-    length = _RESPONSE_LENGTH_MAP[response_length] if response_length else None
+    if response_length:
+        try:
+            length = _RESPONSE_LENGTH_MAP[response_length]
+        except KeyError as exc:
+            raise ValidationError(
+                f"Unknown response length {response_length!r}; "
+                f"expected one of {sorted(_RESPONSE_LENGTH_MAP)}"
+            ) from exc
+    else:
+        length = None
 
     await client.chat.configure(
         notebook_id, goal=goal, response_length=length, custom_prompt=persona

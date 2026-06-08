@@ -14,9 +14,9 @@ Usage:
     python scripts/check_claude_md_freshness.py --claude-md path/to/doc.md
 
 Exit codes:
-    0  CLAUDE.md is fresh.
+    0  The structure doc (docs/architecture.md) is fresh.
     1  One or more paths are stale or missing from the map.
-    2  Argument error or CLAUDE.md not found.
+    2  Argument error or the structure doc not found.
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
 
     claude = Path(args.claude_md)
     if not claude.is_file():
-        print(f"CLAUDE.md not found: {claude}", file=sys.stderr)
+        print(f"Structure doc not found: {claude}", file=sys.stderr)
         return 2
 
     repo_root = Path(args.repo_root).resolve()
@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if missing or undocumented or stale_omissions or unreasoned_omissions:
         if missing:
-            print("Stale CLAUDE.md path references:", file=sys.stderr)
+            print("Stale structure-doc path references:", file=sys.stderr)
             for p in missing:
                 print(f"  {p}", file=sys.stderr)
         if undocumented:
@@ -205,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             for p in undocumented:
                 print(f"  {p}", file=sys.stderr)
         if stale_omissions:
-            print("Stale CLAUDE.md intentional omissions:", file=sys.stderr)
+            print("Stale structure-doc intentional omissions:", file=sys.stderr)
             for p in stale_omissions:
                 print(f"  {p}", file=sys.stderr)
         if unreasoned_omissions:
