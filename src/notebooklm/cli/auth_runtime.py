@@ -265,8 +265,10 @@ def resolve_client_factory(
 
     Resolution order, evaluated at call time:
 
-    1. An injected factory in ``ctx.obj["client_factory"]`` -- the seam tests
-       (and any future transport adapter) use this to substitute a fake client.
+    1. An injected factory in ``ctx.obj["client_factory"]`` -- the CLI seam tests
+       use this to substitute a fake client. ``ctx.obj`` is the CLI adapter's
+       client seam; a future MCP/HTTP front-end injects through the neutral
+       ``_app`` ``execute_<verb>(plan, client)`` signature, not this key (ADR-0021).
     2. The ``default`` supplied by the call site -- during the de-monkeypatch
        migration this is the command module's still-patchable ``NotebookLMClient``
        name, so legacy ``patch("...X_cmd.NotebookLMClient")`` seams keep working.

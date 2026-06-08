@@ -188,19 +188,12 @@ def _is_historical_prose(rel: str) -> bool:
     """True for docs that intentionally name historical/old module paths in prose.
 
     These are frozen-or-by-design historical records — ADRs, the refactor history,
-    the CHANGELOG (whose entries describe edits to modules *as they were named
-    at the time*, e.g. ``cli/note.py`` for a fix that predates the ``_cmd`` rename),
-    and implementation plans under ``docs/plans/`` (point-in-time design artifacts
-    that name modules across their lifecycle, including ones a plan proposes to
-    create or delete). The inline module-ref check skips them; the broken-link
-    check still applies (a dead *link* into the package is never intentional).
+    and the CHANGELOG (whose entries describe edits to modules *as they were named
+    at the time*, e.g. ``cli/note.py`` for a fix that predates the ``_cmd`` rename).
+    The inline module-ref check skips them; the broken-link check still applies (a
+    dead *link* into the package is never intentional, even in history).
     """
-    return (
-        rel.startswith("docs/adr/")
-        or rel.startswith("docs/plans/")
-        or rel == "docs/refactor-history.md"
-        or rel == "CHANGELOG.md"
-    )
+    return rel.startswith("docs/adr/") or rel == "docs/refactor-history.md" or rel == "CHANGELOG.md"
 
 
 def _iter_docs(repo_root: Path):
