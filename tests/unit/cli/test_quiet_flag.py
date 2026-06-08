@@ -34,7 +34,6 @@ from notebooklm.types import Artifact, Note, Notebook, Source
 from .conftest import (
     create_mock_client,
     inject_client,
-    patch_main_cli_client,
 )
 
 
@@ -397,15 +396,14 @@ class TestQuietRepresentativeCommands:
 
     def test_quiet_notebook_create(self, runner, mock_auth, fetch_tokens):
         """``notebooklm --quiet create "Title"`` exits 0 with no prose."""
-        with patch_main_cli_client() as mock_client_cls:
-            new_nb = Notebook(id="nb_new", title="My Notebook")
-            # ``create`` lives in cli/notebook.py; the multi-patcher covers it.
-            for m in mock_client_cls._mocks:  # type: ignore[attr-defined]
-                instance = create_mock_client()
-                instance.notebooks.create = AsyncMock(return_value=new_nb)
-                m.return_value = instance
+        new_nb = Notebook(id="nb_new", title="My Notebook")
+        # ``create`` lives in cli/notebook_cmd.py; the injected factory serves it.
+        mock_client = create_mock_client()
+        mock_client.notebooks.create = AsyncMock(return_value=new_nb)
 
-            result = runner.invoke(cli, ["--quiet", "create", "My Notebook"])
+        result = runner.invoke(
+            cli, ["--quiet", "create", "My Notebook"], obj=inject_client(mock_client)
+        )
 
         assert result.exit_code == 0, result.output
         # Non-quiet would emit "Created notebook: nb_new" — suppressed.
@@ -413,14 +411,11 @@ class TestQuietRepresentativeCommands:
 
     def test_non_quiet_notebook_create_still_prints(self, runner, mock_auth, fetch_tokens):
         """Baseline: ``create`` without ``--quiet`` still prints success."""
-        with patch_main_cli_client() as mock_client_cls:
-            new_nb = Notebook(id="nb_loud", title="Loud Notebook")
-            for m in mock_client_cls._mocks:  # type: ignore[attr-defined]
-                instance = create_mock_client()
-                instance.notebooks.create = AsyncMock(return_value=new_nb)
-                m.return_value = instance
+        new_nb = Notebook(id="nb_loud", title="Loud Notebook")
+        mock_client = create_mock_client()
+        mock_client.notebooks.create = AsyncMock(return_value=new_nb)
 
-            result = runner.invoke(cli, ["create", "Loud Notebook"])
+        result = runner.invoke(cli, ["create", "Loud Notebook"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0, result.output
         # ``create`` emits some success prose. The exact phrasing varies; we

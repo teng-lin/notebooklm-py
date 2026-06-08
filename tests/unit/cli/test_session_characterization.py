@@ -45,7 +45,7 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
 
-from .conftest import create_mock_client, patch_main_cli_client
+from .conftest import create_mock_client, inject_client
 
 pytestmark = pytest.mark.characterization
 
@@ -196,29 +196,27 @@ class TestUseCharacterization:
 
     def test_use_text_success(self, char_runner, char_context_file, mock_auth):
         """``use <id>`` (text) prints the resolved notebook in a table."""
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
-                    id="nb_char_001",
-                    title="Characterization Notebook",
-                    created_at=datetime(2024, 1, 15),
-                    is_owner=True,
-                )
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id="nb_char_001",
+                title="Characterization Notebook",
+                created_at=datetime(2024, 1, 15),
+                is_owner=True,
             )
-            mock_client_cls.return_value = mock_client
-            with (
-                patch(
-                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-                ) as mock_fetch,
-                patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id",
-                    new_callable=AsyncMock,
-                ) as mock_resolve,
-            ):
-                mock_fetch.return_value = ("csrf", "session")
-                mock_resolve.return_value = "nb_char_001"
-                result = char_runner.invoke(cli, ["use", "nb_char_001"])
+        )
+        with (
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch(
+                "notebooklm.cli.session_cmd.resolve_notebook_id",
+                new_callable=AsyncMock,
+            ) as mock_resolve,
+        ):
+            mock_fetch.return_value = ("csrf", "session")
+            mock_resolve.return_value = "nb_char_001"
+            result = char_runner.invoke(cli, ["use", "nb_char_001"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0
         assert "nb_char_001" in result.output
@@ -226,29 +224,29 @@ class TestUseCharacterization:
 
     def test_use_json_success_envelope(self, char_runner, char_context_file, mock_auth):
         """``use --json`` emits the documented envelope shape."""
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
-                    id="nb_json_001",
-                    title="JSON Char Notebook",
-                    created_at=datetime(2024, 2, 1),
-                    is_owner=False,
-                )
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id="nb_json_001",
+                title="JSON Char Notebook",
+                created_at=datetime(2024, 2, 1),
+                is_owner=False,
             )
-            mock_client_cls.return_value = mock_client
-            with (
-                patch(
-                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-                ) as mock_fetch,
-                patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id",
-                    new_callable=AsyncMock,
-                ) as mock_resolve,
-            ):
-                mock_fetch.return_value = ("csrf", "session")
-                mock_resolve.return_value = "nb_json_001"
-                result = char_runner.invoke(cli, ["use", "nb_json_001", "--json"])
+        )
+        with (
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch(
+                "notebooklm.cli.session_cmd.resolve_notebook_id",
+                new_callable=AsyncMock,
+            ) as mock_resolve,
+        ):
+            mock_fetch.return_value = ("csrf", "session")
+            mock_resolve.return_value = "nb_json_001"
+            result = char_runner.invoke(
+                cli, ["use", "nb_json_001", "--json"], obj=inject_client(mock_client)
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)

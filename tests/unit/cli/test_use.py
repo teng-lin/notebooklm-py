@@ -16,7 +16,7 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
 
-from .conftest import create_mock_client, patch_main_cli_client
+from .conftest import create_mock_client, inject_client
 
 
 def _split_stream_runner() -> CliRunner:
@@ -40,60 +40,56 @@ def _split_stream_runner() -> CliRunner:
 class TestUseCommand:
     def test_use_sets_notebook_context(self, runner, mock_auth, mock_context_file):
         """Test 'use' command sets the current notebook context."""
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
-                    id="nb_123",
-                    title="Test Notebook",
-                    created_at=datetime(2024, 1, 15),
-                    is_owner=True,
-                )
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id="nb_123",
+                title="Test Notebook",
+                created_at=datetime(2024, 1, 15),
+                is_owner=True,
             )
-            mock_client_cls.return_value = mock_client
+        )
 
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+
+            # Patch in session module where it's imported
             with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
+                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            ) as mock_resolve:
+                mock_resolve.return_value = "nb_123"
 
-                # Patch in session module where it's imported
-                with patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
-                ) as mock_resolve:
-                    mock_resolve.return_value = "nb_123"
-
-                    result = runner.invoke(cli, ["use", "nb_123"])
+                result = runner.invoke(cli, ["use", "nb_123"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0
         assert "nb_123" in result.output or "Test Notebook" in result.output
 
     def test_use_with_partial_id(self, runner, mock_auth, mock_context_file):
         """Test 'use' command resolves partial notebook ID."""
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
-                    id="nb_full_id_123",
-                    title="Resolved Notebook",
-                    created_at=datetime(2024, 1, 15),
-                    is_owner=True,
-                )
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id="nb_full_id_123",
+                title="Resolved Notebook",
+                created_at=datetime(2024, 1, 15),
+                is_owner=True,
             )
-            mock_client_cls.return_value = mock_client
+        )
 
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+
+            # Patch in session module where it's imported
             with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
+                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            ) as mock_resolve:
+                mock_resolve.return_value = "nb_full_id_123"
 
-                # Patch in session module where it's imported
-                with patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
-                ) as mock_resolve:
-                    mock_resolve.return_value = "nb_full_id_123"
-
-                    result = runner.invoke(cli, ["use", "nb_full"])
+                result = runner.invoke(cli, ["use", "nb_full"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0
         # Should show resolved full ID
@@ -137,30 +133,28 @@ class TestUseCommand:
 
     def test_use_shows_owner_status(self, runner, mock_auth, mock_context_file):
         """Test 'use' command displays ownership status correctly."""
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
-                    id="nb_shared",
-                    title="Shared Notebook",
-                    created_at=datetime(2024, 1, 15),
-                    is_owner=False,  # Shared notebook
-                )
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id="nb_shared",
+                title="Shared Notebook",
+                created_at=datetime(2024, 1, 15),
+                is_owner=False,  # Shared notebook
             )
-            mock_client_cls.return_value = mock_client
+        )
 
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+
+            # Patch in session module where it's imported
             with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
+                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            ) as mock_resolve:
+                mock_resolve.return_value = "nb_shared"
 
-                # Patch in session module where it's imported
-                with patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
-                ) as mock_resolve:
-                    mock_resolve.return_value = "nb_shared"
-
-                    result = runner.invoke(cli, ["use", "nb_shared"])
+                result = runner.invoke(cli, ["use", "nb_shared"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0
         assert "Shared" in result.output or "nb_shared" in result.output
@@ -179,28 +173,28 @@ class TestUseJsonOutput:
 
     def test_use_json_emits_active_notebook_id(self, runner, mock_auth, mock_context_file):
         """`use <id> --json` prints `{"active_notebook_id": "...", "success": true, ...}`."""
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
-                    id="nb_json_use",
-                    title="Use JSON",
-                    created_at=datetime(2026, 5, 14),
-                    is_owner=True,
-                )
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id="nb_json_use",
+                title="Use JSON",
+                created_at=datetime(2026, 5, 14),
+                is_owner=True,
             )
-            mock_client_cls.return_value = mock_client
+        )
 
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
             with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                with patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
-                ) as mock_resolve:
-                    mock_resolve.return_value = "nb_json_use"
+                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            ) as mock_resolve:
+                mock_resolve.return_value = "nb_json_use"
 
-                    result = runner.invoke(cli, ["use", "nb_json_use", "--json"])
+                result = runner.invoke(
+                    cli, ["use", "nb_json_use", "--json"], obj=inject_client(mock_client)
+                )
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
@@ -249,38 +243,38 @@ class TestUseJsonOutput:
         """
         runner = _split_stream_runner()
         full_id = "nb_partial_resolved_full_id"
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            # Real resolver path: list() returns the candidates so the
-            # prefix-match branch fires and emits "Matched: …".
-            mock_client.notebooks.list = AsyncMock(
-                return_value=[
-                    Notebook(
-                        id=full_id,
-                        title="Partial Match Notebook",
-                        created_at=datetime(2026, 5, 21),
-                        is_owner=True,
-                    ),
-                ]
-            )
-            mock_client.notebooks.get = AsyncMock(
-                return_value=Notebook(
+        mock_client = create_mock_client()
+        # Real resolver path: list() returns the candidates so the
+        # prefix-match branch fires and emits "Matched: …".
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[
+                Notebook(
                     id=full_id,
                     title="Partial Match Notebook",
                     created_at=datetime(2026, 5, 21),
                     is_owner=True,
-                )
+                ),
+            ]
+        )
+        mock_client.notebooks.get = AsyncMock(
+            return_value=Notebook(
+                id=full_id,
+                title="Partial Match Notebook",
+                created_at=datetime(2026, 5, 21),
+                is_owner=True,
             )
-            mock_client_cls.return_value = mock_client
+        )
 
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                # NOTE: intentionally do NOT patch resolve_notebook_id —
-                # we want the real partial-ID resolver to run so we can
-                # verify it doesn't pollute stdout with "Matched: …".
-                result = runner.invoke(cli, ["use", "nb_partial", "--json"])
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            # NOTE: intentionally do NOT patch resolve_notebook_id —
+            # we want the real partial-ID resolver to run so we can
+            # verify it doesn't pollute stdout with "Matched: …".
+            result = runner.invoke(
+                cli, ["use", "nb_partial", "--json"], obj=inject_client(mock_client)
+            )
 
         assert result.exit_code == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
         # Hard contract: stdout (what `notebooklm use --json > out.json`
@@ -313,23 +307,23 @@ class TestUseAuthAwareError:
         """AuthError → text mode prints the typed login hint, exit 1, no persist."""
         from notebooklm.exceptions import AuthError
 
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                side_effect=AuthError("Auth expired", method_id="rwIQyf"),
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            side_effect=AuthError("Auth expired", method_id="rwIQyf"),
+        )
 
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
             with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                with patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
-                ) as mock_resolve:
-                    mock_resolve.return_value = "nb_auth_expired"
+                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            ) as mock_resolve:
+                mock_resolve.return_value = "nb_auth_expired"
 
-                    result = runner.invoke(cli, ["use", "nb_auth_expired"])
+                result = runner.invoke(
+                    cli, ["use", "nb_auth_expired"], obj=inject_client(mock_client)
+                )
 
         assert result.exit_code == 1
         # Fail-closed: do not poison context.json on auth expiry.
@@ -343,23 +337,23 @@ class TestUseAuthAwareError:
         """AuthError + --json → typed `{"code": "AUTH_REQUIRED", ...}` envelope, exit 1."""
         from notebooklm.exceptions import AuthError
 
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                side_effect=AuthError("Auth expired", method_id="rwIQyf"),
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.notebooks.get = AsyncMock(
+            side_effect=AuthError("Auth expired", method_id="rwIQyf"),
+        )
 
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
             with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                with patch(
-                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
-                ) as mock_resolve:
-                    mock_resolve.return_value = "nb_auth_expired"
+                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            ) as mock_resolve:
+                mock_resolve.return_value = "nb_auth_expired"
 
-                    result = runner.invoke(cli, ["use", "nb_auth_expired", "--json"])
+                result = runner.invoke(
+                    cli, ["use", "nb_auth_expired", "--json"], obj=inject_client(mock_client)
+                )
 
         assert result.exit_code == 1
         assert not mock_context_file.exists()

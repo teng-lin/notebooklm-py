@@ -11,6 +11,8 @@ from click.testing import CliRunner
 from notebooklm.exceptions import AuthError, NetworkError
 from notebooklm.notebooklm_cli import cli
 
+from .conftest import inject_client
+
 # Import the module explicitly to avoid confusion with the Click group
 # (notebooklm.cli exports 'language' as a Click Group, which shadows the module)
 language_module = importlib.import_module("notebooklm.cli.language_cmd")
@@ -68,12 +70,17 @@ def read_config(path):
 
 @contextmanager
 def mock_server(*, get_returns="en", set_returns="en", get_error=None, set_error=None):
-    """Patch the auth bootstrap + ``NotebookLMClient`` for the server path.
+    """Stub the auth bootstrap and yield ``(settings, client_obj)`` for the server path.
 
     ``language get``/``set`` (without ``--local``) now route through
-    ``with_auth_and_errors`` → ``NotebookLMClient`` → ``client.settings``.
-    This stubs that whole stack so a unit test can drive the server response
-    (or inject an auth/network error to exercise the hard-fail envelope).
+    ``with_auth_and_errors`` → the resolved client factory → ``client.settings``.
+    This stubs the auth stack so a unit test can drive the server response (or
+    inject an auth/network error to exercise the hard-fail envelope).
+
+    The mock client is supplied to the command via ``ctx.obj`` injection rather
+    than a module patch: the yielded ``client_obj`` is the
+    ``CliRunner.invoke(obj=...)`` payload (``inject_client(client)``), which
+    seeds ``ctx.obj["client_factory"]`` so the command builds the mock client.
     """
     settings = MagicMock()
     if get_error is not None:
@@ -93,7 +100,6 @@ def mock_server(*, get_returns="en", set_returns="en", get_error=None, set_error
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
         patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
-        patch.object(language_module, "NotebookLMClient", return_value=client),
     ):
         mock_load.return_value = {
             "SID": "test",
@@ -104,7 +110,7 @@ def mock_server(*, get_returns="en", set_returns="en", get_error=None, set_error
             "SAPISID": "test",
         }
         mock_fetch.return_value = ("csrf", "session")
-        yield settings
+        yield settings, inject_client(client)
 
 
 # =============================================================================
@@ -198,8 +204,8 @@ class TestLanguageGetCommand:
 class TestLanguageSetCommand:
     def test_language_set_valid_code(self, runner, mock_config_file):
         """Test 'language set' with valid language code (server-authoritative)."""
-        with mock_server(set_returns="zh_Hans") as settings:
-            result = runner.invoke(cli, ["language", "set", "zh_Hans"])
+        with mock_server(set_returns="zh_Hans") as (settings, client_obj):
+            result = runner.invoke(cli, ["language", "set", "zh_Hans"], obj=client_obj)
 
         assert result.exit_code == 0
         assert "zh_Hans" in result.output
@@ -213,8 +219,8 @@ class TestLanguageSetCommand:
 
     def test_language_set_shows_global_warning(self, runner, mock_config_file):
         """Test 'language set' shows global setting warning."""
-        with mock_server(set_returns="ko"):
-            result = runner.invoke(cli, ["language", "set", "ko"])
+        with mock_server(set_returns="ko") as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "set", "ko"], obj=client_obj)
 
         assert result.exit_code == 0
         assert "GLOBAL" in result.output or "global" in result.output.lower()
@@ -235,8 +241,8 @@ class TestLanguageSetCommand:
 
     def test_language_set_json_output(self, runner, mock_config_file):
         """Test 'language set --json' outputs JSON format."""
-        with mock_server(set_returns="fr"):
-            result = runner.invoke(cli, ["language", "set", "fr", "--json"])
+        with mock_server(set_returns="fr") as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "set", "fr", "--json"], obj=client_obj)
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -266,8 +272,8 @@ class TestLanguageSetCommand:
 
     def test_language_set_server_error_hard_fails(self, runner, mock_config_file):
         """A server RPC failure surfaces the envelope + non-zero exit (NOT swallowed)."""
-        with mock_server(set_error=NetworkError("connection refused")):
-            result = runner.invoke(cli, ["language", "set", "fr"])
+        with mock_server(set_error=NetworkError("connection refused")) as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "set", "fr"], obj=client_obj)
 
         assert result.exit_code != 0
         assert "Network error" in result.output or "error" in result.output.lower()
@@ -277,8 +283,8 @@ class TestLanguageSetCommand:
 
     def test_language_set_server_error_json_envelope(self, runner, mock_config_file):
         """``language set --json`` on a server failure emits the typed error envelope."""
-        with mock_server(set_error=AuthError("expired session")):
-            result = runner.invoke(cli, ["language", "set", "fr", "--json"])
+        with mock_server(set_error=AuthError("expired session")) as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "set", "fr", "--json"], obj=client_obj)
 
         assert result.exit_code != 0
         data = json.loads(result.output)
@@ -345,8 +351,8 @@ class TestLanguageGetServerPath:
         # Local is "en", server returns "fr" → local should be updated to "fr".
         write_config(mock_config_file, {"language": "en"})
 
-        with mock_server(get_returns="fr") as settings:
-            result = runner.invoke(cli, ["language", "get"])
+        with mock_server(get_returns="fr") as (settings, client_obj):
+            result = runner.invoke(cli, ["language", "get"], obj=client_obj)
 
         assert result.exit_code == 0
         settings.get_output_language.assert_awaited_once()
@@ -358,8 +364,8 @@ class TestLanguageGetServerPath:
         """'language get' shows the synced message when the server differs from local."""
         write_config(mock_config_file, {"language": "en"})
 
-        with mock_server(get_returns="ja"):
-            result = runner.invoke(cli, ["language", "get"])
+        with mock_server(get_returns="ja") as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "get"], obj=client_obj)
 
         assert result.exit_code == 0
         assert "synced" in result.output.lower()
@@ -369,10 +375,10 @@ class TestLanguageGetServerPath:
         write_config(mock_config_file, {"language": "en"})
 
         with (
-            mock_server(get_returns="en"),
+            mock_server(get_returns="en") as (_settings, client_obj),
             patch.object(language_module, "set_language") as mock_set,
         ):
-            result = runner.invoke(cli, ["language", "get"])
+            result = runner.invoke(cli, ["language", "get"], obj=client_obj)
 
         assert result.exit_code == 0
         mock_set.assert_not_called()
@@ -381,16 +387,16 @@ class TestLanguageGetServerPath:
         """When the server has no value set, fall back to local for display."""
         write_config(mock_config_file, {"language": "de"})
 
-        with mock_server(get_returns=None):
-            result = runner.invoke(cli, ["language", "get"])
+        with mock_server(get_returns=None) as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "get"], obj=client_obj)
 
         assert result.exit_code == 0
         assert "de" in result.output
 
     def test_server_and_local_unset_shows_not_set(self, runner, mock_config_file):
         """'language get' shows 'not set' when neither server nor local has a value."""
-        with mock_server(get_returns=None):
-            result = runner.invoke(cli, ["language", "get"])
+        with mock_server(get_returns=None) as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "get"], obj=client_obj)
 
         assert result.exit_code == 0
         assert "not set" in result.output
@@ -399,8 +405,8 @@ class TestLanguageGetServerPath:
         """'language get --json' reflects synced_from_server when values differ."""
         write_config(mock_config_file, {"language": "en"})
 
-        with mock_server(get_returns="de"):
-            result = runner.invoke(cli, ["language", "get", "--json"])
+        with mock_server(get_returns="de") as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "get", "--json"], obj=client_obj)
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -411,8 +417,8 @@ class TestLanguageGetServerPath:
         """A server RPC failure surfaces the envelope + non-zero exit (NOT swallowed)."""
         write_config(mock_config_file, {"language": "en"})
 
-        with mock_server(get_error=NetworkError("connection refused")):
-            result = runner.invoke(cli, ["language", "get"])
+        with mock_server(get_error=NetworkError("connection refused")) as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "get"], obj=client_obj)
 
         assert result.exit_code != 0
         assert "Network error" in result.output or "error" in result.output.lower()
@@ -422,8 +428,8 @@ class TestLanguageGetServerPath:
 
     def test_server_error_json_envelope(self, runner, mock_config_file):
         """'language get --json' on a server failure emits the typed error envelope."""
-        with mock_server(get_error=AuthError("expired session")):
-            result = runner.invoke(cli, ["language", "get", "--json"])
+        with mock_server(get_error=AuthError("expired session")) as (_settings, client_obj):
+            result = runner.invoke(cli, ["language", "get", "--json"], obj=client_obj)
 
         assert result.exit_code != 0
         data = json.loads(result.output)

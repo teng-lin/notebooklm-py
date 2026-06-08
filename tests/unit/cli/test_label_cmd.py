@@ -1,25 +1,25 @@
 """Tests for the ``label`` CLI command group.
 
 Drives the thin Click handlers in ``cli/label_cmd.py`` via ``CliRunner``,
-patching ``NotebookLMClient`` at the module-level seam
-(``notebooklm.cli.label_cmd.NotebookLMClient``). Covers ``list`` (with the
-member-id + title join in ``--json``), ``sources`` (delegates to
-``client.labels.sources()``), the CRUD verbs (``create`` / ``rename`` /
-``emoji`` / ``add`` / ``remove`` / ``delete``), and ``generate`` (the
-``--yes/-y`` gate on ``--scope all``).
+injecting a mock client through ``ctx.obj`` (``inject_client``), which seeds
+``ctx.obj["client_factory"]`` so the command builds the mock instead of a real
+``NotebookLMClient``. Covers ``list`` (with the member-id + title join in
+``--json``), ``sources`` (delegates to ``client.labels.sources()``), the CRUD
+verbs (``create`` / ``rename`` / ``emoji`` / ``add`` / ``remove`` / ``delete``),
+and ``generate`` (the ``--yes/-y`` gate on ``--scope all``).
 """
 
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Label, Source
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, inject_client
 
 
 def _client_with_labels(*, labels=None, sources=None):
@@ -33,9 +33,7 @@ def _client_with_labels(*, labels=None, sources=None):
 
 
 def _run(runner, mock_auth, mock_fetch_tokens, argv, client):
-    with patch("notebooklm.cli.label_cmd.NotebookLMClient") as cls:
-        cls.return_value = client
-        return runner.invoke(cli, argv, catch_exceptions=False)
+    return runner.invoke(cli, argv, obj=inject_client(client), catch_exceptions=False)
 
 
 # ---------------------------------------------------------------------------
@@ -399,13 +397,6 @@ def test_label_sources_not_found_routes_through_envelope(
     payload = json.loads(result.stdout)
     assert payload["error"] is True
     assert payload["code"] == "NOT_FOUND"
-
-
-def test_label_module_level_client_seam_is_patchable() -> None:
-    """The patch seam ``notebooklm.cli.label_cmd.NotebookLMClient`` must exist."""
-    import notebooklm.cli.label_cmd as label_cmd
-
-    assert hasattr(label_cmd, "NotebookLMClient")
 
 
 @pytest.mark.parametrize(

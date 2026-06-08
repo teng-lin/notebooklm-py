@@ -32,12 +32,12 @@ single-interaction error cassette would be re-POSTed and VCR would raise
 ``CannotOverwriteExistingCassetteException`` looking for a 2nd interaction. We
 zero the retry budgets on the client the CLI constructs and no-op
 ``asyncio.sleep`` so the first synthetic error surfaces immediately. Because the
-``list`` command builds its own client inline (``NotebookLMClient(client_auth)``
-in ``cli/notebook_cmd.py``), the seam is injected by patching the
-``NotebookLMClient`` name *in that module* with a thin factory — the same
-module-object ``monkeypatch.setattr`` form the cli_vcr suite already uses (see
-``test_login_browser_cookies.py``), which stays clear of the ADR-0007
-string-target / ``notebooklm.``-attribute monkeypatch lint.
+``list`` command resolves its client factory via ``resolve_client_factory(ctx,
+default=NotebookLMClient)``, the seam is injected by seeding
+``ctx.obj["client_factory"]`` with a thin zero-retry factory (passed through
+``CliRunner.invoke(obj=...)``) — no module patching, no ADR-0007 monkeypatch
+surface. The factory builds a REAL ``NotebookLMClient``, so it is supplied
+directly rather than wrapped in the ``inject_client`` mock-instance helper.
 
 Asserted mappings (verified against ``cli/error_handler.py``)
 -------------------------------------------------------------
@@ -104,13 +104,17 @@ def _install_zero_retry_seam(
     monkeypatch: pytest.MonkeyPatch,
     *,
     refresh_calls: list[object] | None = None,
-) -> None:
-    """Patch the ``list`` command's client factory + no-op ``asyncio.sleep``.
+) -> dict[str, Any]:
+    """Build a zero-retry client factory + no-op ``asyncio.sleep``.
 
-    ``cli/notebook_cmd.py`` binds ``NotebookLMClient`` as a module global, so we
-    rebind that name (module-object form, not a ``"notebooklm..."`` string —
-    ADR-0007 clean) with a zero-retry factory, and no-op ``asyncio.sleep`` so any
-    residual backoff (e.g. the refresh-retry delay) adds no wall-clock time.
+    Returns the ``ctx.obj`` payload (``{"client_factory": _factory}``) to pass to
+    ``CliRunner.invoke(obj=...)`` — the injection seam (``resolve_client_factory``
+    reads ``ctx.obj["client_factory"]`` first) replaces the old per-module
+    ``NotebookLMClient`` rebind. Because ``_factory`` builds a REAL
+    ``NotebookLMClient`` (not a mock), it is passed directly as the factory and
+    NOT wrapped in ``inject_client`` (which is for client instances).
+    ``asyncio.sleep`` is no-opped so any residual backoff (e.g. the refresh-retry
+    delay) adds no wall-clock time.
 
     When ``refresh_calls`` is provided (the ``expired_csrf`` path), the factory
     also installs an in-process auth-refresh callback that issues NO HTTP and
@@ -120,7 +124,6 @@ def _install_zero_retry_seam(
     batchexecute POSTs (mirrors
     ``test_error_paths_vcr.test_expired_csrf_triggers_refresh``).
     """
-    import notebooklm.cli.notebook_cmd as notebook_cmd
 
     def _factory(*args: Any, **kwargs: Any) -> NotebookLMClient:
         client = _zero_retry_client(*args, **kwargs)
@@ -138,12 +141,12 @@ def _install_zero_retry_seam(
             client._collaborators.auth_coord._refresh_callback = _stub_refresh
         return client
 
-    monkeypatch.setattr(notebook_cmd, "NotebookLMClient", _factory)
-
     async def _instant_sleep(_seconds: float) -> None:
         return None
 
     monkeypatch.setattr(asyncio, "sleep", _instant_sleep)
+
+    return {"client_factory": _factory}
 
 
 class TestRateLimited429:
@@ -162,9 +165,9 @@ class TestRateLimited429:
         ``Retry-After`` value (``1`` in the cassette) under the ``retry_after``
         extra field.
         """
-        _install_zero_retry_seam(monkeypatch)
+        client_obj = _install_zero_retry_seam(monkeypatch)
         with notebooklm_vcr.use_cassette("error_synthetic_429_rate_limit.yaml") as cassette:
-            result = runner.invoke(cli, ["list", "--json"])
+            result = runner.invoke(cli, ["list", "--json"], obj=client_obj)
 
         assert result.exit_code == 1, result.output
         assert_json_envelope(result, schema=ERROR_SCHEMA)
@@ -193,9 +196,9 @@ class TestRateLimited429:
         stderr (merged into ``result.output`` by ``CliRunner``) and exits 1 — no
         JSON envelope.
         """
-        _install_zero_retry_seam(monkeypatch)
+        client_obj = _install_zero_retry_seam(monkeypatch)
         with notebooklm_vcr.use_cassette("error_synthetic_429_rate_limit.yaml"):
-            result = runner.invoke(cli, ["list"])
+            result = runner.invoke(cli, ["list"], obj=client_obj)
 
         assert result.exit_code == 1
         assert "Rate limited" in result.output
@@ -218,9 +221,9 @@ class TestServerError5xx:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``list --json`` on a 500 emits the generic ``NOTEBOOKLM_ERROR`` envelope."""
-        _install_zero_retry_seam(monkeypatch)
+        client_obj = _install_zero_retry_seam(monkeypatch)
         with notebooklm_vcr.use_cassette("error_synthetic_500_server.yaml") as cassette:
-            result = runner.invoke(cli, ["list", "--json"])
+            result = runner.invoke(cli, ["list", "--json"], obj=client_obj)
 
         assert result.exit_code == 1, result.output
         assert_json_envelope(result, schema=ERROR_SCHEMA)
@@ -237,9 +240,9 @@ class TestServerError5xx:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``list`` (no ``--json``) on a 500 exits 1 with the server-error line."""
-        _install_zero_retry_seam(monkeypatch)
+        client_obj = _install_zero_retry_seam(monkeypatch)
         with notebooklm_vcr.use_cassette("error_synthetic_500_server.yaml"):
-            result = runner.invoke(cli, ["list"])
+            result = runner.invoke(cli, ["list"], obj=client_obj)
 
         assert result.exit_code == 1
         # Tighter than a bare ``"Error:"``: pin the ``ServerError`` message
@@ -268,10 +271,10 @@ class TestExpiredCsrf400:
     ) -> None:
         """``list --json`` on a stale CSRF refreshes once, then emits ``NOTEBOOKLM_ERROR``."""
         refresh_calls: list[object] = []
-        _install_zero_retry_seam(monkeypatch, refresh_calls=refresh_calls)
+        client_obj = _install_zero_retry_seam(monkeypatch, refresh_calls=refresh_calls)
 
         with notebooklm_vcr.use_cassette("error_synthetic_stale_csrf.yaml") as cassette:
-            result = runner.invoke(cli, ["list", "--json"])
+            result = runner.invoke(cli, ["list", "--json"], obj=client_obj)
 
         assert result.exit_code == 1, result.output
         assert_json_envelope(result, schema=ERROR_SCHEMA)
@@ -292,10 +295,10 @@ class TestExpiredCsrf400:
     ) -> None:
         """``list`` (no ``--json``) on a stale CSRF exits 1 after the refresh retry."""
         refresh_calls: list[object] = []
-        _install_zero_retry_seam(monkeypatch, refresh_calls=refresh_calls)
+        client_obj = _install_zero_retry_seam(monkeypatch, refresh_calls=refresh_calls)
 
         with notebooklm_vcr.use_cassette("error_synthetic_stale_csrf.yaml") as cassette:
-            result = runner.invoke(cli, ["list"])
+            result = runner.invoke(cli, ["list"], obj=client_obj)
 
         assert result.exit_code == 1
         # The post-refresh 400 surfaces as ``ClientError``; pin that fragment so

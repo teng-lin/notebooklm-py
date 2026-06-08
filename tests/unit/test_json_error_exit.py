@@ -57,8 +57,9 @@ def mock_auth_env(monkeypatch) -> Generator[None, None, None]:
     runner can't trip the "set but empty" pre-flight check.
     """
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
-    # Stub object that download commands hand to NotebookLMClient(auth); the
-    # client itself is patched, so the auth value is never inspected.
+    # Stub object that download commands hand to the injected client factory;
+    # the factory ignores the auth value and returns the mock client, so the
+    # auth is never inspected.
     stub_auth = MagicMock(name="AuthTokens-stub")
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
@@ -122,37 +123,19 @@ def _make_client(extra_setup=None) -> MagicMock:
     return client
 
 
-def _patch_modules() -> list:
-    """Patch NotebookLMClient in every cli module that constructs it."""
-    modules = [
-        "notebooklm.cli.notebook_cmd",
-        "notebooklm.cli.chat_cmd",
-        "notebooklm.cli.session_cmd",
-        "notebooklm.cli.share_cmd",
-        "notebooklm.cli.source_cmd",
-        "notebooklm.cli.artifact_cmd",
-        "notebooklm.cli.research_cmd",
-        "notebooklm.cli.note_cmd",
-        "notebooklm.cli.label_cmd",
-        "notebooklm.cli.generate_cmd",
-        "notebooklm.cli.download_cmd",
-    ]
-    # Post-P3.T0: `*_cmd` modules are not shadowed, so direct string-form
-    # `patch(...)` resolves correctly without importlib indirection.
-    return [patch(f"{name}.NotebookLMClient") for name in modules]
-
-
 def _run_with_mock_client(runner: CliRunner, args: list[str], client: MagicMock):
-    """Invoke the CLI with NotebookLMClient mocked in every relevant module."""
-    patches = _patch_modules()
-    try:
-        for p in patches:
-            cls = p.start()
-            cls.return_value = client
-        return runner.invoke(cli, args, catch_exceptions=False)
-    finally:
-        for p in patches:
-            p.stop()
+    """Invoke the CLI with ``client`` injected via ``ctx.obj``.
+
+    The dual-path resolver (``cli.auth_runtime.resolve_client_factory``) reads
+    ``ctx.obj["client_factory"]`` first, so seeding it makes every command
+    construct ``client`` instead of the real ``NotebookLMClient`` -- the
+    replacement for the old per-``*_cmd``-module ``patch(...)`` sweep.
+    """
+
+    def factory(auth=None, **kwargs):
+        return client
+
+    return runner.invoke(cli, args, obj={"client_factory": factory}, catch_exceptions=False)
 
 
 def _safe_stderr(result) -> str:
