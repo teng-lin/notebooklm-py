@@ -1,6 +1,7 @@
 """Transport-neutral ``source wait`` business logic.
 
-This is the Click-free core of ``cli/services/source_wait.py``: it owns the
+This is the Click-free core behind ``source wait`` (imported directly by the
+``cli/source_cmd.py`` / ``cli/_source_render.py`` command layer): it owns the
 source-readiness polling loop and the translation of the three
 ``SourceWaitError`` subclasses into a discriminated :class:`SourceWaitOutcome`.
 Every transport adapter (the Click CLI today, the FastMCP server / future HTTP

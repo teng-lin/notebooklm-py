@@ -1,6 +1,7 @@
 """Transport-neutral ``source add`` business logic.
 
-This is the Click-free core of ``cli/services/source_add.py``: it owns the
+This is the Click-free core behind ``source add`` (imported directly by the
+``cli/source_cmd.py`` / ``cli/_source_render.py`` command layer): it owns the
 input detection + validation (URL SSRF guard, upload-path checks, source-type
 detection) and the add workflow, returning a typed :class:`SourceAddResult`.
 Every transport adapter (the Click CLI today, the FastMCP server / future

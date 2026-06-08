@@ -15,6 +15,22 @@ import click
 from rich.markup import render as render_markup
 from rich.table import Table
 
+from .._app import source_add as source_add_service
+from .._app import source_clean as source_clean_service
+from .._app.source_add import SourceAddResult
+from .._app.source_content import (
+    SourceFulltextResult,
+    SourceGetResult,
+    SourceGuideResult,
+    SourceStaleResult,
+)
+from .._app.source_wait import (
+    SourceWaitNotFound,
+    SourceWaitOutcome,
+    SourceWaitProcessingError,
+    SourceWaitReady,
+    SourceWaitTimeout,
+)
 from ..types import Source, source_status_to_str
 from .error_handler import _output_error, current_json_output, exit_with_code
 from .rendering import (
@@ -25,15 +41,6 @@ from .rendering import (
     emit_status,
     get_source_type_display,
     json_output_response,
-)
-from .services import source_add as source_add_service
-from .services import source_clean as source_clean_service
-from .services.source_add import SourceAddResult
-from .services.source_content import (
-    SourceFulltextResult,
-    SourceGetResult,
-    SourceGuideResult,
-    SourceStaleResult,
 )
 from .services.source_mutations import (
     SourceAddDriveResult,
@@ -48,13 +55,6 @@ from .services.source_serializers import (
     source_fulltext_payload,
     source_kind_value,
     source_summary_payload,
-)
-from .services.source_wait import (
-    SourceWaitNotFound,
-    SourceWaitOutcome,
-    SourceWaitProcessingError,
-    SourceWaitReady,
-    SourceWaitTimeout,
 )
 
 # Compatibility wrappers — tests patch these names on this module. Each

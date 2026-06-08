@@ -1,9 +1,10 @@
 """Transport-neutral read-only source-content business logic.
 
-This is the Click-free core of ``cli/services/source_content.py``: the
-data-fetch services behind ``source get`` / ``fulltext`` / ``guide`` /
-``stale``, each returning a typed result the transport adapter renders into
-its own envelope vocabulary.
+This is the Click-free core behind the read-only source-content commands
+(imported directly by the ``cli/source_cmd.py`` / ``cli/_source_render.py``
+command layer): the data-fetch services behind ``source get`` / ``fulltext`` /
+``guide`` / ``stale``, each returning a typed result the transport adapter
+renders into its own envelope vocabulary.
 
 This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 ``fastmcp`` imports (enforced by ``tests/_guardrails/test_app_boundary.py``).

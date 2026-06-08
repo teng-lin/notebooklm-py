@@ -1146,14 +1146,10 @@ src/notebooklm/
         ├── research.py          # `research wait` CLI adapter over `_app/research.py` — re-exports plan/result/outcome; injects cli.resolve.resolve_notebook_id + cli.research_import.import_research_sources defaults (preserves their patch seams)
         ├── session_context.py   # Notebook-context CLI adapter over `_app/session.py` for `use`/`status`/`auth logout` — re-exports the typed result classes; builds the injected StatusInputs/LogoutInputs bundles from its own session_context-namespace path helpers (read at call time, preserving the get_context_path/get_storage_path/clear_context patch seams)
         ├── skill_install.py     # Skill-install CLI adapter — re-exports `report_mixed_no_clobber_up_to_date` from `_app/skill.py`
-        ├── source_add.py        # `source add` CLI adapter — thin re-export wrapper over `_app/source_add.py` (preserves the source_add_service.* call-time lookups in source_cmd/_source_render)
-        ├── source_clean.py      # `source clean` CLI adapter — thin re-export wrapper over `_app/source_clean.py` (preserves the source_clean_service.classify_junk_sources call-time lookup)
-        ├── source_content.py    # Read-only source-content CLI adapter — thin re-export wrapper over `_app/source_content.py`
         ├── source_listing.py    # `source list` CLI adapter over `_app/source_listing.py` — owns the ListSpec/prepare_list presentation half; injects resolve_label_id into the neutral fetch_sources
         ├── source_mutations.py  # Source-mutation CLI adapter over `_app/source_mutations.py` — re-exports plan/result/error/helpers; injects cli.resolve validate_id + resolve_source_id (preserves the resolve_source_id monkeypatch seam) and the click.confirm confirmer
         ├── source_research.py   # `source add-research` CLI adapter — thin wrapper over `_app/source_research.py` (injects the rich-coupled importer; re-exports plan/result + validate_add_research_flags; preserves the import_research_sources monkeypatch seam)
-        ├── source_serializers.py # Shared JSON serializers for source CLI output
-        └── source_wait.py       # `source wait` CLI adapter — thin re-export over `_app/source_wait.py` (plan/outcome/executor); CLI injects the rich elapsed-time spinner as wait_context
+        └── source_serializers.py # Shared JSON serializers for source CLI output
 ```
 
 ## ADR cross-references

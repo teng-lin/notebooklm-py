@@ -9,14 +9,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm.cli import _source_render, source_cmd
-from notebooklm.cli.services import source_mutations, source_research
-from notebooklm.cli.services.source_content import (
+from notebooklm._app.source_content import (
     SourceFulltextPlan,
     SourceGuidePlan,
     execute_source_fulltext,
     execute_source_guide,
 )
+from notebooklm._app.source_wait import (
+    SourceWaitPlan,
+    SourceWaitTimeout,
+    execute_source_wait,
+)
+from notebooklm.cli import _source_render, source_cmd
+from notebooklm.cli.services import source_mutations, source_research
 from notebooklm.cli.services.source_mutations import (
     SourceDeletePlan,
     SourceMutationError,
@@ -28,11 +33,6 @@ from notebooklm.cli.services.source_research import (
     SourceAddResearchPlan,
     SourceAddResearchResult,
     execute_source_add_research,
-)
-from notebooklm.cli.services.source_wait import (
-    SourceWaitPlan,
-    SourceWaitTimeout,
-    execute_source_wait,
 )
 from notebooklm.types import (
     MindMapResult,  # noqa: F401  (re-exported for shared test helpers)

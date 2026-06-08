@@ -137,14 +137,10 @@ GUARDED_PATHS = {
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
     "cli/services/skill_install.py": SERVICES_ROOT / "skill_install.py",
-    "cli/services/source_clean.py": SERVICES_ROOT / "source_clean.py",
-    "cli/services/source_add.py": SERVICES_ROOT / "source_add.py",
-    "cli/services/source_content.py": SERVICES_ROOT / "source_content.py",
     "cli/services/source_listing.py": SERVICES_ROOT / "source_listing.py",
     "cli/services/source_mutations.py": SERVICES_ROOT / "source_mutations.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",
     "cli/services/source_serializers.py": SERVICES_ROOT / "source_serializers.py",
-    "cli/services/source_wait.py": SERVICES_ROOT / "source_wait.py",
 }
 
 # Stage 3 migration inventory. These modules currently own presentation

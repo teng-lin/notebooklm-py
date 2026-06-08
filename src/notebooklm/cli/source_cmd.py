@@ -1,17 +1,18 @@
 """Source management CLI commands — thin Click-handler layer (ADR-0008).
 
-Each command builds a ``cli/services/source_*`` plan dataclass and delegates
-to its executor:
+Each command builds a plan dataclass and delegates to its executor. The
+read-only and clean/add cores are transport-neutral (``_app/source_*``); the
+remaining cores still live under ``cli/services/source_*``:
 
+* ``_app/source_content.py``       — data fetchers for get, fulltext, guide, stale
+* ``_app/source_wait.py``          — wait
+* ``_app/source_add.py``           — add
+* ``_app/source_clean.py``         — clean (pure orchestration: classify +
+  batched delete; rendering + exit codes live here in the command layer)
 * ``services/source_listing.py``   — list
 * ``services/source_mutations.py`` — delete, delete-by-title, rename,
   refresh, add-drive
-* ``services/source_content.py``   — data fetchers for get, fulltext, guide, stale
 * ``services/source_research.py``  — add-research
-* ``services/source_wait.py``      — wait
-* ``services/source_add.py``       — add  (pre-T5; T5 added the executor)
-* ``services/source_clean.py``     — clean (pure orchestration: classify +
-  batched delete; rendering + exit codes live here in the command layer)
 
 The full per-command listing lives in the ``source`` click group docstring
 below (it is what ``notebooklm source --help`` shows).
@@ -22,6 +23,27 @@ from typing import Any
 
 import click
 
+from .._app import source_add as source_add_service
+from .._app.source_add import SourceAddExecutionPlan, execute_source_add
+from .._app.source_clean import (
+    SourceCleanResult,
+    candidates_payload,
+    run_source_clean,
+)
+from .._app.source_content import (
+    SourceFulltextPlan,
+    SourceGetPlan,
+    SourceGuidePlan,
+    SourceStalePlan,
+    execute_source_fulltext,
+    execute_source_get,
+    execute_source_guide,
+    execute_source_stale,
+)
+from .._app.source_wait import (
+    SourceWaitPlan,
+    execute_source_wait,
+)
 from ..client import NotebookLMClient
 from ..exceptions import ValidationError
 from ..types import Source
@@ -77,24 +99,7 @@ from .rendering import (
 )
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
-from .services import source_add as source_add_service
 from .services.label_listing import LabelResolutionError
-from .services.source_add import SourceAddExecutionPlan, execute_source_add
-from .services.source_clean import (
-    SourceCleanResult,
-    candidates_payload,
-    run_source_clean,
-)
-from .services.source_content import (
-    SourceFulltextPlan,
-    SourceGetPlan,
-    SourceGuidePlan,
-    SourceStalePlan,
-    execute_source_fulltext,
-    execute_source_get,
-    execute_source_guide,
-    execute_source_stale,
-)
 from .services.source_listing import SourceListPlan, execute_source_list
 from .services.source_mutations import (
     SourceAddDrivePlan,
@@ -114,10 +119,6 @@ from .services.source_research import (
     SourceAddResearchPlan,
     execute_source_add_research,
     validate_add_research_flags,
-)
-from .services.source_wait import (
-    SourceWaitPlan,
-    execute_source_wait,
 )
 
 
@@ -881,7 +882,7 @@ def _dispatch_source_clean_result(
     """Render the source-clean outcome and exit per the result's status.
 
     Owns the Click-side rendering + exit-code policy, kept separate from
-    ``execute_source_clean`` in :mod:`.services.source_clean`.
+    ``execute_source_clean`` in :mod:`.._app.source_clean`.
     Keeping presentation here lets the service module stay free of
     ``click`` / ``..rendering`` / ``..error_handler`` imports.
     """

@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from notebooklm._app import source_add as cli_source_add
 from notebooklm._source.add import SourceAddService
 from notebooklm._sources import SourcesAPI
-from notebooklm.cli.services import source_add as cli_source_add
 from notebooklm.exceptions import NetworkError, NonIdempotentRetryError, SourceAddError
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source
@@ -368,7 +368,7 @@ async def test_sources_api_add_url_uses_late_bound_facade_hooks() -> None:
 # ---------------------------------------------------------------------------
 # CLI service layer: SSRF guard on `source add --url`
 #
-# These tests target ``notebooklm.cli.services.source_add.validate_url`` and
+# These tests target ``notebooklm._app.source_add.validate_url`` and
 # the routing inside ``build_source_add_plan``. They replace the previous
 # ``startswith(("http://", "https://"))`` prefix check, which let
 # ``file:///etc/passwd`` and ``http://169.254.169.254/`` through.

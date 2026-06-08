@@ -1,6 +1,7 @@
 """Transport-neutral ``source clean`` business logic.
 
-This is the Click-free core of ``cli/services/source_clean.py``: it owns the
+This is the Click-free core behind ``source clean`` (imported directly by the
+``cli/source_cmd.py`` / ``cli/_source_render.py`` command layer): it owns the
 pure orchestration of source cleanup (classifying junk sources, batched
 deletion, returning a typed :class:`SourceCleanResult`). Presentation (Rich
 text vs. JSON envelope), confirmation prompting, and exit-code policy live in

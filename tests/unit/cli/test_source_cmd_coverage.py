@@ -24,8 +24,8 @@ from unittest.mock import AsyncMock, patch
 import click
 import pytest
 
+from notebooklm._app.source_clean import SourceCleanResult
 from notebooklm.cli import source_cmd
-from notebooklm.cli.services.source_clean import SourceCleanResult
 from notebooklm.cli.services.source_mutations import (
     SourceDeleteResult,
     SourceMutationError,
