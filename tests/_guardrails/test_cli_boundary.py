@@ -176,6 +176,22 @@ def _is_rpc_path(parts: list[str]) -> bool:
     return bool(parts) and parts[0] == "rpc"
 
 
+def _is_app_path(parts: list[str]) -> bool:
+    """True if ``parts`` is the ``_app`` business-logic layer or a sub-path.
+
+    ``_app`` is the sanctioned transport-neutral business-logic layer that CLI
+    adapters are *meant* to consume (rev-2 plan §1/§4): the CLI / MCP / future
+    HTTP surfaces are thin sibling adapters over it. It is therefore the one
+    underscored ``notebooklm`` package the CLI may import, despite the generic
+    private-module block (Rule 1). The match is exact on the first segment so
+    a hypothetical ``_apple`` sibling is not accidentally allowed.
+
+    ``parts`` is the path *below* the ``notebooklm`` prefix, e.g. ``["_app"]``
+    or ``["_app", "source_research"]``.
+    """
+    return bool(parts) and parts[0] == "_app"
+
+
 def _cli_module_imports(path: pathlib.Path) -> set[str]:
     """Return direct ``notebooklm.cli`` module imports used by a CLI file."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -353,8 +369,12 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                 if mod_parts and mod_parts[0] == "notebooklm":
                     if len(mod_parts) >= 2:
                         sub_parts = mod_parts[1:]
+                        # ``notebooklm._app`` is the sanctioned shared layer the
+                        # CLI may consume — exempt it from the private block.
+                        if _is_app_path(sub_parts):
+                            pass
                         # Rule 1 (any private segment) or Rule 2 (rpc layer).
-                        if _has_private_segment(sub_parts) or _is_rpc_path(sub_parts):
+                        elif _has_private_segment(sub_parts) or _is_rpc_path(sub_parts):
                             bad.append(f"from {mod} import ...")
                         else:
                             # Rule 3: private-name leakage from a public module.
@@ -363,13 +383,19 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                                     bad.append(f"from {mod} import {alias.name}")
                     else:
                         # ``from notebooklm import X`` — inspect each name.
-                        # Rule 1 (private name) or Rule 2 (``rpc`` sub-package).
+                        # Rule 1 (private name) or Rule 2 (``rpc`` sub-package),
+                        # but ``_app`` is the allowed shared-layer package.
                         for alias in node.names:
+                            if alias.name == "_app":
+                                continue
                             if _is_private_segment(alias.name) or alias.name == "rpc":
                                 bad.append(f"from notebooklm import {alias.name}")
             elif node.level >= 2:
                 # Relative parent-package import (cli reaches into notebooklm/*).
                 if mod:
+                    # ``from ..._app import ...`` is the allowed shared layer.
+                    if _is_app_path(mod_parts):
+                        continue
                     # Rule 1 (any private segment) or Rule 2 (rpc layer).
                     if _has_private_segment(mod_parts) or _is_rpc_path(mod_parts):
                         bad.append(f"from {'.' * node.level}{mod} import ...")
@@ -380,8 +406,11 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                             bad.append(f"from {'.' * node.level}{mod} import {alias.name}")
                 else:
                     # ``from .. import X`` — inspect each imported name.
-                    # Rule 1 (private name) or Rule 2 (``rpc`` sub-package).
+                    # Rule 1 (private name) or Rule 2 (``rpc`` sub-package),
+                    # but ``_app`` is the allowed shared-layer package.
                     for alias in node.names:
+                        if alias.name == "_app":
+                            continue
                         if _is_private_segment(alias.name) or alias.name == "rpc":
                             bad.append(f"from {'.' * node.level} import {alias.name}")
             else:
@@ -399,6 +428,9 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                 if not (len(parts) >= 2 and parts[0] == "notebooklm"):
                     continue
                 sub_parts = parts[1:]
+                # ``import notebooklm._app...`` is the allowed shared layer.
+                if _is_app_path(sub_parts):
+                    continue
                 # Rule 1 (any private segment) or Rule 2 (rpc layer).
                 if _has_private_segment(sub_parts) or _is_rpc_path(sub_parts):
                     bad.append(f"import {alias.name}")
@@ -760,4 +792,42 @@ def test_cli_boundary_blocks_private_project_import_shapes(
     expected: str,
 ) -> None:
     """CLI imports must stay on public notebooklm modules, including moved _types."""
+    assert expected in _violations(ast.parse(source))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from notebooklm._app.source_research import SourceAddResearchPlan\n",
+        "from notebooklm._app import resolve\n",
+        "import notebooklm._app.source_research\n",
+        "from ..._app.source_research import SourceAddResearchResult\n",
+        "from ..._app import resolve\n",
+        "from notebooklm import _app\n",
+        "from ... import _app\n",
+    ],
+)
+def test_cli_boundary_allows_app_shared_layer_imports(source: str) -> None:
+    """``notebooklm._app`` is the sanctioned shared layer CLI adapters consume.
+
+    It is the single underscored ``notebooklm`` package the CLI may import
+    (rev-2 plan §1/§4); every other private module stays blocked.
+    """
+    assert _violations(ast.parse(source)) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # ``_app`` is allowed but a lookalike sibling must still be blocked —
+        # the match is exact on the first segment, not a prefix.
+        (
+            "from notebooklm._apple.thing import X\n",
+            "from notebooklm._apple.thing import ...",
+        ),
+        ("from ..._apple import thing\n", "from ..._apple import ..."),
+    ],
+)
+def test_cli_boundary_blocks_app_lookalike_private_packages(source: str, expected: str) -> None:
+    """A private package whose name merely starts with ``_app`` is NOT exempt."""
     assert expected in _violations(ast.parse(source))
