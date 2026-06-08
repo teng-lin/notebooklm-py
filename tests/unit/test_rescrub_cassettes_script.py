@@ -39,12 +39,6 @@ import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "scripts" / "rescrub-cassettes.py"
-_TESTS_DIR = _REPO_ROOT / "tests"
-
-# Ensure ``cassette_patterns`` resolves regardless of where pytest is run.
-# This is the same trick the script uses.
-if str(_TESTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_TESTS_DIR))
 
 
 def _run_script(*argv: str) -> int:
@@ -254,7 +248,7 @@ def test_avatar_pattern_matches_registry() -> None:
     script_pattern = script_ns["_AVATAR_URL_RE"].pattern
     script_replacement = script_ns["_AVATAR_URL_REPLACEMENT"]
 
-    from cassette_patterns import SENSITIVE_PATTERNS
+    from tests.cassette_patterns import SENSITIVE_PATTERNS
 
     avatar_entries = [
         (pat, repl) for pat, repl in SENSITIVE_PATTERNS if repl == "SCRUBBED_AVATAR_URL"

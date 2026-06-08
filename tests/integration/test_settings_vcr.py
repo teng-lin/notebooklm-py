@@ -13,18 +13,13 @@ GET_USER_TIER is a homepage-scoped call (``source_path="/"``) so the notebook
 ID is only relevant for ensuring the recording session is logged in.
 """
 
-import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import pytest
+from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
-# Add tests directory to path for vcr_config import (mirrors test_vcr_comprehensive.py).
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from vcr_config import notebooklm_vcr  # noqa: E402
+from notebooklm import NotebookLMClient
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 

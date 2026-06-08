@@ -29,23 +29,19 @@ import sys
 from pathlib import Path
 
 import pytest
-
-pytestmark = pytest.mark.repo_lint
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-TESTS_DIR = REPO_ROOT / "tests"
-# ``tests/vcr_config.py`` lives directly under ``tests/`` (not in a package).
-# Other test modules add it to ``sys.path``; we follow the same convention.
-sys.path.insert(0, str(TESTS_DIR))
-
-from cassette_patterns import (  # noqa: E402
+from tests.cassette_patterns import (
     find_cookie_leaks,
     find_credential_leaks,
     is_clean,
     scrub_cookie_header,
     scrub_set_cookie,
 )
-from vcr_config import scrub_string  # noqa: E402
+from tests.vcr_config import scrub_string
+
+pytestmark = pytest.mark.repo_lint
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TESTS_DIR = REPO_ROOT / "tests"
 
 GUARD_SCRIPT = TESTS_DIR / "scripts" / "check_cassettes_clean.py"
 REGRESSION_FIXTURE = TESTS_DIR / "fixtures" / "bad_cassettes" / "bad_sid_starting_with_s.yaml"

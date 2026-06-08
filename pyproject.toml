@@ -111,6 +111,13 @@ force-include = {"SKILL.md" = "notebooklm/data/SKILL.md", "AGENTS.md" = "noteboo
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so the ``tests`` package is importable as
+# ``tests.*`` under any invocation (plain ``pytest``/``uv run pytest`` does NOT
+# add CWD; only ``python -m pytest`` does). This is what lets test files use
+# fully-qualified ``from tests.integration.conftest import ...`` instead of bare
+# ``from conftest import ...`` (which resolved only via sys.path pollution and
+# broke isolated/xdist runs — issue #1482).
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--ignore=tests/e2e"

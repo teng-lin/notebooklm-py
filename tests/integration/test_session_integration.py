@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from tests.integration.conftest import install_post_as_stream
 
 from _helpers.client_factory import build_client_shell_for_tests
-from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._runtime.helpers import is_auth_error
 from notebooklm.rpc import (

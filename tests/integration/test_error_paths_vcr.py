@@ -57,25 +57,20 @@ synthetic shapes these cassettes carry.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
 # Add tests directory to sys.path for vcr_config + conftest helpers, mirroring
 # the pattern in ``test_auth_refresh_vcr.py``.
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
+from tests.integration.conftest import skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
-from conftest import skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from notebooklm.auth import AuthTokens  # noqa: E402
-from notebooklm.exceptions import (  # noqa: E402
+from notebooklm import NotebookLMClient
+from notebooklm.auth import AuthTokens
+from notebooklm.exceptions import (
     ClientError,
     RateLimitError,
     ServerError,
 )
-from vcr_config import notebooklm_vcr  # noqa: E402
 
 # All tests in this module are VCR-tier. Skipped when cassettes are absent and
 # we're not in record mode (``NOTEBOOKLM_VCR_RECORD=1``).

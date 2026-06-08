@@ -107,9 +107,6 @@ def _scaffold(pytester: pytest.Pytester, integration_body: str) -> None:
             "tests/integration/test_under_test.py": integration_body,
         }
     )
-    # Empty ``__init__.py`` files so the synthetic ``tests/integration/`` is
-    # treated as the same kind of package layout pytest sees in the real repo.
-    pytester.makepyfile(**{"tests/__init__.py": "", "tests/integration/__init__.py": ""})
 
 
 def test_violation_rejected(pytester: pytest.Pytester) -> None:
@@ -186,8 +183,6 @@ def test_use_cassette_decorator_honored(pytester: pytest.Pytester) -> None:
     pytester.makeini(MARKER_REGISTRATION)
     pytester.makepyfile(
         **{
-            "tests/__init__.py": "",
-            "tests/integration/__init__.py": "",
             "tests/integration/conftest.py": HOOK_SOURCE,
             "tests/integration/test_with_use_cassette.py": textwrap.dedent(
                 """
@@ -229,9 +224,6 @@ def test_unit_tier_not_gated(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(
         **{
             "tests/integration/conftest.py": HOOK_SOURCE,
-            "tests/__init__.py": "",
-            "tests/integration/__init__.py": "",
-            "tests/unit/__init__.py": "",
             "tests/unit/test_bare.py": textwrap.dedent(
                 """
                 def test_unit_no_marker():

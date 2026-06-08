@@ -11,12 +11,10 @@ import pytest
 
 from notebooklm.auth import AuthTokens
 
-# Load ``tests/vcr_config.py`` by file path — the ``tests`` directory is not a
-# package (no ``__init__.py``), so ``from tests.vcr_config import ...`` only
-# works when the repo root happens to be on ``sys.path``. That holds in a
-# fresh REPL but NOT inside pytest's per-module import. Loading by file path
-# bypasses ``sys.path`` and is the same idiom used inside ``vcr_config.py``
-# itself for its sibling ``cassette_patterns.py`` import.
+# Load ``tests/vcr_config.py`` by file path. ``from tests.vcr_config import ...``
+# now resolves in pytest via ``pythonpath = ["."]`` (pyproject, #1482); loading
+# by file path is kept as a ``sys.path``-independent fallback (the same idiom
+# ``vcr_config.py`` uses for its sibling ``cassette_patterns.py`` import).
 _vcr_config_spec = importlib.util.spec_from_file_location(
     "tests_vcr_config", Path(__file__).resolve().parent.parent / "vcr_config.py"
 )

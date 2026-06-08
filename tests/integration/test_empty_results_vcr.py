@@ -28,19 +28,13 @@ incidental to replay — the cassettes are matched by RPC method + body,
 not by notebook UUID.
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 
-# tests/ is not a package (no __init__.py); insert both dirs onto sys.path so
-# the ``conftest`` and ``vcr_config`` siblings resolve in any invocation mode
 # (direct pytest, ``-k`` filter, IDE runner).
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from vcr_config import notebooklm_vcr  # noqa: E402
+from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
+
+from notebooklm import NotebookLMClient
 
 # Skip all tests in this module if cassettes are not available (mirrors the
 # pattern in tests/integration/test_vcr_comprehensive.py).

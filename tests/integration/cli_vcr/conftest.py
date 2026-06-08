@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,27 +28,23 @@ from urllib.parse import urlparse
 
 import pytest
 from click.testing import CliRunner
-
-# Add tests directory to path for vcr_config import
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from integration.conftest import _is_vcr_record_mode, skip_no_cassettes  # noqa: E402
+from tests.integration.conftest import _is_vcr_record_mode, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
 # Enum value *sets* only — an allowed-membership definition, NOT a decoder. Reading
 # the canonical enum values from the public ``notebooklm`` types keeps the membership
 # floor in lock-step with the source of truth without importing the decode path
 # (``assert_semantic_invariants`` only checks ``value in <set>``). See issue #1452.
-from notebooklm.rpc.types import SourceStatus  # noqa: E402
-from notebooklm.types import (  # noqa: E402
+from notebooklm.rpc.types import SourceStatus
+from notebooklm.types import (
     ArtifactStatus,
     ArtifactType,
     SourceType,
     artifact_status_to_str,
     source_status_to_str,
 )
-from vcr_config import notebooklm_vcr  # noqa: E402
 
-from ._fixtures import (  # noqa: E402
+from ._fixtures import (
     PLACEHOLDER_NOTEBOOK_ID,
     VCR_READONLY_NOTEBOOK_ID,
     VCR_READONLY_SOURCE_ID,

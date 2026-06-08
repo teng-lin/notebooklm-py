@@ -46,11 +46,11 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.unit.conftest import install_post_as_stream
 
 import notebooklm._backoff as _backoff
 import notebooklm._runtime.helpers as _runtime_helpers
 from _helpers.client_factory import build_client_shell_for_tests
-from conftest import install_post_as_stream
 from notebooklm._logging import get_request_id
 from notebooklm._middleware.core import RpcRequest, RpcResponse
 from notebooklm._request_types import AuthSnapshot

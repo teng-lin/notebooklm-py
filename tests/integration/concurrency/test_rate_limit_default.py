@@ -32,9 +32,9 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from tests.integration.conftest import install_post_as_stream
 
 from _fixtures.kernel_test_helpers import install_http_client_for_test
-from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient, RateLimitError
 from notebooklm.rpc import RPCMethod
 

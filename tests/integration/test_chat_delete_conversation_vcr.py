@@ -28,12 +28,10 @@ import yaml
 
 # Match the rest of ``tests/integration/test_vcr_*.py`` — these files are
 # imported by pytest with the repo root NOT on sys.path.
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
+from tests.integration.conftest import _vcr_record_mode, get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
-from conftest import _vcr_record_mode, get_vcr_auth, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from vcr_config import notebooklm_vcr  # noqa: E402
+from notebooklm import NotebookLMClient
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 

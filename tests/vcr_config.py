@@ -70,13 +70,11 @@ import vcr
 def _load_sibling(module_name: str, file_name: str) -> Any:
     """Load a sibling module under ``tests/`` by file path.
 
-    The ``tests`` directory is not a Python package (no ``__init__.py``), so
-    ``from tests.cassette_patterns import ...`` only works when the repo root
-    happens to be on ``sys.path``. That holds in a fresh REPL but NOT inside
-    pytest's per-module import, where the loader uses an isolated path that
-    omits the repo root. Loading by file path bypasses ``sys.path`` entirely
-    and is the same idiom ``tests/unit/test_cookie_redaction.py`` uses to
-    import this very file.
+    ``from tests.cassette_patterns import ...`` now resolves inside pytest via
+    ``pythonpath = ["."]`` (pyproject, #1482); loading by file path is kept as a
+    ``sys.path``-independent fallback so this module also works when imported
+    outside pytest, the same idiom ``tests/unit/test_cookie_redaction.py`` uses
+    to import this very file.
     """
     spec = importlib.util.spec_from_file_location(
         module_name, Path(__file__).resolve().parent / file_name

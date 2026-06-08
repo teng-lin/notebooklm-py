@@ -22,18 +22,15 @@ only the ``[0][9][3]`` tree is needed for replay.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
+from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from notebooklm.rpc.types import RPCMethod  # noqa: E402
-from notebooklm.types import MindMapKind  # noqa: E402
-from vcr_config import notebooklm_vcr  # noqa: E402
+from notebooklm import NotebookLMClient
+from notebooklm.rpc.types import RPCMethod
+from notebooklm.types import MindMapKind
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 

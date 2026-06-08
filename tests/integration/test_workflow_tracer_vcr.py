@@ -60,23 +60,17 @@ chain is the test.
 from __future__ import annotations
 
 import asyncio
-import sys
 import uuid
 from pathlib import Path
 
 import pytest
 import yaml
+from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import _is_vcr_record_mode, notebooklm_vcr
 
-# Add tests/ to sys.path so vcr_config + integration/conftest resolve when
-# pytest imports this module without the repo root on sys.path (parity with
-# every other ``tests/integration/test_*_vcr.py`` in the repo).
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from notebooklm.rpc import RPCMethod  # noqa: E402
-from notebooklm.types import ReportFormat  # noqa: E402
-from vcr_config import _is_vcr_record_mode, notebooklm_vcr  # noqa: E402
+from notebooklm import NotebookLMClient
+from notebooklm.rpc import RPCMethod
+from notebooklm.types import ReportFormat
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 

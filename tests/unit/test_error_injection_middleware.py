@@ -42,11 +42,11 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from tests.cassette_patterns import build_synthetic_error_response
 
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from cassette_patterns import build_synthetic_error_response
 from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
 from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware.error_injection import ErrorInjectionMiddleware

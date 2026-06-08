@@ -69,22 +69,19 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import uuid
 from pathlib import Path
 
 import pytest
 import yaml
 
-# Add tests directory to path for vcr_config import (parity with the rest of
 # tests/integration/test_vcr_*.py — these files are imported by pytest with
 # the repo root NOT on sys.path).
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from notebooklm.rpc import RPCMethod  # noqa: E402
-from vcr_config import notebooklm_vcr  # noqa: E402
+from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
+
+from notebooklm import NotebookLMClient
+from notebooklm.rpc import RPCMethod
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 

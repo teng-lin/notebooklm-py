@@ -34,19 +34,12 @@ we substitute synthetic ``AuthTokens`` for the same reason, mirroring the
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
+from tests.integration.conftest import _vcr_record_mode, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
-# Add tests directory to path for vcr_config + conftest helpers.
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-
-from conftest import _vcr_record_mode, skip_no_cassettes  # noqa: E402
-from notebooklm import NotebookLMClient  # noqa: E402
-from notebooklm.auth import AuthTokens  # noqa: E402
-from vcr_config import notebooklm_vcr  # noqa: E402
+from notebooklm import NotebookLMClient
+from notebooklm.auth import AuthTokens
 
 CASSETTE_NAME = "auth_rotate_cookies_refresh.yaml"
 

@@ -16,20 +16,15 @@ Note: These tests are automatically skipped if cassettes are not available.
 import csv
 import json
 import os
-import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
-# Add tests directory to path for vcr_config import
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes
 from notebooklm import NotebookLMClient, ReportFormat
 from notebooklm.types import Artifact, ArtifactType
-from vcr_config import notebooklm_vcr
 
 # Skip all tests in this module if cassettes are not available
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]

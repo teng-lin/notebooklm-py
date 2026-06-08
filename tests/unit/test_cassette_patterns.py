@@ -19,20 +19,11 @@ tests assert:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
-
-# ``tests/cassette_patterns.py`` lives directly under ``tests/`` (not in a
-# package). Other test modules add it to ``sys.path``; we follow the same
-# convention so the validator is importable in either layout.
-REPO_ROOT = Path(__file__).resolve().parents[2]
-TESTS_DIR = REPO_ROOT / "tests"
-sys.path.insert(0, str(TESTS_DIR))
-
-import vcr_config  # noqa: E402
-from cassette_patterns import (  # noqa: E402
+from tests import vcr_config
+from tests.cassette_patterns import (
     DISPLAY_NAME_FALSE_POSITIVES,
     EMAIL_PROVIDERS,
     HOST_COOKIES,
@@ -45,6 +36,8 @@ from cassette_patterns import (  # noqa: E402
     is_clean,
     scrub_string,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # A synthetic Google API key whose *shape* (``AIza`` + 35 ``[A-Za-z0-9_-]``
 # chars) matches the canonical Google API-key pattern the registry scrubs, but
