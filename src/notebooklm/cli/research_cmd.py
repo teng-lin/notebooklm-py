@@ -21,7 +21,7 @@ from .._app.research import (
 )
 from ..client import NotebookLMClient
 from ..exceptions import ValidationError
-from .auth_runtime import with_client
+from .auth_runtime import resolve_client_factory, with_client
 from .error_handler import _output_error, exit_with_code
 from .options import notebook_option
 from .polling_ui import status_with_elapsed
@@ -89,7 +89,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with NotebookLMClient(client_auth) as client:
+        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             result = await poll_and_classify(client, nb_id_resolved)
 
@@ -187,7 +187,7 @@ def research_wait(
     )
 
     async def _run():
-        async with NotebookLMClient(client_auth) as client:
+        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
             # Inject the wait spinner as the polling-loop context so the
             # service stays I/O-free and unit-testable. SIGINT inside the
             # spinner emits the canonical "Cancelled. Resume with: ..."

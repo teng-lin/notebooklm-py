@@ -226,6 +226,11 @@ def cli(ctx, storage, profile, verbose, quiet):
     # Mirror the root quiet flag for call sites that already read ctx.obj.
     # ``cli.runtime.is_quiet(ctx)`` remains the canonical reader.
     ctx.obj["quiet"] = bool(quiet)
+    # Default client factory: commands resolve ``NotebookLMClient`` through
+    # ``cli.auth_runtime.resolve_client_factory``. ``setdefault`` never clobbers a
+    # factory injected via ``CliRunner.invoke(obj=...)`` (the test seam); ``None``
+    # leaves resolution to the call-site default / lazy real client.
+    ctx.obj.setdefault("client_factory", None)
 
 
 # =============================================================================

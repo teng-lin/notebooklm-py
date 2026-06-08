@@ -402,6 +402,30 @@ def create_mock_client():
     return mock_client
 
 
+def inject_client(client, *, recorder=None):
+    """Build the ``CliRunner.invoke(obj=...)`` payload that injects ``client``.
+
+    The dual-path resolver (``cli.auth_runtime.resolve_client_factory``) reads
+    ``ctx.obj["client_factory"]`` first, so seeding it here makes every command
+    construct ``client`` instead of the real ``NotebookLMClient`` -- the
+    replacement for the old ``patch("...X_cmd.NotebookLMClient")`` seam. The
+    factory tolerates the ``client_auth, **client_kwargs`` call shape; when
+    ``recorder`` (a list) is supplied, each ``(auth, kwargs)`` call is appended
+    for assertions (e.g. the ``source add`` / ``chat ask`` timeout passthrough).
+
+    Usage::
+
+        result = runner.invoke(cli, [...], obj=inject_client(mock_client))
+    """
+
+    def factory(auth=None, **kwargs):
+        if recorder is not None:
+            recorder.append((auth, kwargs))
+        return client
+
+    return {"client_factory": factory}
+
+
 class MultiMockProxy:
     """Proxy that forwards attribute access to all underlying mocks.
 

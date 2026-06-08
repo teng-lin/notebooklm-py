@@ -69,8 +69,12 @@ CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"
 #: Inline waiver: ``# cli-rpc-unenveloped: <reason>`` within a command's body.
 UNENVELOPED_MARKER = "cli-rpc-unenveloped:"
 
-#: A command whose call graph reaches this name opens a client and does RPC.
-RPC_TARGETS = frozenset({"NotebookLMClient"})
+#: A command whose call graph reaches one of these opens a client and does RPC.
+#: ``resolve_client_factory`` is the ``ctx.obj`` indirection commands now call
+#: (``async with resolve_client_factory(ctx, default=NotebookLMClient)(...)``);
+#: ``NotebookLMClient`` is retained so the synthetic self-tests below and any
+#: future direct ``async with NotebookLMClient(...)`` re-introduction still match.
+RPC_TARGETS = frozenset({"NotebookLMClient", "resolve_client_factory"})
 
 #: Reaching any of these means the RPC is wrapped by the error envelope.
 #: ``with_client`` (a decorator) and ``run_client_workflow`` both funnel into

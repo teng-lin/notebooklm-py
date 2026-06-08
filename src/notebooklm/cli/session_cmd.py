@@ -48,7 +48,7 @@ from ._session_render import (
     _render_status,
     _use_notebook_table,
 )
-from .auth_runtime import handle_auth_error, run_client_workflow
+from .auth_runtime import handle_auth_error, resolve_client_factory, run_client_workflow
 from .context import clear_context, set_current_notebook
 from .error_handler import _output_error, exit_with_code, handle_errors
 from .playwright_login_io import (
@@ -461,7 +461,7 @@ def register_session_commands(cli):
             command_name="session_use",
             json_output=json_output,
             body=_get,
-            client_factory=NotebookLMClient,
+            client_factory=resolve_client_factory(ctx, default=NotebookLMClient),
             body_error_handler=_handle_use_verification_error,
         )
 

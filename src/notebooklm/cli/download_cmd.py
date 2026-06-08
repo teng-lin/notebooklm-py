@@ -31,7 +31,7 @@ import click
 
 from ..client import NotebookLMClient
 from ._download_specs import DOWNLOAD_SPECS, DownloadTypeSpec
-from .auth_runtime import run_client_workflow
+from .auth_runtime import resolve_client_factory, run_client_workflow
 from .error_handler import exit_with_code, output_error
 from .options import _complete_artifacts, alias_command, notebook_option
 from .rendering import console, json_output_response
@@ -156,7 +156,7 @@ def _run_artifact_download(ctx: click.Context, spec: DownloadTypeSpec, **kwargs:
         command_name=f"download_{spec.name.replace('-', '_')}",
         json_output=json_output,
         body=body,
-        client_factory=NotebookLMClient,
+        client_factory=resolve_client_factory(ctx, default=NotebookLMClient),
     )
 
     if json_output:

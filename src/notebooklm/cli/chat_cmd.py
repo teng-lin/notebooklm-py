@@ -15,7 +15,7 @@ from rich.table import Table
 from .._app.events import ProgressEvent
 from ..client import NotebookLMClient
 from ..exceptions import ValidationError
-from .auth_runtime import with_client
+from .auth_runtime import resolve_client_factory, with_client
 from .context import get_current_conversation, get_current_notebook, set_current_conversation
 from .error_handler import _output_error, exit_with_code
 from .input import resolve_prompt
@@ -305,7 +305,9 @@ def register_chat_commands(cli):
             client_kwargs["chat_timeout"] = timeout_value
 
         async def _run():
-            async with NotebookLMClient(client_auth, **client_kwargs) as client:
+            async with resolve_client_factory(ctx, default=NotebookLMClient)(
+                client_auth, **client_kwargs
+            ) as client:
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
                 if new_conversation:
                     # Dropping ``conversation_id`` alone extends the most-recent
@@ -468,7 +470,7 @@ def register_chat_commands(cli):
         nb_id = require_notebook(notebook_id)
 
         async def _run():
-            async with NotebookLMClient(client_auth) as client:
+            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
                 # The mode/goal/length mapping + RPC dispatch live in
                 # ``_app.chat.execute_configure``; the adapter keeps the
@@ -555,7 +557,7 @@ def register_chat_commands(cli):
         """
 
         async def _run():
-            async with NotebookLMClient(client_auth) as client:
+            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
                 if clear_cache:
                     # The pre-clear count capture + clear lives in
                     # ``_app.chat.execute_clear_cache``; the adapter keeps the

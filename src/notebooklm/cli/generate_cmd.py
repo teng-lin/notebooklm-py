@@ -17,7 +17,7 @@ from click.core import ParameterSource
 
 from ..client import NotebookLMClient
 from ..types import MindMap, MindMapResult
-from .auth_runtime import with_client
+from .auth_runtime import resolve_client_factory, with_client
 from .error_handler import current_json_output, output_error
 from .input import resolve_prompt
 from .language_cmd import SUPPORTED_LANGUAGES, get_language
@@ -254,7 +254,7 @@ def _run_generate(*, kind: str, **handler_locals: Any) -> Any:
             click.echo(line, err=True)
 
     async def _run() -> Any:
-        async with NotebookLMClient(client_auth) as client:
+        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
             result = await execute_generation(
                 plan,
                 client,
