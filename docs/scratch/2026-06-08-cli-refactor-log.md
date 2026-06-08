@@ -111,3 +111,27 @@ Doc-gate regression from the plan commit (unborn-ADR + bare module refs) fixed (
 - W-sources: source add-research logic -> _app; keep the 8-outcome command-layer dispatcher + exit codes.
   Worktree .worktrees/cli-source.
 Each: keep patch seams (don't move command modules), cassettes reused, --json byte-stable, polish, merge back.
+
+## Domain waves — DONE + integrated. Branch GREEN (8793 passed, 0 failed).
+- W1 download (1d501a5b): `cli/services/download.py` 657→135 (thin adapter); new `_app/download.py`
+  returns typed `DownloadResult` (discriminated by outcome) + `.to_envelope()` rebuilds the historical
+  dict byte-for-byte. Patch seams preserved (download_cmd untouched; `services.download.resolve_notebook_id`
+  read at call-time). Polish caught a real regression (dropped `require_notebook` env/active-context fallback) — fixed.
+- W-sources (b186b628): `cli/services/source_research.py` 213→65; new `_app/source_research.py` holds the
+  start→wait→import workflow + `validate_add_research_flags` (raises ValidationError, not UsageError);
+  importer INJECTED. The 8-outcome `_render_add_research_result` dispatcher + exit codes stay in CLI.
+- Merge conflict (both added the `_app` carve-out to test_cli_boundary): reconciled (kept one; covers both).
+- Cassettes REUSED (no re-recording); `--json` byte-stable; mypy/ruff clean.
+
+## MCP-dedup litmus — PROVEN (the payoff)
+`tests/unit/app/test_app_serialize_mcp_equiv.py`: 16/16 — `_app.serialize.to_jsonable` is WIRE-byte-identical
+to the MCP server's `mcp/_serialize.to_jsonable` across every type MCP emits. So MCP can delete its private
+copy and `from .._app.serialize import to_jsonable` with zero behavior change. The actual file swap lands when
+`feat/mcp-server` rebases onto `_app/` (a clean follow-up; this test is its green-light).
+
+## PROTOTYPE COMPLETE
+Wave 0 + W1 download + W-sources + MCP-dedup litmus — all green; full suite 8793 passed, 0 failed.
+The `_app/` relocation is validated end-to-end on real CLI code AND proven reusable by a second front-end.
+Remaining (follow-up, per plan): the other domain waves (artifacts/chat/notebook/note/label/research/auth),
+the error_handler classify-routing rewire, the feat/mcp-server rebase + _ids/_errors dedup, the de-monkeypatch
+pass (inject client via ctx.obj), and the relocation ADR. De-monkeypatch explicitly deferred per the user.
