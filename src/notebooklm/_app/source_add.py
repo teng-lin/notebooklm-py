@@ -10,12 +10,10 @@ envelope vocabulary.
 The URL guard here is **CLI input validation**: the lower-level Python API
 continues to pass caller-supplied URLs through to NotebookLM unchanged.
 
-One boundary-imposed shape is worth calling out: :attr:`SourceAddResult.payload`
-builds the ``{"id", "title", "type", "url"}`` source-summary dict inline rather
-than importing ``cli.services.source_serializers.source_summary_payload`` —
-that serializer lives in the Click adapter package, so this module reproduces
-its exact byte shape to stay transport-neutral (enforced by
-``tests/_guardrails/test_app_boundary.py``).
+:class:`SourceAddResult` is typed-fields-only (§11): it builds no ``--json``
+dict. The CLI adapter builds the ``{"source": {...}}`` envelope from the typed
+result, reusing the neutral :func:`notebooklm._app.serialize.source_summary`
+helper for the inner ``{"id", "title", "type", "url"}`` shape.
 
 This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 ``fastmcp`` imports.
@@ -31,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import urlsplit
 
+from ..exceptions import ValidationError
 from ..types import Source
 from ..urls import is_youtube_url
 
@@ -40,8 +39,14 @@ if TYPE_CHECKING:
 SourceAddType = Literal["url", "text", "file", "youtube"]
 
 
-class SourceAddValidationError(ValueError):
-    """Raised when source-add inputs fail validation."""
+class SourceAddValidationError(ValidationError):
+    """Raised when source-add inputs fail validation.
+
+    Subclasses :class:`~notebooklm.exceptions.ValidationError` (was ``ValueError``)
+    so ``_app.errors.classify`` covers it uniformly across adapters — it
+    classifies as :attr:`~notebooklm._app.errors.ErrorCategory.VALIDATION`. The
+    CLI catches it and emits its historical ``VALIDATION_ERROR`` ``--json`` code.
+    """
 
 
 class SourceAddFacade(Protocol):
@@ -353,28 +358,15 @@ class SourceAddExecutionPlan:
 
 @dataclass(frozen=True)
 class SourceAddResult:
-    """Result of adding a source."""
+    """Result of adding a source.
+
+    Typed-fields-only (§11): the ``source add`` ``--json`` envelope (which wraps
+    the neutral source summary under a ``"source"`` key) is built by the CLI
+    adapter from :attr:`source`, not on this dataclass. Adapters that want the
+    neutral summary import :func:`notebooklm._app.serialize.source_summary`.
+    """
 
     source: Source
-
-    @property
-    def payload(self) -> dict[str, object]:
-        """Return the JSON payload for ``source add``.
-
-        The nested source summary mirrors
-        ``cli.services.source_serializers.source_summary_payload`` byte-for-byte;
-        it is inlined here so the ``_app`` core stays free of the CLI adapter
-        package (``tests/_guardrails/test_app_boundary.py``).
-        """
-        src = self.source
-        return {
-            "source": {
-                "id": src.id,
-                "title": src.title,
-                "type": src.kind.value if src.kind is not None else None,
-                "url": src.url,
-            }
-        }
 
 
 async def execute_source_add(

@@ -7,7 +7,10 @@ import dataclasses
 import pytest
 
 from notebooklm import exceptions as exc
+from notebooklm._app.download import DownloadPlanValidationError
 from notebooklm._app.errors import ClassifiedError, ErrorCategory, classify
+from notebooklm._app.source_add import SourceAddValidationError
+from notebooklm._app.source_mutations import SourceMutationError
 
 
 def _all_concrete_subclasses(root: type) -> list[type]:
@@ -78,6 +81,21 @@ def test_every_library_exception_classifies_as_a_library_category(cls: type) -> 
         (exc.NotebookNotFoundError("nb"), ErrorCategory.NOT_FOUND, False),
         (exc.DecodingError("schema drift"), ErrorCategory.RPC, False),
         (exc.NotebookLMError("generic"), ErrorCategory.LIBRARY, False),
+        # ``_app``-raised errors re-based onto the public hierarchy (§11). The
+        # two validation errors fold into VALIDATION via their ValidationError
+        # base; SourceMutationError keeps its own category so adapters recover
+        # its carried ``.code`` taxonomy.
+        (
+            DownloadPlanValidationError("Cannot specify both --force and --no-clobber"),
+            ErrorCategory.VALIDATION,
+            False,
+        ),
+        (SourceAddValidationError("bad url"), ErrorCategory.VALIDATION, False),
+        (
+            SourceMutationError("ambiguous", "AMBIGUOUS_ID"),
+            ErrorCategory.SOURCE_MUTATION,
+            False,
+        ),
         (ValueError("not ours"), ErrorCategory.UNEXPECTED, False),
         (RuntimeError("not ours"), ErrorCategory.UNEXPECTED, False),
     ],
@@ -120,6 +138,57 @@ def test_research_task_mismatch_is_validation() -> None:
     # ResearchTaskMismatchError subclasses ValidationError.
     err = exc.ResearchTaskMismatchError(task_id="A", source_research_task_id="B")
     assert classify(err).category is ErrorCategory.VALIDATION
+
+
+@pytest.mark.parametrize(
+    ("app_error", "expected_base", "expected_category"),
+    [
+        (
+            DownloadPlanValidationError("boom"),
+            exc.ValidationError,
+            ErrorCategory.VALIDATION,
+        ),
+        (SourceAddValidationError("boom"), exc.ValidationError, ErrorCategory.VALIDATION),
+        (
+            SourceMutationError("boom", "NOT_FOUND"),
+            exc.NotebookLMError,
+            ErrorCategory.SOURCE_MUTATION,
+        ),
+    ],
+)
+def test_app_raised_errors_are_in_public_hierarchy_and_classify(
+    app_error: BaseException,
+    expected_base: type,
+    expected_category: ErrorCategory,
+) -> None:
+    """Every ``_app``-raised exception is a ``NotebookLMError`` and classifies (§11)."""
+    assert isinstance(app_error, exc.NotebookLMError)
+    assert isinstance(app_error, expected_base)
+    result = classify(app_error)
+    assert result.category is expected_category
+    assert result.category is not ErrorCategory.UNEXPECTED
+
+
+def test_source_mutation_error_keeps_cli_attributes() -> None:
+    """Re-basing onto NotebookLMError must not drop the CLI-read attributes."""
+    err = SourceMutationError(
+        "ambiguous id",
+        "AMBIGUOUS_ID",
+        {"source_id": "abc"},
+        status_message="[dim]Matched: abc[/dim]",
+    )
+    assert err.message == "ambiguous id"
+    assert err.code == "AMBIGUOUS_ID"
+    assert err.extra == {"source_id": "abc"}
+    assert err.status_message == "[dim]Matched: abc[/dim]"
+
+
+def test_download_plan_validation_error_keeps_code_and_message() -> None:
+    """``download_cmd`` reads ``.message`` / ``.code`` for its --json envelope."""
+    err = DownloadPlanValidationError("Cannot specify both --force and --no-clobber")
+    assert err.message == "Cannot specify both --force and --no-clobber"
+    assert err.code == "VALIDATION_ERROR"
+    assert str(err) == "Cannot specify both --force and --no-clobber"
 
 
 def test_retriable_only_for_transient_categories() -> None:

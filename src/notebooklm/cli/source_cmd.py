@@ -54,6 +54,7 @@ from ._source_render import (  # noqa: F401
     _render_source_wait_outcome,
     _resolve_source_fulltext_output_path,
     _validate_upload_path,
+    source_add_payload,
 )
 from .auth_runtime import with_client
 from .error_handler import _output_error, exit_with_code, output_error
@@ -306,9 +307,7 @@ def source_add(
     for warning in plan.warnings:
         click.echo(warning, err=True)
 
-    client_kwargs: dict = {}
-    if timeout is not None:
-        client_kwargs["timeout"] = timeout
+    client_kwargs: dict = {"timeout": timeout} if timeout is not None else {}
 
     async def _run():
         async with NotebookLMClient(client_auth, **client_kwargs) as client:
@@ -316,7 +315,7 @@ def source_add(
             execution_plan = SourceAddExecutionPlan(notebook_id=nb_id_resolved, plan=plan)
             if json_output:
                 result = await execute_source_add(client, execution_plan)
-                json_output_response(result.payload)
+                json_output_response(source_add_payload(result))
                 return
 
             with cli_status(f"Adding {plan.detected_type} source...", ctx=ctx):

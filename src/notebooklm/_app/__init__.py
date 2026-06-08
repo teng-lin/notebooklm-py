@@ -17,6 +17,8 @@ The Wave-0 foundation primitives every adapter needs:
 
 * :func:`~notebooklm._app.serialize.to_jsonable` — recursive JSON-able
   conversion of dataclasses / enums / datetimes / bytes / containers.
+* :func:`~notebooklm._app.serialize.source_summary` — the single neutral
+  ``{"id", "title", "type", "url"}`` source-summary shape both adapters import.
 * :func:`~notebooklm._app.errors.classify` — class-sensitive
   exception → :class:`~notebooklm._app.errors.ClassifiedError` mapping that
   each adapter projects onto its own code table.
@@ -49,7 +51,7 @@ from .download import (
 from .errors import ClassifiedError, ErrorCategory, classify
 from .events import ProgressEvent, ProgressSink
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
-from .serialize import to_jsonable
+from .serialize import source_summary, to_jsonable
 from .source_add import (
     SourceAddExecutionPlan,
     SourceAddFacade,
@@ -128,6 +130,7 @@ from .source_wait import (
 __all__ = [
     # Wave-0 foundation
     "to_jsonable",
+    "source_summary",
     "ClassifiedError",
     "ErrorCategory",
     "classify",

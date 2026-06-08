@@ -11,8 +11,8 @@ conflict resolution). This module is the thin CLI adapter on top of it: it
   resolvers (kept patchable at ``services.download.resolve_notebook_id`` for the
   service-layer tests), and
 * projects the typed :class:`~notebooklm._app.download.DownloadResult` back onto
-  the historical envelope **dict** the Click handler renders / serialises, so
-  the ``--json`` output stays byte-stable.
+  the historical envelope **dict** the Click handler renders / serialises (via
+  :func:`build_download_envelope`), so the ``--json`` output stays byte-stable.
 
 The split keeps no Click decorators here — Click integration lives in
 :mod:`notebooklm.cli.download_cmd`, which builds each leaf from a
@@ -28,6 +28,7 @@ from typing import Any
 from ..._app.download import (
     FORMAT_EXTENSIONS,
     ArtifactDict,
+    DownloadOutcome,
     DownloadPlan,
     DownloadPlanValidationError,
     DownloadResult,
@@ -50,11 +51,72 @@ __all__ = [
     "DownloadPlanValidationError",
     "DownloadResult",
     "DownloadTypeSpec",
+    "build_download_envelope",
     "build_download_plan",
     "execute_download",
     "require_notebook",
     "resolve_notebook_id",
 ]
+
+
+def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
+    """Project a typed :class:`DownloadResult` onto the historical ``--json`` envelope.
+
+    The transport-neutral ``_app`` core returns the typed result; this CLI
+    adapter owns the dict shaping (§11: no envelope builders in ``_app``). Key
+    ordering and value types match the dicts the pre-relocation
+    ``execute_download`` returned byte-for-byte, so the CLI ``--json`` output
+    stays stable for scripts that parse it.
+    """
+    if result.outcome is DownloadOutcome.NO_ARTIFACTS:
+        return {"error": result.error, "suggestion": result.suggestion}
+
+    if result.outcome is DownloadOutcome.ERROR:
+        envelope: dict[str, Any] = {"error": result.error}
+        if result.artifact is not None:
+            envelope["artifact"] = result.artifact
+        if result.suggestion is not None:
+            envelope["suggestion"] = result.suggestion
+        return envelope
+
+    if result.outcome is DownloadOutcome.ALL_DRY_RUN:
+        return {
+            "dry_run": True,
+            "operation": "download_all",
+            "count": result.count,
+            "output_dir": result.output_dir,
+            "artifacts": [dict(a) for a in result.artifacts],
+        }
+
+    if result.outcome is DownloadOutcome.ALL_EXECUTED:
+        envelope = {
+            "operation": "download_all",
+            "output_dir": result.output_dir,
+            "total": result.total,
+            "succeeded_count": result.succeeded_count,
+            "failed_count": result.failed_count,
+            "skipped_count": result.skipped_count,
+            "artifacts": [dict(a) for a in result.artifacts],
+        }
+        if result.is_failure:
+            envelope["error"] = True
+        return envelope
+
+    if result.outcome is DownloadOutcome.SINGLE_DRY_RUN:
+        return {
+            "dry_run": True,
+            "operation": "download_single",
+            "artifact": result.artifact,
+            "output_path": result.output_path,
+        }
+
+    # SINGLE_DOWNLOADED
+    return {
+        "operation": "download_single",
+        "artifact": result.artifact,
+        "output_path": result.output_path,
+        "status": "downloaded",
+    }
 
 
 def build_download_plan(
@@ -94,6 +156,7 @@ async def execute_download(
     plan: DownloadPlan,
     facade: Any,
     *,
+    json_output: bool = False,
     text_progress_sink: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the validated plan and return the historical envelope dict.
@@ -103,13 +166,20 @@ async def execute_download(
     call time so ``services.download.resolve_notebook_id`` stays patchable) and
     a :class:`ProgressSink` wrapping the optional ``text_progress_sink``, then
     projects the typed result back to the envelope dict via
-    :meth:`DownloadResult.to_envelope`.
+    :func:`build_download_envelope`.
+
+    JSON routing is owned here, not in the neutral core: in ``--json`` mode the
+    adapter passes ``progress=None`` so the per-artifact progress lines are
+    suppressed (keeping the JSON stream clean), and forwards ``json_output`` to
+    the notebook resolver so its "Matched: ..." diagnostic routes to stderr.
 
     Args:
         plan: Output of :func:`build_download_plan`.
         facade: A live :class:`~notebooklm.NotebookLMClient` (or any object
             exposing ``client.artifacts`` with ``.list`` and
             ``.download_<spec.download_attr>``).
+        json_output: When true, suppresses the ``--all`` progress lines
+            (``progress=None``) and routes the resolver diagnostic to stderr.
         text_progress_sink: Callback invoked once per artifact in the ``--all``
             text-mode path. ``None`` (default) skips the progress line; the live
             Click handler injects ``console.print``.
@@ -121,9 +191,15 @@ async def execute_download(
     async def _notebook_resolver(partial_id: str) -> str:
         # Looked up via the module global so a test monkeypatching
         # ``services.download.resolve_notebook_id`` is honoured.
-        return await resolve_notebook_id(facade, partial_id, json_output=plan.json_output)
+        return await resolve_notebook_id(facade, partial_id, json_output=json_output)
 
-    progress = _TextProgressSink(text_progress_sink) if text_progress_sink is not None else None
+    # The adapter owns JSON routing: suppress the progress sink in --json mode so
+    # the JSON stream stays clean (the neutral core no longer inspects a flag).
+    progress = (
+        _TextProgressSink(text_progress_sink)
+        if text_progress_sink is not None and not json_output
+        else None
+    )
 
     result = await _execute_download_core(
         plan,
@@ -132,4 +208,4 @@ async def execute_download(
         artifact_resolver=resolve_partial_artifact_id,
         progress=progress,
     )
-    return result.to_envelope()
+    return build_download_envelope(result)
