@@ -157,3 +157,20 @@ Dispatch: Agent A (near-verbatim trio add/clean/content), Agent B (de-Click trio
 ## Remaining domain waves (same proven recipe, parallelizable): generate, artifacts, chat, notebook/note/label/share/
 ## research, language/doctor, session/auth/profile (last). Plus: error_handler classify-routing; feat/mcp-server rebase
 ## + _ids/_errors dedup (deferred); de-monkeypatch via ctx.obj (deferred); relocation ADR at integration.
+
+## Full parallel fan-out — all remaining domains at once (user: "launch them all in parallel")
+6 agents in separate worktrees, polished, merged back:
+1. generate (generate_cmd + services/generate*, artifact_generation)  -> .worktrees/dom-generate
+2. artifacts (artifact_cmd)                                            -> .worktrees/dom-artifacts
+3. chat (chat_cmd)                                                     -> .worktrees/dom-chat
+4. crud: notebook+note+label+share (+ label_listing)                  -> .worktrees/dom-crud
+5. misc: research+language+doctor+skill+agent                         -> .worktrees/dom-misc
+6. session+auth+profile (HEAVIEST discipline — entry-assembler seam)  -> .worktrees/dom-auth
+Shared (stays in cli/, agents must NOT move): listing.py, confirming_mutation.py, source_serializers,
+rendering.py, helpers.py, resolve.py, error_handler.py, notebooklm_cli.py. Conflicts expected only in
+_app/__init__ + CLAUDE.md (additive; reconciled at merge).
+
+## Review of _app/source_add.py → 2 consistency wrinkles (added §11):
+(1) SourceAddValidationError is a bare ValueError (outside notebooklm.exceptions → classify misses it; source_research did it right with ValidationError).
+(2) SourceAddResult.payload builds the --json dict IN _app (re-introduces envelope-in-_app + duplicates source_serializers).
+Action: added §11 consistency-pass; SendMessage to the 5 in-flight agents to raise public exceptions + not put .payload on _app results.

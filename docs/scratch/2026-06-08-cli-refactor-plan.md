@@ -143,3 +143,9 @@ runs **all 15** `tests/integration/cli_vcr/` suites.
 - **Workflow 2 (parallel):** W1 download + W-sources(add-research) — one agent per domain, own worktree,
   polished, runs its `cli_vcr`+golden+unit suites, merges back. Then the MCP-dedup slice.
 - the relocation decision recorded as a new ADR in the integration step.
+
+## 11. Integration consistency pass [added after reviewing _app/source_add.py]
+Two inherited wrinkles to sweep across ALL relocated domains (runs with the error_handler→_app.classify routing at integration):
+1. **Errors:** every exception raised by `_app/*` must subclass `notebooklm.exceptions.*` (e.g. `ValidationError`) so `_app.errors.classify` covers it uniformly across adapters. NO bare `ValueError`/local exception subclasses outside the hierarchy. (Fix: `source_add.SourceAddValidationError(ValueError)` → subclass `ValidationError`.)
+2. **No envelope-building inside `_app`:** `_app` returns typed Result dataclasses ONLY; the `--json` payload/`.payload` is built by the CLI adapter — OR, where the shaping is genuinely transport-neutral (Source→summary dict), hoist it into ONE neutral `_app` serialize helper both adapters import (kills the source_summary_payload duplication). (Fix: drop `SourceAddResult.payload`; relocate `source_summary_payload`.)
+Acceptance: grep `_app/` for `class .*\(ValueError\)` and for `def payload`/envelope-dict construction → zero outside an explicit neutral serialize helper; `classify` coverage test includes every `_app`-raised error.
