@@ -27,12 +27,14 @@ The Wave-0 foundation primitives every adapter needs:
   :class:`~notebooklm._app.events.ProgressSink` — a transport-neutral
   progress-reporting seam for long-running operations.
 
-The domain modules (``download``, ``source_*``) hold the relocated CLI
-business logic each command's thin adapter now calls.
+The domain modules (``download``, ``doctor``, ``language``, ``research``,
+``skill``, ``source_*``) hold the relocated CLI business logic each command's
+thin adapter now calls.
 """
 
 from __future__ import annotations
 
+from .doctor import DoctorPaths, DoctorReport, run_checks
 from .download import (
     FORMAT_EXTENSIONS,
     ArtifactDict,
@@ -48,8 +50,36 @@ from .download import (
 )
 from .errors import ClassifiedError, ErrorCategory, classify
 from .events import ProgressEvent, ProgressSink
+from .language import SUPPORTED_LANGUAGES, LanguageConfigStore, is_supported_language, language_name
+from .research import (
+    ResearchStatusResult,
+    ResearchWaitOutcome,
+    ResearchWaitPlan,
+    ResearchWaitResult,
+    execute_research_wait,
+    poll_and_classify,
+    validate_research_wait_flags,
+)
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
 from .serialize import to_jsonable
+from .skill import (
+    SCOPES,
+    TARGET_CREATE,
+    TARGET_OVERWRITE,
+    TARGET_UP_TO_DATE,
+    TARGETS,
+    SkillTarget,
+    add_version_comment,
+    classify_target,
+    get_installed_content,
+    get_package_version,
+    get_scope_root,
+    get_skill_path,
+    get_skill_version,
+    iter_targets,
+    remove_empty_parents,
+    report_mixed_no_clobber_up_to_date,
+)
 from .source_add import (
     SourceAddExecutionPlan,
     SourceAddFacade,
@@ -137,6 +167,40 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
+    # doctor
+    "DoctorPaths",
+    "DoctorReport",
+    "run_checks",
+    # language
+    "SUPPORTED_LANGUAGES",
+    "LanguageConfigStore",
+    "is_supported_language",
+    "language_name",
+    # research
+    "ResearchStatusResult",
+    "ResearchWaitOutcome",
+    "ResearchWaitPlan",
+    "ResearchWaitResult",
+    "execute_research_wait",
+    "poll_and_classify",
+    "validate_research_wait_flags",
+    # skill
+    "SCOPES",
+    "TARGET_CREATE",
+    "TARGET_OVERWRITE",
+    "TARGET_UP_TO_DATE",
+    "TARGETS",
+    "SkillTarget",
+    "add_version_comment",
+    "classify_target",
+    "get_installed_content",
+    "get_package_version",
+    "get_scope_root",
+    "get_skill_path",
+    "get_skill_version",
+    "iter_targets",
+    "remove_empty_parents",
+    "report_mixed_no_clobber_up_to_date",
     # download
     "FORMAT_EXTENSIONS",
     "ArtifactDict",

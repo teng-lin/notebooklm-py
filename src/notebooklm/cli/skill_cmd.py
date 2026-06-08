@@ -1,132 +1,68 @@
-"""Skill management commands."""
+"""Skill management commands.
 
-import re
+Thin Click adapter over the transport-neutral
+:mod:`notebooklm._app.skill` core. The install-target catalog, path/version
+helpers, and the per-target ``create`` / ``up_to_date`` / ``overwrite``
+classification live in ``_app``; this module imports those names into its own
+namespace (so ``patch.object(skill_cmd, ...)`` test seams and the
+``from notebooklm.cli.skill_cmd import ...`` imports keep resolving) and owns
+the Click I/O, the atomic file write, and the packaged-source loader.
+"""
+
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 import click
 
+from .._app.skill import (
+    SCOPES,
+    TARGET_CREATE,
+    TARGET_OVERWRITE,
+    TARGET_UP_TO_DATE,
+    TARGETS,
+    SkillTarget,
+    add_version_comment,
+    classify_target,
+    get_installed_content,
+    get_package_version,
+    get_scope_root,
+    get_skill_path,
+    get_skill_version,
+    iter_targets,
+    remove_empty_parents,
+    report_mixed_no_clobber_up_to_date,
+)
 from ..io import replace_file_atomically
 from .agent_templates import get_agent_source_content
 from .error_handler import exit_with_code
 from .rendering import console
-from .services.skill_install import report_mixed_no_clobber_up_to_date
 
-
-@dataclass(frozen=True)
-class SkillTarget:
-    """Install target metadata."""
-
-    label: str
-    relative_path: Path
-
-
-TARGETS = {
-    "claude": SkillTarget("Claude Code", Path(".claude") / "skills" / "notebooklm" / "SKILL.md"),
-    "agents": SkillTarget("Agent Skills", Path(".agents") / "skills" / "notebooklm" / "SKILL.md"),
-}
-SCOPES = ("user", "project")
+__all__ = [
+    "SCOPES",
+    "TARGET_CREATE",
+    "TARGET_OVERWRITE",
+    "TARGET_UP_TO_DATE",
+    "TARGETS",
+    "SkillTarget",
+    "add_version_comment",
+    "atomic_write_text",
+    "classify_target",
+    "get_installed_content",
+    "get_package_version",
+    "get_scope_root",
+    "get_skill_path",
+    "get_skill_source_content",
+    "get_skill_version",
+    "iter_targets",
+    "remove_empty_parents",
+    "report_mixed_no_clobber_up_to_date",
+    "skill",
+]
 
 
 def get_skill_source_content() -> str | None:
     """Read the skill source file from package data."""
     return get_agent_source_content("claude")
-
-
-def get_package_version() -> str:
-    """Get the current package version."""
-    try:
-        from .. import __version__
-
-        return __version__
-    except ImportError:
-        return "unknown"
-
-
-def get_skill_version(skill_path: Path) -> str | None:
-    """Extract version from skill file header comment."""
-    if not skill_path.exists():
-        return None
-
-    with open(skill_path, encoding="utf-8") as f:
-        content = f.read(500)  # Read first 500 chars
-
-    match = re.search(r"notebooklm-py v([\d.]+)", content)
-    return match.group(1) if match else None
-
-
-def get_scope_root(scope: str) -> Path:
-    """Resolve the root directory for a given install scope."""
-    return Path.home() if scope == "user" else Path.cwd()
-
-
-def get_skill_path(target: str, scope: str) -> Path:
-    """Resolve the installed skill path for a target and scope."""
-    return get_scope_root(scope) / TARGETS[target].relative_path
-
-
-def iter_targets(target: str) -> list[str]:
-    """Expand 'all' into concrete targets."""
-    return list(TARGETS) if target == "all" else [target]
-
-
-def add_version_comment(content: str, version: str) -> str:
-    """Embed the CLI version into a skill file."""
-    version_comment = f"<!-- notebooklm-py v{version} -->\n"
-
-    if "---" in content:
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            return f"---{parts[1]}---\n{version_comment}{parts[2].lstrip()}"
-
-    return version_comment + content
-
-
-def remove_empty_parents(skill_path: Path, scope: str) -> None:
-    """Remove empty skill directories without touching the scope root."""
-    stop_at = get_scope_root(scope)
-    current = skill_path.parent
-    while current != stop_at:
-        try:
-            current.rmdir()
-        except OSError:
-            break
-        current = current.parent
-
-
-def get_installed_content(target: str, scope: str) -> str | None:
-    """Read an installed skill file."""
-    skill_path = get_skill_path(target, scope)
-    if not skill_path.exists():
-        return None
-    return skill_path.read_text(encoding="utf-8")
-
-
-# Per-target classification used by ``skill install`` to decide whether each
-# target needs a write, would clobber differing content, or is already in sync.
-TARGET_CREATE = "create"
-TARGET_UP_TO_DATE = "up_to_date"
-TARGET_OVERWRITE = "overwrite"
-
-
-def classify_target(target: str, scope: str, stamped_content: str) -> tuple[str, Path]:
-    """Classify what an install would do for a single target.
-
-    Returns ``(status, skill_path)`` where ``status`` is one of
-    :data:`TARGET_CREATE`, :data:`TARGET_UP_TO_DATE`, or :data:`TARGET_OVERWRITE`.
-    """
-    skill_path = get_skill_path(target, scope)
-    if not skill_path.exists():
-        return TARGET_CREATE, skill_path
-    try:
-        existing = skill_path.read_text(encoding="utf-8")
-    except OSError:
-        # Unreadable existing file -- treat as differing so we surface intent.
-        return TARGET_OVERWRITE, skill_path
-    if existing == stamped_content:
-        return TARGET_UP_TO_DATE, skill_path
-    return TARGET_OVERWRITE, skill_path
 
 
 def atomic_write_text(path: Path, content: str) -> None:

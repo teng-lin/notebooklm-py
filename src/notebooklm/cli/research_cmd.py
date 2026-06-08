@@ -14,7 +14,13 @@ from typing import Any
 
 import click
 
+from .._app.research import (
+    ResearchStatusResult,
+    poll_and_classify,
+    validate_research_wait_flags,
+)
 from ..client import NotebookLMClient
+from ..exceptions import ValidationError
 from .auth_runtime import with_client
 from .error_handler import _output_error, exit_with_code
 from .options import notebook_option
@@ -85,39 +91,38 @@ def research_status(ctx, notebook_id, json_output, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            status = await client.research.poll(nb_id_resolved)
+            result = await poll_and_classify(client, nb_id_resolved)
 
             if json_output:
-                # ``ResearchTask`` is a typed dataclass; serialize via its
-                # legacy dict shape so JSON output is unchanged.
-                json_output_response(status.to_public_dict())
+                # The classified result carries the canonical
+                # ``ResearchTask.to_public_dict()`` payload so JSON is unchanged.
+                json_output_response(result.public_dict)
                 return
 
-            status_val = status.status
-
-            if status_val == "no_research":
-                console.print("[dim]No research running[/dim]")
-            elif status_val == "in_progress":
-                query = status.query
-                console.print(f"[yellow]Research in progress:[/yellow] {query}")
-                console.print("[dim]Use 'research wait' to wait for completion[/dim]")
-            elif status_val == "completed":
-                query = status.query
-                sources = [src.to_public_dict() for src in status.sources]
-                summary = status.summary
-                console.print(f"[green]Research completed:[/green] {query}")
-                display_research_sources(sources)
-
-                if summary:
-                    console.print(f"\n[bold]Summary:[/bold]\n{summary[:_SUMMARY_PREVIEW_CHARS]}")
-
-                display_report(status.report)
-
-                console.print("\n[dim]Use 'research wait --import-all' to import sources[/dim]")
-            else:
-                console.print(f"[yellow]Status: {status_val}[/yellow]")
+            _render_status_result(result)
 
     return _run()
+
+
+def _render_status_result(result: ResearchStatusResult) -> None:
+    """Render a classified ``research status`` poll in text mode."""
+    if result.kind == "no_research":
+        console.print("[dim]No research running[/dim]")
+    elif result.kind == "in_progress":
+        console.print(f"[yellow]Research in progress:[/yellow] {result.query}")
+        console.print("[dim]Use 'research wait' to wait for completion[/dim]")
+    elif result.kind == "completed":
+        console.print(f"[green]Research completed:[/green] {result.query}")
+        display_research_sources(result.sources)
+
+        if result.summary:
+            console.print(f"\n[bold]Summary:[/bold]\n{result.summary[:_SUMMARY_PREVIEW_CHARS]}")
+
+        display_report(result.report)
+
+        console.print("\n[dim]Use 'research wait --import-all' to import sources[/dim]")
+    else:
+        console.print(f"[yellow]Status: {result.status}[/yellow]")
 
 
 @research.command("wait")
@@ -156,7 +161,9 @@ def research_wait(
       notebooklm research wait --import-all --cited-only
       notebooklm research wait --json
     """
-    if cited_only and not import_all:
+    try:
+        validate_research_wait_flags(import_all=import_all, cited_only=cited_only)
+    except ValidationError as exc:
         # Per ADR-0015 §2: under --json this flag-combination conflict must
         # emit the typed JSON envelope and exit 1 (VALIDATION_ERROR), not
         # ride Click's parse-time UsageError path (exit 2, usage text on
@@ -164,15 +171,10 @@ def research_wait(
         # existing Click UX so interactive users still get the
         # ``Usage: ... / Error: ...`` formatting.
         if json_output:
-            _output_error(
-                "--cited-only requires --import-all",
-                "VALIDATION_ERROR",
-                json_output,
-                1,
-            )
+            _output_error(str(exc), "VALIDATION_ERROR", json_output, 1)
         raise click.UsageError(  # cli-input-validation: --cited-only requires --import-all
-            "--cited-only requires --import-all"
-        )
+            str(exc)
+        ) from exc
 
     nb_id = require_notebook(notebook_id)
     plan = ResearchWaitPlan(
@@ -250,22 +252,10 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
 
     # outcome == "completed"
     if plan.json_output:
-        payload: dict[str, Any] = {
-            "status": "completed",
-            "query": result.query,
-            "sources_found": result.sources_count,
-            "sources": result.sources,
-            "report": result.report,
-        }
-        import_result = result.import_result
-        if import_result is not None:
-            if import_result.cited_selection is not None:
-                payload["cited_only"] = True
-                payload["cited_sources_selected"] = len(import_result.sources)
-                payload["cited_only_fallback"] = import_result.cited_selection.used_fallback
-            payload["imported"] = len(import_result.imported)
-            payload["imported_sources"] = import_result.imported
-        json_output_response(payload)
+        # The CLI owns the ``--json`` envelope projection (``_app`` returns only
+        # the typed result); ``_completed_wait_payload`` rebuilds the historical
+        # completed payload (base keys + optional cited/imported keys) verbatim.
+        json_output_response(_completed_wait_payload(result))
         return
 
     # Text mode
@@ -275,3 +265,29 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
     import_result = result.import_result
     if import_result is not None:
         console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
+
+
+def _completed_wait_payload(result: ResearchWaitResult) -> dict[str, Any]:
+    """Project a completed :class:`ResearchWaitResult` into the ``--json`` envelope.
+
+    Lives in the CLI adapter (not ``_app``) because the keys are the CLI's own
+    vocabulary (``sources_found`` / ``imported`` / ``cited_only``). Mirrors the
+    historical ``research wait --json`` completed payload byte-for-byte: the
+    base keys plus the optional cited-only + imported keys when an import ran.
+    """
+    payload: dict[str, Any] = {
+        "status": "completed",
+        "query": result.query,
+        "sources_found": result.sources_count,
+        "sources": result.sources,
+        "report": result.report,
+    }
+    import_result = result.import_result
+    if import_result is not None:
+        if import_result.cited_selection is not None:
+            payload["cited_only"] = True
+            payload["cited_sources_selected"] = len(import_result.sources)
+            payload["cited_only_fallback"] = import_result.cited_selection.used_fallback
+        payload["imported"] = len(import_result.imported)
+        payload["imported_sources"] = import_result.imported
+    return payload
