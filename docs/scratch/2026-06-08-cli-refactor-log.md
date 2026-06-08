@@ -135,3 +135,25 @@ The `_app/` relocation is validated end-to-end on real CLI code AND proven reusa
 Remaining (follow-up, per plan): the other domain waves (artifacts/chat/notebook/note/label/research/auth),
 the error_handler classify-routing rewire, the feat/mcp-server rebase + _ids/_errors dedup, the de-monkeypatch
 pass (inject client via ctx.obj), and the relocation ADR. De-monkeypatch explicitly deferred per the user.
+
+## Sources wave (W3) — dispatching. (MCP feat/ merge DEFERRED per user; dedup litmus stays.)
+Per-module verdict (business->_app, presentation stays; coupling/typed-grounded):
+- MOVE: source_add(0), source_clean(0, typed), source_content(0), source_wait(1), source_listing(5 de-Click), source_mutations(14 de-Click, hardest).
+- STAYS in cli/: source_serializers (the --json envelope builders = adapter half).
+- DONE: source_research.
+Dispatch: Agent A (near-verbatim trio add/clean/content), Agent B (de-Click trio wait/listing/mutations). Parallel worktrees, polished, merged back.
+
+## Sources wave — DONE + integrated. Branch GREEN (8809 passed, 0 failed).
+- Agent A (7615770a): source_add/clean/content → _app (near-verbatim) + re-export wrappers. SourceAddResult.payload
+  inlines the source-summary dict (byte-verified) since _app can't import cli source_serializers.
+- Agent B (4f8700cd): source_wait/listing/mutations → _app (de-Clicked); presentation (SourceMutationError render,
+  --json envelopes, spinners, source_serializers) stays in cli; resolvers/confirmer/wait_context INJECTED;
+  resolve_source_id monkeypatch seam preserved via call-time lookup. Codex polish: no Critical/Important.
+- Merge: additive conflicts in _app/__init__ (reconstructed clean) + CLAUDE.md (combined rows) — resolved.
+- **SOURCE DOMAIN COMPLETE: 7/8 services in _app/ (add/clean/content/listing/mutations/research/wait).
+  source_serializers stays in cli/ (the --json envelope half).**
+
+## Status: domains relocated so far = source (complete) + download (W1). All green, cassettes reused, --json byte-stable.
+## Remaining domain waves (same proven recipe, parallelizable): generate, artifacts, chat, notebook/note/label/share/
+## research, language/doctor, session/auth/profile (last). Plus: error_handler classify-routing; feat/mcp-server rebase
+## + _ids/_errors dedup (deferred); de-monkeypatch via ctx.obj (deferred); relocation ADR at integration.
