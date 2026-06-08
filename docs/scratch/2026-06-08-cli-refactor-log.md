@@ -318,3 +318,15 @@ Deferred (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors
 Decided NOT to do: resolve consolidation (justified adapter/core split, not duplication); test cutting (layered
 coverage, not redundancy — CLI 89% vs app 95% `_app` overlap is unit/integration, not same-layer).
 ## DEFERRED (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
+
+## CLAUDE.md slimmed (user: "keep it very slim!!!") — 545 → 76 lines.
+The `## Architecture` section (Key Files table + Repository Structure tree, ~353 lines) was redundant with the
+narrative `docs/architecture.md` (which had NO file map and NO `_app/` mention). Consolidated: moved the file map
+into `docs/architecture.md` as a new `## File map` section (keeping the `### Repository Structure` heading the
+freshness gate parses), added a `_app/` narrative section + ADR-0021 cross-ref + fixed its "See also → CLAUDE.md
+file index" pointer. Repointed `check_claude_md_freshness.py` (default `--claude-md` → docs/architecture.md), its
+real-file test, and the CI step at it. Slimmed the rest of CLAUDE.md to essentials (overview + critical RPC
+constraint, commands, before-pushing, architecture pointer, pitfalls, usage, testing, docs index, PR workflow),
+preserving the install-docs-gated `uv sync` block + installation link. Gates green: freshness (architecture.md),
+docs-module-refs (the moved table's inline refs all resolve; `_core.py` allowlist now genuinely used), install-docs,
+adr-format. Full suite 9254 passed / 0 failed.

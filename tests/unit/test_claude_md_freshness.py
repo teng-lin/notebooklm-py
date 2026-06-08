@@ -285,9 +285,10 @@ def test_main_fails_for_stale_intentional_omission(tmp_path):
 
 
 def test_real_claude_md():
-    # Verify that the current CLAUDE.md in the project is fresh.
-    # Resolve paths relative to this file so the test is not CWD-dependent
-    # (pytest can be invoked from any subdirectory).
+    # Verify the real repo-structure map is fresh. The tree was moved out of
+    # CLAUDE.md into docs/architecture.md (to keep CLAUDE.md slim); the gate now
+    # reads that doc. Resolve paths relative to this file so the test is not
+    # CWD-dependent (pytest can be invoked from any subdirectory).
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    claude_md = os.path.join(repo_root, "CLAUDE.md")
-    assert main(["--claude-md", claude_md, "--repo-root", repo_root]) == 0
+    structure_doc = os.path.join(repo_root, "docs", "architecture.md")
+    assert main(["--claude-md", structure_doc, "--repo-root", repo_root]) == 0

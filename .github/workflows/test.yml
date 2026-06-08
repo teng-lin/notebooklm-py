@@ -86,7 +86,7 @@ jobs:
     - name: Assert CI install matches CONTRIBUTING.md
       run: uv run python scripts/check_ci_install_parity.py
 
-    - name: Assert CLAUDE.md paths are fresh
+    - name: Assert repo-structure map (docs/architecture.md) is fresh
       run: uv run python scripts/check_claude_md_freshness.py
 
     - name: Assert doc module references are fresh
