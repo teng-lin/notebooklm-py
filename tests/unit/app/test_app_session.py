@@ -180,6 +180,27 @@ def test_read_status_unreadable_payload_flags_not_readable(tmp_path: Path) -> No
     assert report.context.conversation_id is None
 
 
+def test_read_status_non_dict_context_flags_not_readable(tmp_path: Path) -> None:
+    """A context file whose JSON root is a list/scalar (not an object) is the
+    same failure class as corrupt JSON: payload_readable=False, no crash on
+    ``data.get(...)`` (PR #1479 review)."""
+    context_file = tmp_path / "context.json"
+    context_file.write_text("[1, 2, 3]", encoding="utf-8")
+    inputs = StatusInputs(
+        context_path=context_file,
+        notebook_id="nb_active",
+        path_info=None,
+        has_env_auth=False,
+    )
+
+    report = read_status(inputs)
+
+    assert report.context.has_context is True
+    assert report.context.notebook_id == "nb_active"
+    assert report.context.payload_readable is False
+    assert report.context.title is None
+
+
 def test_read_status_missing_file_with_active_id_is_unreadable(tmp_path: Path) -> None:
     """An active id but a missing context file → OSError branch (payload unreadable)."""
     inputs = StatusInputs(

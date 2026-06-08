@@ -95,6 +95,17 @@ class TestGetConfig:
         store = _make_store(config_file)
         assert store.get_config() == {}
 
+    def test_non_dict_root_returns_empty_dict(self, tmp_path):
+        """Valid JSON whose root is a list/scalar (not an object) is treated as
+        corrupt → ``{}``, so ``get_language()`` never does ``.get()`` on a
+        non-dict (PR #1479 review)."""
+        config_file = tmp_path / "config.json"
+        config_file.write_text("[1, 2, 3]", encoding="utf-8")
+        store = _make_store(config_file)
+        assert store.get_config() == {}
+        # the downstream accessor must not raise AttributeError on a list root
+        assert store.get_language() is None
+
     def test_oserror_returns_empty_dict(self, tmp_path):
         """Moved from CLI ``TestGetConfigErrorPaths::test_get_config_oserror``.
 

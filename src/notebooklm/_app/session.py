@@ -179,6 +179,19 @@ def read_status(inputs: StatusInputs) -> StatusReport:
         data = json.loads(inputs.context_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         logger.debug("Status: context file %s unreadable: %s", inputs.context_path, exc)
+        data = None
+
+    # A non-dict root (valid JSON that is a list/scalar) is the same failure
+    # class as corrupt JSON here — ``status`` must not crash on a malformed
+    # context file, so route it to the same payload_readable=False report rather
+    # than letting ``data.get(...)`` raise ``AttributeError``.
+    if not isinstance(data, dict):
+        if data is not None:
+            logger.debug(
+                "Status: context file %s root is %s, not an object; treating as unreadable",
+                inputs.context_path,
+                type(data).__name__,
+            )
         return StatusReport(
             context=StatusContext(
                 has_context=True,

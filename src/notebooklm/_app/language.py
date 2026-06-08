@@ -160,13 +160,19 @@ class LanguageConfigStore:
         config_path = self._config_path()
         if config_path.exists():
             try:
-                return json.loads(config_path.read_text(encoding="utf-8"))
+                data = json.loads(config_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError as e:
                 logger.warning("Config file corrupted, using defaults: %s", e)
                 return {}
             except OSError as e:
                 logger.warning("Could not read config file: %s", e)
                 return {}
+            # A non-dict root (valid JSON that is a list/scalar) is treated as
+            # corrupt per the "empty dict on missing/corrupt" contract, so
+            # downstream ``get_language()`` never does ``.get()`` on a non-dict.
+            if isinstance(data, dict):
+                return data
+            logger.warning("Config root is %s, not an object; using defaults", type(data).__name__)
         return {}
 
     def save_config(self, config: dict) -> None:
