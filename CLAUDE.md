@@ -252,7 +252,7 @@ src/notebooklm/
 │   ├── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
 │   ├── sharing.py               # Click-free sharing core: status/set_public/set_view_level/add_user/update_user/remove_user (injected resolve_notebook_id; permission/view-level display + str→enum parse stay in cli/share_cmd.py)
 │   ├── skill.py                 # Click-free skill-install core: TARGETS/SCOPES catalog + path/version helpers + classify_target (create/up_to_date/overwrite) + report_mixed_no_clobber_up_to_date (CLI owns the atomic write + packaged-source loader)
-│   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; SourceAddResult.payload rebuilds the CLI --json source-summary inline)
+│   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; CLI builds the --json source-summary from the typed result via the neutral serialize.source_summary helper)
 │   ├── source_clean.py          # Click-free `source clean` core: junk-source classification + batched-deletion orchestration (SourceCleanResult; injected list/delete/confirm callables)
 │   ├── source_content.py        # Click-free read-only source-content fetchers for get/fulltext/guide/stale (typed plan/result pairs)
 │   ├── source_listing.py        # Click-free `source list` fetch core: fetch_sources (label_filter resolution; label_resolver injected)

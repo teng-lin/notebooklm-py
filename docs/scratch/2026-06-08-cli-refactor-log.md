@@ -207,7 +207,7 @@ Therefore:
 2. Merge `cleanup-migrated` LAST — take its source/download authority on the existing files + the
    `__init__`/CLAUDE.md source/download rows (NOT a blind keep-ours).
 3. Safety net (fails loud if the union missed anything): `check_claude_md_freshness` (tree↔files),
-   `test_app_boundary` (no click/rich/cli/fastmcp in `_app`), `python -c import notebooklm._app`,
+   `test_app_boundary` (no click/rich/cli/fastmcp in `_app`), an `_app`-package import smoke-test,
    `module_size_ratchet`, then the full ~8,800-test suite + mypy + ruff.
 4. THEN dispatch the held **auth** wave (`refactor/dom-auth` worktree) off the updated integration HEAD —
    heaviest discipline (entry-assembler `has_env_auth_json` seam).
