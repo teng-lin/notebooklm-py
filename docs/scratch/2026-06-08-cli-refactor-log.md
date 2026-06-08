@@ -213,3 +213,20 @@ Therefore:
    heaviest discipline (entry-assembler `has_env_auth_json` seam).
 5. Final integration: route `error_handler` through `_app.classify`; write the relocation ADR.
 Deferred (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
+
+## INTEGRATION DONE — 5 domains + cleanup merged. Branch GREEN (8839 passed, 71 skipped, 1 xfailed, 0 failed).
+Merge order: cleanup-migrated (clean, disjoint) → generate (auto-merged both files) → artifacts/chat/misc/crud.
+Conflict surface was EXACTLY the two predicted additive files (`_app/__init__.py`, `CLAUDE.md`); every other
+touched file single-editor → clean auto-merge. Resolution: hand-built the canonical `_app/__init__.py` union
+(190 exports, all 6 domains, single `resolve`, cleanup's `source_summary` preserved) — ruff confirmed it was
+already import-sorted; `checkout --ours` for crud's __init__ (canonical superset). CLAUDE.md `_app/` tree +
+cli/services rows unioned by hand. §11 doc-consistency: corrected the now-stale `download.py`/`source_add.py`
+rows (cleanup removed `to_envelope`/`.payload` → CLI builds envelopes from typed results via
+`serialize.source_summary`). One guardrail catch: `test_public_docs_do_not_recommend_private_module_imports`
+flagged a literal private-import string in THIS log → reworded.
+Gate: freshness OK (251 paths); mypy clean (237 files); ruff clean; `_app` import smoke (190 names resolve);
+test_app_boundary + module_size_ratchet green; full suite 8839 passed / 0 failed.
+Domains now relocated to `_app/`: artifacts, chat, doctor, download, generate(+plans/retry), labels,
+language, notebooks, notes, research, sharing, skill, source_* (8). **Only session/auth/profile remain.**
+
+## NEXT: auth wave (session/auth/profile) — LAST, heaviest discipline. Then error_handler→classify + relocation ADR.
