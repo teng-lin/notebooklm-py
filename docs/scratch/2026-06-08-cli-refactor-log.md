@@ -95,3 +95,19 @@ Wave 0 (serialized): build src/notebooklm/_app/{errors(classify),serialize,resol
 test_app_boundary lint + de-Click validate_id (wrapper discipline) + golden --json characterization
 tests; full suite must stay green. Then parallel domain waves (download dict->dataclass; source
 add-research) + the MCP _serialize dedup proof.
+
+## Wave 0 — DONE (commit cb52bc14). Branch GREEN.
+Built src/notebooklm/_app/{__init__,serialize,errors,resolve,events}.py (additive) + tests/unit/app/*
+(127 tests) + tests/_guardrails/test_app_boundary.py + CLAUDE.md tree entry. Polished.
+ErrorCategory (13, class-sensitive: ArtifactTimeoutError->ARTIFACT_TIMEOUT before WaitTimeoutError;
+*NotFoundError->NOT_FOUND before RPCError catch-all; RPCTimeoutError->NETWORK). to_jsonable golden-tested
+(enum-before-primitive). resolve: pure validate_id->ValidationError + click-free resolve_ref.
+Doc-gate regression from the plan commit (unborn-ADR + bare module refs) fixed (c6d68bbc).
+**Full suite: 8779 passed, 0 failed.**
+
+## Workflow 2 — parallel domain waves (separate worktrees, polished, merged back)
+- W1 download: dict execute_download -> typed DownloadResult in _app/download.py; CLI re-derives the
+  exact --json envelope; include download_helpers.py + cli/_download_specs.py. Worktree .worktrees/cli-download.
+- W-sources: source add-research logic -> _app; keep the 8-outcome command-layer dispatcher + exit codes.
+  Worktree .worktrees/cli-source.
+Each: keep patch seams (don't move command modules), cassettes reused, --json byte-stable, polish, merge back.
