@@ -247,5 +247,24 @@ all ~20 uncovered `_app` modules get direct tests.** Phase contents (map's recom
 4. Opportunistic SPLITs as each command is touched.
 Sequenced after auth specifically because #3 edits shared `cli/resolve.py` (auth's session_context uses resolve).
 
+## Domain relocation COMPLETE (auth merged) — integration GREEN: 8839 passed / 0 failed; 28 `_app` modules; 209 exports.
+Auth merged conflict-free (integration hadn't touched __init__/CLAUDE.md since auth's branch point). New modules:
+`_app/{session,auth_check,profile}.py`. Polish caught a real Critical on auth: adapter resolved `get_context_path`
+EAGERLY before logout teardown vs the legacy LAZY-only-on-failure timing → fixed (LogoutInputs.context_path is a
+lazy Callable, invoked only on the OSError branch). Every CLI command area's business logic now lives in `_app/`.
+
+## Test-migration phase M1 — DISPATCHED (5 parallel cluster agents, off HEAD 3587a151).
+Additive test work is fully FILE-DISJOINT (each agent owns a distinct set of cli `test_*.py` + creates distinct
+`test_app_*.py`) → merges will be trivially clean (no shared __init__/CLAUDE.md unlike the domain waves). Clusters:
+1. mig-dlgen: download, generate(+plans/retry), language (flagship: test_download_multi_artifact wholesale MOVE).
+2. mig-source: all 7 source_* modules (heaviest; TestSourceCleanClassify free MOVE).
+3. mig-misc: skill, doctor (ZERO coverage today), research, events.
+4. mig-crud: notebooks, notes, labels, sharing, chat (ZERO coverage today).
+5. mig-auth: session, auth_check, profile (all net-new — auth-wave modules; mostly net-new app tests).
+Guardrails: tests-only (no src/ logic edits); NEVER reduce coverage (MOVE relocates the assertion); do NOT touch
+resolve (reserved for M2); KEEP genuinely-CLI tests; full suite collected count must stay ≥ 8910 baseline.
+M2 (serialized, AFTER M1 merges): resolve consolidation — collapse `cli/resolve.py` parallel impl into
+`_app/resolve.py`, delete the ~40 duplicate test_resolve.py tests, preserve the 29 ClickException patch seams.
+
 ## THEN (final integration): error_handler→`_app.classify` routing; the relocation ADR.
 ## DEFERRED (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
