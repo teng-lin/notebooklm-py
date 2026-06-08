@@ -136,7 +136,12 @@ async def test_source_rename_returns_payload(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     client.sources.rename.assert_awaited_once_with("nb_1", "src_full", "New")
-    assert result.payload == {
+    # The typed result carries fields only; the --json envelope is built by the
+    # CLI render layer (§11). Assert the relocated builder is byte-identical.
+    assert result.source.id == "src_full"
+    assert result.source.title == "New"
+    assert result.notebook_id == "nb_1"
+    assert _source_render._source_rename_payload(result) == {
         "action": "rename",
         "source_id": "src_full",
         "notebook_id": "nb_1",

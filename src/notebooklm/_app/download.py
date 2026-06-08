@@ -6,8 +6,8 @@ artifact lookup, single-vs-``--all`` dispatch, dry-run preview, conflict
 resolution — and returns a **typed** :class:`DownloadResult` instead of the
 adapter-shaped envelope dict. Each adapter (the Click CLI today, the FastMCP
 server / future HTTP surface tomorrow) renders the typed result into its own
-vocabulary; the CLI adapter rebuilds its historical ``--json`` envelope from
-:meth:`DownloadResult.to_envelope`.
+vocabulary; the CLI adapter rebuilds its historical ``--json`` envelope in
+``cli/services/download.py::build_download_envelope`` from the typed result.
 
 Public API: :class:`DownloadTypeSpec` (per-leaf metadata), :class:`DownloadPlan`
 (one validated invocation), :class:`DownloadResult` (the typed outcome),
@@ -35,6 +35,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
+from ..exceptions import ValidationError
 from ..types import Artifact, ArtifactType
 from .events import ProgressEvent, ProgressSink
 
@@ -119,15 +120,21 @@ NotebookResolver = Callable[[str], Awaitable[str]]
 ArtifactResolver = Callable[[list[ArtifactDict], str], str]
 
 
-@dataclass(frozen=True)
-class DownloadPlanValidationError(Exception):
-    """Plan-validation error raised synchronously by :func:`build_download_plan`."""
+class DownloadPlanValidationError(ValidationError):
+    """Plan-validation error raised synchronously by :func:`build_download_plan`.
 
-    message: str
-    code: str = "VALIDATION_ERROR"
+    Subclasses :class:`~notebooklm.exceptions.ValidationError` so
+    ``_app.errors.classify`` covers it uniformly across adapters (it classifies
+    as :attr:`~notebooklm._app.errors.ErrorCategory.VALIDATION`). It keeps its
+    ``message`` / ``code`` attributes so the CLI ``download_cmd`` adapter can
+    project them onto the historical ``VALIDATION_ERROR`` ``--json`` code +
+    exit-code policy unchanged.
+    """
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "args", (self.message,))
+    def __init__(self, message: str, code: str = "VALIDATION_ERROR") -> None:
+        self.message = message
+        self.code = code
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -161,7 +168,6 @@ class DownloadPlan:
     download_all: bool
     name: str | None
     artifact_id: str | None
-    json_output: bool
     dry_run: bool
     force: bool
     no_clobber: bool
@@ -178,8 +184,8 @@ class DownloadOutcome(Enum):
     """Which envelope shape a :class:`DownloadResult` represents.
 
     Each value maps 1:1 to one of the dict envelopes the historical
-    ``execute_download`` produced; :meth:`DownloadResult.to_envelope` rebuilds
-    the exact dict for each.
+    ``execute_download`` produced; the CLI adapter's
+    ``build_download_envelope`` rebuilds the exact dict for each.
     """
 
     #: No completed artifacts of the requested kind exist.
@@ -202,10 +208,14 @@ class DownloadResult:
     """Typed outcome of :func:`execute_download`.
 
     Carries every field the historical envelope dict held so an adapter can
-    rebuild it byte-for-byte (CLI, via :meth:`to_envelope`) or project it onto
-    its own vocabulary (MCP / HTTP). :attr:`outcome` discriminates the shape;
-    only the fields relevant to that outcome are populated. See
-    :meth:`to_envelope` for the exact per-outcome field set.
+    rebuild it byte-for-byte (the CLI does so in its download adapter's
+    ``build_download_envelope``) or project it onto its own vocabulary
+    (MCP / HTTP). :attr:`outcome` discriminates the shape; only the fields
+    relevant to that outcome are populated.
+
+    This is a typed-fields-only dataclass: it exposes no envelope/``--json``
+    dict builder (§11). The adapter owns the dict construction so the ``_app``
+    core stays transport-neutral.
     """
 
     outcome: DownloadOutcome
@@ -231,63 +241,6 @@ class DownloadResult:
         exactly when the historical envelope grew a top-level ``"error"`` key.
         """
         return self.error is not None or self.is_failure
-
-    def to_envelope(self) -> dict[str, Any]:
-        """Rebuild the historical ``--json`` envelope dict byte-for-byte.
-
-        Key ordering and value types match the dicts the pre-relocation
-        ``execute_download`` returned, so the CLI ``--json`` output stays
-        stable for scripts that parse it.
-        """
-        if self.outcome is DownloadOutcome.NO_ARTIFACTS:
-            return {"error": self.error, "suggestion": self.suggestion}
-
-        if self.outcome is DownloadOutcome.ERROR:
-            envelope: dict[str, Any] = {"error": self.error}
-            if self.artifact is not None:
-                envelope["artifact"] = self.artifact
-            if self.suggestion is not None:
-                envelope["suggestion"] = self.suggestion
-            return envelope
-
-        if self.outcome is DownloadOutcome.ALL_DRY_RUN:
-            return {
-                "dry_run": True,
-                "operation": "download_all",
-                "count": self.count,
-                "output_dir": self.output_dir,
-                "artifacts": [dict(a) for a in self.artifacts],
-            }
-
-        if self.outcome is DownloadOutcome.ALL_EXECUTED:
-            envelope = {
-                "operation": "download_all",
-                "output_dir": self.output_dir,
-                "total": self.total,
-                "succeeded_count": self.succeeded_count,
-                "failed_count": self.failed_count,
-                "skipped_count": self.skipped_count,
-                "artifacts": [dict(a) for a in self.artifacts],
-            }
-            if self.is_failure:
-                envelope["error"] = True
-            return envelope
-
-        if self.outcome is DownloadOutcome.SINGLE_DRY_RUN:
-            return {
-                "dry_run": True,
-                "operation": "download_single",
-                "artifact": self.artifact,
-                "output_path": self.output_path,
-            }
-
-        # SINGLE_DOWNLOADED
-        return {
-            "operation": "download_single",
-            "artifact": self.artifact,
-            "output_path": self.output_path,
-            "status": "downloaded",
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -473,8 +426,10 @@ def build_download_plan(
         config: One ``DownloadTypeSpec`` row from the registry.
         args: Raw adapter kwargs (``output_path``, ``notebook_id``, ``latest``,
             ``earliest``, ``download_all``, ``name``, ``artifact_id``,
-            ``json_output``, ``dry_run``, ``force``, ``no_clobber``,
-            optionally ``slide_format`` / ``output_format``).
+            ``dry_run``, ``force``, ``no_clobber``,
+            optionally ``slide_format`` / ``output_format``). A ``json_output``
+            key is ignored — JSON routing is the adapter's concern, not the
+            plan's.
         cwd: The working directory to capture for derived-output-path
             resolution. ``None`` falls back to ``Path.cwd()`` at call time.
         notebook_required: Hook applied to ``args["notebook_id"]`` **after** the
@@ -525,7 +480,6 @@ def build_download_plan(
         download_all=bool(args.get("download_all", False)),
         name=args.get("name"),
         artifact_id=args.get("artifact_id"),
-        json_output=bool(args.get("json_output", False)),
         dry_run=bool(args.get("dry_run", False)),
         force=bool(args.get("force", False)),
         no_clobber=bool(args.get("no_clobber", False)),
@@ -622,7 +576,8 @@ async def _execute_download_all(
 
     Per-artifact progress (``Downloading 1/N: <title>``) is emitted into the
     optional :class:`ProgressSink` so the adapter renders it in its own
-    surface. Suppressed in ``json_output`` mode so the JSON stream stays clean.
+    surface. The adapter owns JSON routing: it passes ``progress=None`` when it
+    wants a clean JSON stream, so this core never inspects a presentation flag.
 
     Relative output paths (both the user-supplied ``plan.output_path`` and the
     spec's ``default_dir`` fallback like ``"./audio"``) are resolved against
@@ -680,7 +635,7 @@ async def _execute_download_all(
     for i, (artifact, item_name) in enumerate(
         zip(type_artifacts, planned_filenames, strict=True), 1
     ):
-        if progress is not None and not plan.json_output:
+        if progress is not None:
             progress.emit(
                 ProgressEvent(
                     message=f"[dim]Downloading {i}/{total}:[/dim] {artifact['title']}",

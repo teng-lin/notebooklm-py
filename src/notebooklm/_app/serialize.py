@@ -40,7 +40,10 @@ import dataclasses
 from collections.abc import Iterable, Mapping
 from datetime import date
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..types import Source
 
 # JSON-native scalar leaves that pass through untouched. ``bool`` is a subclass
 # of ``int`` so listing ``int`` alone would already catch it, but naming it
@@ -97,6 +100,25 @@ def to_jsonable(obj: Any) -> Any:
 
     # Rule 7 — last resort.
     return str(obj)
+
+
+def source_summary(source: Source) -> dict[str, Any]:
+    """Return the transport-neutral ``{"id", "title", "type", "url"}`` summary.
+
+    The single source of truth for the source-summary shape shared by every
+    adapter (§11): both the CLI's
+    ``cli.services.source_serializers.source_summary_payload`` and the
+    ``source add`` / ``source add-drive`` JSON envelopes import this helper so
+    the summary dict is built in exactly one place. ``type`` is the source
+    kind's public ``.value`` (``None`` when the kind is unknown).
+    """
+    kind = source.kind
+    return {
+        "id": source.id,
+        "title": source.title,
+        "type": kind.value if kind is not None else None,
+        "url": source.url,
+    }
 
 
 def _jsonable_key(key: Any) -> str | int | float | bool | None:

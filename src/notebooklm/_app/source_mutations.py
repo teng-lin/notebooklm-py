@@ -3,11 +3,12 @@
 This is the Click-free core of ``cli/services/source_mutations.py``: it owns the
 ``delete`` / ``delete-by-title`` / ``rename`` / ``refresh`` / ``add-drive``
 workflows, the mutation-specific source-id resolvers, the typed
-:class:`SourceMutationError`, and the typed result dataclasses whose
-``.payload`` builds each command's stable ``--json`` body. Every transport
-adapter (the Click CLI today, the FastMCP server / future HTTP later) drives
-this core and renders the typed result / error into its own surface + exit-code
-policy.
+:class:`SourceMutationError`, and the typed-fields-only result dataclasses.
+Every transport adapter (the Click CLI today, the FastMCP server / future HTTP
+later) drives this core and renders the typed result / error into its own
+surface + exit-code policy. The result dataclasses expose typed fields only
+(§11); each command's stable ``--json`` body is built by the CLI adapter
+(``cli/_source_render.py``) from those fields.
 
 Two boundary-imposed seams are worth calling out:
 
@@ -26,11 +27,12 @@ Two boundary-imposed seams are worth calling out:
   policy live in the CLI renderer (``_handle_source_mutation_error``), so this
   module stays presentation-neutral while still carrying the hint string.
 
-The confirm → execute → serialize flow for the destructive ``delete`` paths is
-inlined here (rather than importing the CLI-services ``confirming_mutation``
-pipeline, which ``_app`` cannot reach) so the byte-identical payloads are owned
-next to the resolvers. The ``confirmer`` is injected by the adapter
-(``click.confirm`` for the CLI).
+The confirm → execute flow for the destructive ``delete`` paths is inlined here
+(rather than importing the CLI-services ``confirming_mutation`` pipeline, which
+``_app`` cannot reach) so the resolvers + the JSON-mode confirmation gate stay
+together. The ``confirmer`` is injected by the adapter (``click.confirm`` for
+the CLI). The ``--json`` payloads themselves are built by the CLI render layer
+(``cli/_source_render.py``) from the typed-fields-only result dataclasses (§11).
 
 This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 ``fastmcp`` imports (enforced by ``tests/_guardrails/test_app_boundary.py``).
@@ -43,6 +45,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
+from ..exceptions import NotebookLMError
 from ..types import DriveMimeType, Source
 from .resolve import validate_id as _neutral_validate_id
 
@@ -62,8 +65,18 @@ ValidateIdFn = Callable[[str, str], str]
 ResolveSourceIdFn = Callable[..., Awaitable[str]]
 
 
-class SourceMutationError(Exception):
-    """Typed source-mutation error for command-layer rendering and exit policy."""
+class SourceMutationError(NotebookLMError):
+    """Typed source-mutation error for command-layer rendering and exit policy.
+
+    Subclasses :class:`~notebooklm.exceptions.NotebookLMError` (was bare
+    ``Exception``) so ``_app.errors.classify`` covers it — it classifies as
+    :attr:`~notebooklm._app.errors.ErrorCategory.SOURCE_MUTATION`, the
+    class-sensitive category that lets adapters recover its carried ``.code``
+    vocabulary. The CLI renderer (``_handle_source_mutation_error``) still reads
+    its ``.code`` / ``.message`` / ``.extra`` / ``.status_message`` attributes to
+    emit the historical per-error ``--json`` codes (``AMBIGUOUS_ID`` /
+    ``NOT_FOUND`` / ``CONFIRM_REQUIRED`` / …) + exit codes unchanged.
+    """
 
     def __init__(
         self,
@@ -90,7 +103,11 @@ class SourceIdResolution:
 
 @dataclass(frozen=True)
 class SourceDeleteResult:
-    """Outcome of ``source delete``."""
+    """Outcome of ``source delete``.
+
+    Typed-fields-only (§11): the ``--json`` envelope is built by the CLI
+    adapter (``cli/_source_render.py``) from these fields, not here.
+    """
 
     source_id: str
     notebook_id: str
@@ -98,24 +115,14 @@ class SourceDeleteResult:
     status: Literal["completed", "cancelled"]
     status_message: str | None = None
 
-    @property
-    def payload(self) -> dict[str, Any]:
-        return {
-            "action": "delete",
-            "source_id": self.source_id,
-            "notebook_id": self.notebook_id,
-            "success": self.success,
-            "status": (
-                "cancelled"
-                if self.status == "cancelled"
-                else ("deleted" if self.success else "unknown")
-            ),
-        }
-
 
 @dataclass(frozen=True)
 class SourceDeleteByTitleResult:
-    """Outcome of ``source delete-by-title``."""
+    """Outcome of ``source delete-by-title``.
+
+    Typed-fields-only (§11): the ``--json`` envelope is built by the CLI
+    adapter (``cli/_source_render.py``) from these fields, not here.
+    """
 
     source_id: str
     title: str
@@ -124,76 +131,39 @@ class SourceDeleteByTitleResult:
     status: Literal["completed", "cancelled"]
     status_message: str | None = None
 
-    @property
-    def payload(self) -> dict[str, Any]:
-        return {
-            "action": "delete-by-title",
-            "source_id": self.source_id,
-            "title": self.title,
-            "notebook_id": self.notebook_id,
-            "success": self.success,
-            "status": (
-                "cancelled"
-                if self.status == "cancelled"
-                else ("deleted" if self.success else "unknown")
-            ),
-        }
-
 
 @dataclass(frozen=True)
 class SourceRenameResult:
-    """Outcome of ``source rename``."""
+    """Outcome of ``source rename``.
+
+    Typed-fields-only (§11): the ``--json`` envelope is built by the CLI
+    adapter (``cli/_source_render.py``) from these fields, not here.
+    """
 
     source: Source
     notebook_id: str
 
-    @property
-    def payload(self) -> dict[str, Any]:
-        return {
-            "action": "rename",
-            "source_id": self.source.id,
-            "notebook_id": self.notebook_id,
-            "title": self.source.title,
-            "status": "renamed",
-        }
-
 
 @dataclass(frozen=True)
 class SourceRefreshResult:
-    """Outcome of ``source refresh``."""
+    """Outcome of ``source refresh``.
+
+    Typed-fields-only (§11): the ``--json`` envelope is built by the CLI
+    adapter (``cli/_source_render.py``) from these fields, not here.
+    """
 
     source_id: str
     notebook_id: str
     result: Source | None
-
-    @property
-    def payload(self) -> dict[str, Any]:
-        if isinstance(self.result, Source):
-            return {
-                "action": "refresh",
-                "source_id": self.result.id,
-                "notebook_id": self.notebook_id,
-                "title": self.result.title,
-                "status": "refreshed",
-            }
-        # ``sources.refresh`` returns ``None`` on success (#1290); any failure
-        # raises before reaching here, so ``None`` is the refreshed-OK case.
-        return {
-            "action": "refresh",
-            "source_id": self.source_id,
-            "notebook_id": self.notebook_id,
-            "status": "refreshed",
-        }
 
 
 @dataclass(frozen=True)
 class SourceAddDriveResult:
     """Outcome of ``source add-drive``.
 
-    Carries only the neutral fields. Unlike the other result dataclasses this
-    one has no ``.payload`` property: the add-drive ``--json`` envelope embeds
-    the ``source_summary_payload`` serializer (presentation), so the CLI
-    renderer (``_render_source_add_drive_result``) builds it from these fields.
+    Typed-fields-only (§11): the add-drive ``--json`` envelope (which embeds the
+    neutral source summary) is built by the CLI renderer
+    (``_render_source_add_drive_result``) from these fields.
     """
 
     source: Source

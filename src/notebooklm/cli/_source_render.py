@@ -28,6 +28,7 @@ from .rendering import (
 )
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
+from .services.source_add import SourceAddResult
 from .services.source_content import (
     SourceFulltextResult,
     SourceGetResult,
@@ -411,6 +412,68 @@ def _handle_source_mutation_error(exc: SourceMutationError, *, json_output: bool
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+def _delete_status_value(status: str, success: bool) -> str:
+    """Map a delete outcome status onto the historical ``--json`` status string."""
+    if status == "cancelled":
+        return "cancelled"
+    return "deleted" if success else "unknown"
+
+
+def _source_delete_payload(result: SourceDeleteResult) -> dict[str, Any]:
+    """Build the ``source delete`` ``--json`` envelope from the typed result (§11)."""
+    return {
+        "action": "delete",
+        "source_id": result.source_id,
+        "notebook_id": result.notebook_id,
+        "success": result.success,
+        "status": _delete_status_value(result.status, result.success),
+    }
+
+
+def _source_delete_by_title_payload(result: SourceDeleteByTitleResult) -> dict[str, Any]:
+    """Build the ``source delete-by-title`` ``--json`` envelope (§11)."""
+    return {
+        "action": "delete-by-title",
+        "source_id": result.source_id,
+        "title": result.title,
+        "notebook_id": result.notebook_id,
+        "success": result.success,
+        "status": _delete_status_value(result.status, result.success),
+    }
+
+
+def _source_rename_payload(result: SourceRenameResult) -> dict[str, Any]:
+    """Build the ``source rename`` ``--json`` envelope from the typed result (§11)."""
+    return {
+        "action": "rename",
+        "source_id": result.source.id,
+        "notebook_id": result.notebook_id,
+        "title": result.source.title,
+        "status": "renamed",
+    }
+
+
+def _source_refresh_payload(result: SourceRefreshResult) -> dict[str, Any]:
+    """Build the ``source refresh`` ``--json`` envelope from the typed result (§11)."""
+    refreshed = result.result
+    if isinstance(refreshed, Source):
+        return {
+            "action": "refresh",
+            "source_id": refreshed.id,
+            "notebook_id": result.notebook_id,
+            "title": refreshed.title,
+            "status": "refreshed",
+        }
+    # ``sources.refresh`` returns ``None`` on success (#1290); any failure
+    # raises before reaching here, so ``None`` is the refreshed-OK case.
+    return {
+        "action": "refresh",
+        "source_id": result.source_id,
+        "notebook_id": result.notebook_id,
+        "status": "refreshed",
+    }
+
+
 def _render_source_delete_result(
     result: SourceDeleteResult | SourceDeleteByTitleResult,
     *,
@@ -421,7 +484,12 @@ def _render_source_delete_result(
         emit_status(result.status_message, json_output=json_output)
 
     if json_output:
-        json_output_response(result.payload)
+        payload = (
+            _source_delete_by_title_payload(result)
+            if isinstance(result, SourceDeleteByTitleResult)
+            else _source_delete_payload(result)
+        )
+        json_output_response(payload)
         return
 
     if result.status == "cancelled":
@@ -439,7 +507,7 @@ def _render_source_rename_result(
     ctx: click.Context,
 ) -> None:
     if json_output:
-        json_output_response(result.payload)
+        json_output_response(_source_rename_payload(result))
         return
 
     cli_print(f"[green]Renamed source:[/green] {result.source.id}", ctx=ctx)
@@ -453,7 +521,7 @@ def _render_source_refresh_result(
     ctx: click.Context,
 ) -> None:
     if json_output:
-        json_output_response(result.payload)
+        json_output_response(_source_refresh_payload(result))
         return
 
     refreshed = result.result
@@ -464,6 +532,16 @@ def _render_source_refresh_result(
         # ``sources.refresh`` returns ``None`` on success (#1290); failures
         # raise before reaching here, so ``None`` is the refreshed-OK case.
         cli_print(f"[green]Source refreshed:[/green] {result.source_id}", ctx=ctx)
+
+
+def source_add_payload(result: SourceAddResult) -> dict[str, Any]:
+    """Build the ``source add`` ``--json`` envelope from the typed result.
+
+    The envelope is ``{"source": {...summary...}}`` where the inner summary is
+    the neutral ``source_summary_payload`` shape. Built in the CLI render layer
+    (§11) so the ``_app`` result dataclass stays typed-fields-only.
+    """
+    return {"source": source_summary_payload(result.source)}
 
 
 def _render_source_add_drive_result(
