@@ -12,7 +12,7 @@ prototype. Each fix is marked `[fixes: …]`.
 
 Relocate transport-neutral **business logic** into `src/notebooklm/_app/` (underscore-private,
 ADR-0012). CLI / MCP / future HTTP are thin sibling adapters. `cli/services/*` shrink to adapters;
-no `usecases/` ceremony, no DI container. Supersedes ADR-0021 on *placement*.
+no `usecases/` ceremony, no DI container. Supersedes the earlier in-place-utilities proposal on *placement*.
 
 ```
 client.* (public domain API) → _app/ (neutral) → cli/(Click) + mcp/(FastMCP) [+ http/]
@@ -119,7 +119,7 @@ runs **all 15** `tests/integration/cli_vcr/` suites.
 2. **Golden `--json` characterization tests FIRST** for the prototype commands (capture current
    `--json` output under the existing cassettes; assert unchanged after each move).
 3. **W1 download** (the dict→dataclass conversion) — includes `download.py` + `download_helpers.py` +
-   `_download_specs.py` (which imports `DownloadTypeSpec` from the service — dependency direction).
+   `cli/_download_specs.py` (which imports `DownloadTypeSpec` from the service — dependency direction).
 4. **W-sources: `source add-research`** (the hard case — `SourceAddResearchResult` typed Result +
    8-outcome command-layer envelope dispatcher + exit codes). Proves the real boundary.
 5. **MCP dedup in-scope:** replace `mcp/_serialize.py` with `from ..._app.serialize import to_jsonable`
@@ -142,4 +142,4 @@ runs **all 15** `tests/integration/cli_vcr/` suites.
   suite + boundary lint green → merge to `refactor/cli-business-logic`.
 - **Workflow 2 (parallel):** W1 download + W-sources(add-research) — one agent per domain, own worktree,
   polished, runs its `cli_vcr`+golden+unit suites, merges back. Then the MCP-dedup slice.
-- ADR-0021 rewritten as the relocation decision in the integration step.
+- the relocation decision recorded as a new ADR in the integration step.

@@ -3,7 +3,7 @@
 **Status:** Planning
 **Started:** 2026-06-08
 **Branch:** `refactor/cli-business-logic` (worktree `.worktrees/cli-refactor`)
-**Governing decision:** [ADR-0021](../../docs/adr/0021-wire-transport-neutral-utilities.md)
+**Governing decision:** the relocation decision (a new ADR, written at the integration step)
 
 ## Goal
 Refactor the CLI layer so **business logic is separated from presentation/transport
@@ -46,7 +46,7 @@ HTTP). Make the reusable logic transport-neutral and importable without dragging
 - Phase 0: worktree + survey done; oracle + survey workflow dispatched.
 
 ## Planning inputs — DONE
-- **Oracle (Claude + Codex), both independently → RELOCATE to `_app/`** (overturning ADR-0021's
+- **Oracle (Claude + Codex), both independently → RELOCATE to `_app/`** (overturning the earlier in-place-utilities proposal's
   "in-place" for the broader reuse goal; both even chose the name `_app/`). Codex refinement:
   `_app` returns typed Result dataclasses; CLI keeps ALL `--json` envelope assembly.
 - **Survey workflow (7 agents): ~70 extraction units** grounded to file:line across all groups.
@@ -61,7 +61,7 @@ wrappers → deleted last. Contract: `build_<verb>_plan(Request)->Plan` (pure, t
 `async execute_<verb>(plan, client, progress) -> Result` (typed dataclass). CLI owns envelopes +
 exit codes; `_app` is click/rich/cli/fastmcp-free (boundary lint). Strangler migration; cassettes
 reused (matcher = rpcids+body-shape). Wave 0 foundation (serialized) → parallel domain waves →
-auth last → integration. Supersedes ADR-0021 on placement.
+auth last → integration. Supersedes the earlier in-place-utilities proposal on placement.
 
 ## Momus review — BOTH REJECT (convergent, code-grounded). Architecture endorsed; plan incomplete.
 Critical fixes required (both reviewers):
