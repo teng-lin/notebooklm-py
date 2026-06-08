@@ -229,4 +229,23 @@ test_app_boundary + module_size_ratchet green; full suite 8839 passed / 0 failed
 Domains now relocated to `_app/`: artifacts, chat, doctor, download, generate(+plans/retry), labels,
 language, notebooks, notes, research, sharing, skill, source_* (8). **Only session/auth/profile remain.**
 
-## NEXT: auth wave (session/auth/profile) — LAST, heaviest discipline. Then error_handler→classify + relocation ADR.
+## NEXT: auth wave (session/auth/profile) — LAST domain, heaviest discipline. DISPATCHED (background, off HEAD 8a3fc8aa).
+
+## RECOGNIZED PHASE (was missed; user flagged): test → `_app/` migration — see `docs/scratch/2026-06-08-cli-test-app-migration-map.md`.
+The domain waves moved the LOGIC to `_app/` but the TESTS stayed in `tests/unit/cli/` (correct call — kept the
+CLI patch seams intact during relocation). Net effect verified 2026-06-08 on the integrated branch: only 5 app
+test files (artifacts/errors/resolve/serialize/serialize_mcp_equiv, 145 tests); **20 of 25 `_app` modules have NO
+direct test**; `cli/resolve.py` still carries its own parallel `validate_id`/`resolve_partial_id_in_items`
+(lines 43/192) with ~40 duplicate tests. The map's analysis still holds.
+**Decision (user, 2026-06-08): run the WHOLE phase AFTER auth merges (not parallel), with FULL coverage scope —
+all ~20 uncovered `_app` modules get direct tests.** Phase contents (map's recommended sequencing):
+1. Free MOVEs (~65 already-pure tests, import retarget → `tests/unit/app/`; flagship: test_download_multi_artifact).
+2. Net-new direct app tests for every uncovered module (doctor/chat first — zero coverage today — then the rest).
+3. Resolve consolidation: collapse `cli/resolve.py`'s parallel impl into `_app/resolve.py`, delete ~40 dup tests
+   — CAREFUL: 29 `cli.resolve.validate_id`/`cli.helpers.validate_id` patch seams must stay live (wrapper re-raises
+   ValidationError→ClickException per plan §4). This is the one behavior-touching item, hence after-auth + careful.
+4. Opportunistic SPLITs as each command is touched.
+Sequenced after auth specifically because #3 edits shared `cli/resolve.py` (auth's session_context uses resolve).
+
+## THEN (final integration): error_handler→`_app.classify` routing; the relocation ADR.
+## DEFERRED (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
