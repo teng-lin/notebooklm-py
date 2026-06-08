@@ -325,36 +325,13 @@ class TestGenerateUsesConfigLanguage:
 
 
 # =============================================================================
-# GET_CONFIG ERROR PATHS (lines 116-121)
+# GET_CONFIG ERROR PATHS
+#
+# The pure ``get_config()`` corrupt-JSON / OSError fallback tests moved to
+# ``tests/unit/app/test_app_language.py::TestGetConfig`` (the behavior lives in
+# ``_app/language.LanguageConfigStore.get_config``; the CLI ``get_config()`` is
+# a thin wrapper that binds this module's path/home helpers into the store).
 # =============================================================================
-
-
-class TestGetConfigErrorPaths:
-    def test_get_config_json_decode_error(self, tmp_path):
-        """Test get_config() returns {} when config file has invalid JSON."""
-        config_file = tmp_path / "config.json"
-        config_file.write_text("this is not valid json{{{", encoding="utf-8")
-
-        with patch.object(language_module, "get_config_path", return_value=config_file):
-            result = language_module.get_config()
-
-        assert result == {}
-
-    def test_get_config_oserror(self, tmp_path):
-        """Test get_config() returns {} when config file can't be read (OSError)."""
-        config_file = tmp_path / "config.json"
-        # Create the file so exists() returns True, then mock read_text to raise OSError
-        config_file.write_text('{"language": "en"}', encoding="utf-8")
-
-        with (
-            patch.object(language_module, "get_config_path", return_value=config_file),
-            patch.object(
-                config_file.__class__, "read_text", side_effect=OSError("permission denied")
-            ),
-        ):
-            result = language_module.get_config()
-
-        assert result == {}
 
 
 # =============================================================================

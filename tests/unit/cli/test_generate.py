@@ -10,11 +10,7 @@ from click.testing import CliRunner
 
 from notebooklm.cli.polling_ui import status_with_elapsed
 from notebooklm.cli.services.artifact_generation import (
-    RETRY_MAX_DELAY,
     GenerationOutcome,
-    _format_status_message,
-    calculate_backoff_delay,
-    generate_with_retry,
 )
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
@@ -26,7 +22,6 @@ from .conftest import create_mock_client, mind_map_result
 # tests target the module's attribute set (``console``, helpers) rather than
 # the Click Group sitting at the same dotted path.
 generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
-artifact_generation_module = importlib.import_module("notebooklm.cli.services.artifact_generation")
 polling_ui_module = importlib.import_module("notebooklm.cli.polling_ui")
 
 
@@ -1201,161 +1196,13 @@ class TestGenerateLanguageValidation:
 
 # =============================================================================
 # RETRY FUNCTIONALITY TESTS
+#
+# The pure ``calculate_backoff_delay`` / ``generate_with_retry`` tests moved to
+# ``tests/unit/app/test_app_generate_retry.py`` (they call the ``_app`` function
+# directly; the function is defined in ``_app/generate_retry.py`` and only
+# re-exported via ``cli.services.artifact_generation``). The ``--retry`` Click
+# *option* surface stays here.
 # =============================================================================
-
-
-class TestCalculateBackoffDelay:
-    """Tests for the calculate_backoff_delay helper function."""
-
-    def test_initial_delay(self):
-        """Test that first attempt uses initial delay."""
-        delay = calculate_backoff_delay(0, initial_delay=60.0)
-        assert delay == 60.0
-
-    def test_exponential_backoff(self):
-        """Test that delay increases exponentially."""
-        assert calculate_backoff_delay(0, initial_delay=60.0) == 60.0
-        assert calculate_backoff_delay(1, initial_delay=60.0) == 120.0
-        assert calculate_backoff_delay(2, initial_delay=60.0) == 240.0
-
-    def test_max_delay_cap(self):
-        """Test that delay is capped at max_delay."""
-        delay = calculate_backoff_delay(10, initial_delay=60.0, max_delay=300.0)
-        assert delay == 300.0
-
-    def test_custom_multiplier(self):
-        """Test custom backoff multiplier."""
-        delay = calculate_backoff_delay(1, initial_delay=10.0, multiplier=3.0)
-        assert delay == 30.0
-
-
-class TestGenerateWithRetry:
-    """Tests for the generate_with_retry helper function."""
-
-    @pytest.mark.asyncio
-    async def test_no_retry_on_success(self):
-        """Test that successful generation doesn't trigger retry."""
-        from notebooklm.types import GenerationStatus
-
-        success_result = GenerationStatus(
-            task_id="task_123", status="pending", error=None, error_code=None
-        )
-        generate_fn = AsyncMock(return_value=success_result)
-
-        result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
-
-        assert result == success_result
-        assert generate_fn.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_retry_on_rate_limit(self):
-        """Test that a raised RateLimitError triggers retry (#1342)."""
-        from notebooklm.exceptions import RateLimitError
-        from notebooklm.types import GenerationStatus
-
-        success_result = GenerationStatus(
-            task_id="task_123", status="pending", error=None, error_code=None
-        )
-        generate_fn = AsyncMock(
-            side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
-                success_result,
-            ]
-        )
-
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
-
-        assert result == success_result
-        assert generate_fn.call_count == 2
-        mock_sleep.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_retry_exhausted_reraises(self):
-        """v0.8.0 (#1342): exhausting the budget re-raises the RateLimitError."""
-        from notebooklm.exceptions import RateLimitError
-
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
-        generate_fn = AsyncMock(side_effect=error)
-
-        with (
-            patch("asyncio.sleep", new_callable=AsyncMock),
-            pytest.raises(RateLimitError) as exc_info,
-        ):
-            await generate_with_retry(generate_fn, max_retries=2, artifact_type="audio")
-
-        assert exc_info.value is error
-        assert generate_fn.call_count == 3  # initial + 2 retries
-
-    @pytest.mark.asyncio
-    async def test_returned_rate_limited_status_returns_without_retry(self):
-        """v0.8.0 (#1342): a returned rate-limited status is no longer a retry signal."""
-        from notebooklm.types import GenerationStatus
-
-        rate_limited = GenerationStatus(
-            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
-        )
-        generate_fn = AsyncMock(return_value=rate_limited)
-
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
-
-        assert result == rate_limited
-        assert generate_fn.call_count == 1
-        mock_sleep.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_no_retry_when_max_retries_zero(self):
-        """Test that max_retries=0 means no retry attempts (re-raises immediately)."""
-        from notebooklm.exceptions import RateLimitError
-
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
-        generate_fn = AsyncMock(side_effect=error)
-
-        with pytest.raises(RateLimitError):
-            await generate_with_retry(generate_fn, max_retries=0, artifact_type="audio")
-
-        assert generate_fn.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_retry_delays_increase_exponentially(self):
-        """Verify delays follow exponential backoff pattern (60s, 120s, 240s)."""
-        from notebooklm.exceptions import RateLimitError
-
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
-        generate_fn = AsyncMock(side_effect=error)
-
-        with (
-            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RateLimitError),
-        ):
-            await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
-
-        # Verify delays: 60s, 120s, 240s (3 retries = 3 sleeps)
-        delays = [call[0][0] for call in mock_sleep.call_args_list]
-        assert delays == [60.0, 120.0, 240.0]
-
-    @pytest.mark.asyncio
-    async def test_retry_delay_caps_at_max(self):
-        """Verify delay caps at 300s even with many retries."""
-        from notebooklm.exceptions import RateLimitError
-
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
-        generate_fn = AsyncMock(side_effect=error)
-
-        with (
-            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RateLimitError),
-        ):
-            await generate_with_retry(generate_fn, max_retries=10, artifact_type="audio")
-
-        # Verify no delay exceeds RETRY_MAX_DELAY (300s)
-        delays = [call[0][0] for call in mock_sleep.call_args_list]
-        assert len(delays) == 10  # 10 retries = 10 sleeps
-        for delay in delays:
-            assert delay <= RETRY_MAX_DELAY
-        # Later delays should be capped at 300
-        assert delays[-1] == RETRY_MAX_DELAY
 
 
 class TestRetryOptionAvailable:
@@ -1697,43 +1544,9 @@ class TestOutputGenerationOutcomeDirect:
         assert "[yellow]Started:[/yellow]" in call_args
 
 
-class TestExtractTaskIdDirect:
-    """Direct tests for _extract_task_id() covering list path."""
-
-    def setup_method(self):
-        self.generate_module = artifact_generation_module
-
-    def test_extract_from_list_first_string(self):
-        """Lines 231-232: list where first element is a string."""
-        result = self.generate_module._extract_task_id(["task_abc", "other"])
-        assert result == "task_abc"
-
-    def test_extract_from_list_first_not_string(self):
-        """Line 233: list where first element is not a string → returns None."""
-        result = self.generate_module._extract_task_id([123, "other"])
-        assert result is None
-
-    def test_extract_from_empty_list(self):
-        """Line 233: empty list → returns None."""
-        result = self.generate_module._extract_task_id([])
-        assert result is None
-
-    def test_extract_from_dict_task_id(self):
-        """Line 228: dict with task_id key."""
-        result = self.generate_module._extract_task_id({"task_id": "t1", "status": "pending"})
-        assert result == "t1"
-
-    def test_extract_from_dict_artifact_id(self):
-        """Line 228: dict with artifact_id key (no task_id)."""
-        result = self.generate_module._extract_task_id({"artifact_id": "a1"})
-        assert result == "a1"
-
-    def test_extract_from_object_with_task_id(self):
-        """Line 228: object with task_id attribute."""
-        status = MagicMock()
-        status.task_id = "task_obj"
-        result = self.generate_module._extract_task_id(status)
-        assert result == "task_obj"
+# ``TestExtractTaskIdDirect`` moved to ``tests/unit/app/test_app_generate_retry.py``
+# (``_extract_task_id`` is defined in ``_app/generate_retry.py`` and only
+# re-exported via ``cli.services.artifact_generation``).
 
 
 # =============================================================================
@@ -2155,39 +1968,10 @@ class TestHandleGenerationResultPaths:
 # =============================================================================
 
 
-class TestGenerateWithRetryConsoleOutput:
-    """Test generate_with_retry console output branch (line 111)."""
-
-    @pytest.mark.asyncio
-    async def test_retry_shows_console_message_when_not_json(self):
-        """Line 111: console.print shown during retry when json_output=False.
-
-        v0.8.0 (#1342): the retry is driven by a raised RateLimitError.
-        """
-        from notebooklm.exceptions import RateLimitError
-        from notebooklm.types import GenerationStatus
-
-        success_result = GenerationStatus(
-            task_id="task_123", status="pending", error=None, error_code=None
-        )
-        generate_fn = AsyncMock(
-            side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
-                success_result,
-            ]
-        )
-
-        retry_sink = MagicMock()
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await artifact_generation_module.generate_with_retry(
-                generate_fn,
-                max_retries=1,
-                artifact_type="audio",
-                on_retry=retry_sink,
-            )
-
-        assert result == success_result
-        retry_sink.assert_called_once()
+# ``TestGenerateWithRetryConsoleOutput`` (the pure ``on_retry``-sink retry test)
+# moved to ``tests/unit/app/test_app_generate_retry.py`` as
+# ``test_retry_fires_on_retry_sink`` (retargeted at the injected sink, no
+# Click coupling).
 
 
 class TestHandleGenerationResultListPathAndWait:
@@ -2312,30 +2096,14 @@ class TestOutputMindMapNonDictMindMap:
 
 
 class TestStatusWithElapsed:
-    """Cover the spinner helpers."""
+    """Cover the polling-UI spinner helper.
 
-    def test_format_status_message_known_kind_includes_typical_hint(self):
-        """Known kinds get a typical-duration parenthetical so users see an ETA."""
-        msg = _format_status_message("cinematic-video")
-        # The exact wording matches the audit example so the user-visible
-        # surface is anchored: "Waiting for cinematic-video generation
-        # (typically 30-40 min)...".
-        assert "cinematic-video" in msg
-        assert "typically" in msg
-        assert msg.endswith("...")
-
-    def test_format_status_message_unknown_kind_omits_hint(self):
-        """Unknown kinds fall back gracefully — no parenthetical, still rendered."""
-        msg = _format_status_message("unknown-kind")
-        assert "unknown-kind" in msg
-        assert "(" not in msg, f"unknown kind should NOT add a hint, got: {msg!r}"
-
-    def test_format_status_message_with_elapsed_appends_seconds(self):
-        """Elapsed timer is appended in `[Ns elapsed]` form for the live update."""
-        msg = _format_status_message("audio", elapsed=42.7)
-        # Truncated to int — the spinner's per-second tick doesn't need
-        # sub-second precision and an integer reads cleaner in the UI.
-        assert "[42s elapsed]" in msg
+    The pure ``_format_status_message`` tests moved to
+    ``tests/unit/app/test_app_generate_retry.py`` (the formatter is defined in
+    ``_app/generate_retry.py``); the CLI-coupled ``status_with_elapsed``
+    no-op-under-``--json`` assertion (which patches ``polling_ui.console``)
+    stays here.
+    """
 
     def test_status_with_elapsed_json_output_is_no_op(self):
         """Under --json the helper must NOT call console.status (stdout stays JSON)."""
