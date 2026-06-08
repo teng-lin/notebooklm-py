@@ -297,5 +297,24 @@ must show NO `src/` coverage regression vs pre-trim — a dropped line/branch me
   The growth is intended new direct coverage (doctor/chat had zero) + healthy defense-in-depth. Suite ~50s; runtime
   is a non-issue. Decision: KEEP.
 
-## FINAL INTEGRATION (in progress): error_handler→`_app.classify` routing; the relocation ADR.
+## FINAL INTEGRATION — DONE. Full suite 9254 passed / 0 failed.
+- **Relocation ADR written:** `docs/adr/0021-transport-neutral-app-layer.md` (Status: Accepted; supersedes the
+  in-place-utilities proposal on placement; records the contract, boundary lint, classify-single-source, patch-seam
+  discipline, cassette invariance, the resolve adapter/core split, and the layered-coverage trade-off). Passes the
+  ADR-format + docs-module-ref gates.
+- **error_handler→classify: enforced, not rewritten.** Same risk/benefit judgment as resolve — a full rewrite of the
+  byte-stable `--json` error contract for marginal DRY (MCP adapter not even on this branch) wasn't worth the
+  regression risk. Instead realized plan §5's OTHER half: a consistency GATE
+  (`tests/_guardrails/test_classify_error_handler_consistency.py`, 16 tests) that pins, for an exemplar of every one
+  of the 14 `ErrorCategory` values, that the CLI `error_handler`'s emitted `--json` code == the code that category
+  projects onto. classify is now the enforced single source of the category decision; drift in either ladder fails CI.
+
+## ████ PROTOTYPE COMPLETE ████
+Every CLI command area's business logic relocated to `src/notebooklm/_app/` (28 modules); CLI = thin adapters;
+boundary-linted; cassettes reused (zero re-records); `--json` byte-stable. Direct `_app` coverage 145 → 623 tests.
+Full suite 9254 passed / 0 failed; mypy clean; ruff clean; freshness OK. MCP-reuse proven (serialize wire-equiv).
+Branch: `refactor/cli-business-logic` (local; no PR per the prototype constraint).
+Deferred (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
+Decided NOT to do: resolve consolidation (justified adapter/core split, not duplication); test cutting (layered
+coverage, not redundancy — CLI 89% vs app 95% `_app` overlap is unit/integration, not same-layer).
 ## DEFERRED (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
