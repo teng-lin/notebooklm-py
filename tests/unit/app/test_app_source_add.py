@@ -386,8 +386,10 @@ async def test_add_source_file_dispatch() -> None:
         mime_type="application/pdf",
     )
     await add_source(facade, notebook_id="nb_1", plan=plan)
+    # ``add_source`` forwards ``str(plan.upload_path)``; compare against the same
+    # ``str(Path(...))`` so the assertion holds on Windows (``\tmp\doc.pdf``) too.
     facade.add_file.assert_awaited_once_with(
-        "nb_1", "/tmp/doc.pdf", "application/pdf", title="My File"
+        "nb_1", str(Path("/tmp/doc.pdf")), "application/pdf", title="My File"
     )
 
 
