@@ -37,7 +37,7 @@ from click.testing import CliRunner, Result
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import GenerationStatus
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, inject_client
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
@@ -82,7 +82,6 @@ def authed_invoke(
         if configure is not None:
             configure(mock_client)
         with (
-            patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_cls,
             patch(
                 "notebooklm.cli.helpers.load_auth_from_storage",
                 return_value=_AUTH_PAYLOAD,
@@ -92,9 +91,8 @@ def authed_invoke(
                 new_callable=AsyncMock,
             ) as mock_fetch,
         ):
-            mock_cls.return_value = mock_client
             mock_fetch.return_value = ("csrf", "session")
-            return runner.invoke(cli, args)
+            return runner.invoke(cli, args, obj=inject_client(mock_client))
 
     yield _invoke
 

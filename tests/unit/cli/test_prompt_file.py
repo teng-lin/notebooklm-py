@@ -125,16 +125,16 @@ class TestGeneratePromptFile:
         prompt_file = tmp_path / "report.txt"
         prompt_file.write_text("Create a white paper about AI trends", encoding="utf-8")
 
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_report = AsyncMock(
-                return_value={"artifact_id": "report_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.generate_report = AsyncMock(
+            return_value={"artifact_id": "report_123", "status": "processing"}
+        )
 
-            result = runner.invoke(
-                cli, ["generate", "report", "--prompt-file", str(prompt_file), "-n", "nb_123"]
-            )
+        result = runner.invoke(
+            cli,
+            ["generate", "report", "--prompt-file", str(prompt_file), "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.artifacts.generate_report.call_args.kwargs
@@ -147,17 +147,16 @@ class TestGeneratePromptFile:
         prompt_file = tmp_path / "table.txt"
         prompt_file.write_text("Compare key concepts", encoding="utf-8")
 
-        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_data_table = AsyncMock(
-                return_value={"artifact_id": "table_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.generate_data_table = AsyncMock(
+            return_value={"artifact_id": "table_123", "status": "processing"}
+        )
 
-            result = runner.invoke(
-                cli,
-                ["generate", "data-table", "--prompt-file", str(prompt_file), "-n", "nb_123"],
-            )
+        result = runner.invoke(
+            cli,
+            ["generate", "data-table", "--prompt-file", str(prompt_file), "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.artifacts.generate_data_table.call_args.kwargs

@@ -182,19 +182,18 @@ class TestQuietArtifactDelete:
         """``notebooklm --quiet artifact delete <id> --yes`` exits 0 with no
         stdout and no Rich-decorated output.
         """
-        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Test", _artifact_type=4, status=3)]
-            )
-            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
-            mock_client.artifacts.delete = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[Artifact(id="art_123", title="Test", _artifact_type=4, status=3)]
+        )
+        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.artifacts.delete = AsyncMock(return_value=None)
 
-            result = runner.invoke(
-                cli,
-                ["--quiet", "artifact", "delete", "art_123", "-n", "nb_123", "-y"],
-            )
+        result = runner.invoke(
+            cli,
+            ["--quiet", "artifact", "delete", "art_123", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         # ``CliRunner.output`` is stdout+stderr mixed. Quiet must suppress the
@@ -212,28 +211,27 @@ class TestQuietArtifactDelete:
         JSON is the deliverable, not "status". Quiet suppresses prose; JSON
         is structured output.
         """
-        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_456", title="JsonTest", _artifact_type=4, status=3)]
-            )
-            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
-            mock_client.artifacts.delete = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[Artifact(id="art_456", title="JsonTest", _artifact_type=4, status=3)]
+        )
+        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.artifacts.delete = AsyncMock(return_value=None)
 
-            result = runner.invoke(
-                cli,
-                [
-                    "--quiet",
-                    "artifact",
-                    "delete",
-                    "art_456",
-                    "-n",
-                    "nb_123",
-                    "-y",
-                    "--json",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "--quiet",
+                "artifact",
+                "delete",
+                "art_456",
+                "-n",
+                "nb_123",
+                "-y",
+                "--json",
+            ],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
@@ -244,16 +242,18 @@ class TestQuietArtifactDelete:
         stdout. Pinned so the quiet plumbing cannot accidentally suppress
         the default-mode UX.
         """
-        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_789", title="Loud", _artifact_type=4, status=3)]
-            )
-            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
-            mock_client.artifacts.delete = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[Artifact(id="art_789", title="Loud", _artifact_type=4, status=3)]
+        )
+        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.artifacts.delete = AsyncMock(return_value=None)
 
-            result = runner.invoke(cli, ["artifact", "delete", "art_789", "-n", "nb_123", "-y"])
+        result = runner.invoke(
+            cli,
+            ["artifact", "delete", "art_789", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         assert "Deleted artifact" in result.output
