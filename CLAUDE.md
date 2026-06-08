@@ -234,6 +234,7 @@ src/notebooklm/
 ├── _research_task_parser.py     # Research task result-type parser
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
 │   ├── __init__.py              # Re-exports the neutral primitives
+│   ├── artifacts.py             # Click-free artifact core: get/rename/delete/export + poll/wait/retry; kind-aware mind-map dispatch (mind_maps.list for rename, notes.list_mind_maps for delete), get_artifact raises ArtifactNotFoundError, typed Rename/Export results + ArtifactStatusView/status_view neutral status DTO (CLI builds every --json envelope from the typed fields)
 │   ├── download.py              # Click-free download core: DownloadPlan/Result/TypeSpec + build_download_plan/execute_download (injected resolvers; DownloadResult.to_envelope rebuilds the CLI --json envelope)
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
