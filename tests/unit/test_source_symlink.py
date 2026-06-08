@@ -27,12 +27,27 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from cli.conftest import inject_client
 from click.testing import CliRunner
 
 from notebooklm import paths as paths_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Source
+
+
+def inject_client(client, *, recorder=None):
+    """Local copy of the ``cli/conftest`` helper.
+
+    Defined inline because this test lives in ``tests/unit/`` (outside the
+    ``tests/unit/cli`` package), so it cannot relatively import the shared helper
+    and a cross-package absolute import would be fragile.
+    """
+
+    def factory(auth=None, **kwargs):
+        if recorder is not None:
+            recorder.append((auth, kwargs))
+        return client
+
+    return {"client_factory": factory}
 
 
 @pytest.fixture

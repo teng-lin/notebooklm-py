@@ -413,6 +413,10 @@ def inject_client(client, *, recorder=None):
     ``recorder`` (a list) is supplied, each ``(auth, kwargs)`` call is appended
     for assertions (e.g. the ``source add`` / ``chat ask`` timeout passthrough).
 
+    ``client`` must implement the async context-manager protocol
+    (``__aenter__`` / ``__aexit__``); ``create_mock_client()`` provides the
+    standard fake.
+
     Usage::
 
         result = runner.invoke(cli, [...], obj=inject_client(mock_client))

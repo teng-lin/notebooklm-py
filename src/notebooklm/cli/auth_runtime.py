@@ -280,7 +280,7 @@ def resolve_client_factory(
     ``factory(client_auth, **client_kwargs)``, so it is typed to accept keyword
     arguments (the ``source add`` / ``chat ask`` timeout passthrough).
     """
-    if ctx is not None and ctx.obj:
+    if ctx is not None and isinstance(ctx.obj, dict):
         injected = ctx.obj.get("client_factory")
         if injected is not None:
             return injected
