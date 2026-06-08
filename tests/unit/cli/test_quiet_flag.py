@@ -33,6 +33,7 @@ from notebooklm.types import Artifact, Note, Notebook, Source
 
 from .conftest import (
     create_mock_client,
+    inject_client,
     patch_main_cli_client,
 )
 
@@ -268,12 +269,14 @@ class TestQuietSourceClean:
         """``notebooklm --quiet source clean -y`` with no junk sources exits 0
         with no stdout — the "Notebook is already clean" line is status prose.
         """
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[])
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(return_value=[])
 
-            result = runner.invoke(cli, ["--quiet", "source", "clean", "-n", "nb_123", "-y"])
+        result = runner.invoke(
+            cli,
+            ["--quiet", "source", "clean", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         assert result.output == ""
@@ -285,13 +288,15 @@ class TestQuietSourceClean:
         """
         # A source with status=FAILED is treated as junk by the classifier.
         junk = Source(id="src_junk_1", title="Junk Source", status=5)  # 5 = FAILED
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[junk])
-            mock_client.sources.delete = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(return_value=[junk])
+        mock_client.sources.delete = AsyncMock(return_value=None)
 
-            result = runner.invoke(cli, ["--quiet", "source", "clean", "-n", "nb_123", "-y"])
+        result = runner.invoke(
+            cli,
+            ["--quiet", "source", "clean", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         # No candidate table or "Successfully cleaned" prose.
@@ -310,13 +315,15 @@ class TestQuietSourceClean:
         async def fail_delete(_notebook_id, _source_id):
             raise RuntimeError("delete failed")
 
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[junk])
-            mock_client.sources.delete = AsyncMock(side_effect=fail_delete)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(return_value=[junk])
+        mock_client.sources.delete = AsyncMock(side_effect=fail_delete)
 
-            result = runner.invoke(cli, ["--quiet", "source", "clean", "-n", "nb_123", "-y"])
+        result = runner.invoke(
+            cli,
+            ["--quiet", "source", "clean", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code != 0, result.output
         assert "1 deletion(s) failed" in result.output
@@ -326,12 +333,12 @@ class TestQuietSourceClean:
     def test_non_quiet_source_clean_still_prints_success(self, runner, mock_auth, fetch_tokens):
         """Baseline: non-quiet ``source clean -y`` still emits the success
         line (or already-clean line)."""
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[])
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(return_value=[])
 
-            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
+        result = runner.invoke(
+            cli, ["source", "clean", "-n", "nb_123", "-y"], obj=inject_client(mock_client)
+        )
 
         assert result.exit_code == 0, result.output
         assert "already clean" in result.output.lower()
@@ -349,15 +356,15 @@ class TestQuietRepresentativeCommands:
     """
 
     def test_quiet_source_delete(self, runner, mock_auth, fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="Doomed")])
-            mock_client.sources.delete = AsyncMock(return_value=True)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="Doomed")])
+        mock_client.sources.delete = AsyncMock(return_value=True)
 
-            result = runner.invoke(
-                cli, ["--quiet", "source", "delete", "src_1", "-n", "nb_123", "-y"]
-            )
+        result = runner.invoke(
+            cli,
+            ["--quiet", "source", "delete", "src_1", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         assert "Deleted source" not in result.output

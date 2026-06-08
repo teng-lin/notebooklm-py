@@ -26,7 +26,7 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Source
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, inject_client
 
 
 @pytest.fixture
@@ -36,26 +36,23 @@ def runner():
 
 @contextmanager
 def _stale_command_environment(*, is_fresh: bool):
-    """Patch ``NotebookLMClient`` + ``fetch_tokens_with_domains`` for ``source stale``.
+    """Build the injected client env for ``source stale`` tests.
 
-    Yields nothing; the context just owns the lifetimes of the two patches
-    that every test in this file needs.
+    Yields the ``ctx.obj`` payload that injects the mock client; callers thread
+    it into ``runner.invoke(cli, args, obj=obj)``. The ``fetch_tokens`` auth
+    seam is still patched here.
     """
-    with (
-        patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
-        patch(
-            "notebooklm.auth.fetch_tokens_with_domains",
-            new_callable=AsyncMock,
-            return_value=("csrf", "session"),
-        ),
+    with patch(
+        "notebooklm.auth.fetch_tokens_with_domains",
+        new_callable=AsyncMock,
+        return_value=("csrf", "session"),
     ):
         mock_client = create_mock_client()
         mock_client.sources.list = AsyncMock(
             return_value=[Source(id="src_123", title="Test Source")]
         )
         mock_client.sources.check_freshness = AsyncMock(return_value=is_fresh)
-        mock_client_cls.return_value = mock_client
-        yield
+        yield inject_client(mock_client)
 
 
 # ---------------------------------------------------------------------------
@@ -77,16 +74,16 @@ class TestSourceStaleDefaultExitCodes:
         self, runner, mock_auth, is_fresh, expected_verdict_text
     ):
         """Default policy: exit 0 once the check succeeds, verdict on stdout."""
-        with _stale_command_environment(is_fresh=is_fresh):
-            result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"])
+        with _stale_command_environment(is_fresh=is_fresh) as obj:
+            result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"], obj=obj)
 
         assert result.exit_code == 0, result.output
         assert expected_verdict_text in result.output.lower()
 
     def test_default_text_mode_stale_branch_mentions_refresh(self, runner, mock_auth):
         """The stale branch should point callers at ``source refresh`` on stdout."""
-        with _stale_command_environment(is_fresh=False):
-            result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"])
+        with _stale_command_environment(is_fresh=False) as obj:
+            result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123"], obj=obj)
 
         assert result.exit_code == 0, result.output
         assert "refresh" in result.output.lower()
@@ -102,8 +99,10 @@ class TestSourceStaleDefaultExitCodes:
         self, runner, mock_auth, is_fresh, expected_stale
     ):
         """JSON mode mirrors text mode: exit 0, verdict in payload fields."""
-        with _stale_command_environment(is_fresh=is_fresh):
-            result = runner.invoke(cli, ["source", "stale", "src_123", "-n", "nb_123", "--json"])
+        with _stale_command_environment(is_fresh=is_fresh) as obj:
+            result = runner.invoke(
+                cli, ["source", "stale", "src_123", "-n", "nb_123", "--json"], obj=obj
+            )
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
@@ -130,10 +129,11 @@ class TestSourceStaleExitOnStaleFlag:
     def test_exit_on_stale_text_mode_inverts_exit_codes(
         self, runner, mock_auth, is_fresh, expected_exit, expected_verdict_text
     ):
-        with _stale_command_environment(is_fresh=is_fresh):
+        with _stale_command_environment(is_fresh=is_fresh) as obj:
             result = runner.invoke(
                 cli,
                 ["source", "stale", "src_123", "-n", "nb_123", "--exit-on-stale"],
+                obj=obj,
             )
 
         assert result.exit_code == expected_exit, result.output
@@ -149,7 +149,7 @@ class TestSourceStaleExitOnStaleFlag:
     def test_exit_on_stale_json_mode_inverts_exit_codes_with_payload_intact(
         self, runner, mock_auth, is_fresh, expected_exit, expected_stale
     ):
-        with _stale_command_environment(is_fresh=is_fresh):
+        with _stale_command_environment(is_fresh=is_fresh) as obj:
             result = runner.invoke(
                 cli,
                 [
@@ -161,6 +161,7 @@ class TestSourceStaleExitOnStaleFlag:
                     "--exit-on-stale",
                     "--json",
                 ],
+                obj=obj,
             )
 
         assert result.exit_code == expected_exit, result.output

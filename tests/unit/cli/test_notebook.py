@@ -13,7 +13,13 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, Notebook
 
-from .conftest import create_mock_client, patch_main_cli_client, research_start, research_task
+from .conftest import (
+    create_mock_client,
+    inject_client,
+    patch_main_cli_client,
+    research_start,
+    research_task,
+)
 
 
 @pytest.fixture
@@ -1124,72 +1130,66 @@ class TestNotebookConfigure:
 
 class TestSourceAddResearch:
     def test_source_add_research_success(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(
-                return_value=research_start({"task_id": "task_123"})
-            )
-            mock_client.research.poll = AsyncMock(
-                return_value=research_task(
-                    {"status": "completed", "sources": [{"title": "Source 1"}]}
-                )
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
+        mock_client.research.poll = AsyncMock(
+            return_value=research_task({"status": "completed", "sources": [{"title": "Source 1"}]})
+        )
 
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "add-research", "AI research", "-n", "nb_123"]
-                )
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add-research", "AI research", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
 
-            assert result.exit_code == 0
-            assert "Found 1 sources" in result.output
+        assert result.exit_code == 0
+        assert "Found 1 sources" in result.output
 
     def test_source_add_research_failed_to_start(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.research.start = AsyncMock(return_value=None)
 
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "add-research", "AI research", "-n", "nb_123"]
-                )
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add-research", "AI research", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
 
-            assert result.exit_code == 1
-            assert "Research failed to start" in result.output
+        assert result.exit_code == 1
+        assert "Research failed to start" in result.output
 
     def test_source_add_research_with_import(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(
-                return_value=research_start({"task_id": "task_123"})
-            )
-            mock_client.research.poll = AsyncMock(
-                return_value=research_task({"status": "completed", "sources": [{"id": "src_1"}]})
-            )
-            # CLI's import_with_retry now delegates to the library's
-            # import_sources_with_verification method (#315).
-            mock_client.research.import_sources_with_verification = AsyncMock(
-                return_value=[{"id": "src_1"}]
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
+        mock_client.research.poll = AsyncMock(
+            return_value=research_task({"status": "completed", "sources": [{"id": "src_1"}]})
+        )
+        # CLI's import_with_retry now delegates to the library's
+        # import_sources_with_verification method (#315).
+        mock_client.research.import_sources_with_verification = AsyncMock(
+            return_value=[{"id": "src_1"}]
+        )
 
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "add-research", "AI research", "-n", "nb_123", "--import-all"]
-                )
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add-research", "AI research", "-n", "nb_123", "--import-all"],
+                obj=inject_client(mock_client),
+            )
 
-            assert result.exit_code == 0
-            assert "Imported 1 sources" in result.output
+        assert result.exit_code == 0
+        assert "Imported 1 sources" in result.output
 
 
 # =============================================================================

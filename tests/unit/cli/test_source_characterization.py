@@ -51,7 +51,7 @@ from notebooklm.types import (
     SourceTimeoutError,
 )
 
-from .conftest import create_mock_client, research_start, source_guide
+from .conftest import create_mock_client, inject_client, research_start, source_guide
 
 pytestmark = pytest.mark.characterization
 
@@ -96,28 +96,27 @@ class TestSourceAddCharacterization:
     def test_add_url_text_mode_prints_added_source_line(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.add_url = AsyncMock(
-                return_value=Source(id="src_new_url", title="URL Source", url="https://x")
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "add", "https://example.com", "-n", "nb_123"])
+        client = create_mock_client()
+        client.sources.add_url = AsyncMock(
+            return_value=Source(id="src_new_url", title="URL Source", url="https://x")
+        )
+        result = runner.invoke(
+            cli, ["source", "add", "https://example.com", "-n", "nb_123"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         assert "Added source:" in result.output
         assert "src_new_url" in result.output
 
     def test_add_url_json_mode_emits_source_envelope(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.add_url = AsyncMock(
-                return_value=Source(id="src_new", title="T", url="https://x", _type_code=5)
-            )
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                ["source", "add", "https://example.com", "-n", "nb_123", "--json"],
-            )
+        client = create_mock_client()
+        client.sources.add_url = AsyncMock(
+            return_value=Source(id="src_new", title="T", url="https://x", _type_code=5)
+        )
+        result = runner.invoke(
+            cli,
+            ["source", "add", "https://example.com", "-n", "nb_123", "--json"],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["source"]["id"] == "src_new"
@@ -133,34 +132,32 @@ class TestSourceAddCharacterization:
 
 class TestSourceListCharacterization:
     def test_list_text_mode_renders_rich_table(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "list", "-n", "nb_123"])
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
+        result = runner.invoke(cli, ["source", "list", "-n", "nb_123"], obj=inject_client(client))
         assert result.exit_code == 0
         assert "Sources in nb_123" in result.output
         assert "src_1" in result.output
         assert "One" in result.output
 
     def test_list_json_mode_emits_array_with_count(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(
-                return_value=[
-                    Source(
-                        id="src_1",
-                        title="One",
-                        url=None,
-                        _type_code=5,
-                        status=SourceStatus.READY,
-                        created_at=datetime(2025, 1, 1, 12, 0, 0),
-                    )
-                ]
-            )
-            client.notebooks.get = AsyncMock(return_value=type("N", (), {"title": "NB"})())
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "list", "-n", "nb_123", "--json"])
+        client = create_mock_client()
+        client.sources.list = AsyncMock(
+            return_value=[
+                Source(
+                    id="src_1",
+                    title="One",
+                    url=None,
+                    _type_code=5,
+                    status=SourceStatus.READY,
+                    created_at=datetime(2025, 1, 1, 12, 0, 0),
+                )
+            ]
+        )
+        client.notebooks.get = AsyncMock(return_value=type("N", (), {"title": "NB"})())
+        result = runner.invoke(
+            cli, ["source", "list", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["notebook_id"] == "nb_123"
@@ -177,32 +174,32 @@ class TestSourceListCharacterization:
 
 class TestSourceGetCharacterization:
     def test_get_text_mode_prints_title_and_type(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_or_none = AsyncMock(
-                return_value=Source(id="src_1", title="My Source", url=None)
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "get", "src_1", "-n", "nb_123"])
+        client = create_mock_client()
+        client.sources.get_or_none = AsyncMock(
+            return_value=Source(id="src_1", title="My Source", url=None)
+        )
+        result = runner.invoke(
+            cli, ["source", "get", "src_1", "-n", "nb_123"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         assert "Source:" in result.output
         assert "src_1" in result.output
         assert "My Source" in result.output
 
     def test_get_json_mode_emits_source_envelope(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_or_none = AsyncMock(
-                return_value=Source(
-                    id="src_1",
-                    title="My Source",
-                    url="https://x",
-                    _type_code=5,
-                    status=SourceStatus.READY,
-                )
+        client = create_mock_client()
+        client.sources.get_or_none = AsyncMock(
+            return_value=Source(
+                id="src_1",
+                title="My Source",
+                url="https://x",
+                _type_code=5,
+                status=SourceStatus.READY,
             )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "get", "src_1", "-n", "nb_123", "--json"])
+        )
+        result = runner.invoke(
+            cli, ["source", "get", "src_1", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["found"] is True
@@ -211,38 +208,36 @@ class TestSourceGetCharacterization:
         assert payload["source"]["url"] == "https://x"
 
     def test_get_not_found_exits_1_text_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_or_none = AsyncMock(return_value=None)
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "get",
-                    "11111111-2222-3333-4444-555555555555",
-                    "-n",
-                    "nb_123",
-                ],
-            )
+        client = create_mock_client()
+        client.sources.get_or_none = AsyncMock(return_value=None)
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "get",
+                "11111111-2222-3333-4444-555555555555",
+                "-n",
+                "nb_123",
+            ],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 1
 
     def test_get_not_found_exits_1_json_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_or_none = AsyncMock(return_value=None)
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "get",
-                    "11111111-2222-3333-4444-555555555555",
-                    "-n",
-                    "nb_123",
-                    "--json",
-                ],
-            )
+        client = create_mock_client()
+        client.sources.get_or_none = AsyncMock(return_value=None)
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "get",
+                "11111111-2222-3333-4444-555555555555",
+                "-n",
+                "nb_123",
+                "--json",
+            ],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 1
         payload = json.loads(result.output)
         assert payload["error"] is True
@@ -258,24 +253,24 @@ class TestSourceDeleteCharacterization:
     def test_delete_text_mode_with_yes_prints_deleted(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.delete = AsyncMock(return_value=True)
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "delete", "src_1", "-n", "nb_123", "-y"])
+        client = create_mock_client()
+        client.sources.delete = AsyncMock(return_value=True)
+        result = runner.invoke(
+            cli, ["source", "delete", "src_1", "-n", "nb_123", "-y"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         assert "Deleted source:" in result.output
 
     def test_delete_json_mode_with_yes_emits_envelope(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.delete = AsyncMock(return_value=True)
-            cls.return_value = client
-            result = runner.invoke(
-                cli, ["source", "delete", "src_1", "-n", "nb_123", "-y", "--json"]
-            )
+        client = create_mock_client()
+        client.sources.delete = AsyncMock(return_value=True)
+        result = runner.invoke(
+            cli,
+            ["source", "delete", "src_1", "-n", "nb_123", "-y", "--json"],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["action"] == "delete"
@@ -291,47 +286,41 @@ class TestSourceDeleteCharacterization:
 
 class TestSourceDeleteByTitleCharacterization:
     def test_delete_by_title_text_mode_with_yes(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(
-                return_value=[Source(id="src_999", title="Exact Title")]
-            )
-            client.sources.delete = AsyncMock(return_value=True)
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "delete-by-title",
-                    "Exact Title",
-                    "-n",
-                    "nb_123",
-                    "-y",
-                ],
-            )
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[Source(id="src_999", title="Exact Title")])
+        client.sources.delete = AsyncMock(return_value=True)
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "delete-by-title",
+                "Exact Title",
+                "-n",
+                "nb_123",
+                "-y",
+            ],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 0
         assert "Deleted source:" in result.output
 
     def test_delete_by_title_json_mode_with_yes(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(
-                return_value=[Source(id="src_999", title="Exact Title")]
-            )
-            client.sources.delete = AsyncMock(return_value=True)
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "delete-by-title",
-                    "Exact Title",
-                    "-n",
-                    "nb_123",
-                    "-y",
-                    "--json",
-                ],
-            )
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[Source(id="src_999", title="Exact Title")])
+        client.sources.delete = AsyncMock(return_value=True)
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "delete-by-title",
+                "Exact Title",
+                "-n",
+                "nb_123",
+                "-y",
+                "--json",
+            ],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["action"] == "delete-by-title"
@@ -346,20 +335,18 @@ class TestSourceDeleteByTitleCharacterization:
 
 class TestSourceCleanCharacterization:
     def test_clean_already_clean_text_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(return_value=[])
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123"])
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[])
+        result = runner.invoke(cli, ["source", "clean", "-n", "nb_123"], obj=inject_client(client))
         assert result.exit_code == 0
         assert "already clean" in result.output.lower()
 
     def test_clean_already_clean_json_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(return_value=[])
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "--json"])
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[])
+        result = runner.invoke(
+            cli, ["source", "clean", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["action"] == "clean"
@@ -374,39 +361,41 @@ class TestSourceCleanCharacterization:
 
 class TestSourceFulltextCharacterization:
     def test_fulltext_text_mode_prints_content(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_fulltext = AsyncMock(
-                return_value=SourceFulltext(
-                    source_id="src_1",
-                    title="T",
-                    content="hello world",
-                    char_count=11,
-                    url=None,
-                )
+        client = create_mock_client()
+        client.sources.get_fulltext = AsyncMock(
+            return_value=SourceFulltext(
+                source_id="src_1",
+                title="T",
+                content="hello world",
+                char_count=11,
+                url=None,
             )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "fulltext", "src_1", "-n", "nb_123"])
+        )
+        result = runner.invoke(
+            cli, ["source", "fulltext", "src_1", "-n", "nb_123"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         assert "hello world" in result.output
 
     def test_fulltext_json_mode_emits_dataclass_payload(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_fulltext = AsyncMock(
-                return_value=SourceFulltext(
-                    source_id="src_1",
-                    title="T",
-                    content="hi",
-                    _type_code=5,
-                    char_count=2,
-                    url=None,
-                )
+        client = create_mock_client()
+        client.sources.get_fulltext = AsyncMock(
+            return_value=SourceFulltext(
+                source_id="src_1",
+                title="T",
+                content="hi",
+                _type_code=5,
+                char_count=2,
+                url=None,
             )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "fulltext", "src_1", "-n", "nb_123", "--json"])
+        )
+        result = runner.invoke(
+            cli,
+            ["source", "fulltext", "src_1", "-n", "nb_123", "--json"],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["source_id"] == "src_1"
@@ -425,13 +414,13 @@ class TestSourceGuideCharacterization:
     def test_guide_text_mode_prints_summary_and_keywords(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_guide = AsyncMock(
-                return_value=source_guide({"summary": "summary text", "keywords": ["a", "b"]})
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "guide", "src_1", "-n", "nb_123"])
+        client = create_mock_client()
+        client.sources.get_guide = AsyncMock(
+            return_value=source_guide({"summary": "summary text", "keywords": ["a", "b"]})
+        )
+        result = runner.invoke(
+            cli, ["source", "guide", "src_1", "-n", "nb_123"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         assert "summary text" in result.output
         assert "Keywords:" in result.output
@@ -440,13 +429,13 @@ class TestSourceGuideCharacterization:
     def test_guide_json_mode_emits_summary_and_keywords(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.get_guide = AsyncMock(
-                return_value=source_guide({"summary": "s", "keywords": ["k1"]})
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "guide", "src_1", "-n", "nb_123", "--json"])
+        client = create_mock_client()
+        client.sources.get_guide = AsyncMock(
+            return_value=source_guide({"summary": "s", "keywords": ["k1"]})
+        )
+        result = runner.invoke(
+            cli, ["source", "guide", "src_1", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["source_id"] == "src_1"
@@ -463,21 +452,20 @@ class TestSourceAddResearchCharacterization:
     def test_add_research_no_wait_returns_after_start(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "add-research",
-                    "machine learning",
-                    "-n",
-                    "nb_123",
-                    "--no-wait",
-                ],
-            )
+        client = create_mock_client()
+        client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "add-research",
+                "machine learning",
+                "-n",
+                "nb_123",
+                "--no-wait",
+            ],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 0
         assert "Task ID:" in result.output
         assert "Research started" in result.output
@@ -485,21 +473,20 @@ class TestSourceAddResearchCharacterization:
     def test_add_research_no_wait_with_import_all_is_usage_error(
         self, runner, mock_auth, patched_fetch_tokens
     ):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "add-research",
-                    "ml",
-                    "-n",
-                    "nb_123",
-                    "--no-wait",
-                    "--import-all",
-                ],
-            )
+        client = create_mock_client()
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "add-research",
+                "ml",
+                "-n",
+                "nb_123",
+                "--no-wait",
+                "--import-all",
+            ],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 2
         assert "--import-all requires" in result.output
 
@@ -511,67 +498,66 @@ class TestSourceAddResearchCharacterization:
 
 class TestSourceWaitCharacterization:
     def test_wait_success_text_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.wait_until_ready = AsyncMock(
-                return_value=Source(id="src_1", title="Ready One")
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "wait", "src_1", "-n", "nb_123"])
+        client = create_mock_client()
+        client.sources.wait_until_ready = AsyncMock(
+            return_value=Source(id="src_1", title="Ready One")
+        )
+        result = runner.invoke(
+            cli, ["source", "wait", "src_1", "-n", "nb_123"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         assert "Source ready:" in result.output
         assert "src_1" in result.output
 
     def test_wait_success_json_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.wait_until_ready = AsyncMock(
-                return_value=Source(id="src_1", title="Ready", status=2)
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "wait", "src_1", "-n", "nb_123", "--json"])
+        client = create_mock_client()
+        client.sources.wait_until_ready = AsyncMock(
+            return_value=Source(id="src_1", title="Ready", status=2)
+        )
+        result = runner.invoke(
+            cli, ["source", "wait", "src_1", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["status"] == "ready"
         assert payload["source_id"] == "src_1"
 
     def test_wait_not_found_exits_1_json_mode(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
-            client.sources.wait_until_ready = AsyncMock(side_effect=SourceNotFoundError("src_1"))
-            cls.return_value = client
-            result = runner.invoke(
-                cli,
-                ["source", "wait", "src_1", "-n", "nb_123", "--json"],
-            )
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
+        client.sources.wait_until_ready = AsyncMock(side_effect=SourceNotFoundError("src_1"))
+        result = runner.invoke(
+            cli,
+            ["source", "wait", "src_1", "-n", "nb_123", "--json"],
+            obj=inject_client(client),
+        )
         assert result.exit_code == 1
         payload = json.loads(result.output)
         assert payload["status"] == "not_found"
 
     def test_wait_processing_error_exits_1(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
-            client.sources.wait_until_ready = AsyncMock(
-                side_effect=SourceProcessingError("src_1", status=4)
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "wait", "src_1", "-n", "nb_123", "--json"])
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
+        client.sources.wait_until_ready = AsyncMock(
+            side_effect=SourceProcessingError("src_1", status=4)
+        )
+        result = runner.invoke(
+            cli, ["source", "wait", "src_1", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 1
         payload = json.loads(result.output)
         assert payload["status"] == "error"
         assert payload["status_code"] == 4
 
     def test_wait_timeout_exits_2(self, runner, mock_auth, patched_fetch_tokens):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as cls:
-            client = create_mock_client()
-            client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
-            client.sources.wait_until_ready = AsyncMock(
-                side_effect=SourceTimeoutError("src_1", timeout=5.0, last_status=3)
-            )
-            cls.return_value = client
-            result = runner.invoke(cli, ["source", "wait", "src_1", "-n", "nb_123", "--json"])
+        client = create_mock_client()
+        client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="One")])
+        client.sources.wait_until_ready = AsyncMock(
+            side_effect=SourceTimeoutError("src_1", timeout=5.0, last_status=3)
+        )
+        result = runner.invoke(
+            cli, ["source", "wait", "src_1", "-n", "nb_123", "--json"], obj=inject_client(client)
+        )
         assert result.exit_code == 2
         payload = json.loads(result.output)
         assert payload["status"] == "timeout"

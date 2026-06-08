@@ -37,7 +37,7 @@ from notebooklm.cli.services.source_research import (
 )
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import create_mock_client
+from .conftest import create_mock_client, inject_client
 
 
 def _research_result(outcome: str, **kw) -> SourceAddResearchResult:
@@ -264,25 +264,24 @@ class TestDispatchSourceCleanResultTextFailures:
 
 class TestSourceAddValidationErrorJson:
     def test_invalid_url_json_emits_validation_error(self, runner, mock_auth):
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client_cls.return_value = create_mock_client()
-            with patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-            ) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli,
-                    [
-                        "source",
-                        "add",
-                        "http://",  # malformed URL — no host component
-                        "--type",
-                        "url",
-                        "-n",
-                        "nb_123",
-                        "--json",
-                    ],
-                )
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                [
+                    "source",
+                    "add",
+                    "http://",  # malformed URL — no host component
+                    "--type",
+                    "url",
+                    "-n",
+                    "nb_123",
+                    "--json",
+                ],
+                obj=inject_client(create_mock_client()),
+            )
         assert result.exit_code == 1
         payload = json.loads(result.output)
         assert payload["code"] == "VALIDATION_ERROR"

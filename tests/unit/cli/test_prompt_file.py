@@ -10,7 +10,7 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 from notebooklm.types import AskResult
 
-from .conftest import create_mock_client, research_start
+from .conftest import create_mock_client, inject_client, research_start
 
 
 def make_ask_result(answer: str = "The answer is 42.") -> AskResult:
@@ -169,25 +169,22 @@ class TestSourceAddResearchPromptFile:
         prompt_file = tmp_path / "research.txt"
         prompt_file.write_text("AI papers", encoding="utf-8")
 
-        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.research.start = AsyncMock(
-                return_value=research_start({"task_id": "task_123"})
-            )
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
 
-            result = runner.invoke(
-                cli,
-                [
-                    "source",
-                    "add-research",
-                    "--prompt-file",
-                    str(prompt_file),
-                    "--no-wait",
-                    "-n",
-                    "nb_123",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "add-research",
+                "--prompt-file",
+                str(prompt_file),
+                "--no-wait",
+                "-n",
+                "nb_123",
+            ],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         mock_client.research.start.assert_awaited_once_with("nb_123", "AI papers", "web", "fast")

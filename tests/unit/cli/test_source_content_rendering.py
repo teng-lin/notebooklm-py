@@ -13,18 +13,19 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Source, SourceFulltext
 
-from .conftest import create_mock_client, source_guide
+from .conftest import create_mock_client, inject_client, source_guide
 
 
 @contextmanager
-def _patched_source_client(client) -> Iterator[None]:
-    with (
-        patch("notebooklm.cli.source_cmd.NotebookLMClient") as client_cls,
-        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as fetch_tokens,
-    ):
+def _patched_source_client(client) -> Iterator[dict]:
+    """Yield the ``ctx.obj`` payload that injects ``client`` into the command.
+
+    Callers thread the yielded value into ``runner.invoke(cli, args, obj=obj)``.
+    The ``fetch_tokens`` auth seam is still patched here.
+    """
+    with patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as fetch_tokens:
         fetch_tokens.return_value = ("csrf", "session")
-        client_cls.return_value = client
-        yield
+        yield inject_client(client)
 
 
 def _client_resolving_source(source_id: str = "src_1", title: str = "Source One"):
@@ -60,8 +61,8 @@ def test_source_get_not_found_renderer_exits_one(
     if json_output:
         args.append("--json")
 
-    with _patched_source_client(client):
-        result = runner.invoke(cli, args)
+    with _patched_source_client(client) as obj:
+        result = runner.invoke(cli, args, obj=obj)
 
     assert result.exit_code == 1, result.output
     if json_output:
@@ -88,8 +89,10 @@ def test_source_fulltext_json_renderer_emits_full_payload(
         )
     )
 
-    with _patched_source_client(client):
-        result = runner.invoke(cli, ["source", "fulltext", "src_1", "-n", "nb_123", "--json"])
+    with _patched_source_client(client) as obj:
+        result = runner.invoke(
+            cli, ["source", "fulltext", "src_1", "-n", "nb_123", "--json"], obj=obj
+        )
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -119,7 +122,7 @@ def test_source_fulltext_json_output_file_writes_content_and_emits_metadata(
         )
     )
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -132,6 +135,7 @@ def test_source_fulltext_json_output_file_writes_content_and_emits_metadata(
                 "-o",
                 str(output_file),
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 0, result.output
@@ -157,10 +161,11 @@ def test_source_fulltext_output_file_auto_renames_existing_file(
     content = "replacement content"
     client = _client_with_fulltext(content)
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             ["source", "fulltext", "src_1", "-n", "nb_123", "-o", str(output_file)],
+            obj=obj,
         )
 
     assert result.exit_code == 0, result.output
@@ -181,7 +186,7 @@ def test_source_fulltext_json_output_file_auto_renames_and_emits_actual_path(
     content = "replacement content"
     client = _client_with_fulltext(content, type_code=5)
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -194,6 +199,7 @@ def test_source_fulltext_json_output_file_auto_renames_and_emits_actual_path(
                 "-o",
                 str(output_file),
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 0, result.output
@@ -213,7 +219,7 @@ def test_source_fulltext_output_file_no_clobber_rejects_existing_file(
     output_file.write_text("existing content", encoding="utf-8")
     client = _client_with_fulltext("replacement content")
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -226,6 +232,7 @@ def test_source_fulltext_output_file_no_clobber_rejects_existing_file(
                 str(output_file),
                 "--no-clobber",
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 1, result.output
@@ -244,7 +251,7 @@ def test_source_fulltext_json_output_file_no_clobber_rejects_existing_file(
     output_file.write_text("existing content", encoding="utf-8")
     client = _client_with_fulltext("replacement content")
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -258,6 +265,7 @@ def test_source_fulltext_json_output_file_no_clobber_rejects_existing_file(
                 str(output_file),
                 "--no-clobber",
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 1, result.output
@@ -282,10 +290,11 @@ def test_source_fulltext_output_rejects_directory_before_fetching(
     output_dir.mkdir()
     client = _client_with_fulltext("content that should not be fetched")
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             ["source", "fulltext", "src_1", "-n", "nb_123", "-o", str(output_dir)],
+            obj=obj,
         )
 
     assert result.exit_code == 2, result.output
@@ -304,7 +313,7 @@ def test_source_fulltext_json_output_rejects_directory_before_fetching(
     output_dir.mkdir()
     client = _client_with_fulltext("content that should not be fetched")
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -317,6 +326,7 @@ def test_source_fulltext_json_output_rejects_directory_before_fetching(
                 "-o",
                 str(output_dir),
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 1, result.output
@@ -340,7 +350,7 @@ def test_source_fulltext_output_file_force_overwrites_existing_file(
     content = "replacement content"
     client = _client_with_fulltext(content)
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -353,6 +363,7 @@ def test_source_fulltext_output_file_force_overwrites_existing_file(
                 str(output_file),
                 "--force",
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 0, result.output
@@ -368,7 +379,7 @@ def test_source_fulltext_output_rejects_force_and_no_clobber_json(
     output_file = tmp_path / "source.txt"
     client = _client_with_fulltext("replacement content")
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -383,6 +394,7 @@ def test_source_fulltext_output_rejects_force_and_no_clobber_json(
                 "--force",
                 "--no-clobber",
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 1, result.output
@@ -402,7 +414,7 @@ def test_source_fulltext_output_rejects_force_and_no_clobber_text(
     output_file = tmp_path / "source.txt"
     client = _client_with_fulltext("replacement content")
 
-    with _patched_source_client(client):
+    with _patched_source_client(client) as obj:
         result = runner.invoke(
             cli,
             [
@@ -416,6 +428,7 @@ def test_source_fulltext_output_rejects_force_and_no_clobber_text(
                 "--force",
                 "--no-clobber",
             ],
+            obj=obj,
         )
 
     assert result.exit_code == 2, result.output
@@ -433,8 +446,8 @@ def test_source_guide_empty_text_renderer_uses_empty_state(
         return_value=source_guide({"summary": "  ", "keywords": ["", "  ", 7, None]})
     )
 
-    with _patched_source_client(client):
-        result = runner.invoke(cli, ["source", "guide", "src_1", "-n", "nb_123"])
+    with _patched_source_client(client) as obj:
+        result = runner.invoke(cli, ["source", "guide", "src_1", "-n", "nb_123"], obj=obj)
 
     assert result.exit_code == 0, result.output
     assert "No guide available" in result.output
@@ -457,8 +470,8 @@ def test_source_guide_populated_renderer_strips_keywords(
     if json_output:
         args.append("--json")
 
-    with _patched_source_client(client):
-        result = runner.invoke(cli, args)
+    with _patched_source_client(client) as obj:
+        result = runner.invoke(cli, args, obj=obj)
 
     assert result.exit_code == 0, result.output
     if json_output:
@@ -499,8 +512,8 @@ def test_source_stale_renderer_default_exits_zero_on_success(
     if json_output:
         args.append("--json")
 
-    with _patched_source_client(client):
-        result = runner.invoke(cli, args)
+    with _patched_source_client(client) as obj:
+        result = runner.invoke(cli, args, obj=obj)
 
     assert result.exit_code == 0, result.output
     if json_output:
@@ -535,8 +548,8 @@ def test_source_stale_renderer_exit_on_stale_flag_inverts_exit_codes(
     if json_output:
         args.append("--json")
 
-    with _patched_source_client(client):
-        result = runner.invoke(cli, args)
+    with _patched_source_client(client) as obj:
+        result = runner.invoke(cli, args, obj=obj)
 
     assert result.exit_code == expected_exit, result.output
     if json_output:
