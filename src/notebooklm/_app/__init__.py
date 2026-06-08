@@ -27,12 +27,25 @@ The Wave-0 foundation primitives every adapter needs:
   :class:`~notebooklm._app.events.ProgressSink` — a transport-neutral
   progress-reporting seam for long-running operations.
 
-The domain modules (``download``, ``source_*``) hold the relocated CLI
-business logic each command's thin adapter now calls.
+The domain modules (``artifacts``, ``download``, ``source_*``) hold the
+relocated CLI business logic each command's thin adapter now calls.
 """
 
 from __future__ import annotations
 
+from .artifacts import (
+    ArtifactExportResult,
+    ArtifactRenameResult,
+    ArtifactStatusView,
+    delete_artifact,
+    export_artifact,
+    get_artifact,
+    poll_artifact,
+    rename_artifact,
+    retry_artifact,
+    status_view,
+    wait_for_artifact,
+)
 from .download import (
     FORMAT_EXTENSIONS,
     ArtifactDict,
@@ -137,6 +150,18 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
+    # artifacts
+    "ArtifactExportResult",
+    "ArtifactRenameResult",
+    "ArtifactStatusView",
+    "delete_artifact",
+    "export_artifact",
+    "get_artifact",
+    "poll_artifact",
+    "rename_artifact",
+    "retry_artifact",
+    "status_view",
+    "wait_for_artifact",
     # download
     "FORMAT_EXTENSIONS",
     "ArtifactDict",
