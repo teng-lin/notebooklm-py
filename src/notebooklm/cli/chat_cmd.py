@@ -12,8 +12,9 @@ from typing import Any
 import click
 from rich.table import Table
 
+from .._app.events import ProgressEvent
 from ..client import NotebookLMClient
-from ..types import ChatMode
+from ..exceptions import ValidationError
 from .auth_runtime import with_client
 from .context import get_current_conversation, get_current_notebook, set_current_conversation
 from .error_handler import _output_error, exit_with_code
@@ -26,8 +27,111 @@ from .rendering import (
     json_output_response,
 )
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
+from .services.chat import (
+    ClearCacheResult,
+    ConfigureResult,
+    determine_conversation_id,
+    execute_clear_cache,
+    execute_configure,
+    fetch_history,
+    format_history,
+    format_single_qa,
+    get_latest_conversation_from_server,
+    save_answer_as_note,
+    validate_ask_flags,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_json_payload(config: ConfigureResult) -> dict[str, Any]:
+    """Build the ``configure --json`` envelope from the typed result.
+
+    Discriminated by ``config.mode``: a predefined ``--mode`` emits the compact
+    mode envelope; the persona / response-length branch emits the full settings
+    envelope. ``_app`` returns typed results only, so this CLI adapter owns the
+    envelope shape (byte-stable keys/order for scripted callers).
+    """
+    if config.mode is not None:
+        return {
+            "notebook_id": config.notebook_id,
+            "mode": config.mode,
+            "configured": True,
+        }
+    return {
+        "notebook_id": config.notebook_id,
+        "mode": None,
+        # Lowercase enum name (e.g. "custom") for a stable, human-readable JSON
+        # contract. The underlying RPC integer is an implementation detail.
+        "goal": config.goal_name,
+        "persona": config.persona,
+        "response_length": config.response_length,
+        "configured": True,
+    }
+
+
+def _clear_cache_json_payload(result: ClearCacheResult) -> dict[str, Any]:
+    """Build the ``history --clear --json`` envelope from the typed result."""
+    return {"cleared": result.cleared, "count": result.count}
+
+
+def _history_json_payload(
+    notebook_id: str,
+    conversation_id: str | None,
+    qa_pairs: list[tuple[str, str]],
+) -> dict[str, Any]:
+    """Build the shared JSON envelope for ``history --json`` modes.
+
+    Same shape whether or not ``--save`` is set; the save branch merges a
+    ``note`` field on top of this base envelope. Owned by the CLI adapter
+    (``_app`` returns typed results only).
+    """
+    return {
+        "notebook_id": notebook_id,
+        "conversation_id": conversation_id,
+        "count": len(qa_pairs),
+        "qa_pairs": [
+            {"turn": i, "question": q, "answer": a} for i, (q, a) in enumerate(qa_pairs, 1)
+        ],
+    }
+
+
+class _CliPrintStatusSink:
+    """:class:`ProgressSink` routing neutral status events through ``cli_print``.
+
+    Used for the conversation-selection prose, which the historical command only
+    emitted under ``not json_output`` — so the sink is constructed only on that
+    path and forwards every event to ``cli_print`` (honoring root ``--quiet``).
+    Rich markup in the message is preserved.
+    """
+
+    def emit(self, event: ProgressEvent) -> None:
+        cli_print(event.message)
+
+
+class _EmitStatusSink:
+    """:class:`ProgressSink` routing neutral status events through ``emit_status``.
+
+    Used for the ``ask --save-as-note`` status lines: routes to stderr under
+    ``--json`` (keeping stdout JSON-pure) and to stdout otherwise, honoring root
+    ``--quiet``. Rich markup is preserved.
+    """
+
+    def __init__(self, *, json_output: bool) -> None:
+        self._json_output = json_output
+
+    def emit(self, event: ProgressEvent) -> None:
+        # Status forwarder for a secondary --save-as-note action: the neutral
+        # workflow folds its own failures into the returned outcome (never
+        # raised), so this emit is never on an error path.
+        emit_status(event.message, json_output=self._json_output)
+
+
+# Re-export the neutral note-content formatters under their historical
+# command-local names so ``from notebooklm.cli.chat_cmd import _format_single_qa``
+# keeps resolving (the logic lives in ``_app.chat``).
+_format_single_qa = format_single_qa
+_format_history = format_history
 
 
 def _determine_conversation_id(
@@ -39,20 +143,22 @@ def _determine_conversation_id(
 ) -> str | None:
     """Determine which conversation ID to use for the ask command.
 
-    Returns None if no cached conversation exists, otherwise returns
-    the conversation ID to continue.
+    Thin CLI adapter over :func:`notebooklm._app.chat.determine_conversation_id`:
+    passes the CLI context helpers as **lazy callables** (read at call time, and
+    only on the branches that need them — preserving the historical
+    short-circuit) so the ``patch("...chat_cmd.get_current_*")`` seams keep
+    landing, and routes the neutral "starting new conversation" status into
+    ``cli_print`` only under ``not json_output``.
     """
-    if explicit_conversation_id:
-        return explicit_conversation_id
-
-    # Check if user switched notebooks via --notebook flag
-    cached_notebook = get_current_notebook()
-    if explicit_notebook_id and cached_notebook and resolved_notebook_id != cached_notebook:
-        if not json_output:
-            cli_print("[dim]Different notebook specified, starting new conversation...[/dim]")
-        return None
-
-    return get_current_conversation()
+    progress = None if json_output else _CliPrintStatusSink()
+    return determine_conversation_id(
+        explicit_conversation_id=explicit_conversation_id,
+        explicit_notebook_id=explicit_notebook_id,
+        resolved_notebook_id=resolved_notebook_id,
+        cached_notebook_id=get_current_notebook,
+        cached_conversation_id=get_current_conversation,
+        progress=progress,
+    )
 
 
 async def _get_latest_conversation_from_server(
@@ -60,49 +166,13 @@ async def _get_latest_conversation_from_server(
 ) -> str | None:
     """Fetch the most recent conversation ID from the server.
 
-    Returns None if unavailable or empty.
+    Thin CLI adapter over
+    :func:`notebooklm._app.chat.get_latest_conversation_from_server`: routes the
+    neutral status events into ``cli_print`` only under ``not json_output`` (so
+    status prose honors root ``--quiet`` and stays off JSON stdout).
     """
-    history_unavailable = False
-    try:
-        conv_id = await client.chat.get_conversation_id(notebook_id)
-        if conv_id:
-            if not json_output:
-                cli_print(f"[dim]Continuing conversation {conv_id[:8]}...[/dim]")
-            return conv_id
-    except Exception as e:
-        logger.debug(
-            "Failed to fetch last conversation (%s): %s",
-            type(e).__name__,
-            e,
-        )
-        history_unavailable = True
-    # Emit the fallback status *outside* the ``except`` handler: it is a
-    # status line (so it must honor root ``--quiet`` via ``cli_print``), not
-    # an error diagnostic, and emitting it inside the handler would trip the
-    # error-path heuristic in ``tests/unit/cli/test_quiet_enforcement.py``.
-    if history_unavailable and not json_output:
-        cli_print("[dim]Starting new conversation (history unavailable)[/dim]")
-    return None
-
-
-def _history_json_payload(
-    notebook_id: str,
-    conversation_id: str | None,
-    qa_pairs: list[tuple[str, str]],
-) -> dict[str, Any]:
-    """Build the shared JSON envelope for ``history --json`` modes.
-
-    Same shape whether or not ``--save`` is set; the save branch merges a
-    ``note`` field on top of this base envelope.
-    """
-    return {
-        "notebook_id": notebook_id,
-        "conversation_id": conversation_id,
-        "count": len(qa_pairs),
-        "qa_pairs": [
-            {"turn": i, "question": q, "answer": a} for i, (q, a) in enumerate(qa_pairs, 1)
-        ],
-    }
+    progress = None if json_output else _CliPrintStatusSink()
+    return await get_latest_conversation_from_server(client, notebook_id, progress=progress)
 
 
 def register_chat_commands(cli):
@@ -209,27 +279,22 @@ def register_chat_commands(cli):
           notebooklm ask "explain X" --json             # Get answer with source references
           notebooklm ask "explain X" --save-as-note     # Save response as a note
         """
-        if new_conversation and conversation_id:
-            # Per ADR-0015 §2: under --json this mutual-exclusion conflict
-            # must emit the typed JSON envelope and exit 1 (VALIDATION_ERROR),
-            # not ride Click's parse-time UsageError path (exit 2, usage
-            # text on stderr, no JSON on stdout). Under text mode we
-            # preserve the existing Click UX so interactive users still
-            # get the ``Usage: ... / Error: ...`` formatting.
-            mutual_exclusion_message = (
-                "--new and --conversation-id are mutually exclusive: "
-                "--new starts a fresh conversation while --conversation-id resumes a specific one."
-            )
+        # Per ADR-0015 §2: under --json this mutual-exclusion conflict must emit
+        # the typed JSON envelope and exit 1 (VALIDATION_ERROR), not ride
+        # Click's parse-time UsageError path (exit 2, usage text on stderr, no
+        # JSON on stdout). Under text mode we preserve the existing Click UX so
+        # interactive users still get the ``Usage: ... / Error: ...`` formatting.
+        # The neutral core raises the public ``ValidationError``; this adapter
+        # maps it to the CLI's own ``VALIDATION_ERROR`` code / Click UsageError.
+        try:
+            validate_ask_flags(new_conversation=new_conversation, conversation_id=conversation_id)
+        except ValidationError as exc:
+            message = str(exc)
             if json_output:
-                _output_error(
-                    mutual_exclusion_message,
-                    "VALIDATION_ERROR",
-                    json_output,
-                    1,
-                )
+                _output_error(message, "VALIDATION_ERROR", json_output, 1)
             raise click.UsageError(  # cli-input-validation: --new and --conversation-id are mutually exclusive
-                mutual_exclusion_message
-            )
+                message
+            ) from exc
         question = resolve_prompt(question, prompt_file, "question", required=True)
         nb_id = require_notebook(notebook_id)
 
@@ -328,51 +393,22 @@ def register_chat_commands(cli):
                 note_save_error: str | None = None
 
                 if save_as_note:
-                    if not result.answer:
-                        emit_status(
-                            "[yellow]Warning: No answer to save as note[/yellow]",
-                            json_output=json_output,
-                        )
-                        note_save_error = "No answer to save as note"
-                    else:
-                        try:
-                            title = (
-                                note_title or f"Chat: {question[:50].strip().replace(chr(10), ' ')}"
-                            )
-                            if result.references:
-                                # Citation-rich path: server stores [N] markers
-                                # as hover-anchored references (issue #660).
-                                # ``client.chat.save_answer_as_note`` is the
-                                # canonical home for this primitive.
-                                note = await client.chat.save_answer_as_note(
-                                    nb_id_resolved, result, title=title
-                                )
-                            else:
-                                # No citations to preserve -- fall back to the
-                                # plain-text path so the save still succeeds.
-                                emit_status(
-                                    "[dim]No citations in answer; saving as plain-text note.[/dim]",
-                                    json_output=json_output,
-                                )
-                                note = await client.notes.create(
-                                    nb_id_resolved, title, result.answer
-                                )
-                            note_save_result = {"id": note.id, "title": note.title}
-                            emit_status(
-                                f"\n[dim]Saved as note: {note.title} ({note.id[:8]}...)[/dim]",
-                                json_output=json_output,
-                            )
-                        except Exception as e:
-                            note_save_error = str(e)
-                            # Note-save is a secondary `--save-as-note` action;
-                            # emit_status keeps the warning non-fatal so the chat
-                            # response payload still prints. output_error would
-                            # SystemExit(1) and abort that payload. Revisit when
-                            # save-as-note gains a structured non-fatal error channel.
-                            emit_status(  # quiet-ok: non-fatal warning for a secondary --save-as-note action
-                                f"[yellow]Warning: Failed to save note: {e}[/yellow]",
-                                json_output=json_output,
-                            )
+                    # The save-as-note workflow (citation-rich vs plain-text
+                    # fallback, the non-fatal error fold) lives in
+                    # ``_app.chat.save_answer_as_note``. Its Rich-markup status
+                    # lines route through ``_EmitStatusSink`` (stderr under
+                    # ``--json``, honoring root ``--quiet``); the outcome's note
+                    # / error are merged into the JSON envelope below.
+                    outcome = await save_answer_as_note(
+                        client,
+                        nb_id_resolved,
+                        result,
+                        note_title=note_title,
+                        question=question,
+                        progress=_EmitStatusSink(json_output=json_output),
+                    )
+                    note_save_result = outcome.note
+                    note_save_error = outcome.error
 
                 if json_output:
                     from dataclasses import asdict
@@ -432,58 +468,28 @@ def register_chat_commands(cli):
         nb_id = require_notebook(notebook_id)
 
         async def _run():
-            from ..types import ChatGoal, ChatResponseLength
-
             async with NotebookLMClient(client_auth) as client:
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+                # The mode/goal/length mapping + RPC dispatch live in
+                # ``_app.chat.execute_configure``; the adapter keeps the
+                # ``--json`` envelope build + text prose.
+                config = await execute_configure(
+                    client,
+                    nb_id_resolved,
+                    chat_mode=chat_mode,
+                    persona=persona,
+                    response_length=response_length,
+                )
+
                 if chat_mode:
-                    mode_map = {
-                        "default": ChatMode.DEFAULT,
-                        "learning-guide": ChatMode.LEARNING_GUIDE,
-                        "concise": ChatMode.CONCISE,
-                        "detailed": ChatMode.DETAILED,
-                    }
-                    await client.chat.set_mode(nb_id_resolved, mode_map[chat_mode])
                     if json_output:
-                        json_output_response(
-                            {
-                                "notebook_id": nb_id_resolved,
-                                "mode": chat_mode,
-                                "configured": True,
-                            }
-                        )
+                        json_output_response(_configure_json_payload(config))
                         return
                     console.print(f"[green]Chat mode set to: {chat_mode}[/green]")
                     return
 
-                goal = ChatGoal.CUSTOM if persona else None
-                length = None
-                if response_length:
-                    length_map = {
-                        "default": ChatResponseLength.DEFAULT,
-                        "longer": ChatResponseLength.LONGER,
-                        "shorter": ChatResponseLength.SHORTER,
-                    }
-                    length = length_map[response_length]
-
-                await client.chat.configure(
-                    nb_id_resolved, goal=goal, response_length=length, custom_prompt=persona
-                )
-
                 if json_output:
-                    json_output_response(
-                        {
-                            "notebook_id": nb_id_resolved,
-                            "mode": None,
-                            # Lowercase enum name (e.g. "custom") for a stable,
-                            # human-readable JSON contract. The underlying RPC
-                            # integer is an implementation detail.
-                            "goal": goal.name.lower() if goal else None,
-                            "persona": persona,
-                            "response_length": response_length,
-                            "configured": True,
-                        }
-                    )
+                    json_output_response(_configure_json_payload(config))
                     return
 
                 parts = []
@@ -551,22 +557,16 @@ def register_chat_commands(cli):
         async def _run():
             async with NotebookLMClient(client_auth) as client:
                 if clear_cache:
-                    # Capture pre-clear conversation count so the JSON
-                    # envelope can report what was dropped. Done BEFORE the
-                    # clear call because ``clear_cache`` returns only a bool.
-                    pre_clear_count = client.chat.cache_size()
-                    cleared = client.chat.clear_cache()
+                    # The pre-clear count capture + clear lives in
+                    # ``_app.chat.execute_clear_cache``; the adapter keeps the
+                    # ``--json`` envelope + text prose.
+                    cache_result = execute_clear_cache(client)
                     if json_output:
                         # In JSON mode, stdout must be a single JSON
                         # document; no Rich/text output.
-                        json_output_response(
-                            {
-                                "cleared": bool(cleared),
-                                "count": pre_clear_count if cleared else 0,
-                            }
-                        )
+                        json_output_response(_clear_cache_json_payload(cache_result))
                         return
-                    if cleared:
+                    if cache_result.cleared:
                         console.print("[green]Local conversation cache cleared[/green]")
                     else:
                         console.print("[yellow]No cache to clear[/yellow]")
@@ -574,10 +574,9 @@ def register_chat_commands(cli):
 
                 nb_id = require_notebook(notebook_id)
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-                conv_id = await client.chat.get_conversation_id(nb_id_resolved)
-                qa_pairs = await client.chat.get_history(
-                    nb_id_resolved, limit=limit, conversation_id=conv_id
-                )
+                fetched = await fetch_history(client, nb_id_resolved, limit=limit)
+                conv_id = fetched.conversation_id
+                qa_pairs = fetched.qa_pairs
 
                 if save_as_note:
                     if not qa_pairs:
@@ -649,21 +648,3 @@ def register_chat_commands(cli):
                 console.print("\n[dim]Use 'notebooklm history --save' to save as a note.[/dim]")
 
         return _run()
-
-
-def _format_single_qa(question: str, answer: str) -> str:
-    """Format one Q&A pair as note content."""
-    parts = []
-    if question:
-        parts.append(f"**Q:** {question}")
-    if answer:
-        parts.append(f"**A:** {answer}")
-    return "\n\n".join(parts)
-
-
-def _format_history(qa_pairs: list[tuple[str, str]]) -> str:
-    """Format Q&A history as note content."""
-    turns = []
-    for i, (question, answer) in enumerate(qa_pairs, 1):
-        turns.append(f"### Turn {i}\n\n{_format_single_qa(question, answer)}")
-    return "\n\n---\n\n".join(turns)

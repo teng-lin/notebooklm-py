@@ -33,6 +33,23 @@ business logic each command's thin adapter now calls.
 
 from __future__ import annotations
 
+from .chat import (
+    ChatModeChoice,
+    ClearCacheResult,
+    ConfigureResult,
+    HistoryFetch,
+    ResponseLengthChoice,
+    SaveNoteOutcome,
+    determine_conversation_id,
+    execute_clear_cache,
+    execute_configure,
+    fetch_history,
+    format_history,
+    format_single_qa,
+    get_latest_conversation_from_server,
+    save_answer_as_note,
+    validate_ask_flags,
+)
 from .download import (
     FORMAT_EXTENSIONS,
     ArtifactDict,
@@ -137,6 +154,22 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
+    # chat
+    "ChatModeChoice",
+    "ClearCacheResult",
+    "ConfigureResult",
+    "HistoryFetch",
+    "ResponseLengthChoice",
+    "SaveNoteOutcome",
+    "determine_conversation_id",
+    "execute_clear_cache",
+    "execute_configure",
+    "fetch_history",
+    "format_history",
+    "format_single_qa",
+    "get_latest_conversation_from_server",
+    "save_answer_as_note",
+    "validate_ask_flags",
     # download
     "FORMAT_EXTENSIONS",
     "ArtifactDict",

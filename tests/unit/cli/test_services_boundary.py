@@ -112,6 +112,7 @@ GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
     "cli/services/auth_source.py": SERVICES_ROOT / "auth_source.py",
     "cli/services/artifact_generation.py": SERVICES_ROOT / "artifact_generation.py",
+    "cli/services/chat.py": SERVICES_ROOT / "chat.py",
     "cli/services/confirming_mutation.py": SERVICES_ROOT / "confirming_mutation.py",
     "cli/services/download.py": SERVICES_ROOT / "download.py",
     "cli/services/generate.py": SERVICES_ROOT / "generate.py",
