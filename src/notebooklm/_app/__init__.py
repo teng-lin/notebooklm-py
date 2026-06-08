@@ -13,19 +13,22 @@ Each adapter is a thin shell that:
   hierarchy on failure), and
 * renders the typed result into its own envelope vocabulary.
 
-The Wave-0 surface is the four foundation primitives every adapter needs:
+The Wave-0 foundation primitives every adapter needs:
 
 * :func:`~notebooklm._app.serialize.to_jsonable` — recursive JSON-able
   conversion of dataclasses / enums / datetimes / bytes / containers.
 * :func:`~notebooklm._app.errors.classify` — class-sensitive
   exception → :class:`~notebooklm._app.errors.ClassifiedError` mapping that
   each adapter projects onto its own code table.
-* :func:`~notebooklm._app.resolve.validate_id` and
+* :func:`~notebooklm._app.resolve.validate_id` /
   :func:`~notebooklm._app.resolve.resolve_ref` — Click-free id validation
   and partial-id resolution.
 * :class:`~notebooklm._app.events.ProgressEvent` /
   :class:`~notebooklm._app.events.ProgressSink` — a transport-neutral
   progress-reporting seam for long-running operations.
+
+The domain modules (``download``, ``source_*``) hold the relocated CLI
+business logic each command's thin adapter now calls.
 """
 
 from __future__ import annotations
@@ -86,32 +89,90 @@ from .source_content import (
     execute_source_guide,
     execute_source_stale,
 )
+from .source_listing import fetch_sources
+from .source_mutations import (
+    DriveMimeChoice,
+    SourceAddDrivePlan,
+    SourceAddDriveResult,
+    SourceDeleteByTitlePlan,
+    SourceDeleteByTitleResult,
+    SourceDeletePlan,
+    SourceDeleteResult,
+    SourceIdResolution,
+    SourceMutationError,
+    SourceRefreshPlan,
+    SourceRefreshResult,
+    SourceRenamePlan,
+    SourceRenameResult,
+    build_id_ambiguity_error,
+    execute_source_add_drive,
+    execute_source_delete,
+    execute_source_delete_by_title,
+    execute_source_refresh,
+    execute_source_rename,
+    looks_like_full_source_id,
+    require_yes_in_json,
+    resolve_source_by_exact_title,
+    resolve_source_for_delete,
+)
+from .source_wait import (
+    SourceWaitNotFound,
+    SourceWaitOutcome,
+    SourceWaitPlan,
+    SourceWaitProcessingError,
+    SourceWaitReady,
+    SourceWaitTimeout,
+    execute_source_wait,
+)
 
 __all__ = [
-    "FORMAT_EXTENSIONS",
-    "AmbiguousIdError",
-    "ArtifactDict",
+    # Wave-0 foundation
+    "to_jsonable",
     "ClassifiedError",
-    "CleanCandidate",
-    "CleanFailure",
-    "CleanStatus",
+    "ErrorCategory",
+    "classify",
+    "AmbiguousIdError",
+    "Resolution",
+    "resolve_ref",
+    "validate_id",
+    "ProgressEvent",
+    "ProgressSink",
+    # download
+    "FORMAT_EXTENSIONS",
+    "ArtifactDict",
     "DownloadOutcome",
     "DownloadPlan",
     "DownloadPlanValidationError",
     "DownloadResult",
     "DownloadTypeSpec",
-    "ErrorCategory",
-    "FulltextFormat",
-    "ProgressEvent",
-    "ProgressSink",
-    "Resolution",
+    "artifact_title_to_filename",
+    "build_download_plan",
+    "execute_download",
+    "select_artifact",
+    # source_add
     "SourceAddExecutionPlan",
     "SourceAddFacade",
     "SourceAddPlan",
     "SourceAddResult",
     "SourceAddType",
     "SourceAddValidationError",
+    "add_source",
+    "build_source_add_plan",
+    "execute_source_add",
+    "looks_like_path",
+    "validate_upload_path",
+    "validate_url",
+    # source_clean
+    "CleanCandidate",
+    "CleanFailure",
+    "CleanStatus",
     "SourceCleanResult",
+    "candidates_payload",
+    "classify_junk_sources",
+    "normalize_url_for_dedup",
+    "run_source_clean",
+    # source_content
+    "FulltextFormat",
     "SourceFulltextPlan",
     "SourceFulltextResult",
     "SourceGetPlan",
@@ -120,26 +181,42 @@ __all__ = [
     "SourceGuideResult",
     "SourceStalePlan",
     "SourceStaleResult",
-    "add_source",
-    "artifact_title_to_filename",
-    "build_download_plan",
-    "build_source_add_plan",
-    "candidates_payload",
-    "classify",
-    "classify_junk_sources",
-    "execute_download",
-    "execute_source_add",
     "execute_source_fulltext",
     "execute_source_get",
     "execute_source_guide",
     "execute_source_stale",
-    "looks_like_path",
-    "normalize_url_for_dedup",
-    "resolve_ref",
-    "run_source_clean",
-    "select_artifact",
-    "to_jsonable",
-    "validate_id",
-    "validate_upload_path",
-    "validate_url",
+    # source_listing
+    "fetch_sources",
+    # source_mutations
+    "DriveMimeChoice",
+    "SourceAddDrivePlan",
+    "SourceAddDriveResult",
+    "SourceDeleteByTitlePlan",
+    "SourceDeleteByTitleResult",
+    "SourceDeletePlan",
+    "SourceDeleteResult",
+    "SourceIdResolution",
+    "SourceMutationError",
+    "SourceRefreshPlan",
+    "SourceRefreshResult",
+    "SourceRenamePlan",
+    "SourceRenameResult",
+    "build_id_ambiguity_error",
+    "execute_source_add_drive",
+    "execute_source_delete",
+    "execute_source_delete_by_title",
+    "execute_source_refresh",
+    "execute_source_rename",
+    "looks_like_full_source_id",
+    "require_yes_in_json",
+    "resolve_source_by_exact_title",
+    "resolve_source_for_delete",
+    # source_wait
+    "SourceWaitNotFound",
+    "SourceWaitOutcome",
+    "SourceWaitPlan",
+    "SourceWaitProcessingError",
+    "SourceWaitReady",
+    "SourceWaitTimeout",
+    "execute_source_wait",
 ]

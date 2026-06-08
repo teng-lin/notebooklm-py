@@ -658,7 +658,6 @@ async def test_source_wait_timeout_returns_typed_outcome() -> None:
             source_id="src_1",
             timeout=10.0,
             interval=0.5,
-            json_output=True,
         ),
         wait_context=lambda: fake_status_with_elapsed(),
     )

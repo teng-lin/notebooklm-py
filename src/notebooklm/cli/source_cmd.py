@@ -795,7 +795,6 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
                     source_id=resolved_id,
                     timeout=float(timeout),
                     interval=float(interval),
-                    json_output=json_output,
                 ),
                 wait_context=lambda: status_with_elapsed(
                     f"Waiting for source {resolved_id} to finish processing...",
