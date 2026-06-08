@@ -371,24 +371,24 @@ class TestQuietRepresentativeCommands:
         assert result.output == ""
 
     def test_quiet_note_delete(self, runner, mock_auth, fetch_tokens):
-        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.notes.list = AsyncMock(
-                return_value=[
-                    Note(
-                        id="note_1",
-                        notebook_id="nb_123",
-                        title="Doomed Note",
-                        content="body",
-                    )
-                ]
-            )
-            mock_client.notes.delete = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.notes.list = AsyncMock(
+            return_value=[
+                Note(
+                    id="note_1",
+                    notebook_id="nb_123",
+                    title="Doomed Note",
+                    content="body",
+                )
+            ]
+        )
+        mock_client.notes.delete = AsyncMock(return_value=None)
 
-            result = runner.invoke(
-                cli, ["--quiet", "note", "delete", "note_1", "-n", "nb_123", "-y"]
-            )
+        result = runner.invoke(
+            cli,
+            ["--quiet", "note", "delete", "note_1", "-n", "nb_123", "-y"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         assert "Deleted" not in result.output

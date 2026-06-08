@@ -96,13 +96,13 @@ class TestChatNotebookResolution:
         backend listing - the explicit arg is the authoritative source.
         """
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.chat.ask = AsyncMock(return_value=_ask_result())
-            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.chat.ask = AsyncMock(return_value=_ask_result())
+        mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
 
-            result = runner.invoke(cli, ["ask", "what?", "-n", full_uuid])
+        result = runner.invoke(
+            cli, ["ask", "what?", "-n", full_uuid], obj=inject_client(mock_client)
+        )
 
         assert result.exit_code == 0, result.output
         # No notebook listing should happen with a full UUID-shaped id.
@@ -126,13 +126,11 @@ class TestChatNotebookResolution:
             lambda *a, **kw: tmp_path / "nonexistent.json",
         )
 
-        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.chat.ask = AsyncMock(return_value=_ask_result())
-            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.chat.ask = AsyncMock(return_value=_ask_result())
+        mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
 
-            result = runner.invoke(cli, ["ask", "what?"])
+        result = runner.invoke(cli, ["ask", "what?"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0, result.output
         # ``chat.ask`` was called with the env-var-resolved notebook id.
@@ -150,13 +148,11 @@ class TestChatNotebookResolution:
         monkeypatch.delenv("NOTEBOOKLM_NOTEBOOK", raising=False)
         monkeypatch.setattr(resolve_helpers, "get_context_path", lambda *a, **kw: ctx_file)
 
-        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.chat.ask = AsyncMock(return_value=_ask_result())
-            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.chat.ask = AsyncMock(return_value=_ask_result())
+        mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
 
-            result = runner.invoke(cli, ["ask", "what?"])
+        result = runner.invoke(cli, ["ask", "what?"], obj=inject_client(mock_client))
 
         assert result.exit_code == 0, result.output
         assert mock_client.chat.ask.await_count == 1
@@ -389,13 +385,13 @@ class TestChatConversationFallback:
     def test_explicit_conversation_id_wins(self, runner, mock_auth, mock_fetch):
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
         conv_id = "11111111-2222-3333-4444-555555555555"
-        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.chat.ask = AsyncMock(return_value=_ask_result())
-            mock_client.chat.get_conversation_id = AsyncMock(return_value="zzz-different-conv")
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.chat.ask = AsyncMock(return_value=_ask_result())
+        mock_client.chat.get_conversation_id = AsyncMock(return_value="zzz-different-conv")
 
-            result = runner.invoke(cli, ["ask", "what?", "-n", full_uuid, "-c", conv_id])
+        result = runner.invoke(
+            cli, ["ask", "what?", "-n", full_uuid, "-c", conv_id], obj=inject_client(mock_client)
+        )
 
         assert result.exit_code == 0, result.output
         # The conversation_id passed to ``chat.ask`` must be the explicit one.

@@ -34,7 +34,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import create_mock_client, research_task
+from .conftest import create_mock_client, inject_client, research_task
 
 research_import_module = importlib.import_module("notebooklm.cli.research_import")
 
@@ -80,9 +80,9 @@ HAPPY_POLL = {
 class TestWaitHappy:
     def test_happy_text(self, runner_and_mocks):
         runner, factory = runner_and_mocks
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = factory(HAPPY_POLL)
-            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123"])
+        result = runner.invoke(
+            cli, ["research", "wait", "-n", "nb_123"], obj=inject_client(factory(HAPPY_POLL))
+        )
 
         assert result.exit_code == 0
         out = _strip_ansi(result.output)
@@ -97,9 +97,11 @@ class TestWaitHappy:
 
     def test_happy_json(self, runner_and_mocks):
         runner, factory = runner_and_mocks
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = factory(HAPPY_POLL)
-            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123", "--json"])
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123", "--json"],
+            obj=inject_client(factory(HAPPY_POLL)),
+        )
 
         assert result.exit_code == 0
         payload = json.loads(result.output)
@@ -129,12 +131,11 @@ TIMEOUT_POLL = {"status": "in_progress", "query": "AI research"}
 class TestWaitTimeout:
     def test_timeout_text(self, runner_and_mocks):
         runner, factory = runner_and_mocks
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = factory(TIMEOUT_POLL)
-            result = runner.invoke(
-                cli,
-                ["research", "wait", "-n", "nb_123", "--timeout", "1", "--interval", "1"],
-            )
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123", "--timeout", "1", "--interval", "1"],
+            obj=inject_client(factory(TIMEOUT_POLL)),
+        )
 
         assert result.exit_code == 1
         out = _strip_ansi(result.output)
@@ -142,22 +143,21 @@ class TestWaitTimeout:
 
     def test_timeout_json(self, runner_and_mocks):
         runner, factory = runner_and_mocks
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = factory(TIMEOUT_POLL)
-            result = runner.invoke(
-                cli,
-                [
-                    "research",
-                    "wait",
-                    "-n",
-                    "nb_123",
-                    "--json",
-                    "--timeout",
-                    "1",
-                    "--interval",
-                    "1",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "research",
+                "wait",
+                "-n",
+                "nb_123",
+                "--json",
+                "--timeout",
+                "1",
+                "--interval",
+                "1",
+            ],
+            obj=inject_client(factory(TIMEOUT_POLL)),
+        )
 
         assert result.exit_code == 1
         payload = json.loads(result.output)
@@ -181,9 +181,9 @@ class TestWaitCancelled:
         runner, _ = runner_and_mocks
         mock_client = create_mock_client()
         mock_client.research.poll = AsyncMock(side_effect=KeyboardInterrupt)
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = mock_client
-            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123"])
+        result = runner.invoke(
+            cli, ["research", "wait", "-n", "nb_123"], obj=inject_client(mock_client)
+        )
 
         # SIGINT exit code is 130 (128 + signal 2).
         assert result.exit_code == 130
@@ -196,9 +196,9 @@ class TestWaitCancelled:
         runner, _ = runner_and_mocks
         mock_client = create_mock_client()
         mock_client.research.poll = AsyncMock(side_effect=KeyboardInterrupt)
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = mock_client
-            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123", "--json"])
+        result = runner.invoke(
+            cli, ["research", "wait", "-n", "nb_123", "--json"], obj=inject_client(mock_client)
+        )
 
         assert result.exit_code == 130
         payload = json.loads(result.output)
@@ -221,14 +221,12 @@ class TestWaitNoImport:
 
     def test_no_import_text_does_not_invoke_importer(self, runner_and_mocks):
         runner, factory = runner_and_mocks
-        with (
-            patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
-            patch.object(
-                research_import_module, "import_with_retry", new_callable=AsyncMock
-            ) as mock_import,
-        ):
-            mock_cls.return_value = factory(HAPPY_POLL)
-            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123"])
+        with patch.object(
+            research_import_module, "import_with_retry", new_callable=AsyncMock
+        ) as mock_import:
+            result = runner.invoke(
+                cli, ["research", "wait", "-n", "nb_123"], obj=inject_client(factory(HAPPY_POLL))
+            )
 
         assert result.exit_code == 0
         mock_import.assert_not_awaited()
@@ -238,14 +236,14 @@ class TestWaitNoImport:
 
     def test_no_import_json_omits_import_keys(self, runner_and_mocks):
         runner, factory = runner_and_mocks
-        with (
-            patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
-            patch.object(
-                research_import_module, "import_with_retry", new_callable=AsyncMock
-            ) as mock_import,
-        ):
-            mock_cls.return_value = factory(HAPPY_POLL)
-            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123", "--json"])
+        with patch.object(
+            research_import_module, "import_with_retry", new_callable=AsyncMock
+        ) as mock_import:
+            result = runner.invoke(
+                cli,
+                ["research", "wait", "-n", "nb_123", "--json"],
+                obj=inject_client(factory(HAPPY_POLL)),
+            )
 
         assert result.exit_code == 0
         mock_import.assert_not_awaited()
@@ -266,17 +264,14 @@ class TestWaitImportAll:
     def test_import_all_text(self, runner_and_mocks):
         runner, factory = runner_and_mocks
         mock_client = factory(HAPPY_POLL)
-        with (
-            patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
-            patch.object(
-                research_import_module, "import_with_retry", new_callable=AsyncMock
-            ) as mock_import,
-        ):
-            mock_cls.return_value = mock_client
+        with patch.object(
+            research_import_module, "import_with_retry", new_callable=AsyncMock
+        ) as mock_import:
             mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
             result = runner.invoke(
                 cli,
                 ["research", "wait", "-n", "nb_123", "--import-all"],
+                obj=inject_client(mock_client),
             )
 
         assert result.exit_code == 0
@@ -296,17 +291,14 @@ class TestWaitImportAll:
     def test_import_all_json(self, runner_and_mocks):
         runner, factory = runner_and_mocks
         mock_client = factory(HAPPY_POLL)
-        with (
-            patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
-            patch.object(
-                research_import_module, "import_with_retry", new_callable=AsyncMock
-            ) as mock_import,
-        ):
-            mock_cls.return_value = mock_client
+        with patch.object(
+            research_import_module, "import_with_retry", new_callable=AsyncMock
+        ) as mock_import:
             mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
             result = runner.invoke(
                 cli,
                 ["research", "wait", "-n", "nb_123", "--json", "--import-all"],
+                obj=inject_client(mock_client),
             )
 
         assert result.exit_code == 0
@@ -343,17 +335,14 @@ class TestWaitImportAll:
                 }
             )
         )
-        with (
-            patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
-            patch.object(
-                research_import_module, "import_with_retry", new_callable=AsyncMock
-            ) as mock_import,
-        ):
-            mock_cls.return_value = mock_client
+        with patch.object(
+            research_import_module, "import_with_retry", new_callable=AsyncMock
+        ) as mock_import:
             mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
             result = runner.invoke(
                 cli,
                 ["research", "wait", "-n", "nb_123", "--import-all", "--cited-only"],
+                obj=inject_client(mock_client),
             )
 
         assert result.exit_code == 0
@@ -385,13 +374,9 @@ class TestWaitImportAll:
                 }
             )
         )
-        with (
-            patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls,
-            patch.object(
-                research_import_module, "import_with_retry", new_callable=AsyncMock
-            ) as mock_import,
-        ):
-            mock_cls.return_value = mock_client
+        with patch.object(
+            research_import_module, "import_with_retry", new_callable=AsyncMock
+        ) as mock_import:
             mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
             result = runner.invoke(
                 cli,
@@ -404,6 +389,7 @@ class TestWaitImportAll:
                     "--import-all",
                     "--cited-only",
                 ],
+                obj=inject_client(mock_client),
             )
 
         assert result.exit_code == 0
@@ -454,12 +440,11 @@ class TestTaskIdPinning:
             ),
         ]
         mock_client.research.poll = poll_mock
-        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_cls:
-            mock_cls.return_value = mock_client
-            result = runner.invoke(
-                cli,
-                ["research", "wait", "-n", "nb_123", "--interval", "1", "--timeout", "10"],
-            )
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123", "--interval", "1", "--timeout", "10"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0
         # First call: task_id=None (nothing pinned yet).

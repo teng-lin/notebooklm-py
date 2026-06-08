@@ -1,6 +1,6 @@
 """Tests for the --prompt-file option across prompt-based CLI commands."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import click
 import pytest
@@ -99,13 +99,15 @@ class TestAskPromptFile:
         prompt_file = tmp_path / "question.txt"
         prompt_file.write_text("What is 42?", encoding="utf-8")
 
-        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
-            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
-            mock_client_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
+        mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
 
-            result = runner.invoke(cli, ["ask", "--prompt-file", str(prompt_file), "-n", "nb_123"])
+        result = runner.invoke(
+            cli,
+            ["ask", "--prompt-file", str(prompt_file), "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         call_args = mock_client.chat.ask.await_args
