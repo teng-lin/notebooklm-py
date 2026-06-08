@@ -235,6 +235,7 @@ src/notebooklm/
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
 │   ├── __init__.py              # Re-exports the neutral primitives
 │   ├── artifacts.py             # Click-free artifact core: get/rename/delete/export + poll/wait/retry; kind-aware mind-map dispatch (mind_maps.list for rename, notes.list_mind_maps for delete), get_artifact raises ArtifactNotFoundError, typed Rename/Export results + ArtifactStatusView/status_view neutral status DTO (CLI builds every --json envelope from the typed fields)
+│   ├── chat.py                  # Click-free chat core: conversation-id selection ladder + configure mode/goal/length dispatch + history fetch/format-as-data + ask save-as-note workflow (raises public ValidationError; status emitted into injected ProgressSink)
 │   ├── download.py              # Click-free download core: DownloadPlan/Result/TypeSpec + build_download_plan/execute_download (injected resolvers; DownloadResult.to_envelope rebuilds the CLI --json envelope)
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
@@ -388,6 +389,7 @@ src/notebooklm/
         ├── artifact_generation.py # `generate` retry/wait CLI adapter — thin re-export over `_app/generate_retry.py` (GenerationOutcome, generate_with_retry, handle_generation_result + the private _extract_*/`_format_status_message` symbols the tests reach for)
         ├── auth_diagnostics.py  # `auth check` diagnostic service
         ├── auth_source.py       # Single source of truth for the active CLI auth source
+        ├── chat.py              # `ask`/`configure`/`history` CLI adapter over `_app/chat.py` — re-exports the neutral chat names + supplies the rich-coupled CliPrintStatusSink/EmitStatusSink that route status events through cli_print/emit_status
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
         ├── download.py          # CLI adapter over _app/download.py: re-exports plan types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
         ├── generate.py          # `generate` CLI adapter over `_app/generate.py` — re-exports plan/result/error + build_generation_plan; injects cli.resolve resolve_notebook_id/resolve_source_ids (read at call time, preserving the resolve_module monkeypatch seam) into the neutral execute_generation
