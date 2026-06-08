@@ -50,6 +50,7 @@ from .artifacts import (
     status_view,
     wait_for_artifact,
 )
+from .auth_check import AuthCheckPlan, AuthCheckResult, run_auth_check
 from .chat import (
     ChatModeChoice,
     ClearCacheResult,
@@ -134,6 +135,13 @@ from .notes import (
     extract_new_note_id,
     resolve_note_for_delete,
 )
+from .profile import (
+    ProfileEntry,
+    gather_profile_list,
+    is_protected_profile,
+    retarget_default_profile_mutator,
+    set_default_profile_mutator,
+)
 from .research import (
     ResearchStatusResult,
     ResearchWaitOutcome,
@@ -145,6 +153,19 @@ from .research import (
 )
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
 from .serialize import source_summary, to_jsonable
+from .session import (
+    LogoutFailure,
+    LogoutFailureKind,
+    LogoutInputs,
+    LogoutOutcome,
+    StatusContext,
+    StatusInputs,
+    StatusReport,
+    UseNotebookResult,
+    execute_logout,
+    read_status,
+    verify_and_set_notebook,
+)
 from .sharing import (
     execute_share_add_user,
     execute_share_remove_user,
@@ -259,6 +280,28 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
+    # auth_check
+    "AuthCheckPlan",
+    "AuthCheckResult",
+    "run_auth_check",
+    # session
+    "LogoutFailure",
+    "LogoutFailureKind",
+    "LogoutInputs",
+    "LogoutOutcome",
+    "StatusContext",
+    "StatusInputs",
+    "StatusReport",
+    "UseNotebookResult",
+    "execute_logout",
+    "read_status",
+    "verify_and_set_notebook",
+    # profile
+    "ProfileEntry",
+    "gather_profile_list",
+    "is_protected_profile",
+    "retarget_default_profile_mutator",
+    "set_default_profile_mutator",
     # artifacts
     "ArtifactExportResult",
     "ArtifactRenameResult",
