@@ -174,3 +174,42 @@ _app/__init__ + CLAUDE.md (additive; reconciled at merge).
 (1) SourceAddValidationError is a bare ValueError (outside notebooklm.exceptions → classify misses it; source_research did it right with ValidationError).
 (2) SourceAddResult.payload builds the --json dict IN _app (re-introduces envelope-in-_app + duplicates source_serializers).
 Action: added §11 consistency-pass; SendMessage to the 5 in-flight agents to raise public exceptions + not put .payload on _app results.
+
+## Full fan-out — ALL 5 DOMAIN WAVES DONE (committed, not yet merged). Auth held; cleanup still running.
+Each: own worktree, polished, full domain gate green, §11 constraints applied mid-flight via SendMessage
+(only `ValidationError`-subclass exceptions in `_app`; no `.payload`/envelope-building in `_app`; command
+modules NOT moved → NotebookLMClient patch seams intact). All cassettes REUSED; `--json` byte-stable.
+- **artifacts** (`refactor/dom-artifacts` 1f85b16f): `_app/artifacts.py` (get/rename kind-aware/delete/export/
+  poll/wait/retry + ArtifactStatusView). §11-clean.
+- **chat** (`refactor/dom-chat` 6a629052): `_app/chat.py` (validate_ask_flags/determine_conversation_id/
+  execute_configure/fetch_history). Fixed ChatValidationError→public ValidationError; envelope-builders→CLI;
+  caught a real short-circuit bug (lazy `get_current_*` reads). `_app/chat.py` 100% covered.
+- **misc** (`refactor/dom-misc` 53c3afb0): `_app/{skill,language,doctor,research}.py` (skill install,
+  LanguageConfigStore+SUPPORTED_LANGUAGES, DoctorService.run_checks→DoctorReport, research wait/status).
+  `agent show` correctly STAYED presentation (no headless caller). §11-clean.
+- **generate** (`refactor/dom-generate` 46c02ccc): `_app/{generate_plans(753),generate_retry(286),
+  generate(268)}.py` — split 3 ways to stay under the ADR-0008 900-line budget (mirrors the original CLI
+  service trio). GenerationPlanValidationError→ValidationError; classify-coverage guardrail auto-discovers it.
+  Polish removed GenerationOutcome from the cli/services/generate re-export surface (byte-identical surface).
+- **crud** (`refactor/dom-crud` e6f422c4): `_app/{notebooks,notes,labels,sharing}.py`. Preserved: #1247
+  BREAKING NOT_FOUND/exit-1 note path; label resolve ordering (`<id|name>` + LabelResolutionError→ValidationError,
+  re-exported through label_listing for the 14 seam tests); share `set_view_level` keys notebook_id off the
+  RESOLVED id (not status.notebook_id). Codex polish: Critical/Important/Minor = 0.
+
+## Integration sequence (decided; executes when cleanup lands)
+Conflict topology: 5 domains add DISJOINT `_app/<domain>.py` + DISJOINT CLI command edits; collide only on
+ADDITIVE shared files (`_app/__init__.py`, `CLAUDE.md` `_app/` tree, maybe `test_services_boundary` GUARDED_PATHS).
+Cleanup is different in KIND — it EDITS the existing `_app/source_*.py`/`download.py` + CLI adapters +
+`source_serializers.py` (no domain touches those), so it's conflict-free vs domains EXCEPT where it also
+edits the source/download rows of `__init__`/CLAUDE.md (real edits/removals, not additive).
+Therefore:
+1. Merge the 5 domains first. Reconcile `_app/__init__`/CLAUDE.md/GUARDED_PATHS ONCE as an additive UNION.
+2. Merge `cleanup-migrated` LAST — take its source/download authority on the existing files + the
+   `__init__`/CLAUDE.md source/download rows (NOT a blind keep-ours).
+3. Safety net (fails loud if the union missed anything): `check_claude_md_freshness` (tree↔files),
+   `test_app_boundary` (no click/rich/cli/fastmcp in `_app`), `python -c import notebooklm._app`,
+   `module_size_ratchet`, then the full ~8,800-test suite + mypy + ruff.
+4. THEN dispatch the held **auth** wave (`refactor/dom-auth` worktree) off the updated integration HEAD —
+   heaviest discipline (entry-assembler `has_env_auth_json` seam).
+5. Final integration: route `error_handler` through `_app.classify`; write the relocation ADR.
+Deferred (per user): feat/mcp-server rebase + delete mcp/_serialize|_ids|_errors; de-monkeypatch via ctx.obj.
