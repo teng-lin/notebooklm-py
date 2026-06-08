@@ -21,7 +21,6 @@ from rich.table import Table
 
 from .._app.language import SUPPORTED_LANGUAGES, LanguageConfigStore
 from ..auth import AuthTokens
-from ..client import NotebookLMClient
 from ..io import atomic_update_json
 from ..paths import get_config_path, get_home_dir
 from .auth_runtime import resolve_client_factory, with_auth_and_errors
@@ -169,7 +168,7 @@ def language_get(ctx, local, json_output):
     # config write happens outside the envelope so a (rare) disk-write error
     # is never misreported as an RPC failure for an otherwise-successful fetch.
     async def body(auth: AuthTokens) -> str | None:
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(auth) as client:
+        async with resolve_client_factory(ctx)(auth) as client:
             return await client.settings.get_output_language()
 
     server_lang = with_auth_and_errors(
@@ -240,7 +239,7 @@ def language_set(ctx, code, local, json_output):
         # This way a failed sync hard-fails (structured envelope + non-zero
         # exit) instead of silently leaving a misleading local value behind.
         async def body(auth: AuthTokens) -> None:
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(auth) as client:
+            async with resolve_client_factory(ctx)(auth) as client:
                 await client.settings.set_output_language(code)
 
         with_auth_and_errors(

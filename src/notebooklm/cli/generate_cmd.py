@@ -2,7 +2,7 @@
 
 All validation, enum mapping, retry/wait orchestration, and output
 dispatch live in ``cli/services/generate.py``. Tests patch
-``NotebookLMClient`` / ``console`` / ``json_error_response`` /
+``console`` / ``json_error_response`` /
 ``json_output_response`` / ``get_language`` / ``_output_mind_map_result``
 as module-level attributes here, so those names remain imported at
 module scope and ``_output_mind_map_result`` + ``resolve_language``
@@ -18,7 +18,6 @@ from click.core import ParameterSource
 from .._app.generate_retry import (
     GenerationOutcome,
 )
-from ..client import NotebookLMClient
 from ..types import MindMap, MindMapResult
 from .auth_runtime import resolve_client_factory, with_client
 from .error_handler import current_json_output, output_error
@@ -254,7 +253,7 @@ def _run_generate(*, kind: str, **handler_locals: Any) -> Any:
             click.echo(line, err=True)
 
     async def _run() -> Any:
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             result = await execute_generation(
                 plan,
                 client,

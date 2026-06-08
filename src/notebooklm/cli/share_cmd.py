@@ -20,7 +20,6 @@ from .._app.sharing import (
     execute_share_status,
     execute_share_update_user,
 )
-from ..client import NotebookLMClient
 from ..types import SharePermission, ShareViewLevel
 from .auth_runtime import resolve_client_factory, with_client
 from .options import notebook_option
@@ -88,7 +87,7 @@ def share_status(ctx, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             status = await execute_share_status(
                 client,
                 nb_id,
@@ -169,7 +168,7 @@ def share_public(ctx, notebook_id, enable, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             status = await execute_share_set_public(
                 client,
                 nb_id,
@@ -221,7 +220,7 @@ def share_view_level(ctx, level, notebook_id, json_output, client_auth):
     )
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             resolved_id, status = await execute_share_set_view_level(
                 client,
                 nb_id,
@@ -276,7 +275,7 @@ def share_add(ctx, email, notebook_id, permission, no_notify, message, json_outp
     perm = _parse_permission(permission)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             resolved_id = await execute_share_add_user(
                 client,
                 nb_id,
@@ -331,7 +330,7 @@ def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
     perm = _parse_permission(permission)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             resolved_id = await execute_share_update_user(
                 client,
                 nb_id,
@@ -372,7 +371,7 @@ def share_remove(ctx, email, notebook_id, yes, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
 
             async def resolve_remove(client):
                 resolved_id = await resolve_notebook_id(client, nb_id, json_output=json_output)

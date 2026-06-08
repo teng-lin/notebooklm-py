@@ -44,7 +44,6 @@ from .._app.source_wait import (
     SourceWaitPlan,
     execute_source_wait,
 )
-from ..client import NotebookLMClient
 from ..exceptions import ValidationError
 from ..types import Source
 
@@ -171,7 +170,7 @@ def source_list(ctx, notebook_id, json_output, label_filter, limit, no_truncate,
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             plan = SourceListPlan(
                 notebook_id=nb_id_resolved,
@@ -311,9 +310,7 @@ def source_add(
     client_kwargs: dict = {"timeout": timeout} if timeout is not None else {}
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(
-            client_auth, **client_kwargs
-        ) as client:
+        async with resolve_client_factory(ctx)(client_auth, **client_kwargs) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             execution_plan = SourceAddExecutionPlan(notebook_id=nb_id_resolved, plan=plan)
             if json_output:
@@ -338,7 +335,7 @@ def source_get(ctx, source_id, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
@@ -366,7 +363,7 @@ def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 result = await execute_source_delete(
@@ -397,7 +394,7 @@ def source_delete_by_title(ctx, title, notebook_id, yes, json_output, client_aut
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 result = await execute_source_delete_by_title(
@@ -428,7 +425,7 @@ def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_au
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             result = await execute_source_rename(
                 client,
@@ -454,7 +451,7 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             plan = SourceRefreshPlan(
                 notebook_id=nb_id_resolved,
@@ -488,7 +485,7 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             plan = SourceAddDrivePlan(
                 notebook_id=nb_id_resolved,
@@ -581,7 +578,7 @@ def source_add_research(
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             if not json_output:
                 console.print(f"[yellow]Starting {mode} research on {search_source}...[/yellow]")
@@ -659,7 +656,7 @@ def source_fulltext(
     )
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
@@ -697,7 +694,7 @@ def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
@@ -750,7 +747,7 @@ def source_stale(ctx, source_id, notebook_id, exit_on_stale, json_output, client
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
@@ -785,7 +782,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             resolved_id = await resolve_source_id(
                 client, nb_id_resolved, source_id, json_output=json_output
@@ -825,7 +822,7 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
     quiet_mode = is_quiet(ctx)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
 
             async def _list_sources(notebook_id_inner: str) -> list[Source]:

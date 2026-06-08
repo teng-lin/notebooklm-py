@@ -35,7 +35,6 @@ from .._app.labels import (
     execute_label_set_emoji,
     execute_label_sources,
 )
-from ..client import NotebookLMClient
 from ..types import Label
 from .auth_runtime import resolve_client_factory, with_client
 from .error_handler import output_error
@@ -105,7 +104,7 @@ def label_list(ctx, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             plan = LabelListPlan(
                 notebook_id=nb_id_resolved,
@@ -131,7 +130,7 @@ def label_sources(ctx, label_ref, notebook_id, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 label_id = await resolve_label_id(
@@ -185,7 +184,7 @@ def label_generate(ctx, notebook_id, scope, yes, json_output, client_auth):
     destructive = scope == "all"
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
 
             if destructive and not yes:
@@ -236,7 +235,7 @@ def label_create(ctx, name, notebook_id, emoji, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             label_ = await execute_label_create(client, nb_id_resolved, name, emoji)
 
@@ -263,7 +262,7 @@ def label_rename(ctx, label_ref, new_name, notebook_id, json_output, client_auth
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 label_id = await resolve_label_id(
@@ -296,7 +295,7 @@ def label_emoji(ctx, label_ref, emoji_value, notebook_id, json_output, client_au
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 label_id = await resolve_label_id(
@@ -330,7 +329,7 @@ def label_add(ctx, label_ref, source_ids, notebook_id, json_output, client_auth)
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 label_id = await resolve_label_id(
@@ -384,7 +383,7 @@ def label_remove(ctx, label_ref, source_ids, notebook_id, json_output, client_au
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
                 label_id = await resolve_label_id(
@@ -432,7 +431,7 @@ def label_delete(ctx, label_refs, notebook_id, yes, json_output, client_auth):
     nb_id = require_notebook(notebook_id)
 
     async def _run():
-        async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+        async with resolve_client_factory(ctx)(client_auth) as client:
 
             async def resolve_delete(client):
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)

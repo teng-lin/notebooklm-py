@@ -20,7 +20,6 @@ from .._app.notebooks import (
     execute_notebook_metadata,
     execute_notebook_rename,
 )
-from ..client import NotebookLMClient
 from .auth_runtime import resolve_client_factory, with_client
 from .context import clear_context, get_current_notebook, set_current_notebook
 from .error_handler import _output_error
@@ -48,7 +47,7 @@ def register_notebook_commands(cli):
         """
 
         async def _run():
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+            async with resolve_client_factory(ctx)(client_auth) as client:
                 spec = ListSpec(
                     title="Notebooks",
                     items_key="notebooks",
@@ -100,7 +99,7 @@ def register_notebook_commands(cli):
         """
 
         async def _run():
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+            async with resolve_client_factory(ctx)(client_auth) as client:
                 nb = (await execute_notebook_create(client, title)).notebook
 
                 if switch_context:
@@ -148,7 +147,7 @@ def register_notebook_commands(cli):
         notebook_id = require_notebook(notebook_id)
 
         async def _run():
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+            async with resolve_client_factory(ctx)(client_auth) as client:
 
                 async def resolve_delete(client):
                     resolved_id = await resolve_notebook_id(
@@ -242,7 +241,7 @@ def register_notebook_commands(cli):
         notebook_id = require_notebook(notebook_id)
 
         async def _run():
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+            async with resolve_client_factory(ctx)(client_auth) as client:
                 result = await execute_notebook_rename(
                     client,
                     notebook_id,
@@ -284,7 +283,7 @@ def register_notebook_commands(cli):
         notebook_id = require_notebook(notebook_id)
 
         async def _run():
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+            async with resolve_client_factory(ctx)(client_auth) as client:
                 describe_result = await execute_notebook_describe(
                     client,
                     notebook_id,
@@ -353,7 +352,7 @@ def register_notebook_commands(cli):
         notebook_id = require_notebook(notebook_id)
 
         async def _run():
-            async with resolve_client_factory(ctx, default=NotebookLMClient)(client_auth) as client:
+            async with resolve_client_factory(ctx)(client_auth) as client:
                 # Resolve partial ID + fetch metadata (notebooks.get_metadata)
                 metadata_result = await execute_notebook_metadata(
                     client,
