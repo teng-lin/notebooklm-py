@@ -328,5 +328,5 @@ file index" pointer. Repointed `check_claude_md_freshness.py` (default `--claude
 real-file test, and the CI step at it. Slimmed the rest of CLAUDE.md to essentials (overview + critical RPC
 constraint, commands, before-pushing, architecture pointer, pitfalls, usage, testing, docs index, PR workflow),
 preserving the install-docs-gated `uv sync` block + installation link. Gates green: freshness (architecture.md),
-docs-module-refs (the moved table's inline refs all resolve; `_core.py` allowlist now genuinely used), install-docs,
+docs-module-refs (the moved table's inline refs all resolve; the pre-existing architecture.md deleted-shim allowlist entry is now genuinely used), install-docs,
 adr-format. Full suite 9254 passed / 0 failed.
