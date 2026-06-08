@@ -29,8 +29,10 @@ The Wave-0 foundation primitives every adapter needs:
   :class:`~notebooklm._app.events.ProgressSink` — a transport-neutral
   progress-reporting seam for long-running operations.
 
-The domain modules (``artifacts``, ``download``, ``source_*``) hold the
-relocated CLI business logic each command's thin adapter now calls.
+The domain modules (``artifacts``, ``chat``, ``doctor``, ``download``,
+``generate``, ``labels``, ``language``, ``notebooks``, ``notes``,
+``research``, ``sharing``, ``skill``, ``source_*``) hold the relocated CLI
+business logic each command's thin adapter now calls.
 """
 
 from __future__ import annotations
@@ -65,6 +67,7 @@ from .chat import (
     save_answer_as_note,
     validate_ask_flags,
 )
+from .doctor import DoctorPaths, DoctorReport, run_checks
 from .download import (
     FORMAT_EXTENSIONS,
     ArtifactDict,
@@ -92,8 +95,82 @@ from .generate import (
     generation_outcome_from_status,
     handle_generation_result,
 )
+from .labels import (
+    LabelGenerateResult,
+    LabelMembershipResult,
+    LabelResolutionError,
+    execute_label_add_sources,
+    execute_label_create,
+    execute_label_delete,
+    execute_label_generate,
+    execute_label_remove_sources,
+    execute_label_rename,
+    execute_label_set_emoji,
+    execute_label_sources,
+    resolve_label_id,
+)
+from .language import SUPPORTED_LANGUAGES, LanguageConfigStore, is_supported_language, language_name
+from .notebooks import (
+    NotebookCreateResult,
+    NotebookDescribeResult,
+    NotebookMetadataResult,
+    NotebookRenameResult,
+    execute_notebook_create,
+    execute_notebook_delete,
+    execute_notebook_describe,
+    execute_notebook_metadata,
+    execute_notebook_rename,
+)
+from .notes import (
+    NoteCreateResult,
+    NoteGetResult,
+    NoteRenameResult,
+    NoteSaveResult,
+    execute_note_create,
+    execute_note_delete,
+    execute_note_get,
+    execute_note_rename,
+    execute_note_save,
+    extract_new_note_id,
+    resolve_note_for_delete,
+)
+from .research import (
+    ResearchStatusResult,
+    ResearchWaitOutcome,
+    ResearchWaitPlan,
+    ResearchWaitResult,
+    execute_research_wait,
+    poll_and_classify,
+    validate_research_wait_flags,
+)
 from .resolve import AmbiguousIdError, Resolution, resolve_ref, validate_id
 from .serialize import source_summary, to_jsonable
+from .sharing import (
+    execute_share_add_user,
+    execute_share_remove_user,
+    execute_share_set_public,
+    execute_share_set_view_level,
+    execute_share_status,
+    execute_share_update_user,
+)
+from .skill import (
+    SCOPES,
+    TARGET_CREATE,
+    TARGET_OVERWRITE,
+    TARGET_UP_TO_DATE,
+    TARGETS,
+    SkillTarget,
+    add_version_comment,
+    classify_target,
+    get_installed_content,
+    get_package_version,
+    get_scope_root,
+    get_skill_path,
+    get_skill_version,
+    iter_targets,
+    remove_empty_parents,
+    report_mixed_no_clobber_up_to_date,
+)
 from .source_add import (
     SourceAddExecutionPlan,
     SourceAddFacade,
@@ -182,17 +259,6 @@ __all__ = [
     "validate_id",
     "ProgressEvent",
     "ProgressSink",
-    # generate
-    "GenerationExecutionResult",
-    "GenerationKind",
-    "GenerationOutcome",
-    "GenerationPlan",
-    "GenerationPlanValidationError",
-    "build_generation_plan",
-    "execute_generation",
-    "generate_with_retry",
-    "generation_outcome_from_status",
-    "handle_generation_result",
     # artifacts
     "ArtifactExportResult",
     "ArtifactRenameResult",
@@ -221,6 +287,93 @@ __all__ = [
     "get_latest_conversation_from_server",
     "save_answer_as_note",
     "validate_ask_flags",
+    # doctor
+    "DoctorPaths",
+    "DoctorReport",
+    "run_checks",
+    # generate
+    "GenerationExecutionResult",
+    "GenerationKind",
+    "GenerationOutcome",
+    "GenerationPlan",
+    "GenerationPlanValidationError",
+    "build_generation_plan",
+    "execute_generation",
+    "generate_with_retry",
+    "generation_outcome_from_status",
+    "handle_generation_result",
+    # labels
+    "LabelGenerateResult",
+    "LabelMembershipResult",
+    "LabelResolutionError",
+    "execute_label_add_sources",
+    "execute_label_create",
+    "execute_label_delete",
+    "execute_label_generate",
+    "execute_label_remove_sources",
+    "execute_label_rename",
+    "execute_label_set_emoji",
+    "execute_label_sources",
+    "resolve_label_id",
+    # language
+    "SUPPORTED_LANGUAGES",
+    "LanguageConfigStore",
+    "is_supported_language",
+    "language_name",
+    # notebooks
+    "NotebookCreateResult",
+    "NotebookDescribeResult",
+    "NotebookMetadataResult",
+    "NotebookRenameResult",
+    "execute_notebook_create",
+    "execute_notebook_delete",
+    "execute_notebook_describe",
+    "execute_notebook_metadata",
+    "execute_notebook_rename",
+    # notes
+    "NoteCreateResult",
+    "NoteGetResult",
+    "NoteRenameResult",
+    "NoteSaveResult",
+    "execute_note_create",
+    "execute_note_delete",
+    "execute_note_get",
+    "execute_note_rename",
+    "execute_note_save",
+    "extract_new_note_id",
+    "resolve_note_for_delete",
+    # research
+    "ResearchStatusResult",
+    "ResearchWaitOutcome",
+    "ResearchWaitPlan",
+    "ResearchWaitResult",
+    "execute_research_wait",
+    "poll_and_classify",
+    "validate_research_wait_flags",
+    # sharing
+    "execute_share_add_user",
+    "execute_share_remove_user",
+    "execute_share_set_public",
+    "execute_share_set_view_level",
+    "execute_share_status",
+    "execute_share_update_user",
+    # skill
+    "SCOPES",
+    "TARGET_CREATE",
+    "TARGET_OVERWRITE",
+    "TARGET_UP_TO_DATE",
+    "TARGETS",
+    "SkillTarget",
+    "add_version_comment",
+    "classify_target",
+    "get_installed_content",
+    "get_package_version",
+    "get_scope_root",
+    "get_skill_path",
+    "get_skill_version",
+    "iter_targets",
+    "remove_empty_parents",
+    "report_mixed_no_clobber_up_to_date",
     # download
     "FORMAT_EXTENSIONS",
     "ArtifactDict",

@@ -4,14 +4,22 @@ Commands:
     list    List all supported language codes
     get     Get current language setting
     set     Set default language for artifact generation
-"""
 
-import json
-import logging
+The :data:`SUPPORTED_LANGUAGES` catalog and the persisted-config store live in
+the transport-neutral :mod:`notebooklm._app.language`. This module imports the
+catalog into its own namespace (so ``from .language_cmd import SUPPORTED_LANGUAGES``
+keeps resolving) and keeps thin module-level ``get_config`` / ``_save_config``
+/ ``get_language`` / ``set_language`` wrappers that bind **this module's**
+``get_config_path`` / ``get_home_dir`` / ``atomic_update_json`` at call time —
+preserving the ``patch.object(language_cmd, "get_config_path", ...)`` test
+seam and the re-exports consumed by ``cli/__init__.py``, ``generate_cmd``, and
+the login-refresh service.
+"""
 
 import click
 from rich.table import Table
 
+from .._app.language import SUPPORTED_LANGUAGES, LanguageConfigStore
 from ..auth import AuthTokens
 from ..client import NotebookLMClient
 from ..io import atomic_update_json
@@ -21,109 +29,24 @@ from .error_handler import exit_with_code
 from .options import json_option
 from .rendering import console, json_error_response, json_output_response
 
-logger = logging.getLogger(__name__)
 
-# Language codes with native names
-# Based on BCP 47 / IETF language tags from WIZ_global_data
-SUPPORTED_LANGUAGES: dict[str, str] = {
-    # Major languages (sorted by usage)
-    "en": "English",
-    "zh_Hans": "中文（简体）",
-    "zh_Hant": "中文（繁體）",
-    "es": "Español",
-    "es_419": "Español (Latinoamérica)",
-    "es_MX": "Español (México)",
-    "hi": "हिन्दी",
-    "ar_001": "العربية",
-    "ar_eg": "العربية (مصر)",
-    "pt_BR": "Português (Brasil)",
-    "pt_PT": "Português (Portugal)",
-    "bn": "বাংলা",
-    "ru": "Русский",
-    "ja": "日本語",
-    "pa": "ਪੰਜਾਬੀ",
-    "de": "Deutsch",
-    "jv": "Basa Jawa",
-    "ko": "한국어",
-    "fr": "Français",
-    "fr_CA": "Français (Canada)",
-    "te": "తెలుగు",
-    "vi": "Tiếng Việt",
-    "mr": "मराठी",
-    "ta": "தமிழ்",
-    "tr": "Türkçe",
-    "ur": "اردو",
-    "it": "Italiano",
-    "th": "ไทย",
-    "gu": "ગુજરાતી",
-    "fa": "فارسی",
-    "pl": "Polski",
-    "uk": "Українська",
-    "ml": "മലയാളം",
-    "kn": "ಕನ್ನಡ",
-    "or": "ଓଡ଼ିଆ",
-    "my": "မြန်မာဘာသာ",
-    "sw": "Kiswahili",
-    "nl_NL": "Nederlands",
-    "ro": "Română",
-    "hu": "Magyar",
-    "el": "Ελληνικά",
-    "cs": "Čeština",
-    "sv": "Svenska",
-    "be": "Беларуская",
-    "bg": "Български",
-    "hr": "Hrvatski",
-    "sk": "Slovenčina",
-    "da": "Dansk",
-    "fi": "Suomi",
-    "nb_NO": "Norsk Bokmål",
-    "nn_NO": "Norsk Nynorsk",
-    "he": "עברית",
-    "iw": "עברית",  # Legacy code
-    "id": "Bahasa Indonesia",
-    "ms": "Bahasa Melayu",
-    "fil": "Filipino",
-    "ceb": "Cebuano",
-    "sr": "Српски",
-    "sl": "Slovenščina",
-    "sq": "Shqip",
-    "mk": "Македонски",
-    "lt": "Lietuvių",
-    "lv": "Latviešu",
-    "et": "Eesti",
-    "hy": "Հայերեն",
-    "ka": "ქართული",
-    "az": "Azərbaycanca",
-    "af": "Afrikaans",
-    "am": "አማርኛ",
-    "eu": "Euskara",
-    "ca": "Català",
-    "gl": "Galego",
-    "is": "Íslenska",
-    "la": "Latina",
-    "ne": "नेपाली",
-    "ps": "پښتو",
-    "sd": "سنڌي",
-    "si": "සිංහල",
-    "ht": "Kreyòl Ayisyen",
-    "kok": "कोंकणी",
-    "mai": "मैथिली",
-}
+def _store() -> LanguageConfigStore:
+    """Build a store bound to this module's path/home/writer helpers.
+
+    The collaborators are read off ``language_cmd`` at call time so the
+    historical ``patch.object(language_cmd, "get_config_path", ...)`` and
+    ``patch.object(language_cmd, "get_home_dir", ...)`` test seams keep landing.
+    """
+    return LanguageConfigStore(
+        config_path=get_config_path,
+        ensure_home=get_home_dir,
+        atomic_update=atomic_update_json,
+    )
 
 
 def get_config() -> dict:
     """Read config from config.json."""
-    config_path = get_config_path()
-    if config_path.exists():
-        try:
-            return json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            logger.warning("Config file corrupted, using defaults: %s", e)
-            return {}
-        except OSError as e:
-            logger.warning("Could not read config file: %s", e)
-            return {}
-    return {}
+    return _store().get_config()
 
 
 def _save_config(config: dict) -> None:
@@ -136,17 +59,12 @@ def _save_config(config: dict) -> None:
         only as the low-level write primitive for callers that already hold
         no shared state to merge.
     """
-    config_path = get_config_path()
-    get_home_dir(create=True)  # Ensure directory exists
-    # ``json.dump`` streams directly to the file handle and avoids
-    # materializing the full serialized string in memory.
-    with config_path.open("w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=2, ensure_ascii=False)
+    _store().save_config(config)
 
 
 def get_language() -> str | None:
     """Get the configured language, or None if not set."""
-    return get_config().get("language")
+    return _store().get_language()
 
 
 def set_language(code: str) -> None:
@@ -158,14 +76,7 @@ def set_language(code: str) -> None:
     the file lock so a peer's valid concurrent write is never clobbered by
     an out-of-lock unlink-and-retry.
     """
-    config_path = get_config_path()
-    get_home_dir(create=True)  # Ensure directory exists
-
-    def _set_lang(current: dict) -> dict:
-        current["language"] = code
-        return current
-
-    atomic_update_json(config_path, _set_lang, recover_from_corrupt=True)
+    _store().set_language(code)
 
 
 @click.group()

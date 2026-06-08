@@ -1,16 +1,12 @@
-"""Service helpers for skill install result handling."""
+"""CLI adapter for skill-install result handling — re-export over ``_app``.
 
-from collections.abc import Callable, Sequence
+The ``report_mixed_no_clobber_up_to_date`` reporting decision is
+transport-neutral and now lives in :mod:`notebooklm._app.skill`. This module
+re-exports it so existing
+``from notebooklm.cli.services.skill_install import report_mixed_no_clobber_up_to_date``
+imports (the command layer + its unit tests) keep resolving.
+"""
 
+from ..._app.skill import report_mixed_no_clobber_up_to_date
 
-def report_mixed_no_clobber_up_to_date(
-    emit: Callable[[str], None],
-    *,
-    skipped_up_to_date: Sequence[object],
-    skipped_no_clobber: Sequence[object],
-    installed_paths: Sequence[object],
-    failed_targets: Sequence[object],
-) -> None:
-    """Report up-to-date targets when ``--no-clobber`` skipped other targets."""
-    if skipped_up_to_date and skipped_no_clobber and not installed_paths and not failed_targets:
-        emit(f"[green]Up to date[/green] {len(skipped_up_to_date)} target(s)")
+__all__ = ["report_mixed_no_clobber_up_to_date"]
