@@ -238,7 +238,8 @@ src/notebooklm/
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
 │   ├── resolve.py               # Click-free validate_id + resolve_ref (AmbiguousIdError/Resolution)
-│   └── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
+│   ├── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
+│   └── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public names
 │   ├── auth.py                  # AuthRefreshCoordinator (refresh task + auth-snapshot lock)
@@ -408,7 +409,7 @@ src/notebooklm/
         ├── source_content.py    # Read-only source-content commands service
         ├── source_listing.py    # `source list` fetch + prepare service
         ├── source_mutations.py  # Source-mutation commands service
-        ├── source_research.py   # `source add-research` start + wait + import service
+        ├── source_research.py   # `source add-research` CLI adapter — thin wrapper over `_app/source_research.py` (injects the rich-coupled importer; re-exports plan/result + validate_add_research_flags; preserves the import_research_sources monkeypatch seam)
         ├── source_serializers.py # Shared JSON serializers for source CLI output
         └── source_wait.py       # `source wait` source-readiness poll service
 ```

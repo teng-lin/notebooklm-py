@@ -23,6 +23,7 @@ from typing import Any
 import click
 
 from ..client import NotebookLMClient
+from ..exceptions import ValidationError
 from ..types import Source
 
 # Render/validation helpers live in ``_source_render``; re-exported here so the
@@ -111,6 +112,7 @@ from .services.source_mutations import (
 from .services.source_research import (
     SourceAddResearchPlan,
     execute_source_add_research,
+    validate_add_research_flags,
 )
 from .services.source_wait import (
     SourceWaitPlan,
@@ -564,20 +566,15 @@ def source_add_research(
     ``--prompt-file``.
     """
     query = resolve_prompt(query, prompt_file, "query", required=True)
-    if cited_only and not import_all:
-        # ADR-0015 §2: under --json route through the typed envelope; preserve
-        # Click's parser-style ``UsageError`` (exit 2 with usage text) in text
-        # mode so interactive callers still see the canonical conflict prose.
-        _emit_add_research_flag_conflict(
-            "--cited-only requires --import-all", json_output=json_output
-        )
-    # --no-wait + --import-all is silently broken — refuse it.
-    if no_wait and import_all:
-        _emit_add_research_flag_conflict(
-            "--import-all requires --wait (the default) or a separate "
-            "'research wait --import-all' after --no-wait.",
-            json_output=json_output,
-        )
+    # Flag-combination rules live in the neutral ``_app`` core as a pure
+    # ``validate_*`` raising ``ValidationError``; the command maps that to the
+    # CLI conflict contract (ADR-0015 §2): under --json route through the typed
+    # envelope, otherwise preserve Click's parser-style ``UsageError`` (exit 2
+    # with usage text) so interactive callers still see the canonical prose.
+    try:
+        validate_add_research_flags(import_all=import_all, cited_only=cited_only, no_wait=no_wait)
+    except ValidationError as exc:
+        _emit_add_research_flag_conflict(str(exc), json_output=json_output)
 
     nb_id = require_notebook(notebook_id)
 
