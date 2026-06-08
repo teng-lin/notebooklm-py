@@ -239,6 +239,9 @@ src/notebooklm/
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
 │   ├── resolve.py               # Click-free validate_id + resolve_ref (AmbiguousIdError/Resolution)
 │   ├── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
+│   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; SourceAddResult.payload rebuilds the CLI --json source-summary inline)
+│   ├── source_clean.py          # Click-free `source clean` core: junk-source classification + batched-deletion orchestration (SourceCleanResult; injected list/delete/confirm callables)
+│   ├── source_content.py        # Click-free read-only source-content fetchers for get/fulltext/guide/stale (typed plan/result pairs)
 │   └── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public names
@@ -404,9 +407,9 @@ src/notebooklm/
         ├── research.py          # Service layer for `research wait`
         ├── session_context.py   # Notebook-context services for `use`/`status`/`auth logout`
         ├── skill_install.py     # Service helpers for skill install result handling
-        ├── source_add.py        # `source add` text/url/drive service
-        ├── source_clean.py      # Source-content cleaning service
-        ├── source_content.py    # Read-only source-content commands service
+        ├── source_add.py        # `source add` CLI adapter — thin re-export wrapper over `_app/source_add.py` (preserves the source_add_service.* call-time lookups in source_cmd/_source_render)
+        ├── source_clean.py      # `source clean` CLI adapter — thin re-export wrapper over `_app/source_clean.py` (preserves the source_clean_service.classify_junk_sources call-time lookup)
+        ├── source_content.py    # Read-only source-content CLI adapter — thin re-export wrapper over `_app/source_content.py`
         ├── source_listing.py    # `source list` fetch + prepare service
         ├── source_mutations.py  # Source-mutation commands service
         ├── source_research.py   # `source add-research` CLI adapter — thin wrapper over `_app/source_research.py` (injects the rich-coupled importer; re-exports plan/result + validate_add_research_flags; preserves the import_research_sources monkeypatch seam)
