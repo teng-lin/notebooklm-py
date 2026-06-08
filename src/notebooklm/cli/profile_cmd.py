@@ -17,6 +17,12 @@ from pathlib import Path
 import click
 from rich.table import Table
 
+from .._app.profile import (
+    gather_profile_list,
+    is_protected_profile,
+    retarget_default_profile_mutator,
+    set_default_profile_mutator,
+)
 from ..auth import read_account_metadata
 from ..io import atomic_update_json
 from ..paths import (
@@ -111,32 +117,32 @@ def list_cmd(json_output):
 
 def _run_list_cmd(*, json_output: bool) -> None:
     """List all profiles and their status."""
-    profiles = list_profiles()
-    active = resolve_profile()
+    # The profile/storage/account helpers are read off THIS module's namespace
+    # at call time so the historical ``patch.object(profile_cmd, ...)`` seams
+    # land; the neutral core only joins them into typed rows.
+    entries, active = gather_profile_list(
+        list_profiles=list_profiles,
+        resolve_profile=resolve_profile,
+        get_storage_path=get_storage_path,
+        read_account_metadata=read_account_metadata,
+    )
 
-    if not profiles:
+    if not entries:
         if json_output:
             json_output_response({"profiles": [], "active": active})
             return
         console.print("[yellow]No profiles found. Run 'notebooklm login' to create one.[/yellow]")
         return
 
-    profile_data = []
-    for name in profiles:
-        storage = get_storage_path(profile=name)
-        is_active = name == active
-        authenticated = storage.exists()
-        account_metadata = read_account_metadata(storage)
-        account_email = account_metadata.get("email")
-
-        profile_data.append(
-            {
-                "name": name,
-                "active": is_active,
-                "authenticated": authenticated,
-                "account": account_email if isinstance(account_email, str) else None,
-            }
-        )
+    profile_data = [
+        {
+            "name": e.name,
+            "active": e.active,
+            "authenticated": e.authenticated,
+            "account": e.account,
+        }
+        for e in entries
+    ]
 
     if json_output:
         json_output_response({"profiles": profile_data, "active": active})
@@ -218,12 +224,8 @@ def switch_cmd(name):
     # The lock-protected mutator below is the source of truth for the write.
     old_profile = _read_config(config_path).get("default_profile", "default")
 
-    def _set_default(data: dict) -> dict:
-        data["default_profile"] = name
-        return data
-
     try:
-        _atomic_write_config(config_path, _set_default)
+        _atomic_write_config(config_path, set_default_profile_mutator(name))
     except OSError as e:
         raise click.ClickException(  # cli-input-validation: profile config write validation
             f"Failed to update config.json: {e}"
@@ -273,7 +275,9 @@ def delete_cmd(name, yes, confirm):
     # Block deletion of active or configured default profile
     configured_default = read_default_profile() or "default"
     effective_active = resolve_profile()
-    if name in (configured_default, effective_active):
+    if is_protected_profile(
+        name, configured_default=configured_default, effective_active=effective_active
+    ):
         raise click.ClickException(  # cli-input-validation: profile delete active/default validation
             f"Cannot delete active/default profile '{name}'. "
             f"Switch to another profile first with 'notebooklm profile switch <name>'."
@@ -333,28 +337,24 @@ def rename_cmd(old_name, new_name):
     # corrupt config under the same lock (``recover_from_corrupt=True``
     # inside ``_atomic_write_config``).
     config_path = get_config_path()
-    updated = False
-
-    def _retarget_default(current: dict) -> dict:
-        nonlocal updated
-        # Decide under the lock — this is the only read of
-        # ``default_profile`` that matters. Treat a missing key as the
-        # implicit "default" so a fresh install with no config.json still
-        # picks up the rename when the user renamed the default profile.
-        if (current.get("default_profile") or "default") == old_name:
-            current["default_profile"] = new_name
-            updated = True
-        return current
+    # The retarget decision (treating a missing ``default_profile`` key as the
+    # implicit "default") happens under the lock — this is the only read of
+    # ``default_profile`` that matters. The neutral core supplies the mutator
+    # closure + the ``was_updated`` predicate so the CLI keeps only the locked
+    # write + presentation.
+    retarget_mutator, was_updated = retarget_default_profile_mutator(
+        old_name=old_name, new_name=new_name
+    )
 
     try:
-        _atomic_write_config(config_path, _retarget_default)
+        _atomic_write_config(config_path, retarget_mutator)
     except OSError as e:
         console.print(
             f"[yellow]Warning: profile renamed but config.json update failed: {e}[/yellow]\n"
             f"[yellow]Run 'notebooklm profile switch {new_name}' to fix.[/yellow]"
         )
     else:
-        if updated:
+        if was_updated():
             console.print(f"[dim]Updated default profile in config: {old_name} → {new_name}[/dim]")
 
     console.print(f"[green]Profile renamed: {old_name} → {new_name}[/green]")
