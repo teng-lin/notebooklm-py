@@ -223,7 +223,7 @@ class TestLoginLanguageSync:
         real_client = NotebookLMClient(auth_tokens)
         with (
             patch(
-                "notebooklm.cli.session_cmd.NotebookLMClient.from_storage",
+                "notebooklm.client.NotebookLMClient.from_storage",
                 new_callable=MagicMock,
                 return_value=_from_storage_cm(real_client),
             ),

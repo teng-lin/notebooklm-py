@@ -348,7 +348,7 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
     from notebooklm.auth import AuthTokens
     from notebooklm.exceptions import RateLimitError
 
-    from .conftest import create_mock_client
+    from .conftest import create_mock_client, inject_client
 
     auth = AuthTokens(
         cookies={
@@ -369,20 +369,17 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
     elif setup == "runtime_error":
         mock_client.artifacts.list = AsyncMock(side_effect=RuntimeError("boom"))
 
-    with (
-        patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens,
-        patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls,
-    ):
+    with patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens:
         if setup == "missing_storage":
             mock_get_auth_tokens.side_effect = FileNotFoundError("Storage file not found")
         else:
             mock_get_auth_tokens.return_value = auth
-            mock_client_cls.return_value = mock_client
 
         result = CliRunner().invoke(
             cli,
             ["download", "audio", "--json", "-n", "nb_123"],
             catch_exceptions=False,
+            obj=inject_client(mock_client),
         )
 
     assert result.exit_code == expected_exit, case_id

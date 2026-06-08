@@ -38,6 +38,7 @@ from notebooklm.types import AskResult
 
 from .conftest import (
     create_mock_client,
+    inject_client,
 )
 
 # ----------------------------------------------------------------------------
@@ -225,27 +226,26 @@ class TestDownloadNotebookResolution:
         Resolver does not call ``notebooks.list`` for a UUID-shaped id.
         """
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(
-                return_value=_make_artifact_list(
-                    [(f"art-{i}-1234-4abc-def0-1234567890ab", f"a{i}") for i in range(1)]
-                )
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=_make_artifact_list(
+                [(f"art-{i}-1234-4abc-def0-1234567890ab", f"a{i}") for i in range(1)]
             )
-            mock_client.artifacts.download_audio = AsyncMock(return_value=str(tmp_path / "out.mp3"))
-            mock_cls.return_value = mock_client
+        )
+        mock_client.artifacts.download_audio = AsyncMock(return_value=str(tmp_path / "out.mp3"))
 
-            result = runner.invoke(
-                cli,
-                [
-                    "download",
-                    "audio",
-                    "-n",
-                    full_uuid,
-                    "--latest",
-                    str(tmp_path / "out.mp3"),  # positional output path
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "download",
+                "audio",
+                "-n",
+                full_uuid,
+                "--latest",
+                str(tmp_path / "out.mp3"),  # positional output path
+            ],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         # No notebook listing fires for a full-UUID id.
@@ -265,24 +265,23 @@ class TestDownloadNotebookResolution:
                 ("xyz00000-aaaa-4abc-def0-000000000002", "second"),
             ]
         )
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(return_value=artifacts)
-            mock_client.artifacts.download_audio = AsyncMock(return_value=str(tmp_path / "out.mp3"))
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(return_value=artifacts)
+        mock_client.artifacts.download_audio = AsyncMock(return_value=str(tmp_path / "out.mp3"))
 
-            result = runner.invoke(
-                cli,
-                [
-                    "download",
-                    "audio",
-                    "-n",
-                    full_uuid,
-                    "--artifact",
-                    "abc",  # unique prefix of the first artifact id
-                    str(tmp_path / "out.mp3"),  # positional output path
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "download",
+                "audio",
+                "-n",
+                full_uuid,
+                "--artifact",
+                "abc",  # unique prefix of the first artifact id
+                str(tmp_path / "out.mp3"),  # positional output path
+            ],
+            obj=inject_client(mock_client),
+        )
 
         assert result.exit_code == 0, result.output
         # download_audio signature: (notebook_id, output_path, artifact_id=None).
@@ -312,24 +311,23 @@ class TestDownloadNotebookResolution:
                 ("abc22222-aaaa-4abc-def0-000000000002", "second"),
             ]
         )
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(return_value=artifacts)
-            mock_client.artifacts.download_audio = AsyncMock()
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(return_value=artifacts)
+        mock_client.artifacts.download_audio = AsyncMock()
 
-            result = runner.invoke(
-                cli,
-                [
-                    "download",
-                    "audio",
-                    "-n",
-                    full_uuid,
-                    "--artifact",
-                    "abc",  # ambiguous prefix
-                    "--json",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "download",
+                "audio",
+                "-n",
+                full_uuid,
+                "--artifact",
+                "abc",  # ambiguous prefix
+                "--json",
+            ],
+            obj=inject_client(mock_client),
+        )
 
         # Full contract: --json failure exits 1 (post-#925 exit-code parity)
         # with a {"error": ...} envelope on stdout, and the download_audio
@@ -346,24 +344,23 @@ class TestDownloadNotebookResolution:
         """Unknown artifact prefix surfaces ``not found`` in the output."""
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
         artifacts = _make_artifact_list([("aaaa1111-aaaa-4abc-def0-000000000001", "only")])
-        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.list = AsyncMock(return_value=artifacts)
-            mock_client.artifacts.download_audio = AsyncMock()
-            mock_cls.return_value = mock_client
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(return_value=artifacts)
+        mock_client.artifacts.download_audio = AsyncMock()
 
-            result = runner.invoke(
-                cli,
-                [
-                    "download",
-                    "audio",
-                    "-n",
-                    full_uuid,
-                    "--artifact",
-                    "zzz",  # no match
-                    "--json",
-                ],
-            )
+        result = runner.invoke(
+            cli,
+            [
+                "download",
+                "audio",
+                "-n",
+                full_uuid,
+                "--artifact",
+                "zzz",  # no match
+                "--json",
+            ],
+            obj=inject_client(mock_client),
+        )
 
         # Full contract: --json failure exits 1 (post-#925 exit-code parity)
         # with {"error": "Artifact 'zzz' not found"} on stdout, and
