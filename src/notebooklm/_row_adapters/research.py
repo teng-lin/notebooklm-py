@@ -167,11 +167,17 @@ class ResearchTaskInfoRow:
 
     @staticmethod
     def bundle_sources(bundle: Any) -> Any:
-        """Sources list at ``task_info[3][0]`` — the raw value (list-validated upstream).
+        """Sources list at ``task_info[3][0]`` — ``None`` when the slot is absent.
 
-        ``bundle`` is ``task_info[3]`` (already validated as a non-empty list by
-        the caller), so ``[0]`` is always present.
+        ``bundle`` is ``task_info[3]``. The parser's caller already
+        short-circuits an empty bundle, but the adapter still length-guards its
+        own read (mirroring :meth:`bundle_summary`) so an empty bundle degrades
+        to the missing-slot default instead of raising ``IndexError`` — the
+        soft-read contract this module documents. The caller coerces a
+        non-list (including ``None``) to ``[]``.
         """
+        if len(bundle) <= ResearchTaskInfoRow._SOURCES_POS:
+            return None
         return bundle[ResearchTaskInfoRow._SOURCES_POS]
 
     @staticmethod

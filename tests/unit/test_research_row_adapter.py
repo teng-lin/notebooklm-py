@@ -108,6 +108,12 @@ class TestResearchTaskInfoRow:
     def test_bundle_sources_returns_first(self) -> None:
         assert ResearchTaskInfoRow.bundle_sources([["a", "b"], "summary"]) == ["a", "b"]
 
+    def test_bundle_sources_empty_bundle_soft_degrades(self) -> None:
+        # Regression (#1502 review): an empty task_info[3] must hit the
+        # missing-slot default like every other soft read in this adapter —
+        # not raise IndexError. The parser's caller coerces None to [].
+        assert ResearchTaskInfoRow.bundle_sources([]) is None
+
     def test_bundle_summary_present(self) -> None:
         assert ResearchTaskInfoRow.bundle_summary([["a"], "Summary text"]) == "Summary text"
 
