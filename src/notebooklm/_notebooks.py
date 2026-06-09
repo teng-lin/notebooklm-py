@@ -62,7 +62,7 @@ def _extract_summary(outer: Any) -> str:
     # routine "no summary yet" case — return "" without logging drift.
     if outer is None:
         return ""
-    if isinstance(outer, list) and (len(outer) < 1 or outer[0] is None):
+    if isinstance(outer, list) and (not outer or outer[0] is None):
         return ""
     # Descend outer[0][0] via safe_index. A scalar ``outer`` or a malformed
     # ``outer[0]`` (present, non-None, but not the expected list) raises drift
@@ -608,7 +608,7 @@ class NotebooksAPI:
         # is the ``outer`` payload that ``_extract_summary`` descends, so delegate
         # to it: empty/None/null-slot → "" and present-but-malformed → drift,
         # identically to ``get_description`` (single source of truth — #1485).
-        if not isinstance(result, list) or len(result) < 1:
+        if not isinstance(result, list) or not result:
             return ""
         return _extract_summary(result[0])
 
