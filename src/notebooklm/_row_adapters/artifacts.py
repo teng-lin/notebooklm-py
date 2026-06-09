@@ -523,7 +523,14 @@ class ReportSuggestionRow:
         return isinstance(self._raw, list) and len(self._raw) >= self._MIN_LEN
 
     def _str_at(self, position: int) -> str:
-        """Return ``self._raw[position]`` when it is a str, else ``""``."""
+        """Return ``self._raw[position]`` when it is a str, else ``""``.
+
+        Bounds-guarded so a short / malformed row degrades to ``""`` (the
+        documented contract) instead of raising ``IndexError`` when a property
+        is read without first checking :attr:`is_well_formed`.
+        """
+        if not isinstance(self._raw, list) or len(self._raw) <= position:
+            return ""
         value = self._raw[position]
         return value if isinstance(value, str) else ""
 

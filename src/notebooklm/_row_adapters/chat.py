@@ -457,7 +457,7 @@ class PassageRow:
         record too short to carry start/end/text — both legitimate "skip this
         passage" shapes, not wire drift.
         """
-        if not isinstance(self._raw, list) or not self._raw:
+        if not isinstance(self._raw, list) or len(self._raw) <= self._PASSAGE_DATA_POS:
             return None
         data = self._raw[self._PASSAGE_DATA_POS]
         if not isinstance(data, list) or len(data) < self._MIN_LEN:
