@@ -47,9 +47,10 @@ async def test_get_summary_happy_path_returns_string():
 @pytest.mark.asyncio
 async def test_get_summary_drift_raises_typed_error():
     """Present-but-malformed payload raises ``UnknownRPCMethodError`` (the only mode)."""
-    # result[0] is present but an empty list → the safe_index descent into
-    # result[0][0] raises IndexError. A present-but-malformed inner payload is
-    # genuine drift (distinct from a routinely-absent/None result[0]).
+    # result = [[[]]]: result[0] (== outer) is [[]] — present and non-None — but
+    # its summary slot result[0][0] is an empty list, so the safe_index descent
+    # into result[0][0][0] raises IndexError. A present-but-malformed inner
+    # payload is genuine drift (distinct from a routinely-absent/None result[0]).
     api = _make_api([[[]]])
 
     with pytest.raises(UnknownRPCMethodError) as exc_info:
