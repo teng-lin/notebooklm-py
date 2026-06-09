@@ -524,7 +524,10 @@ async def _fetch_artifacts_once(
     """
     list_for_download = getattr(facade.artifacts, "_list_for_download", None)
     if list_for_download is not None:
-        all_artifacts, raw_studio_rows, mind_map_rows = await list_for_download(notebook_id)
+        # spec.kind => skip the mind-map sub-fetch for non-mind-map downloads (#1488 review).
+        all_artifacts, raw_studio_rows, mind_map_rows = await list_for_download(
+            notebook_id, spec.kind
+        )
     else:
         all_artifacts = await facade.artifacts.list(notebook_id)
 

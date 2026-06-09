@@ -742,8 +742,10 @@ class TestExecuteDownload:
         resolver.assert_awaited_once_with("nb_partial")
         # The resolved id flows into the single ``_list_for_download`` call — the
         # executor lists once and threads the raw rows down (#1488), so it no
-        # longer goes through the plain ``artifacts.list`` seam.
-        facade.artifacts._list_for_download.assert_awaited_once_with("resolved_nb")
+        # longer goes through the plain ``artifacts.list`` seam. Assert awaited
+        # first, then the first positional arg (a ``spec.kind`` arg follows it).
+        facade.artifacts._list_for_download.assert_awaited_once()
+        assert facade.artifacts._list_for_download.call_args[0][0] == "resolved_nb"
 
     @pytest.mark.asyncio
     async def test_artifact_resolver_used_for_partial_id(self, tmp_path):
