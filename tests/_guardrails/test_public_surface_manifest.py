@@ -1116,6 +1116,9 @@ def test_public_top_level_module_declares_all(module_name: str) -> None:
     assert all(isinstance(name, str) for name in all_value), (
         f"{module_name}.__all__ must contain only str names"
     )
+    assert len(all_value) == len(set(all_value)), (
+        f"{module_name}.__all__ contains duplicate entries"
+    )
     for name in all_value:
         assert hasattr(module, name), f"{module_name}.__all__ references missing attribute {name!r}"
 
