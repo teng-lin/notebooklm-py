@@ -40,15 +40,33 @@ def _extract_summary(outer: Any) -> str:
     """Extract the summary string from a SUMMARIZE ``result[0]`` payload.
 
     The expected shape is ``[[summary_string, ...], ...]`` — i.e. the summary
-    lives at ``outer[0][0]``. ``safe_index`` is used for the inner-most
-    descent so drift is logged with method_id + source rather than raising
-    ``IndexError`` from a raw subscript.
+    lives at ``outer[0][0]``. Only a genuinely *absent* summary is treated as
+    routinely-optional: a brand-new, source-less notebook has no summary yet,
+    so the server returns ``None`` at ``outer``, an empty ``outer``, or an
+    explicitly-null summary slot (``outer[0] is None``). Those three shapes
+    short-circuit to ``""`` so a healthy "no summary yet" response doesn't
+    surface as schema drift.
+
+    Everything else descends through ``safe_index``: a *present-but-malformed*
+    payload — a scalar ``outer`` (e.g. ``123``), or a non-``None`` ``outer[0]``
+    that isn't the expected ``[summary_string, ...]`` list — is genuine drift
+    and raises ``UnknownRPCMethodError`` with method_id + source rather than
+    silently becoming an empty summary (which would mask the wire-schema move).
 
     Returns:
-        The summary string, or ``""`` when the payload is missing the
-        expected slot (the caller is responsible for treating an empty
-        summary as "no description available").
+        The summary string, or ``""`` when the payload omits the summary
+        slot (the caller is responsible for treating an empty summary as
+        "no description available").
     """
+    # Genuinely-absent summary (no payload, empty payload, or null slot) is the
+    # routine "no summary yet" case — return "" without logging drift.
+    if outer is None:
+        return ""
+    if isinstance(outer, list) and (len(outer) < 1 or outer[0] is None):
+        return ""
+    # Descend outer[0][0] via safe_index. A scalar ``outer`` or a malformed
+    # ``outer[0]`` (present, non-None, but not the expected list) raises drift
+    # at the failing step rather than silently returning "".
     summary_val = safe_index(
         outer,
         0,
@@ -586,16 +604,13 @@ class NotebooksAPI:
             params,
             source_path=f"/notebook/{notebook_id}",
         )
-        # Response structure: [[[summary_string, ...], topics, ...]]
-        summary = safe_index(
-            result,
-            0,
-            0,
-            0,
-            method_id=RPCMethod.SUMMARIZE.value,
-            source="_notebooks.get_summary",
-        )
-        return str(summary) if summary else ""
+        # Response structure: [[[summary_string, ...], topics, ...]]. ``result[0]``
+        # is the ``outer`` payload that ``_extract_summary`` descends, so delegate
+        # to it: empty/None/null-slot → "" and present-but-malformed → drift,
+        # identically to ``get_description`` (single source of truth — #1485).
+        if not isinstance(result, list) or len(result) < 1:
+            return ""
+        return _extract_summary(result[0])
 
     async def get_description(self, notebook_id: str) -> NotebookDescription:
         """Get AI-generated summary and suggested topics for a notebook.

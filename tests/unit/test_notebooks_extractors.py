@@ -26,9 +26,30 @@ class TestExtractSummary:
 
         assert _extract_summary(outer) == "the summary"
 
+    def test_none_outer_returns_empty(self) -> None:
+        # Regression for #1485: a brand-new, source-less notebook has no
+        # summary, so result[0] (== outer) is None. Routine "no summary yet",
+        # NOT schema drift.
+        assert _extract_summary(None) == ""
+
+    def test_empty_outer_list_returns_empty(self) -> None:
+        # Regression for #1485: outer with no [0] slot at all is the same
+        # routine "no summary yet" state.
+        assert _extract_summary([]) == ""
+
+    def test_none_at_outer_zero_returns_empty(self) -> None:
+        # Regression for #1485: outer[0] is explicitly None (no summary slot)
+        # — routine absence, handled by the plain guard, not safe_index drift.
+        assert _extract_summary([None, [[["Q", "P"]]]]) == ""
+
+    def test_nested_summary_string_returns_string(self) -> None:
+        # outer[0][0] holds the summary string at the documented shape.
+        assert _extract_summary([["the summary"]]) == "the summary"
+
     def test_drift_missing_inner_index_raises(self) -> None:
-        # outer[0] is an empty list — outer[0][0] drifts and raises under
-        # strict decoding (the only mode).
+        # outer[0] is present but an empty list — the inner safe_index descent
+        # into outer[0][0] drifts and raises under strict decoding (the only
+        # mode). Present-but-malformed is real drift, distinct from absence.
         outer: list = [[], [[["Q", "P"]]]]
 
         with pytest.raises(UnknownRPCMethodError) as exc_info:
@@ -37,12 +58,40 @@ class TestExtractSummary:
         assert exc_info.value.source == "_notebooks._extract_summary"
 
     def test_drift_wrong_type_at_outer_zero_raises(self) -> None:
-        # outer[0] is an int — outer[0][0] raises TypeError, surfaced by
-        # safe_index as a typed drift error.
+        # outer[0] is present but an int — the inner safe_index descent into
+        # outer[0][0] raises TypeError, surfaced as a typed drift error. A
+        # present-but-malformed slot must NOT be over-suppressed as "absence".
         outer = [42, [[["Q", "P"]]]]
 
         with pytest.raises(UnknownRPCMethodError):
             _extract_summary(outer)
+
+    def test_drift_scalar_outer_raises(self) -> None:
+        # Regression for #1485 codex review: ``outer`` is itself a scalar (not
+        # None, not a list) — e.g. the server returned ``result[0] == 123``.
+        # This is present-but-malformed at the payload level, NOT the routine
+        # "no summary yet" absence, so it must raise drift rather than silently
+        # collapse to "". A `not isinstance(outer, list)` short-circuit would
+        # wrongly suppress it; the descent must reach safe_index.
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            _extract_summary(123)
+
+        assert exc_info.value.source == "_notebooks._extract_summary"
+
+    def test_drift_str_outer_raises(self) -> None:
+        # Regression for #1485 codex review (second round): a *string* outer is
+        # indexable, so a naive safe_index descent would char-index it
+        # ("abc"[0] -> "a") and silently return "a" instead of raising. A string
+        # at the outer-payload level is genuine drift, not a 1-char summary.
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_summary("abc")
+
+    def test_drift_str_at_outer_zero_raises(self) -> None:
+        # And a string at outer[0] (present, non-None, but not the expected
+        # [summary_string, ...] list) is drift too — must not collapse to the
+        # first character of the string.
+        with pytest.raises(UnknownRPCMethodError):
+            _extract_summary(["summary text"])
 
 
 class TestExtractSuggestedTopics:

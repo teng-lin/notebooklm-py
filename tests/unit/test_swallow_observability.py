@@ -103,22 +103,28 @@ def test_qa_pairs_raises_on_unguarded_shape():
 async def test_summary_raises_on_indexerror_drift():
     """_notebooks.py: summary extraction raises when result[0][0][0] drifts.
 
-    This site was migrated to ``safe_index``; under strict decoding (the only
-    mode) a drifted response raises ``UnknownRPCMethodError`` carrying the
-    call-site label ``source='_notebooks.get_summary'``.
+    ``get_summary`` delegates the descent to ``_extract_summary`` (the single
+    source of truth shared with ``get_description`` — #1485), so under strict
+    decoding (the only mode) a *present-but-malformed* response raises
+    ``UnknownRPCMethodError`` carrying the helper label
+    ``source='_notebooks._extract_summary'``. A genuinely-absent summary
+    (None / empty / null slot) returns "" instead and is covered in
+    ``test_get_summary_drift.py``.
     """
     from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
 
     api = NotebooksAPI.__new__(NotebooksAPI)
-    # result[0] is an empty list → result[0][0] raises IndexError.
-    mock_core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
+    # result[0] == [42]: the summary slot is present and non-None but holds an
+    # int, so the inner result[0][0][0] descent raises TypeError — genuine
+    # drift, distinct from a routinely-absent summary.
+    mock_core = make_fake_core(rpc_call=AsyncMock(return_value=[[42]]))
     api._rpc = mock_core
 
     with pytest.raises(UnknownRPCMethodError) as exc_info:
         await api.get_summary("nb_summary")
 
-    assert exc_info.value.source == "_notebooks.get_summary"
+    assert exc_info.value.source == "_notebooks._extract_summary"
 
 
 # ---------------------------------------------------------------------------

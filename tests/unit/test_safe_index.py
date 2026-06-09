@@ -83,6 +83,45 @@ def test_descending_into_int_is_caught_and_rerouted(monkeypatch):
     assert isinstance(exc_info.value.__cause__, TypeError)
 
 
+def test_descending_into_str_raises_drift():
+    """A str at an intermediate hop is drift, NOT a silent char index.
+
+    ``"abc"[0] == "a"`` — a string is indexable but is never a valid container
+    at an intermediate descent hop in a decoded RPC payload. Descending it would
+    smuggle a bogus 1-char "value" past drift detection. safe_index must reject
+    it as drift instead (regression for #1485 codex review).
+    """
+    with pytest.raises(UnknownRPCMethodError) as exc_info:
+        safe_index(["abc"], 0, 0, method_id="abc", source="test.str")
+    err = exc_info.value
+    # hop 0 descends ["abc"][0] -> "abc" (a str); hop 1 ([0]) is rejected, so
+    # the truncated path stops at (0,).
+    assert err.path == (0,)
+    assert err.source == "test.str"
+    assert err.data_at_failure is not None
+    assert "abc" in err.data_at_failure
+
+
+def test_descending_into_top_level_str_raises_drift():
+    """A str passed directly as ``data`` (descended at hop 0) is drift."""
+    with pytest.raises(UnknownRPCMethodError) as exc_info:
+        safe_index("abc", 0, method_id="abc", source="test.top_str")
+    assert exc_info.value.path == ()
+
+
+def test_descending_into_bytes_raises_drift():
+    """bytes is also indexable-but-not-a-container; reject it as drift too."""
+    with pytest.raises(UnknownRPCMethodError):
+        safe_index([b"abc"], 0, 0, method_id="abc", source="test.bytes")
+
+
+def test_str_leaf_value_is_returned_not_rejected():
+    """A str as the *final* leaf is fine — only intermediate hops are checked."""
+    assert safe_index([["leaf"]], 0, 0, method_id="abc", source="test.leaf") == "leaf"
+    # And a bare string with no descent is returned untouched.
+    assert safe_index("leaf", method_id="abc", source="test.no_descent") == "leaf"
+
+
 def test_strict_mode_exception_is_catchable_as_rpc_error(monkeypatch):
     """Backward compat: ``except RPCError`` still catches strict-mode raise."""
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")

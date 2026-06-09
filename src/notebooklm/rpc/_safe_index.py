@@ -71,12 +71,33 @@ def safe_index(
         The value at ``data[path[0]][path[1]]...`` on success.
 
     Raises:
-        UnknownRPCMethodError: When descent fails. The exception carries
-            ``method_id``, ``source``, ``path`` (truncated to where descent
-            stopped), and a truncated ``data_at_failure`` repr.
+        UnknownRPCMethodError: When descent fails — an out-of-range index, a
+            non-indexable value (``None``/``int``), a missing key, or a
+            ``str``/``bytes`` value at an intermediate hop (which is indexable
+            but never a valid container, so descending it would silently yield a
+            single character/byte instead of surfacing the shape drift). The
+            exception carries ``method_id``, ``source``, ``path`` (truncated to
+            where descent stopped), and a truncated ``data_at_failure`` repr.
     """
     current: Any = data
     for i, key in enumerate(path):
+        # A str/bytes is indexable but is NEVER a valid container at an
+        # *intermediate* descent hop in a decoded RPC payload: ``"abc"[0]``
+        # silently returns ``"a"`` instead of descending into a nested list,
+        # which would smuggle a bogus single-character "value" past drift
+        # detection (the payload shape has actually moved). Reject it as drift
+        # before indexing. (A string is fine as the returned *leaf* — the loop
+        # never indexes the final value.)
+        if isinstance(current, (str, bytes, bytearray)):
+            failing_path = tuple(path[:i])
+            raise UnknownRPCMethodError(
+                f"safe_index drift at path {failing_path}[{key}]: cannot index "
+                f"into {type(current).__name__} (expected a nested list/tuple)",
+                method_id=method_id,
+                path=failing_path,
+                source=source,
+                data_at_failure=_truncate(current),
+            )
         try:
             current = current[key]
         except (IndexError, TypeError, KeyError) as exc:

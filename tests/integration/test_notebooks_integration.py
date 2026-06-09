@@ -569,26 +569,60 @@ class TestNotebookEdgeCases:
         assert notebooks == []
 
     @pytest.mark.asyncio
-    async def test_get_summary_empty_response_raises(
+    async def test_get_summary_empty_response_returns_empty(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """An empty SUMMARIZE response drifts and raises under strict decoding.
+        """A summary-less SUMMARIZE response returns "" rather than drifting.
 
-        Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
-        soft-mode opt-out was retired in v0.7.0); a ``[]`` response cannot be
-        descended to the summary slot, so it surfaces as
-        ``UnknownRPCMethodError``. Strict-mode unit coverage lives in
+        Regression for #1485: a brand-new, source-less notebook has no summary
+        yet, so the server returns an empty/absent result[0] payload. That
+        routine "no summary yet" state must surface as "" instead of being
+        mis-classified as wire-schema drift. Strict-mode unit coverage lives in
         ``tests/unit/test_get_summary_drift.py``.
         """
-        response = build_rpc_response(RPCMethod.SUMMARIZE, [])
-        httpx_mock.add_response(content=response.encode())
+        # ``[]`` (no outer[0] slot), ``[None]`` (result[0] is None), and ``[[]]``
+        # (result[0] is an empty list — no summary slot) are all legitimate
+        # summary-less payloads. ``[[None]]`` (summary slot explicitly null) is
+        # the same routine absence, now consistent between get_summary and
+        # get_description after delegating to _extract_summary (#1485).
+        for data in ([], [None], [[]], [[None]]):
+            response = build_rpc_response(RPCMethod.SUMMARIZE, data)
+            httpx_mock.add_response(content=response.encode())
 
-        async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(UnknownRPCMethodError):
-                await client.notebooks.get_summary("nb_123")
+            async with NotebookLMClient(auth_tokens) as client:
+                assert await client.notebooks.get_summary("nb_123") == ""
+
+    @pytest.mark.asyncio
+    async def test_get_summary_malformed_response_raises(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A present-but-malformed SUMMARIZE payload still drifts and raises.
+
+        Distinct from the routinely-absent summary slot (#1485): when result[0]
+        is present (non-None) but cannot be descended to the summary value, that
+        is genuine schema drift and must surface as ``UnknownRPCMethodError``
+        under strict decoding (the only mode; the ``NOTEBOOKLM_STRICT_DECODE=0``
+        soft-mode opt-out was retired in v0.7.0). This guards against
+        over-suppressing real drift while fixing the empty-summary case — in
+        particular a scalar ``result[0]`` must raise, not collapse to "".
+        """
+        # Each payload has a present, non-None result[0] that cannot be descended
+        # to result[0][0][0]: a non-empty-but-malformed inner list, and a bare
+        # scalar (the #1485 codex over-suppression case). Contrast with [] /
+        # [None] / [[]] which are routine absence and return "" above.
+        for data in ([[[]]], [[42]], [123]):
+            response = build_rpc_response(RPCMethod.SUMMARIZE, data)
+            httpx_mock.add_response(content=response.encode())
+
+            async with NotebookLMClient(auth_tokens) as client:
+                with pytest.raises(UnknownRPCMethodError):
+                    await client.notebooks.get_summary("nb_123")
 
     @pytest.mark.asyncio
     async def test_get_description_empty_topics(
