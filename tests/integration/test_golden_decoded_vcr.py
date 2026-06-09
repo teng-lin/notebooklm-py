@@ -46,6 +46,7 @@ decoded objects produced from the existing cassettes.
 from __future__ import annotations
 
 import os
+import reprlib
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -103,7 +104,8 @@ def assert_decoded_equals(actual: Any, expected: Any, *, field: str) -> None:
     human-readable label like ``"artifacts_list[0].kind"``.
     """
     assert actual == expected, (
-        f"Decoded golden value drift for {field}: expected {expected!r}, got {actual!r}. "
+        f"Decoded golden value drift for {field}: "
+        f"expected {reprlib.repr(expected)}, got {reprlib.repr(actual)}. "
         "The cassette replayed but the decoder produced a different leaf value than the "
         "golden recording — likely a positional mis-map (row-adapter column moved) or a "
         "leaf-shape change in the recorded response. If the cassette was deliberately "
@@ -144,7 +146,7 @@ class TestChatGoldenDecoded:
         assert_decoded_equals(len(result.answer), 1871, field="chat_ask.answer length")
         assert result.answer.startswith(
             "This notebook is about **NotebookLM**, an online research"
-        ), f"Unexpected answer head: {result.answer[:80]!r}"
+        ), f"Unexpected answer head: {reprlib.repr(result.answer)}"
 
         # Conversation id + turn metadata.
         assert_decoded_equals(
@@ -199,7 +201,7 @@ class TestChatGoldenDecoded:
         )
         assert result.answer.startswith(
             "**NotebookLM** is an online research and note-taking tool"
-        ), f"Unexpected answer head: {result.answer[:80]!r}"
+        ), f"Unexpected answer head: {reprlib.repr(result.answer)}"
         assert_decoded_equals(
             result.conversation_id,
             "bc0666c8-34b5-4bf8-817f-554867ea6ee8",
@@ -385,7 +387,7 @@ class TestSourcesGoldenDecoded:
         )
         assert guide.summary.startswith(
             "This educational repository serves as a progressive tutorial"
-        ), f"Unexpected guide summary head: {guide.summary[:80]!r}"
+        ), f"Unexpected guide summary head: {reprlib.repr(guide.summary)}"
         assert isinstance(guide.keywords, tuple)
         assert_decoded_equals(len(guide.keywords), 5, field="sources_get_guide.keyword count")
         # First four keywords are non-scrubbed and positionally stable; the
@@ -416,7 +418,7 @@ class TestSourcesGoldenDecoded:
             field="sources_get_fulltext.source_id",
         )
         assert fulltext.title.startswith("GitHub - shareAI-lab/learn-claude-code"), (
-            f"Unexpected fulltext title head: {fulltext.title[:60]!r}"
+            f"Unexpected fulltext title head: {reprlib.repr(fulltext.title)}"
         )
         # char_count is a decoded integer that must equal the content length —
         # a mis-decode of the count slot (vs the content slot) breaks this.
