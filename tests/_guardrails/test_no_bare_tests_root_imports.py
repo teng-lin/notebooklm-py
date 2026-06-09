@@ -54,7 +54,7 @@ FORBIDDEN_BARE_TOP: frozenset[str] = frozenset(
 
 def _bare_violations(path: Path) -> list[tuple[int, str]]:
     """Return ``(lineno, imported_module)`` for every bare tests-root import."""
-    tree = ast.parse(path.read_text(), filename=str(path))
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     out: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -97,7 +97,8 @@ def test_detector_flags_bare_but_allows_qualified_and_relative(tmp_path) -> None
         "from integration.conftest import b\n"  # bare group dir -> flagged (line 3)
         "from tests.vcr_config import c\n"  # qualified -> OK
         "from .conftest import d\n"  # relative -> OK
-        "from _fixtures.fake_core import e\n"  # exempt helper package -> OK
+        "from _fixtures.fake_core import e\n",  # exempt helper package -> OK
+        encoding="utf-8",
     )
     assert _bare_violations(probe) == [
         (1, "conftest"),
