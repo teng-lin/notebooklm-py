@@ -97,12 +97,57 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     assert snapshot.rpc_calls_started == 1
     assert snapshot.rpc_calls_succeeded == 1
     assert snapshot.rpc_calls_failed == 0
+    # A clean decode never touches the drift counter (issue #1492).
+    assert snapshot.rpc_decode_errors == 0
     assert snapshot.rpc_latency_seconds_total >= 0
 
     assert len(events) == 1
     assert events[0].method == "GET_NOTEBOOK"
     assert events[0].status == "success"
     assert events[0].request_id == "batch-42"
+
+
+@pytest.mark.asyncio
+async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> None:
+    """Public contract: a decode/drift failure increments ``rpc_decode_errors``.
+
+    End-to-end mirror of the success test above (issue #1492). The transport
+    leg returns 200 OK; the injected decoder then raises a ``DecodingError``
+    (the base of ``UnknownRPCMethodError``), exercising the executor's
+    decode-boundary increment. Wire-schema drift is the stated #1 breakage
+    class, so the snapshot must expose it as a dedicated counter distinct from
+    ``rpc_calls_failed`` (which tracks transport-leg failures).
+    """
+    from notebooklm.exceptions import DecodingError
+
+    def drifting_decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> dict:
+        raise DecodingError("Google reshaped the response", method_id=rpc_id)
+
+    core = build_client_shell_for_tests(auth_tokens, decode_response=drifting_decode)
+    install_http_client_for_test(core._collaborators.kernel, AsyncMock(spec=httpx.AsyncClient))
+
+    from notebooklm._middleware.core import RpcResponse, build_chain
+
+    async def fake_terminal(request: object) -> RpcResponse:
+        return RpcResponse(
+            response=httpx.Response(200, text=")]}'\n[]"),
+            context=request.context,  # type: ignore[attr-defined]
+        )
+
+    core._composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
+    core._composed.chain_host._authed_post_chain = build_chain(
+        core._composed.middlewares, fake_terminal
+    )
+
+    with pytest.raises(DecodingError):
+        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
+
+    snapshot = core._collaborators.metrics.snapshot()
+    assert snapshot.rpc_decode_errors == 1
+    # The transport leg succeeded (200 OK), so the generic transport-failure
+    # counter stays 0 — the drift is counted ONLY under the dedicated signal.
+    assert snapshot.rpc_calls_failed == 0
+    assert snapshot.rpc_calls_started == 1
 
 
 @pytest.mark.asyncio

@@ -52,6 +52,10 @@ from uuid import uuid4
 import httpx
 
 from notebooklm._artifact.payloads import build_retry_artifact_params
+from notebooklm._chat.wire import (
+    build_streaming_chat_request,
+    parse_streaming_chat_response,
+)
 from notebooklm._env import get_default_language
 from notebooklm._logging import scrub_secrets
 from notebooklm._notebooks import build_create_notebook_params
@@ -62,6 +66,7 @@ from notebooklm.auth import (
     get_authuser_for_storage,
     load_auth_from_storage,
 )
+from notebooklm.exceptions import ChatError, ChatResponseParseError, DecodingError
 from notebooklm.paths import get_storage_path
 from notebooklm.rpc import (
     RPCError,
@@ -76,6 +81,7 @@ from notebooklm.rpc.decoder import (
     parse_chunked_response,
     strip_anti_xssi,
 )
+from notebooklm.rpc.types import _QUERY_ENDPOINT_PATH
 
 
 class CheckStatus(str, Enum):
@@ -680,6 +686,140 @@ async def check_method(
     )
 
 
+@dataclass
+class _ChatQueryProbe:
+    """Method-like sentinel for the ``GenerateFreeFormStreamed`` chat probe.
+
+    The streamed-chat orchestration endpoint is NOT a batchexecute RPC ID — it
+    is a ``PATH_NOT_METHOD`` ``v1`` URL segment (see ``_QUERY_ENDPOINT_PATH`` in
+    ``rpc/types.py``), so it has no :class:`RPCMethod` enum member and cannot be
+    probed by ``make_rpc_call``/``check_method`` like the obfuscated method IDs.
+    This ducktype gives the probe's :class:`CheckResult` the ``.name`` /
+    ``.value`` attributes that ``print_summary`` / ``format_check_output`` /
+    ``partition_errors`` read, so the chat result flows through the existing
+    summary + exit-code machinery unchanged (an ``ERROR`` here is classified
+    and reported as drift exactly like a method-ID probe).
+    """
+
+    name: str = "GENERATE_FREE_FORM_STREAMED"
+    value: str = _QUERY_ENDPOINT_PATH
+
+
+# Singleton sentinel reused for every chat-probe CheckResult.
+CHAT_QUERY_PROBE = _ChatQueryProbe()
+
+
+async def check_chat_query(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    notebook_id: str | None,
+) -> CheckResult:
+    """Probe the streamed-chat ``GenerateFreeFormStreamed`` orchestration RPC.
+
+    This is the chat surface's drift canary. Unlike the batchexecute method-ID
+    probes, the chat endpoint is a hardcoded ``v1`` path with no obfuscated RPC
+    ID to echo back, so liveness is asserted on the *wire shape* instead: issue
+    one minimal request and require an HTTP 200 plus a recognizable stream frame
+    (a ``wrb.fr`` envelope or a server ``"er"`` frame).
+
+    Classification mirrors the method-ID probes:
+
+    * Parseable stream (an answer, or a server-side ``ChatError`` frame the
+      parser recognizes — including a rate-limit / rejected frame) -> ``OK``:
+      the wire contract is intact, the server merely declined this request.
+    * Zero parseable chunks (:class:`ChatResponseParseError`) -> ``ERROR``: the
+      response body was empty or the wire format drifted. This is the schema
+      drift the canary exists to catch.
+    * Non-200 / transport failure -> ``ERROR`` (rate-limit / ReadTimeout text is
+      still classified as transient downstream by ``is_transient_error``).
+
+    Skipped when no notebook ID is configured (the request needs one for
+    server-side conversation persistence).
+    """
+    if not notebook_id:
+        return CheckResult(
+            method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
+            status=CheckStatus.SKIPPED,
+            expected_id=CHAT_QUERY_PROBE.value,
+            found_ids=[],
+            error="No notebook ID provided (chat probe needs one)",
+        )
+
+    url, body, extra_headers = build_streaming_chat_request(
+        snapshot=auth,
+        notebook_id=notebook_id,
+        question="RPC health check ping.",
+        source_ids=[],
+        conversation_history=None,
+        conversation_id=None,
+        reqid=int(uuid4().int % 1_000_000),
+    )
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": auth.cookie_header,
+        **extra_headers,
+    }
+
+    try:
+        response = await client.post(url, content=body, headers=headers)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        return CheckResult(
+            method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
+            status=CheckStatus.ERROR,
+            expected_id=CHAT_QUERY_PROBE.value,
+            found_ids=[],
+            error=f"HTTP {e.response.status_code}",
+        )
+    except httpx.RequestError as e:
+        # ``httpx.ReadTimeout`` can stringify to ``""``; fall back to the class
+        # name so the downstream transient classifier (and the operator) sees a
+        # usable signal — same posture as ``make_rpc_request`` (#864).
+        return CheckResult(
+            method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
+            status=CheckStatus.ERROR,
+            expected_id=CHAT_QUERY_PROBE.value,
+            found_ids=[],
+            error=str(e) or type(e).__name__,
+        )
+
+    try:
+        parse_streaming_chat_response(response.text)
+    except (ChatResponseParseError, DecodingError) as e:
+        # Zero parseable chunks (empty/drifted body) OR strict positional drift
+        # raising DecodingError / UnknownRPCMethodError from the wire decoder:
+        # both are the schema-drift signal the canary exists to surface. Catch
+        # them here so a drifted response returns a clean ERROR result rather
+        # than crashing the canary with an uncaught exception.
+        return CheckResult(
+            method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
+            status=CheckStatus.ERROR,
+            expected_id=CHAT_QUERY_PROBE.value,
+            found_ids=[],
+            error=f"Parse error: {e}",
+        )
+    except ChatError as e:
+        # A recognized server-side ``"er"`` / rate-limit frame: the wire shape
+        # is INTACT (the parser identified the frame), the server simply
+        # declined this request. Treat as OK — the contract is healthy. The
+        # message is preserved for the operator (and so a rate-limit frame
+        # stays visible), but it does not fail the canary.
+        return CheckResult(
+            method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
+            status=CheckStatus.OK,
+            expected_id=CHAT_QUERY_PROBE.value,
+            found_ids=[CHAT_QUERY_PROBE.value],
+            error=f"Server declined (recognized frame): {e}",
+        )
+
+    return CheckResult(
+        method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
+        status=CheckStatus.OK,
+        expected_id=CHAT_QUERY_PROBE.value,
+        found_ids=[CHAT_QUERY_PROBE.value],
+    )
+
+
 async def setup_temp_resources(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -1042,6 +1182,19 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
 
                 if i < total and result.status != CheckStatus.SKIPPED:
                     await asyncio.sleep(CALL_DELAY)
+
+            # Probe the streamed-chat orchestration RPC. It is not an
+            # ``RPCMethod`` (it is a ``PATH_NOT_METHOD`` ``v1`` URL segment),
+            # so it is checked separately from the method-ID loop above — but
+            # its ``CheckResult`` flows through the same summary + exit-code
+            # machinery so chat drift fails the canary like any other probe.
+            chat_result = await check_chat_query(client, auth, notebook_id)
+            results.append(chat_result)
+            chat_icon = STATUS_ICONS[chat_result.status]
+            chat_line = f"{chat_icon:8} {chat_result.method.name} ({chat_result.expected_id})"
+            if chat_result.error and chat_result.status != CheckStatus.OK:
+                chat_line += f" - {scrub_secrets(chat_result.error)}"
+            print(chat_line)
 
         finally:
             if full_mode and temp_resources.notebook_id:

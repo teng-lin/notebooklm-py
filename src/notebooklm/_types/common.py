@@ -90,6 +90,31 @@ class ClientMetricsSnapshot:
     upload_queue_wait_seconds_max: float = 0.0
     lock_wait_seconds_total: float = 0.0
     lock_wait_seconds_max: float = 0.0
+    # Appended at the END so no existing positional parameter shifts — the
+    # public ``ClientMetricsSnapshot`` is constructed positionally in places,
+    # and inserting mid-list would be a breaking signature change (the
+    # api-compat audit flags a moved positional parameter). Keep new counters
+    # here at the tail.
+    rpc_decode_errors: int = 0
+    """Schema-drift failures surfaced at the **RPC executor's response-decode
+    boundary**.
+
+    Bumped whenever the executor rejects a decoded RPC response as schema
+    drift — a wrapped shape-drift error (bad JSON / missing key-or-index) or a
+    surfaced ``DecodingError`` / ``UnknownRPCMethodError`` raised while decoding
+    the response envelope (``safe_index`` inside the decoder). Wire-schema drift
+    is the stated #1 breakage class, so this counter separates "Google reshaped
+    a response" from an ordinary 5xx / network failure (which lands in
+    ``rpc_calls_failed`` via the transport-leg ``MetricsMiddleware``). A decode
+    error recovered by a refresh-and-retry is NOT counted; only the error that
+    ultimately surfaces is.
+
+    Scope note: this covers drift detected at the executor boundary. Positional
+    drift raised *later* by feature-layer ``safe_index`` navigation (after
+    ``rpc_call`` returns — e.g. ``_extract_summary``) propagates straight to the
+    caller and is not routed through this counter yet; broadening the counting
+    boundary to those sites is tracked as a follow-up.
+    """
 
 
 @dataclass(frozen=True)

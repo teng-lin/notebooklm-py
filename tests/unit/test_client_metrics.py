@@ -94,6 +94,19 @@ def test_increment_accumulates_across_calls() -> None:
     assert snapshot.rpc_calls_failed == 0
 
 
+def test_decode_errors_counter_defaults_zero_and_accumulates() -> None:
+    """The drift counter (issue #1492) starts at 0 and accumulates through the
+    same locked ``increment()`` path as every other counter — confirming it is
+    threadsafe-consistent with the existing metrics locking.
+    """
+    metrics = ClientMetrics()
+    assert metrics.snapshot().rpc_decode_errors == 0
+
+    metrics.increment(rpc_decode_errors=1)
+    metrics.increment(rpc_decode_errors=2)
+    assert metrics.snapshot().rpc_decode_errors == 3
+
+
 def test_increment_holds_metrics_lock_during_update() -> None:
     """``increment()`` itself must run under ``_metrics_lock``.
 

@@ -30,6 +30,7 @@ from ._transport_errors import (
     parse_retry_after,
 )
 from .auth import format_authuser_value
+from .exceptions import DecodingError
 from .rpc import (
     ClientError,
     NetworkError,
@@ -353,6 +354,17 @@ class RpcExecutor:
                 )
                 return refreshed
 
+            # Count only genuine wire-schema drift, not every decoded
+            # ``RPCError``. ``DecodingError`` (and its ``UnknownRPCMethodError``
+            # subclass, e.g. from ``safe_index``) means "Google reshaped a
+            # response"; a decoded ``RateLimitError`` / ``AuthError`` /
+            # ``*NotFoundError`` is a semantic outcome, not drift, and must not
+            # inflate the drift signal. This is the surfaced leg only — a decode
+            # error recovered by the refresh-and-retry above returns before
+            # reaching here, so it is correctly not counted.
+            if isinstance(exc, DecodingError):
+                self._metrics.increment(rpc_decode_errors=1)
+
             error_details = [type(exc).__name__]
             if exc.rpc_code is not None:
                 error_details.append(f"rpc_code={exc.rpc_code}")
@@ -377,6 +389,12 @@ class RpcExecutor:
             # this guard exists to remove.
             elapsed = time.perf_counter() - start
             logger.error("RPC %s failed after %.3fs: %s", method.name, elapsed, exc)
+            # Genuine shape drift: a malformed body or a missing key/index in
+            # the decoded payload. Count it under the dedicated drift signal
+            # before re-raising as ``RPCError`` (the wrap is the executor's
+            # single decode-boundary, so this is the one site for the wrapped
+            # case — symmetric with the surfaced ``DecodingError`` leg above).
+            self._metrics.increment(rpc_decode_errors=1)
             raise RPCError(
                 f"Failed to decode response for {method.name}: {exc}",
                 method_id=method.value,

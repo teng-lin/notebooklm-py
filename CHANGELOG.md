@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Schema-drift observability: `rpc_decode_errors` counter + chat drift canary**
+  (#1492). Wire-schema drift is the stated #1 breakage class, but
+  decode/drift failures (`DecodingError` / `UnknownRPCMethodError`) were
+  invisible to metrics — they did not even reach the transport-leg
+  `rpc_calls_failed` counter (the middleware chain wraps only the transport
+  leg; decode happens after). `ClientMetricsSnapshot` now exposes a dedicated
+  `rpc_decode_errors` counter (additive, defaults to `0`, appended at the end
+  of the dataclass so existing positional construction is unaffected),
+  incremented at the executor's response-decode boundary whenever a decoded
+  response envelope is rejected as drift — both the wrapped shape-drift case
+  (bad JSON / missing key-or-index) and a surfaced `DecodingError` /
+  `UnknownRPCMethodError` from the envelope decoder. A decoded *semantic* error
+  (rate-limit, not-found, auth) is not drift and does not bump the counter; a
+  drift error recovered by refresh-and-retry is not counted. (Positional drift
+  raised later by feature-layer `safe_index` navigation, after `rpc_call`
+  returns, is not yet routed through this counter — a tracked follow-up.)
+  Operators can now alert on "Google reshaped a response" distinctly from
+  ordinary 5xx / network failures. Separately,
+  `scripts/check_rpc_health.py` now probes the streamed-chat orchestration RPC
+  `GenerateFreeFormStreamed` — a `PATH_NOT_METHOD` (`v1` URL) endpoint with no
+  obfuscated method ID — by asserting a 200 plus a recognizable stream frame,
+  closing the gap where the chat surface escaped the daily drift canary.
+
 ### Fixed
 
 - **Empty notebook summary no longer raises `UnknownRPCMethodError`** (#1485).

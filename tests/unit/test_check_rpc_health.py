@@ -19,6 +19,7 @@ auth-failure test by invoking ``main()`` with a missing storage env var.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from collections import Counter
 from pathlib import Path
@@ -560,6 +561,139 @@ def test_print_summary_lists_affected_methods_on_exit_three(
     assert "timeout" in affected and "parse" in affected
     # …and the transient one is NOT listed as an affected method.
     assert "rate" not in affected
+
+
+# ---------------------------------------------------------------------------
+# check_chat_query: GenerateFreeFormStreamed (PATH_NOT_METHOD) drift probe
+#
+# The streamed-chat orchestration RPC has no obfuscated method ID to echo back
+# (it is a hardcoded ``v1`` URL path), so the canary probes its WIRE SHAPE:
+# 200 + a recognizable stream frame -> OK; zero parseable chunks -> ERROR
+# (drift). These tests pin that classification (issue #1492).
+# ---------------------------------------------------------------------------
+
+
+def _chat_auth() -> Any:
+    return check_rpc_health.AuthTokens(
+        cookies={"SID": "sid"},
+        csrf_token="csrf",
+        session_id="session",
+        authuser=2,
+        account_email="bob@example.com",
+    )
+
+
+class _ChatClient:
+    """Minimal httpx-like client returning a fixed response (or raising)."""
+
+    def __init__(self, *, text: str = "", status: int = 200, raises: Exception | None = None):
+        self._text = text
+        self._status = status
+        self._raises = raises
+        self.url: str | None = None
+        self.content: str | None = None
+
+    async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+        self.url = url
+        self.content = content
+        if self._raises is not None:
+            raise self._raises
+        return httpx.Response(
+            self._status,
+            text=self._text,
+            request=httpx.Request("POST", url),
+        )
+
+
+def _wrb_fr_body(inner: Any) -> str:
+    """Build an anti-XSSI-prefixed body wrapping one ``wrb.fr`` frame."""
+    frame = json.dumps([["wrb.fr", "GenerateFreeFormStreamed", json.dumps(inner)]])
+    return ")]}'\n" + frame
+
+
+def test_chat_probe_uses_query_endpoint_path() -> None:
+    """The probe's CheckResult is labelled with the streamed-chat path, not an
+    RPCMethod value, and matches the library's ``_QUERY_ENDPOINT_PATH``.
+    """
+    assert check_rpc_health.CHAT_QUERY_PROBE.value == check_rpc_health._QUERY_ENDPOINT_PATH
+    assert "GenerateFreeFormStreamed" in check_rpc_health.CHAT_QUERY_PROBE.value
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_skipped_without_notebook() -> None:
+    result = await check_rpc_health.check_chat_query(_ChatClient(), _chat_auth(), None)
+    assert result.status is CheckStatus.SKIPPED
+    assert result.method.name == "GENERATE_FREE_FORM_STREAMED"
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_ok_on_parseable_frame() -> None:
+    # An empty-list ``wrb.fr`` frame is a recognized (heartbeat) frame: the
+    # wire shape is intact even though there's no answer text. -> OK.
+    client = _ChatClient(text=_wrb_fr_body([]))
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.OK
+    # The probe hit the streamed-chat endpoint, not batchexecute.
+    assert "GenerateFreeFormStreamed" in (client.url or "")
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_error_on_zero_parseable_chunks() -> None:
+    # Empty/garbage body -> ChatResponseParseError -> ERROR (this is the
+    # wire-drift signal the chat canary exists to catch).
+    client = _ChatClient(text=")]}'\n\n")
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.ERROR
+    assert "Parse error" in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_error_on_strict_decode_drift(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Strict positional drift in the wire decoder raises UnknownRPCMethodError
+    # (a DecodingError subclass), NOT ChatResponseParseError. The probe must
+    # CATCH it and return ERROR rather than letting it escape and crash the
+    # canary (#1492 review). This is the drift the chat canary exists to catch.
+    from notebooklm.exceptions import UnknownRPCMethodError
+
+    def _raise_drift(_text: str) -> Any:
+        raise UnknownRPCMethodError("safe_index drift at path ()[0]")
+
+    monkeypatch.setattr(check_rpc_health, "parse_streaming_chat_response", _raise_drift)
+    client = _ChatClient(text=_wrb_fr_body([]))
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.ERROR
+    assert "Parse error" in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_ok_on_recognized_server_error_frame() -> None:
+    # An ``"er"`` frame is a RECOGNIZED frame (the parser raises ChatError):
+    # the wire contract is intact, the server merely declined. -> OK.
+    body = ")]}'\n" + json.dumps([["er", "GenerateFreeFormStreamed", 7]])
+    client = _ChatClient(text=body)
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.OK
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_error_on_http_status() -> None:
+    client = _ChatClient(status=500, text="boom")
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.ERROR
+    assert result.error == "HTTP 500"
+
+
+@pytest.mark.asyncio
+async def test_chat_probe_surfaces_class_name_for_empty_message_errors() -> None:
+    # Mirror the make_rpc_request #864 fallback: ``httpx.ReadTimeout("")``
+    # stringifies to "" and must surface as the class name, not be swallowed.
+    client = _ChatClient(raises=httpx.ReadTimeout(""))
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.ERROR
+    assert result.error == "ReadTimeout"
+    # And ReadTimeout is classified as transient downstream (does not fail the
+    # canary) — same posture as the method-ID probes.
+    assert is_transient_error(result.error) is True
 
 
 # ---------------------------------------------------------------------------

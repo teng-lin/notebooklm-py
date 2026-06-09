@@ -12,6 +12,7 @@ from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm.auth import AuthTokens
+from notebooklm.exceptions import DecodingError, UnknownRPCMethodError
 from notebooklm.rpc import (
     ClientError,
     NetworkError,
@@ -933,3 +934,161 @@ async def test_decode_code_bug_propagates(
         )
 
     assert raised.value is decoder_exc
+
+
+# =============================================================================
+# rpc_decode_errors drift counter (issue #1492)
+#
+# Wire-schema drift is the stated #1 breakage class. The executor's decode
+# boundary bumps the dedicated ``rpc_decode_errors`` counter so operators can
+# distinguish "Google reshaped a response" from an ordinary transport failure.
+# These tests pin the two increment sites (wrapped shape-drift + surfaced
+# ``DecodingError``), the no-increment cases (success, non-drift ``RPCError``),
+# and that a decode error recovered by refresh-and-retry is NOT counted.
+# =============================================================================
+
+
+def _decode_error_count(owner: _Owner) -> int:
+    """Sum ``rpc_decode_errors`` deltas recorded by the stub's ``increment``."""
+    return sum(int(inc.get("rpc_decode_errors", 0)) for inc in owner.metric_increments)
+
+
+@pytest.mark.asyncio
+async def test_decode_errors_metric_zero_on_success() -> None:
+    """A clean decode never touches the drift counter."""
+    owner = _Owner()
+
+    result = await _executor(owner)._execute_once(
+        RPCMethod.LIST_NOTEBOOKS,
+        [],
+        "/",
+        False,
+        False,
+    )
+
+    assert result == {"rpc_id": RPCMethod.LIST_NOTEBOOKS.value, "allow_null": False}
+    assert _decode_error_count(owner) == 0
+
+
+@pytest.mark.parametrize(
+    "decoder_exc_factory",
+    [
+        lambda: KeyError("missing"),
+        lambda: IndexError("oob"),
+        lambda: TypeError("bad type"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_decode_errors_metric_increments_on_wrapped_shape_drift(
+    decoder_exc_factory: Callable[[], Exception],
+) -> None:
+    """The wrap branch (bad JSON / missing key-or-index) bumps the counter."""
+    owner = _Owner()
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise decoder_exc_factory()
+
+    with pytest.raises(RPCError):
+        await _executor(owner, decode_response=decode)._execute_once(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    assert _decode_error_count(owner) == 1
+
+
+@pytest.mark.parametrize(
+    "drift_exc_factory",
+    [
+        lambda: DecodingError("unexpected shape", method_id="x"),
+        lambda: UnknownRPCMethodError(
+            "safe_index drift", method_id="x", path=(0,), source="_decoder"
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_decode_errors_metric_increments_on_surfaced_drift(
+    drift_exc_factory: Callable[[], Exception],
+) -> None:
+    """A ``DecodingError`` / ``UnknownRPCMethodError`` surfaced by the decoder
+    (e.g. from ``safe_index``) bumps the drift counter on the surfaced leg.
+    """
+    owner = _Owner()
+    drift_exc = drift_exc_factory()
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise drift_exc
+
+    with pytest.raises(DecodingError) as raised:
+        await _executor(owner, decode_response=decode)._execute_once(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    assert raised.value is drift_exc
+    assert _decode_error_count(owner) == 1
+
+
+@pytest.mark.asyncio
+async def test_decode_errors_metric_not_bumped_for_non_drift_rpc_error() -> None:
+    """A decoded *semantic* ``RPCError`` (rate-limit / not-found / auth) is not
+    schema drift and MUST NOT inflate ``rpc_decode_errors`` — only
+    ``DecodingError`` and its subclasses count.
+    """
+    owner = _Owner()
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise RateLimitError("quota", method_id=RPCMethod.LIST_NOTEBOOKS.value)
+
+    with pytest.raises(RateLimitError):
+        await _executor(owner, decode_response=decode)._execute_once(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    assert _decode_error_count(owner) == 0
+
+
+@pytest.mark.asyncio
+async def test_decode_errors_metric_not_counted_when_recovered_by_retry() -> None:
+    """A decode error cured by refresh-and-retry returns before the surfaced
+    leg, so it is NOT counted — only an error that ultimately surfaces is.
+    """
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    decode_calls = 0
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        nonlocal decode_calls
+        decode_calls += 1
+        if decode_calls == 1:
+            raise DecodingError("auth-shaped drift on first attempt")
+        return {"ok": True}
+
+    result = await _executor(
+        owner,
+        decode_response=decode,
+        is_auth_error=lambda exc: True,
+    )._execute_once(
+        RPCMethod.LIST_NOTEBOOKS,
+        [],
+        "/",
+        False,
+        False,
+    )
+
+    assert result == {"ok": True}
+    assert decode_calls == 2
+    assert _decode_error_count(owner) == 0
