@@ -785,12 +785,14 @@ async def check_chat_query(
 
     try:
         parse_streaming_chat_response(response.text)
-    except (ChatResponseParseError, DecodingError) as e:
-        # Zero parseable chunks (empty/drifted body) OR strict positional drift
-        # raising DecodingError / UnknownRPCMethodError from the wire decoder:
-        # both are the schema-drift signal the canary exists to surface. Catch
-        # them here so a drifted response returns a clean ERROR result rather
-        # than crashing the canary with an uncaught exception.
+    except (ChatResponseParseError, DecodingError, json.JSONDecodeError) as e:
+        # Zero parseable chunks (empty/drifted body), a structurally malformed
+        # JSON body (``json.JSONDecodeError`` — a ``ValueError`` subclass we
+        # catch specifically so a bare ``ValueError`` from a real bug still
+        # propagates), OR strict positional drift raising DecodingError /
+        # UnknownRPCMethodError from the wire decoder: all are the schema-drift
+        # signal the canary exists to surface. Catch them here so a drifted
+        # response returns a clean ERROR result rather than crashing the canary.
         return CheckResult(
             method=CHAT_QUERY_PROBE,  # type: ignore[arg-type]
             status=CheckStatus.ERROR,
