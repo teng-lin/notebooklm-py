@@ -115,7 +115,7 @@ class TestDownloadStandardTypes:
         mock_client = create_mock_client()
         output_target = tmp_path / output_name
 
-        async def mock_download(notebook_id, output_path, artifact_id=None):
+        async def mock_download(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"fake content")
             return output_path
 
@@ -157,7 +157,7 @@ class TestDownloadStandardTypes:
         mock_client = create_mock_client()
         output_dir = tmp_path / "slides"
 
-        async def mock_download_slide_deck(notebook_id, output_path, artifact_id=None):
+        async def mock_download_slide_deck(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).mkdir(parents=True, exist_ok=True)
             (Path(output_path) / "slide_1.png").write_bytes(b"fake slide")
             return output_path
@@ -237,7 +237,7 @@ class TestDownloadFlags:
 
         output_file = tmp_path / "audio.mp3"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"fake audio")
             return output_path
 
@@ -274,7 +274,7 @@ class TestDownloadFlags:
 
         output_file = tmp_path / "audio.mp3"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"fake audio")
             return output_path
 
@@ -312,7 +312,7 @@ class TestDownloadFlags:
         output_file = tmp_path / "audio.mp3"
         output_file.write_bytes(b"existing content")
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"new content")
             return output_path
 
@@ -476,7 +476,7 @@ class TestDownloadCommandsExist:
 
         output_file = tmp_path / "cinematic.mp4"
 
-        async def mock_download_video(notebook_id, output_path, artifact_id=None):
+        async def mock_download_video(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"fake cinematic content")
             return output_path
 
@@ -573,7 +573,7 @@ class TestDownloadAutoRename:
         output_file = tmp_path / "audio.mp3"
         output_file.write_bytes(b"existing content")
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"new content")
             return output_path
 
@@ -611,7 +611,7 @@ class TestDownloadAll:
 
         output_dir = tmp_path / "downloads"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"audio content")
             return output_path
 
@@ -672,7 +672,7 @@ class TestDownloadAll:
         output_dir = tmp_path / "downloads"
         call_count = 0
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -727,7 +727,7 @@ class TestDownloadAllExitCodeContract:
         mock_client = create_mock_client()
         output_dir = tmp_path / "downloads"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             raise Exception("Network error")
 
         mock_client.artifacts.list = AsyncMock(
@@ -770,7 +770,7 @@ class TestDownloadAllExitCodeContract:
         output_dir = tmp_path / "downloads"
         call_count = 0
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -824,7 +824,7 @@ class TestDownloadAllExitCodeContract:
         output_dir = tmp_path / "downloads"
         call_count = 0
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -867,7 +867,7 @@ class TestDownloadAllExitCodeContract:
         mock_client = create_mock_client()
         output_dir = tmp_path / "downloads"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"audio content")
             return output_path
 
@@ -910,7 +910,7 @@ class TestDownloadAllNameFilter:
         output_dir = tmp_path / "downloads"
         downloaded_ids: list[str | None] = []
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             downloaded_ids.append(artifact_id)
             Path(output_path).write_bytes(b"audio content")
             return output_path
@@ -1110,7 +1110,7 @@ class TestDownloadAllDryRunFilenameParity:
         mock_client = create_mock_client()
         output_dir_exec = tmp_path / "exec"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"audio content")
             return output_path
 
@@ -1145,7 +1145,7 @@ class TestDownloadAllDryRunFilenameParity:
         # Create existing file
         (output_dir / "First Audio.mp3").write_bytes(b"existing")
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"new content")
             return output_path
 
@@ -1184,7 +1184,7 @@ class TestDownloadArtifactFlag:
         output_file = tmp_path / "audio.mp3"
         downloaded_ids = []
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             downloaded_ids.append(artifact_id)
             Path(output_path).write_bytes(b"audio")
             return output_path
@@ -1239,7 +1239,7 @@ class TestDownloadArtifactFlag:
         output_file = tmp_path / "audio.mp3"
         downloaded_ids = []
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             downloaded_ids.append(artifact_id)
             Path(output_path).write_bytes(b"audio")
             return output_path
@@ -1312,7 +1312,7 @@ class TestDownloadErrorHandling:
 
         output_file = tmp_path / "audio.mp3"
 
-        async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+        async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             raise Exception("Connection refused")
 
         mock_client.artifacts.list = AsyncMock(
@@ -1407,7 +1407,7 @@ class TestDownloadQuizStandardFlags:
         output_file = tmp_path / "quiz.json"
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text('{"questions": []}')
             return output_path
@@ -1433,7 +1433,7 @@ class TestDownloadQuizStandardFlags:
         chosen_ids: list[str | None] = []
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             chosen_ids.append(artifact_id)
             Path(output_path).write_text("{}")
@@ -1469,7 +1469,7 @@ class TestDownloadQuizStandardFlags:
         chosen_ids: list[str | None] = []
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             chosen_ids.append(artifact_id)
             Path(output_path).write_text("{}")
@@ -1503,7 +1503,7 @@ class TestDownloadQuizStandardFlags:
         chosen_ids: list[str | None] = []
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             chosen_ids.append(artifact_id)
             Path(output_path).write_text("{}")
@@ -1559,7 +1559,7 @@ class TestDownloadQuizStandardFlags:
         downloaded: list[str | None] = []
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             downloaded.append(artifact_id)
             Path(output_path).write_text('{"q": []}')
@@ -1592,7 +1592,7 @@ class TestDownloadQuizStandardFlags:
         output_file.write_text("OLD")
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text("NEW")
             return output_path
@@ -1620,7 +1620,7 @@ class TestDownloadQuizStandardFlags:
         output_file.write_text("EXISTING")
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text("OVERWROTE")
             return output_path
@@ -1659,7 +1659,7 @@ class TestDownloadQuizStandardFlags:
         output_file = tmp_path / "quiz.json"
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text("{}")
             return output_path
@@ -1690,7 +1690,7 @@ class TestDownloadQuizStandardFlags:
         captured: dict[str, str] = {}
 
         async def fake_download_quiz(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             captured["output_format"] = output_format
             Path(output_path).write_text("# Quiz")
@@ -1748,7 +1748,7 @@ class TestDownloadFlashcardsStandardFlags:
         output_file = tmp_path / "cards.json"
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text('{"cards": []}')
             return output_path
@@ -1776,7 +1776,7 @@ class TestDownloadFlashcardsStandardFlags:
         downloaded: list[str | None] = []
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             downloaded.append(artifact_id)
             Path(output_path).write_text('{"cards": []}')
@@ -1837,7 +1837,7 @@ class TestDownloadFlashcardsStandardFlags:
         output_file.write_text("OLD")
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text("NEW")
             return output_path
@@ -1865,7 +1865,7 @@ class TestDownloadFlashcardsStandardFlags:
         output_file.write_text("EXISTING")
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text("OVERWROTE")
             return output_path
@@ -1891,7 +1891,7 @@ class TestDownloadFlashcardsStandardFlags:
         output_file = tmp_path / "cards.json"
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             Path(output_path).write_text("{}")
             return output_path
@@ -1922,7 +1922,7 @@ class TestDownloadFlashcardsStandardFlags:
         captured: dict[str, str] = {}
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             captured["output_format"] = output_format
             Path(output_path).write_text("<html></html>")
@@ -1959,7 +1959,7 @@ class TestDownloadFlashcardsStandardFlags:
         chosen_ids: list[str | None] = []
 
         async def fake_download_flashcards(
-            notebook_id, output_path, artifact_id=None, output_format="json"
+            notebook_id, output_path, artifact_id=None, output_format="json", **kwargs
         ):
             chosen_ids.append(artifact_id)
             Path(output_path).write_text("{}")

@@ -173,8 +173,13 @@ async def test_execute_download_all_reports_partial_failure_and_progress(tmp_pat
 @pytest.mark.asyncio
 async def test_execute_download_single_forwards_format_kwarg(tmp_path: Path) -> None:
     spec = DOWNLOAD_SPECS_BY_NAME["quiz"]
+    quiz = _artifact("quiz_1", "Quiz", 4, variant=2)
     artifacts = SimpleNamespace(
-        list=AsyncMock(return_value=[_artifact("quiz_1", "Quiz", 4, variant=2)]),
+        list=AsyncMock(return_value=[quiz]),
+        # Single-pass seam (#1488): the executor lists once via _list_for_download
+        # (typed + raw studio rows + mind-map rows) and threads the typed quiz
+        # list into download_quiz so it skips its own second LIST_ARTIFACTS.
+        _list_for_download=AsyncMock(return_value=([quiz], [], [])),
         download_quiz=AsyncMock(return_value=str(tmp_path / "quiz.md")),
     )
     facade = SimpleNamespace(artifacts=artifacts)
@@ -187,9 +192,13 @@ async def test_execute_download_single_forwards_format_kwarg(tmp_path: Path) -> 
     result = await execute_download(plan, facade)
 
     assert result["status"] == "downloaded"
+    # The executor now lists once and threads the already-fetched typed quiz list
+    # into ``download_quiz`` so it skips its own second LIST_ARTIFACTS (#1488);
+    # the format kwarg is still forwarded alongside it.
     artifacts.download_quiz.assert_awaited_once_with(
         "nb_resolved",
         str(tmp_path / "quiz.md"),
+        artifacts=[quiz],
         artifact_id="quiz_1",
         output_format="markdown",
     )

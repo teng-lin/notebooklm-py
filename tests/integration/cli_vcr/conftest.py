@@ -138,12 +138,19 @@ def mock_auth_for_vcr():
         yield
 
 
-def assert_command_success(result, *, allow_no_context: bool = True) -> None:
-    """Assert a CLI command completed without crashing.
+def assert_command_success(result, *, allow_no_context: bool = False) -> None:
+    """Assert a CLI command completed successfully (exit 0).
+
+    The default is **strict** (``exit_code == 0``): a permissive default that
+    accepted exit 1 "for any reason" silently masked a genuinely-broken command
+    (issue #1488: the download flow exited 1 with no file written, yet passed).
+    Callers that legitimately expect a no-notebook-context exit-1 path opt in
+    explicitly via ``allow_no_context=True``.
 
     Args:
         result: The CliRunner result object.
-        allow_no_context: If True, exit code 1 (no notebook context) is acceptable.
+        allow_no_context: If True, exit code 1 (e.g. no notebook context) is
+            also acceptable. Opt-in per call site, not the default.
     """
     acceptable_codes = (0, 1) if allow_no_context else (0,)
     assert result.exit_code in acceptable_codes, f"Command failed: {result.output}"

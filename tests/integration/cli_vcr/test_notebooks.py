@@ -42,8 +42,7 @@ class TestSummaryCommand:
     def test_summary(self, runner, mock_auth_for_vcr, mock_context):
         """Summary command shows notebook summary."""
         result = runner.invoke(cli, ["summary"])
-        # allow_no_context=True: cassette may not match mock notebook ID
-        assert_command_success(result)
+        assert_command_success(result)  # strict: the summary command exits 0
 
 
 class TestStatusCommand:

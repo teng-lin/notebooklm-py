@@ -394,7 +394,7 @@ async def test_download_quiz_delegates():
 
     assert result == "/tmp/q.json"
     service.download_interactive_artifact.assert_awaited_once_with(
-        "nb", "/tmp/q.json", None, "json", "quiz"
+        "nb", "/tmp/q.json", None, "json", "quiz", artifacts=None
     )
 
 
@@ -407,7 +407,7 @@ async def test_download_flashcards_delegates():
 
     assert result == "/tmp/f.json"
     service.download_interactive_artifact.assert_awaited_once_with(
-        "nb", "/tmp/f.json", None, "markdown", "flashcards"
+        "nb", "/tmp/f.json", None, "markdown", "flashcards", artifacts=None
     )
 
 

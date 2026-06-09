@@ -424,6 +424,11 @@ def _make_facade(*, artifacts: list, download_return: str | None = "/out/path") 
     facade = MagicMock()
     facade.artifacts = MagicMock()
     facade.artifacts.list = AsyncMock(return_value=artifacts)
+    # The executor lists once via ``_list_for_download`` (``list`` + raw rows;
+    # issue #1488). On a bare MagicMock this would auto-spawn a non-awaitable
+    # child; wire it to return the typed list plus empty raw rows (the mocked
+    # ``download_<x>`` never consumes the raw rows here).
+    facade.artifacts._list_for_download = AsyncMock(return_value=(artifacts, [], []))
     facade.artifacts.download_audio = AsyncMock(return_value=download_return)
     facade.artifacts.download_slide_deck = AsyncMock(return_value=download_return)
     facade.artifacts.download_quiz = AsyncMock(return_value=download_return)
@@ -681,7 +686,7 @@ class TestExecuteDownload:
         )
         call_count = {"n": 0}
 
-        async def fake_download(_nb, output_path, artifact_id=None):
+        async def fake_download(_nb, output_path, artifact_id=None, **_kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
                 raise RuntimeError("boom")
@@ -735,8 +740,10 @@ class TestExecuteDownload:
             artifact_resolver=_artifact_resolver_identity,
         )
         resolver.assert_awaited_once_with("nb_partial")
-        # The resolved id flows into the artifacts.list() call.
-        facade.artifacts.list.assert_awaited_once_with("resolved_nb")
+        # The resolved id flows into the single ``_list_for_download`` call — the
+        # executor lists once and threads the raw rows down (#1488), so it no
+        # longer goes through the plain ``artifacts.list`` seam.
+        facade.artifacts._list_for_download.assert_awaited_once_with("resolved_nb")
 
     @pytest.mark.asyncio
     async def test_artifact_resolver_used_for_partial_id(self, tmp_path):
@@ -757,6 +764,46 @@ class TestExecuteDownload:
         )
         resolver.assert_called_once()
         assert result.outcome is DownloadOutcome.SINGLE_DOWNLOADED
+
+    @pytest.mark.asyncio
+    async def test_fallback_without_seam_threads_no_prefetch(self, tmp_path):
+        """A narrow facade exposing only ``.list()`` (no ``_list_for_download``)
+        gets NO prefetch kwargs, so the bound ``download_<x>`` self-fetches as
+        before. Regression for #1488: the seam-absent fallback must not bind
+        ``artifacts_data=[]`` — that would suppress the method's self-fetch (it
+        only fetches on ``is None``) and break an old-style ``download_<x>``
+        whose signature lacks the new keyword-only param.
+        """
+        artifacts = [_make_artifact("audio_1", "Only One")]
+        facade = MagicMock()
+        # ``spec`` restricts the attribute set so
+        # ``getattr(facade.artifacts, "_list_for_download", None)`` is ``None``,
+        # exercising the fallback branch; ``download_audio`` takes no prefetch kwarg.
+        facade.artifacts = MagicMock(spec=["list", "download_audio"])
+        facade.artifacts.list = AsyncMock(return_value=artifacts)
+        facade.artifacts.download_audio = AsyncMock(return_value="/out/audio.mp3")
+
+        plan = build_download_plan(
+            _AUDIO_SPEC,
+            {"notebook_id": "nb_1", "artifact_id": "audio_1"},
+            cwd=tmp_path,
+        )
+        result = await execute_download(
+            plan,
+            facade,
+            notebook_resolver=_passthrough_notebook_resolver(),
+            artifact_resolver=_artifact_resolver_identity,
+        )
+
+        assert result.outcome is DownloadOutcome.SINGLE_DOWNLOADED
+        # Selection used the plain ``.list()`` seam (the only one available)...
+        facade.artifacts.list.assert_awaited_once_with("nb_1")
+        # ...and the bound download fn received NO prefetch kwarg, so it would
+        # self-fetch (rather than being handed an empty list).
+        _args, kwargs = facade.artifacts.download_audio.call_args
+        assert "artifacts_data" not in kwargs
+        assert "artifacts" not in kwargs
+        assert "mind_maps" not in kwargs
 
 
 def test_format_extensions_map_contract():

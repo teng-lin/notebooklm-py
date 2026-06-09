@@ -133,27 +133,63 @@ class ArtifactListingService:
         list_mind_maps: ListMindMapsCallback,
     ) -> list[Artifact]:
         """List public artifacts from studio rows plus mind-map rows."""
-        artifacts = self._filter_studio_artifacts(await list_raw(notebook_id), artifact_type)
+        artifacts, _raw, _mm = await self.list_artifacts_with_raw(
+            notebook_id,
+            artifact_type,
+            list_raw=list_raw,
+            list_mind_maps=list_mind_maps,
+        )
+        return artifacts
 
+    async def list_artifacts_with_raw(
+        self,
+        notebook_id: str,
+        artifact_type: ArtifactType | None,
+        *,
+        list_raw: ListRawCallback,
+        list_mind_maps: ListMindMapsCallback,
+    ) -> tuple[list[Artifact], list[Any], list[Any] | None]:
+        """List artifacts *and* return the raw rows fetched to build them.
+
+        Returns ``(typed_artifacts, raw_studio_rows, mind_map_rows)`` from a
+        single pass over each backing RPC. The download executor uses this to
+        select a target from the typed list while threading the raw rows it
+        already fetched into the per-type ``download_<x>`` method — so that
+        method does not re-issue ``LIST_ARTIFACTS`` / ``GET_NOTES_AND_MIND_MAPS``
+        (issue #1488). The typed projection / merge / partial-availability policy
+        is identical to :meth:`list_artifacts`, which now delegates here.
+
+        ``mind_map_rows`` is the raw note-backed list when the mind-map sub-fetch
+        ran (``artifact_type`` is ``None`` or ``MIND_MAP``) and succeeded — ``[]``
+        included, meaning "fetched, genuinely no mind maps". It is ``None`` when
+        the sub-fetch's transport failed (``RPCError`` / ``HTTPError``): a
+        distinct "fetch failed, value unknown" sentinel so a caller threading it
+        into ``download_mind_map`` passes ``None`` and the method re-fetches (and
+        surfaces the error) rather than mistaking the outage for "no mind maps".
+        It is also ``[]`` when the sub-fetch was skipped (a specific non-mind-map
+        ``artifact_type``); that list is never threaded to ``download_mind_map``.
+        """
+        raw_studio_rows = await list_raw(notebook_id)
+        artifacts = self._filter_studio_artifacts(raw_studio_rows, artifact_type)
+
+        mind_map_rows: list[Any] | None = []
         if artifact_type is None or artifact_type == ArtifactType.MIND_MAP:
             try:
-                artifacts.extend(
-                    self._filter_mind_map_artifacts(
-                        await list_mind_maps(notebook_id),
-                        artifact_type,
-                    )
-                )
+                mind_map_rows = await list_mind_maps(notebook_id)
+                artifacts.extend(self._filter_mind_map_artifacts(mind_map_rows, artifact_type))
             except DecodingError:
                 # Schema drift is not a transient outage: surface it (#1344)
                 # rather than masking drifted mind-map rows as "no mind maps".
                 raise
             except (RPCError, httpx.HTTPError) as e:
-                # Network/API errors - log and continue with studio artifacts.
-                # This ensures users can see audio/video/reports even if the
-                # mind-map endpoint is temporarily unavailable.
+                # Network/API errors - log and continue with studio artifacts so
+                # users still see audio/video/reports when the mind-map endpoint
+                # is temporarily unavailable. Use ``None`` (not ``[]``) as the
+                # "fetch failed" sentinel so a downstream caller re-fetches.
+                mind_map_rows = None
                 logger.warning("Failed to fetch mind maps: %s", e)
 
-        return artifacts
+        return artifacts, raw_studio_rows, mind_map_rows
 
     async def get(
         self,

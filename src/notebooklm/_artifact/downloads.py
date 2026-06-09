@@ -48,6 +48,14 @@ _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleap
 # a brief read stall. 8 slots × 64 KiB ≈ 512 KiB of in-flight buffering.
 _DOWNLOAD_WRITER_QUEUE_SIZE = 8
 
+# ``_PREFETCH_NOTE`` — referenced by the per-method docstrings below. Each
+# ``download_<x>`` accepts an optional pre-fetched list (``artifacts_data`` raw
+# studio rows / ``artifacts`` typed list / ``mind_maps`` note-backed rows). When
+# supplied — the ``_app`` executor lists once to select the target and threads
+# what it already fetched — the method skips its own otherwise-redundant second
+# ``LIST_ARTIFACTS`` / ``GET_NOTES_AND_MIND_MAPS`` RPC; ``None`` re-lists as before
+# (issue #1488).
+
 
 async def _await_writer_exit(
     writer_thread: threading.Thread,
@@ -250,10 +258,16 @@ class ArtifactDownloadService:
         return tree_json if isinstance(tree_json, str) else None
 
     async def download_audio(
-        self, notebook_id: str, output_path: str, artifact_id: str | None = None
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download an Audio Overview to a file."""
-        artifacts_data = await self._list_raw(notebook_id)
+        """Download an Audio Overview to a file (``artifacts_data``: see ``_PREFETCH_NOTE``)."""
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
 
         audio_art = self._select_artifact(
             artifacts_data,
@@ -282,10 +296,16 @@ class ArtifactDownloadService:
         return await self.download_url(url, output_path)
 
     async def download_video(
-        self, notebook_id: str, output_path: str, artifact_id: str | None = None
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download a Video Overview to a file."""
-        artifacts_data = await self._list_raw(notebook_id)
+        """Download a Video Overview to a file (``artifacts_data``: see ``_PREFETCH_NOTE``)."""
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
 
         # Note: distinct error keys preserved — specific-ID miss raises
         # "video" (from type_name="Video"); empty-list raises
@@ -317,10 +337,16 @@ class ArtifactDownloadService:
         return await self.download_url(url, output_path)
 
     async def download_infographic(
-        self, notebook_id: str, output_path: str, artifact_id: str | None = None
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download an Infographic to a file."""
-        artifacts_data = await self._list_raw(notebook_id)
+        """Download an Infographic to a file (``artifacts_data``: see ``_PREFETCH_NOTE``)."""
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
 
         info_art = self._select_artifact(
             artifacts_data,
@@ -354,12 +380,15 @@ class ArtifactDownloadService:
         output_path: str,
         artifact_id: str | None = None,
         output_format: str = "pdf",
+        *,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download a slide deck as PDF or PPTX."""
+        """Download a slide deck as PDF or PPTX (``artifacts_data``: see ``_PREFETCH_NOTE``)."""
         if output_format not in ("pdf", "pptx"):
             raise ValidationError(f"Invalid format '{output_format}'. Must be 'pdf' or 'pptx'.")
 
-        artifacts_data = await self._list_raw(notebook_id)
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
 
         slide_art = self._select_artifact(
             artifacts_data,
@@ -401,8 +430,15 @@ class ArtifactDownloadService:
         artifact_id: str | None,
         output_format: str,
         artifact_type: str,
+        *,
+        artifacts: list[Artifact] | None = None,
     ) -> str:
-        """Download quiz or flashcard artifact."""
+        """Download quiz or flashcard artifact.
+
+        ``artifacts`` is the optional pre-fetched *typed* list of the matching
+        ``list_type`` (see ``_PREFETCH_NOTE``); this method still filters it to
+        completed entries and id-matches within it.
+        """
         valid_formats = ("json", "markdown", "html")
         if output_format not in valid_formats:
             raise ValidationError(
@@ -413,7 +449,8 @@ class ArtifactDownloadService:
         default_title = "Untitled Quiz" if is_quiz else "Untitled Flashcards"
         list_type = ArtifactType.QUIZ if is_quiz else ArtifactType.FLASHCARDS
 
-        artifacts = await self._list_artifacts(notebook_id, list_type)
+        if artifacts is None:
+            artifacts = await self._list_artifacts(notebook_id, list_type)
         completed = [a for a in artifacts if a.is_completed]
         if not completed:
             raise ArtifactNotReadyError(artifact_type)
@@ -456,9 +493,12 @@ class ArtifactDownloadService:
         notebook_id: str,
         output_path: str,
         artifact_id: str | None = None,
+        *,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download a report artifact as markdown."""
-        artifacts_data = await self._list_raw(notebook_id)
+        """Download a report artifact as markdown (``artifacts_data``: see ``_PREFETCH_NOTE``)."""
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
 
         report_art = self._select_artifact(
             artifacts_data,
@@ -500,14 +540,23 @@ class ArtifactDownloadService:
         notebook_id: str,
         output_path: str,
         artifact_id: str | None = None,
+        *,
+        mind_maps: list[Any] | None = None,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download a mind map as JSON (note-backed or interactive kind)."""
+        """Download a mind map as JSON (note-backed or interactive kind).
+
+        ``mind_maps`` (note-backed rows) and ``artifacts_data`` (raw studio rows,
+        used only by the interactive-mind-map branch) are optional pre-fetched
+        lists; see ``_PREFETCH_NOTE``. Each is fetched on demand when ``None``.
+        """
         mind_maps_service = self._mind_maps
 
         # Fetch the note-backed list first: it is the primary backing for this
         # method, so an explicit id that resolves here (the happy path) avoids
         # the extra _list_raw artifact-collection network call entirely.
-        mind_maps = await mind_maps_service.list_mind_maps(notebook_id)
+        if mind_maps is None:
+            mind_maps = await mind_maps_service.list_mind_maps(notebook_id)
 
         # The JSON tree string to write — sourced from the note content for
         # note-backed maps, or from GET_INTERACTIVE_HTML for interactive ones.
@@ -525,9 +574,13 @@ class ArtifactDownloadService:
                 # The id is not a note-backed mind map. Interactive
                 # (studio-artifact) mind maps live in the artifact collection,
                 # not the note-backed list — fetch the tree there so both kinds
-                # download to the same JSON shape (issue #1256).
+                # download to the same JSON shape (issue #1256). Reuse the
+                # caller-provided ``artifacts_data`` when present to avoid a
+                # redundant second ``LIST_ARTIFACTS``.
+                if artifacts_data is None:
+                    artifacts_data = await self._list_raw(notebook_id)
                 interactive = False
-                for row in await self._list_raw(notebook_id):
+                for row in artifacts_data:
                     if not isinstance(row, list):
                         continue
                     artifact = Artifact.from_api_response(row)
@@ -581,9 +634,12 @@ class ArtifactDownloadService:
         notebook_id: str,
         output_path: str,
         artifact_id: str | None = None,
+        *,
+        artifacts_data: list[Any] | None = None,
     ) -> str:
-        """Download a data table as CSV."""
-        artifacts_data = await self._list_raw(notebook_id)
+        """Download a data table as CSV (``artifacts_data``: see ``_PREFETCH_NOTE``)."""
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
 
         table_art = self._select_artifact(
             artifacts_data,
@@ -626,10 +682,12 @@ class ArtifactDownloadService:
         output_path: str,
         artifact_id: str | None = None,
         output_format: str = "json",
+        *,
+        artifacts: list[Artifact] | None = None,
     ) -> str:
         """Download quiz questions."""
         return await self.download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "quiz"
+            notebook_id, output_path, artifact_id, output_format, "quiz", artifacts=artifacts
         )
 
     async def download_flashcards(
@@ -638,10 +696,12 @@ class ArtifactDownloadService:
         output_path: str,
         artifact_id: str | None = None,
         output_format: str = "json",
+        *,
+        artifacts: list[Artifact] | None = None,
     ) -> str:
         """Download flashcard deck."""
         return await self.download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "flashcards"
+            notebook_id, output_path, artifact_id, output_format, "flashcards", artifacts=artifacts
         )
 
     async def download_urls_batch(self, urls_and_paths: list[tuple[str, str]]) -> DownloadResult:

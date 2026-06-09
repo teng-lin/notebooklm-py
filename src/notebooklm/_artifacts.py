@@ -196,6 +196,18 @@ class ArtifactsAPI:
             list_mind_maps=self._list_mind_maps,
         )
 
+    async def _list_for_download(
+        self, notebook_id: str, artifact_type: ArtifactType | None = None
+    ) -> tuple[builtins.list[Artifact], builtins.list[Any], builtins.list[Any] | None]:
+        """List artifacts + the raw rows fetched to build them — same RPC set as
+        :meth:`list`. Internal seam for the ``_app`` download executor (#1488)."""
+        return await self._listing.list_artifacts_with_raw(
+            notebook_id,
+            artifact_type,
+            list_raw=self._list_raw,
+            list_mind_maps=self._list_mind_maps,
+        )
+
     async def get(self, notebook_id: str, artifact_id: str) -> Artifact:
         """Get a specific artifact by ID.
 
@@ -756,22 +768,43 @@ class ArtifactsAPI:
     # =========================================================================
 
     async def download_audio(
-        self, notebook_id: str, output_path: str, artifact_id: str | None = None
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download an Audio Overview to a file."""
-        return await self._downloads.download_audio(notebook_id, output_path, artifact_id)
+        return await self._downloads.download_audio(
+            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+        )
 
     async def download_video(
-        self, notebook_id: str, output_path: str, artifact_id: str | None = None
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a Video Overview to a file."""
-        return await self._downloads.download_video(notebook_id, output_path, artifact_id)
+        return await self._downloads.download_video(
+            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+        )
 
     async def download_infographic(
-        self, notebook_id: str, output_path: str, artifact_id: str | None = None
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download an Infographic to a file."""
-        return await self._downloads.download_infographic(notebook_id, output_path, artifact_id)
+        return await self._downloads.download_infographic(
+            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+        )
 
     async def download_slide_deck(
         self,
@@ -779,10 +812,12 @@ class ArtifactsAPI:
         output_path: str,
         artifact_id: str | None = None,
         output_format: str = "pdf",
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a slide deck as PDF or PPTX."""
         return await self._downloads.download_slide_deck(
-            notebook_id, output_path, artifact_id, output_format
+            notebook_id, output_path, artifact_id, output_format, artifacts_data=artifacts_data
         )
 
     async def _download_interactive_artifact(
@@ -792,10 +827,12 @@ class ArtifactsAPI:
         artifact_id: str | None,
         output_format: str,
         artifact_type: str,
+        *,
+        artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download quiz or flashcard artifact."""
         return await self._downloads.download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, artifact_type
+            notebook_id, output_path, artifact_id, output_format, artifact_type, artifacts=artifacts
         )
 
     def _format_interactive_content(
@@ -831,27 +868,44 @@ class ArtifactsAPI:
         notebook_id: str,
         output_path: str,
         artifact_id: str | None = None,
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a report artifact as markdown."""
-        return await self._downloads.download_report(notebook_id, output_path, artifact_id)
+        return await self._downloads.download_report(
+            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+        )
 
     async def download_mind_map(
         self,
         notebook_id: str,
         output_path: str,
         artifact_id: str | None = None,
+        *,
+        mind_maps: builtins.list[Any] | None = None,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a mind map as JSON."""
-        return await self._downloads.download_mind_map(notebook_id, output_path, artifact_id)
+        return await self._downloads.download_mind_map(
+            notebook_id,
+            output_path,
+            artifact_id,
+            mind_maps=mind_maps,
+            artifacts_data=artifacts_data,
+        )
 
     async def download_data_table(
         self,
         notebook_id: str,
         output_path: str,
         artifact_id: str | None = None,
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a data table as CSV."""
-        return await self._downloads.download_data_table(notebook_id, output_path, artifact_id)
+        return await self._downloads.download_data_table(
+            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+        )
 
     async def download_quiz(
         self,
@@ -859,10 +913,12 @@ class ArtifactsAPI:
         output_path: str,
         artifact_id: str | None = None,
         output_format: str = "json",
+        *,
+        artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download quiz questions."""
         return await self._download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "quiz"
+            notebook_id, output_path, artifact_id, output_format, "quiz", artifacts=artifacts
         )
 
     async def download_flashcards(
@@ -871,10 +927,12 @@ class ArtifactsAPI:
         output_path: str,
         artifact_id: str | None = None,
         output_format: str = "json",
+        *,
+        artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download flashcard deck."""
         return await self._download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "flashcards"
+            notebook_id, output_path, artifact_id, output_format, "flashcards", artifacts=artifacts
         )
 
     # =========================================================================

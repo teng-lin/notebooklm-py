@@ -502,25 +502,63 @@ def build_download_plan(
 # ---------------------------------------------------------------------------
 
 
-async def _get_completed_artifacts_as_dicts(
+async def _fetch_artifacts_once(
     facade: _DownloadFacade, notebook_id: str, spec: DownloadTypeSpec
-) -> list[ArtifactDict]:
-    """Fetch artifacts, filter by kind + completion, project to ArtifactDict.
+) -> tuple[list[ArtifactDict], dict[str, Any]]:
+    """List artifacts once; return ``(selection_dicts, prefetch_kwargs)`` (issue #1488).
 
-    The ``isinstance(a, Artifact)`` guard mirrors the legacy implementation and
-    protects against a heterogeneous list with stub entries that don't expose
-    the ``kind`` / ``is_completed`` properties.
+    ``execute_download`` lists a single time to select the target, then threads
+    the raw rows it already fetched into the per-type ``download_<x>`` (as the
+    returned ``prefetch_kwargs``) so that method skips its redundant second list
+    RPC. The prefetch kwarg(s) match the bound method: quiz/flashcards →
+    ``artifacts`` (the matching-kind typed list); mind-map → ``mind_maps``
+    (note-backed rows) + ``artifacts_data`` (raw studio rows, interactive branch);
+    other studio types → ``artifacts_data``.
+
+    The single-pass ``_list_for_download`` facade seam (``list`` + raw rows) is
+    used when present. When it is absent — a narrow test double exposing only
+    ``.list()`` — we list for selection but thread **no** prefetch kwargs, so
+    each ``download_<x>`` self-fetches exactly as before (and an old-style
+    ``download_<x>`` lacking the new kwargs keeps working). The ``isinstance``
+    guard tolerates stub entries lacking ``kind``/``is_completed``.
     """
-    all_artifacts = await facade.artifacts.list(notebook_id)
-    return [
+    list_for_download = getattr(facade.artifacts, "_list_for_download", None)
+    if list_for_download is not None:
+        all_artifacts, raw_studio_rows, mind_map_rows = await list_for_download(notebook_id)
+    else:
+        all_artifacts = await facade.artifacts.list(notebook_id)
+
+    typed = [
+        a
+        for a in all_artifacts
+        if isinstance(a, Artifact) and a.kind == spec.kind and a.is_completed
+    ]
+    dicts: list[ArtifactDict] = [
         {
             "id": a.id,
             "title": a.title,
             "created_at": int(a.created_at.timestamp()) if a.created_at else 0,
         }
-        for a in all_artifacts
-        if isinstance(a, Artifact) and a.kind == spec.kind and a.is_completed
+        for a in typed
     ]
+
+    # No single-pass seam: thread nothing so each download_<x> self-fetches as
+    # before (binding ``...=[]`` would suppress that and break old-style fakes).
+    if list_for_download is None:
+        return dicts, {}
+
+    if spec.kind in (ArtifactType.QUIZ, ArtifactType.FLASHCARDS):
+        prefetch: dict[str, Any] = {"artifacts": typed}
+    elif spec.kind == ArtifactType.MIND_MAP:
+        # ``None`` => note-backed sub-fetch failed: thread None so
+        # download_mind_map self-fetches and raises as the standalone path would.
+        prefetch = {
+            "mind_maps": None if mind_map_rows is None else list(mind_map_rows),
+            "artifacts_data": list(raw_studio_rows),
+        }
+    else:
+        prefetch = {"artifacts_data": list(raw_studio_rows)}
+    return dicts, prefetch
 
 
 def _resolve_conflict(
@@ -546,29 +584,33 @@ def _resolve_conflict(
     return path, None
 
 
-def _bind_download_fn(plan: DownloadPlan, facade: _DownloadFacade) -> _DownloadFn:
-    """Bind the spec's ``download_attr`` coroutine, partialing the format kwarg
-    when the spec requests it.
+def _bind_download_fn(
+    plan: DownloadPlan,
+    facade: _DownloadFacade,
+    prefetch_kwargs: dict[str, Any] | None = None,
+) -> _DownloadFn:
+    """Bind ``download_attr``, partialing the format + prefetch kwargs.
 
-    Three branches:
-
-    - No ``format_kwarg`` (audio/video/report/mind-map/data-table/infographic
-      and the slide-deck ``--format pdf`` default): use the bare attr.
-    - ``forward_format_only_if_set`` AND the user picked the non-default
-      (slide-deck pptx): partial-bind with the format kwarg.
-    - Always-forward (quiz/flashcards): partial-bind regardless.
+    The format kwarg is forwarded unless absent or it is slide-deck's pdf default
+    (``forward_format_only_if_set`` forwards only the non-default pptx);
+    quiz/flashcards always forward it. ``prefetch_kwargs`` (issue #1488) carries
+    the already-fetched rows so the bound method skips its redundant second list
+    RPC. Both are partial-bound here, so ``_execute_download_*`` stays unchanged.
     """
     spec = plan.spec
     base_fn = getattr(facade.artifacts, spec.download_attr, None)
     if base_fn is None:
         raise ValueError(f"Unknown artifact download method: {spec.download_attr}")
-    if not spec.format_kwarg:
+
+    bound_kwargs: dict[str, Any] = dict(prefetch_kwargs or {})
+    if spec.format_kwarg and not (
+        spec.forward_format_only_if_set and plan.format_choice == spec.format_default
+    ):
+        bound_kwargs[spec.format_kwarg] = plan.format_choice
+
+    if not bound_kwargs:
         return base_fn
-    if spec.forward_format_only_if_set:
-        if plan.format_choice == spec.format_default:
-            return base_fn
-        return partial(base_fn, **{spec.format_kwarg: plan.format_choice})
-    return partial(base_fn, **{spec.format_kwarg: plan.format_choice})
+    return partial(base_fn, **bound_kwargs)
 
 
 async def _execute_download_all(
@@ -822,9 +864,12 @@ async def execute_download(
     """
     nb_id_resolved = await notebook_resolver(plan.notebook_id)
 
-    download_fn = _bind_download_fn(plan, facade)
+    # List ONCE; thread the raw rows into the bound download method so it does
+    # not re-issue the same list RPC (issue #1488).
+    type_artifacts, prefetch_kwargs = await _fetch_artifacts_once(facade, nb_id_resolved, plan.spec)
 
-    type_artifacts = await _get_completed_artifacts_as_dicts(facade, nb_id_resolved, plan.spec)
+    download_fn = _bind_download_fn(plan, facade, prefetch_kwargs)
+
     if not type_artifacts:
         return DownloadResult(
             outcome=DownloadOutcome.NO_ARTIFACTS,

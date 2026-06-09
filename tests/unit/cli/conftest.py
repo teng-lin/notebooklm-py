@@ -399,6 +399,19 @@ def create_mock_client():
     mock_client.artifacts.list = AsyncMock(side_effect=make_artifact_list)
     mock_client.notes.list = AsyncMock(side_effect=make_note_list)
 
+    # The ``_app`` download executor prefers the ``_list_for_download`` seam
+    # (``list`` + raw rows in one RPC pass; issue #1488). On a bare ``MagicMock``
+    # this attribute would auto-spawn a non-awaitable child mock, so wire it to
+    # delegate to the (possibly test-overridden) ``artifacts.list`` and return
+    # the ``(typed, raw_studio_rows, mind_map_rows)`` tuple the executor expects.
+    # Empty raw rows are correct for these doubles: ``download_<x>`` is itself
+    # mocked, so its (now-suppressed) inner re-list never runs.
+    async def _list_for_download(notebook_id, artifact_type=None):
+        typed = await mock_client.artifacts.list(notebook_id)
+        return typed, [], []
+
+    mock_client.artifacts._list_for_download = AsyncMock(side_effect=_list_for_download)
+
     return mock_client
 
 
