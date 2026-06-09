@@ -29,8 +29,6 @@ not by notebook UUID.
 """
 
 import pytest
-
-# (direct pytest, ``-k`` filter, IDE runner).
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 

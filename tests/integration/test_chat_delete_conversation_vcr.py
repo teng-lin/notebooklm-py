@@ -25,9 +25,6 @@ from urllib.parse import parse_qs
 
 import pytest
 import yaml
-
-# Match the rest of ``tests/integration/test_vcr_*.py`` — these files are
-# imported by pytest with the repo root NOT on sys.path.
 from tests.integration.conftest import _vcr_record_mode, get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 

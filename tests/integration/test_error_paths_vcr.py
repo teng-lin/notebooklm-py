@@ -58,9 +58,6 @@ synthetic shapes these cassettes carry.
 from __future__ import annotations
 
 import pytest
-
-# Add tests directory to sys.path for vcr_config + conftest helpers, mirroring
-# the pattern in ``test_auth_refresh_vcr.py``.
 from tests.integration.conftest import skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 

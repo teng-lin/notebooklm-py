@@ -42,9 +42,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
-# tests/integration/test_vcr_*.py — these files are imported by pytest with
-# the repo root NOT on sys.path).
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 

@@ -54,7 +54,10 @@ FORBIDDEN_BARE_TOP: frozenset[str] = frozenset(
 
 def _bare_violations(path: Path) -> list[tuple[int, str]]:
     """Return ``(lineno, imported_module)`` for every bare tests-root import."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except SyntaxError:
+        return []  # a syntactically-broken file is pytest collection's problem, not ours
     out: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
