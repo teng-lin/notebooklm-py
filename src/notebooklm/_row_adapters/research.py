@@ -139,7 +139,6 @@ class ResearchTaskRow:
         )
 
 
-@dataclass(frozen=True)
 class ResearchTaskInfoRow:
     """Typed view of one task info block (``task_data[1]``).
 
