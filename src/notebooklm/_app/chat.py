@@ -33,8 +33,12 @@ Conversation IDs pass straight through (no validation / resolution here) — the
 server owns their shape and a partial/explicit id is forwarded verbatim to
 ``ChatAPI.ask``.
 
-This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
-``fastmcp`` imports (enforced by ``tests/_guardrails/test_app_boundary.py``).
+This module depends only on the public ``notebooklm`` surface — no ``click`` /
+``rich`` / ``cli`` / ``fastmcp`` and no runtime-internal (``notebooklm.rpc`` /
+``notebooklm._*``) imports (enforced by
+``tests/_guardrails/test_app_boundary.py``). The chat RPC enums ``ChatGoal`` /
+``ChatResponseLength`` are consumed through their ``notebooklm.types``
+re-export, not by reaching into ``notebooklm.rpc.types``.
 """
 
 from __future__ import annotations
@@ -45,8 +49,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from ..exceptions import ValidationError
-from ..rpc.types import ChatGoal, ChatResponseLength
-from ..types import ChatMode
+from ..types import ChatGoal, ChatMode, ChatResponseLength
 from .events import ProgressEvent, ProgressSink
 
 if TYPE_CHECKING:

@@ -145,6 +145,11 @@ CLIENT_NAMESPACE_ATTRIBUTES = set(json.loads(sys.argv[3])) if len(sys.argv) > 3 
 PKG = sys.argv[4]
 EXCLUDED = set(json.loads(sys.argv[5]))
 EXTRA_PACKAGES = tuple(json.loads(sys.argv[6]))
+# Enforce the "every public module declares __all__" rule only for the CURRENT
+# checkout. Historical baselines (e.g. v0.4.1) predate the rule and legitimately
+# lack __all__ on some public modules; raising there would abort the baseline
+# collection before any diff runs (issue #1493 review).
+ENFORCE_ALL = (sys.argv[7] == "1") if len(sys.argv) > 7 else True
 
 
 def discover_modules() -> list[str]:
@@ -320,13 +325,26 @@ def collect_class(cls) -> dict:
 
 def collect_module(module_name: str) -> dict:
     module = importlib.import_module(module_name)
+    has_all = hasattr(module, "__all__")
+    if not has_all and ENFORCE_ALL:
+        # Every discovered public top-level module MUST declare ``__all__`` so a
+        # brand-new public module cannot ship un-baselined (its surface would
+        # otherwise be invisible to this audit). The presence flag was captured
+        # historically but never enforced; enforce it now (issue #1493) — but
+        # only for the current checkout (ENFORCE_ALL), never for an older
+        # baseline that predates the rule.
+        raise RuntimeError(
+            f"public module {module_name!r} must declare __all__ "
+            "(every public top-level module defines its exported surface so "
+            "the compat audit can baseline it)"
+        )
     all_names = list(getattr(module, "__all__", []))
     extra_names = list(EXTRA_PUBLIC_NAMES.get(module_name, []))
     names = []
     for name in [*all_names, *extra_names]:
         if name not in names:
             names.append(name)
-    payload = {"exports": {}, "has_all": hasattr(module, "__all__")}
+    payload = {"exports": {}, "has_all": has_all}
     for name in names:
         try:
             value = getattr(module, name)
@@ -396,8 +414,16 @@ def normalize_default_repr(default_repr: str | None) -> str | None:
 def collect_manifest(
     source_root: Path,
     extra_public_names: dict[str, list[str]] | None = None,
+    *,
+    enforce_all: bool = True,
 ) -> dict[str, Any]:
-    """Run the collector in a clean Python process for ``source_root``."""
+    """Run the collector in a clean Python process for ``source_root``.
+
+    ``enforce_all`` gates the "every public module declares ``__all__``" rule
+    (issue #1493): pass ``True`` for the current checkout and ``False`` for a
+    historical baseline that predates the rule, so baseline collection never
+    aborts before the diff.
+    """
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
     pythonpath = str(source_root / "src")
@@ -416,6 +442,7 @@ def collect_manifest(
             PUBLIC_PACKAGE,
             json.dumps(sorted(EXCLUDED_TOP_LEVEL_MODULES)),
             json.dumps(EXTRA_PUBLIC_PACKAGES),
+            "1" if enforce_all else "0",
         ],
         cwd=source_root,
         env=env,
@@ -852,8 +879,12 @@ def main(argv: list[str] | None = None) -> int:
         allowances, extra_public_names = load_policy(allowlist_path)
         with tempfile.TemporaryDirectory(prefix="notebooklm-api-compat-") as tmp:
             baseline_root = export_git_ref(repo_root, baseline_ref, Path(tmp))
-            baseline_manifest = collect_manifest(baseline_root, extra_public_names)
-            current_manifest = collect_manifest(repo_root, extra_public_names)
+            # Enforce the __all__ rule only for the current checkout; an older
+            # baseline may legitimately predate it (issue #1493 review).
+            baseline_manifest = collect_manifest(
+                baseline_root, extra_public_names, enforce_all=False
+            )
+            current_manifest = collect_manifest(repo_root, extra_public_names, enforce_all=True)
 
         breakages = compare_manifests(baseline_manifest, current_manifest)
         unapproved, approved = partition_allowed(breakages, allowances)

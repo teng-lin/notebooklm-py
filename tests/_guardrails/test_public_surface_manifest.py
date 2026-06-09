@@ -1001,6 +1001,126 @@ def test_auth_update_cookie_input_lives_in_cookies_module() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Every discovered public top-level module must declare ``__all__``.
+#
+# ``scripts/audit_public_api_compat.py`` captures ``has_all`` per module but
+# (historically) never asserted it, and the shim-pair sweep below only covered a
+# hardcoded trio. A brand-new public top-level module could therefore ship
+# without ``__all__`` and slip past both gates (issue #1493). This sweep mirrors
+# the audit's module-discovery rule — every non-underscore top-level ``*.py``
+# (minus the excluded entrypoints) plus the public ``rpc`` subpackage and the
+# top-level ``notebooklm`` package — and requires each to declare ``__all__``.
+# ---------------------------------------------------------------------------
+
+# Mirrors scripts/audit_public_api_compat.py: EXCLUDED_TOP_LEVEL_MODULES /
+# EXTRA_PUBLIC_PACKAGES. Keep in sync with the audit's discovery so the two
+# gates agree on the public top-level surface.
+_AUDIT_EXCLUDED_TOP_LEVEL_MODULES = {"__main__", "notebooklm_cli"}
+_AUDIT_EXTRA_PUBLIC_PACKAGES = ("rpc",)
+_NOTEBOOKLM_PACKAGE_DIR = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
+
+
+def _discover_public_top_level_modules() -> list[str]:
+    """Discover the public top-level ``notebooklm`` modules the audit baselines.
+
+    Identical discovery to ``scripts/audit_public_api_compat.py``'s
+    ``discover_modules``: the ``notebooklm`` package itself, every
+    non-underscore top-level ``*.py`` (minus the excluded entrypoints), and each
+    public subpackage in ``EXTRA_PUBLIC_PACKAGES`` that ships an ``__init__``.
+    """
+    modules = {"notebooklm"}
+    for path in _NOTEBOOKLM_PACKAGE_DIR.glob("*.py"):
+        stem = path.stem
+        if stem.startswith("_") or stem in _AUDIT_EXCLUDED_TOP_LEVEL_MODULES:
+            continue
+        modules.add(f"notebooklm.{stem}")
+    for name in _AUDIT_EXTRA_PUBLIC_PACKAGES:
+        if (_NOTEBOOKLM_PACKAGE_DIR / name / "__init__.py").is_file():
+            modules.add(f"notebooklm.{name}")
+    return sorted(modules)
+
+
+_PUBLIC_TOP_LEVEL_MODULES = _discover_public_top_level_modules()
+
+
+def test_public_top_level_module_discovery_is_non_trivial() -> None:
+    """Guard the discovery itself: it must find the known anchor modules.
+
+    A discovery bug that returned an empty/degenerate set would make the
+    per-module ``__all__`` sweep vacuously pass. Pin a few stable anchors so a
+    regression in ``_discover_public_top_level_modules`` is caught loudly.
+    """
+    found = set(_PUBLIC_TOP_LEVEL_MODULES)
+    for anchor in ("notebooklm", "notebooklm.types", "notebooklm.client", "notebooklm.rpc"):
+        assert anchor in found, f"discovery dropped the public anchor module {anchor!r}"
+    # The excluded entrypoints must never be treated as public surface.
+    assert "notebooklm.__main__" not in found
+    assert "notebooklm.notebooklm_cli" not in found
+
+
+def test_discovery_constants_match_the_audit_source() -> None:
+    """The mirrored discovery constants must EQUAL the audit's, self-checked.
+
+    ``_AUDIT_EXCLUDED_TOP_LEVEL_MODULES`` / ``_AUDIT_EXTRA_PUBLIC_PACKAGES`` are
+    hand-copied from ``scripts/audit_public_api_compat.py`` so this gate and the
+    audit agree on the public surface. Assert equality against the source of
+    truth rather than relying on a "keep in sync" comment — an un-enforced copy
+    is exactly the consistency-drift failure shape this gate exists to close
+    (#1493 review).
+    """
+    import scripts.audit_public_api_compat as audit
+
+    assert set(audit.EXCLUDED_TOP_LEVEL_MODULES) == _AUDIT_EXCLUDED_TOP_LEVEL_MODULES
+    assert tuple(_AUDIT_EXTRA_PUBLIC_PACKAGES) == tuple(audit.EXTRA_PUBLIC_PACKAGES)
+
+
+def test_all_enforcement_flags_a_module_without_all() -> None:
+    """Probe: the ``__all__`` requirement catches a module lacking ``__all__``.
+
+    A synthetic public-shaped module with no ``__all__`` would have evaded both
+    gates before issue #1493. This pins that the enforcement predicate
+    (``hasattr(module, "__all__")``) actually distinguishes the two cases, so
+    the per-module sweep above is not vacuous.
+    """
+    without_all = ModuleType("notebooklm._probe_without_all")
+    with_all = ModuleType("notebooklm._probe_with_all")
+    with_all.__all__ = ["x"]  # type: ignore[attr-defined]
+    with_all.x = 1  # type: ignore[attr-defined]
+
+    assert not hasattr(without_all, "__all__")
+    assert hasattr(with_all, "__all__")
+
+
+@pytest.mark.parametrize("module_name", _PUBLIC_TOP_LEVEL_MODULES)
+def test_public_top_level_module_declares_all(module_name: str) -> None:
+    """Every public top-level module must declare ``__all__``.
+
+    This is the assertion behind the audit's captured ``has_all`` flag: a public
+    module without ``__all__`` ships an un-baselined surface. ``__all__`` must be
+    a list/tuple of ``str`` so the audit and ``import *`` consumers see a
+    well-formed export manifest.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        module = importlib.import_module(module_name)
+
+    assert hasattr(module, "__all__"), (
+        f"{module_name} must declare __all__ — every public top-level module "
+        "defines its exported surface so the compat audit can baseline it "
+        "(scripts/audit_public_api_compat.py)."
+    )
+    all_value = module.__all__
+    assert isinstance(all_value, (list, tuple)), (
+        f"{module_name}.__all__ must be a list/tuple, got {type(all_value).__name__}"
+    )
+    assert all(isinstance(name, str) for name in all_value), (
+        f"{module_name}.__all__ must contain only str names"
+    )
+    for name in all_value:
+        assert hasattr(module, name), f"{module_name}.__all__ references missing attribute {name!r}"
+
+
+# ---------------------------------------------------------------------------
 # __all__ contract tests for the public shim modules.
 #
 # Enforces, for each shim, that:

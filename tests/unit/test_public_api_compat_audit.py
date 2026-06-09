@@ -633,7 +633,11 @@ def test_audit_json_includes_stale_allowances_field(script, tmp_path, monkeypatc
 
     def _stub_manifests():
         manifests = iter([baseline, current])
-        monkeypatch.setattr(script, "collect_manifest", lambda root, extra=None: next(manifests))
+        monkeypatch.setattr(
+            script,
+            "collect_manifest",
+            lambda root, extra=None, *, enforce_all=True: next(manifests),
+        )
 
     _stub_manifests()
 
@@ -699,7 +703,11 @@ def test_check_stale_does_not_print_ok_when_stale_blocks(script, tmp_path, monke
     monkeypatch.setattr(script, "latest_release_tag", lambda repo_root: "v9.9.9")
     monkeypatch.setattr(script, "export_git_ref", lambda repo_root, ref, dest: dest)
     manifests = iter([baseline, current])
-    monkeypatch.setattr(script, "collect_manifest", lambda root, extra=None: next(manifests))
+    monkeypatch.setattr(
+        script,
+        "collect_manifest",
+        lambda root, extra=None, *, enforce_all=True: next(manifests),
+    )
 
     allowlist = tmp_path / "allowlist.json"
     allowlist.write_text(
