@@ -480,7 +480,7 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | `ArtifactDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Asynchronous download coordinator for finished artifacts. |
 | `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
 | `_artifact/listing` | [`_artifact/listing.py`](../src/notebooklm/_artifact/listing.py) | Listing and filtering operations for notebook artifacts. |
-| `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `NoteRow`, `SourceRow`) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, and the chat parser don't open-code positional indices. Soft-degrade and strict-mode behavior is pinned in `tests/unit/test_row_adapters.py` and `tests/unit/test_chat_row_adapter.py`. |
+| `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/research.py`](../src/notebooklm/_row_adapters/research.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `NoteRow`, `SourceRow`, the `POLL_RESEARCH` rows) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, research, and the chat parser don't open-code positional indices. Soft-degrade and strict-mode behavior is pinned in `tests/unit/test_row_adapters.py`, `tests/unit/test_chat_row_adapter.py`, and `tests/unit/test_research_row_adapter.py`. |
 | `_research_task_parser` | [`_research_task_parser.py`](../src/notebooklm/_research_task_parser.py) | Parses deep-research task results from raw rows. Returns dict-shaped output today; a typed-model migration is not yet complete. |
 | `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the dataclass and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `chat.py`, `notebooks.py`, `notes.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
 
@@ -852,6 +852,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_row_adapters/chat.py` | Streamed-chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `PassageRow` / `StreamFrameRow` / `ErrorPayloadRow` / `TextLeafRow`) that centralise the chat wire positions `_chat/wire.py` used to open-code (#1491) |
 | `_row_adapters/labels.py` | `LabelRow` strict typed view over the raw positional label tuple `[name, sources, id, emoji]` (fails loud on schema drift) |
 | `_row_adapters/notes.py` | `NoteRow` typed view over raw positional note and mind-map RPC rows |
+| `_row_adapters/research.py` | `ResearchTaskRow` / `ResearchTaskInfoRow` / `ResearchResultRow` typed views over raw positional `POLL_RESEARCH` rows that centralise the single-level positions `_research_task_parser.py` used to open-code (#1501) |
 | `_row_adapters/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
@@ -1028,6 +1029,7 @@ src/notebooklm/
 │   ├── chat.py                  # Streamed-chat row adapters (AnswerRow / CitationRow / CitationDetail / PassageRow / StreamFrameRow / ErrorPayloadRow / TextLeafRow) — closes the chat positional-decode perimeter (#1491)
 │   ├── labels.py                # Source-label row adapter
 │   ├── notes.py                 # Note and mind-map row adapter
+│   ├── research.py              # POLL_RESEARCH row adapters (ResearchTaskRow / ResearchTaskInfoRow / ResearchResultRow) — drains the research parser's single-level positional reads (#1501)
 │   └── sources.py               # Source row adapter
 ├── _chat/                       # Chat-feature subpackage — facade + helpers unified (#1328)
 │   ├── __init__.py              # Re-exports ChatAPI so `from ._chat import ChatAPI` keeps resolving

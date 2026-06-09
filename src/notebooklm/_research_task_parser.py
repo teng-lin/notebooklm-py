@@ -12,6 +12,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ._row_adapters.research import (
+    ResearchResultRow,
+    ResearchTaskInfoRow,
+    ResearchTaskRow,
+    unwrap_poll_tasks,
+)
 from ._types.research import (
     RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_RESULT_TYPE_WEB,
@@ -43,15 +49,17 @@ _POLL_METHOD_ID = RPCMethod.POLL_RESEARCH.value
 
 def extract_legacy_report_chunks(src: list[Any]) -> str:
     """Join legacy deep-research report chunks stored in ``src[6]``."""
-    if len(src) <= 6 or not isinstance(src[6], list):
-        return ""
-    chunks = [chunk for chunk in src[6] if isinstance(chunk, str) and chunk]
+    chunks = [
+        chunk
+        for chunk in ResearchResultRow(src).legacy_report_chunks
+        if isinstance(chunk, str) and chunk
+    ]
     return "\n\n".join(chunks)
 
 
 def _extract_task_id(task_data: Any) -> str | None:
     """Return ``task_data[0]`` as a string when present, else ``None``."""
-    value = safe_index(task_data, 0, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
+    value = ResearchTaskRow(task_data).task_id_raw
     if isinstance(value, str):
         return value
     if value is not None:
@@ -66,7 +74,7 @@ def _extract_task_id(task_data: Any) -> str | None:
 
 def _extract_task_info(task_data: Any) -> list[Any] | None:
     """Return ``task_data[1]`` as a list when present, else ``None``."""
-    value = safe_index(task_data, 1, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
+    value = ResearchTaskRow(task_data).task_info_raw
     if isinstance(value, list):
         return value
     if value is not None:
@@ -92,7 +100,7 @@ def _extract_query_text(task_info: Any) -> str | None:
             )
         return None
 
-    value = query_info[0] if query_info else None
+    value = ResearchTaskInfoRow.query_text(query_info)
     if isinstance(value, str):
         return value
     if value is not None:
@@ -142,18 +150,18 @@ def _extract_sources_and_summary(task_info: Any) -> tuple[list[Any], str | None]
             )
         return [], None
 
-    sources_data = bundle[0] if isinstance(bundle[0], list) else []
-    if bundle[0] is not None and not isinstance(bundle[0], list):
+    raw_sources = ResearchTaskInfoRow.bundle_sources(bundle)
+    sources_data = raw_sources if isinstance(raw_sources, list) else []
+    if raw_sources is not None and not isinstance(raw_sources, list):
         logger.warning(
             "task_info[3][0] is not a list (method_id=%r, source=%r): %r",
             _POLL_METHOD_ID,
             _POLL_SOURCE,
-            type(bundle[0]).__name__,
+            type(raw_sources).__name__,
         )
 
-    summary: str | None = None
-    if len(bundle) >= 2 and isinstance(bundle[1], str):
-        summary = bundle[1]
+    raw_summary = ResearchTaskInfoRow.bundle_summary(bundle)
+    summary: str | None = raw_summary if isinstance(raw_summary, str) else None
 
     return sources_data, summary
 
@@ -172,7 +180,8 @@ def _status_from_code(status_code: int | None) -> ResearchStatus:
 def _parse_source_row(
     src: Any, *, task_id: str, report_found: bool = False
 ) -> tuple[ResearchSource | None, str]:
-    if not isinstance(src, list) or len(src) < 2:
+    row = ResearchResultRow(src)
+    if not row.is_well_formed:
         return None, ""
 
     title = ""
@@ -183,22 +192,19 @@ def _parse_source_row(
     # Deep research (legacy): [None, title, None, type, ..., [report_markdown]]
     # Deep research (current): [None, [title, report_markdown], None, type, ...]
     # src[3] is the authoritative result_type when present.
-    result_type = parse_result_type(src[3]) if len(src) > 3 else RESEARCH_RESULT_TYPE_WEB
-    if src[0] is None and len(src) > 1:
-        # Deep-research (current) packs ``[title, report_markdown]`` at ``src[1]``.
-        # Bind it once so the title/report reads are single-level ``payload[0]`` /
-        # ``payload[1]`` indices instead of chained ``src[1][0]`` / ``src[1][1]``
-        # descents; the legitimate alternatives (bare-string title, or neither)
-        # fall through to the elif / outer branches below.
-        payload = src[1]
-        if (
-            isinstance(payload, list)
-            and len(payload) >= 2
-            and isinstance(payload[0], str)
-            and isinstance(payload[1], str)
-        ):
-            title = payload[0]
-            source_report = payload[1]
+    result_type = (
+        parse_result_type(row.result_type_slot) if row.has_result_type else RESEARCH_RESULT_TYPE_WEB
+    )
+    if row.url_slot is None and row.length > 1:
+        # Deep-research (current) packs ``[title, report_markdown]`` at ``src[1]``;
+        # ``ResearchResultRow.deep_payload`` unpacks that exact shape (a 2+-length
+        # list of two strings) and returns ``None`` for the legitimate
+        # alternatives (bare-string title, or neither), which fall through to the
+        # elif / outer branches below.
+        payload = row.title_slot
+        deep = ResearchResultRow.deep_payload(payload)
+        if deep is not None:
+            title, source_report = deep
             url = ""
             if result_type == RESEARCH_RESULT_TYPE_WEB:
                 result_type = RESEARCH_RESULT_TYPE_REPORT
@@ -207,9 +213,9 @@ def _parse_source_row(
             url = ""
             if result_type == RESEARCH_RESULT_TYPE_WEB:
                 result_type = RESEARCH_RESULT_TYPE_REPORT
-    elif isinstance(src[0], str) or len(src) >= 3:
-        url = src[0] if isinstance(src[0], str) else ""
-        title = src[1] if len(src) > 1 and isinstance(src[1], str) else ""
+    elif isinstance(row.url_slot, str) or row.length >= 3:
+        url = row.url_slot if isinstance(row.url_slot, str) else ""
+        title = row.title_slot if row.length > 1 and isinstance(row.title_slot, str) else ""
 
     parsed_source = None
     if title or url:
@@ -230,15 +236,11 @@ def _parse_source_row(
 
 
 def _unwrap_poll_result(result: Any) -> list[Any]:
-    if not result or not isinstance(result, list):
-        return []
     # POLL_RESEARCH returns either a wrapped envelope (``[[task1, ...]]``) or an
-    # already-flat list of tasks. Bind the first element so the wrap probe reads
-    # ``first[0]`` (single-level) instead of a chained ``result[0][0]`` descent.
-    first = result[0]
-    if isinstance(first, list) and len(first) > 0 and isinstance(first[0], list):
-        return first
-    return result
+    # already-flat list of tasks; ``unwrap_poll_tasks`` centralises that envelope
+    # probe (the former ``result[0]`` / ``first[0]`` reads) behind the research
+    # row adapter.
+    return unwrap_poll_tasks(result)
 
 
 def parse_research_task_models(result: Any) -> list[ResearchTask]:

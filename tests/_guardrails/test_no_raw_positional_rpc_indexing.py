@@ -26,21 +26,25 @@ This module runs **two** AST gates:
    #1377 burndown migrated every chained offender, so the chained gate
    re-protects the whole feature tree with no exceptions.
 
-2. **Single-level descent (issue #1491).** A single ``Subscript`` indexed by an
-   integer literal (``x[i]``). On its own this is too common and too benign --
-   ``args[0]``, ``parts[-1]`` -- to forbid outright, but it is *also* exactly how
-   un-named row-position knowledge of an RPC payload leaks past the chained
-   gate (the chat wire parser carried dozens of ``first[4]`` / ``cite[1]`` /
-   ``passage_data[0]`` reads that the chained gate never saw). So the
-   single-level gate works as a **ratchet**: the 47 feature files that already
-   open-code single-level integer subscripts are *baselined* into
-   :data:`SINGLE_LEVEL_ALLOWLIST` (so the gate is green on ``main`` today), but
-   a *new* single-level integer subscript in a file that is NOT on that list
-   fails the gate. New code therefore decodes through a row adapter / a named
-   local rather than re-scattering raw positions. The burndown that drains
+2. **Single-level descent (issue #1491, narrowed in #1501).** A single
+   ``Subscript`` indexed by an integer literal whose *value is a bare local*
+   ``Name`` -- the RPC-payload shape ``name[int]`` (``first[4]`` / ``cite[1]`` /
+   ``passage_data[0]``). That is exactly how un-named row-position knowledge of
+   an RPC payload leaks past the chained gate (the chat wire parser carried
+   dozens of such reads the chained gate never saw), because a decoded
+   ``batchexecute`` list is always bound to a local before it is walked.
+   Attribute/call subscripts (``sys.version_info[0]``, ``url.split("@", 1)[0]``)
+   are **excluded as structurally-benign** -- they are never positional descents
+   into an RPC payload -- so the gate is precise and benign indexing need not be
+   grandfathered. The gate works as a **ratchet**: the feature files that
+   already open-code a ``name[int]`` RPC read are *baselined* into
+   :data:`SINGLE_LEVEL_ALLOWLIST` (so the gate is green on ``main`` today), but a
+   *new* ``name[int]`` read in a file that is NOT on that list fails the gate.
+   New code therefore decodes through a row adapter / a named local rather than
+   re-scattering raw positions. The burndown that drains
    :data:`SINGLE_LEVEL_ALLOWLIST` (migrating each file behind ``_row_adapters/``
    + ``safe_index`` or binding the guarded inner list to a named local) is
-   tracked as a follow-up to #1491.
+   tracked by #1501.
 
 A string/slice subscript (``d["k"]``, ``s[1:]``) is ignored by both gates.
 
@@ -116,7 +120,6 @@ SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "_notebooks.py",
         "_notes.py",
         "_research.py",
-        "_research_task_parser.py",
         "_source/add.py",
         "_source/content.py",
         "_source/listing.py",
@@ -128,14 +131,9 @@ SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "_version_check.py",
         "cli/_chromium_profiles.py",
         "cli/_firefox_containers.py",
-        "cli/agent_templates.py",
-        "cli/artifact_cmd.py",
-        "cli/error_handler.py",
         "cli/resolve.py",
-        "cli/services/login/browser_accounts.py",
         "cli/services/login/chromium_accounts.py",
         "cli/services/login/cookie_writes.py",
-        "cli/services/login/profile_targets.py",
         "cli/services/playwright_login.py",
         "cli/services/playwright_redaction.py",
         "utils.py",
@@ -183,18 +181,40 @@ def _chained_positional_offenders(tree: ast.AST) -> list[int]:
 
 
 def _single_level_positional_offenders(tree: ast.AST) -> list[int]:
-    """Return sorted line numbers of single-level integer-literal subscripts.
+    """Return sorted line numbers of the RPC-payload shape ``name[int]``.
 
-    A site is any ``Subscript`` whose index is an integer literal -- ``x[i]``.
-    This is a superset of :func:`_chained_positional_offenders` (each level of a
-    chain ``x[i][j]`` is itself a single-level subscript), so the chained gate
-    is strictly stronger; this detector is what powers the #1491 single-level
-    ratchet. Pure on its input so a planted fixture can exercise it without
-    touching the filesystem.
+    A site is a ``Subscript`` indexed by an integer literal whose *value is a
+    bare* :class:`ast.Name` -- i.e. ``data[0]`` / ``result[2]``, a positional
+    read of a **decoded RPC payload bound to a local name**. That is the shape
+    the #1491 single-level ratchet targets: a genuine RPC-payload position read
+    is always rooted at a local variable, because the decoded ``batchexecute``
+    list is bound to a name before it is walked.
+
+    Subscripts whose value is an :class:`ast.Attribute` (``sys.version_info[0]``,
+    ``e.args[0]``, ``context.pages[0]``), an :class:`ast.Call`
+    (``url.split("@", 1)[0]``, ``Path(...).parents[3]``), or another
+    :class:`ast.Subscript` are **excluded as structurally-benign**: every such
+    site in the feature tree is a stdlib / string / path read, never a
+    positional descent into an RPC payload (which is *always* bound to a local
+    ``Name`` first). Excluding them keeps the ratchet precise -- it flags only
+    the ``name[int]`` shape that re-scatters RPC-row position knowledge -- so
+    benign attribute/call indexing does not have to be grandfathered into
+    :data:`SINGLE_LEVEL_ALLOWLIST`.
+
+    Note this is therefore NOT a strict superset of
+    :func:`_chained_positional_offenders`: the *inner* level of a chain
+    ``x[i][j]`` (where the outer value is itself a ``Subscript``) is excluded
+    here, but the chained gate -- which is the strictly-stronger gate for that
+    deep-descent shape -- still catches it. Pure on its input so a planted
+    fixture can exercise it without touching the filesystem.
     """
     lines: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Subscript) and _is_int_literal(node.slice):
+        if (
+            isinstance(node, ast.Subscript)
+            and _is_int_literal(node.slice)
+            and isinstance(node.value, ast.Name)
+        ):
             lines.add(node.lineno)
     return sorted(lines)
 
@@ -320,11 +340,15 @@ def test_no_unbaselined_single_level_positional_rpc_indexing() -> None:
     and shape drift RAISES ``UnknownRPCMethodError`` via ``safe_index``.
 
     Scope (deliberate, like #1377): a *ratchet*, not a closed perimeter. It flags
-    only integer-*literal* subscripts (``x[0]``) — a named-constant index
-    (``first[TEXT_POS]``) is not detected — and raw reads inside the ~47
-    already-allowlisted files are tolerated until each is migrated and dropped
-    from the allowlist. The goal is to stop NEW raw positions accruing while the
-    existing ones burn down, not to prove "no RPC positions anywhere".
+    only the RPC-payload shape ``name[int]`` -- an integer-*literal* subscript of
+    a bare local :class:`ast.Name` (``data[0]``). A named-constant index
+    (``first[TEXT_POS]``) is not detected, and attribute/call subscripts
+    (``sys.version_info[0]``, ``url.split("@", 1)[0]``) are excluded as
+    structurally-benign (see :func:`_single_level_positional_offenders`). Raw
+    reads inside the already-allowlisted files are tolerated until each is
+    migrated and dropped from the allowlist. The goal is to stop NEW raw RPC-row
+    positions accruing while the existing ones burn down, not to prove "no
+    integer subscripts anywhere".
     """
     offenders = _single_level_offending_files()
     unbaselined = {f: lines for f, lines in offenders.items() if f not in SINGLE_LEVEL_ALLOWLIST}
@@ -382,18 +406,20 @@ def test_migrated_chat_wire_is_not_single_level_allowlisted() -> None:
 
 
 def test_single_level_detector_flags_and_ignores() -> None:
-    """The single-level detector flags ``x[i]`` and ignores string/slice subscripts."""
+    """The single-level detector flags ``name[i]`` and ignores string/slice subscripts."""
     flagged = ast.parse(
         "\n".join(
             [
-                "a = first[4]",  # single-level int -- flagged
-                "b = parts[-1]",  # negative literal -- still positional
-                "c = payload[+1]",  # explicit unary-plus -- still positional
-                "d = chain[0][1]",  # both levels are single-level subscripts
+                "a = first[4]",  # name[int] -- flagged
+                "b = parts[-1]",  # negative literal of a name -- still positional
+                "c = payload[+1]",  # explicit unary-plus of a name -- still positional
+                "d = chain[0][1]",  # inner ``chain[0]`` is name-rooted -- flagged
             ]
         )
     )
-    # Line 4 contributes one line number even though it has two subscripts.
+    # Line 4 contributes one line number: the OUTER ``chain[0][1]`` has a
+    # ``Subscript`` value (excluded), but its INNER ``chain[0]`` is name-rooted
+    # and fires (the chained gate is the stronger gate for the outer descent).
     assert _single_level_positional_offenders(flagged) == [1, 2, 3, 4]
 
     benign = ast.parse(
@@ -407,6 +433,48 @@ def test_single_level_detector_flags_and_ignores() -> None:
         )
     )
     assert _single_level_positional_offenders(benign) == []
+
+
+def test_single_level_detector_targets_name_rooted_rpc_shape_only() -> None:
+    """The single-level detector flags only ``name[int]``, not attribute/call subscripts.
+
+    Pins the #1501 narrowing: by current codebase convention a genuine
+    RPC-payload position read is rooted at a local ``Name`` (``data[0]`` /
+    ``result[2]``) — every decoded batchexecute payload is bound to a local
+    before it is walked (verified across the whole feature tree at narrowing
+    time: all 15 non-``Name`` integer subscripts were benign stdlib/string/path
+    reads). The ratchet therefore targets exactly that shape and *excludes*
+    integer subscripts of an attribute (``sys.version_info[0]``, ``e.args[0]``,
+    ``ctx.pages[0]``) or a call (``Path(...).parents[3]``, ``s.split("@", 1)[0]``,
+    ``f()[0]``). This is a convention-backed scope, not an absolute guarantee —
+    a future ``self._payload[0]`` or ``parse_rpc()[0]`` would evade it; if that
+    idiom ever appears in feature code, widen the detector rather than adopting
+    the idiom.
+    """
+    excluded = ast.parse(
+        "\n".join(
+            [
+                "a = sys.version_info[0]",  # attribute value -- excluded
+                "b = e.args[0]",  # attribute value -- excluded
+                "c = ctx.pages[0]",  # attribute value -- excluded
+                "d = Path(__file__).resolve().parents[3]",  # call value -- excluded
+                "e = email.split('@', 1)[0]",  # call value -- excluded
+                "f = parse()[0]",  # call value -- excluded
+            ]
+        )
+    )
+    assert _single_level_positional_offenders(excluded) == []
+
+    rpc_shape = ast.parse(
+        "\n".join(
+            [
+                "data = decode(raw)",
+                "a = data[0]",  # name[int] -- flagged (an RPC-row read)
+                "b = result[2]",  # name[int] -- flagged
+            ]
+        )
+    )
+    assert _single_level_positional_offenders(rpc_shape) == [2, 3]
 
 
 def test_detector_flags_chained_descent() -> None:
