@@ -32,7 +32,7 @@ import json
 
 import pytest
 
-from notebooklm._row_adapters.artifacts import ArtifactRow
+from notebooklm._row_adapters.artifacts import ArtifactRow, ReportSuggestionRow
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm._row_adapters.sources import (
     SourceRow,
@@ -1737,3 +1737,66 @@ class TestInterpretSourceFreshness:
         # non-boolean are all drift -> raise, not a silent bool.
         with pytest.raises(DecodingError):
             interpret_source_freshness(payload)
+
+
+# ---------------------------------------------------------------------------
+# ReportSuggestionRow (GET_SUGGESTED_REPORTS rows, issue #1491)
+# ---------------------------------------------------------------------------
+
+
+class TestReportSuggestionRowPositionContract:
+    """If these fail, Google has likely reshaped the GET_SUGGESTED_REPORTS row."""
+
+    def test_positions_pinned(self) -> None:
+        assert (
+            ReportSuggestionRow._TITLE_POS,
+            ReportSuggestionRow._DESCRIPTION_POS,
+            ReportSuggestionRow._PROMPT_POS,
+            ReportSuggestionRow._AUDIENCE_LEVEL_POS,
+            ReportSuggestionRow._DEFAULT_AUDIENCE_LEVEL,
+            ReportSuggestionRow._MIN_LEN,
+        ) == (0, 1, 4, 5, 2, 5)
+
+
+class TestReportSuggestionRow:
+    """Named-property reads with the historical permissive defaults."""
+
+    def test_full_row_reads_all_fields(self) -> None:
+        row = ReportSuggestionRow(["Title", "Desc", None, None, "Prompt", 3])
+        assert row.is_well_formed is True
+        assert row.title == "Title"
+        assert row.description == "Desc"
+        assert row.prompt == "Prompt"
+        assert row.audience_level == 3
+
+    def test_missing_audience_level_defaults_to_two(self) -> None:
+        # Exactly the historical ``item[5] if len(item) > 5 else 2`` contract.
+        row = ReportSuggestionRow(["Title", "Desc", None, None, "Prompt"])
+        assert row.is_well_formed is True
+        assert row.audience_level == 2
+
+    def test_non_string_fields_degrade_to_empty(self) -> None:
+        row = ReportSuggestionRow([None, 5, None, None, ["nested"], 1])
+        assert row.title == ""
+        assert row.description == ""
+        assert row.prompt == ""
+        assert row.audience_level == 1
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            [],
+            ["Title", "Desc"],
+            ["Title", "Desc", None, None],  # len 4 < 5, missing prompt slot
+            "not-a-list",
+            None,
+        ],
+    )
+    def test_short_or_non_list_rows_are_not_well_formed(self, raw: object) -> None:
+        assert ReportSuggestionRow(raw).is_well_formed is False
+
+    def test_present_but_non_int_audience_level_returned_verbatim(self) -> None:
+        # Mirrors the prior inline read: the slot's *presence* is checked, not
+        # its type -- a present non-int value passes through unchanged.
+        row = ReportSuggestionRow(["T", "D", None, None, "P", "high"])
+        assert row.audience_level == "high"

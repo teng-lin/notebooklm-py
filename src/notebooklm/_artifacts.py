@@ -43,6 +43,7 @@ from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
+from ._row_adapters.artifacts import ReportSuggestionRow
 from ._runtime.contracts import RpcCaller
 from ._types.artifacts import _status_from_code
 from ._types.research import MindMapResult
@@ -1233,29 +1234,28 @@ class ArtifactsAPI:
             allow_null=True,
         )
 
-        suggestions = []
-        if result and isinstance(result, list) and len(result) > 0:
-            # GET_SUGGESTED_REPORTS returns a wrapped ``[[row1, ...]]`` envelope or an
-            # already-flat ``[row1, ...]``; only unwrap the wrapped case (single outer
-            # element whose first inner element is itself a row). Bind ``inner`` so the
-            # wrap probe is ``inner[0]`` not chained ``result[0][0]``.
-            items = result
-            if len(result) == 1 and isinstance(result[0], list):
-                inner = result[0]
-                if not inner or isinstance(inner[0], list):
-                    items = inner
-            for item in items:
-                if isinstance(item, list) and len(item) >= 5:
-                    suggestions.append(
-                        ReportSuggestion(
-                            title=item[0] if isinstance(item[0], str) else "",
-                            description=item[1] if isinstance(item[1], str) else "",
-                            prompt=item[4] if isinstance(item[4], str) else "",
-                            audience_level=item[5] if len(item) > 5 else 2,
-                        )
-                    )
+        if not (result and isinstance(result, list)):
+            return []
 
-        return suggestions
+        # GET_SUGGESTED_REPORTS returns a wrapped ``[[row1, ...]]`` envelope or an
+        # already-flat ``[row1, ...]``; only unwrap the wrapped case (single outer
+        # element whose first inner element is itself a row).
+        items = result
+        if len(result) == 1 and isinstance(result[0], list):
+            inner = result[0]
+            if not inner or isinstance(inner[0], list):
+                items = inner
+        # ``ReportSuggestionRow`` centralises the per-row position knowledge (#1491).
+        return [
+            ReportSuggestion(
+                title=row.title,
+                description=row.description,
+                prompt=row.prompt,
+                audience_level=row.audience_level,
+            )
+            for row in map(ReportSuggestionRow, items)
+            if row.is_well_formed
+        ]
 
     # =========================================================================
     # Private Helpers

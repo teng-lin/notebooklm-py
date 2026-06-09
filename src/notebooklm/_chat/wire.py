@@ -16,6 +16,15 @@ from typing import Any, NoReturn, Protocol
 from urllib.parse import quote, urlencode
 
 from .._env import get_default_bl, get_default_language
+from .._row_adapters.chat import (
+    AnswerRow,
+    CitationDetail,
+    CitationRow,
+    ErrorPayloadRow,
+    PassageRow,
+    StreamFrameRow,
+    TextLeafRow,
+)
 from ..auth import format_authuser_value
 from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from ..rpc._safe_index import safe_index
@@ -294,26 +303,29 @@ def _extract_chunk_with_parseable(
         # The batchexecute stream emits ``["er", rpc_id, code, ...]`` frames
         # when the RPC itself failed; the old parser only inspected
         # ``"wrb.fr"`` frames, so a server error collapsed into the generic
-        # "no parseable chunks" / "empty response" failure. ``item[0]`` is a
-        # guaranteed index here (``len(item) >= 2``) so the ``safe_index``
-        # descent is byte-for-byte identical on the happy path and only raises
-        # if the frame tag slot itself drifted out from under us.
-        tag = safe_index(item, 0, method_id=None, source=_CHUNK_SOURCE)
+        # "no parseable chunks" / "empty response" failure. ``StreamFrameRow``
+        # centralises the ``item[0]`` / ``item[2]`` / ``item[5]`` frame reads
+        # (issue #1491). ``frame.tag`` is the one guaranteed slot
+        # (``len(item) >= 2``) so its ``safe_index`` descent is byte-for-byte
+        # identical on the happy path and only raises if the tag slot drifted.
+        frame = StreamFrameRow(item)
+        tag = frame.tag
         if tag == "er":
             _raise_chat_error_frame(item)
 
         if tag != "wrb.fr" or len(item) < 3:
             continue
 
-        inner_json = item[2]
+        inner_json = frame.inner_json
         if not isinstance(inner_json, str):
             # item[2] is null — check item[5] for a server-side error payload.
             # Don't flip ``parseable`` here: a null inner_json without a
             # recognized error payload is not a successfully decoded
             # envelope. The error-payload path raises, so flow only
             # reaches the next iteration when item[5] was absent/unusable.
-            if len(item) > 5 and isinstance(item[5], list):
-                raise_if_rate_limited(item[5])
+            error_payload = frame.error_payload
+            if error_payload is not None:
+                raise_if_rate_limited(error_payload)
             continue
 
         try:
@@ -359,34 +371,20 @@ def _extract_chunk_with_parseable(
                     data_at_failure=repr(first)[:200],
                 )
             if len(first) > 0:
-                # Load-bearing answer-text leaf. ``first`` already holds
-                # ``inner_data[0]`` and the ``len(first) > 0`` guard makes
-                # ``first[0]`` valid, so reuse it instead of re-traversing from
-                # ``inner_data``: byte-for-byte identical on the happy path,
-                # with a more localized ``(0,)`` drift path under drift.
-                text = safe_index(first, 0, method_id=None, source=_CHUNK_SOURCE)
-                if not isinstance(text, str) or not text:
+                # The populated record is wrapped in an ``AnswerRow`` so every
+                # leaf read (text / answer-marker / server-conv-id / citations)
+                # goes through one named position contract in
+                # ``_row_adapters/chat.py`` instead of scattered single-level
+                # subscripts here (issue #1491). ``text`` is the load-bearing
+                # answer leaf; an absent/empty/non-string leaf legitimately means
+                # "no answer in this chunk" (heartbeat-ish), so fall through.
+                answer = AnswerRow(first)
+                text = answer.text
+                if text is None:
                     continue
 
-                # ``first[4]`` is the optional type/flags block; its trailing
-                # element being ``1`` marks an answer record. Bind it so the flag
-                # read is a single-level ``type_block[-1]`` index rather than a
-                # chained ``first[4][-1]`` descent. An absent block legitimately
-                # means "not an answer" (non-answer records carry no type block).
-                type_block = first[4] if len(first) > 4 and isinstance(first[4], list) else None
-                is_answer = type_block is not None and len(type_block) > 0 and type_block[-1] == 1
-
-                # ``first[2]`` is the optional server-conversation-id block; bind
-                # it so the id read is a single-level ``conv_block[0]`` index
-                # rather than a chained ``first[2][0]`` descent. An absent/empty
-                # block legitimately means "no server conversation id present".
-                server_conv_id: str | None = None
-                conv_block = first[2] if len(first) > 2 and isinstance(first[2], list) else None
-                if conv_block and isinstance(conv_block[0], str):
-                    server_conv_id = conv_block[0]
-
                 refs = parse_citations(first)
-                return text, is_answer, refs, server_conv_id, parseable
+                return text, answer.is_answer, refs, answer.server_conversation_id, parseable
         # inner_json decoded but the record didn't yield usable answer data
         # — either the outer ``isinstance(inner_data, list) and len > 0``
         # guard failed (dict, empty list, non-list) OR the inner
@@ -416,8 +414,9 @@ def _raise_chat_error_frame(item: list) -> NoReturn:
     """
     # The error code is optional enrichment — its absence must not be treated
     # as schema drift (an ``"er"`` frame is itself the error signal), so read
-    # the slot with an explicit length guard rather than ``safe_index``.
-    code = item[2] if len(item) > 2 else None
+    # the slot via ``StreamFrameRow.error_code`` (length-guarded, not
+    # ``safe_index``) which centralises the ``item[2]`` position (issue #1491).
+    code = StreamFrameRow(item).error_code
     detail = f" (code {code!r})" if code is not None else ""
     raise ChatError(
         f"Chat request failed: the server returned an error frame{detail}. "
@@ -430,14 +429,16 @@ def raise_if_rate_limited(error_payload: list) -> None:
     """Raise ``ChatError`` if the payload contains a UserDisplayableError."""
     try:
         # Structure: [8, None, [["type.googleapis.com/.../UserDisplayableError", ...]]]
-        if len(error_payload) > 2 and isinstance(error_payload[2], list):
-            for entry in error_payload[2]:
-                if isinstance(entry, list) and entry and isinstance(entry[0], str):
-                    if "UserDisplayableError" in entry[0]:
-                        raise ChatError(
-                            "Chat request was rate limited or rejected by the API. "
-                            "Wait a few seconds and try again."
-                        )
+        # ``ErrorPayloadRow`` centralises the ``error_payload[2]`` entries read
+        # and the per-entry ``entry[0]`` type-string read (issue #1491).
+        row = ErrorPayloadRow(error_payload)
+        for entry in row.entries:
+            entry_type = ErrorPayloadRow.entry_type(entry)
+            if entry_type is not None and "UserDisplayableError" in entry_type:
+                raise ChatError(
+                    "Chat request was rate limited or rejected by the API. "
+                    "Wait a few seconds and try again."
+                )
     except ChatError:
         raise
     except Exception:
@@ -450,14 +451,11 @@ def raise_if_rate_limited(error_payload: list) -> None:
 def parse_citations(first: list) -> list[ChatReference]:
     """Parse citation details from a streamed-chat response structure."""
     try:
-        if len(first) <= 4 or not isinstance(first[4], list):
-            return []
-        type_info = first[4]
-        if len(type_info) <= 3 or not isinstance(type_info[3], list):
-            return []
-
+        # ``AnswerRow.citations`` centralises the ``first[4][3]`` descent and
+        # degrades to ``[]`` for the "answer without citations" shapes the old
+        # inline length guards tolerated (issue #1491).
         refs: list[ChatReference] = []
-        for cite in type_info[3]:
+        for cite in AnswerRow(first).citations:
             ref = parse_single_citation(cite)
             if ref is not None:
                 refs.append(ref)
@@ -473,28 +471,20 @@ def parse_citations(first: list) -> list[ChatReference]:
 
 def parse_single_citation(cite: Any) -> ChatReference | None:
     """Parse a single citation entry into a ``ChatReference``."""
-    if not isinstance(cite, list) or len(cite) < 2:
+    # ``CitationRow`` centralises the ``cite[0][0]`` chunk-id and ``cite[1]``
+    # detail-block position knowledge (issue #1491); a malformed entry yields
+    # ``detail is None`` here, matching the old "skip unusable citation" guard.
+    row = CitationRow(cite)
+    detail = row.detail
+    if detail is None:
         return None
+    cite_inner = detail.raw_list
 
-    cite_inner = cite[1]
-    if not isinstance(cite_inner, list):
-        return None
-
-    source_id_data = cite_inner[5] if len(cite_inner) > 5 else None
-    source_id = extract_uuid_from_nested(source_id_data)
+    source_id = extract_uuid_from_nested(detail.source_id_data)
     if source_id is None:
         return None
 
-    # ``cite[0]`` is the optional chunk-id block; bind it so the id read is a
-    # single-level ``chunk_block[0]`` index rather than a chained ``cite[0][0]``
-    # descent. An absent/empty block legitimately means "no chunk id" (the
-    # citation is kept; chunk_id stays None).
-    chunk_id = None
-    chunk_block = cite[0]
-    if isinstance(chunk_block, list) and chunk_block:
-        first_item = chunk_block[0]
-        if isinstance(first_item, str):
-            chunk_id = first_item
+    chunk_id = row.chunk_id
 
     cited_text, start_char, end_char = extract_text_passages(cite_inner)
     answer_start_char, answer_end_char = extract_answer_range(cite_inner)
@@ -524,15 +514,10 @@ def extract_answer_range(cite_inner: list) -> tuple[int | None, int | None]:
     semantically paired and one without the other is meaningless to
     downstream consumers.
     """
-    if len(cite_inner) <= 3 or not isinstance(cite_inner[3], list):
-        return None, None
-    outer = cite_inner[3]
-    if not outer or not isinstance(outer[0], list):
-        return None, None
-    inner = outer[0]
-    if len(inner) < 3:
-        return None, None
-    start, end = inner[1], inner[2]
+    # ``CitationDetail.answer_range`` centralises the ``cite_inner[3][0]``
+    # descent (``[None, start, end]``) and returns ``(None, None)`` for every
+    # malformed shape the old inline guards rejected (issue #1491).
+    start, end = CitationDetail(cite_inner).answer_range()
     # bool is an int subclass in Python; reject it explicitly. Treat positions
     # as paired — one without the other (or invalid ordering) is unusable.
     if (
@@ -555,9 +540,11 @@ def extract_score(cite_inner: list) -> float | None:
     [0.0, 1.0]. The bound check keeps the contract documented on the field
     enforceable for downstream consumers.
     """
-    if len(cite_inner) <= 2:
+    # ``CitationDetail.raw_score`` centralises the ``cite_inner[2]`` read
+    # (issue #1491); a short detail block yields ``None`` (no score).
+    raw = CitationDetail(cite_inner).raw_score
+    if raw is None:
         return None
-    raw = cite_inner[2]
     if isinstance(raw, bool):  # bool is a subclass of int in Python; reject
         return None
     if isinstance(raw, (int, float)):
@@ -577,26 +564,24 @@ def extract_text_passages(cite_inner: list) -> tuple[str | None, int | None, int
     never trips on a half-populated source range. The cited text (if any) is
     still returned.
     """
-    if len(cite_inner) <= 4 or not isinstance(cite_inner[4], list):
-        return None, None, None
-
+    # ``CitationDetail.passages`` centralises the ``cite_inner[4]`` descent and
+    # ``PassageRow`` the per-passage ``passage_wrapper[0]`` / ``passage_data[0..2]``
+    # reads (issue #1491); absent/short shapes degrade to ``[]`` / ``None``.
     texts: list[str] = []
     start_char: int | None = None
     end_char: int | None = None
 
-    for passage_wrapper in cite_inner[4]:
-        if not isinstance(passage_wrapper, list) or not passage_wrapper:
-            continue
-        passage_data = passage_wrapper[0]
-        if not isinstance(passage_data, list) or len(passage_data) < 3:
+    for passage_wrapper in CitationDetail(cite_inner).passages:
+        passage = PassageRow(passage_wrapper)
+        if not passage.is_well_formed:
             continue
 
-        if start_char is None and isinstance(passage_data[0], int):
-            start_char = passage_data[0]
-        if isinstance(passage_data[1], int):
-            end_char = passage_data[1]
+        if start_char is None and isinstance(passage.start_char, int):
+            start_char = passage.start_char
+        if isinstance(passage.end_char, int):
+            end_char = passage.end_char
 
-        collect_texts_from_nested(passage_data[2], texts)
+        collect_texts_from_nested(passage.text_payload, texts)
 
     cited_text = " ".join(texts) if texts else None
     # Drop a half-populated range so the ChatReference invariant accepts it.
@@ -621,9 +606,12 @@ def collect_texts_from_nested(nested: Any, texts: list[str]) -> None:
         if not isinstance(nested_group, list):
             continue
         for inner in nested_group:
-            if not isinstance(inner, list) or len(inner) < 3:
+            # ``TextLeafRow`` centralises the ``inner[2]`` text-payload read and
+            # the ``len(inner) >= 3`` well-formedness guard (issue #1491).
+            leaf = TextLeafRow(inner)
+            if not leaf.is_well_formed:
                 continue
-            text_val = inner[2]
+            text_val = leaf.text_value
             if isinstance(text_val, str) and text_val.strip():
                 texts.append(text_val.strip())
             elif isinstance(text_val, list):

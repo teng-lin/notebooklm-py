@@ -10,7 +10,7 @@ from .._types.common import _datetime_from_timestamp
 from ..exceptions import UnknownRPCMethodError
 from ..rpc import ArtifactStatus, ArtifactTypeCode, RPCMethod, safe_index
 
-__all__ = ["ArtifactRow"]
+__all__ = ["ArtifactRow", "ReportSuggestionRow"]
 
 
 @dataclass(frozen=True)
@@ -482,3 +482,75 @@ class ArtifactRow:
         if completed_only:
             return self.status == ArtifactStatus.COMPLETED
         return True
+
+
+@dataclass(frozen=True)
+class ReportSuggestionRow:
+    """Typed view of one raw ``GET_SUGGESTED_REPORTS`` suggestion row.
+
+    The wrapped row is a single AI-suggested report-format entry returned by
+    the ``ciyUvf`` (``GET_SUGGESTED_REPORTS``) RPC. Position layout:
+
+    =====  ============================================================
+    Index  Meaning
+    =====  ============================================================
+    0      title (str)
+    1      description (str)
+    4      prompt (str)
+    5      audience level (int; defaults to ``2`` when absent)
+    =====  ============================================================
+
+    Position knowledge is centralised here so ``ArtifactsAPI.suggest_reports``
+    stops open-coding ``item[0]`` / ``item[1]`` / ``item[4]`` / ``item[5]``
+    (issue #1491). Short / malformed rows degrade to the documented defaults
+    rather than raising — a suggestion list is best-effort UI sugar, not a
+    load-bearing decode, so the historical permissive contract is preserved.
+    """
+
+    _raw: list[Any] = field(repr=False)
+
+    _TITLE_POS: ClassVar[int] = 0
+    _DESCRIPTION_POS: ClassVar[int] = 1
+    _PROMPT_POS: ClassVar[int] = 4
+    _AUDIENCE_LEVEL_POS: ClassVar[int] = 5
+    _DEFAULT_AUDIENCE_LEVEL: ClassVar[int] = 2
+    # A row must carry at least the prompt slot (index 4) to be usable.
+    _MIN_LEN: ClassVar[int] = 5
+
+    @property
+    def is_well_formed(self) -> bool:
+        """Whether the row is a list long enough to carry title…prompt."""
+        return isinstance(self._raw, list) and len(self._raw) >= self._MIN_LEN
+
+    def _str_at(self, position: int) -> str:
+        """Return ``self._raw[position]`` when it is a str, else ``""``."""
+        value = self._raw[position]
+        return value if isinstance(value, str) else ""
+
+    @property
+    def title(self) -> str:
+        """Suggestion title — empty string when absent / non-string."""
+        return self._str_at(self._TITLE_POS)
+
+    @property
+    def description(self) -> str:
+        """Suggestion description — empty string when absent / non-string."""
+        return self._str_at(self._DESCRIPTION_POS)
+
+    @property
+    def prompt(self) -> str:
+        """Suggestion prompt — empty string when absent / non-string."""
+        return self._str_at(self._PROMPT_POS)
+
+    @property
+    def audience_level(self) -> int:
+        """Audience level at ``[5]``; the default ``2`` when the slot is absent.
+
+        Matches the historical contract: only the *presence* of the slot is
+        checked (``len(row) > 5``); a present-but-non-int value is returned
+        verbatim, exactly as the prior inline ``item[5] if len(item) > 5 else 2``
+        read did.
+        """
+        if len(self._raw) <= self._AUDIENCE_LEVEL_POS:
+            return self._DEFAULT_AUDIENCE_LEVEL
+        return self._raw[self._AUDIENCE_LEVEL_POS]

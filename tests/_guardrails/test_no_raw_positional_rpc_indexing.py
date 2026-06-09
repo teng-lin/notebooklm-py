@@ -1,4 +1,4 @@
-"""Guard: no raw *chained* positional indexing of RPC payloads in feature code.
+"""Guard: no raw positional indexing of RPC payloads in feature code.
 
 Google's ``batchexecute`` responses are positional lists (the project's #1
 standing risk -- the shape can move without notice). The sanctioned places to
@@ -7,34 +7,47 @@ decode those positional structures are:
 * ``src/notebooklm/rpc/`` -- the RPC protocol layer (encoder/decoder/safe_index),
   the home of ``safe_index`` itself; and
 * ``src/notebooklm/_row_adapters/`` -- the typed row views (``ArtifactRow`` /
-  ``NoteRow`` / ``SourceRow``) that centralise position knowledge behind named
-  properties.
+  ``NoteRow`` / ``SourceRow`` / the chat rows) that centralise position
+  knowledge behind named properties.
 
-Everywhere else, walking a decoded payload with a hand-rolled *chain* of
-integer-literal subscripts (``first[4][3]``, ``result[0][2][4]``,
-``cite[0][0]``) re-scatters the position knowledge the adapters exist to
-contain, and -- per **ADR-0011** -- routinely *swallows* shape drift to an
-empty/wrong value behind ``try/except (IndexError, TypeError)`` instead of
-raising ``UnknownRPCMethodError`` via ``safe_index``.
+Everywhere else, walking a decoded payload with hand-rolled integer-literal
+subscripts re-scatters the position knowledge the adapters exist to contain,
+and -- per **ADR-0011** -- routinely *swallows* shape drift to an empty/wrong
+value behind ``try/except (IndexError, TypeError)`` instead of raising
+``UnknownRPCMethodError`` via ``safe_index``.
 
-This AST lint forbids the anti-pattern: a ``Subscript`` indexed by an integer
-literal whose *own value* is another integer-literal ``Subscript`` -- i.e. a
-two-or-more-deep positional descent like ``x[i][j]``. Single-level ``x[i]``
-indexing is intentionally **not** flagged (it is too common and too benign --
-``args[0]``, ``parts[-1]`` -- to gate without noise); the chained form is the
-fragile "deep descent into an RPC payload" shape this gate targets. A
-string/slice subscript (``d["k"]``, ``s[1:]``) is likewise ignored.
+This module runs **two** AST gates:
 
-This is the durable GATE for issue #1377. The current offenders are *baselined*
-into :data:`ALLOWLIST` so the gate is green on ``main`` today; the burndown that
-drains that list (migrating each file behind ``_row_adapters/`` + ``safe_index``)
-is tracked as follow-up issue #1389. New feature files start gated -- adding a
-fresh chained positional descent outside ``rpc/`` / ``_row_adapters/`` fails the
-gate unless the file is on the allowlist.
+1. **Chained descent (issue #1377).** A ``Subscript`` indexed by an integer
+   literal whose *own value* is another integer-literal ``Subscript`` -- i.e. a
+   two-or-more-deep positional descent like ``x[i][j]`` (``first[4][3]``,
+   ``result[0][2][4]``, ``cite[0][0]``). This is the most fragile "deep descent
+   into an RPC payload" shape, and its :data:`ALLOWLIST` is **empty** -- the
+   #1377 burndown migrated every chained offender, so the chained gate
+   re-protects the whole feature tree with no exceptions.
 
-The allowlist is self-draining: :func:`test_no_stale_allowlist_entries` fails if
-an allowlisted file no longer contains any chained positional descent, so once a
-file is migrated it must be removed from the list (the gate then re-protects it).
+2. **Single-level descent (issue #1491).** A single ``Subscript`` indexed by an
+   integer literal (``x[i]``). On its own this is too common and too benign --
+   ``args[0]``, ``parts[-1]`` -- to forbid outright, but it is *also* exactly how
+   un-named row-position knowledge of an RPC payload leaks past the chained
+   gate (the chat wire parser carried dozens of ``first[4]`` / ``cite[1]`` /
+   ``passage_data[0]`` reads that the chained gate never saw). So the
+   single-level gate works as a **ratchet**: the 47 feature files that already
+   open-code single-level integer subscripts are *baselined* into
+   :data:`SINGLE_LEVEL_ALLOWLIST` (so the gate is green on ``main`` today), but
+   a *new* single-level integer subscript in a file that is NOT on that list
+   fails the gate. New code therefore decodes through a row adapter / a named
+   local rather than re-scattering raw positions. The burndown that drains
+   :data:`SINGLE_LEVEL_ALLOWLIST` (migrating each file behind ``_row_adapters/``
+   + ``safe_index`` or binding the guarded inner list to a named local) is
+   tracked as a follow-up to #1491.
+
+A string/slice subscript (``d["k"]``, ``s[1:]``) is ignored by both gates.
+
+Both allowlists are self-draining: :func:`test_no_stale_allowlist_entries` and
+:func:`test_no_stale_single_level_allowlist_entries` fail if an allowlisted file
+no longer contains the offending shape, so once a file is migrated it must be
+removed from its list (the gate then re-protects it).
 """
 
 from __future__ import annotations
@@ -59,6 +72,75 @@ SANCTIONED_PACKAGES = frozenset({"rpc", "_row_adapters"})
 # DO NOT add new entries to grow the debt -- a new offender means new code that
 # should decode through ``safe_index`` / a row adapter instead.
 ALLOWLIST: frozenset[str] = frozenset()
+
+# Baseline of feature files that open-code a *single-level* integer-literal
+# subscript (``x[i]``) of a decoded RPC payload (issue #1491). Many of these
+# reads are benign (``params[2]``, ``args[0]``) and many are genuine but
+# already-guarded inner reads -- the single-level gate is a RATCHET, not an
+# immediate ban: these files are grandfathered so the gate is green on ``main``,
+# but a single-level subscript in any file NOT on this list fails the gate.
+#
+# The chat wire parser (``_chat/wire.py``) and the ``suggest_reports`` row decode
+# in ``_artifacts.py`` were the largest un-adapted surfaces; ``_chat/wire.py`` is
+# fully migrated behind ``_row_adapters/chat.py`` and is DELIBERATELY ABSENT from
+# this list so the gate re-protects it. ``_artifacts.py`` keeps its remaining
+# envelope-unwrap / request-param reads (only its ``suggest_reports`` row decode
+# moved behind ``ReportSuggestionRow``), so it stays listed for now.
+#
+# DO NOT add new entries to grow the debt. The burndown (drain this list by
+# migrating each file behind ``_row_adapters/`` + ``safe_index``, or binding the
+# already-guarded inner list to a named local) is a follow-up to #1491.
+SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "_app/artifacts.py",
+        "_app/download.py",
+        "_app/generate_retry.py",
+        "_app/labels.py",
+        "_app/notes.py",
+        "_app/resolve.py",
+        "_app/skill.py",
+        "_app/source_clean.py",
+        "_app/source_mutations.py",
+        "_artifact/downloads.py",
+        "_artifact/formatters.py",
+        "_artifact/listing.py",
+        "_artifact/polling.py",
+        "_artifacts.py",
+        "_auth/cookies.py",
+        "_auth/refresh.py",
+        "_chat/api.py",
+        "_chat/notes.py",
+        "_labels.py",
+        "_mind_maps_api.py",
+        "_note_service.py",
+        "_notebooks.py",
+        "_notes.py",
+        "_research.py",
+        "_research_task_parser.py",
+        "_source/add.py",
+        "_source/content.py",
+        "_source/listing.py",
+        "_source/upload.py",
+        "_types/artifacts.py",
+        "_types/notebooks.py",
+        "_types/sharing.py",
+        "_types/sources.py",
+        "_version_check.py",
+        "cli/_chromium_profiles.py",
+        "cli/_firefox_containers.py",
+        "cli/agent_templates.py",
+        "cli/artifact_cmd.py",
+        "cli/error_handler.py",
+        "cli/resolve.py",
+        "cli/services/login/browser_accounts.py",
+        "cli/services/login/chromium_accounts.py",
+        "cli/services/login/cookie_writes.py",
+        "cli/services/login/profile_targets.py",
+        "cli/services/playwright_login.py",
+        "cli/services/playwright_redaction.py",
+        "utils.py",
+    }
+)
 
 
 def _is_int_literal(node: ast.expr) -> bool:
@@ -100,6 +182,23 @@ def _chained_positional_offenders(tree: ast.AST) -> list[int]:
     return sorted(lines)
 
 
+def _single_level_positional_offenders(tree: ast.AST) -> list[int]:
+    """Return sorted line numbers of single-level integer-literal subscripts.
+
+    A site is any ``Subscript`` whose index is an integer literal -- ``x[i]``.
+    This is a superset of :func:`_chained_positional_offenders` (each level of a
+    chain ``x[i][j]`` is itself a single-level subscript), so the chained gate
+    is strictly stronger; this detector is what powers the #1491 single-level
+    ratchet. Pure on its input so a planted fixture can exercise it without
+    touching the filesystem.
+    """
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Subscript) and _is_int_literal(node.slice):
+            lines.add(node.lineno)
+    return sorted(lines)
+
+
 @functools.cache
 def _feature_files() -> tuple[Path, ...]:
     """All ``src/notebooklm`` Python files outside the sanctioned decoding packages.
@@ -136,6 +235,23 @@ def _offending_files() -> dict[str, list[int]]:
     for path in _feature_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         lines = _chained_positional_offenders(tree)
+        if lines:
+            offenders[_rel(path)] = lines
+    return offenders
+
+
+@functools.cache
+def _single_level_offending_files() -> dict[str, list[int]]:
+    """Map ``rel-path -> single-level offending line numbers`` for every feature file.
+
+    Cached for the same reason as :func:`_offending_files` -- the #1491
+    single-level ratchet tests share one whole-tree scan. Callers treat the
+    result as read-only.
+    """
+    offenders: dict[str, list[int]] = {}
+    for path in _feature_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        lines = _single_level_positional_offenders(tree)
         if lines:
             offenders[_rel(path)] = lines
     return offenders
@@ -186,6 +302,111 @@ def test_allowlist_entries_exist() -> None:
     assert not missing, "ALLOWLIST references nonexistent files:\n" + "\n".join(
         f"  {f}" for f in missing
     )
+
+
+# ---------------------------------------------------------------------------
+# Single-level ratchet (issue #1491)
+# ---------------------------------------------------------------------------
+
+
+def test_no_unbaselined_single_level_positional_rpc_indexing() -> None:
+    """No feature file outside the single-level allowlist may add a literal ``x[i]`` read.
+
+    This is the #1491 **burndown ratchet** (introduced the way #1377 introduced
+    the chained-descent gate). It fails when a file that is NOT on
+    :data:`SINGLE_LEVEL_ALLOWLIST` open-codes a *brand-new* integer-literal
+    single-level subscript of an RPC payload. Route the read through a
+    ``_row_adapters/`` typed view so the position knowledge lives in one place
+    and shape drift RAISES ``UnknownRPCMethodError`` via ``safe_index``.
+
+    Scope (deliberate, like #1377): a *ratchet*, not a closed perimeter. It flags
+    only integer-*literal* subscripts (``x[0]``) — a named-constant index
+    (``first[TEXT_POS]``) is not detected — and raw reads inside the ~47
+    already-allowlisted files are tolerated until each is migrated and dropped
+    from the allowlist. The goal is to stop NEW raw positions accruing while the
+    existing ones burn down, not to prove "no RPC positions anywhere".
+    """
+    offenders = _single_level_offending_files()
+    unbaselined = {f: lines for f, lines in offenders.items() if f not in SINGLE_LEVEL_ALLOWLIST}
+    assert not unbaselined, (
+        "Raw single-level positional indexing of RPC payloads (`x[i]`) is forbidden "
+        "outside src/notebooklm/rpc/ and src/notebooklm/_row_adapters/ for files not "
+        "on SINGLE_LEVEL_ALLOWLIST (see ADR-0011, issue #1491). Decode through a typed "
+        "_row_adapters/ view so shape drift RAISES UnknownRPCMethodError instead of "
+        "silently degrading to empty/wrong data. NOTE: binding the read to a named local "
+        "does NOT satisfy this single-level gate (the local subscript `local[i]` is still "
+        "flagged) — move the position knowledge into an adapter; or, for a deliberate "
+        "burndown deferral, add the file to SINGLE_LEVEL_ALLOWLIST.\n\n"
+        + "\n".join(
+            f"  src/notebooklm/{f}:{','.join(map(str, lines))}"
+            for f, lines in sorted(unbaselined.items())
+        )
+    )
+
+
+def test_no_stale_single_level_allowlist_entries() -> None:
+    """Every single-level-allowlisted file must still offend -- migrated files drop off.
+
+    Keeps the #1491 burndown honest: when a file's single-level RPC reads move
+    behind a row adapter / named local, it stops offending and must drop off
+    :data:`SINGLE_LEVEL_ALLOWLIST`, which re-arms the gate for that file.
+    """
+    offenders = _single_level_offending_files()
+    stale = sorted(f for f in SINGLE_LEVEL_ALLOWLIST if f not in offenders)
+    assert not stale, (
+        "Stale entries in SINGLE_LEVEL_ALLOWLIST -- these files no longer use a "
+        "single-level integer subscript (likely migrated behind a row adapter / named "
+        "local). Remove them so the gate re-protects them:\n" + "\n".join(f"  {f}" for f in stale)
+    )
+
+
+def test_single_level_allowlist_entries_exist() -> None:
+    """Every single-level-allowlisted path must point at a real file."""
+    missing = sorted(f for f in SINGLE_LEVEL_ALLOWLIST if not (SRC_ROOT / f).is_file())
+    assert not missing, "SINGLE_LEVEL_ALLOWLIST references nonexistent files:\n" + "\n".join(
+        f"  {f}" for f in missing
+    )
+
+
+def test_migrated_chat_wire_is_not_single_level_allowlisted() -> None:
+    """``_chat/wire.py`` was migrated behind ``_row_adapters/chat.py`` (issue #1491).
+
+    Pins the headline #1491 outcome: the chat wire parser no longer open-codes
+    any single-level RPC-payload subscript, so it is absent from
+    :data:`SINGLE_LEVEL_ALLOWLIST` AND from the live offender set -- the gate now
+    re-protects it. If a future edit re-introduces a raw ``x[i]`` read there,
+    ``test_no_unbaselined_single_level_positional_rpc_indexing`` fails.
+    """
+    assert "_chat/wire.py" not in SINGLE_LEVEL_ALLOWLIST
+    assert "_chat/wire.py" not in _single_level_offending_files()
+
+
+def test_single_level_detector_flags_and_ignores() -> None:
+    """The single-level detector flags ``x[i]`` and ignores string/slice subscripts."""
+    flagged = ast.parse(
+        "\n".join(
+            [
+                "a = first[4]",  # single-level int -- flagged
+                "b = parts[-1]",  # negative literal -- still positional
+                "c = payload[+1]",  # explicit unary-plus -- still positional
+                "d = chain[0][1]",  # both levels are single-level subscripts
+            ]
+        )
+    )
+    # Line 4 contributes one line number even though it has two subscripts.
+    assert _single_level_positional_offenders(flagged) == [1, 2, 3, 4]
+
+    benign = ast.parse(
+        "\n".join(
+            [
+                "x = data['key']",  # string subscript -- not positional
+                "y = items[1:]",  # slice -- not an int literal
+                "z = flags[True]",  # bool index -- excluded
+                "w = [[[source_id]]]",  # list construction, no subscripting
+            ]
+        )
+    )
+    assert _single_level_positional_offenders(benign) == []
 
 
 def test_detector_flags_chained_descent() -> None:
