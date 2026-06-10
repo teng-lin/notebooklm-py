@@ -262,9 +262,7 @@ def test_result_succeeded_property() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_concurrent_explicit_attempts_coalesce_to_one_browser(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path, monkeypatch) -> None:
     """N concurrent ``attempt_headless_reauth`` calls drive ONE browser.
 
     The explicit ``refresh_auth(allow_headless=True)`` entry bypasses the

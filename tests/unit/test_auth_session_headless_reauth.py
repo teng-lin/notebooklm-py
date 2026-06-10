@@ -94,9 +94,7 @@ def _redirect_then_ok_handler(state: dict[str, int]):
             return httpx.Response(200, text="<html>sign in</html>", request=request)
         if state.get("healed"):
             return httpx.Response(200, text=REFRESH_HTML, request=request)
-        return httpx.Response(
-            302, headers={"Location": LOGIN_REDIRECT}, request=request
-        )
+        return httpx.Response(302, headers={"Location": LOGIN_REDIRECT}, request=request)
 
     return handler
 
@@ -199,9 +197,7 @@ async def test_dead_cookies_optin_success_retries_and_refreshes(
 
 
 @pytest.mark.asyncio
-async def test_concurrent_refreshes_coalesce_to_one_browser(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_concurrent_refreshes_coalesce_to_one_browser(monkeypatch, tmp_path: Path) -> None:
     """N concurrent refreshes via the real single-flight spawn ONE re-mint.
 
     The mid-RPC cascade reaches ``refresh_auth_session`` through

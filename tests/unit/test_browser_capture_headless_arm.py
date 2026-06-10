@@ -104,9 +104,7 @@ def test_mode_guard_accepts_both_sanctioned_arms() -> None:
 )
 def test_mode_guard_rejects_contradictory_combos(headless: bool, interactive: bool) -> None:
     with pytest.raises(NotImplementedError, match="Unsupported browser-capture mode"):
-        _reject_unsupported_mode(
-            headless=headless, interactive=interactive, io=_RaisingCaptureIO()
-        )
+        _reject_unsupported_mode(headless=headless, interactive=interactive, io=_RaisingCaptureIO())
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +129,7 @@ def test_headless_authenticated_landing_persists_storage(tmp_path: Path) -> None
     io = _RaisingCaptureIO()
 
     result = _run_headless(
-        BrowserCapturePlan(
-            browser="chromium", browser_profile=profile, storage_path=storage
-        ),
+        BrowserCapturePlan(browser="chromium", browser_profile=profile, storage_path=storage),
         io,
         playwright,
     )
@@ -165,9 +161,7 @@ def test_headless_redirected_to_login_raises_loudly(tmp_path: Path) -> None:
 
     with pytest.raises(HeadlessLoginRequiredError, match="session is"):
         _run_headless(
-            BrowserCapturePlan(
-                browser="chromium", browser_profile=profile, storage_path=storage
-            ),
+            BrowserCapturePlan(browser="chromium", browser_profile=profile, storage_path=storage),
             io,
             playwright,
         )
