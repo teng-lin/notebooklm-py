@@ -62,18 +62,14 @@ class NoteCreateResult:
     ``raw`` is the typed :class:`~notebooklm.types.Note` the facade returned
     (the text view prints it verbatim); ``note_id`` is its server-assigned id.
     The facade **raises** on failure (it never returns a degenerate value), so
-    a constructed result always describes a really-created note; ``created``
-    stays as a property because the adapters branch on it for their envelopes.
+    a constructed result always describes a really-created note — there is no
+    ``created`` flag; existence of the result IS the success signal.
     """
 
     notebook_id: str
     title: str
     note_id: str
     raw: Note
-
-    @property
-    def created(self) -> bool:
-        return bool(self.raw) and self.note_id is not None
 
 
 async def execute_note_create(

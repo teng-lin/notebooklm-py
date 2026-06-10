@@ -78,7 +78,6 @@ async def test_execute_note_create_returns_typed_note_result() -> None:
     assert result.notebook_id == "nb_1"
     assert result.title == "Title"
     assert result.note_id == "note_new"
-    assert result.created is True
     assert result.raw is note
     client.notes.create.assert_awaited_once_with("nb_1", "Title", "Body")
 
