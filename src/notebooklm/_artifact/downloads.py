@@ -13,7 +13,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import ParseResult, unquote, urlparse
+from urllib.parse import ParseResult, urlparse
 
 import httpx
 
@@ -30,6 +30,7 @@ from ..types import (
     ArtifactParseError,
     ArtifactType,
 )
+from ._redirect_guard import redirect_revalidation_hooks
 from .formatters import _extract_app_data, _format_interactive_content, _parse_data_table
 
 if TYPE_CHECKING:
@@ -143,8 +144,13 @@ def _load_httpx_cookies(storage_path: Any) -> Any:
 def _is_trusted_download_host(hostname: str | None) -> bool:
     if hostname is None:
         return False
-    hostname = unquote(hostname).lower()
-    if "\\" in hostname or "/" in hostname:
+    # Match the EXACT host httpx connects to. httpx does NOT percent-decode
+    # ``request.url.host``, so the guard must not either: decoding made
+    # ``evil%2egoogleapis.com`` (%2e -> '.') read as trusted while the
+    # connection went to the raw non-Google host (#1521). A real Google host
+    # never contains ``%``, so reject any (defense-in-depth w/ the slash guards).
+    hostname = hostname.lower()
+    if "%" in hostname or "\\" in hostname or "/" in hostname:
         return False
     return any(
         hostname == domain.lstrip(".") or hostname.endswith(domain)
@@ -714,6 +720,7 @@ class ArtifactDownloadService:
             cookies=cookies,
             follow_redirects=True,
             timeout=60.0,
+            event_hooks=redirect_revalidation_hooks(_is_trusted_download_host),  # #1521
         ) as client:
             for url, output_path in urls_and_paths:
                 display_host = ""
@@ -815,6 +822,7 @@ class ArtifactDownloadService:
                     cookies=cookies,
                     follow_redirects=True,
                     timeout=timeout,
+                    event_hooks=redirect_revalidation_hooks(_is_trusted_download_host),  # #1521
                 ) as client:
                     async with client.stream("GET", url) as response:
                         response.raise_for_status()

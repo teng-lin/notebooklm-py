@@ -77,6 +77,40 @@ def test_is_trusted_download_host_none_returns_false():
     assert _is_trusted_download_host(None) is False
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "evil%2egoogleapis.com",  # %2e decodes to '.' -> evil.googleapis.com
+        "evil%2Egoogleapis.com",  # uppercase variant
+        "storage.googleapis.com%2eevil.example",  # encoded dot mid-host
+        "storage.googleapis.com%00",  # any percent-escape is suspect
+    ],
+)
+def test_is_trusted_download_host_rejects_percent_encoded(host):
+    """Percent-encoded hosts are never trusted (parser-differential bypass, #1521).
+
+    httpx connects to the RAW host; the guard must validate that same raw
+    string and never percent-decode it, or ``evil%2egoogleapis.com`` would be
+    judged trusted while the connection goes to a non-Google host.
+    """
+    assert _is_trusted_download_host(host) is False
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "storage.googleapis.com",
+        "lh3.googleusercontent.com",
+        "www.google.com",
+        "google.com",
+        "googleapis.com",
+    ],
+)
+def test_is_trusted_download_host_accepts_legitimate_google_hosts(host):
+    """Removing the percent-decode must not reject any real Google download host."""
+    assert _is_trusted_download_host(host) is True
+
+
 def test_download_display_host_falls_back_to_netloc():
     """Line 149: with no parsed hostname, strip userinfo from netloc."""
     from urllib.parse import urlparse

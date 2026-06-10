@@ -86,7 +86,10 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # already at its ceiling, so any explanation grows it; splitting is out of
     # scope for a maintenance backport.
     "cli/services/playwright_login.py": 995,
-    "_artifact/downloads.py": 1033,
+    # +8 LOC backporting per-redirect-hop revalidation (#1532): the new logic
+    # lives in ``_artifact/_redirect_guard.py``; the residual downloads.py
+    # growth is only hook wiring plus the percent-encoded-host guard comment.
+    "_artifact/downloads.py": 1041,
     "client.py": 986,
     "_research.py": 969,
     "cli/services/generate.py": 954,

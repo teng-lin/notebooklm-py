@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Artifact downloads now re-validate every redirect hop against the trusted
+  host allowlist** (backport of #1532). `download_url` and batch media
+  downloads already checked the initial URL, but `follow_redirects=True` could
+  still follow a trusted Google URL to an off-allowlist, non-HTTPS, localhost,
+  or link-local target and write the response body to disk. Redirect requests
+  are now checked before they are sent, and percent-encoded hosts are rejected
+  instead of decoded into a trusted-looking hostname.
+
 ## [0.7.3] - 2026-06-29
 
 Maintenance patch on the 0.7.x line. Backports fixes from `main`
