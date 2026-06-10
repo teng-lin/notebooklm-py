@@ -282,10 +282,60 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 | `browser` | `playwright>=1.40.0` | `notebooklm login` (interactive). | `pip install "notebooklm-py[browser]"` | `uv add "notebooklm-py[browser]"` |
 | `cookies` | `rookiepy>=0.1.0` | `notebooklm login --browser-cookies <browser>`, `notebooklm auth inspect`. | `pip install "notebooklm-py[cookies]"` | `uv add "notebooklm-py[cookies]"` |
 | `markdown` | `markdownify>=0.14.1` | `notebooklm source fulltext -f markdown`. | `pip install "notebooklm-py[markdown]"` | `uv add "notebooklm-py[markdown]"` |
+| `server` | `fastapi`, `uvicorn[standard]`, `python-multipart` | The localhost REST API server (`notebooklm-server`). See [§ REST API server](#rest-api-server). | `pip install "notebooklm-py[server]"` | `uv add "notebooklm-py[server]"` |
 | `dev` | pytest stack, mypy, ruff (`==0.15.13` exact pin), pre-commit (`>=4.5.1`), vcrpy | Contributor tooling only. Not sufficient for this repo's default `uv run pytest`; add `browser` too because some unit tests import Playwright. | `pip install "notebooklm-py[dev]"` | `uv add "notebooklm-py[dev]"` (in your project) — but contributors *to this repo* use the [Persona E](#e-contributor) `uv sync` flow instead |
-| `all` | Resolves to `browser` + `dev` + `markdown` (**not `cookies`**) | Contributors who do not need `rookiepy`. | `pip install "notebooklm-py[all]"` | `uv add "notebooklm-py[all]"` (in your project) — see [All vs All-Extras](#all-vs-all-extras) |
+| `all` | Resolves to `browser` + `dev` + `markdown` + `server` (**not `cookies`**) | Contributors who do not need `rookiepy`. | `pip install "notebooklm-py[all]"` | `uv add "notebooklm-py[all]"` (in your project) — see [All vs All-Extras](#all-vs-all-extras) |
 
 > **Note on `uv` columns:** the `uv (in your project)` column is for users adding `notebooklm-py` as a dependency in **their own** project (requires a `pyproject.toml` in that project). Contributors working inside *this* repo use the Persona E flow (`uv sync --frozen --extra ...`), governed by this repo's `uv.lock`. Do not run `uv sync` outside a project — it errors with `No pyproject.toml found`.
+
+---
+
+## REST API server
+
+A single-tenant, localhost REST API over the same transport-neutral core as the CLI — the natural shape for scripting and agent automation (feed a notebook, generate an artifact, pull it down) without spawning a CLI process per call.
+
+<!-- not mirrored: the server extra is end-user/automation tooling, not part of the contributor `uv sync` flow; CONTRIBUTING.md tracks only browser/dev/markdown. -->
+```bash
+pip install "notebooklm-py[server]"        # fastapi + uvicorn + python-multipart
+```
+
+**Prerequisite:** a provisioned account (`storage_state.json`) from `notebooklm login`. The server holds one account for the process; it does not run browser login itself.
+
+**Launch:**
+
+<!-- not mirrored: REST-server launch (end-user/automation tooling); CONTRIBUTING.md tracks only the contributor `uv sync` flow. -->
+```bash
+export NOTEBOOKLM_SERVER_TOKEN="$(openssl rand -hex 32)"   # REQUIRED — the server refuses to start without it
+notebooklm-server --host 127.0.0.1 --port 8000            # loopback-only by default
+```
+
+Configuration is read from `NOTEBOOKLM_SERVER_*` env vars (overridable by the matching flags):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `NOTEBOOKLM_SERVER_TOKEN` | *(unset)* | Bearer token every request must present. **Required** — fail-closed if unset. |
+| `NOTEBOOKLM_SERVER_HOST` | `127.0.0.1` | Bind host. Non-loopback is refused unless the elevated-risk override below is set. |
+| `NOTEBOOKLM_SERVER_PORT` | `8000` | Bind port. |
+| `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND` | *(unset)* | ⚠️ Set to `1` to bind a non-loopback interface. Only behind a trusted reverse proxy — this exposes account-fronting credentials to the network. |
+
+**Surface:** every route is under `/v1` and requires `Authorization: Bearer <token>` plus a loopback `Host` header (a DNS-rebinding guard). `/healthz` is the one public, token-less route. The auto-generated `/docs` / `/openapi.json` schema UI is disabled (it would otherwise be reachable token-less).
+
+<!-- not mirrored: REST-server curl examples (end-user/automation tooling); not part of the contributor install flow. -->
+```bash
+TOKEN=$NOTEBOOKLM_SERVER_TOKEN
+BASE=http://127.0.0.1:8000
+
+curl $BASE/healthz                                                    # {"ok": true}  (no token)
+curl -H "Authorization: Bearer $TOKEN" $BASE/v1/notebooks             # list notebooks
+curl -H "Authorization: Bearer $TOKEN" -d '{"title":"My NB"}' \
+     -H 'Content-Type: application/json' $BASE/v1/notebooks           # create
+curl -H "Authorization: Bearer $TOKEN" -d '{"url":"https://example.com"}' \
+     -H 'Content-Type: application/json' $BASE/v1/notebooks/<id>/sources/url
+curl -H "Authorization: Bearer $TOKEN" -d '{"question":"Summarize"}' \
+     -H 'Content-Type: application/json' $BASE/v1/notebooks/<id>/chat # blocking answer
+```
+
+Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact. Failures arrive as `{"error": {"category": "...", "message": "..."}}` with a category-derived HTTP status.
 
 ---
 
