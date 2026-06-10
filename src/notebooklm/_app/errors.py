@@ -55,6 +55,7 @@ from enum import Enum
 from ..exceptions import (
     ArtifactTimeoutError,
     AuthError,
+    ClientError,
     ConfigurationError,
     NetworkError,
     NotebookLimitError,
@@ -145,6 +146,22 @@ _RETRIABLE_CATEGORIES = frozenset(
 )
 
 
+def _normalized_rpc_code(exc: ClientError) -> int | None:
+    """Return ``exc.rpc_code`` normalized to an ``int``, or ``None`` if absent/non-numeric.
+
+    ``rpc_code`` is typed ``str | int | None``; a string ``"5"`` must compare
+    equal to the integer status, so this coerces before comparison and tolerates
+    a non-numeric value (returns ``None`` rather than raising).
+    """
+    code = getattr(exc, "rpc_code", None)
+    if code is None:
+        return None
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
+
+
 def _category_for(exc: BaseException) -> ErrorCategory:
     """Return the most-specific :class:`ErrorCategory` for ``exc``.
 
@@ -190,6 +207,20 @@ def _category_for(exc: BaseException) -> ErrorCategory:
         return ErrorCategory.VALIDATION
     if isinstance(exc, ConfigurationError):
         return ErrorCategory.CONFIG
+
+    # --- gRPC status-5 (NOT_FOUND) surfaced as a bare ClientError -------------
+    # ``rpc/decoder.py`` raises ``ClientError(rpc_code=5)`` for a gRPC status-5
+    # result (a deliberate non-``NotFoundError`` choice to dodge the auth-retry
+    # path), so a genuine missing resource would otherwise fall through to the
+    # generic ``RPC`` catch-all -> 502. Map it to ``NOT_FOUND`` here, before that
+    # catch-all. The match is narrow to code **5 only** — the same decoder site
+    # also raises code **7** (permission-denied), which must NOT be swept in —
+    # and normalizes ``rpc_code`` (typed ``str | int | None``) so a string
+    # ``"5"`` is not missed. Purely additive (no exception-type change), so the
+    # ``RPC`` exemplar (a bare ``RPCError`` with no ``rpc_code``) is unaffected
+    # and the consistency gate stays green.
+    if isinstance(exc, ClientError) and _normalized_rpc_code(exc) == 5:
+        return ErrorCategory.NOT_FOUND
 
     # --- Remaining RPC failures (decoding, unknown-method, client 4xx, ...) ---
     if isinstance(exc, RPCError):
