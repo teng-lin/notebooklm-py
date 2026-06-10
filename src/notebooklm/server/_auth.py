@@ -74,13 +74,19 @@ def _host_is_loopback(host_header: str) -> bool:
         if end == -1:
             return False
         candidate = host[1:end]
+        # Anything after "]" must be empty or a ":port" suffix — reject
+        # trailing garbage like "[::1]evil.com".
+        rest = host[end + 1 :]
+        if rest and not (rest.startswith(":") and rest[1:].isdigit()):
+            return False
     else:
         # Split off a trailing :port only when there is a single colon (an
         # unbracketed bare IPv6 literal has several and is not a valid Host with
         # a port anyway).
         candidate = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
     candidate = candidate.strip()
-    if candidate in _LOOPBACK_HOSTNAMES:
+    # Host hostnames are case-insensitive (RFC 3986/7230).
+    if candidate.lower() in _LOOPBACK_HOSTNAMES:
         return True
     try:
         return ipaddress.ip_address(candidate).is_loopback

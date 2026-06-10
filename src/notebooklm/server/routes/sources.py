@@ -27,8 +27,7 @@ import os
 import tempfile
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from ..._app import source_add as add_core
@@ -68,10 +67,36 @@ class SourceAddText(BaseModel):
     title: str | None = None
 
 
-def _record_and_serialize(
-    pending: PendingRegistry, notebook_id: str, result: add_core.SourceAddResult
+async def _add_source(
+    client: NotebookLMClient,
+    pending: PendingRegistry,
+    notebook_id: str,
+    *,
+    content: str,
+    source_type: add_core.SourceAddType,
+    title: str | None,
+    allow_internal: bool = False,
 ) -> dict[str, Any]:
-    """Record the new source id in the registry and project it to the wire."""
+    """Build + execute a source-add, then record the new id and project it.
+
+    Shared by the ``url`` / ``text`` / ``file`` handlers: each supplies its own
+    ``content`` / ``source_type`` / ``title`` (and the URL handler its
+    ``allow_internal`` flag), while the SSRF / upload-path validators and the
+    execute → record → serialize tail live here once.
+    """
+    plan = add_core.build_source_add_plan(
+        content=content,
+        source_type=source_type,
+        title=title,
+        mime_type=None,
+        follow_symlinks=False,
+        validate_path=add_core.validate_upload_path,
+        looks_path_shaped=add_core.looks_like_path,
+        allow_internal=allow_internal,
+    )
+    result = await add_core.execute_source_add(
+        client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
+    )
     pending.record(notebook_id, result.source.id)
     return to_jsonable(result.source)
 
@@ -108,20 +133,15 @@ async def add_url(
     notebook_id: str, body: SourceAddUrl, client: ClientDep, pending: PendingDep
 ) -> dict[str, Any]:
     """Add a URL source (SSRF-validated via the neutral core)."""
-    plan = add_core.build_source_add_plan(
+    return await _add_source(
+        client,
+        pending,
+        notebook_id,
         content=body.url,
         source_type="url",
         title=None,
-        mime_type=None,
-        follow_symlinks=False,
-        validate_path=add_core.validate_upload_path,
-        looks_path_shaped=add_core.looks_like_path,
         allow_internal=body.allow_internal,
     )
-    result = await add_core.execute_source_add(
-        client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
-    )
-    return _record_and_serialize(pending, notebook_id, result)
 
 
 @router.post("/text", status_code=201)
@@ -129,19 +149,14 @@ async def add_text(
     notebook_id: str, body: SourceAddText, client: ClientDep, pending: PendingDep
 ) -> dict[str, Any]:
     """Add an inline-text source."""
-    plan = add_core.build_source_add_plan(
+    return await _add_source(
+        client,
+        pending,
+        notebook_id,
         content=body.text,
         source_type="text",
         title=body.title,
-        mime_type=None,
-        follow_symlinks=False,
-        validate_path=add_core.validate_upload_path,
-        looks_path_shaped=add_core.looks_like_path,
     )
-    result = await add_core.execute_source_add(
-        client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
-    )
-    return _record_and_serialize(pending, notebook_id, result)
 
 
 @router.post("/file", status_code=201)
@@ -159,6 +174,12 @@ async def add_file(
     disconnect or a downstream error still cleans up). The upload safety here is
     the ``0o600`` / size-limit / unique-name discipline — ``validate_upload_path``
     guards a *caller-supplied* path string, not the server-generated temp path.
+
+    The per-chunk size check below caps the copy into *our* temp file; the
+    primary disk-exhaustion guard is the Content-Length pre-check in the app
+    middleware (see ``app.py``). For a chunked (no-Content-Length) upload that
+    bypasses the pre-check, Starlette has already spooled the part before this
+    runs, so the check is a backstop on our own write, not on Starlette's spool.
     """
     suffix = os.path.splitext(file.filename or "")[1]
     fd, temp_path = tempfile.mkstemp(suffix=suffix, prefix="nblm-upload-")
@@ -171,19 +192,14 @@ async def add_file(
                 if total > MAX_UPLOAD_BYTES:
                     raise HTTPException(status_code=413, detail="Upload exceeds the size limit")
                 out.write(chunk)
-        plan = add_core.build_source_add_plan(
+        return await _add_source(
+            client,
+            pending,
+            notebook_id,
             content=temp_path,
             source_type="file",
             title=title,
-            mime_type=None,
-            follow_symlinks=False,
-            validate_path=add_core.validate_upload_path,
-            looks_path_shaped=add_core.looks_like_path,
         )
-        result = await add_core.execute_source_add(
-            client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
-        )
-        return _record_and_serialize(pending, notebook_id, result)
     finally:
         try:
             os.unlink(temp_path)
@@ -194,8 +210,8 @@ async def add_file(
 @router.delete("/{source_id}", status_code=204)
 async def delete_source(
     notebook_id: str, source_id: str, client: ClientDep, pending: PendingDep
-) -> JSONResponse:
+) -> Response:
     """Delete a source (idempotent)."""
     await client.sources.delete(notebook_id, source_id)
     pending.drop(notebook_id, source_id)
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)

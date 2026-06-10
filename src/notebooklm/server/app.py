@@ -24,11 +24,12 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import cast
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 
 from ..client import NotebookLMClient
 from ._auth import require_auth
@@ -36,6 +37,7 @@ from ._context import AppState
 from ._errors import install_exception_handlers
 from ._pending import PendingRegistry
 from .routes import artifacts, chat, notebooks, sources
+from .routes.sources import MAX_UPLOAD_BYTES
 
 __all__ = ["SERVER_NAME", "create_app"]
 
@@ -92,6 +94,39 @@ def create_app(*, client_factory: ClientFactory | None = None) -> FastAPI:
     )
 
     install_exception_handlers(app)
+
+    @app.middleware("http")
+    async def _limit_request_body(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # Reject an oversized upload by its declared Content-Length BEFORE the
+        # route reads/parses the body — Starlette's multipart parser spools file
+        # parts to disk unbounded, so a post-parse check is too late (the body is
+        # already on disk). This Content-Length pre-check is the actual disk-
+        # exhaustion mitigation. Residual: a chunked request (no Content-Length)
+        # bypasses it, and Starlette still spools the full part before the upload
+        # handler's per-chunk check can reject it — so that per-chunk check caps
+        # only the copy into our own temp file, not Starlette's spool. Acceptable
+        # for a single-user loopback-only server; revisit if ever exposed wider.
+        # Nothing legitimate exceeds the upload cap, so applying it to every
+        # request is safe.
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                declared = int(content_length)
+            except ValueError:
+                declared = -1
+            if declared > MAX_UPLOAD_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "category": "VALIDATION",
+                            "message": "Request body exceeds the size limit",
+                        }
+                    },
+                )
+        return await call_next(request)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:

@@ -17,8 +17,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from ..._app import notebooks as core
@@ -61,7 +60,7 @@ async def create_notebook(body: NotebookCreate, client: ClientDep) -> dict[str, 
 
 
 @router.delete("/{notebook_id}", status_code=204)
-async def delete_notebook(notebook_id: str, client: ClientDep) -> JSONResponse:
+async def delete_notebook(notebook_id: str, client: ClientDep) -> Response:
     """Delete a notebook (idempotent-on-missing — never 500 for an absent id)."""
     await core.execute_notebook_delete(client, notebook_id)
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)

@@ -31,6 +31,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Annotated, Any
@@ -49,6 +50,7 @@ from ...client import NotebookLMClient
 from ...exceptions import ValidationError
 from ...types import ArtifactType, GenerationState
 from .._context import get_client, get_pending
+from .._errors import safe_detail
 from .._pending import PendingRegistry
 from ._passthrough import (
     passthrough_artifact_id,
@@ -301,23 +303,25 @@ async def poll(
     status = await artifact_core.poll_artifact(client, notebook_id, task_id)
     view = artifact_core.status_view(status)
     state = status.status
+    projected = {"notebook_id": notebook_id, **to_jsonable(view)}
 
     if state in (GenerationState.PENDING, GenerationState.IN_PROGRESS):
-        return {"notebook_id": notebook_id, **to_jsonable(view)}
+        return projected
     if state == GenerationState.NOT_FOUND:
         if pending.knows(notebook_id, task_id):
-            return {"notebook_id": notebook_id, **to_jsonable(view)}
+            return projected
         raise HTTPException(status_code=404, detail="Artifact task not found")
     # Terminal states: drop from the registry, then project.
     pending.drop(notebook_id, task_id)
-    if state == GenerationState.COMPLETED:
-        return {"notebook_id": notebook_id, **to_jsonable(view)}
     if state == GenerationState.REMOVED:
         raise HTTPException(status_code=410, detail="Artifact was removed")
     if state == GenerationState.FAILED:
-        raise HTTPException(status_code=409, detail=view.error or "Generation failed")
-    # Defensive: any unmodeled state surfaces the projected view rather than 500.
-    return {"notebook_id": notebook_id, **to_jsonable(view)}  # pragma: no cover
+        raise HTTPException(
+            status_code=409, detail=safe_detail(view.error) if view.error else "Generation failed"
+        )
+    # COMPLETED — and, defensively, any unmodeled state — surfaces the projected
+    # view rather than a 500.
+    return projected
 
 
 @router.post("/download")
@@ -328,8 +332,12 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
         raise ValidationError(
             f"Unknown download type {body.type!r}; expected one of {sorted(DOWNLOAD_SPECS)}"
         )
-    fd, temp_path = tempfile.mkstemp(suffix=spec.extension, prefix="nblm-download-")
-    os.close(fd)
+    # Download into a private 0700 directory we own. mkstemp would pre-create the
+    # file, which the download core treats as a conflict and may auto-rename
+    # (download.py); an isolated empty dir avoids that, and we assert the served
+    # path stays inside it so a surprising resolved path can never be streamed.
+    temp_dir = tempfile.mkdtemp(prefix="nblm-download-")
+    temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
     try:
         args: dict[str, Any] = {
             "notebook_id": notebook_id,
@@ -350,32 +358,41 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
             artifact_resolver=passthrough_artifact_id,
         )
     except BaseException:
-        _cleanup(temp_path)
+        _cleanup(temp_dir)
         raise
 
     # No completed artifact of this kind exists yet (not ready), or a pre-download
-    # error — surface as 409, not 500, and clean up the unused temp file.
+    # error — surface as 409, not 500, and clean up the unused temp dir.
     if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
-        _cleanup(temp_path)
-        detail = result.error or f"No completed {body.type} artifact is available yet"
+        _cleanup(temp_dir)
+        detail = (
+            safe_detail(result.error)
+            if result.error
+            else (f"No completed {body.type} artifact is available yet")
+        )
         raise HTTPException(status_code=409, detail=detail)
 
-    # Stream the actual written file; the download core may resolve a conflict to
-    # a different path than the requested temp path.
+    # Stream the actual written file. The core may resolve a conflict to a
+    # different name, but it must stay inside our private dir — anything else is a
+    # bug, not a file we serve.
     served = result.output_path or temp_path
-    if served != temp_path:
-        _cleanup(temp_path)
+    if Path(temp_dir).resolve() not in Path(served).resolve().parents:
+        _cleanup(temp_dir)
+        raise ValidationError("Download produced an unexpected output path")
     return FileResponse(
         served,
         filename=os.path.basename(served),
-        background=BackgroundTask(_cleanup, served),
+        background=BackgroundTask(_cleanup, temp_dir),
     )
 
 
 def _cleanup(path: str) -> None:
-    """Remove a temp file, ignoring an already-removed path."""
+    """Remove a temp file or directory tree, ignoring an already-removed path."""
     try:
-        os.unlink(path)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            os.unlink(path)
     except FileNotFoundError:  # pragma: no cover - already gone
         pass
 

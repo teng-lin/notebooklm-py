@@ -26,25 +26,45 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import threading
+from collections import deque
 
 __all__ = ["PendingRegistry"]
+
+#: Hard cap on tracked pending ids. A resource that never reaches a terminal
+#: state (so it is never ``drop``-ped) would otherwise leak forever; past the cap
+#: the oldest entry is evicted (its later poll falls to 404, same as a restart).
+_MAX_ENTRIES = 10_000
 
 
 class PendingRegistry:
     """Per-notebook sets of created-but-not-yet-terminal source/artifact ids.
 
     Thread-safe: ``starlette`` runs sync dependencies / handlers in a thread
-    pool, so the registry guards its state with a lock.
+    pool, so the registry guards its state with a lock. Bounded at
+    :data:`_MAX_ENTRIES` with FIFO eviction so a never-terminal id cannot leak
+    memory without limit.
     """
 
     def __init__(self) -> None:
         self._ids: dict[str, set[str]] = {}
+        self._order: deque[tuple[str, str]] = deque()
         self._lock = threading.Lock()
 
     def record(self, notebook_id: str, resource_id: str) -> None:
         """Remember that this server created ``resource_id`` under ``notebook_id``."""
         with self._lock:
-            self._ids.setdefault(notebook_id, set()).add(resource_id)
+            bucket = self._ids.setdefault(notebook_id, set())
+            if resource_id in bucket:
+                return
+            bucket.add(resource_id)
+            self._order.append((notebook_id, resource_id))
+            while len(self._order) > _MAX_ENTRIES:
+                old_nb, old_rid = self._order.popleft()
+                stale = self._ids.get(old_nb)
+                if stale is not None:
+                    stale.discard(old_rid)
+                    if not stale:
+                        del self._ids[old_nb]
 
     def knows(self, notebook_id: str, resource_id: str) -> bool:
         """Return whether ``resource_id`` was recorded under ``notebook_id``."""

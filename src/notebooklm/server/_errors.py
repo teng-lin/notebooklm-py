@@ -25,15 +25,50 @@ This module imports NO ``click`` / ``rich`` / ``cli`` — only ``fastapi`` and t
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .._app.errors import ErrorCategory, classify
+from .._logging import scrub_secrets
 from ..exceptions import NotebookLMError
 
-__all__ = ["CATEGORY_STATUS", "error_response", "install_exception_handlers"]
+__all__ = [
+    "CATEGORY_STATUS",
+    "error_response",
+    "http_error_response",
+    "install_exception_handlers",
+    "safe_detail",
+]
 
 #: Maximum wire length for an error message before it is truncated.
 _MAX_MESSAGE = 300
+
+#: Category label for an ``HTTPException`` raised explicitly by a route or the
+#: auth dependency, keyed by HTTP status. Keeps the ``{"error": {...}}`` envelope
+#: uniform across *both* classified library errors and hand-raised
+#: ``HTTPException``s (the R9 single-shape contract), instead of letting FastAPI
+#: emit its default ``{"detail": ...}`` for the latter. Statuses not listed fall
+#: back to a coarse class label (see :func:`_http_category`).
+_STATUS_CATEGORY: dict[int, str] = {
+    400: ErrorCategory.VALIDATION.value,
+    401: ErrorCategory.AUTH.value,
+    403: ErrorCategory.AUTH.value,
+    404: ErrorCategory.NOT_FOUND.value,
+    409: "conflict",
+    410: "gone",
+    413: ErrorCategory.VALIDATION.value,
+    422: ErrorCategory.VALIDATION.value,
+    429: ErrorCategory.RATE_LIMITED.value,
+    500: ErrorCategory.UNEXPECTED.value,
+    502: ErrorCategory.SERVER.value,
+    503: ErrorCategory.SERVER.value,
+    504: ErrorCategory.TIMEOUT.value,
+}
+
+#: Generic message returned for an unexpected (non-library) exception — a bug's
+#: ``str(exc)`` could carry anything, so it is never echoed to the client.
+_UNEXPECTED_MESSAGE = "Internal server error"
 
 #: The HTTP status each neutral :class:`ErrorCategory` projects onto. Covers
 #: EVERY ``ErrorCategory`` value (pinned by
@@ -56,18 +91,59 @@ CATEGORY_STATUS: dict[ErrorCategory, int] = {
 }
 
 
-def _redact(message: str) -> str:
-    """Collapse whitespace and length-cap a message for the wire.
+def _redact(message: object) -> str:
+    """Scrub secrets, collapse whitespace, and length-cap a message for the wire.
 
     SDK exception messages are already designed to be secret-free (raw responses
-    are truncated at construction, per ADR-0019); we additionally collapse
-    whitespace and cap the length so an unexpectedly long body cannot bloat the
-    error envelope or over-disclose a schema-drift dump.
+    are truncated at construction, per ADR-0019), but the server runs every
+    wire-bound message through :func:`notebooklm._logging.scrub_secrets` as
+    defense-in-depth (so a stray ``Authorization``/``Cookie`` fragment in any
+    exception or upstream error string is masked), then collapses whitespace and
+    caps the length so a schema-drift dump cannot bloat or over-disclose the body.
     """
-    message = " ".join(message.split())
-    if len(message) > _MAX_MESSAGE:
-        message = message[:_MAX_MESSAGE] + "…"
-    return message
+    scrubbed = " ".join(scrub_secrets(message).split())
+    if len(scrubbed) > _MAX_MESSAGE:
+        scrubbed = scrubbed[:_MAX_MESSAGE] + "…"
+    return scrubbed
+
+
+def safe_detail(message: object) -> str:
+    """Scrub + cap an upstream message for use as an ``HTTPException`` detail.
+
+    Route handlers that raise ``HTTPException`` with upstream-derived text
+    (e.g. an artifact ``view.error``) must run it through this so the detail
+    cannot leak a credential or a multi-kilobyte dump.
+    """
+    return _redact(message)
+
+
+def _http_category(status: int) -> str:
+    """Map an HTTP status to its envelope ``category`` label.
+
+    Uses the explicit :data:`_STATUS_CATEGORY` table, falling back to a coarse
+    class label so an unanticipated status still yields a non-empty category.
+    """
+    label = _STATUS_CATEGORY.get(status)
+    if label is not None:
+        return label
+    if 400 <= status < 500:
+        return ErrorCategory.VALIDATION.value
+    return ErrorCategory.SERVER.value
+
+
+def http_error_response(status: int, detail: object) -> JSONResponse:
+    """Build the typed envelope for a hand-raised ``HTTPException``.
+
+    Renders ``HTTPException``s (the auth dependency's 401/403, an artifact poll's
+    404/409/410, an oversized-upload 413) through the same
+    ``{"error": {"category": ..., "message": ...}}`` shape as classified library
+    errors, so the wire contract is uniform. The ``detail`` is scrubbed +
+    length-capped via :func:`_redact`.
+    """
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"category": _http_category(status), "message": _redact(detail)}},
+    )
 
 
 def error_response(exc: BaseException) -> JSONResponse:
@@ -75,13 +151,15 @@ def error_response(exc: BaseException) -> JSONResponse:
 
     Calls :func:`classify` exactly once and looks up the status from
     :data:`CATEGORY_STATUS`; the category is never re-derived. The message is the
-    scrubbed ``str(exc)``.
+    scrubbed ``str(exc)`` for library errors, and a fixed generic string for an
+    unexpected (non-library) bug — whose ``str(exc)`` is never echoed.
     """
     category = classify(exc).category
     status = CATEGORY_STATUS[category]
+    message = _UNEXPECTED_MESSAGE if category is ErrorCategory.UNEXPECTED else _redact(str(exc))
     return JSONResponse(
         status_code=status,
-        content={"error": {"category": category.value, "message": _redact(str(exc))}},
+        content={"error": {"category": category.value, "message": message}},
     )
 
 
@@ -97,14 +175,26 @@ def install_exception_handlers(app: FastAPI) -> None:
     The ``NotebookLMError`` handler is registered on the library base class (not
     the broad ``Exception``) so Starlette's ``ExceptionMiddleware`` handles it
     without re-raising; the broad ``Exception`` handler is the last-resort net
-    for genuine bugs. ``HTTPException`` raised explicitly by a handler (e.g. the
-    auth dependency's 401/403) is left to FastAPI's default handler so its
-    status/detail are preserved.
+    for genuine bugs. An ``HTTPException`` raised explicitly by a handler (the
+    auth dependency's 401/403, an artifact poll's 404/409/410) and a
+    request-body ``RequestValidationError`` (422) are re-projected onto the same
+    ``{"error": {...}}`` envelope (R9 single-shape contract) instead of FastAPI's
+    default ``{"detail": ...}``.
     """
 
     @app.exception_handler(NotebookLMError)
     async def _handle_library(_request: Request, exc: NotebookLMError) -> JSONResponse:
         return error_response(exc)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _handle_http(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        return http_error_response(exc.status_code, exc.detail)
+
+    @app.exception_handler(RequestValidationError)
+    async def _handle_validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        # A malformed request body — echo a scrubbed, capped summary (the client's
+        # own input, no secrets) under the validation category at 422.
+        return http_error_response(422, f"Request validation failed: {exc}")
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(_request: Request, exc: Exception) -> JSONResponse:
