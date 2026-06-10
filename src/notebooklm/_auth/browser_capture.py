@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import reprlib
 import sys
 import time
 from collections.abc import Awaitable, Iterator
@@ -123,6 +122,20 @@ CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
 # ---------------------------------------------------------------------------
 
 
+def _safe_cookie_shape(cookie: dict[str, Any]) -> str:
+    """A VALUE-FREE structural summary of a cookie dict, safe to log.
+
+    Returns the sorted key set plus the Python type of each field — but NEVER
+    any field *value*. A cookie ``value`` is a live credential (and, on the CDP
+    arm, comes straight from the operator's running browser), so the
+    malformed-row warnings must not echo the row. Example output:
+    ``keys=['domain', 'name', 'value'] types={domain: int, name: str, value: str}``.
+    """
+    keys = sorted(map(str, cookie.keys()))
+    types = ", ".join(f"{k}: {type(cookie[k]).__name__}" for k in keys)
+    return f"keys={keys} types={{{types}}}"
+
+
 def filter_storage_state_cookies_by_domain_policy(
     state: dict[str, Any],
     *,
@@ -149,8 +162,11 @@ def filter_storage_state_cookies_by_domain_policy(
       emit malformed rows; a non-dict entry, a cookie whose ``domain`` is not
       a str, or a cookie whose ``name`` is not a non-empty str (all malformed
       under Playwright's own ``storage_state`` schema) is dropped with one
-      bounded ``logger.warning`` per row (``reprlib`` preview) instead of
-      crashing the whole persist.
+      bounded ``logger.warning`` per row instead of crashing the whole persist.
+      The warning logs only a **value-free shape** (:func:`_safe_cookie_shape`:
+      the row's keys + per-field types) — never the row itself — so a cookie
+      ``value`` (a live credential, and for the CDP arm one that comes straight
+      from the operator's running browser) cannot leak into the logs.
     * **Exact-identity duplicate dedup.** Rows are keyed by their full
       RFC 6265 identity ``(name, domain, path)`` (path normalized via
       ``or "/"``, matching every loader). For exact-identity duplicates —
@@ -198,24 +214,26 @@ def filter_storage_state_cookies_by_domain_policy(
 
     for cookie in state.get("cookies", []):
         if not isinstance(cookie, dict):
-            # reprlib bounds the preview without materialising the full repr.
+            # Never log the row itself — a cookie's ``value`` is a live
+            # credential and (for the CDP arm) comes straight from the
+            # operator's running browser. Log only the offending Python type.
             logger.warning(
-                "Skipping malformed storage_state cookie entry (not a dict): %s",
-                reprlib.repr(cookie),
+                "Skipping malformed storage_state cookie entry (not a dict): type=%s",
+                type(cookie).__name__,
             )
             continue
         domain = cookie.get("domain", "")
         if not isinstance(domain, str):
             logger.warning(
-                "Skipping storage_state cookie with non-str domain: %s",
-                reprlib.repr(cookie),
+                "Skipping storage_state cookie with non-str domain (%s)",
+                _safe_cookie_shape(cookie),
             )
             continue
         name = cookie.get("name")
         if not isinstance(name, str) or not name:
             logger.warning(
-                "Skipping storage_state cookie with missing/empty/non-str name: %s",
-                reprlib.repr(cookie),
+                "Skipping storage_state cookie with missing/empty/non-str name (%s)",
+                _safe_cookie_shape(cookie),
             )
             continue
         # ``path`` participates in the dedup identity below and is normalized
@@ -226,8 +244,8 @@ def filter_storage_state_cookies_by_domain_policy(
         path = cookie.get("path")
         if path is not None and not isinstance(path, str):
             logger.warning(
-                "Skipping storage_state cookie with non-str path: %s",
-                reprlib.repr(cookie),
+                "Skipping storage_state cookie with non-str path (%s)",
+                _safe_cookie_shape(cookie),
             )
             continue
         if not _is_allowed(domain):
@@ -705,6 +723,149 @@ def run_browser_capture(
     return CaptureResult(page_html=captured_page_html)
 
 
+def run_cdp_capture(
+    plan: BrowserCapturePlan,
+    io: BrowserCaptureIO,
+    *,
+    cdp_url: str,
+) -> CaptureResult:
+    """Capture NotebookLM storage state by attaching to a running Chrome over CDP.
+
+    An **alternative credential source** for layer-3 headless re-auth: instead
+    of launching a dedicated persistent-context browser against our profile
+    dir, attach (``playwright.chromium.connect_over_cdp``) to a Chrome the
+    operator is *already* running and pointed us at via an explicit CDP
+    endpoint. The motivation is freshness: a user's daily Chrome is
+    continuously Google-refreshed, whereas our dedicated profile can go stale in
+    the long-idle case — so the live browser is a stronger re-mint source.
+
+    This arm performs the SAME landing classification as the headless launch
+    arm (:func:`run_browser_capture` with ``headless=True``): navigate to the
+    NotebookLM base URL, and if it does not land on the configured host, raise
+    :class:`HeadlessLoginRequiredError` (the typed honest signal the caller
+    maps to FAILED) rather than hang. On success it captures
+    ``BrowserContext.storage_state()``, applies the same cookie-domain
+    allowlist, and atomically persists ``storage_state.json``.
+
+    **EXPLICIT / opt-in only.** ``cdp_url`` is an endpoint the operator
+    provides; this never auto-discovers a browser. **LOCAL-UNATTENDED-ONLY** —
+    a CDP endpoint is account-equivalent and this is NOT a remote / hosted MCP
+    auth path; the local-only host check is enforced upstream in
+    ``resolve_cdp_url`` (loopback hosts only). **Never logs a cookie value or
+    the endpoint** (only the typed outcome).
+
+    **Lifecycle (CRITICAL):** the attached Chrome belongs to the operator. We
+    reuse its EXISTING browser context (which carries the live Google session)
+    — never ``new_context`` (a fresh context would be logged out) — and create
+    a TEMPORARY page we own for the navigation, closing ONLY that page in
+    ``finally`` so the operator's own tabs are never navigated or closed.
+    Teardown then only **disconnects** the Playwright client (``browser.close()``
+    on a CDP-connected browser severs the connection without killing the user's
+    Chrome). If the attached browser exposes no context, we fail loudly rather
+    than fabricate one.
+
+    Args:
+        plan: Capture plan; ``browser`` / ``browser_profile`` are ignored on
+            this arm (we attach to a running browser, not a profile dir), while
+            ``storage_path`` / ``include_domains`` are honored identically.
+        io: Side-effect sink. The headless caller injects a silent / raising
+            sink; ``emit`` lines are dropped and never carry a cookie value.
+        cdp_url: The operator-provided CDP endpoint (e.g.
+            ``http://127.0.0.1:9222``) of an already-running Chrome started with
+            ``--remote-debugging-port``.
+
+    Returns:
+        A :class:`CaptureResult` (``page_html`` best-effort, may be ``None``).
+
+    Raises:
+        HeadlessLoginRequiredError: the attached browser did not land on the
+            NotebookLM host (its Google session cannot reach NotebookLM).
+    """
+    ensure_playwright_available(io, browser="chromium")
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import sync_playwright
+
+    storage_path = plan.storage_path
+    include_domains = plan.include_domains
+    captured_page_html: str | None = None
+
+    def _capture_page_html(page: Any) -> str | None:
+        try:
+            content = page.content()
+        except PlaywrightError as exc:
+            logger.debug("Could not read CDP page content: %s", exc)
+            return None
+        return content if isinstance(content, str) else None
+
+    with windows_playwright_event_loop(), sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(cdp_url)
+        page = None
+        try:
+            # Reuse a context the operator's Chrome already holds — that context
+            # carries the live Google session we are harvesting. We must NOT
+            # create a fresh ``new_context``: a brand-new context would be
+            # logged out (no session), so capturing from it would be useless and
+            # could overwrite ``storage_state.json`` with a logged-out state. If
+            # the attached browser exposes no context, fail loudly rather than
+            # fabricate one.
+            if not browser.contexts:
+                raise HeadlessLoginRequiredError(
+                    "CDP re-auth: the attached browser exposes no browser "
+                    "context to harvest a session from. Open a tab in that "
+                    "Chrome (or run 'notebooklm login')."
+                )
+            context = browser.contexts[0]
+
+            # Create a TEMPORARY page we own for the navigation, and close ONLY
+            # that page in ``finally`` — never the operator's own tabs/context.
+            # This avoids navigating (and thereby disrupting) a tab the operator
+            # is actively using.
+            page = context.new_page()
+            page.goto(f"{get_base_url()}/", timeout=30000)
+
+            # SAME landing classification as the headless launch arm: if we did
+            # not land on the NotebookLM host, the attached browser's Google
+            # session cannot reach NotebookLM — fail loudly (raise) rather than
+            # capture a logged-out state.
+            if not url_matches_base_host(page.url):
+                logger.warning(
+                    "CDP re-auth: landed off-host after navigation (the attached "
+                    "browser's Google session cannot reach NotebookLM); cannot "
+                    "re-mint cookies."
+                )
+                raise HeadlessLoginRequiredError(
+                    "CDP re-auth could not reach NotebookLM from the attached "
+                    "browser: its Google session cannot reach NotebookLM. Sign "
+                    "in to NotebookLM in that browser, or run 'notebooklm login'."
+                )
+
+            captured_page_html = _capture_page_html(page)
+
+            # Same cookie-domain allowlist + atomic 0o600 write as every other
+            # capture path, so the on-disk state is equivalent regardless of the
+            # credential source. Capture from the operator's CONTEXT (its cookie
+            # jar), not from our temporary page.
+            playwright_state = context.storage_state()
+            filtered_state: dict[str, Any] = filter_storage_state_cookies_by_domain_policy(
+                dict(playwright_state), include_domains=include_domains
+            )
+            atomic_write_json(storage_path, filtered_state)
+        finally:
+            # Close ONLY the temporary page we created — never the operator's
+            # tabs or context.
+            if page is not None:
+                try:
+                    page.close()
+                except PlaywrightError as exc:
+                    logger.debug("Could not close temporary CDP page: %s", type(exc).__name__)
+            # CDP teardown: disconnect the Playwright client only. On a
+            # CDP-connected browser, ``close()`` severs the connection without
+            # terminating the operator's Chrome.
+            browser.close()
+
+    return CaptureResult(page_html=captured_page_html)
+
+
 __all__ = [
     "BROWSER_CLOSED_HELP",
     "CHANNEL_BROWSERS",
@@ -721,6 +882,7 @@ __all__ = [
     "is_navigation_interrupted_error",
     "recover_page",
     "run_browser_capture",
+    "run_cdp_capture",
     "url_matches_base_host",
     "windows_playwright_event_loop",
 ]

@@ -16,6 +16,7 @@ Playwright / network is needed; ``playwright`` stays lazily imported.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -389,6 +390,214 @@ def test_readiness_never_drives_a_browser(tmp_path: Path, monkeypatch) -> None:
 def test_playwright_installed_true_with_extra() -> None:
     """The browser extra IS installed in the test env, so the probe is True."""
     assert hr._playwright_installed() is True
+
+
+# ---------------------------------------------------------------------------
+# CDP attach arm (alternative credential source): resolution + routing
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_cdp_url_explicit_arg_wins() -> None:
+    assert (
+        hr.resolve_cdp_url(
+            "http://127.0.0.1:9222", {"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "http://x"}
+        )
+        == "http://127.0.0.1:9222"
+    )
+
+
+def test_resolve_cdp_url_falls_back_to_env() -> None:
+    assert (
+        hr.resolve_cdp_url(None, {"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "http://127.0.0.1:9222"})
+        == "http://127.0.0.1:9222"
+    )
+
+
+def test_resolve_cdp_url_blank_is_unset() -> None:
+    assert hr.resolve_cdp_url(None, {"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "   "}) is None
+    assert hr.resolve_cdp_url("", {}) is None
+    assert hr.resolve_cdp_url(None, {}) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:9222",
+        "http://localhost:9222",
+        "http://[::1]:9222",
+        "http://127.5.6.7:9222",  # anywhere in 127.0.0.0/8
+        "ws://127.0.0.1:9222/devtools/browser/abc",
+        "127.0.0.1:9222",  # bare host:port (no scheme)
+    ],
+)
+def test_resolve_cdp_url_allows_loopback(url: str) -> None:
+    """Loopback endpoints are the only sanctioned LOCAL-ONLY targets."""
+    assert hr.resolve_cdp_url(url, {}) == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://remote-host:9222",
+        "http://10.0.0.5:9222",  # private LAN, NOT loopback
+        "http://192.168.1.10:9222",
+        "http://0.0.0.0:9222",  # wildcard bind is not loopback
+        "http://example.com:9222",
+        "not a url",
+    ],
+)
+def test_resolve_cdp_url_rejects_non_loopback(url: str, caplog) -> None:
+    """Non-loopback (remote / LAN / wildcard / junk) endpoints are rejected.
+
+    This is the LOCAL-UNATTENDED-ONLY boundary: a remote CDP endpoint must
+    never reach ``connect_over_cdp``. The rejection must NOT log the endpoint.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
+        assert hr.resolve_cdp_url(url, {}) is None
+    # The endpoint value must not appear in any log record.
+    assert url not in caplog.text
+
+
+def test_cdp_path_skips_profile_gate_and_drives_cdp(tmp_path: Path, monkeypatch) -> None:
+    """A resolved CDP URL routes to run_cdp_capture WITHOUT requiring a profile.
+
+    The dedicated profile is intentionally NOT created here: the CDP arm must
+    not decline for a missing profile (the live browser is the source).
+    """
+    storage = tmp_path / "storage_state.json"
+    calls: dict[str, Any] = {}
+
+    def _fake_cdp(plan, io, *, cdp_url):
+        calls["cdp_url"] = cdp_url
+        storage.write_text("{}", encoding="utf-8")
+        return None
+
+    def _no_launch(*_a, **_k):  # pragma: no cover - must not be called
+        raise AssertionError("the CDP arm must not launch the dedicated profile")
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _fake_cdp)
+    monkeypatch.setattr(hr, "run_browser_capture", _no_launch)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    result = attempt_headless_reauth(
+        storage_path=storage,
+        allow_headless=True,
+        cdp_url="http://127.0.0.1:9222",
+        env={},
+    )
+
+    assert result.status is HeadlessReauthStatus.SUCCESS
+    assert calls["cdp_url"] == "http://127.0.0.1:9222"
+
+
+def test_cdp_url_from_env_routes_to_cdp(tmp_path: Path, monkeypatch) -> None:
+    storage = tmp_path / "storage_state.json"
+    used: dict[str, Any] = {}
+
+    def _fake_cdp(plan, io, *, cdp_url):
+        used["cdp_url"] = cdp_url
+        storage.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _fake_cdp)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    result = attempt_headless_reauth(
+        storage_path=storage,
+        allow_headless=True,
+        env={"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "http://127.0.0.1:9333"},
+    )
+
+    assert result.status is HeadlessReauthStatus.SUCCESS
+    assert used["cdp_url"] == "http://127.0.0.1:9333"
+
+
+def test_cdp_off_host_maps_to_failed(tmp_path: Path, monkeypatch) -> None:
+    """A HeadlessLoginRequiredError from the CDP arm → honest FAILED."""
+    storage = tmp_path / "storage_state.json"
+
+    def _fake_cdp(plan, io, *, cdp_url):
+        raise HeadlessLoginRequiredError("attached browser cannot reach NotebookLM")
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _fake_cdp)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    result = attempt_headless_reauth(
+        storage_path=storage,
+        allow_headless=True,
+        cdp_url="http://127.0.0.1:9222",
+        env={},
+    )
+
+    assert result.status is HeadlessReauthStatus.FAILED
+    assert "attached browser" in result.reason
+    assert not storage.exists()
+
+
+def test_cdp_opt_in_still_required(tmp_path: Path, monkeypatch) -> None:
+    """Even with a CDP URL, opt-in is required — never fires by default."""
+
+    def _boom(*_a, **_k):  # pragma: no cover - must not be called
+        raise AssertionError("CDP arm must not run without opt-in")
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _boom)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    result = attempt_headless_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        allow_headless=False,
+        cdp_url="http://127.0.0.1:9222",
+        env={},
+    )
+
+    assert result.status is HeadlessReauthStatus.UNAVAILABLE
+    assert "not enabled" in result.reason
+
+
+def test_remote_cdp_url_does_not_route_to_cdp(tmp_path: Path, monkeypatch) -> None:
+    """A remote CDP endpoint must NOT drive the CDP arm (local-only boundary).
+
+    With a remote URL and no reusable profile, the attempt declines as
+    UNAVAILABLE (the remote URL was rejected by ``resolve_cdp_url``, then the
+    profile arm found no profile) — and ``run_cdp_capture`` is never called.
+    """
+
+    def _boom(*_a, **_k):  # pragma: no cover - must not be called
+        raise AssertionError("a remote CDP endpoint must never reach run_cdp_capture")
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _boom)
+    monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    result = attempt_headless_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        allow_headless=True,
+        browser_profile=tmp_path / "no_profile",
+        env={"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "http://remote-host:9222"},
+    )
+
+    # Fell through to the profile arm, which declined (no profile) → UNAVAILABLE.
+    assert result.status is HeadlessReauthStatus.UNAVAILABLE
+    assert "no reusable browser profile" in result.reason
+
+
+def test_cdp_playwright_missing_is_unavailable(tmp_path: Path, monkeypatch) -> None:
+    def _boom(*_a, **_k):  # pragma: no cover - must not be called
+        raise AssertionError("CDP arm must not run without playwright")
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _boom)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
+
+    result = attempt_headless_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        allow_headless=True,
+        cdp_url="http://127.0.0.1:9222",
+        env={},
+    )
+
+    assert result.status is HeadlessReauthStatus.UNAVAILABLE
+    assert "playwright is not installed" in result.reason
 
 
 if __name__ == "__main__":  # pragma: no cover

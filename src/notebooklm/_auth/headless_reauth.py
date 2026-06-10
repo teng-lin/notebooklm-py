@@ -38,12 +38,25 @@ logging (never logs a captured cookie value — only the typed outcome).
 dead tokens:
 
 * :attr:`HeadlessReauthStatus.UNAVAILABLE` — L3 could not even be attempted
-  (opt-in off, no reusable profile, or ``playwright`` not installed).
-* :attr:`HeadlessReauthStatus.FAILED` — L3 ran but the profile's Google
-  session is ALSO dead (the headless browser was redirected to the Google
-  login page), or the capture otherwise failed.
+  (opt-in off, ``playwright`` not installed, or — on the default profile arm —
+  no reusable profile).
+* :attr:`HeadlessReauthStatus.FAILED` — L3 ran but the credential source's
+  Google session is ALSO dead (the browser landed off the NotebookLM host),
+  or the capture otherwise failed.
 * :attr:`HeadlessReauthStatus.SUCCESS` — fresh cookies were captured, filtered,
   and atomically persisted to ``storage_state.json``.
+
+**Alternative credential source — CDP attach.** Besides launching the dedicated
+profile, L3 can attach to an operator-pointed already-running Chrome over the
+Chrome DevTools Protocol (``cdp_url`` /
+:data:`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV`), via
+:func:`notebooklm._auth.browser_capture.run_cdp_capture`. This mitigates the
+dedicated-profile-can-stale weakness — the operator's daily Chrome is
+continuously Google-refreshed. It is EXPLICIT / opt-in (an endpoint the operator
+provides, never auto-discovered), reuses the SAME landing classification and the
+SAME cookie-domain allowlist, and stays under the SAME local-unattended-only
+boundary (a CDP endpoint is account-equivalent; never a remote / hosted MCP auth
+path, never logs a cookie value or the endpoint).
 
 ``playwright`` stays lazily imported (only the neutral capture core touches it);
 importing this module without the ``browser`` extra never fails.
@@ -60,7 +73,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from ..exceptions import HeadlessLoginRequiredError
-from .browser_capture import BrowserCapturePlan, run_browser_capture
+from .browser_capture import BrowserCapturePlan, run_browser_capture, run_cdp_capture
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -73,6 +86,17 @@ logger = logging.getLogger("notebooklm.auth")
 # ``client.refresh_auth(allow_headless=True)`` entry point. The locked design
 # decision: never auto-fire by default.
 NOTEBOOKLM_HEADLESS_REAUTH_ENV = "NOTEBOOKLM_HEADLESS_REAUTH"
+
+# Opt-in env var that points L3 at an ALREADY-RUNNING Chrome via the Chrome
+# DevTools Protocol (CDP) instead of launching against the dedicated profile.
+# When set to a CDP endpoint (e.g. ``http://127.0.0.1:9222``), the headless
+# re-mint attaches to that browser — a freshness mitigation, since the
+# operator's daily Chrome is continuously Google-refreshed where our dedicated
+# profile can go stale in the long-idle case. The value is an endpoint the
+# operator provides (never auto-discovered); LOCAL-UNATTENDED-ONLY, never a
+# remote / hosted MCP auth path. An explicit ``cdp_url=`` argument takes
+# precedence over this env var.
+NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV = "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL"
 
 # Per-storage-path single-flight for the (blocking, sync) browser drive.
 #
@@ -111,6 +135,75 @@ def headless_reauth_env_enabled(env: dict[str, str] | None = None) -> bool:
     """
     source = os.environ if env is None else env
     return source.get(NOTEBOOKLM_HEADLESS_REAUTH_ENV) == "1"
+
+
+def _is_loopback_cdp_host(cdp_url: str) -> bool:
+    """True only when ``cdp_url``'s host is a loopback address.
+
+    The LOCAL-UNATTENDED-ONLY boundary in code: a CDP endpoint is
+    account-equivalent, so the CDP arm must attach ONLY to a browser on the
+    operator's own machine. We allow the loopback forms a locally-launched
+    ``--remote-debugging-port`` Chrome binds to — ``localhost``, the
+    ``127.0.0.0/8`` IPv4 loopback block, and the ``::1`` IPv6 loopback — and
+    fail closed on everything else (a remote host, a LAN IP, ``0.0.0.0``, an
+    unparseable value). This is what stops
+    ``NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL=http://remote-host:9222`` from turning
+    L3 into a remote auth path.
+    """
+    from urllib.parse import urlparse
+
+    # ``connect_over_cdp`` accepts an http(s) endpoint or a ws(s) one; both
+    # carry the host in the netloc, so urlparse handles either. A bare
+    # ``host:port`` (no scheme) parses with an empty hostname, so prepend a
+    # scheme in that case to extract the host.
+    parsed = urlparse(cdp_url if "//" in cdp_url else f"http://{cdp_url}")
+    host = (parsed.hostname or "").lower()
+    if host in {"localhost", "::1"}:
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        # Not an IP literal and not ``localhost`` — e.g. a remote hostname.
+        return False
+
+
+def resolve_cdp_url(
+    cdp_url: str | None = None,
+    env: dict[str, str] | None = None,
+) -> str | None:
+    """Resolve the opt-in CDP endpoint, explicit-arg-first then env-var.
+
+    An explicit ``cdp_url`` wins; otherwise read
+    :data:`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV`. An empty / whitespace-only
+    value is treated as unset (``None``) so a blank env var does not enable the
+    CDP arm. The endpoint is always operator-provided — never auto-discovered.
+
+    **LOCAL-ONLY enforcement.** A resolved endpoint whose host is NOT loopback
+    (:func:`_is_loopback_cdp_host`) is rejected — ``None`` is returned, so the
+    CDP arm never fires against a remote / LAN browser. The rejection is logged
+    at WARNING WITHOUT the endpoint value (only that a non-local endpoint was
+    declined), so the boundary is observable without leaking the operator's
+    address. This keeps L3 a local-unattended-only credential path.
+    """
+    source = os.environ if env is None else env
+    candidate = (
+        cdp_url if cdp_url is not None else source.get(NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV)
+    )
+    if candidate is None:
+        return None
+    stripped = candidate.strip()
+    if not stripped:
+        return None
+    if not _is_loopback_cdp_host(stripped):
+        logger.warning(
+            "Ignoring a non-loopback CDP endpoint for headless re-auth: the CDP "
+            "arm is local-unattended-only and attaches to a loopback browser "
+            "only (the endpoint value is not logged)."
+        )
+        return None
+    return stripped
 
 
 class HeadlessReauthStatus(Enum):
@@ -347,6 +440,7 @@ def attempt_headless_reauth(
     profile: str | None = None,
     browser: str = "chromium",
     include_domains: set[str] | None = None,
+    cdp_url: str | None = None,
     env: dict[str, str] | None = None,
 ) -> HeadlessReauthResult:
     """Attempt one layer-3 headless re-auth; return a typed, honest outcome.
@@ -359,17 +453,27 @@ def attempt_headless_reauth(
        the explicit ``client.refresh_auth(allow_headless=True)`` entry, and
        gate the mid-RPC auto-fire on the env var via
        :func:`headless_reauth_env_enabled`.)
-    2. **Reusable profile.** A persistent profile dir holding a (hopefully
-       live) Google session must exist on disk (:func:`_resolve_reusable_profile`).
-       No profile → ``UNAVAILABLE`` (fall through to the terminal message).
-    3. **Drive the headless browser** through the neutral capture core
-       (``headless=True, interactive=False``): launch the persistent context,
-       navigate to the NotebookLM base URL, classify the landing — authenticated
-       (lands on NotebookLM) → capture / domain-filter / atomically persist;
-       redirected to the Google login page → the profile's session is ALSO dead
-       → :class:`HeadlessLoginRequiredError` → ``FAILED`` (loud, never hangs).
-    4. **Playwright missing** → ``UNAVAILABLE`` (the ``browser`` extra is not
-       installed; nothing to drive).
+    2. **Playwright present.** The ``browser`` extra must be importable;
+       otherwise ``UNAVAILABLE`` (nothing to drive).
+    3. **Credential source.** Two alternative sources, both opt-in:
+
+       * **CDP attach** (when ``cdp_url`` resolves, explicit arg or
+         :data:`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV`): attach to an
+         operator-pointed already-running Chrome
+         (:func:`notebooklm._auth.browser_capture.run_cdp_capture`). The
+         dedicated profile is NOT required on this path — the live browser is
+         the credential source. This is the freshness mitigation for our
+         dedicated-profile-can-stale weakness.
+       * **Dedicated profile** (default): a persistent profile dir holding a
+         (hopefully live) Google session must exist on disk
+         (:func:`_resolve_reusable_profile`); no profile → ``UNAVAILABLE``.
+
+    4. **Drive the headless browser**: navigate to the NotebookLM base URL,
+       classify the landing — authenticated (lands on NotebookLM) → capture /
+       domain-filter / atomically persist; redirected off-host → the source's
+       Google session is ALSO dead → :class:`HeadlessLoginRequiredError` →
+       ``FAILED`` (loud, never hangs). Both sources reuse the SAME landing
+       classification and the SAME cookie-domain allowlist.
 
     This function performs the *recovery*, not the retry. On ``SUCCESS`` the
     caller re-runs the normal auth path (L1 token refresh) which now finds the
@@ -388,7 +492,12 @@ def attempt_headless_reauth(
         browser: Playwright channel (``"chromium"`` / ``"chrome"`` / ``"msedge"``).
         include_domains: Optional cookie-domain opt-in labels, forwarded to the
             same allowlist filter the interactive login uses.
-        env: Environment mapping for the opt-in check; defaults to
+        cdp_url: Optional explicit CDP endpoint of an already-running Chrome to
+            attach to instead of launching the dedicated profile. ``None``
+            falls back to :data:`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV`. When
+            resolved, the CDP arm runs and the dedicated profile is not
+            required. EXPLICIT / opt-in, LOCAL-UNATTENDED-ONLY.
+        env: Environment mapping for the opt-in + CDP-URL checks; defaults to
             :data:`os.environ`.
 
     Returns:
@@ -401,6 +510,32 @@ def attempt_headless_reauth(
             "headless re-auth not enabled "
             "(pass allow_headless=True or set NOTEBOOKLM_HEADLESS_REAUTH=1)",
         )
+
+    # Lazy-import probe: if the ``browser`` extra is absent, classify as
+    # UNAVAILABLE (nothing to drive), distinct from a genuine dead-session
+    # FAILED. Checked up front so the two are never conflated, and before the
+    # profile/CDP resolution so a missing extra is reported the same way on
+    # both arms.
+    if not _playwright_installed():
+        return HeadlessReauthResult(
+            HeadlessReauthStatus.UNAVAILABLE,
+            "playwright is not installed (install the 'browser' extra to enable headless re-auth)",
+        )
+
+    resolved_cdp_url = resolve_cdp_url(cdp_url, env)
+    if resolved_cdp_url is not None:
+        # CDP arm: attach to the operator-pointed running Chrome. The dedicated
+        # profile is NOT required here — the live browser is the credential
+        # source (the freshness mitigation). ``browser_profile`` is irrelevant
+        # on this path, so a placeholder ``storage_path.parent`` keeps the
+        # frozen plan well-formed without resolving a profile dir.
+        plan = BrowserCapturePlan(
+            browser=browser,
+            browser_profile=storage_path.parent,
+            storage_path=storage_path,
+            include_domains=include_domains,
+        )
+        return _drive_capture_coalesced(plan, cdp_url=resolved_cdp_url)
 
     resolved_profile = _resolve_reusable_profile(browser_profile=browser_profile, profile=profile)
     if resolved_profile is None:
@@ -416,17 +551,6 @@ def attempt_headless_reauth(
         storage_path=storage_path,
         include_domains=include_domains,
     )
-
-    # Lazy-import probe: if the ``browser`` extra is absent, the neutral core's
-    # ``ensure_playwright_available`` routes through ``io.fail`` →
-    # ``HeadlessLoginRequiredError``. We want that case classified as
-    # UNAVAILABLE (nothing to drive), distinct from a genuine dead-session
-    # FAILED. Check import availability up front so the two are not conflated.
-    if not _playwright_installed():
-        return HeadlessReauthResult(
-            HeadlessReauthStatus.UNAVAILABLE,
-            "playwright is not installed (install the 'browser' extra to enable headless re-auth)",
-        )
 
     # Per-storage-path single-flight: within this process, at most one browser
     # drives a given storage file at a time, and a follower that finds the file
@@ -456,14 +580,22 @@ def _storage_mtime(storage_path: Path) -> float | None:
         return None
 
 
-def _drive_capture_coalesced(plan: BrowserCapturePlan) -> HeadlessReauthResult:
+def _drive_capture_coalesced(
+    plan: BrowserCapturePlan,
+    *,
+    cdp_url: str | None = None,
+) -> HeadlessReauthResult:
     """Drive the headless capture under the per-path single-flight + freshness skip.
 
     Captures the storage mtime BEFORE acquiring the lock. After acquiring it, a
     follower whose storage file was rewritten by the leader while it waited
     (mtime advanced) skips its own browser and reports SUCCESS — so N concurrent
-    callers spawn at most ONE browser per profile. The leader (and any follower
-    whose wait did not yield a fresh file) drives the real capture.
+    callers spawn at most ONE browser per storage file. The leader (and any
+    follower whose wait did not yield a fresh file) drives the real capture.
+
+    Both credential sources (dedicated profile and ``cdp_url`` attach) coalesce
+    on the SAME per-storage-path lock, since both re-mint into the same
+    ``storage_state.json``.
     """
     storage_path = plan.storage_path
     pre_mtime = _storage_mtime(storage_path)
@@ -481,47 +613,72 @@ def _drive_capture_coalesced(plan: BrowserCapturePlan) -> HeadlessReauthResult:
                 "coalesced onto a concurrent headless re-mint",
                 storage_path=storage_path,
             )
-        return _drive_capture(plan)
+        return _drive_capture(plan, cdp_url=cdp_url)
 
 
-def _drive_capture(plan: BrowserCapturePlan) -> HeadlessReauthResult:
-    """Run one headless ``run_browser_capture`` and map it to a typed outcome."""
+def _drive_capture(
+    plan: BrowserCapturePlan,
+    *,
+    cdp_url: str | None = None,
+) -> HeadlessReauthResult:
+    """Run one headless capture (profile-launch or CDP-attach) → typed outcome.
+
+    When ``cdp_url`` is set, attach to the operator's running Chrome via
+    :func:`notebooklm._auth.browser_capture.run_cdp_capture`; otherwise launch
+    the dedicated persistent profile via ``run_browser_capture``. Both arms map
+    a clean run to SUCCESS, an off-host landing
+    (:class:`HeadlessLoginRequiredError`) to FAILED, and any other capture
+    failure to FAILED — never masking a dead session as success, and never
+    logging a cookie value.
+    """
     io = _SilentRaisingCaptureIO()
-    logger.info(
-        "Attempting layer-3 headless re-auth against persisted browser profile "
-        "(opt-in honored); no cookie values are logged."
-    )
-    try:
-        run_browser_capture(plan, io, headless=True, interactive=False)
-    except HeadlessLoginRequiredError as exc:
-        # The profile's Google session is also dead (redirected to login) or
-        # the core aborted via io.fail. Honest FAILED — never masked as success.
-        logger.warning("Layer-3 headless re-auth failed: %s", exc)
-        return HeadlessReauthResult(
-            HeadlessReauthStatus.FAILED,
-            "the persisted browser profile's Google session is also expired",
+    if cdp_url is not None:
+        logger.info(
+            "Attempting layer-3 re-auth by attaching to a running Chrome over CDP "
+            "(opt-in honored); no cookie values or endpoints are logged."
         )
+        source_dead_reason = "the attached browser's Google session cannot reach NotebookLM"
+        success_reason = "re-minted NotebookLM cookies from the attached running browser"
+    else:
+        logger.info(
+            "Attempting layer-3 headless re-auth against persisted browser profile "
+            "(opt-in honored); no cookie values are logged."
+        )
+        source_dead_reason = "the persisted browser profile's Google session is also expired"
+        success_reason = "re-minted NotebookLM cookies from the live browser-profile session"
+
+    try:
+        if cdp_url is not None:
+            run_cdp_capture(plan, io, cdp_url=cdp_url)
+        else:
+            run_browser_capture(plan, io, headless=True, interactive=False)
+    except HeadlessLoginRequiredError as exc:
+        # The source's Google session cannot reach NotebookLM (redirected) or
+        # the core aborted via io.fail. Honest FAILED — never masked as success.
+        logger.warning("Layer-3 re-auth failed: %s", exc)
+        return HeadlessReauthResult(HeadlessReauthStatus.FAILED, source_dead_reason)
     except Exception as exc:  # noqa: BLE001 - recovery is best-effort
-        # Any other capture failure (launch error, navigation failure,
+        # Any other capture failure (launch/attach error, navigation failure,
         # filesystem error) is a non-fatal recovery failure: surface FAILED so
         # the caller falls back to the terminal message rather than crashing.
-        # The message is the exception *type/string* (already redacted by the
-        # exceptions layer); no cookie value reaches here.
-        logger.warning("Layer-3 headless re-auth errored: %s", exc)
+        # The message is the exception *type* only; no cookie value or endpoint
+        # reaches here.
+        logger.warning("Layer-3 re-auth errored: %s", type(exc).__name__)
         return HeadlessReauthResult(
             HeadlessReauthStatus.FAILED,
             f"headless capture failed: {type(exc).__name__}",
         )
 
-    logger.info("Layer-3 headless re-auth succeeded; re-minted cookies persisted.")
+    logger.info("Layer-3 re-auth succeeded; re-minted cookies persisted.")
     return HeadlessReauthResult(
         HeadlessReauthStatus.SUCCESS,
-        "re-minted NotebookLM cookies from the live browser-profile session",
+        success_reason,
         storage_path=plan.storage_path,
     )
 
 
 __all__ = [
+    "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV",
     "NOTEBOOKLM_HEADLESS_REAUTH_ENV",
     "HeadlessReauthReadiness",
     "HeadlessReauthResult",
@@ -529,4 +686,5 @@ __all__ = [
     "attempt_headless_reauth",
     "headless_reauth_env_enabled",
     "headless_reauth_readiness",
+    "resolve_cdp_url",
 ]
