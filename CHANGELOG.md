@@ -42,6 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Decoded `created_at` timestamps are now tz-aware UTC instead of naive
+  host-local time** (#1519). The shared decoder `_datetime_from_timestamp`
+  (backing `Notebook`/`Source`/`Artifact`/`MindMap.created_at`) called
+  `datetime.fromtimestamp(value)` with no `tz`, producing a **naive** datetime in
+  the host's local zone — so the same epoch surfaced as a different wall-time
+  string per machine, and `created_at.isoformat()` / `--json` output, the
+  `strftime` table cells, etc. mis-stated the absolute instant (a notebook
+  created `13:40:05` UTC rendered as the offset-less `08:40:05` under
+  `America/New_York`). It now returns `datetime.fromtimestamp(value, tz=utc)`:
+  the value is tz-aware UTC and host-independent. `.timestamp()` round-trips
+  unchanged, so internal sort/dedup/download ordering is provably unaffected —
+  only the rendered string changes (now offset-aware, identical everywhere).
+  This is the production sibling of the timezone slip pinned out of the #1511
+  golden VCR test.
+
 - **Playwright login: closing the browser during the final storage-state
   capture now shows the browser-closed help instead of a bug-report prompt**
   (#1514, deferred from the #1512 review). Every in-flow Playwright call in

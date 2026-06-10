@@ -138,12 +138,13 @@ class TestNotebooksGoldenDecoded:
         )
         # The created_at slot decodes to a real timestamp (not a fabricated
         # default) — pin the first row's to catch a timestamp-column slip.
-        # The decoder renders LOCAL wall time (``datetime.fromtimestamp``), so
-        # pin the round-tripped epoch — identical on every timezone/CI host —
-        # never the rendered wall-time string (that one varies with TZ and
-        # failed CI's UTC runners against a UTC-5 recording sandbox).
+        # The decoder now renders tz-aware UTC (``fromtimestamp(.., tz=utc)``,
+        # #1519), so the round-tripped epoch is identical on every timezone/CI
+        # host. We still pin the epoch (not a wall-time string), and additionally
+        # assert tz-awareness so a regression back to naive host-local time fails.
         first = notebooks[0]
         assert first.created_at is not None
+        assert first.created_at.tzinfo is not None
         assert_decoded_equals(
             int(first.created_at.timestamp()),
             1768311605,

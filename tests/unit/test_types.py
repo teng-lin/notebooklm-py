@@ -1,7 +1,10 @@
 """Unit tests for types module dataclasses and parsing."""
 
+import os
 import pickle
+import time
 import warnings
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -57,6 +60,59 @@ class TestTimestampParsing:
         assert parsed is not None
         assert parsed.timestamp() == ts
 
+    def test_datetime_from_timestamp_is_tz_aware_utc(self):
+        """Decoded datetimes are tz-aware UTC, not naive host-local time (#1519).
+
+        The bug: a naive ``datetime.fromtimestamp(value)`` rendered the epoch in
+        the host's local zone, so the public ``created_at`` mis-stated the absolute
+        instant and serialized differently per box. The decoder must return a
+        tz-aware value pinned to UTC and equal to the correct absolute instant.
+
+        Red-first: against the unfixed (naive) decoder ``parsed.tzinfo`` is ``None``,
+        so the ``tzinfo is not None`` assertion fails (and the offset-aware equality
+        would compare unequal — a naive value never ``==`` an aware one).
+        """
+        from notebooklm.types import _datetime_from_timestamp
+
+        # 1768311605 == 2026-01-13T13:40:05+00:00 (the issue's illustrative instant).
+        parsed = _datetime_from_timestamp(1768311605)
+
+        assert parsed is not None
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timedelta(0)
+        assert parsed == datetime(2026, 1, 13, 13, 40, 5, tzinfo=timezone.utc)
+
+    @pytest.mark.parametrize("tz_name", ["UTC", "America/New_York", "Asia/Kolkata"])
+    def test_datetime_from_timestamp_host_independent(self, tz_name):
+        """The decoded instant is identical regardless of the host timezone (#1519).
+
+        Exercises the original failure mode directly: under ``America/New_York`` a
+        notebook created 13:40:05 UTC used to serialize as the offset-less
+        ``08:40:05``. With the fix every host yields the same tz-aware UTC value.
+        ``time.tzset`` only honours ``$TZ`` on POSIX, so skip elsewhere.
+        """
+        if not hasattr(time, "tzset"):
+            pytest.skip("time.tzset is POSIX-only; cannot exercise host-TZ swap")
+
+        from notebooklm.types import _datetime_from_timestamp
+
+        # Swap the process-wide zone, then restore the host's real $TZ + tz table
+        # in ``finally`` so the swap never leaks into later tests in this process.
+        original_tz = os.environ.get("TZ")
+        os.environ["TZ"] = tz_name
+        time.tzset()
+        try:
+            parsed = _datetime_from_timestamp(1768311605)
+        finally:
+            if original_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = original_tz
+            time.tzset()
+
+        assert parsed == datetime(2026, 1, 13, 13, 40, 5, tzinfo=timezone.utc)
+        assert parsed.isoformat() == "2026-01-13T13:40:05+00:00"
+
     def test_datetime_from_timestamp_oserror(self, monkeypatch):
         """Platform-specific timestamp errors should normalize to None."""
         from unittest.mock import MagicMock
@@ -71,7 +127,8 @@ class TestTimestampParsing:
         parsed = _datetime_from_timestamp(1704067200)
 
         assert parsed is None
-        mock_datetime.fromtimestamp.assert_called_once_with(1704067200)
+        # Pinned to UTC so the rendered instant is host-independent (#1519).
+        mock_datetime.fromtimestamp.assert_called_once_with(1704067200, tz=timezone.utc)
 
     @pytest.mark.parametrize("value", ["bad", None, float("inf"), float("-inf")])
     def test_datetime_from_timestamp_invalid_value(self, value):

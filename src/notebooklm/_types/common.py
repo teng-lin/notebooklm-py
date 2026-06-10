@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from .research import ResearchSourceInput
@@ -145,8 +145,16 @@ class CitedSourceSelection:
 
 
 def _datetime_from_timestamp(value: Any) -> datetime | None:
-    """Convert an API seconds timestamp to ``datetime``, returning ``None`` if invalid."""
+    """Convert an API seconds timestamp to a UTC ``datetime``, ``None`` if invalid.
+
+    Pinning ``tz=timezone.utc`` makes the result tz-aware and host-independent:
+    a naive ``fromtimestamp(value)`` would render in the host's local zone, so the
+    same epoch surfaced as a different wall-time string per CI runner / user box and
+    mis-stated the absolute instant. ``.timestamp()`` round-trips identically either
+    way, so internal sort/dedup/download ordering is unaffected — only the rendered
+    string changes (now offset-aware and identical everywhere).
+    """
     try:
-        return datetime.fromtimestamp(value)
+        return datetime.fromtimestamp(value, tz=timezone.utc)
     except (TypeError, ValueError, OSError, OverflowError):
         return None
