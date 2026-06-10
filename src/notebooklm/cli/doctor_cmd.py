@@ -56,10 +56,23 @@ def _headless_reauth_check() -> dict[str, str]:
     not a broken install — only an unavailable enhancement. The
     ``headless_reauth_readiness`` import is function-local so ``doctor`` never
     forces a ``playwright`` import on the common path.
+
+    ``doctor`` is a read-only diagnostic, so resolving the browser-profile dir
+    is wrapped: ``get_browser_profile_dir`` can raise ``ValueError`` (malformed
+    profile config) or ``OSError`` (permission / filesystem issues), and the
+    readiness probe stats the dir. Either is degraded to a ``warn`` row rather
+    than crashing the whole command — consistent with the other doctor checks,
+    which all map malformed inputs to a status instead of raising.
     """
     from .._auth.headless_reauth import headless_reauth_readiness
 
-    readiness = headless_reauth_readiness(browser_profile=get_browser_profile_dir())
+    try:
+        readiness = headless_reauth_readiness(browser_profile=get_browser_profile_dir())
+    except (ValueError, OSError) as exc:
+        return {
+            "status": "warn",
+            "detail": f"unavailable: could not resolve the browser profile ({type(exc).__name__})",
+        }
     return {
         "status": "pass" if readiness.available else "warn",
         "detail": readiness.detail,

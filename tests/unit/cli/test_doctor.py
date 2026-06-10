@@ -264,6 +264,37 @@ def test_doctor_json_wraps_unexpected_filesystem_error(runner, isolated_notebook
     assert result.stderr == ""
 
 
+def test_doctor_headless_reauth_degrades_to_warn_on_profile_resolution_error(
+    runner, isolated_notebooklm_home, monkeypatch
+):
+    """A read-only diagnostic must not crash if the profile dir cannot resolve.
+
+    ``get_browser_profile_dir`` can raise ``ValueError`` (malformed profile
+    config) / ``OSError`` (permissions); the headless-reauth check degrades to
+    a ``warn`` row instead of bubbling up. ``monkeypatch.setattr`` on the public
+    helper avoids growing the string-patch ratchet for this file.
+    """
+    from notebooklm.cli import doctor_cmd
+
+    _make_profile(isolated_notebooklm_home)
+    _write_json(
+        isolated_notebooklm_home / "profiles" / "default" / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}]),
+    )
+
+    def _boom(*_a, **_k):
+        raise ValueError("malformed profile name")
+
+    monkeypatch.setattr(doctor_cmd, "get_browser_profile_dir", _boom)
+
+    data = _invoke_json(runner, [])
+
+    assert data["checks"]["headless_reauth"]["status"] == "warn"
+    assert "could not resolve the browser profile" in data["checks"]["headless_reauth"]["detail"]
+    # The error type is surfaced, never a raw path / value.
+    assert "ValueError" in data["checks"]["headless_reauth"]["detail"]
+
+
 def test_doctor_text_mode_exits_nonzero_on_failure(runner, isolated_notebooklm_home):
     """Regression for #1160: text-mode doctor must exit 1 when a check fails.
 
