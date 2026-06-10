@@ -98,6 +98,33 @@ BROAD_TYPE = "RPCError"
 # required — see the module docstring).
 REQUIRED_NARROW_RERAISE = frozenset({"AuthError", "RateLimitError", "ServerError"})
 
+# Every OTHER current RPCError subclass, each with the reason it does NOT
+# belong in the required re-raise set. Together with REQUIRED_NARROW_RERAISE
+# this PARTITIONS the live RPCError subtree: the taxonomy-pin test asserts
+# ``live subclasses == required ∪ excluded``, so a brand-new RPCError subclass
+# (e.g. a future QuotaError) FAILS the pin and forces an explicit
+# include-or-exclude decision here instead of silently bypassing the gate.
+EXCLUDED_FROM_REQUIRED: dict[str, str] = {
+    # Semantic absence (ADR-0019 "mutate/read missing target" classes) — a
+    # domain wrapper translating these is a deliberate per-callsite contract
+    # decision, not the transient-transport swallow this gate targets.
+    "ArtifactNotFoundError": "semantic not-found, not transient transport",
+    "LabelNotFoundError": "semantic not-found, not transient transport",
+    "MindMapNotFoundError": "semantic not-found, not transient transport",
+    "NoteNotFoundError": "semantic not-found, not transient transport",
+    "NotebookNotFoundError": "semantic not-found, not transient transport",
+    "SourceNotFoundError": "semantic not-found, not transient transport",
+    # Schema drift — surfacing vs wrapping is the callsite's drift policy
+    # (ADR-0011), orthogonal to the retry-ability this gate protects.
+    "DecodingError": "schema drift, not transient transport",
+    "UnknownRPCMethodError": "schema drift (DecodingError subclass)",
+    # Caller-input / feature / setup faults — not retryable transport states.
+    "ClientError": "4xx caller fault, not retryable transport",
+    "RPCResponseTooLargeError": "payload-size fault, not retryable transport",
+    "AuthExtractionError": "login/setup-time extraction fault",
+    "ArtifactFeatureUnavailableError": "feature availability, not transport",
+}
+
 # Files (relative to src/notebooklm, posix) with a baselined violation that is
 # genuinely non-trivial to fix. EMPTY by construction at gate introduction —
 # the lone violation (add_text) was fixed in the same change. DO NOT add
@@ -297,6 +324,33 @@ def test_required_narrow_set_matches_exception_taxonomy() -> None:
     assert not issubclass(nlm_exceptions.NetworkError, broad), (
         "NetworkError now subclasses RPCError — it CAN be swallowed by a broad "
         "catch, so add it to REQUIRED_NARROW_RERAISE."
+    )
+
+    # PARTITION pin: the live RPCError subtree must equal required ∪ excluded,
+    # so a brand-new RPCError subclass forces an explicit decision here
+    # instead of silently bypassing the required set.
+    def _subtree(cls: type) -> set[str]:
+        names: set[str] = set()
+        for sub in cls.__subclasses__():
+            if sub.__module__.startswith("notebooklm"):
+                names.add(sub.__name__)
+                names.update(_subtree(sub))
+        return names
+
+    live = _subtree(broad)
+    partitioned = REQUIRED_NARROW_RERAISE | set(EXCLUDED_FROM_REQUIRED)
+    unaccounted = sorted(live - partitioned)
+    assert not unaccounted, (
+        f"New RPCError subclass(es) {unaccounted} are not partitioned: decide "
+        "whether each is a transient transport fault callers must catch (add "
+        "to REQUIRED_NARROW_RERAISE — the gate will then demand it in every "
+        "narrow re-raise clause) or not (add to EXCLUDED_FROM_REQUIRED with a "
+        "one-line reason)."
+    )
+    retired = sorted(partitioned - live)
+    assert not retired, (
+        f"Partition entries {retired} no longer exist in the RPCError subtree "
+        "— remove them from REQUIRED_NARROW_RERAISE / EXCLUDED_FROM_REQUIRED."
     )
 
 
