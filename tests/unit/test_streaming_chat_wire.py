@@ -489,7 +489,13 @@ def test_stream_with_reshaped_citation_container_raises() -> None:
 
 
 def test_malformed_citation_rows_warn_and_keep_survivors(caplog) -> None:
-    """Per-row malformation warns (once per row) and keeps the surviving citations."""
+    """Per-row malformation warns (at least once per row) and keeps survivors.
+
+    The rows crafted here each emit exactly one warning. A deep malformed
+    source-id tree could additionally trip the UUID max-recursion warning,
+    so the production contract is "at least one bounded warning per
+    malformed row" rather than exactly one.
+    """
     good_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
     class _ExplodingLen(list):
@@ -516,9 +522,49 @@ def test_malformed_citation_rows_warn_and_keep_survivors(caplog) -> None:
         refs = parse_citations(first)
 
     assert [ref.source_id for ref in refs] == [good_id]
+    # The survivor keeps its RAW wire ordinal (position 5, after 4 skipped
+    # rows) — not a dense re-count — so the answer's [5] marker still
+    # resolves to it and [1]-[4] resolve to nothing.
+    assert [ref.citation_number for ref in refs] == [5]
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == len(bad_rows)  # one warning per malformed row
+    assert len(warnings) == len(bad_rows)  # these rows: exactly one each
     assert all("citation" in r.message for r in warnings)
+
+
+def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
+    """Regression: raw rows [good#1, bad#2, good#3] yield citation numbers {1, 3}.
+
+    Dense renumbering after a skip would re-anchor the answer's literal
+    ``[2]`` marker onto raw citation #3 (save-as-note would anchor the WRONG
+    chunk via the positional fallback). Survivors must keep raw ordinals so
+    the skipped row leaves a hole: marker ``[2]`` resolves to ``None`` and
+    its anchor is dropped — never mis-anchored.
+    """
+    from notebooklm._chat.notes import _resolve_reference
+
+    good_1 = _citation(source_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chunk_id="chunk-1")
+    bad_2 = ["present-but-unusable"]
+    good_3 = _citation(source_id="11111111-2222-3333-4444-555555555555", chunk_id="chunk-3")
+    first = ["Answer [1][2][3].", None, None, None, [[], None, None, [good_1, bad_2, good_3], 1]]
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._chat"):
+        refs = parse_citations(first)
+    assert [ref.citation_number for ref in refs] == [1, 3]
+
+    # End-to-end: the stream parser's final dense fill only touches None
+    # numbers, so the hole survives parse_streaming_chat_response.
+    inner = json.dumps([first])
+    chunk = json.dumps([["wrb.fr", None, inner]])
+    result = parse_streaming_chat_response(_length_prefixed(chunk))
+    assert [ref.citation_number for ref in result.references] == [1, 3]
+
+    # Downstream marker resolution: the hole yields None (anchor skipped),
+    # the surviving markers resolve to their own chunks.
+    resolved_1 = _resolve_reference(result.references, 1)
+    assert resolved_1 is not None and resolved_1.chunk_id == "chunk-1"
+    assert _resolve_reference(result.references, 2) is None
+    resolved_3 = _resolve_reference(result.references, 3)
+    assert resolved_3 is not None and resolved_3.chunk_id == "chunk-3"
 
 
 def test_row_level_citation_helpers_keep_soft_contracts() -> None:

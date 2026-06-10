@@ -494,11 +494,17 @@ class AnswerRow:
         Absence-vs-malformed split (#1485 policy, the #1505 follow-up for
         the citation path):
 
-        * **Absence stays soft** — a short row, a non-list type block (also
-          a legitimate "not an answer record" shape consumed by
-          :attr:`is_answer`), a type block too short to carry the slot, or a
-          *falsy* slot all degrade to ``[]``: real wire traffic routinely
-          sends ``None`` here for "answer without citations".
+        * **Absence stays soft** — a short row, a non-list type block, a
+          type block too short to carry the slot, or a *falsy* slot all
+          degrade to ``[]``: real wire traffic routinely sends ``None`` here
+          for "answer without citations". The non-list *type block*
+          (``first[4]``) is deliberately kept soft even though it could be
+          drift: it doubles as the legitimate "not an answer record" shape
+          consumed by :attr:`is_answer`. Visibility is narrow by design —
+          it surfaces only on the stream path, and only when no other
+          marked chunk wins (the parser's "No marked answer found"
+          WARNING); on a losing chunk, or in a direct ``parse_citations``
+          call, it stays silent.
         * **Truthy non-list RAISES** — a truthy non-list where the citation
           container belongs is structural wire drift, not a citation-less
           answer, and raises :class:`UnknownRPCMethodError`. Precedent: the

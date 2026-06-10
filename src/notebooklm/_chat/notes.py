@@ -157,17 +157,24 @@ def _resolve_reference(
 ) -> ChatReference | None:
     """Look up the ChatReference that backs citation marker ``[N]``.
 
-    Prefers an exact ``citation_number`` match; falls back to positional
-    lookup (``references[N-1]``) when ``citation_number`` is unset on
-    the reference. Returns ``None`` if neither path resolves to a
-    reference with a usable ``chunk_id``.
+    Prefers an exact ``citation_number`` match. The positional fallback
+    (``references[N-1]``) applies ONLY when that positional candidate has no
+    ``citation_number`` set — the legacy unset-number contract it was built
+    for. It must NOT fire for a *numbered* list with a hole: the wire parser
+    keeps raw ordinals when it skips a malformed citation row, so after
+    ``[good#1, skipped#2, good#3]`` a positional fallback for marker ``[2]``
+    would anchor raw citation #3 — a WRONG anchor. Returns ``None`` instead
+    (the caller skips that marker's anchor with a warning): a missing anchor
+    is recoverable, a mis-anchored note is silently wrong.
     """
     for ref in references:
         if ref.citation_number == citation_number and ref.chunk_id:
             return ref
     idx = citation_number - 1
-    if 0 <= idx < len(references) and references[idx].chunk_id:
-        return references[idx]
+    if 0 <= idx < len(references):
+        candidate = references[idx]
+        if candidate.citation_number is None and candidate.chunk_id:
+            return candidate
     return None
 
 

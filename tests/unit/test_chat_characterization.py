@@ -2125,18 +2125,13 @@ class TestParseAskResponseBranchCoverage:
         ]
         inner_json = json.dumps(inner_data)
         chunk_json = json.dumps([["wrb.fr", None, inner_json]])
-        # Two identical chunks - second one produces a ref with citation_number already set
-        # But actually each call to _parse_ask_response creates fresh refs, so two chunks
-        # means two refs (same source), first gets 1, second gets 2 (both had citation_number=None)
-        # To trigger 496->495 we need ref.citation_number to already be set.
-        # This can happen if we manually set citation_number before the assignment loop.
-        # However, in the normal flow, refs from _parse_citations don't have citation_number set.
-        # The only way to get citation_number != None before the assignment loop is if
-        # somehow the code path sets it earlier - which it doesn't.
-        # So arc 496->495 requires citation_number to be not None from _parse_citations.
-        # Since _parse_citations creates ChatReference with citation_number=None by default,
-        # this arc may not be reachable in normal flow - it's a defensive check.
-        # Let's verify the assignment logic works correctly with multiple refs.
+        # Since the citation-hardening pass, _parse_citations stamps each
+        # surviving reference with its RAW wire ordinal (so a skipped
+        # malformed row leaves a hole instead of shifting [N] markers onto
+        # the wrong citation). The final assignment's preserve-non-None arc
+        # is therefore the NORMAL path now: it must keep the raw ordinal
+        # untouched. With nothing skipped, raw ordinal == dense ordinal,
+        # which is what this asserts (citation_number == 1 for the sole ref).
         response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
         answer, refs, conv_id = client.chat._parse_ask_response_with_references(response_body)
         assert len(refs) == 1

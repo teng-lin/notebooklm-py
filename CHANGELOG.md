@@ -101,9 +101,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   truthy non-list where the citation *container* belongs (`first[4][3]`) is
   structural wire drift and raises `UnknownRPCMethodError` (matching the
   parser's existing `inner_data[0]` raise and `unwrap_conversation_turns`);
-  a present-but-unusable individual citation row now logs one WARNING with a
-  bounded preview and is skipped, so a good answer keeps its surviving
-  citations.
+  a present-but-unusable individual citation row now logs at least one
+  bounded WARNING and is skipped, so a good answer keeps its surviving
+  citations. Surviving citations keep their **raw wire ordinal** as
+  `citation_number` (a skipped row leaves a hole; with nothing skipped this
+  equals the dense numbering always produced), so the answer's literal `[N]`
+  markers never shift onto a different citation. Correspondingly,
+  save-as-note's positional marker fallback (`references[N-1]`) now applies
+  only when that positional reference carries no `citation_number`: a holed
+  marker drops its anchor with a warning instead of anchoring the wrong
+  chunk.
 - **Empty notebook summary no longer raises `UnknownRPCMethodError`** (#1485).
   A brand-new, source-less notebook has no summary yet, so the `SUMMARIZE` RPC
   returns an absent/`None` payload. `notebooks.get_summary()` and

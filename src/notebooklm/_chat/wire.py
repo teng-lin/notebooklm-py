@@ -250,7 +250,11 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     # Assign citation numbers without mutating the dataclass instances in place
     # (prepares for an eventual ``frozen=True`` sweep on public domain types).
     # The list is rebuilt — externally identical to the prior mutation since
-    # only ``citation_number`` ever changes here.
+    # only ``citation_number`` ever changes here. ``parse_citations`` already
+    # stamps raw wire ordinals; the ``is None`` guard deliberately preserves
+    # them (a skipped malformed row leaves a hole so [N] markers never shift
+    # onto the wrong citation) — the dense fill applies only to refs that
+    # arrived unnumbered.
     final_refs = [
         replace(ref, citation_number=idx) if ref.citation_number is None else ref
         for idx, ref in enumerate(final_refs, start=1)
@@ -469,10 +473,22 @@ def parse_citations(first: list) -> list[ChatReference]:
       silently degrade to "answer without citations".
     * **Per-row malformed WARNS and skips** — a citation entry that is present
       but unusable (wrong shape/type at a slot, no extractable source id, or
-      an unexpected error while decoding it) logs one ``WARNING`` with a
-      ``reprlib``-bounded preview, then drops only that row; surviving
-      citations are still returned so one bad row never destroys a good
-      answer's remaining citations.
+      an unexpected error while decoding it) logs at least one bounded
+      ``WARNING`` (``reprlib`` previews; a deep malformed source-id tree may
+      additionally emit the UUID max-recursion warning), then drops only that
+      row; surviving citations are still returned so one bad row never
+      destroys a good answer's remaining citations.
+
+    Survivors keep their **raw wire ordinal** as ``citation_number`` (1-based
+    position in the citation container), NOT a dense re-count. The answer
+    text's literal ``[N]`` markers refer to raw positions, so re-densifying
+    after a skip would silently re-anchor ``[N]`` onto a *different* citation
+    (e.g. save-as-note anchoring the wrong chunk). A skipped row instead
+    leaves a hole: its marker resolves to no reference and downstream
+    consumers drop that anchor rather than mis-anchoring. With nothing
+    skipped, raw ordinals equal the dense numbering this parser always
+    produced. The final assignment in :func:`parse_streaming_chat_response`
+    preserves non-``None`` numbers, so the ordinals survive unchanged.
 
     The pre-hardening behavior swallowed *every* citation drift at DEBUG and
     returned ``[]`` — a Google reshape degraded to "answers with no
@@ -490,7 +506,7 @@ def parse_citations(first: list) -> list[ChatReference]:
             data_at_failure=reprlib.repr(first),
         )
     refs: list[ChatReference] = []
-    for cite in AnswerRow(first).citations:
+    for raw_idx, cite in enumerate(AnswerRow(first).citations, start=1):
         try:
             ref = parse_single_citation(cite)
         except (IndexError, TypeError, AttributeError) as exc:
@@ -509,7 +525,10 @@ def parse_citations(first: list) -> list[ChatReference]:
                 _CITATION_SOURCE,
             )
             continue
-        refs.append(ref)
+        # Raw wire ordinal, not a dense re-count — see the docstring: the
+        # answer's literal [N] markers point at raw positions, so a skipped
+        # row must leave a hole rather than shift survivors onto wrong markers.
+        refs.append(replace(ref, citation_number=raw_idx))
     return refs
 
 

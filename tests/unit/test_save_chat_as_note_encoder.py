@@ -24,6 +24,7 @@ import pytest
 
 from notebooklm._chat.notes import (
     _CITATION_MARKER_RE,
+    _resolve_reference,
     _strip_citation_markers,
     build_save_chat_as_note_params,
 )
@@ -242,14 +243,19 @@ class TestBuildSaveChatAsNoteParamsBehavior:
         assert chunk_refs[1] == [["chunk-b"], [None, 0, 23]]
 
     def test_dedupes_source_passages_by_chunk_id(self):
-        # Same chunk_id referenced twice → only one source_passages entry,
-        # but each [N] marker still gets its own anchor.
-        ref = self._make_ref(1, "chunk-shared", "src-shared")
-        refs = [ref, ref]  # caller may legitimately repeat
+        # Same chunk_id under two distinct citation numbers (the realistic
+        # repeat: one chunk cited at two markers) → only one source_passages
+        # entry, but each [N] marker still gets its own anchor. (Previously
+        # this pinned the numbered-positional fallback — both refs numbered 1
+        # and [2] resolved via references[1]; that fallback is now gated to
+        # unnumbered candidates so a numbering hole can't mis-anchor.)
+        refs = [
+            self._make_ref(1, "chunk-shared", "src-shared"),
+            self._make_ref(2, "chunk-shared", "src-shared"),
+        ]
         params = build_save_chat_as_note_params("nb-id", "A [1] B [2]", refs, "Title")
         assert len(params[3]) == 1  # deduped
         # Two markers found in answer_text → two chunk_refs
-        # (the lookup of [2] falls back to references[1] = same ref)
         assert len(params[5][0][1]) == 2
 
     def test_marker_without_matching_reference_is_skipped(self, caplog):
@@ -261,6 +267,45 @@ class TestBuildSaveChatAsNoteParamsBehavior:
         # Only one anchor — the [99] marker is silently dropped with a warning
         assert len(chunk_refs) == 1
         assert any("[99]" in record.message or "99" in record.message for record in caplog.records)
+
+    def test_holed_numbering_skips_missing_marker_instead_of_mis_anchoring(self, caplog):
+        """Regression (codex review of the citation hardening): no wrong anchors.
+
+        The wire parser keeps RAW ordinals when it skips a malformed citation
+        row, so ``[good#1, skipped#2, good#3]`` reaches the encoder as refs
+        numbered ``{1, 3}``. Marker ``[2]`` must resolve to nothing — the old
+        positional fallback would have anchored ``references[1]`` = raw #3,
+        a silently WRONG anchor. Missing anchor (with a warning) is the only
+        acceptable outcome.
+        """
+        refs = [
+            self._make_ref(1, "chunk-1", "src-1"),
+            self._make_ref(3, "chunk-3", "src-3"),
+        ]
+        # Resolver level: exact matches work, the hole yields None.
+        resolved_1 = _resolve_reference(refs, 1)
+        assert resolved_1 is not None and resolved_1.chunk_id == "chunk-1"
+        assert _resolve_reference(refs, 2) is None
+        resolved_3 = _resolve_reference(refs, 3)
+        assert resolved_3 is not None and resolved_3.chunk_id == "chunk-3"
+
+        # Encoder level: [2]'s anchor is dropped with a warning; [1] and [3]
+        # anchor their own chunks.
+        with caplog.at_level("WARNING"):
+            params = build_save_chat_as_note_params("nb-id", "A [1] B [2] C [3]", refs, "Title")
+        chunk_refs = params[5][0][1]
+        assert [anchor[0] for anchor in chunk_refs] == [["chunk-1"], ["chunk-3"]]
+        assert any("[2]" in record.message for record in caplog.records)
+
+    def test_positional_fallback_still_serves_unnumbered_references(self):
+        """The legacy unset-number contract is preserved: positional lookup
+        applies when the positional candidate carries no citation_number."""
+        refs = [
+            ChatReference(source_id="src-a", chunk_id="chunk-a"),
+            ChatReference(source_id="src-b", chunk_id="chunk-b"),
+        ]
+        resolved = _resolve_reference(refs, 2)
+        assert resolved is not None and resolved.chunk_id == "chunk-b"
 
     def test_seven_element_params_shape(self):
         """Sanity: top-level params is always exactly 7 elements."""
