@@ -1605,14 +1605,20 @@ class TestExtractAnswerAndRefsFromChunk:
 
 
 class TestParseCitationsEdgeCases:
-    """Tests for _parse_citations edge cases (lines 599-605)."""
+    """Tests for _parse_citations edge cases (absence soft, malformed loud)."""
 
-    def test_parse_citations_returns_empty_on_type_error(self, auth_tokens):
-        """Test _parse_citations returns [] when first causes TypeError (lines 599-605)."""
+    def test_parse_citations_raises_on_non_list_answer_row(self, auth_tokens):
+        """A non-list ``first`` is structural drift and raises (was a silent-DEBUG ``[]``).
+
+        Flipped under the #1505 absence-vs-malformed policy: the stream parser
+        already raises ``UnknownRPCMethodError`` for a non-list answer row, so
+        the direct-call surface now matches instead of swallowing a TypeError.
+        """
+        from notebooklm.exceptions import UnknownRPCMethodError
+
         client = NotebookLMClient(auth_tokens)
-        # Passing None triggers TypeError in len(first) at the guard check
-        refs = client.chat._parse_citations(None)  # type: ignore[arg-type]
-        assert refs == []
+        with pytest.raises(UnknownRPCMethodError):
+            client.chat._parse_citations(None)  # type: ignore[arg-type]
 
     def test_parse_citations_returns_empty_when_first_too_short(self, auth_tokens):
         """Test _parse_citations returns [] when first has <= 4 elements."""
@@ -1628,12 +1634,19 @@ class TestParseCitationsEdgeCases:
         refs = client.chat._parse_citations(first)
         assert refs == []
 
-    def test_parse_citations_returns_empty_when_type_info_3_not_list(self, auth_tokens):
-        """Test _parse_citations returns [] when type_info[3] is not a list."""
+    def test_parse_citations_raises_when_type_info_3_truthy_non_list(self, auth_tokens):
+        """A truthy non-list citation container is structural drift and raises.
+
+        Flipped under the #1505 absence-vs-malformed policy (was a silent
+        ``[]``): real traffic sends ``None`` (absence, still soft) or a list
+        here — a truthy non-list means the container itself was reshaped.
+        """
+        from notebooklm.exceptions import UnknownRPCMethodError
+
         client = NotebookLMClient(auth_tokens)
         first = ["text", None, None, None, [1, 2, 3, "not_a_list"]]
-        refs = client.chat._parse_citations(first)
-        assert refs == []
+        with pytest.raises(UnknownRPCMethodError):
+            client.chat._parse_citations(first)
 
 
 class TestParseSingleCitationEdgeCases:

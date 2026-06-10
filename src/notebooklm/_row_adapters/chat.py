@@ -491,16 +491,38 @@ class AnswerRow:
     def citations(self) -> list[Any]:
         """Raw citation entries at ``first[4][3]`` — empty list when absent.
 
-        Mirrors the historical ``parse_citations`` permissive contract: a
-        short / non-list type block or a non-list citation slot degrades to
-        ``[]`` rather than raising, because a missing citation list is a normal
-        "answer without citations" shape, not wire drift.
+        Absence-vs-malformed split (#1485 policy, the #1505 follow-up for
+        the citation path):
+
+        * **Absence stays soft** — a short row, a non-list type block (also
+          a legitimate "not an answer record" shape consumed by
+          :attr:`is_answer`), a type block too short to carry the slot, or a
+          *falsy* slot all degrade to ``[]``: real wire traffic routinely
+          sends ``None`` here for "answer without citations".
+        * **Truthy non-list RAISES** — a truthy non-list where the citation
+          container belongs is structural wire drift, not a citation-less
+          answer, and raises :class:`UnknownRPCMethodError`. Precedent: the
+          :func:`unwrap_conversation_turns` container raise above and the
+          ``inner_data[0]`` non-list raise in ``_chat/wire.py`` — this
+          parser family treats reshaped containers as a raise, never a
+          silent ``[]``.
         """
         type_block = self._type_block
         if type_block is None or len(type_block) <= self._CITATIONS_POS:
             return []
         citations = type_block[self._CITATIONS_POS]
-        return citations if isinstance(citations, list) else []
+        if not citations:
+            return []
+        if not isinstance(citations, list):
+            raise UnknownRPCMethodError(
+                f"chat citation container holds {type(citations).__name__} "
+                "(expected the citation list)",
+                method_id=None,
+                path=(self._TYPE_BLOCK_POS, self._CITATIONS_POS),
+                source="ChatAnswerRow.citations",
+                data_at_failure=reprlib.repr(citations),
+            )
+        return citations
 
     def citation_rows(self) -> list[CitationRow]:
         """Wrap each raw citation entry as a :class:`CitationRow`."""

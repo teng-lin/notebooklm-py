@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import re
+import reprlib
 from dataclasses import dataclass, replace
 from typing import Any, NoReturn, Protocol
 from urllib.parse import quote, urlencode
@@ -43,6 +44,7 @@ logger = logging.getLogger("notebooklm._chat")
 # and rely on these labels to localize schema drift in raised
 # ``UnknownRPCMethodError`` diagnostics (ADR-0011).
 _CHUNK_SOURCE = "_chat_wire._extract_chunk_with_parseable"
+_CITATION_SOURCE = "_chat_wire.parse_citations"
 
 _UUID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -449,24 +451,66 @@ def raise_if_rate_limited(error_payload: list) -> None:
 
 
 def parse_citations(first: list) -> list[ChatReference]:
-    """Parse citation details from a streamed-chat response structure."""
-    try:
-        # ``AnswerRow.citations`` centralises the ``first[4][3]`` descent and
-        # degrades to ``[]`` for the "answer without citations" shapes the old
-        # inline length guards tolerated (issue #1491).
-        refs: list[ChatReference] = []
-        for cite in AnswerRow(first).citations:
-            ref = parse_single_citation(cite)
-            if ref is not None:
-                refs.append(ref)
-        return refs
-    except (IndexError, TypeError, AttributeError) as e:
-        logger.debug(
-            "Citation parsing failed (API structure may have changed): %s",
-            e,
-            exc_info=True,
+    """Parse citation details from a streamed-chat response structure.
+
+    Absence-vs-malformed policy (#1505 continuity). Citations are *secondary*
+    payload riding on a usable answer, so loudness is tiered:
+
+    * **Absence is silent** — an answer with no citations is the common case
+      (real traffic routinely sends ``None`` in the ``first[4][3]`` slot):
+      no/short type block and falsy citation slots return ``[]`` with zero
+      logging, via ``AnswerRow.citations`` (issue #1491).
+    * **Container drift RAISES** — a non-list ``first`` (the answer row) or a
+      truthy non-list citation container is structural wire drift; it raises
+      :class:`UnknownRPCMethodError`, matching this parser's existing raise
+      for the ``inner_data[0]`` non-list case and the
+      ``unwrap_conversation_turns`` container raise (#1505): a reshaped
+      container means the payload can no longer be trusted, so it must not
+      silently degrade to "answer without citations".
+    * **Per-row malformed WARNS and skips** — a citation entry that is present
+      but unusable (wrong shape/type at a slot, no extractable source id, or
+      an unexpected error while decoding it) logs one ``WARNING`` with a
+      ``reprlib``-bounded preview, then drops only that row; surviving
+      citations are still returned so one bad row never destroys a good
+      answer's remaining citations.
+
+    The pre-hardening behavior swallowed *every* citation drift at DEBUG and
+    returned ``[]`` — a Google reshape degraded to "answers with no
+    citations" invisibly.
+    """
+    if not isinstance(first, list):
+        # Same structural-drift signal ``_extract_chunk_with_parseable``
+        # raises for a non-list answer row; reachable only via direct calls
+        # since the stream parser already enforces it before delegating here.
+        raise UnknownRPCMethodError(
+            f"Streamed chat answer row is not a list (got {type(first).__name__})",
+            method_id=None,
+            path=(0,),
+            source=_CITATION_SOURCE,
+            data_at_failure=reprlib.repr(first),
         )
-        return []
+    refs: list[ChatReference] = []
+    for cite in AnswerRow(first).citations:
+        try:
+            ref = parse_single_citation(cite)
+        except (IndexError, TypeError, AttributeError) as exc:
+            logger.warning(
+                "Skipping malformed citation entry (%s: %s; cite=%s) [%s]",
+                type(exc).__name__,
+                exc,
+                reprlib.repr(cite),
+                _CITATION_SOURCE,
+            )
+            continue
+        if ref is None:
+            logger.warning(
+                "Skipping unusable citation entry (no parsable detail or source id; cite=%s) [%s]",
+                reprlib.repr(cite),
+                _CITATION_SOURCE,
+            )
+            continue
+        refs.append(ref)
+    return refs
 
 
 def parse_single_citation(cite: Any) -> ChatReference | None:

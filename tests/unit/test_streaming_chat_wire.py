@@ -31,7 +31,7 @@ from notebooklm._chat.wire import (
     parse_streaming_chat_response,
     raise_if_rate_limited,
 )
-from notebooklm.exceptions import ChatError
+from notebooklm.exceptions import ChatError, UnknownRPCMethodError
 from notebooklm.rpc.types import get_query_url
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
@@ -425,9 +425,104 @@ def test_extract_score_accepts_float_and_int_rejects_bool_and_out_of_range() -> 
     assert extract_score([None, None, float("-inf")]) is None
 
 
-def test_missing_and_malformed_citation_shapes_degrade_without_raising() -> None:
-    assert parse_citations(["Answer", None, None, None]) == []
-    assert parse_citations(["Answer", None, None, None, [[], None, None, None, 1]]) == []
+def test_citation_absence_shapes_stay_silent(caplog) -> None:
+    """Genuine absence (answer without citations) emits ZERO log records.
+
+    Pins the soft half of the #1505 absence-vs-malformed policy for the
+    citation path: no type block, a short type block, a ``None`` citation
+    slot (the routine real-traffic shape), and an empty citation list all
+    parse to ``[]`` with no logging at any level.
+    """
+    absent_shapes = [
+        ["Answer only"],  # short row: no type block at all
+        ["Answer", None, None, None],  # no first[4]
+        ["Answer", None, None, None, [1, 2, 3]],  # type block too short for [3]
+        ["Answer", None, None, None, [[], None, None, None, 1]],  # slot is None
+        ["Answer", None, None, None, [[], None, None, [], 1]],  # empty citation list
+    ]
+    with caplog.at_level(logging.DEBUG, logger="notebooklm._chat"):
+        for first in absent_shapes:
+            assert parse_citations(first) == []
+    assert [r for r in caplog.records if r.name.startswith("notebooklm")] == []
+
+
+def test_citationless_answer_stream_parses_silently(caplog) -> None:
+    """End-to-end absence pin: a citation-less answer stream stays soft/silent."""
+    with caplog.at_level(logging.DEBUG, logger="notebooklm._chat"):
+        result = parse_streaming_chat_response(
+            _length_prefixed(_chunk("Answer without citations."))
+        )
+    assert result.answer == "Answer without citations."
+    assert result.references == []
+    assert [r for r in caplog.records if r.name.startswith("notebooklm")] == []
+
+
+def test_citation_container_truthy_non_list_raises() -> None:
+    """PRESENT-BUT-MALFORMED container: a truthy non-list at ``first[4][3]`` raises.
+
+    Documented choice (raise, not warn): the surrounding parser already treats
+    equivalent container drift as a raise — ``_extract_chunk_with_parseable``
+    raises ``UnknownRPCMethodError`` for a non-list ``inner_data[0]``, and the
+    #1505 ``unwrap_conversation_turns`` raises for a truthy non-list turn
+    container — so the citation container follows the same precedent.
+    """
+    first = ["Answer", None, None, None, [[], None, None, {"reshaped": True}, 1]]
+    with pytest.raises(UnknownRPCMethodError) as raised:
+        parse_citations(first)
+    assert raised.value.source == "ChatAnswerRow.citations"
+    assert raised.value.path == (4, 3)
+
+
+def test_non_list_answer_row_raises_in_parse_citations() -> None:
+    """A non-list answer row mirrors the stream parser's structural raise."""
+    with pytest.raises(UnknownRPCMethodError) as raised:
+        parse_citations("not-a-row")  # type: ignore[arg-type]
+    assert raised.value.source == "_chat_wire.parse_citations"
+
+
+def test_stream_with_reshaped_citation_container_raises() -> None:
+    """Container drift inside a real stream surfaces loudly (no silent no-citations answer)."""
+    inner = json.dumps([["Answer.", None, None, None, [[], None, None, "drifted", 1]]])
+    chunk = json.dumps([["wrb.fr", None, inner]])
+    with pytest.raises(UnknownRPCMethodError):
+        parse_streaming_chat_response(_length_prefixed(chunk))
+
+
+def test_malformed_citation_rows_warn_and_keep_survivors(caplog) -> None:
+    """Per-row malformation warns (once per row) and keeps the surviving citations."""
+    good_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+    class _ExplodingLen(list):
+        """A list whose ``len()`` raises — exercises the defensive per-row except."""
+
+        def __len__(self) -> int:
+            raise TypeError("boom")
+
+    bad_rows: list = [
+        ["present-but-too-short"],  # no detail slot -> unusable
+        [["chunk-x"], "detail-not-a-list"],  # wrong type at the detail slot
+        _citation(source_id="not-a-uuid"),  # no extractable source id
+        _ExplodingLen(),  # unexpected error while decoding the row
+    ]
+    first = [
+        "Answer",
+        None,
+        None,
+        None,
+        [[], None, None, [*bad_rows, _citation(source_id=good_id)], 1],
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._chat"):
+        refs = parse_citations(first)
+
+    assert [ref.source_id for ref in refs] == [good_id]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == len(bad_rows)  # one warning per malformed row
+    assert all("citation" in r.message for r in warnings)
+
+
+def test_row_level_citation_helpers_keep_soft_contracts() -> None:
+    """Row-level helper contracts are unchanged: unusable rows yield None/defaults."""
     assert parse_single_citation(_citation(source_id="not-a-uuid")) is None
     assert extract_text_passages([None, None, None, None, ["bad-passage"]]) == (
         None,

@@ -159,6 +159,27 @@ class TestAnswerRow:
         assert isinstance(rows[0], CitationRow)
         assert rows[0].chunk_id == "chunk"
 
+    def test_none_citation_slot_is_absence(self) -> None:
+        """``first[4][3] is None`` is the routine real-traffic "no citations" shape."""
+        rec = _answer_record()
+        rec[4][3] = None
+        assert AnswerRow(rec).citations == []
+
+    def test_truthy_non_list_citation_slot_raises(self) -> None:
+        """A truthy non-list where the citation container belongs is wire drift.
+
+        #1505 absence-vs-malformed policy: matches the container raise in
+        ``unwrap_conversation_turns`` and the ``inner_data[0]`` non-list raise
+        in ``_chat/wire.py`` (was a silent ``[]`` degrade).
+        """
+        for drifted in ("reshaped", {"v2": []}, 7):
+            rec = _answer_record()
+            rec[4][3] = drifted
+            with pytest.raises(UnknownRPCMethodError) as raised:
+                _ = AnswerRow(rec).citations
+            assert raised.value.path == (4, 3)
+            assert raised.value.source == "ChatAnswerRow.citations"
+
 
 # ---------------------------------------------------------------------------
 # 3. CitationRow / CitationDetail
