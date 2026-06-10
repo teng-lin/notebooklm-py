@@ -27,8 +27,8 @@ from notebooklm.paths import get_profile_dir
 # or quota rejection rather than a client bug. Covers both the explicit
 # UserDisplayableError message and the HTTP-status-wrapped 429 path in
 # _chat/api.py:156, the generation skip phrase in assert_generation_started,
-# and the typed RateLimitError message ("API rate limit or quota exceeded...")
-# surfaced by _install_generation_rate_limit_skip.
+# and the "Rate limit:" prefix _install_generation_rate_limit_skip adds to
+# typed RateLimitError skips.
 _RATE_LIMIT_PHRASES = (
     "rate limit",
     "rate limited",
@@ -74,7 +74,10 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
             try:
                 return await original(*args, **kwargs)
             except RateLimitError as e:
-                pytest.skip(str(e))
+                # The "Rate limit:" prefix guarantees a _RATE_LIMIT_PHRASES
+                # match regardless of the exception message wording, so the
+                # skip always lands in pytest_terminal_summary's section.
+                pytest.skip(f"Rate limit: {e}")
 
         return _with_skip
 
