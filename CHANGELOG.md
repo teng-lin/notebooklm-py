@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Layer-3 headless re-auth: `client.refresh_auth(allow_headless=True)`** (#1525,
+  P2; P1 was #1512). When NotebookLM's first-party cookies are fully dead — the
+  homepage GET 302s to the Google login page and neither token refresh (L1) nor
+  `RotateCookies` rotation (L2) can help — a persisted browser profile may still
+  hold a live Google SSO session that outlives `storage_state.json`. The new
+  opt-in re-auth layer drives an unattended **headless** browser against that
+  profile to silently re-mint cookies, then retries. It is **explicit by
+  default**: `refresh_auth(allow_headless=True)` (additive keyword-only,
+  defaults to `False`) triggers it on demand, and a *mid-RPC* auto-fire happens
+  only when `NOTEBOOKLM_HEADLESS_REAUTH=1` is set — L3 **never** fires by
+  default, so behavior with no opt-in and no profile is unchanged. Outcomes are
+  typed and honest (re-minted / profile-session-also-dead / unavailable) and it
+  never reports success on dead tokens. **SECURITY:** the persistent profile is
+  an account-equivalent credential; L3 is **local-unattended-only** and must not
+  be the auth path for a remote / hosted MCP server. It reuses the existing
+  cookie-domain allowlist and never logs a captured cookie value.
+
 - **`client.mind_maps.list_note_backed(notebook_id)`** — typed list of only
   the **note-backed** mind maps (every `kind` is `NOTE_BACKED`, `tree`
   populated, deleted rows excluded) via a single `GET_NOTES_AND_MIND_MAPS`
