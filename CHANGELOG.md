@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`client.mind_maps.list_note_backed(notebook_id)`** — typed list of only
+  the **note-backed** mind maps (every `kind` is `NOTE_BACKED`, `tree`
+  populated, deleted rows excluded) via a single `GET_NOTES_AND_MIND_MAPS`
+  RPC — no `LIST_ARTIFACTS`. Factored out of `mind_maps.list()` (which now
+  builds on it) and used by the CLI `artifact delete` carve-out probe so the
+  note-backed membership check is fully typed while keeping the historical
+  single-RPC call set (recorded cassettes replay unchanged).
+
 - **Schema-drift observability: `rpc_decode_errors` counter + chat drift canary**
   (#1492). Wire-schema drift is the stated #1 breakage class, but
   decode/drift failures (`DecodingError` / `UnknownRPCMethodError`) were

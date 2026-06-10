@@ -177,33 +177,23 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
             nb_id_resolved = create_result.notebook_id
             new_id = create_result.note_id
 
+            # The typed facade raises on failure (``notes.create`` returns a
+            # ``Note``, so ``note_id`` is always set) -- there is no
+            # soft-failure branch here; errors propagate to the standard CLI
+            # error handler.
             if json_output:
-                if create_result.created:
-                    json_output_response(
-                        {
-                            "id": new_id,
-                            "notebook_id": nb_id_resolved,
-                            "title": title,
-                            "created": True,
-                        }
-                    )
-                else:
-                    json_output_response(
-                        {
-                            "id": None,
-                            "notebook_id": nb_id_resolved,
-                            "title": title,
-                            "created": False,
-                            "error": "Creation may have failed",
-                        }
-                    )
+                json_output_response(
+                    {
+                        "id": new_id,
+                        "notebook_id": nb_id_resolved,
+                        "title": title,
+                        "created": True,
+                    }
+                )
                 return
 
-            if create_result.raw:
-                cli_print("[green]Note created[/green]", ctx=ctx)
-                cli_print(create_result.raw, ctx=ctx)
-            else:
-                cli_print("[yellow]Creation may have failed[/yellow]", ctx=ctx)
+            cli_print("[green]Note created[/green]", ctx=ctx)
+            cli_print(create_result.raw, ctx=ctx)
 
     return _run()
 

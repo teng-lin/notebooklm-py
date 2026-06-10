@@ -34,7 +34,6 @@ from notebooklm.types import (
     GenerationStatus,
     MindMap,
     MindMapKind,
-    Note,
 )
 
 
@@ -117,30 +116,58 @@ async def test_rename_mind_map_dispatches_kind_aware(kind: MindMapKind) -> None:
 
 @pytest.mark.asyncio
 async def test_delete_regular_artifact() -> None:
-    """A miss on the typed ``notes.get_or_none`` probe routes to ``artifacts.delete``."""
+    """A miss on the typed note-backed probe routes to ``artifacts.delete``."""
     client = _client()
-    client.notes.get_or_none = AsyncMock(return_value=None)
+    client.mind_maps.list_note_backed = AsyncMock(return_value=[])
     client.notes.delete = AsyncMock()
     client.artifacts.delete = AsyncMock()
     assert await delete_artifact(client, "nb", "art_1") is False
-    client.notes.get_or_none.assert_awaited_once_with("nb", "art_1")
+    client.mind_maps.list_note_backed.assert_awaited_once_with("nb")
     client.artifacts.delete.assert_awaited_once_with("nb", "art_1")
     client.notes.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_delete_note_backed_mind_map_clears_via_notes() -> None:
-    """A hit on the typed ``notes.get_or_none`` probe clears via ``notes.delete``."""
+    """A hit on the typed ``mind_maps.list_note_backed`` probe clears via ``notes.delete``."""
     client = _client()
-    client.notes.get_or_none = AsyncMock(
-        return_value=Note(id="mm_1", notebook_id="nb", title="MM Title", content="{}")
+    client.mind_maps.list_note_backed = AsyncMock(
+        return_value=[
+            MindMap(id="mm_1", notebook_id="nb", title="MM Title", kind=MindMapKind.NOTE_BACKED)
+        ]
     )
     client.notes.delete = AsyncMock()
     client.artifacts.delete = AsyncMock()
     assert await delete_artifact(client, "nb", "mm_1") is True
-    client.notes.get_or_none.assert_awaited_once_with("nb", "mm_1")
+    client.mind_maps.list_note_backed.assert_awaited_once_with("nb")
     client.notes.delete.assert_awaited_once_with("nb", "mm_1")
     client.artifacts.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delete_plain_note_uuid_falls_through_to_artifacts_delete() -> None:
+    """A plain-note UUID must NOT be ``notes.delete``d — it is not a mind map.
+
+    Regression for the broad-probe data-loss path: the CLI resolver's full-ID
+    fast-path skips the artifact listing for a canonical UUID, so a plain
+    user-note UUID can reach ``delete_artifact`` without ever being validated
+    as an artifact. A probe matching ANY note row (e.g. ``notes.get_or_none``)
+    would route it into ``notes.delete`` and soft-delete user data. The probe
+    must match note-backed mind maps only — even when other note-backed maps
+    exist — and fall through to ``artifacts.delete`` (harmless no-op/error).
+    """
+    plain_note_uuid = "11111111-2222-3333-4444-555555555555"
+    client = _client()
+    client.mind_maps.list_note_backed = AsyncMock(
+        return_value=[
+            MindMap(id="mm_other", notebook_id="nb", title="Other", kind=MindMapKind.NOTE_BACKED)
+        ]
+    )
+    client.notes.delete = AsyncMock()
+    client.artifacts.delete = AsyncMock()
+    assert await delete_artifact(client, "nb", plain_note_uuid) is False
+    client.notes.delete.assert_not_awaited()
+    client.artifacts.delete.assert_awaited_once_with("nb", plain_note_uuid)
 
 
 # ---------------------------------------------------------------------------

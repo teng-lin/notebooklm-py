@@ -66,6 +66,42 @@ async def test_list_unions_both_backings():
 
 
 @pytest.mark.asyncio
+async def test_list_note_backed_returns_only_note_backed_without_artifact_list():
+    """``list_note_backed`` decodes the note-backed rows ONLY, via a single RPC.
+
+    Even with an interactive map present, the result carries note-backed
+    entries exclusively (every ``kind`` is ``NOTE_BACKED``; the interactive id
+    never appears — the method never sees that backing), and ``artifacts.list``
+    is NOT consulted: the only fetch is the note-backed service's
+    ``list_mind_maps`` (the single ``GET_NOTES_AND_MIND_MAPS`` round-trip the
+    artifact-delete probe relies on for cassette stability).
+    """
+    api, _, mind_maps, artifacts, _ = _make_api(
+        note_rows=[["note_mm", '{"name": "NB", "children": []}']],
+        interactive=[_interactive_artifact("int_mm")],
+    )
+    result = await api.list_note_backed("nb")
+    assert [m.id for m in result] == ["note_mm"]
+    assert all(m.kind == MindMapKind.NOTE_BACKED for m in result)
+    # tree is populated for free from the already-listed note content.
+    assert result[0].tree == {"name": "NB", "children": []}
+    assert result[0].notebook_id == "nb"
+    mind_maps.list_mind_maps.assert_awaited_once_with("nb")
+    artifacts.list.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_note_backed_empty_when_no_note_backed_rows():
+    """No note-backed rows → an empty list (interactive maps never leak in)."""
+    api, _, mind_maps, artifacts, _ = _make_api(
+        interactive=[_interactive_artifact("int_mm")],
+    )
+    assert await api.list_note_backed("nb") == []
+    mind_maps.list_mind_maps.assert_awaited_once_with("nb")
+    artifacts.list.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_rename_dispatches_by_kind():
     # The explicit-interactive path pre-validates the id (issue #1270), so the
     # interactive artifact must exist for the rename to dispatch.

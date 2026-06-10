@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import Artifact, GenerationStatus, Note
+from notebooklm.types import Artifact, GenerationStatus, MindMap, MindMapKind
 
 from .conftest import create_mock_client, inject_client
 
@@ -562,8 +562,6 @@ class TestArtifactRename:
         path must stay unused for mind maps — so a regression that pinned one kind
         or also called ``artifacts.rename`` would be caught here.
         """
-        from notebooklm.types import MindMap, MindMapKind
-
         map_kind = getattr(MindMapKind, map_kind_attr)
 
         mock_client = create_mock_client()
@@ -656,7 +654,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with patch(
@@ -677,7 +675,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with patch(
@@ -701,7 +699,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with patch(
@@ -726,7 +724,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with (
@@ -759,10 +757,15 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="mm_456", title="Mind Map Title", _artifact_type=5, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(
-            return_value=Note(
-                id="mm_456", notebook_id="nb_123", title="Mind Map Title", content="{}"
-            )
+        mock_client.mind_maps.list_note_backed = AsyncMock(
+            return_value=[
+                MindMap(
+                    id="mm_456",
+                    notebook_id="nb_123",
+                    title="Mind Map Title",
+                    kind=MindMapKind.NOTE_BACKED,
+                )
+            ]
         )
         mock_client.notes.delete = AsyncMock(return_value=None)
 
@@ -788,10 +791,15 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="mm_456", title="Mind Map Title", _artifact_type=5, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(
-            return_value=Note(
-                id="mm_456", notebook_id="nb_123", title="Mind Map Title", content="{}"
-            )
+        mock_client.mind_maps.list_note_backed = AsyncMock(
+            return_value=[
+                MindMap(
+                    id="mm_456",
+                    notebook_id="nb_123",
+                    title="Mind Map Title",
+                    kind=MindMapKind.NOTE_BACKED,
+                )
+            ]
         )
         mock_client.notes.delete = AsyncMock(return_value=None)
 

@@ -185,7 +185,7 @@ class TestQuietArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         result = runner.invoke(
@@ -214,7 +214,7 @@ class TestQuietArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_456", title="JsonTest", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         result = runner.invoke(
@@ -245,7 +245,7 @@ class TestQuietArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_789", title="Loud", _artifact_type=4, status=3)]
         )
-        mock_client.notes.get_or_none = AsyncMock(return_value=None)
+        mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         result = runner.invoke(

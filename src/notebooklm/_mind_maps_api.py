@@ -157,16 +157,18 @@ class MindMapsAPI:
         self._artifacts = artifacts
         self._notebooks = notebooks
 
-    async def list(self, notebook_id: str) -> builtins.list[MindMap]:
-        """List all mind maps in a notebook — both backings, as distinct entries.
+    async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
+        """List only the **note-backed** mind maps in a notebook.
 
-        ``MindMap.tree`` is populated only for **note-backed** entries (parsed
-        for free from the already-listed note content). **Interactive** entries
-        carry ``tree=None``: fetching each tree would cost a separate
-        ``GET_INTERACTIVE_HTML`` per map, so ``list`` leaves it unfetched. A
-        ``None`` ``tree`` on an interactive entry therefore means "not fetched",
-        not "empty" — call :meth:`get_tree` with ``kind=INTERACTIVE`` to fetch
-        an individual interactive tree.
+        A single ``GET_NOTES_AND_MIND_MAPS`` RPC — no ``LIST_ARTIFACTS`` — so
+        callers that only need the note-backed membership (e.g. the artifact
+        ``delete`` carve-out probe) pay exactly one round-trip. Returns
+        note-backed entries only (every ``kind`` is
+        :attr:`MindMapKind.NOTE_BACKED`); interactive (studio-artifact) maps
+        never appear here — use :meth:`list` for the union. Deleted rows
+        (status ``2``) are already excluded by the underlying
+        ``list_mind_maps`` classification, and ``MindMap.tree`` is populated
+        for free from the already-listed note content.
         """
         result: builtins.list[MindMap] = []
         for row in await self._mind_maps.list_mind_maps(notebook_id):
@@ -180,6 +182,20 @@ class MindMapsAPI:
                     tree=_parse_tree(self._mind_maps.extract_content(row)),
                 )
             )
+        return result
+
+    async def list(self, notebook_id: str) -> builtins.list[MindMap]:
+        """List all mind maps in a notebook — both backings, as distinct entries.
+
+        ``MindMap.tree`` is populated only for **note-backed** entries (parsed
+        for free from the already-listed note content). **Interactive** entries
+        carry ``tree=None``: fetching each tree would cost a separate
+        ``GET_INTERACTIVE_HTML`` per map, so ``list`` leaves it unfetched. A
+        ``None`` ``tree`` on an interactive entry therefore means "not fetched",
+        not "empty" — call :meth:`get_tree` with ``kind=INTERACTIVE`` to fetch
+        an individual interactive tree.
+        """
+        result: builtins.list[MindMap] = await self.list_note_backed(notebook_id)
         for art in await self._artifacts.list(notebook_id, ArtifactType.MIND_MAP):
             if art.is_interactive_mind_map:
                 result.append(

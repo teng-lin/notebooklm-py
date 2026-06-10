@@ -31,18 +31,20 @@ carries signal for them:
 * **ABOVE the facade (``cli/``, ``_app/``).** These layers must have **ZERO
   raw-payload access** -- they consume typed facade returns only. That
   invariant is enforced by (i) the payload-INGRESS gate
-  (:func:`test_no_raw_payload_ingress_above_facade`): the only public facade
-  methods that return raw payloads are enumerated in
-  :data:`RAW_PAYLOAD_FACADE_METHODS`, and calling any of them from ``cli/`` or
-  ``_app/`` fails the gate -- payloads cannot *enter* these layers; (ii) the
-  chained gate, which stays FULL-SCOPE over the whole feature tree; and
-  (iii) the typed facade returns themselves (mypy: you cannot subscript a
-  ``Note``). The type-blind ``name[int]`` scan carries **no signal** above the
-  facade -- at rescope time every one of its hits there was a benign Python
-  idiom (``matches[0]``-style sequence reads, string parsing) -- so the
-  single-level gate EXCLUDES those packages
-  (:data:`SINGLE_LEVEL_EXCLUDED_PACKAGES`) rather than grandfathering 20 files
-  of noise.
+  (:func:`test_no_raw_payload_ingress_above_facade`): the raw-returning facade
+  methods are enumerated in :data:`RAW_PAYLOAD_FACADE_METHODS` (a maintained
+  denylist -- the public raw returners found by introspection plus the
+  ``getattr``-accessed ``_list_for_download`` prefetch seam), and reaching any
+  of them from ``cli/`` or ``_app/`` -- via an attribute call OR a ``getattr``
+  string-literal -- fails the gate, with one documented opaque-passthrough
+  exemption (:data:`INGRESS_EXEMPT_FILES`); (ii) the chained gate, which stays
+  FULL-SCOPE over the whole feature tree; and (iii) the typed facade returns
+  themselves (mypy: you cannot subscript a ``Note``). The type-blind
+  ``name[int]`` scan carries **no signal** above the facade -- at rescope time
+  every one of its hits there was a benign Python idiom (``matches[0]``-style
+  sequence reads, string parsing) -- so the single-level gate EXCLUDES those
+  packages (:data:`SINGLE_LEVEL_EXCLUDED_PACKAGES`) rather than grandfathering
+  20 files of noise.
 
 * **``_auth/``, ``utils.py``, ``_version_check.py``.** Never see
   ``batchexecute`` payloads by construction (they handle cookies / argv /
@@ -78,10 +80,12 @@ This module therefore runs **three** AST gates:
    the gate. The burndown that drains :data:`SINGLE_LEVEL_ALLOWLIST` is
    tracked by #1501.
 
-3. **Raw-payload ingress (above-facade).** Payloads can only *enter* ``cli/``
-   / ``_app/`` through the raw-returning public facade methods
-   (:data:`RAW_PAYLOAD_FACADE_METHODS`); any call to one of them from those
-   packages fails :func:`test_no_raw_payload_ingress_above_facade`.
+3. **Raw-payload ingress (above-facade).** Payloads enter ``cli/`` / ``_app/``
+   through the raw-returning facade methods enumerated in
+   :data:`RAW_PAYLOAD_FACADE_METHODS`; reaching one of them from those
+   packages -- via an attribute call or a ``getattr`` string-literal -- fails
+   :func:`test_no_raw_payload_ingress_above_facade`, except in the documented
+   opaque-passthrough exemption files (:data:`INGRESS_EXEMPT_FILES`).
 
 A string/slice subscript (``d["k"]``, ``s[1:]``) is ignored by the positional
 gates.
@@ -173,15 +177,30 @@ SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
-# The complete set of PUBLIC facade methods that return RAW (untyped /
-# positional) RPC payloads instead of typed objects. Verified by introspection
-# at gate-introduction time: ``notebooks.get_raw -> Any`` and
-# ``notes.list_mind_maps -> list[Any]``; every other public facade method
-# returns typed objects (and ``_``-prefixed internals are already forbidden to
-# ``_app`` by the boundary lint). If a NEW raw-returning facade method is ever
-# added, it must be added to this set in the same PR so the ingress gate keeps
-# covering the whole raw surface.
-RAW_PAYLOAD_FACADE_METHODS = frozenset({"get_raw", "list_mind_maps"})
+# The enumerated facade methods that return RAW (untyped / positional) RPC
+# payloads instead of typed objects. Verified by introspection at
+# gate-introduction time: the public ``notebooks.get_raw -> Any`` and
+# ``notes.list_mind_maps -> list[Any]`` (every other PUBLIC facade method
+# returns typed objects), plus the private ``artifacts._list_for_download``
+# prefetch seam, which ``_app/download.py`` reaches via
+# ``getattr(..., "_list_for_download", None)`` (issue #1488) -- a dynamic
+# access the ``_``-boundary lint cannot see, so the ingress gate names it
+# here. This is a DENYLIST, not a proven-complete inventory: the gate flags
+# attribute calls and ``getattr`` string-literals naming these methods, so if
+# a NEW raw-returning facade method is ever added, it must be added to this
+# set in the same PR for the gate to keep covering it.
+RAW_PAYLOAD_FACADE_METHODS = frozenset({"get_raw", "list_mind_maps", "_list_for_download"})
+
+# Above-facade files exempt from the ingress gate, with their contract:
+#
+# * ``_app/download.py`` -- the #1488 single-list prefetch: it receives the raw
+#   studio/mind-map rows from ``artifacts._list_for_download`` and threads them
+#   straight back into the facade's ``download_<x>(..., artifacts_data=/
+#   mind_maps=)`` kwargs as an OPAQUE PASSTHROUGH. It must never index or
+#   decode those rows -- the moment it needs to look inside them, that decoding
+#   must move below the facade (a typed adapter / facade method), not be done
+#   in ``_app``. The exemption covers the handoff, not payload access.
+INGRESS_EXEMPT_FILES = frozenset({"_app/download.py"})
 
 # The packages that sit ABOVE the facade: transport adapters + transport-neutral
 # business logic. They consume typed facade returns only.
@@ -643,55 +662,91 @@ def test_gate_catches_a_planted_offender_in_a_fresh_module() -> None:
 
 
 def _raw_payload_ingress_offenders(tree: ast.AST) -> list[int]:
-    """Return sorted line numbers of calls to raw-returning facade methods.
+    """Return sorted line numbers of sites reaching a raw-returning facade method.
 
-    A site is an :class:`ast.Call` whose ``func`` is an :class:`ast.Attribute`
-    with ``attr`` in :data:`RAW_PAYLOAD_FACADE_METHODS` -- e.g.
-    ``client.notes.list_mind_maps(nb)`` or ``client.notebooks.get_raw(nb)``.
+    Two site shapes are flagged:
+
+    * an :class:`ast.Call` whose ``func`` is an :class:`ast.Attribute` with
+      ``attr`` in :data:`RAW_PAYLOAD_FACADE_METHODS` -- e.g.
+      ``client.notes.list_mind_maps(nb)`` or ``client.notebooks.get_raw(nb)``;
+    * a ``getattr(<anything>, "<name>", ...)`` call whose second argument is a
+      string literal in :data:`RAW_PAYLOAD_FACADE_METHODS` -- the dynamic form
+      that binds the method to a local name (``f = getattr(x,
+      "_list_for_download", None)``) whose later ``f(...)`` call is an
+      :class:`ast.Name` call the attribute pattern cannot see. Flagging the
+      ``getattr`` itself catches the seam at its single point of acquisition.
+
     Matching is name-based and deliberately receiver-blind: ANY
-    ``something.get_raw(...)`` / ``something.list_mind_maps(...)`` attribute
-    call is flagged regardless of what the receiver is. That over-match is
-    accepted -- nothing else in ``cli/`` / ``_app/`` defines those names, and a
-    false positive is a loud, cheap rename rather than a silent payload leak.
-    Pure on its input so the planted self-check can exercise it without
-    touching the filesystem.
+    ``something.get_raw(...)`` attribute call (or ``getattr`` naming a
+    denylisted method) is flagged regardless of what the receiver is. That
+    over-match is accepted -- nothing else in ``cli/`` / ``_app/`` defines
+    those names, and a false positive is a loud, cheap rename rather than a
+    silent payload leak. A ``getattr`` whose name argument is not a literal
+    (``getattr(x, name)``) is NOT detected -- a dynamic-name acquisition of a
+    raw method would evade this gate; if that idiom ever appears in ``cli/`` /
+    ``_app/``, widen the detector rather than adopting the idiom. Pure on its
+    input so the planted self-check can exercise it without touching the
+    filesystem.
     """
+
+    def _is_raw_attribute_call(call: ast.Call) -> bool:
+        func = call.func
+        return isinstance(func, ast.Attribute) and func.attr in RAW_PAYLOAD_FACADE_METHODS
+
+    def _is_raw_getattr_literal(call: ast.Call) -> bool:
+        func = call.func
+        return (
+            isinstance(func, ast.Name)
+            and func.id == "getattr"
+            and len(call.args) >= 2
+            and isinstance(call.args[1], ast.Constant)
+            and call.args[1].value in RAW_PAYLOAD_FACADE_METHODS
+        )
+
     lines: set[int] = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in RAW_PAYLOAD_FACADE_METHODS
+        if isinstance(node, ast.Call) and (
+            _is_raw_attribute_call(node) or _is_raw_getattr_literal(node)
         ):
             lines.add(node.lineno)
     return sorted(lines)
 
 
 def test_no_raw_payload_ingress_above_facade() -> None:
-    """``cli/`` and ``_app/`` must never CALL a raw-returning facade method.
+    """``cli/`` and ``_app/`` must never reach a raw-returning facade method.
 
-    Raw ``batchexecute`` payloads can only enter the above-facade layers
-    through the public facade methods that return them
-    (:data:`RAW_PAYLOAD_FACADE_METHODS` -- the complete raw-returning surface;
-    everything else public is typed, and ``_``-prefixed internals are already
-    forbidden to ``_app`` by the boundary lint). With zero such calls, the
-    above-facade layers provably hold no raw payload to mis-index -- which is
-    why the type-blind single-level gate can exclude them.
+    Raw ``batchexecute`` payloads enter the above-facade layers through the
+    facade methods enumerated in :data:`RAW_PAYLOAD_FACADE_METHODS` (the
+    public raw returners found by introspection plus the ``getattr``-accessed
+    ``_list_for_download`` prefetch seam). Coverage is the enumerated names
+    via attribute calls AND ``getattr`` string-literals -- a denylist kept
+    current by the add-it-in-the-same-PR rule, not a proven-complete
+    inventory. With zero un-exempted sites, the above-facade layers hold no
+    raw payload to mis-index -- which is why the type-blind single-level gate
+    can exclude them. The one documented exemption is
+    :data:`INGRESS_EXEMPT_FILES` (``_app/download.py``): it ferries the #1488
+    prefetch rows as an opaque passthrough and must never index/decode them
+    (decoding requires moving below the facade).
     """
     offenders: dict[str, list[int]] = {}
     for pkg in ABOVE_FACADE_PACKAGES:
         for path in sorted((SRC_ROOT / pkg).rglob("*.py")):
+            rel = _rel(path)
+            if rel in INGRESS_EXEMPT_FILES:
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             lines = _raw_payload_ingress_offenders(tree)
             if lines:
-                offenders[_rel(path)] = lines
+                offenders[rel] = lines
     assert not offenders, (
         "Raw-payload INGRESS above the facade: cli/ and _app/ must consume TYPED "
-        "facade methods (notes.get_or_none, mind_maps.list, artifacts.list, ...) "
-        "-- raw batchexecute payloads must not cross the facade boundary. Replace "
-        "the call with a typed facade method (or add one). If a NEW raw-returning "
-        "facade method was added, add it to RAW_PAYLOAD_FACADE_METHODS in the "
-        "same PR so this gate keeps covering the whole raw surface.\n\n"
+        "facade methods (notes.get_or_none, mind_maps.list_note_backed, "
+        "artifacts.list, ...) -- raw batchexecute payloads must not cross the "
+        "facade boundary. Replace the call with a typed facade method (or add "
+        "one). If a NEW raw-returning facade method was added, add it to "
+        "RAW_PAYLOAD_FACADE_METHODS in the same PR so this gate keeps covering "
+        "it; an opaque-passthrough seam needs an INGRESS_EXEMPT_FILES entry with "
+        "a documented contract.\n\n"
         + "\n".join(
             f"  src/notebooklm/{f}:{','.join(map(str, lines))}"
             for f, lines in sorted(offenders.items())
@@ -699,27 +754,54 @@ def test_no_raw_payload_ingress_above_facade() -> None:
     )
 
 
+def test_ingress_exempt_files_exist_and_still_use_the_seam() -> None:
+    """Every ingress exemption points at a real file that still reaches a raw seam.
+
+    Self-draining, like the allowlists: when ``_app/download.py`` stops using
+    the ``getattr(..., "_list_for_download")`` prefetch seam (e.g. the #1488
+    handoff moves below the facade), its exemption must be removed so the gate
+    re-protects the file.
+    """
+    for rel in sorted(INGRESS_EXEMPT_FILES):
+        path = SRC_ROOT / rel
+        assert path.is_file(), f"INGRESS_EXEMPT_FILES references a nonexistent file: {rel}"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        assert _raw_payload_ingress_offenders(tree), (
+            f"Stale INGRESS_EXEMPT_FILES entry: src/notebooklm/{rel} no longer "
+            "reaches any raw-returning facade method -- remove the exemption so "
+            "the ingress gate re-protects it."
+        )
+
+
 def test_ingress_detector_flags_and_ignores() -> None:
-    """The ingress detector flags raw-facade calls and ignores typed-facade calls.
+    """The ingress detector flags raw-facade access and ignores typed-facade calls.
 
     Flagged: calls to ``.list_mind_maps(...)`` / ``.get_raw(...)`` -- including
     on an unrelated receiver (``foo.get_raw(...)``), pinning the documented
-    receiver-blind over-match. Ignored: typed facade calls
-    (``notes.get_or_none`` / ``mind_maps.list`` / ``artifacts.list``), a bare
-    ``get_raw(...)`` name call (not an attribute), and an attribute *reference*
-    without a call.
+    receiver-blind over-match -- and the ``getattr`` string-literal form that
+    binds a denylisted method to a local name (the ``_app/download.py`` #1488
+    seam shape, whose later bound-name call the attribute pattern cannot see).
+    Ignored: typed facade calls (``notes.get_or_none`` / ``mind_maps.list`` /
+    ``mind_maps.list_note_backed`` / ``artifacts.list``), a bare
+    ``get_raw(...)`` name call (not an attribute), an attribute *reference*
+    without a call, and a ``getattr`` naming a non-denylisted attribute.
     """
     flagged = ast.parse(
         "\n".join(
             [
-                "async def probe(client, foo, nb):",
+                "async def probe(client, facade, foo, nb, kind):",
                 "    mm = await client.notes.list_mind_maps(nb)",  # raw facade call
                 "    data = client.notebooks.get_raw(nb)",  # raw facade call
                 "    x = foo.get_raw(nb)",  # receiver-blind by design -- still flagged
+                # the #1488 seam shape: getattr-bind, then call the bound Name.
+                '    lfd = getattr(facade.artifacts, "_list_for_download", None)',
+                "    rows = await lfd(nb, kind)",  # bound-Name call -- invisible...
             ]
         )
     )
-    assert _raw_payload_ingress_offenders(flagged) == [2, 3, 4]
+    # ...so the getattr acquisition on line 5 is what must fire (the bound-name
+    # call on line 6 is NOT detected -- pinning why getattr itself is flagged).
+    assert _raw_payload_ingress_offenders(flagged) == [2, 3, 4, 5]
 
     benign = ast.parse(
         "\n".join(
@@ -727,9 +809,11 @@ def test_ingress_detector_flags_and_ignores() -> None:
                 "async def probe(client, obj, nb, note_id):",
                 "    n = await client.notes.get_or_none(nb, note_id)",  # typed facade
                 "    maps = await client.mind_maps.list(nb)",  # typed facade
+                "    nb_maps = await client.mind_maps.list_note_backed(nb)",  # typed facade
                 "    arts = await client.artifacts.list(nb)",  # typed facade
                 "    y = get_raw(nb)",  # bare Name call, not an attribute call
                 "    z = obj.get_raw",  # attribute reference, no call
+                '    w = getattr(obj, "list", None)',  # getattr of a typed method
             ]
         )
     )

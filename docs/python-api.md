@@ -1626,6 +1626,7 @@ Each operation dispatches to the correct backend; you work with `MindMap` /
 | Method | Args | Returns | Description |
 |--------|------|---------|-------------|
 | `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries. `MindMap.tree` is populated for note-backed entries but `None` for interactive ones (`None` = not fetched, not empty — see below) |
+| `list_note_backed(notebook_id)` | `str` | `list[MindMap]` | **Note-backed** entries only (every `kind` is `NOTE_BACKED`, `tree` populated, deleted rows excluded), via a single `GET_NOTES_AND_MIND_MAPS` RPC — no `LIST_ARTIFACTS`. Use `list()` for the union with interactive maps |
 | `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id. **Deprecated** `None`-on-miss (warns in v0.7.0, raises `MindMapNotFoundError` in v0.8.0 — issues #1247/#1358); use `get_or_none()` for the warning-free optional lookup |
 | `get_or_none(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Sanctioned `None`-on-miss lookup (silent — no deprecation warning) |
 | `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll). A null `CREATE_ARTIFACT` raises `ArtifactFeatureUnavailableError` (a subclass of `ArtifactError`) |
