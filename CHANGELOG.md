@@ -53,6 +53,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bug"). The outer handler in `run_browser_capture` now recognizes
   TargetClosed and surfaces the same help + exit 1; every other unexpected
   failure keeps the exit-2 bug-report contract.
+- **Playwright storage-state filter hardened against malformed cookie rows
+  and exact-duplicate identities** (#1513, deferred from the #1512 review).
+  `filter_storage_state_cookies_by_domain_policy` no longer crashes the whole
+  persist when rookiepy / Playwright emits a malformed row: non-dict entries,
+  cookies whose `domain` is not a str, and cookies whose `name` is not a
+  non-empty str are skipped with one bounded `logger.warning` per row
+  (`reprlib` preview) instead of raising in `.get` / `.lstrip`. It also
+  dedups rows sharing an exact RFC 6265 identity `(name, domain, path)`
+  (path normalized via `or "/"`, matching every loader): the last occurrence
+  in capture order wins whole (fields are never merged), mirroring the
+  persistence-merge rule in `save_cookies_to_storage` where the newer
+  observation overwrites the stored row for the same key. Same-name rows on
+  *different* domains or paths are all kept — cross-domain same-name
+  resolution remains a load-time concern (the flat loaders rank by
+  `_auth_domain_priority`); deduping by bare name at write time would starve
+  the `(name, domain, path)`-keyed runtime loader
+  (`build_httpx_cookies_from_storage`), which legitimately holds e.g. the
+  per-product `OSID` cookie on `notebooklm.google.com` and
+  `myaccount.google.com` as distinct jar entries.
 
 - **`sources.add_text` no longer swallows typed transport errors into
   `SourceAddError`.** Its bare `except RPCError` wrapped *everything* —

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import reprlib
 import sys
 import time
 from collections.abc import Awaitable, Iterator
@@ -142,6 +143,36 @@ def filter_storage_state_cookies_by_domain_policy(
     sibling subdomains are deliberately NOT matched by a broad ``.google.com``
     suffix — that's the bug being fixed.
 
+    Two hardening behaviors (#1513) ride on top of the allowlist:
+
+    * **Malformed rows are skipped, not raised.** rookiepy / Playwright can
+      emit malformed rows; a non-dict entry, a cookie whose ``domain`` is not
+      a str, or a cookie whose ``name`` is not a non-empty str (all malformed
+      under Playwright's own ``storage_state`` schema) is dropped with one
+      bounded ``logger.warning`` per row (``reprlib`` preview) instead of
+      crashing the whole persist.
+    * **Exact-identity duplicate dedup.** Rows are keyed by their full
+      RFC 6265 identity ``(name, domain, path)`` (path normalized via
+      ``or "/"``, matching every loader). For exact-identity duplicates —
+      where only metadata such as ``value`` / ``expires`` / flags can differ —
+      the **last occurrence in input order wins** and replaces the earlier row
+      in place, kept whole (fields are never merged). This mirrors the
+      persistence-merge rule in
+      :func:`notebooklm._auth.storage.save_cookies_to_storage`, where the
+      newer observation overwrites the stored row for the same
+      ``(name, domain, path)`` key.
+
+      Same-name rows on *different* domains or paths are deliberately ALL
+      kept: cross-domain same-name resolution is a **load-time** concern (the
+      flat loaders :func:`notebooklm._auth.cookies.extract_cookies_from_storage`
+      / :func:`notebooklm._auth.cookies.flatten_cookie_map` rank by
+      ``_auth_domain_priority``). Deduping by bare name at write time would
+      starve the ``(name, domain, path)``-keyed runtime loader
+      (:func:`notebooklm._auth.cookies.build_httpx_cookies_from_storage`),
+      which legitimately holds e.g. the per-product ``OSID`` cookie on
+      ``notebooklm.google.com`` and ``myaccount.google.com`` as distinct jar
+      entries.
+
     Args:
         state: Playwright ``storage_state`` dict (``BrowserContext.storage_state()``).
         include_optional: When ``True``, opt in to every label in
@@ -162,9 +193,67 @@ def filter_storage_state_cookies_by_domain_policy(
     def _is_allowed(domain: str) -> bool:
         return domain in allowed or domain.lstrip(".") in allowed_stripped
 
-    filtered_cookies = [
-        cookie for cookie in state.get("cookies", []) if _is_allowed(cookie.get("domain", ""))
-    ]
+    filtered_cookies: list[dict[str, Any]] = []
+    index_by_identity: dict[tuple[str, str, Any], int] = {}
+
+    for cookie in state.get("cookies", []):
+        if not isinstance(cookie, dict):
+            # reprlib bounds the preview without materialising the full repr.
+            logger.warning(
+                "Skipping malformed storage_state cookie entry (not a dict): %s",
+                reprlib.repr(cookie),
+            )
+            continue
+        domain = cookie.get("domain", "")
+        if not isinstance(domain, str):
+            logger.warning(
+                "Skipping storage_state cookie with non-str domain: %s",
+                reprlib.repr(cookie),
+            )
+            continue
+        name = cookie.get("name")
+        if not isinstance(name, str) or not name:
+            logger.warning(
+                "Skipping storage_state cookie with missing/empty/non-str name: %s",
+                reprlib.repr(cookie),
+            )
+            continue
+        # ``path`` participates in the dedup identity below and is normalized
+        # with ``or "/"``; a present-but-non-str path (int, list) would slip
+        # past that and later crash http.cookiejar/httpx path matching, so
+        # treat it as malformed. ``None``/absent is fine — it normalizes to
+        # the root path, matching the loaders.
+        path = cookie.get("path")
+        if path is not None and not isinstance(path, str):
+            logger.warning(
+                "Skipping storage_state cookie with non-str path: %s",
+                reprlib.repr(cookie),
+            )
+            continue
+        if not _is_allowed(domain):
+            continue
+
+        # Full RFC 6265 identity. ``or "/"`` mirrors the path normalization
+        # the loaders and the save_cookies_to_storage merge key use, so an
+        # empty-path twin can't survive as a phantom duplicate row.
+        identity = (name, domain, path or "/")
+        existing = index_by_identity.get(identity)
+        if existing is None:
+            index_by_identity[identity] = len(filtered_cookies)
+            filtered_cookies.append(cookie)
+        else:
+            # Exact-identity duplicate: the later observation wins whole,
+            # replacing the earlier row in place — mirroring the
+            # save_cookies_to_storage merge, where the newer observation
+            # overwrites the stored row for the same (name, domain, path) key.
+            logger.debug(
+                "Cookie %s: exact-identity duplicate on (%s, %s); keeping later observation",
+                name,
+                domain,
+                identity[2],
+            )
+            filtered_cookies[existing] = cookie
+
     return {
         "cookies": filtered_cookies,
         "origins": list(state.get("origins", [])),
