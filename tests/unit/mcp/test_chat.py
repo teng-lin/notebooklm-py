@@ -97,6 +97,16 @@ async def test_chat_configure_no_goal(mcp_call, mock_client) -> None:
     mock_client.chat.configure.assert_awaited_once()
 
 
+async def test_chat_configure_rejects_bad_response_length(mcp_call, mock_client) -> None:
+    """An invalid response_length is rejected up front as VALIDATION_ERROR, no RPC."""
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID, "response_length": "huge"})
+    assert "VALIDATION" in str(excinfo.value)
+    assert "response_length" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
 async def test_chat_ask_error_projects_tool_error(mcp_call, mock_client) -> None:
     mock_client.chat.ask = AsyncMock(side_effect=ChatError("no conversation recorded"))
     with pytest.raises(ToolError) as excinfo:

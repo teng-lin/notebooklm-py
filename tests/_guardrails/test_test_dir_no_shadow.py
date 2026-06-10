@@ -93,7 +93,7 @@ def test_predicate_flags_name_resolving_to_an_installed_package(tmp_path: Path) 
 
     fake = tmp_path / "json"
     fake.mkdir()
-    (fake / "__init__.py").write_text("")
+    (fake / "__init__.py").write_text("", encoding="utf-8")
 
     offender = _shadow_offender(fake)
     assert offender is not None
@@ -110,7 +110,7 @@ def test_predicate_flags_name_resolving_to_in_repo_package(tmp_path: Path) -> No
 
     fake = tmp_path / "notebooklm"
     fake.mkdir()
-    (fake / "__init__.py").write_text("")
+    (fake / "__init__.py").write_text("", encoding="utf-8")
 
     offender = _shadow_offender(fake)
     assert offender is not None
@@ -122,6 +122,6 @@ def test_predicate_does_not_flag_a_free_name(tmp_path: Path) -> None:
 
     fake = tmp_path / "definitely_not_an_installed_package_xyzzy_42"
     fake.mkdir()
-    (fake / "__init__.py").write_text("")
+    (fake / "__init__.py").write_text("", encoding="utf-8")
 
     assert _shadow_offender(fake) is None

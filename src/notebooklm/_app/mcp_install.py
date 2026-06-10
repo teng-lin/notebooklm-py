@@ -209,7 +209,9 @@ def merge_server_config(
     non-dict ``mcpServers`` value is replaced with a fresh object rather than
     crashing — the file is a config we own a slice of, not a source of truth.
     """
-    new_config = copy.deepcopy(existing)
+    # A corrupt / non-dict JSON root is replaced with a fresh object rather than
+    # crashing on ``.get`` below — the file is a config we own a slice of.
+    new_config = copy.deepcopy(existing) if isinstance(existing, dict) else {}
 
     servers = new_config.get(config_key)
     if not isinstance(servers, dict):

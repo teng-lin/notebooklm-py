@@ -28,9 +28,12 @@ from fastmcp import Context
 
 from ..._app import chat as core
 from ..._app.serialize import to_jsonable
+from ...exceptions import ValidationError
 from .._context import get_client
 from .._errors import mcp_errors
 from .._resolve import resolve_notebook
+
+_RESPONSE_LENGTHS = ("default", "longer", "shorter")
 
 
 def register(mcp: Any) -> None:
@@ -68,6 +71,13 @@ def register(mcp: Any) -> None:
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Validate up front so a bad value returns a clean VALIDATION_ERROR
+            # rather than failing deeper in the core.
+            if response_length is not None and response_length not in _RESPONSE_LENGTHS:
+                raise ValidationError(
+                    f"Unknown response_length {response_length!r}; "
+                    f"expected one of {'|'.join(_RESPONSE_LENGTHS)}"
+                )
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_configure(
                 client,
