@@ -10,6 +10,7 @@ Covers the review findings fixed after the initial implementation:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import pytest
@@ -146,10 +147,13 @@ class TestUploadPathIsServerControlled:
         assert resp.status_code == 201
         # The temp path is the server-generated mkstemp name only — none of the
         # attacker's filename (not even a sanitized extension) appears in it.
-        assert "nblm-upload-" in captured["path"]
-        assert "evil" not in captured["path"]
-        assert "passwd" not in captured["path"]
-        assert captured["path"].count("/") >= 1 and ".." not in captured["path"]
+        path = captured["path"]
+        assert os.path.basename(path).startswith("nblm-upload-")
+        assert "evil" not in path
+        assert "passwd" not in path
+        # Absolute, canonical path with no traversal component (portable across
+        # POSIX "/" and Windows "\\").
+        assert os.path.isabs(path) and ".." not in path
         # The original filename is preserved as the title instead.
         assert captured["title"] == evil
 
