@@ -864,16 +864,14 @@ def run_cdp_capture(
                     page.close()
                 except PlaywrightError as exc:
                     logger.debug("Could not close temporary CDP page: %s", type(exc).__name__)
-            # CDP teardown: disconnect the Playwright client only. Per the
-            # Playwright ``Browser.close`` contract, a *connected* browser (one
-            # obtained via ``connect_over_cdp``, as here) is NOT terminated —
-            # ``close()`` "clears all created contexts belonging to this browser
-            # and disconnects from the browser server." We never call
-            # ``new_context`` (we reuse the operator's existing context), so it
-            # clears NONE of the operator's contexts and merely severs our
-            # connection, leaving the operator's Chrome and tabs running. This
-            # only force-quits the browser for a ``launch()``-obtained one, which
-            # this path never is.
+            # CDP teardown: disconnect only. Per Playwright's ``Browser.close``
+            # contract, a *connected* browser (``connect_over_cdp``, as here) is
+            # NOT terminated — it "clears all created contexts belonging to this
+            # browser and disconnects from the browser server." We never call
+            # ``new_context`` (we reuse the operator's existing context), so this
+            # clears none of the operator's contexts and only severs our
+            # connection, leaving their Chrome + tabs running. (It only
+            # force-quits a ``launch()``-obtained browser, which this never is.)
             browser.close()
 
     return CaptureResult(page_html=captured_page_html)
