@@ -286,7 +286,13 @@ class TestSourceMutationsGoldenDecoded:
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("sources_add_file.yaml")
     async def test_add_file_decoded_golden(self, tmp_path):
-        """``sources.add_file`` decodes the registered source id + PROCESSING status."""
+        """``sources.add_file`` decodes the registered source id (o4cbdc).
+
+        The id is the ONLY recording-derived field on this path: in the
+        default no-wait flow the returned ``Source``'s title/status are
+        client-synthesized placeholders (``_source/upload.py``), so pinning
+        them would assert the synthesizer, not the decoder.
+        """
         test_file = tmp_path / "vcr_test_document.txt"
         test_file.write_text("This is a test document for VCR cassette recording.")
 
@@ -295,12 +301,6 @@ class TestSourceMutationsGoldenDecoded:
 
         assert_decoded_equals(
             source.id, "dc84ca28-2629-49ac-aec3-de45f0ec93e4", field="sources_add_file.id"
-        )
-        assert_decoded_equals(source.title, "vcr_test_document.txt", field="sources_add_file.title")
-        # A freshly-uploaded file is still PROCESSING in the recording — a
-        # status-column slip onto the READY default would flip this.
-        assert_decoded_equals(
-            source.status, SourceStatus.PROCESSING, field="sources_add_file.status"
         )
 
     @pytest.mark.vcr
