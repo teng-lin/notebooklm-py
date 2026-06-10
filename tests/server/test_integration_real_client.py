@@ -17,16 +17,19 @@ Surface covered through the real stack:
 * notebooks — list, get, create, delete (full)
 * sources   — list, add url, add text, delete
 * chat      — ask (full)
-* artifacts — list
+* artifacts — list, generate, poll, download
 * errors    — a real 429 → RATE_LIMITED → 429 and a real 5xx → 502 projection
 
-Not covered here (and why): the file-upload, artifact generate/poll/download
-endpoints are multi-RPC orchestrations whose recorded shapes depend on inputs a
-single existing cassette can't supply in isolation; they stay covered by the
-``FakeClient`` adapter tests and (for upload's cross-platform file handling) the
-dedicated ``REST server`` CI matrix. The gRPC-status-5 → 404 contract is covered
-by composition: ``tests/unit/test_decoder.py`` (real status-5 frame →
-``ClientError(rpc_code=5)``) + ``tests/server/test_errors.py`` (that → 404).
+The artifact generate/poll/download legs replay server-shaped cassettes recorded
+by ``tests/scripts/record_server_cassettes.py`` (the server emits a different
+``f.req`` than the CLI, so the CLI cassettes don't match).
+
+Not covered here: ``POST /sources/file`` — the upload's recorded shape depends on
+the exact file/mime, so it stays covered by the ``FakeClient`` adapter tests and
+the cross-platform ``REST server`` CI matrix (where its file handling is the
+point). The gRPC-status-5 → 404 contract is covered by composition:
+``tests/unit/test_decoder.py`` (real status-5 frame → ``ClientError(rpc_code=5)``)
++ ``tests/server/test_errors.py`` (that → 404).
 
 Runs only under the ``server`` extra (``importorskip``); skipped without cassettes.
 """
@@ -172,6 +175,41 @@ class TestChatAndArtifacts:
         body = resp.json()
         assert body["notebook_id"] == _NB
         assert isinstance(body["artifacts"], list)
+
+
+class TestArtifactLifecycle:
+    """The generate → poll → download legs, replayed from server-shaped cassettes
+    recorded by ``tests/scripts/record_server_cassettes.py``.
+
+    Note: quiz/flashcards require explicit ``source_ids`` — with none the API
+    returns "… generation is unavailable" (the server, unlike the CLI, does not
+    default to all-sources). The recording + this test pass ``source_ids``.
+    """
+
+    @notebooklm_vcr.use_cassette("server_generate_flashcards.yaml", allow_playback_repeats=True)
+    def test_generate_and_poll(self, real_authed_client: TestClient) -> None:
+        gen = real_authed_client.post(
+            f"/v1/notebooks/{_NB}/artifacts",
+            json={"type": "flashcards", "source_ids": [_SRC]},
+        )
+        assert gen.status_code == 202
+        body = gen.json()
+        assert body["kind"] == "flashcards"
+        task_id = body["task_id"]
+        assert isinstance(task_id, str) and task_id
+
+        # Poll the freshly-recorded task (the pending registry resolved it).
+        poll = real_authed_client.get(f"/v1/notebooks/{_NB}/artifacts/{task_id}")
+        assert poll.status_code == 200
+        assert poll.json()["notebook_id"] == _NB
+
+    @notebooklm_vcr.use_cassette("server_download_mind_map.yaml", allow_playback_repeats=True)
+    def test_download(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.post(
+            f"/v1/notebooks/{_NB}/artifacts/download", json={"type": "mind-map"}
+        )
+        assert resp.status_code == 200
+        assert resp.content  # streamed artifact bytes
 
 
 class TestErrorProjection:
