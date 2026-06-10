@@ -45,14 +45,17 @@ import pytest
 
 APP_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_app"
 
-# Forbidden top-level *external* package roots.
-FORBIDDEN_EXTERNAL_ROOTS = {"click", "rich", "fastmcp"}
+# Forbidden top-level *external* package roots. ``fastapi`` / ``uvicorn`` /
+# ``starlette`` are the REST adapter's framework — ``_app`` must never import
+# them (same posture as ``fastmcp`` for the MCP adapter).
+FORBIDDEN_EXTERNAL_ROOTS = {"click", "rich", "fastmcp", "fastapi", "uvicorn", "starlette"}
 
-# Forbidden non-private ``notebooklm`` siblings. ``cli`` is the transport
-# adapter; ``rpc`` is the batchexecute runtime layer (consume its enums via the
-# public ``notebooklm.types`` re-export instead). Private ``_*`` siblings are
-# caught separately by :func:`_is_forbidden_notebooklm_child`.
-FORBIDDEN_NOTEBOOKLM_CHILDREN = {"cli", "rpc"}
+# Forbidden non-private ``notebooklm`` siblings. ``cli`` is the Click transport
+# adapter; ``server`` is the REST transport adapter; ``rpc`` is the batchexecute
+# runtime layer (consume its enums via the public ``notebooklm.types``
+# re-export instead). Private ``_*`` siblings are caught separately by
+# :func:`_is_forbidden_notebooklm_child`.
+FORBIDDEN_NOTEBOOKLM_CHILDREN = {"cli", "server", "rpc"}
 
 
 def _is_forbidden_external(parts: list[str]) -> bool:
@@ -181,6 +184,14 @@ def test_app_has_no_transport_dependency_imports() -> None:
         "from rich.console import Console\n",
         "import fastmcp\n",
         "from fastmcp import FastMCP\n",
+        "import fastapi\n",
+        "from fastapi import FastAPI\n",
+        "import uvicorn\n",
+        "import starlette.responses\n",
+        "from starlette.responses import JSONResponse\n",
+        "import notebooklm.server\n",
+        "from notebooklm.server import create_app\n",
+        "from notebooklm import server\n",
         "import notebooklm.cli\n",
         "import notebooklm.cli.error_handler\n",
         "from notebooklm.cli import error_handler\n",
