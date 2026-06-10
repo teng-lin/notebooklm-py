@@ -172,23 +172,27 @@ def _count_string_patch_sites(text: str) -> int:
 
 
 @functools.cache
-def _measure_all() -> dict[str, int]:
-    """Map every scanned test file (repo-relative POSIX path) to its site count.
+def _measure_all() -> tuple[tuple[str, int], ...]:
+    """``(repo-relative POSIX path, site count)`` for every scanned test file.
 
     Includes zero-count files, so the pure checks below can distinguish "file
     exists with no sites" (tighten/remove the ceiling) from "file is gone"
-    (stale entry). Cached: the tree is read once per session; callers treat
-    the result as read-only.
+    (stale entry). Cached: the tree is read once per session. Returns a tuple
+    of pairs (not a dict) so the cached value cannot be mutated by a caller —
+    the gates rebuild a fresh ``dict(_measure_all())`` at each call site.
     """
-    measured: dict[str, int] = {}
+    measured: list[tuple[str, int]] = []
     for path in sorted(_TESTS_ROOT.rglob("*.py")):
         rel_parts = path.relative_to(_TESTS_ROOT).parts
         if rel_parts and rel_parts[0] in _SKIP_DIRS:
             continue
-        measured[path.relative_to(_REPO_ROOT).as_posix()] = _count_string_patch_sites(
-            path.read_text(encoding="utf-8")
+        measured.append(
+            (
+                path.relative_to(_REPO_ROOT).as_posix(),
+                _count_string_patch_sites(path.read_text(encoding="utf-8")),
+            )
         )
-    return measured
+    return tuple(measured)
 
 
 # --- Pure ratchet checks (no I/O) ----------------------------------------
@@ -236,7 +240,7 @@ def test_no_string_patch_population_growth() -> None:
     through an import-string — the exact seam fragility ADR-0007 exists to
     drain. The baseline holds today's debt; it never absorbs new debt.
     """
-    grown = _grown_offenders(_measure_all(), STRING_PATCH_CEILINGS)
+    grown = _grown_offenders(dict(_measure_all()), STRING_PATCH_CEILINGS)
     assert grown == {}, (
         'String-target ``patch("notebooklm…")`` site count grew past the '
         "recorded ceiling (ADR-0007 string-patch population ratchet; files "
@@ -254,7 +258,7 @@ def test_string_patch_ceilings_ratchet_down() -> None:
     the drained sites silently re-accrete. The failure prints the exact value
     to record.
     """
-    slack = _slack_offenders(_measure_all(), STRING_PATCH_CEILINGS)
+    slack = _slack_offenders(dict(_measure_all()), STRING_PATCH_CEILINGS)
     assert slack == {}, (
         "Test file(s) dropped below their recorded string-patch ceiling — "
         "tighten the ratchet by lowering each STRING_PATCH_CEILINGS entry to "
@@ -270,7 +274,7 @@ def test_ceilings_have_no_stale_entries() -> None:
     the gate (the missing path can never trip the growth/slack checks), so it
     must be pruned (or re-pointed at the renamed file at its measured count).
     """
-    missing = _stale_entries(_measure_all(), STRING_PATCH_CEILINGS)
+    missing = _stale_entries(dict(_measure_all()), STRING_PATCH_CEILINGS)
     assert missing == [], (
         "STRING_PATCH_CEILINGS entries point at files that no longer exist in "
         f"the scanned tests tree (renamed or deleted). Remove them: {missing}"
