@@ -239,18 +239,28 @@ _PATTERN_MOCK_PATCH_DEEP_PRIVATE = re.compile(
 #     handling; like those patterns, the keyword form is detected only in its
 #     natural positional slot (an exotic reordered-kwargs spelling is outside
 #     the regex perimeter — none exist under ``tests/`` today).
-#     ``_(?!_\w*_[\"'])`` flags every ``_``-leading layout name —
-#     ``"_private"``, double-underscore ``"__private"``, name-mangled
-#     ``"_Cls__attr"`` — while exempting only *full* dunder names
-#     (``"__aenter__"`` etc., leading AND trailing double underscore:
-#     Python-protocol surface, not internal layout). There are no
-#     double-underscore-form ``patch.object`` sites under ``tests/`` today, so
-#     the exemption is precautionary, documented here and self-tested below.
+#     ``_(?!_\w*__[\"'])`` flags every ``_``-leading layout name —
+#     ``"_private"``, double-underscore ``"__private"``, quasi-dunder
+#     ``"__x_"``, name-mangled ``"_Cls__attr"`` — while exempting only *full*
+#     dunder names (``"__aenter__"`` etc.: leading AND trailing DOUBLE
+#     underscore, Python-protocol surface, not internal layout — hence the
+#     ``__[\"']`` tail in the lookahead). There are no double-underscore-form
+#     ``patch.object`` sites under ``tests/`` today, so the exemption is
+#     precautionary, documented here and self-tested below.
 _PATTERN_PATCH_OBJECT_PRIVATE_ATTR = re.compile(
     r"(?<![\w.])(?:[\w]+\.)*patch\.object\(\s*[^,()]+,\s*(?:attribute\s*=\s*)?"
-    r"[rRfFuUbB]*[\"']_(?!_\w*_[\"'])"
+    r"[rRfFuUbB]*[\"']_(?!_\w*__[\"'])"
 )
 
+# NOTE: patterns (f) and (g) are deliberately NOT in this tuple — it drives
+# the drained-to-zero global gate (``_ALLOWLIST`` + stays-empty guard), while
+# (f)/(g) run under their own baselined-allowlist regime via
+# ``test_no_deep_leaf_private_string_patches_outside_allowlist`` /
+# ``test_no_private_attr_patch_object_outside_allowlist``
+# (``_assert_tier_clean``). A future pattern must be wired into exactly one of
+# the two regimes — appending here alone would put a baselined population
+# under the stays-empty rule (false alarms); writing only a regex with
+# neither gate would leave it unenforced.
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("string-target monkeypatch (forbidden by ADR-0007)", _PATTERN_STRING_TARGET),
     ("object-attribute monkeypatch (forbidden by ADR-0007)", _PATTERN_OBJECT_ATTR),
@@ -690,6 +700,15 @@ def test_patch_object_private_attr_pattern_detects_known_shapes() -> None:
     # Double-underscore layout names are NOT protocol dunders — still flagged.
     assert _match_lines(
         'patch.object(helpers, "__private", fake)', _PATTERN_PATCH_OBJECT_PRIVATE_ATTR
+    ) == [1]
+    # …including the quasi-dunder with a SINGLE trailing underscore.
+    assert _match_lines(
+        'patch.object(helpers, "__x_", fake)', _PATTERN_PATCH_OBJECT_PRIVATE_ATTR
+    ) == [1]
+    # The decorator spelling matches too (``@`` is outside ``[\w.]``, so the
+    # word-boundary lookbehind passes).
+    assert _match_lines(
+        '@patch.object(LoginFlow, "_resolve_profile")', _PATTERN_PATCH_OBJECT_PRIVATE_ATTR
     ) == [1]
 
     # Public attribute names are the sanctioned seam-alias form — no match.
