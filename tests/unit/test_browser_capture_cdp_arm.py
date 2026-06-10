@@ -253,5 +253,18 @@ def test_safe_cookie_shape_is_value_free() -> None:
     assert "int" in shape  # domain's type
 
 
+def test_safe_cookie_shape_tolerates_non_str_keys() -> None:
+    """A malformed cookie with a non-str key must not raise KeyError.
+
+    This helper exists to *describe* malformed rows, so it must never itself
+    choke on one (regression for a ``cookie[str(k)]`` re-subscript bug).
+    """
+    from notebooklm._auth.browser_capture import _safe_cookie_shape
+
+    shape = _safe_cookie_shape({3: "x", "value": "SECRET"})
+    assert "SECRET" not in shape
+    assert "3" in shape
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -130,9 +130,15 @@ def _safe_cookie_shape(cookie: dict[str, Any]) -> str:
     arm, comes straight from the operator's running browser), so the
     malformed-row warnings must not echo the row. Example output:
     ``keys=['domain', 'name', 'value'] types={domain: int, name: str, value: str}``.
+
+    Iterates ``items()`` (sorted by the string form of each key) rather than
+    re-subscripting by a stringified key, so a malformed cookie with a non-str
+    key (e.g. an ``int``) cannot raise ``KeyError`` here — this helper exists to
+    describe malformed rows, so it must itself never choke on one.
     """
-    keys = sorted(map(str, cookie.keys()))
-    types = ", ".join(f"{k}: {type(cookie[k]).__name__}" for k in keys)
+    sorted_items = sorted(cookie.items(), key=lambda item: str(item[0]))
+    keys = [str(k) for k, _ in sorted_items]
+    types = ", ".join(f"{k}: {type(v).__name__}" for k, v in sorted_items)
     return f"keys={keys} types={{{types}}}"
 
 
@@ -858,9 +864,16 @@ def run_cdp_capture(
                     page.close()
                 except PlaywrightError as exc:
                     logger.debug("Could not close temporary CDP page: %s", type(exc).__name__)
-            # CDP teardown: disconnect the Playwright client only. On a
-            # CDP-connected browser, ``close()`` severs the connection without
-            # terminating the operator's Chrome.
+            # CDP teardown: disconnect the Playwright client only. Per the
+            # Playwright ``Browser.close`` contract, a *connected* browser (one
+            # obtained via ``connect_over_cdp``, as here) is NOT terminated —
+            # ``close()`` "clears all created contexts belonging to this browser
+            # and disconnects from the browser server." We never call
+            # ``new_context`` (we reuse the operator's existing context), so it
+            # clears NONE of the operator's contexts and merely severs our
+            # connection, leaving the operator's Chrome and tabs running. This
+            # only force-quits the browser for a ``launch()``-obtained one, which
+            # this path never is.
             browser.close()
 
     return CaptureResult(page_html=captured_page_html)
