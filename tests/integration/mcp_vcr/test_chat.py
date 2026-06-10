@@ -28,15 +28,13 @@ Not covered here (no reusable cassette):
   *explicit ``source_ids``* path, which the MCP ``chat_ask`` tool does not expose
   (the tool always lets the client resolve sources via ``GET_NOTEBOOK``), so it
   lacks the ``rLM1Ne`` + streamed-ask legs the tool would issue.
-* ``chat_configure`` — its core RPC is ``RENAME_NOTEBOOK`` (``s0tc2d``) carrying
-  a chat-settings param block; the only ``s0tc2d`` cassettes
-  (``notebooks_rename.yaml`` / ``cli_notebook_rename.yaml``) record the *rename*
-  param shape (``[notebook_id, [[null,null,null,[null, title]]], null,
-  "generic"]``), which is structurally distinct from the chat-config body
-  (``[notebook_id, [[null×7, chat_settings]]]``) under the ``freq`` matcher.
-  ``settings_set_output_language.yaml`` is a different RPC entirely
-  (``GET_USER_SETTINGS`` ``ZwVcOc`` / ``SET_USER_SETTINGS`` ``hT54vc``), not the
-  per-notebook chat config. No recorded cassette matches ``chat_configure``'s RPC.
+``chat_configure`` IS now covered by ``mcp_chat_configure.yaml`` — a cassette
+recorded specifically for the MCP integration suite. Its core RPC is
+``RENAME_NOTEBOOK`` (``s0tc2d``) carrying the chat-settings param block
+(``[notebook_id, [[null×7, chat_settings]]]``), which is structurally distinct
+under the ``freq`` matcher from the *rename* param shape the only other
+``s0tc2d`` cassettes (``notebooks_rename.yaml`` / ``cli_notebook_rename.yaml``)
+record — so a dedicated recording is required.
 
 The notebook is invoked by its recorded full UUID so the resolver skips its
 ``LIST_NOTEBOOKS`` preflight.
@@ -55,6 +53,9 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 # ``chat_ask.yaml`` was recorded against this notebook.
 CHAT_NOTEBOOK_ID = "bb00c9e3-656c-4fd2-b890-2b71e1cf3814"
+
+# ``mcp_chat_configure.yaml`` was recorded against this notebook.
+CONFIGURE_NOTEBOOK_ID = "2bba3730-4547-48c7-b5f5-e631eb5332ca"
 
 
 @pytest.mark.asyncio
@@ -88,3 +89,40 @@ async def test_mcp_chat_ask_with_references_over_vcr() -> None:
     assert isinstance(first_ref, dict)
     # Each citation is a serialized ChatReference pointing at a source.
     assert first_ref.get("source_id"), "recorded citation is missing a source_id"
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mcp_chat_configure.yaml")
+async def test_mcp_chat_configure_over_vcr() -> None:
+    """``chat_configure`` applies chat settings through the real client over VCR.
+
+    End-to-end: ``chat_configure`` tool → ``resolve_notebook`` (full UUID, no
+    list) → ``execute_configure`` → ``client.chat.configure`` which issues the
+    real ``RENAME_NOTEBOOK`` (``s0tc2d``) RPC carrying the chat-settings param
+    block (``goal`` → ``CUSTOM`` persona, ``response_length`` → ``shorter``).
+    ``mcp_chat_configure.yaml`` is the first cassette to record that body shape.
+
+    Pins the serialized ``ConfigureResult`` wire shape: ``mode`` is ``None`` (the
+    persona/length branch ran, not a predefined ``--mode``), ``goal_name`` is the
+    lowercase ``"custom"`` enum name a non-empty ``goal`` selects, and ``persona``
+    / ``response_length`` echo the inputs.
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "chat_configure",
+            {
+                "notebook": CONFIGURE_NOTEBOOK_ID,
+                "goal": "Answer concisely as a helpful research assistant.",
+                "response_length": "shorter",
+            },
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    # to_jsonable(ConfigureResult) → notebook_id / mode / goal_name / persona /
+    # response_length.
+    assert structured["notebook_id"] == CONFIGURE_NOTEBOOK_ID
+    assert structured["mode"] is None
+    assert structured["goal_name"] == "custom"
+    assert structured["persona"] == "Answer concisely as a helpful research assistant."
+    assert structured["response_length"] == "shorter"

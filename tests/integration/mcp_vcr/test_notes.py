@@ -21,7 +21,10 @@ INCONSISTENT with the notebook tools:
 * ``note_list`` is ``{"notebook_id", "notes": [...]}``.
 * ``note_delete`` (confirmed) is ``{"status", "notebook_id", "note_id"}``.
 
-``note_update`` is NOT covered — see the module-level skip note below.
+``note_update`` IS covered by ``mcp_note_update.yaml`` — a cassette recorded
+specifically for the MCP integration suite that pairs the post-#1362 existence
+preflight (``GET_NOTES_AND_MIND_MAPS`` → ``cFji9``) with the ``UPDATE_NOTE``
+(``cYAfTb``) mutation, the exact pair no pre-existing cassette holds.
 """
 
 from __future__ import annotations
@@ -40,6 +43,8 @@ NOTE_CREATE_NOTEBOOK_ID = "f66923f0-1df4-4ffe-9822-3ed63c558b1c"  # notes_create
 NOTE_LIST_NOTEBOOK_ID = "167481cd-23a3-4331-9a45-c8948900bf91"  # notes_list.yaml
 NOTE_DELETE_NOTEBOOK_ID = "06f0c5bd-108f-4c8b-8911-34b2acc656de"  # notes_delete.yaml
 NOTE_DELETE_NOTE_ID = "7027c957-5230-4fc1-adf1-3ea5c3041d5a"  # notes_delete.yaml
+NOTE_UPDATE_NOTEBOOK_ID = "2bba3730-4547-48c7-b5f5-e631eb5332ca"  # mcp_note_update.yaml
+NOTE_UPDATE_NOTE_ID = "39f5e968-5eab-4a8a-9bd7-d10756febe0c"  # mcp_note_update.yaml
 
 
 @pytest.mark.asyncio
@@ -154,18 +159,35 @@ async def test_mcp_note_delete_two_step_confirm_over_vcr() -> None:
     assert deleted_structured["note_id"] == NOTE_DELETE_NOTE_ID
 
 
-# ---------------------------------------------------------------------------
-# note_update is intentionally NOT covered (reuse-only constraint).
-#
-# The MCP ``note_update`` tool drives the public ``client.notes.update`` facade,
-# which since v0.8.0 (#1362) runs an existence preflight — ``get_or_none`` ->
-# ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) — BEFORE issuing ``UPDATE_NOTE``
-# (``cYAfTb``). The candidate cassette ``notes_create_and_update.yaml`` was
-# recorded PRE-flip and holds only ``CREATE_NOTE`` + ``UPDATE_NOTE`` — no
-# ``cFji9`` interaction — so the preflight RPC has nothing to replay against, and
-# NO existing cassette pairs ``cFji9`` with ``cYAfTb``. The comprehensive VCR
-# test dodges this by monkeypatching ``client.notes.get_or_none``, but an
-# integration test that mocks the facade would defeat the whole purpose of
-# exercising the real path. Covering it would require re-recording a cassette,
-# which is forbidden here.
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mcp_note_update.yaml")
+async def test_mcp_note_update_over_vcr() -> None:
+    """``note_update`` updates a note's content through the real client over VCR.
+
+    End-to-end: ``note_update`` tool -> ``resolve_notebook`` / ``resolve_note``
+    (full UUIDs, no list) -> ``execute_note_save`` -> ``client.notes.update``.
+    Post-#1362 the public ``update`` facade runs an existence preflight via
+    ``get_or_none`` -> ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) BEFORE issuing the
+    real ``UPDATE_NOTE`` (``cYAfTb``) mutation. ``mcp_note_update.yaml`` is the
+    first cassette to pair those two RPCs, so this exercises the real preflight
+    path rather than monkeypatching ``get_or_none`` the way the comprehensive VCR
+    suite does.
+
+    Pins the flat ``{"status": "updated", "notebook_id", "note_id"}`` wire shape
+    — hand-authored by the tool (not ``to_jsonable`` over a result dataclass).
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "note_update",
+            {
+                "notebook": NOTE_UPDATE_NOTEBOOK_ID,
+                "note": NOTE_UPDATE_NOTE_ID,
+                "content": "Updated content recorded by the MCP VCR suite.",
+            },
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    assert structured["status"] == "updated"
+    assert structured["notebook_id"] == NOTE_UPDATE_NOTEBOOK_ID
+    assert structured["note_id"] == NOTE_UPDATE_NOTE_ID
