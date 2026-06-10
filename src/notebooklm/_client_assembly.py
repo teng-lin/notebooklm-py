@@ -141,8 +141,16 @@ def _assemble_client(
     # of in-place mutation so a caller reusing ``AuthTokens`` across
     # multiple clients (with different storage paths) doesn't see one
     # client's path leak into another.
-    if storage_path is not None and auth.storage_path != storage_path:
-        auth = dataclasses.replace(auth, storage_path=storage_path)
+    # Type-coerce only (``Path(...)``) — deliberately NOT
+    # ``expanduser().resolve()``: the caller-provided ``storage_path`` and
+    # ``auth.storage_path`` stay as supplied (see the keepalive NOTE
+    # below); without the coercion a ``str`` argument would compare
+    # unequal to an identical ``Path`` and bind a raw ``str`` onto
+    # ``auth.storage_path``.
+    if storage_path is not None:
+        storage_path = Path(storage_path)
+        if auth.storage_path != storage_path:
+            auth = dataclasses.replace(auth, storage_path=storage_path)
 
     # Direct client-owned reference to the authoritative ``AuthTokens``
     # instance. Set AFTER the ``storage_path`` normalization above so it

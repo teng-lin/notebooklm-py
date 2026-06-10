@@ -112,20 +112,25 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
     - the uploader aliases the client-owned ``AuthTokens`` (ADR-0016's
       Auth Instance Invariant).
     """
+    _missing = object()
     for label, client in (
         ("NotebookLMClient(...)", NotebookLMClient(_make_auth())),
         ("build_client_shell_for_tests(...)", build_client_shell_for_tests(auth=_make_auth())),
     ):
-        assert client.chat._notebooks is client.notebooks, (
-            f"{label}: chat must share the client's NotebooksAPI instance, "
-            "not a privately constructed one"
+        # ``getattr`` with a sentinel so a renamed private storage
+        # attribute fails THIS assertion with the contract message
+        # instead of an unexplained AttributeError.
+        assert getattr(client.chat, "_notebooks", _missing) is client.notebooks, (
+            f"{label}: chat must share the client's NotebooksAPI instance "
+            "(ChatAPI._notebooks), not a privately constructed one"
         )
-        assert client.notebooks._rpc is client._rpc_executor, (
-            f"{label}: notebooks must dispatch through the client's shared RpcExecutor"
+        assert getattr(client.notebooks, "_rpc", _missing) is client._rpc_executor, (
+            f"{label}: notebooks (NotebooksAPI._rpc) must dispatch through the "
+            "client's shared RpcExecutor"
         )
-        assert client._source_uploader._auth is client._auth, (
-            f"{label}: the upload pipeline must alias the client-owned AuthTokens "
-            "(ADR-0016 Auth Instance Invariant)"
+        assert getattr(client._source_uploader, "_auth", _missing) is client._auth, (
+            f"{label}: the upload pipeline (SourceUploadPipeline._auth) must alias "
+            "the client-owned AuthTokens (ADR-0016 Auth Instance Invariant)"
         )
         assert client.auth is client._auth, (
             f"{label}: the public auth property must alias the client-owned AuthTokens"
