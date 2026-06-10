@@ -287,9 +287,7 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
         if _name in headers:
             _vals = headers[_name]
             headers[_name] = (
-                [scrub_string(v) for v in _vals]
-                if isinstance(_vals, list)
-                else scrub_string(_vals)
+                [scrub_string(v) for v in _vals] if isinstance(_vals, list) else scrub_string(_vals)
             )
     if "X-GUploader-UploadID" in headers:
         _vals = headers["X-GUploader-UploadID"]
