@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from tests.integration.conftest import get_vcr_auth
-
 from notebooklm import NotebookLMClient
+from tests.integration.conftest import get_vcr_auth
 
 
 @asynccontextmanager

@@ -50,10 +50,6 @@ import os
 from pathlib import Path
 
 import pytest
-from tests.integration._golden_assert import assert_decoded_equals
-from tests.integration._vcr_helpers import vcr_client
-from tests.integration.conftest import skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
 
 from notebooklm import ReportFormat
 from notebooklm.types import (
@@ -62,6 +58,10 @@ from notebooklm.types import (
     SharePermission,
     SourceStatus,
 )
+from tests.integration._golden_assert import assert_decoded_equals
+from tests.integration._vcr_helpers import vcr_client
+from tests.integration.conftest import skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
 # Skip all tests in this module if cassettes are not available.
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]

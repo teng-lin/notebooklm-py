@@ -38,18 +38,17 @@ from __future__ import annotations
 
 import re
 
+from notebooklm._secrets import (
+    AUTH_TOKEN_SHAPE_PATTERNS,
+    RUNTIME_SESSION_COOKIES,
+    SECURE_HOST_UMBRELLA_PATTERNS,
+)
 from tests.cassette_patterns import (
     _AUTH_TOKEN_PATTERNS,
     _GOOGLE_API_KEY_PATTERN,
     HOST_COOKIES,
     SECURE_COOKIES,
     SESSION_COOKIES,
-)
-
-from notebooklm._secrets import (
-    AUTH_TOKEN_SHAPE_PATTERNS,
-    RUNTIME_SESSION_COOKIES,
-    SECURE_HOST_UMBRELLA_PATTERNS,
 )
 
 

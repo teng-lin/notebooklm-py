@@ -77,7 +77,8 @@ def _resolve_by_title(
     matches = [item for item in items if (item.title or "").casefold() == token_folded]
 
     if len(matches) == 1:
-        return str(matches[0].id)
+        (match,) = matches  # unpack (not matches[0]) — these are typed items, not an RPC row
+        return str(match.id)
 
     if not matches:
         raise not_found(token)

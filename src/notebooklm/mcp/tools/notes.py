@@ -50,7 +50,9 @@ def register(mcp: Any) -> None:
                 "notebook_id": result.notebook_id,
                 "title": result.title,
                 "note_id": result.note_id,
-                "created": result.created,
+                # The facade raises on failure (no degenerate result), so
+                # reaching here always means the note was really created.
+                "created": True,
             }
 
     @mcp.tool(annotations=READ_ONLY)

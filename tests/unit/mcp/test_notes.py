@@ -35,8 +35,11 @@ NOTE_ID = "55555555-5555-5555-5555-555555555555"
 
 
 async def test_note_create(mcp_call, mock_client) -> None:
-    # notes.create returns the nested RPC shape whose first element is the new id.
-    mock_client.notes.create = AsyncMock(return_value=[NOTE_ID, [NOTE_ID, "body"]])
+    # notes.create returns a typed Note (the facade trusts the contract and
+    # reads note.id — no raw RPC-shape extraction above the facade).
+    mock_client.notes.create = AsyncMock(
+        return_value=FakeNote(id=NOTE_ID, title="Idea", content="body")
+    )
     result = await mcp_call("note_create", {"notebook": NB_ID, "title": "Idea", "content": "body"})
     assert result.structured_content == {
         "notebook_id": NB_ID,
