@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import ast
 import re
-from functools import cache, lru_cache
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -68,6 +68,13 @@ CASSETTES_DIR = REPO_ROOT / "tests" / "cassettes"
 # POST, and the ids are strictly alphanumeric (see ``rpc/types.py``), so a
 # regex over the raw cassette text is exact — and far cheaper than YAML-parsing
 # 40+ MB of recordings.
+#
+# Deliberately FULL-TEXT (not scoped to ``uri:`` lines): a hypothetical
+# ``?rpcids=...`` URL inside a recorded response body would be counted too,
+# but that failure mode is LOUD (an unknown/unclassified rpcid fails the
+# gate and a human looks), whereas scoping to ``uri:`` lines could silently
+# DROP a real request id if YAML ever folds a long URI across lines —
+# turning the gate vacuous for that family. Loud-over-silent wins.
 _RPCIDS_RE = re.compile(r"[?&]rpcids=([A-Za-z0-9]+)")
 
 # Golden-covered families → one or more pointers ``(file relative to repo
@@ -277,13 +284,22 @@ def _recorded_rpcids(text: str) -> set[str]:
     return set(_RPCIDS_RE.findall(text))
 
 
-@lru_cache(maxsize=1)
+@cache
 def _corpus_rpcids_by_cassette() -> dict[str, frozenset[str]]:
-    """Map each cassette file name -> the rpcids it records (cached: ~40 MB read)."""
-    return {
-        path.name: frozenset(_recorded_rpcids(path.read_text(encoding="utf-8")))
-        for path in _cassette_files()
-    }
+    """Map each cassette base name -> the rpcids it records (cached: ~40 MB read).
+
+    Keyed by base name because that is what ``use_cassette`` decorators carry.
+    Should two cassettes in different subdirectories ever share a base name,
+    their rpcid sets are UNIONED (not last-wins), so a pointer can never be
+    invalidated — or falsely satisfied for a *different* family — by a
+    directory-level name collision.
+    """
+    corpus: dict[str, set[str]] = {}
+    for path in _cassette_files():
+        corpus.setdefault(path.name, set()).update(
+            _recorded_rpcids(path.read_text(encoding="utf-8"))
+        )
+    return {name: frozenset(rpcids) for name, rpcids in corpus.items()}
 
 
 def _corpus_rpcids() -> dict[str, set[str]]:
@@ -403,7 +419,12 @@ def test_covered_pointers_are_real_tests_replaying_the_right_cassettes() -> None
             if not cassettes:
                 problems.append(f"{rel}::{qualname} has no use_cassette decorator")
                 continue
-            if not any(method.value in by_cassette.get(name, frozenset()) for name in cassettes):
+            # Normalize to base names: a decorator may carry a subdirectory
+            # path (e.g. ``"gzip_coverage/foo.yaml"``) while the corpus map is
+            # keyed by base name.
+            if not any(
+                method.value in by_cassette.get(Path(name).name, frozenset()) for name in cassettes
+            ):
                 problems.append(
                     f"{rel}::{qualname} replays {sorted(cassettes)}, none of which "
                     f"records rpcid {method.value!r}"
@@ -477,6 +498,13 @@ def test_rpcids_extractor_self_test() -> None:
     )
     assert _recorded_rpcids(sample) == {"wXbhsf", "gArtLc"}
     assert _recorded_rpcids("no ids here") == set()
+    # Full-text scan is INTENTIONAL (see the ``_RPCIDS_RE`` comment): a
+    # ``?rpcids=`` URL inside a recorded response body IS extracted, because
+    # that false positive fails the gate loudly, whereas scoping to ``uri:``
+    # lines could silently drop a folded request URI and turn the gate
+    # vacuous for that family.
+    body_url = "    string: 'see https://x.test/page?rpcids=Zz9fake for details'"
+    assert _recorded_rpcids(body_url) == {"Zz9fake"}
 
 
 def test_decorator_cassette_collector_self_test() -> None:

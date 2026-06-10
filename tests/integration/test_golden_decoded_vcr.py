@@ -47,14 +47,13 @@ from __future__ import annotations
 
 import os
 import reprlib
-from contextlib import asynccontextmanager
 
 import pytest
 from tests.integration._golden_assert import assert_decoded_equals
-from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.integration._vcr_helpers import vcr_client
+from tests.integration.conftest import skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 
-from notebooklm import NotebookLMClient
 from notebooklm.types import Artifact, ArtifactType, Source, SourceType
 
 # Skip all tests in this module if cassettes are not available.
@@ -80,18 +79,10 @@ MUTABLE_NOTEBOOK_ID = os.environ.get(
 _CHAT_MATCH_ON = ["method", "scheme", "host", "port", "path", "freq"]
 
 
-@asynccontextmanager
-async def vcr_client():
-    """Authenticated client bound to VCR replay (mock auth in replay mode)."""
-    auth = await get_vcr_auth()
-    async with NotebookLMClient(auth) as client:
-        yield client
-
-
-# ``assert_decoded_equals`` (the golden helper) lives in
-# ``tests/integration/_golden_assert.py`` so the expansion module
-# (``test_golden_decoded_vcr_expansion.py``) can share it without a
-# cross-test-module import.
+# ``assert_decoded_equals`` and ``vcr_client`` live in
+# ``tests/integration/_golden_assert.py`` / ``_vcr_helpers.py`` so the
+# expansion module (``test_golden_decoded_vcr_expansion.py``) can share them
+# without a cross-test-module import.
 
 
 # =============================================================================

@@ -47,15 +47,15 @@ Field-selection rules
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
 from tests.integration._golden_assert import assert_decoded_equals
-from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
+from tests.integration._vcr_helpers import vcr_client
+from tests.integration.conftest import skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 
-from notebooklm import NotebookLMClient, ReportFormat
+from notebooklm import ReportFormat
 from notebooklm.types import (
     MindMapKind,
     ResearchStatus,
@@ -88,14 +88,6 @@ MINDMAP_NOTEBOOK_ID = os.environ.get(
 # RPCs recorded in ``generate_mind_map_chain.yaml`` (same constant as
 # ``test_mind_map_chain_vcr.py``).
 _WIKIPEDIA_SOURCE_ID = "466b9ee3-c1ce-45ef-861c-1d4bfcd939ad"
-
-
-@asynccontextmanager
-async def vcr_client():
-    """Authenticated client bound to VCR replay (mock auth in replay mode)."""
-    auth = await get_vcr_auth()
-    async with NotebookLMClient(auth) as client:
-        yield client
 
 
 # =============================================================================
@@ -146,12 +138,16 @@ class TestNotebooksGoldenDecoded:
         )
         # The created_at slot decodes to a real timestamp (not a fabricated
         # default) — pin the first row's to catch a timestamp-column slip.
+        # The decoder renders LOCAL wall time (``datetime.fromtimestamp``), so
+        # pin the round-tripped epoch — identical on every timezone/CI host —
+        # never the rendered wall-time string (that one varies with TZ and
+        # failed CI's UTC runners against a UTC-5 recording sandbox).
         first = notebooks[0]
         assert first.created_at is not None
         assert_decoded_equals(
-            first.created_at.isoformat(),
-            "2026-01-13T08:40:05",
-            field="notebooks_list[0].created_at",
+            int(first.created_at.timestamp()),
+            1768311605,
+            field="notebooks_list[0].created_at (epoch seconds)",
         )
 
     @pytest.mark.vcr
@@ -294,7 +290,8 @@ class TestSourceMutationsGoldenDecoded:
         them would assert the synthesizer, not the decoder.
         """
         test_file = tmp_path / "vcr_test_document.txt"
-        test_file.write_text("This is a test document for VCR cassette recording.")
+        with test_file.open("w", encoding="utf-8", newline="\n") as f:
+            f.write("This is a test document for VCR cassette recording.")
 
         async with vcr_client() as client:
             source = await client.sources.add_file(MUTABLE_NOTEBOOK_ID, str(test_file))
