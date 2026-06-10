@@ -53,26 +53,17 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
     """Extract the response content from a streaming-chat next_turn frame.
 
     The ``khqZz`` (``GET_CONVERSATION_TURNS``) response packs each AI answer
-    as ``turn[4][0][0]`` — three nested wrappers around the answer text. This
-    helper delegates the inner-most descent to :func:`safe_index`, which
-    enforces strict decoding: descent failures raise
+    as ``turn[4][0][0]`` — three nested wrappers around the answer text. The
+    descent goes through :func:`safe_index` under strict decoding (the only
+    mode since the ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out was retired in
+    v0.7.0; rationale in ADR-0011): a genuine descent failure raises
     :class:`~notebooklm.exceptions.UnknownRPCMethodError` so callers fail
-    fast on Google-side shape drift. The legacy
-    ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0.
-    See ADR-0011 (``docs/adr/0011-schema-validation-policy.md``) for the
-    rationale.
+    fast on Google-side shape drift.
 
-    Args:
-        next_turn: The candidate answer turn (a ``turn[2] == 2`` row from the
-            ``khqZz`` payload). Caller has already validated this is a list
-            with ``len(next_turn) > 4`` and ``next_turn[2] == 2``.
-
-    Returns:
-        The answer-text string on success, or ``None`` when the leaf at
-        ``[4][0][0]`` descends successfully to a non-string value. A genuine
-        descent failure (shape drift) raises
-        :class:`~notebooklm.exceptions.UnknownRPCMethodError` from
-        :func:`safe_index` — strict decoding is the only mode.
+    ``next_turn`` is a validated answer row (a list with ``len > 4`` and the
+    answer role code — see ``ConversationTurnRow.is_answer``). Returns the
+    answer-text string, or ``None`` when the leaf descends successfully to a
+    non-string value (the caller's empty-answer fallback).
     """
     content = safe_index(
         next_turn,
@@ -628,9 +619,8 @@ class ChatAPI(LoopBoundPrimitive):
         except (ChatError, NetworkError) as e:
             logger.warning("Failed to fetch conversation turns for %s: %s", notebook_id, e)
             return []
-        # API returns individual turns newest-first: [A2, Q2, A1, Q1, ...];
-        # reverse to chronological [Q1, A1, ...] for the Q→A forward-pairer.
-        # The unwrap keeps an empty history soft, raises on a malformed one.
+        # API returns turns newest-first: [A2, Q2, ...]; reverse to [Q1, A1, ...]
+        # for the Q→A pairer. Unwrap keeps an empty history soft, raises on drift.
         turns = unwrap_conversation_turns(turns_data, source="_chat.get_history")
         if turns:
             turns_data = [list(reversed(turns))]
@@ -646,9 +636,10 @@ class ChatAPI(LoopBoundPrimitive):
         positions live in :class:`~notebooklm._row_adapters.chat.ConversationTurnRow`.
 
         Drift handling (#1485): an empty/absent history parses to ``[]``; a
-        truthy-but-malformed container raises ``UnknownRPCMethodError`` via
-        ``unwrap_conversation_turns``; a malformed turn row is skipped with a
-        DEBUG diagnostic (mirroring ``_notebooks._extract_suggested_topics``).
+        truthy-but-malformed payload/container raises ``UnknownRPCMethodError``
+        via ``unwrap_conversation_turns``; a malformed turn row or an
+        unrecognized role code is skipped with a DEBUG diagnostic (ordinary
+        unpaired answer rows are consumed by pairing and never logged).
         """
         turns = unwrap_conversation_turns(turns_data, source="_chat._parse_turns_to_qa_pairs")
 
@@ -664,12 +655,21 @@ class ChatAPI(LoopBoundPrimitive):
                 )
                 i += 1
                 continue
+            if turn.has_unrecognized_role:
+                logger.debug(
+                    "_parse_turns_to_qa_pairs: unrecognized role code %r at turn %d — skipping; "
+                    "possible role-slot drift: %s",
+                    turn.role,
+                    i,
+                    reprlib.repr(turns[i]),
+                )
+                i += 1
+                continue
             if turn.is_question:
                 q = turn.question_text
                 a = ""
-                # Pair with the immediately-following answer turn, if any. A
-                # non-string content leaf yields "" (empty-answer fallback);
-                # genuine drift raises through ``safe_index`` (strict mode).
+                # Pair with the immediately-following answer turn, if any; a
+                # non-string content leaf yields "" (drift raises in the leaf).
                 if i + 1 < len(turns):
                     next_turn = ConversationTurnRow(turns[i + 1])
                     if next_turn.is_answer:

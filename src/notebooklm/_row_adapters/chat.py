@@ -112,23 +112,36 @@ def unwrap_conversation_turns(turns_data: Any, *, source: str) -> list[Any]:
     container probe so ``_chat/api.py`` stops open-coding it, with the
     absence-vs-malformed split of the #1485 policy:
 
-    * **Absence stays soft** — a falsy / non-list payload (no history yet) and
-      a falsy first slot (``[[]]`` / ``[None]``, a legitimately-empty
-      conversation) return ``[]`` without logging, preserving the historical
-      "no history" contract.
-    * **Present-but-malformed RAISES** — a *truthy non-list* where the turn
-      list belongs is genuine schema drift, not an empty conversation, and
-      raises :class:`UnknownRPCMethodError` (consistent with the strict
-      ``safe_index`` leaf behavior in ``_extract_next_turn_content``) instead
-      of silently yielding an empty chat history.
+    * **Absence stays soft** — a falsy payload (no history yet) and a falsy
+      first slot (``[[]]`` / ``[None]``, a legitimately-empty conversation)
+      return ``[]`` without logging, preserving the historical "no history"
+      contract.
+    * **Present-but-malformed RAISES** — a *truthy non-list* payload, or a
+      *truthy non-list* where the turn list belongs, is genuine schema drift,
+      not an empty conversation, and raises :class:`UnknownRPCMethodError`
+      (consistent with the strict ``safe_index`` leaf behavior in
+      ``_extract_next_turn_content``) instead of silently yielding an empty
+      chat history.
 
     Args:
         turns_data: Raw decoded ``GET_CONVERSATION_TURNS`` payload.
         source: Caller label for drift diagnostics
             (e.g. ``"_chat.get_history"``).
     """
-    if not turns_data or not isinstance(turns_data, list):
+    if not turns_data:
         return []
+    if not isinstance(turns_data, list):
+        # Top-level drift: the RPC returned something other than the envelope
+        # list. ``path=()`` marks top-level per the UnknownRPCMethodError
+        # contract; the preview is reprlib-bounded.
+        raise UnknownRPCMethodError(
+            f"conversation turns payload holds {type(turns_data).__name__} "
+            "(expected the envelope list)",
+            method_id=_TURNS_METHOD_ID,
+            path=(),
+            source=source,
+            data_at_failure=reprlib.repr(turns_data),
+        )
     # ``turns_data`` is a non-empty list here, so the descent is a no-op on
     # the happy path; routed through ``safe_index`` for the shared telemetry
     # seam (mirrors ``StreamFrameRow.tag``).
@@ -208,6 +221,20 @@ class ConversationTurnRow:
         if not self.is_well_formed:
             return None
         return self._raw[self._ROLE_POS]
+
+    @property
+    def has_unrecognized_role(self) -> bool:
+        """Whether a *well-formed* row carries a role outside the known set.
+
+        ``False`` for malformed rows (those are skipped as malformed, not as
+        role drift) and for the known :data:`ROLE_QUESTION` /
+        :data:`ROLE_ANSWER` codes — an ordinary unpaired answer row must NOT
+        trip this. A well-formed row whose role slot holds anything else
+        signals role-slot drift: without a diagnostic, real history would
+        silently parse to ``[]`` (the fabrication class #1485 targets), so
+        the QA-pair walk logs a DEBUG record before skipping it.
+        """
+        return self.is_well_formed and self.role not in (self.ROLE_QUESTION, self.ROLE_ANSWER)
 
     @property
     def is_question(self) -> bool:

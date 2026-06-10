@@ -349,6 +349,21 @@ class TestConversationTurnRow:
         row = ConversationTurnRow([None, None, 2, None])
         assert row.is_answer is False
 
+    def test_unrecognized_role_is_flagged(self) -> None:
+        """A well-formed row with a role outside {1, 2} is role-slot drift."""
+        assert ConversationTurnRow([None, None, "user", "Q?"]).has_unrecognized_role is True
+        assert ConversationTurnRow([None, None, 3]).has_unrecognized_role is True
+        assert ConversationTurnRow([None, None, None]).has_unrecognized_role is True
+
+    def test_known_roles_and_malformed_rows_are_not_flagged(self) -> None:
+        """Known roles (incl. unpaired answers) and malformed rows never flag."""
+        assert ConversationTurnRow([None, None, 1, "Q?"]).has_unrecognized_role is False
+        assert ConversationTurnRow([None, None, 2, None, [["A."]]]).has_unrecognized_role is False
+        # Short role-2 row: still a KNOWN role — skipped as unusable, not drift.
+        assert ConversationTurnRow([None, None, 2]).has_unrecognized_role is False
+        assert ConversationTurnRow([None]).has_unrecognized_role is False
+        assert ConversationTurnRow("not a turn").has_unrecognized_role is False
+
     def test_none_question_text_coerces_to_empty(self) -> None:
         """Preserves the historical ``str(turn[3] or "")`` coercion."""
         row = ConversationTurnRow([None, None, 1, None])
@@ -376,9 +391,23 @@ class TestUnwrapConversationTurns:
         turns = [[None, None, 1, "Q?"], [None, None, 2, None, [["A."]]]]
         assert unwrap_conversation_turns([turns], source="test") is turns
 
-    @pytest.mark.parametrize("payload", [None, [], "not a list", 0, {}])
-    def test_absent_or_non_list_payload_is_soft_empty(self, payload: object) -> None:
+    @pytest.mark.parametrize("payload", [None, [], "", 0, {}])
+    def test_falsy_payload_is_soft_empty(self, payload: object) -> None:
+        """A falsy payload is a legitimately-absent history, not drift."""
         assert unwrap_conversation_turns(payload, source="test") == []
+
+    @pytest.mark.parametrize("payload", ["not a list", 42, {"unexpected": "dict"}])
+    def test_truthy_non_list_payload_raises(self, payload: object) -> None:
+        """A truthy non-list TOP-LEVEL payload is wire drift (#1485).
+
+        Historically this degraded to a silent ``[]`` — the fabricated-
+        empty-history class. ``path=()`` marks top-level drift.
+        """
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            unwrap_conversation_turns(payload, source="test-source")
+        assert exc_info.value.method_id == RPCMethod.GET_CONVERSATION_TURNS.value
+        assert exc_info.value.source == "test-source"
+        assert exc_info.value.path == ()
 
     @pytest.mark.parametrize("payload", [[[]], [None], [0], [""]])
     def test_falsy_container_slot_is_soft_empty(self, payload: list) -> None:
