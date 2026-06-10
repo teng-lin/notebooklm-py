@@ -14,8 +14,8 @@ import httpx
 import pytest
 
 import notebooklm.cli.services.session_context as _sc
-from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 from ._session_helpers import (
     _multiaccount_rookiepy_mock,
@@ -1420,9 +1420,9 @@ class TestAuthInspect:
         the async bridge is now the injected sink's ``run_async``. This pins
         that the helper routes the account-enumeration probe through the sink.
         """
-        from _fixtures.login_io import make_recording_io
         from notebooklm.auth import Account
         from notebooklm.cli.services.login import _enumerate_one_jar
+        from tests._fixtures.login_io import make_recording_io
 
         raw_cookies = _multiaccount_rookiepy_mock().chrome.return_value
         accounts = [Account(authuser=0, email="alice@example.com", is_default=True)]
@@ -1456,9 +1456,9 @@ class TestAuthInspect:
         assert "offline" in message
 
     def test_select_account_without_marked_default_uses_first_account(self, caplog):
-        from _fixtures.login_io import RecordingLoginIO
         from notebooklm.auth import Account
         from notebooklm.cli.services.login import _select_account
+        from tests._fixtures.login_io import RecordingLoginIO
 
         accounts = [
             Account(authuser=0, email="alice@example.com", is_default=False),
@@ -1480,9 +1480,9 @@ class TestAuthInspect:
         assert "alice@example.com" in caplog.text
 
     def test_select_account_empty_accounts_returns_user_message(self):
-        from _fixtures.login_io import make_recording_io
         from notebooklm.cli.services.login.cookie_writes import _select_account
         from notebooklm.cli.services.login.outcomes import CookieValidationFailure
+        from tests._fixtures.login_io import make_recording_io
 
         result = _select_account(make_recording_io(), [], account_email=None)
 

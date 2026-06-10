@@ -28,8 +28,6 @@ from urllib.parse import urlparse
 
 import pytest
 from click.testing import CliRunner
-from tests.integration.conftest import _is_vcr_record_mode, skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
 
 # Enum value *sets* only — an allowed-membership definition, NOT a decoder. Reading
 # the canonical enum values from the public ``notebooklm`` types keeps the membership
@@ -43,6 +41,8 @@ from notebooklm.types import (
     artifact_status_to_str,
     source_status_to_str,
 )
+from tests.integration.conftest import _is_vcr_record_mode, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
 from ._fixtures import (
     PLACEHOLDER_NOTEBOOK_ID,

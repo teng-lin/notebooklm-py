@@ -401,7 +401,7 @@ class TestArtifactsAPI:
     @pytest.mark.asyncio
     async def test_list_raw_preserves_rpc_call_shape(self):
         """_list_raw keeps the exact LIST_ARTIFACTS RPC contract."""
-        from _fixtures.fake_core import make_fake_core
+        from tests._fixtures.fake_core import make_fake_core
 
         core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
         api = ArtifactsAPI(
@@ -430,7 +430,7 @@ class TestArtifactsAPI:
     @pytest.mark.asyncio
     async def test_list_raw_preserves_already_flat_artifact_rows(self):
         """_list_raw must not collapse already-flat artifact rows."""
-        from _fixtures.fake_core import make_fake_core
+        from tests._fixtures.fake_core import make_fake_core
 
         artifact_rows = [
             ["art_001", "My Report", 2, None, 3],

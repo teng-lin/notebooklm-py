@@ -36,13 +36,14 @@ from typing import Any
 import httpx
 import pytest
 
-# pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
-# import path documented in ``tests/_fixtures/__init__.py``.
-from _fixtures.chain import make_request
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware.retry import RetryMiddleware
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
+
+# The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
+# fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
+from tests._fixtures.chain import make_request
 
 
 def _recording_sleep() -> tuple[Callable[[float], Awaitable[None]], list[float]]:

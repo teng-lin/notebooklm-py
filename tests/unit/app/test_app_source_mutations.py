@@ -43,7 +43,7 @@ from notebooklm._app.source_mutations import (
     resolve_source_by_exact_title,
     resolve_source_for_delete,
 )
-from notebooklm.exceptions import NotebookLMError
+from notebooklm.exceptions import NotebookLMError, ValidationError
 from notebooklm.types import DriveMimeType, Source
 
 _FULL_UUID = "11111111-2222-3333-4444-555555555555"
@@ -433,3 +433,25 @@ async def test_add_drive_maps_mime(choice: str, expected_mime: str) -> None:
     assert result.file_id == "fid"
     assert result.mime_type == choice
     client.sources.add_drive.assert_awaited_once_with("nb_1", "fid", "Drive Doc", expected_mime)
+
+
+@pytest.mark.asyncio
+async def test_add_drive_bad_mime_raises_validation_error() -> None:
+    """An unknown ``mime_type`` raises the public ``ValidationError`` (ADR-0021).
+
+    The CLI never reaches this guard (Click validates the ``Choice`` first), but
+    a transport adapter that forwards a raw string (MCP/HTTP) must get a clean
+    ``VALIDATION`` rather than a raw ``KeyError`` leaking as ``UNEXPECTED``.
+    """
+    client = _client()
+    plan = SourceAddDrivePlan(
+        notebook_id="nb_1",
+        file_id="fid",
+        title="Drive Doc",
+        mime_type="bogus",  # type: ignore[arg-type]
+    )
+    with pytest.raises(ValidationError) as excinfo:
+        await execute_source_add_drive(client, plan)
+    # The message lists the valid keys so the caller can self-correct.
+    assert "google-doc" in str(excinfo.value)
+    client.sources.add_drive.assert_not_called()

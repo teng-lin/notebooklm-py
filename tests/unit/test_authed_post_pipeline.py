@@ -46,11 +46,9 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.unit.conftest import install_post_as_stream
 
 import notebooklm._backoff as _backoff
 import notebooklm._runtime.helpers as _runtime_helpers
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._logging import get_request_id
 from notebooklm._middleware.core import RpcRequest, RpcResponse
 from notebooklm._request_types import AuthSnapshot
@@ -62,6 +60,8 @@ from notebooklm._transport_errors import (
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
+from tests._helpers.client_factory import build_client_shell_for_tests
+from tests.unit.conftest import install_post_as_stream
 
 
 @pytest.fixture(autouse=True)

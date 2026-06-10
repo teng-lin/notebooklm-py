@@ -35,13 +35,13 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from tests.unit.conftest import install_post_as_stream
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._middleware.core import RpcRequest, RpcResponse
 from notebooklm._request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
+from tests.unit.conftest import install_post_as_stream
 
 
 @pytest.fixture(autouse=True)

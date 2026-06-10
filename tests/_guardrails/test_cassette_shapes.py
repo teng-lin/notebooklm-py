@@ -52,7 +52,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 import yaml
 
-from _guardrails._cassette_shape_lint import _find_leaks
+from tests._guardrails._cassette_shape_lint import _find_leaks
 
 pytestmark = pytest.mark.repo_lint
 

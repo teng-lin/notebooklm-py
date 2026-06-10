@@ -2,7 +2,6 @@
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._env import get_base_host, get_base_url
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
@@ -10,6 +9,7 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod, get_batchexecute_url, get_query_url, get_upload_url
 from notebooklm.types import ShareStatus
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def test_default_base_url_is_personal(monkeypatch):

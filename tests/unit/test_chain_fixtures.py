@@ -7,19 +7,20 @@ import asyncio
 import httpx
 import pytest
 
-# Match the import idiom documented in ``tests/_fixtures/__init__.py``:
-# pytest puts ``tests/`` on ``sys.path``, so ``_fixtures.chain`` is the
-# canonical import path for these helpers.
-from _fixtures.chain import (
-    FakeChainTerminal,
-    chain_calls_through_to_terminal,
-    make_request,
-)
 from notebooklm._middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,
     build_chain,
+)
+
+# Match the import idiom documented in ``tests/_fixtures/__init__.py``: the
+# ``tests/`` package chain is complete, so ``tests._fixtures.chain`` is the
+# fully-qualified import path for these helpers.
+from tests._fixtures.chain import (
+    FakeChainTerminal,
+    chain_calls_through_to_terminal,
+    make_request,
 )
 
 # ---------------------------------------------------------------------------

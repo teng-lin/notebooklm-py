@@ -37,7 +37,6 @@ import httpx
 import pytest
 
 import notebooklm._runtime.helpers as _runtime_helpers
-from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import (
     NonIdempotentRetryError,
     NotebookLMClient,
@@ -45,6 +44,7 @@ from notebooklm import (
     ServerError,
 )
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 
 # mock-transport idempotency tests; no HTTP, no cassette. Opt out
 # of the tier-enforcement hook in tests/integration/conftest.py.

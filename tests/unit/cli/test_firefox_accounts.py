@@ -14,9 +14,9 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import MagicMock, patch
 
-from _fixtures.login_io import make_recording_io
 from notebooklm.cli.services.login import firefox_accounts
 from notebooklm.cli.services.login.outcomes import BrowserCookieOutcome
+from tests._fixtures.login_io import make_recording_io
 
 
 def _fake_containers_module(profile_path, *, extract_side_effect=None):

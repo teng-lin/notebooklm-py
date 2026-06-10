@@ -70,7 +70,7 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-from _fixtures.cli_exit_markers import Span, marker_reasons, match_markers
+from tests._fixtures.cli_exit_markers import Span, marker_reasons, match_markers
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"

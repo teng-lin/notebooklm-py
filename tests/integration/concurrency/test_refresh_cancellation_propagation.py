@@ -29,9 +29,9 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 # async-cancellation propagation tests with no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.

@@ -32,9 +32,6 @@ from typing import Any
 import httpx
 import pytest
 
-# pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the
-# canonical import path documented in ``tests/_fixtures/__init__.py``.
-from _fixtures.chain import make_request
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._middleware.core import (
@@ -45,6 +42,10 @@ from notebooklm._middleware.core import (
 )
 from notebooklm._middleware.metrics import MetricsMiddleware
 from notebooklm._types.common import RpcTelemetryEvent
+
+# The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
+# fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
+from tests._fixtures.chain import make_request
 
 
 def _make_terminal_returning(response: httpx.Response) -> NextCall:

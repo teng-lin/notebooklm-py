@@ -54,6 +54,10 @@ class ResearchStatusResult:
     ``public_dict`` is the canonical ``ResearchTask.to_public_dict()`` payload
     the CLI emits verbatim under ``--json`` (byte-stable). The remaining fields
     drive the text-mode render; ``kind`` discriminates the render branch.
+
+    ``task_id`` is the polled task's identifier (empty string for an unfiltered
+    empty poll). A transport adapter that drives a start→status→import workflow
+    (the MCP server) surfaces it so an agent can pin the same task for import.
     """
 
     kind: ResearchStatusKind
@@ -63,6 +67,7 @@ class ResearchStatusResult:
     summary: str
     report: str
     public_dict: dict[str, Any]
+    task_id: str = ""
 
 
 def _classify_status_kind(status_val: str) -> ResearchStatusKind:
@@ -71,14 +76,25 @@ def _classify_status_kind(status_val: str) -> ResearchStatusKind:
     return "other"
 
 
-async def poll_and_classify(client: Any, notebook_id: str) -> ResearchStatusResult:
+async def poll_and_classify(
+    client: Any, notebook_id: str, task_id: str | None = None
+) -> ResearchStatusResult:
     """Poll research status once and classify it for the command layer.
 
     The typed ``ResearchTask`` returned by ``client.research.poll`` is
     serialized to the legacy ``list[dict]`` source shape + the canonical
     ``to_public_dict()`` so the CLI render + ``--json`` output stay unchanged.
+
+    ``task_id`` (optional) is forwarded to ``client.research.poll`` as the
+    task discriminator: when supplied, the poll selects that specific task (or
+    returns the typed ``NOT_FOUND`` sentinel if it is not among the polled
+    results); when ``None`` the unfiltered poll runs, which raises
+    ``AmbiguousResearchTaskError`` if two or more tasks are in flight. The CLI
+    ``research status`` command passes ``None`` (unchanged); the MCP
+    ``research_status`` / ``research_import`` tools pass the agent-supplied id so
+    start→status→import stays pinned to one task.
     """
-    status = await client.research.poll(notebook_id)
+    status = await client.research.poll(notebook_id, task_id)
     # ``ResearchStatus`` is a ``str`` enum; ``.value`` yields the canonical
     # lowercase code the CLI render branches + the original status command keyed
     # off (matches ``execute_research_wait``'s ``status.status.value``).
@@ -91,6 +107,7 @@ async def poll_and_classify(client: Any, notebook_id: str) -> ResearchStatusResu
         summary=status.summary,
         report=status.report,
         public_dict=status.to_public_dict(),
+        task_id=status.task_id,
     )
 
 

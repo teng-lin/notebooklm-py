@@ -5,11 +5,11 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from tests.integration.conftest import install_post_as_stream
 
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCError, RPCMethod
+from tests.integration.conftest import install_post_as_stream
 
 # mock-based refresh-callback wiring tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.

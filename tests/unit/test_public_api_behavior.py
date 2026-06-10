@@ -90,7 +90,7 @@ def _make_sources_api() -> SourcesAPI:
 
 
 def _make_artifacts_api() -> ArtifactsAPI:
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(), get_source_ids=AsyncMock(return_value=[]))
     mind_maps = MagicMock(spec=NoteBackedMindMapService)
@@ -108,7 +108,7 @@ def _make_artifacts_api() -> ArtifactsAPI:
 
 
 def _make_notes_api() -> NotesAPI:
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     # ``None`` is the empty-notebook payload (a notebook with no notes); it is
     # the realistic miss shape that ``fetch_note_rows`` resolves to ``[]``. A
@@ -142,7 +142,7 @@ def _make_labels_api() -> LabelsAPI:
 
 
 def _make_notebooks_api() -> NotebooksAPI:
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     # An empty/degenerate GET_NOTEBOOK payload is the unknown-id shape that
     # ``notebooks.get`` post-validates into ``NotebookNotFoundError`` — so this
@@ -345,7 +345,7 @@ def test_table_covers_all_lookup_namespaces() -> None:
     contract being covered here too — the static and behavioural halves of the
     Tier-1 floor stay in lock-step.
     """
-    from test_public_api_contract import LOOKUP_NAMESPACES
+    from tests.unit.test_public_api_contract import LOOKUP_NAMESPACES
 
     covered = {case.namespace for case in LOOKUP_CASES}
     assert covered == set(LOOKUP_NAMESPACES), (

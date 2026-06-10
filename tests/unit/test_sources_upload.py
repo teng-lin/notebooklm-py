@@ -22,7 +22,7 @@ from notebooklm.types import Source
 @pytest.fixture
 def mock_core():
     """Create a mocked Session for SourcesAPI."""
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock())
     core.auth = MagicMock()

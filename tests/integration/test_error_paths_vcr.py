@@ -58,8 +58,6 @@ synthetic shapes these cassettes carry.
 from __future__ import annotations
 
 import pytest
-from tests.integration.conftest import skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
 
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
@@ -68,6 +66,8 @@ from notebooklm.exceptions import (
     RateLimitError,
     ServerError,
 )
+from tests.integration.conftest import skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
 # All tests in this module are VCR-tier. Skipped when cassettes are absent and
 # we're not in record mode (``NOTEBOOKLM_VCR_RECORD=1``).

@@ -10,7 +10,6 @@ from contextvars import Token
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._logging import (
     RedactingFilter,
     RedactingFormatter,
@@ -18,6 +17,7 @@ from notebooklm._logging import (
     reset_request_id,
     set_request_id,
 )
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 @pytest.fixture(autouse=True)

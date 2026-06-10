@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from _fixtures.fake_core import make_fake_core
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm._mind_map import NoteBackedMindMapService
@@ -18,6 +17,7 @@ from notebooklm.rpc.types import (
     DriveMimeType,
     RPCMethod,
 )
+from tests._fixtures.fake_core import make_fake_core
 
 
 class TestNewEnums:

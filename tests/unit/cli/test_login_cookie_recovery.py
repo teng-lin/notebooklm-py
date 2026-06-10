@@ -23,8 +23,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 _ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
 

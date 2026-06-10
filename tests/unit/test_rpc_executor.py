@@ -7,7 +7,6 @@ from typing import Any
 import httpx
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._rpc_executor import RpcExecutor
@@ -22,6 +21,7 @@ from notebooklm.rpc import (
     RPCTimeoutError,
     ServerError,
 )
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _auth_tokens() -> AuthTokens:

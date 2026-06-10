@@ -35,11 +35,11 @@ we substitute synthetic ``AuthTokens`` for the same reason, mirroring the
 from __future__ import annotations
 
 import pytest
-from tests.integration.conftest import _vcr_record_mode, skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
 
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
+from tests.integration.conftest import _vcr_record_mode, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
 CASSETTE_NAME = "auth_rotate_cookies_refresh.yaml"
 

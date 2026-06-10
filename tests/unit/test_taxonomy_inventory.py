@@ -15,6 +15,15 @@ def _load_inventory_script():
     spec = importlib.util.spec_from_file_location("test_taxonomy_inventory", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    # Register before exec so the dataclass machinery can resolve the module by
+    # ``cls.__module__`` (Python 3.14's ``dataclasses._is_type`` does a bare
+    # ``sys.modules.get(cls.__module__)``). Before the ``tests`` package chain
+    # was completed this happened to be satisfied because pytest imported this
+    # very test file as the top-level module ``test_taxonomy_inventory``; with
+    # fully-qualified ``tests.unit.test_taxonomy_inventory`` it no longer is.
+    import sys
+
+    sys.modules.setdefault(spec.name, module)
     spec.loader.exec_module(module)
     return module
 

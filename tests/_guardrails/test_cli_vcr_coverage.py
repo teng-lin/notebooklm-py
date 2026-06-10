@@ -85,14 +85,16 @@ GROUP_COVERAGE: dict[str, str] = {
 # by reading each command module:
 #   * ``research``/``auth`` build a NotebookLMClient (RPC path) but have no
 #     cassettes yet — they flip on when a maintainer records (#1452 Phase 3).
-#   * ``agent``/``skill`` never touch the RPC API (``agent show`` prints packaged
-#     prompt templates; ``skill`` reads/writes skill files on disk), so a VCR
+#   * ``agent``/``skill``/``mcp`` never touch the RPC API (``agent show`` prints
+#     packaged prompt templates; ``skill`` reads/writes skill files on disk;
+#     ``mcp install`` reads/writes the MCP client's config file on disk), so a VCR
 #     cassette would capture nothing — permanently local-only.
 COVERAGE_EXEMPT: dict[str, str] = {
     "research": _REASON_NEEDS_RECORDING,
     "auth": _REASON_NEEDS_RECORDING,
     "agent": _REASON_LOCAL_ONLY,
     "skill": _REASON_LOCAL_ONLY,
+    "mcp": _REASON_LOCAL_ONLY,
 }
 
 _VALID_REASONS = frozenset({_REASON_NEEDS_RECORDING, _REASON_LOCAL_ONLY})

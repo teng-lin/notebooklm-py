@@ -204,10 +204,10 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
     ``source_path`` / ``_is_retry`` / ``operation_variant`` kwargs were
     removed and are no longer forwarded by this layer.
     """
-    from _fixtures.fake_core import make_fake_core
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
+    from tests._fixtures.fake_core import make_fake_core
 
     client = NotebookLMClient(
         AuthTokens(
@@ -243,10 +243,10 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
 @pytest.mark.asyncio
 async def test_client_rpc_call_forwards_default_arguments() -> None:
     """The default-shape call forwards minimal kwargs and inherits executor defaults."""
-    from _fixtures.fake_core import make_fake_core
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
+    from tests._fixtures.fake_core import make_fake_core
 
     client = NotebookLMClient(
         AuthTokens(

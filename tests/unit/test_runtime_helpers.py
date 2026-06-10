@@ -30,13 +30,13 @@ from collections.abc import Awaitable
 import httpx
 import pytest
 
-from _fixtures.chain import make_request
 from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
 from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware.retry import RetryMiddleware
 from notebooklm._runtime.helpers import is_auth_error, resolve_sleep
 from notebooklm._transport_errors import TransportServerError
 from notebooklm.rpc import AuthError, RPCError, ServerError
+from tests._fixtures.chain import make_request
 
 # ---------------------------------------------------------------------------
 # Direct unit tests for resolve_sleep

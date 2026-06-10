@@ -5,9 +5,10 @@ This subpackage is the canonical replacement for the ``monkeypatch.setattr(...)`
 acquire collaborators through ``make_fake_core(**overrides)`` rather than
 mutating production modules from the outside.
 
-Import style from inside a test file (pytest adds ``tests/`` to ``sys.path``)::
+Import style from inside a test file (the ``tests`` package is fully
+qualified now that the ``__init__.py`` chain is complete)::
 
-    from _fixtures import make_fake_core
+    from tests._fixtures import make_fake_core
 
 See ``docs/adr/0007-test-monkeypatch-policy.md`` for the policy and rationale.
 """

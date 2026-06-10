@@ -64,10 +64,10 @@ from urllib.parse import parse_qs
 
 import pytest
 import yaml
-from tests.integration.conftest import _vcr_record_mode, get_vcr_auth, skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
 
 from notebooklm import NotebookLMClient
+from tests.integration.conftest import _vcr_record_mode, get_vcr_auth, skip_no_cassettes
+from tests.vcr_config import notebooklm_vcr
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 

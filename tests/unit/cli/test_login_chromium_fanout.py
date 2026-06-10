@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 from ._session_helpers import (
     _account_exists,

@@ -61,7 +61,7 @@ from collections import defaultdict, deque
 from collections.abc import Iterable
 from pathlib import Path
 
-from _fixtures.cli_exit_markers import marker_reasons, marker_reasons_for, parse_cli_file
+from tests._fixtures.cli_exit_markers import marker_reasons, marker_reasons_for, parse_cli_file
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI_ROOT = REPO_ROOT / "src" / "notebooklm" / "cli"

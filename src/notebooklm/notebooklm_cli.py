@@ -100,6 +100,7 @@ from .cli import (
     generate,
     label,
     language,
+    mcp,
     note,
     profile,
     register_chat_commands,
@@ -256,6 +257,7 @@ cli.add_command(skill)
 cli.add_command(research)
 cli.add_command(language)
 cli.add_command(profile)
+cli.add_command(mcp)
 
 
 # =============================================================================

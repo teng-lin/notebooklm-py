@@ -1,8 +1,8 @@
 """Shared fixtures and helpers for tests/unit/.
 
 The ``make_core`` async context manager is imported directly by sibling
-test modules (e.g. ``from conftest import make_core``) — pytest adds the
-test directory to ``sys.path`` so the sibling import works.
+test modules (e.g. ``from tests.unit.conftest import make_core``) now that
+the ``tests`` package chain is complete and fully qualified.
 """
 
 from collections.abc import Awaitable, Callable
@@ -12,9 +12,9 @@ from typing import Any
 import httpx
 import pytest
 
-from _fixtures.kernel_test_helpers import install_http_client_for_test
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm.auth import AuthTokens
+from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def install_post_as_stream(

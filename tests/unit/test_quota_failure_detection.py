@@ -28,9 +28,9 @@ from notebooklm.types import GenerationStatus
 
 def _make_api():
     """Return an ArtifactsAPI with mocked runtime + mind-map services."""
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
         rpc_call=AsyncMock(),

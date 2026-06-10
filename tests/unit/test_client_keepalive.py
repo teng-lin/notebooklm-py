@@ -9,9 +9,9 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._auth.keepalive as _auth_keepalive
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
 

@@ -37,10 +37,10 @@ import json
 import httpx
 import pytest
 
-from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient, ServerError
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 
 # Mock-transport tests; no HTTP / no cassette. Opt out of the
 # tier-enforcement hook in tests/integration/conftest.py.

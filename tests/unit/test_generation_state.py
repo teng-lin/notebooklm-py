@@ -323,8 +323,8 @@ async def _noop_operation_scope():
 
 
 def _make_parse_api():
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._artifacts import ArtifactsAPI
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
         rpc_call=AsyncMock(),

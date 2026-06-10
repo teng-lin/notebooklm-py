@@ -24,8 +24,8 @@ import subprocess
 import sys
 import textwrap
 
-from _fixtures.login_io import RecordingLoginIO
 from notebooklm.cli.services.login import io_seam
+from tests._fixtures.login_io import RecordingLoginIO
 
 
 def test_resolve_returns_injected_sink_unchanged():

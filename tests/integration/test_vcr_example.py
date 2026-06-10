@@ -22,6 +22,7 @@ Note: These tests are automatically skipped if cassettes are not available.
 """
 
 import pytest
+
 from tests.integration.conftest import skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 

@@ -44,7 +44,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
-from ..exceptions import NotebookLMError
+from ..exceptions import NotebookLMError, ValidationError
 from ..types import DriveMimeType, Source
 from .resolve import FULL_ID_PATTERN
 from .resolve import validate_id as _neutral_validate_id
@@ -561,7 +561,19 @@ async def execute_source_add_drive(
     client: NotebookLMClient,
     plan: SourceAddDrivePlan,
 ) -> SourceAddDriveResult:
-    """Add a Google Drive document as a source."""
+    """Add a Google Drive document as a source.
+
+    Raises:
+        ValidationError: ``plan.mime_type`` is not one of the supported Drive
+            mime choices. The CLI never reaches this guard (Click validates the
+            ``Choice`` first), but a transport adapter that forwards a raw string
+            (MCP/HTTP) gets a clean ``VALIDATION`` rather than a leaked
+            ``KeyError`` (ADR-0021).
+    """
+    if plan.mime_type not in _DRIVE_MIME_MAP:
+        raise ValidationError(
+            f"Invalid mime_type {plan.mime_type!r}; expected one of {sorted(_DRIVE_MIME_MAP)}"
+        )
     mime = _DRIVE_MIME_MAP[plan.mime_type]
 
     src = await client.sources.add_drive(plan.notebook_id, plan.file_id, plan.title, mime)

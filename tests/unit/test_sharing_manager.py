@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from _fixtures.fake_core import make_fake_core
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sharing_manager import ShareManager, build_share_url
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.fake_core import make_fake_core
 
 BASE_URL = "https://notebooklm.google.com"
 

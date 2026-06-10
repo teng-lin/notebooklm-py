@@ -1,0 +1,84 @@
+{
+  "manifest_version": "0.3",
+  "name": "notebooklm-mcp",
+  "display_name": "NotebookLM (notebooklm-py)",
+  "version": "0.8.0",
+  "description": "Connect Claude to Google NotebookLM: manage notebooks and sources, chat over your notebooks, generate podcasts/videos/quizzes/mind maps, and run research.",
+  "long_description": "This extension connects an MCP host (e.g. Claude Desktop) to Google NotebookLM via the Model Context Protocol, backed by the `notebooklm-py` Python client.\n\n**Prerequisites:**\n1. Install `uv` (the launcher runs `uvx`): `curl -LsSf https://astral.sh/uv/install.sh | sh`\n2. Authenticate once: `uvx --from \"notebooklm-py[mcp]\" notebooklm login` (or `notebooklm login` if installed), then select your Google profile.\n\nThe bundled `run_server.py` launcher locates `uvx` across common install paths and runs `uvx --from \"notebooklm-py[mcp]\" notebooklm-mcp`, so no global install is required.\n\n**Features:**\n- Create, list, describe, rename, and delete notebooks\n- Add sources (URL, YouTube, Google Drive, text, files) and read their content\n- Chat / ask questions over a notebook\n- Generate Audio Overviews (podcasts), videos, quizzes, flashcards, reports, and mind maps\n- Research topics via web or Drive and import the results",
+  "author": {
+    "name": "Teng Lin",
+    "email": "teng.lin@gmail.com",
+    "url": "https://github.com/teng-lin"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/teng-lin/notebooklm-py"
+  },
+  "homepage": "https://github.com/teng-lin/notebooklm-py",
+  "documentation": "https://github.com/teng-lin/notebooklm-py#readme",
+  "support": "https://github.com/teng-lin/notebooklm-py/issues",
+  "server": {
+    "type": "python",
+    "entry_point": "run_server.py",
+    "mcp_config": {
+      "command": "python3",
+      "args": [
+        "${__dirname}/run_server.py"
+      ],
+      "env": {},
+      "platform_overrides": {
+        "win32": {
+          "command": "python"
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "notebook_list",
+      "description": "List all notebooks"
+    },
+    {
+      "name": "notebook_create",
+      "description": "Create a new notebook"
+    },
+    {
+      "name": "source_add",
+      "description": "Add a source (URL, YouTube, Drive, text, or file)"
+    },
+    {
+      "name": "chat_ask",
+      "description": "Ask a question over a notebook's sources"
+    },
+    {
+      "name": "artifact_generate",
+      "description": "Generate audio, video, quizzes, flashcards, reports, or mind maps"
+    },
+    {
+      "name": "research_start",
+      "description": "Research a topic via web or Drive search"
+    }
+  ],
+  "tools_generated": true,
+  "keywords": [
+    "notebooklm",
+    "google",
+    "podcast",
+    "research",
+    "notebook",
+    "ai",
+    "mcp"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

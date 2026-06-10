@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 import pytest
+
 from tests.cassette_patterns import (
     find_cookie_leaks,
     find_credential_leaks,

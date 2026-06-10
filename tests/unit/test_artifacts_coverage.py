@@ -25,7 +25,7 @@ from notebooklm.types import ArtifactDownloadError, GenerationStatus
 @pytest.fixture
 def mock_artifacts_api():
     """Create an ArtifactsAPI with mocked core and notes API."""
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(
         rpc_call=AsyncMock(),

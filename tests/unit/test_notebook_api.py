@@ -30,7 +30,7 @@ def _make_core(rpc_call: AsyncMock | None = None):
     assignment pattern. Callers that need to control the dispatch
     behaviour pass a pre-built ``rpc_call`` here.
     """
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     return make_fake_core(rpc_call=rpc_call if rpc_call is not None else AsyncMock())
 

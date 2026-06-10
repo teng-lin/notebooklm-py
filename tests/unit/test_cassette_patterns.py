@@ -22,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from tests import vcr_config
 from tests.cassette_patterns import (
     DISPLAY_NAME_FALSE_POSITIVES,
@@ -1099,7 +1100,9 @@ def test_display_name_false_positives_mirror_shape_lint() -> None:
     # that ``_``-prefixed module avoids a test-imports-test dependency on
     # ``test_cassette_shapes``. ``tests/`` is on ``sys.path`` so the
     # ``_guardrails`` package resolves.
-    from _guardrails._cassette_shape_lint import DISPLAY_NAME_FALSE_POSITIVES as SHAPE_LINT_FPS
+    from tests._guardrails._cassette_shape_lint import (
+        DISPLAY_NAME_FALSE_POSITIVES as SHAPE_LINT_FPS,
+    )
 
     # Shape-lint stores entries as ``\"Name\"``; the scrub registry stores
     # bare names. Strip the escape wrapping to compare apples-to-apples.

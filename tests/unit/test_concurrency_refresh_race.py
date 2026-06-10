@@ -67,14 +67,14 @@ import textwrap
 import httpx
 import pytest
 
-from _fixtures.kernel_test_helpers import install_http_client_for_test
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 # Test-side deadline for any single asyncio.Event in the race scaffolding.
 # Generous enough not to flake on slow CI, tight enough that a regression

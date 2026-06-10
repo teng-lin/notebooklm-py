@@ -22,8 +22,8 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 @pytest.mark.asyncio
 async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
     """_notebooks.py:get_source_ids — non-list at notebook_data[0] triggers WARNING."""
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[{"unexpected": "dict"}]))
     api = NotebooksAPI(core)
@@ -44,8 +44,8 @@ async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
 @pytest.mark.asyncio
 async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
     """_notebooks.py:get_source_ids — notebook_info[1] not list triggers WARNING."""
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
 
     # notebook_data[0] is a list of length >1 but [1] is not a list
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, "not a list", "x"]]))
@@ -61,8 +61,8 @@ async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
 @pytest.mark.asyncio
 async def test_get_source_ids_happy_path_no_warning(caplog):
     """Well-formed payload extracts source ids and emits no warning."""
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=[[None, [[["src_alpha"]], [["src_beta"]]]]])
@@ -111,8 +111,8 @@ async def test_summary_raises_on_indexerror_drift():
     (None / empty / null slot) returns "" instead and is covered in
     ``test_get_summary_drift.py``.
     """
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
 
     api = NotebooksAPI.__new__(NotebooksAPI)
     # result[0] == [42]: the summary slot is present and non-None but holds an
@@ -143,8 +143,8 @@ async def test_summary_raises_on_indexerror_drift():
 @pytest.mark.asyncio
 async def test_description_partial_summary_logs_debug(caplog):
     """_notebooks.py:273 — partial summary (no topics) logs at DEBUG."""
-    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
 
     api = NotebooksAPI.__new__(NotebooksAPI)
     # outer[0][0] works but outer[1] raises (no topics shape)

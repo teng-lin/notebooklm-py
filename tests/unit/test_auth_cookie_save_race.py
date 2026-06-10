@@ -31,7 +31,6 @@ import notebooklm._atomic_io as _atomic_io
 import notebooklm._auth.refresh as _auth_refresh
 import notebooklm._auth.storage as _auth_storage
 import notebooklm._runtime.lifecycle as _lifecycle
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm.auth import (
     AuthTokens,
     CookieSaveResult,
@@ -42,6 +41,7 @@ from notebooklm.auth import (
     save_cookies_to_storage,
     snapshot_cookie_jar,
 )
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _read_cookies(storage_path: Path) -> list[dict]:

@@ -51,7 +51,6 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._runtime.helpers import _resolve_keepalive_interval
 from notebooklm._runtime.lifecycle import (
     ClientLifecycle,
@@ -61,6 +60,7 @@ from notebooklm._runtime.lifecycle import (
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 class _StubHost:

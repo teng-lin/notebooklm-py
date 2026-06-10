@@ -20,11 +20,11 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._note_service import NoteRowKind, NoteService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
+from tests._fixtures.fake_core import FakeSession, make_fake_core
 
 
 @pytest.fixture

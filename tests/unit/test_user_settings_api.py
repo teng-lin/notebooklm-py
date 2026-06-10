@@ -159,7 +159,7 @@ def test_extract_account_tier_against_recorded_cassette_shape():
 
 @pytest.mark.asyncio
 async def test_get_account_limits_calls_user_settings_rpc():
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, [6, 200, 100, 500000, 1]]]))
     api = SettingsAPI(core.rpc_executor)
@@ -180,7 +180,7 @@ async def test_get_account_limits_calls_user_settings_rpc():
 
 @pytest.mark.asyncio
 async def test_get_account_tier_calls_user_tier_rpc():
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[[[None, "NOTEBOOKLM_TIER_STANDARD"]]]]))
     api = SettingsAPI(core.rpc_executor)
@@ -370,7 +370,7 @@ def test_extract_language_set_prefix_envelope_drift_raises(response):
 
 @pytest.mark.asyncio
 async def test_get_output_language_returns_code_from_wire_shape():
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=_get_response([True, None, None, True, ["zh_Hans"]]))
@@ -383,7 +383,7 @@ async def test_get_output_language_returns_code_from_wire_shape():
 @pytest.mark.asyncio
 async def test_get_output_language_absent_language_returns_none():
     """End-to-end: a user with no language set gets ``None`` (no raise)."""
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=_get_response([True, None, None, True])))
     api = SettingsAPI(core.rpc_executor)
@@ -394,7 +394,7 @@ async def test_get_output_language_absent_language_returns_none():
 @pytest.mark.asyncio
 async def test_get_output_language_envelope_drift_raises():
     """End-to-end: mandatory-envelope drift surfaces as a typed error."""
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[None]))
     api = SettingsAPI(core.rpc_executor)
@@ -405,7 +405,7 @@ async def test_get_output_language_envelope_drift_raises():
 
 @pytest.mark.asyncio
 async def test_set_output_language_returns_confirmed_code():
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=_set_response([True, None, None, True, ["en"]]))
@@ -418,7 +418,7 @@ async def test_set_output_language_returns_confirmed_code():
 @pytest.mark.asyncio
 async def test_set_output_language_absent_confirmation_returns_none():
     """If the SET response omits the language slot, return ``None`` (no raise)."""
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=_set_response([True, None, None, True])))
     api = SettingsAPI(core.rpc_executor)

@@ -24,8 +24,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from _fixtures.fake_core import FakeSession, make_fake_core
-from _guardrails._ast_reach_in import (
+from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._notes import NotesAPI
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
+from tests._fixtures.fake_core import FakeSession, make_fake_core
+from tests._guardrails._ast_reach_in import (
     _assignment_value,
     _call_keyword_value,
     _facade_construction_lines,
@@ -34,11 +38,7 @@ from _guardrails._ast_reach_in import (
     _owned_attr_name,
     _RuntimeImportVisitor,
 )
-from _helpers.client_factory import build_client_shell_for_tests
-from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._notes import NotesAPI
-from notebooklm.auth import AuthTokens
-from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 pytestmark = pytest.mark.repo_lint
 

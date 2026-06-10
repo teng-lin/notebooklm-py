@@ -16,13 +16,13 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from _fixtures.login_io import RecordingLoginIO
 from notebooklm.cli.services.login import cookie_jar
 from notebooklm.cli.services.login.outcomes import (
     CookieValidationFailure,
     NetworkFailure,
     StaleCookies,
 )
+from tests._fixtures.login_io import RecordingLoginIO
 
 
 class _FakeAccount:

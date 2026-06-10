@@ -18,9 +18,9 @@ import warnings
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_core() -> NotebookLMClient:

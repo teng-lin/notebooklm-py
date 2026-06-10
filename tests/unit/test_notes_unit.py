@@ -19,7 +19,7 @@ def mock_core():
     note-row primitives and the mind-map facade — the same surface
     NotesAPI used to exercise via the legacy ``_mind_map`` module-level helpers.
     """
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     return make_fake_core(rpc_call=AsyncMock())
 

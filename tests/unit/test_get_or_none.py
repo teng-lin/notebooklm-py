@@ -63,7 +63,7 @@ def _make_notebooks_api(rpc_call: AsyncMock) -> NotebooksAPI:
     # ADR-0007: configure the rpc_call seam via constructor injection
     # (``make_fake_core(rpc_call=...)``) rather than dotted AsyncMock attribute
     # assignment, which the forbidden-monkeypatch lint rejects.
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=rpc_call)
     return NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
@@ -76,7 +76,7 @@ def sources_api():
 
 @pytest.fixture
 def artifacts_api():
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(), get_source_ids=AsyncMock(return_value=[]))
     mind_maps = MagicMock(spec=NoteBackedMindMapService)
@@ -95,7 +95,7 @@ def artifacts_api():
 
 @pytest.fixture
 def notes_api():
-    from _fixtures.fake_core import make_fake_core
+    from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock())
     note_service = NoteService(core)

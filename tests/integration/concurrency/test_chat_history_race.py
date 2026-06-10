@@ -33,9 +33,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 import httpx
 import pytest
 
-from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
 # integration-tree enforcement hook in ``tests/integration/conftest.py``.

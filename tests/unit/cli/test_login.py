@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import notebooklm.cli.services.playwright_login as _pl
-from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 from .conftest import create_mock_client
 

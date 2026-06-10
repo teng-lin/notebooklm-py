@@ -41,12 +41,12 @@ import pytest
 pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from tests.integration.conftest import skip_no_cassettes  # noqa: E402
-from tests.vcr_config import notebooklm_vcr  # noqa: E402
 
 from notebooklm.auth import AuthTokens  # noqa: E402
 from notebooklm.client import NotebookLMClient  # noqa: E402
 from notebooklm.server.app import create_app  # noqa: E402
+from tests.integration.conftest import skip_no_cassettes  # noqa: E402
+from tests.vcr_config import notebooklm_vcr  # noqa: E402
 
 from .conftest import TEST_TOKEN  # noqa: E402
 

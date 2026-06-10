@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._auth_refresh_retry import RefreshBudget
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCMethod
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 _UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
     "unit_conftest_make_core",

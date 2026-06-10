@@ -173,8 +173,8 @@ class TestEndToEndWithRealNoteService:
 
     @pytest.mark.asyncio
     async def test_real_note_service_round_trip(self) -> None:
-        from _fixtures.fake_core import make_fake_core
         from notebooklm._note_service import NoteService as RealNoteService
+        from tests._fixtures.fake_core import make_fake_core
 
         mind_map_payload = json.dumps({"children": [{"name": "c"}]})
         session = make_fake_core(

@@ -101,7 +101,7 @@ async def test_poll_classifies_no_research() -> None:
     assert isinstance(result, ResearchStatusResult)
     assert result.kind == "no_research"
     assert result.status == "no_research"
-    client.research.poll.assert_awaited_once_with("nb_1")
+    client.research.poll.assert_awaited_once_with("nb_1", None)
 
 
 async def test_poll_classifies_in_progress_carries_query() -> None:

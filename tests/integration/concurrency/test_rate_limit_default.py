@@ -32,11 +32,11 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from tests.integration.conftest import install_post_as_stream
 
-from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient, RateLimitError
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests.integration.conftest import install_post_as_stream
 
 # Uses synthetic HTTPX responses via mock — no cassette, no real HTTP.
 pytestmark = pytest.mark.allow_no_vcr

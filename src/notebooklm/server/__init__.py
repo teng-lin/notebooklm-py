@@ -1,11 +1,11 @@
 """Single-tenant REST API server over the transport-neutral ``_app`` layer.
 
-**Experimental.** Like the drafted ``mcp/`` adapter, this package is
-experimental: the ``/v1`` surface and behavior may change in a minor release.
-It ships behind the optional ``server`` extra and is excluded from the
-public-API compatibility gate. Pin a version before relying on it for automation.
+**Experimental.** Like the ``mcp/`` adapter, this package is experimental: the
+``/v1`` surface and behavior may change in a minor release. It ships behind the
+optional ``server`` extra and is excluded from the public-API compatibility
+gate. Pin a version before relying on it for automation.
 
-The third adapter (after ``cli/`` and the drafted ``mcp/``, per ADR-0021): a
+The third adapter (after ``cli/`` and ``mcp/``, per ADR-0021): a
 localhost HTTP surface that lets scripts and agents drive NotebookLM without a
 CLI process per call. v1 exposes notebooks, sources, chat, and studio-artifact
 generation / download; long-running work uses a poll-the-resource model; every

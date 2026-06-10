@@ -28,7 +28,7 @@ import pytest
 # helper ``_guardrails._ast_reach_in`` so that ``tests/unit/test_init_order.py``
 # can import them from a non-test module instead of from this gate file
 # (issue #1431). This gate imports only the two helpers its own tests exercise.
-from _guardrails._ast_reach_in import _facade_construction_lines, _RuntimeImportVisitor
+from tests._guardrails._ast_reach_in import _facade_construction_lines, _RuntimeImportVisitor
 
 pytestmark = pytest.mark.repo_lint
 

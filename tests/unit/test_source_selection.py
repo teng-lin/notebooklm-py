@@ -1140,8 +1140,8 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_extracts_correctly(self):
         """Test get_source_ids correctly extracts source IDs from notebook data."""
-        from _fixtures.fake_core import make_fake_core
         from notebooklm._notebooks import NotebooksAPI
+        from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
@@ -1169,8 +1169,8 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_empty_notebook(self):
         """Test get_source_ids handles notebook with no sources."""
-        from _fixtures.fake_core import make_fake_core
         from notebooklm._notebooks import NotebooksAPI
+        from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
@@ -1185,8 +1185,8 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_null_response(self):
         """Test get_source_ids handles null API response."""
-        from _fixtures.fake_core import make_fake_core
         from notebooklm._notebooks import NotebooksAPI
+        from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
@@ -1201,8 +1201,8 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_malformed_data(self):
         """Test get_source_ids handles malformed source data gracefully."""
-        from _fixtures.fake_core import make_fake_core
         from notebooklm._notebooks import NotebooksAPI
+        from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)

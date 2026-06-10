@@ -4,9 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from tests.integration.conftest import install_post_as_stream
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._runtime.helpers import is_auth_error
 from notebooklm.rpc import (
@@ -19,6 +17,8 @@ from notebooklm.rpc import (
     RPCTimeoutError,
     ServerError,
 )
+from tests._helpers.client_factory import build_client_shell_for_tests
+from tests.integration.conftest import install_post_as_stream
 
 # httpx-mock + MagicMock based core-layer tests; no real HTTP, no
 # cassette. Opt out of the tier-enforcement hook in tests/integration/conftest.py.

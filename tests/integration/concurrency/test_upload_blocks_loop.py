@@ -65,9 +65,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
+from tests._fixtures.fake_core import FakeSession, make_fake_core
 
 # mock-based loop-blocking detection tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.

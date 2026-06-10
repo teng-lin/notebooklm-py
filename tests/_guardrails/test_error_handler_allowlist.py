@@ -51,7 +51,7 @@ import ast
 from collections.abc import Callable
 from pathlib import Path
 
-from _fixtures.cli_exit_markers import (
+from tests._fixtures.cli_exit_markers import (
     Span,
     marker_reasons,
     marker_reasons_for,

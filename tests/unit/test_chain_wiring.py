@@ -32,7 +32,6 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._middleware.core import (
     Middleware,
     NextCall,
@@ -42,6 +41,7 @@ from notebooklm._middleware.core import (
 )
 from notebooklm._transport_errors import TransportServerError
 from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_core() -> NotebookLMClient:

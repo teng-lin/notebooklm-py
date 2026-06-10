@@ -44,13 +44,6 @@ import logging
 import httpx
 import pytest
 
-# pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
-# import path documented in ``tests/_fixtures/__init__.py``.
-from _fixtures.chain import (
-    FakeChainTerminal,
-    chain_calls_through_to_terminal,
-    make_request,
-)
 from notebooklm._middleware.core import (
     Middleware,
     RpcRequest,
@@ -58,6 +51,14 @@ from notebooklm._middleware.core import (
     build_chain,
 )
 from notebooklm._middleware.tracing import TracingMiddleware
+
+# The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
+# fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
+from tests._fixtures.chain import (
+    FakeChainTerminal,
+    chain_calls_through_to_terminal,
+    make_request,
+)
 
 _TRACE_LOGGER = "notebooklm.middleware.tracing"
 

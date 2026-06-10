@@ -9,8 +9,8 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 from ._session_helpers import (
     _account_exists,

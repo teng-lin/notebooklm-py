@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_auth() -> AuthTokens:

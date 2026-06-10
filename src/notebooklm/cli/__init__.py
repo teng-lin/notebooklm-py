@@ -62,6 +62,7 @@ from .helpers import (
 )
 from .label_cmd import label
 from .language_cmd import get_language, language
+from .mcp_cmd import mcp
 from .note_cmd import note
 from .notebook_cmd import register_notebook_commands
 from .options import (
@@ -96,6 +97,7 @@ __all__ = [
     "research",
     "language",
     "profile",
+    "mcp",
     # Language config
     "get_language",
     # Register functions (top-level command style)

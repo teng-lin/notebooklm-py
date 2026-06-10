@@ -26,10 +26,10 @@ from pathlib import Path
 import httpx
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_core(tmp_path: Path, *, cookie_saver=None) -> NotebookLMClient:

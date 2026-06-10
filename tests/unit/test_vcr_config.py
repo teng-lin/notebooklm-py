@@ -29,11 +29,11 @@ from urllib.parse import quote
 
 import pytest
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._error_injection import (
     ERROR_INJECT_ENV_VAR,
     _get_error_injection_mode,
 )
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 # Load ``tests/vcr_config.py`` via ``importlib`` rather than mutating
 # ``sys.path``. The ``tests`` directory is not a package (no ``__init__.py``),

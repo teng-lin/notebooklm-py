@@ -17,9 +17,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from tests.unit.conftest import install_post_as_stream
 
-from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm import _env
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -27,6 +25,8 @@ from notebooklm.rpc import RPCMethod
 from notebooklm.rpc import overrides as rpc_overrides
 from notebooklm.rpc import types as rpc_types
 from notebooklm.rpc.overrides import _load_rpc_overrides, _parse_rpc_overrides, resolve_rpc_id
+from tests._helpers.client_factory import build_client_shell_for_tests
+from tests.unit.conftest import install_post_as_stream
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RPC_TYPES_PATH = PROJECT_ROOT / "src" / "notebooklm" / "rpc" / "types.py"

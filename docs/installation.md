@@ -233,7 +233,7 @@ pre-commit install
 
 **Why `uv sync --frozen` and not `uv pip install -e ".[all]"`:** the repo has a checked-in `uv.lock`. `uv sync --frozen` enforces the lockfile and fails fast on drift; `uv pip install` ignores the lockfile and re-resolves transitively (will silently get newer versions of `playwright`, `ruff`, etc.).
 
-**Why three extras and not `[all]`:** `[all]` is `pip` extras semantics. `uv sync --extra X` is the `uv` equivalent. The three extras here mirror the contents of `[all]` = `[browser, dev, markdown]`. `cookies` is intentionally excluded (`rookiepy` build issues on Python 3.13+); opt in via `--extra cookies` if needed.
+**Why three extras and not `[all]`:** `[all]` is `pip` extras semantics. `uv sync --extra X` is the `uv` equivalent. The three extras here are the contributor subset of `[all]` = `[browser, dev, markdown, mcp]`. `cookies` is intentionally excluded (`rookiepy` build issues on Python 3.13+) and `mcp` is omitted from the default contributor flow (the MCP server isn't needed for the standard test run); opt into either via `--extra cookies` / `--extra mcp` if needed.
 
 **Why `browser` is part of the contributor install:** the default local test suite includes unit tests that import and patch `playwright.sync_api`, even though they do not launch a real browser. `uv sync --frozen --extra dev` installs pytest/ruff/mypy but not Playwright, so `uv run pytest` will fail with `ModuleNotFoundError: No module named 'playwright'`. Use the full contributor command above before running the default test suite.
 
@@ -282,9 +282,10 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 | `browser` | `playwright>=1.40.0` | `notebooklm login` (interactive). | `pip install "notebooklm-py[browser]"` | `uv add "notebooklm-py[browser]"` |
 | `cookies` | `rookiepy>=0.1.0` | `notebooklm login --browser-cookies <browser>`, `notebooklm auth inspect`. | `pip install "notebooklm-py[cookies]"` | `uv add "notebooklm-py[cookies]"` |
 | `markdown` | `markdownify>=0.14.1` | `notebooklm source fulltext -f markdown`. | `pip install "notebooklm-py[markdown]"` | `uv add "notebooklm-py[markdown]"` |
-| `server` | `fastapi`, `uvicorn[standard]`, `python-multipart` | The localhost REST API server (`notebooklm-server`). See [§ REST API server](#rest-api-server). | `pip install "notebooklm-py[server]"` | `uv add "notebooklm-py[server]"` |
+| `mcp` | `fastmcp>=2.14` | Run the MCP server (`notebooklm-mcp`) so an MCP client/agent can drive NotebookLM as tools. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` |
+| `server` | `fastapi`, `uvicorn[standard]`, `python-multipart` | The localhost REST API server (`notebooklm-server`, experimental). See [§ REST API server](#rest-api-server). | `pip install "notebooklm-py[server]"` | `uv add "notebooklm-py[server]"` |
 | `dev` | pytest stack, mypy, ruff (`==0.15.13` exact pin), pre-commit (`>=4.5.1`), vcrpy | Contributor tooling only. Not sufficient for this repo's default `uv run pytest`; add `browser` too because some unit tests import Playwright. | `pip install "notebooklm-py[dev]"` | `uv add "notebooklm-py[dev]"` (in your project) — but contributors *to this repo* use the [Persona E](#e-contributor) `uv sync` flow instead |
-| `all` | Resolves to `browser` + `dev` + `markdown` + `server` (**not `cookies`**) | Contributors who do not need `rookiepy`. | `pip install "notebooklm-py[all]"` | `uv add "notebooklm-py[all]"` (in your project) — see [All vs All-Extras](#all-vs-all-extras) |
+| `all` | Resolves to `browser` + `dev` + `markdown` + `mcp` + `server` (**not `cookies`**) | Contributors who do not need `rookiepy`. | `pip install "notebooklm-py[all]"` | `uv add "notebooklm-py[all]"` (in your project) — see [All vs All-Extras](#all-vs-all-extras) |
 
 > **Note on `uv` columns:** the `uv (in your project)` column is for users adding `notebooklm-py` as a dependency in **their own** project (requires a `pyproject.toml` in that project). Contributors working inside *this* repo use the Persona E flow (`uv sync --frozen --extra ...`), governed by this repo's `uv.lock`. Do not run `uv sync` outside a project — it errors with `No pyproject.toml found`.
 
@@ -401,6 +402,22 @@ notebooklm skill install               # writes ~/.claude/skills/notebooklm/, ~/
 
 Optional — only needed if your agent harness reads from those directories and the skill isn't already present.
 
+### Running the MCP server (`mcp` extra)
+
+The MCP server ships behind the optional `mcp` extra (see the extras matrix above) and exposes the same `_app/` business logic over the Model Context Protocol.
+
+<!-- not mirrored: end-user MCP run/config pointer; out of scope for the contributor README -->
+```bash
+notebooklm-mcp                                         # installed console script (stdio transport)
+uvx --from "notebooklm-py[mcp]" notebooklm-mcp         # no install — run straight from PyPI
+```
+
+Wire it into an MCP client with either:
+- `notebooklm mcp install <client>` — auto-writes the server config for `claude-desktop`, `claude-code`, `cursor`, or `windsurf`; or
+- the one-click `.mcpb` desktop bundle built from `desktop-extension/` (Claude Desktop's "Install Extension").
+
+Full usage walkthrough (auth, transports, the 25 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
+
 ---
 
 ## Verifying your install
@@ -465,7 +482,7 @@ rm -rf ~/.notebooklm                          # optional: remove auth state
 
 > ⚠️  **`pip install ".[all]"` and `uv sync --all-extras` are not equivalent.**
 >
-> - `pyproject.toml` defines: `all = ["notebooklm-py[browser,dev,markdown]"]` — a self-referential extras string that resolves to **browser + dev + markdown only**. It deliberately excludes `cookies` because `rookiepy` has install issues on Python 3.13+ ([CHANGELOG `[0.4.1]`](../CHANGELOG.md)).
+> - `pyproject.toml` defines: `all = ["notebooklm-py[browser,dev,markdown,mcp]"]` — a self-referential extras string that resolves to **browser + dev + markdown + mcp only**. It deliberately excludes `cookies` because `rookiepy` has install issues on Python 3.13+ ([CHANGELOG `[0.4.1]`](../CHANGELOG.md)).
 > - `uv sync --all-extras` installs **every** extra including `cookies`, and may fail on Python 3.13/3.14.
 > - In this repo, prefer `uv sync --frozen --extra browser --extra dev --extra markdown`.
 
