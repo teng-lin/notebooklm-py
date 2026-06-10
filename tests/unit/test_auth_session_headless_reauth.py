@@ -160,7 +160,7 @@ async def test_dead_cookies_optin_success_retries_and_refreshes(
     monkeypatch, tmp_path: Path
 ) -> None:
     storage = tmp_path / "storage_state.json"
-    storage.write_text('{"cookies": [], "origins": []}')
+    storage.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
     state: dict[str, int] = {}
     import notebooklm._auth.headless_reauth as hr
 
@@ -206,7 +206,7 @@ async def test_concurrent_refreshes_coalesce_to_one_browser(monkeypatch, tmp_pat
     headless browser drive.
     """
     storage = tmp_path / "storage_state.json"
-    storage.write_text('{"cookies": [], "origins": []}')
+    storage.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
     state: dict[str, int] = {}
     drives = {"count": 0}
     import notebooklm._auth.headless_reauth as hr

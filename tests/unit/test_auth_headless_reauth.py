@@ -283,7 +283,7 @@ def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path, mo
         drives["count"] += 1
         time.sleep(0.05)  # hold the lock so followers pile up behind it
         # Simulate the real capture writing fresh storage (advances mtime).
-        plan.storage_path.write_text('{"cookies": [], "origins": []}')
+        plan.storage_path.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
 
     monkeypatch.setattr(hr, "run_browser_capture", _slow_capture)
     monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())

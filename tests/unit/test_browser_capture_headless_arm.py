@@ -136,7 +136,7 @@ def test_headless_authenticated_landing_persists_storage(tmp_path: Path) -> None
 
     # Persisted, and the domain allowlist filtered out the mail.google.com row.
     assert storage.exists()
-    persisted = json.loads(storage.read_text())
+    persisted = json.loads(storage.read_text(encoding="utf-8"))
     names = {c["name"] for c in persisted["cookies"]}
     assert "SID" in names
     assert "X" not in names
