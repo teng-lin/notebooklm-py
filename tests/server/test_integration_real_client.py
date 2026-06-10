@@ -3,39 +3,44 @@ backed by **existing** VCR cassettes.
 
 The rest of ``tests/server/`` uses an in-memory :class:`FakeClient`, which is fast
 and good for adapter wiring but cannot catch divergence between the fake and the
-real client runtime — real ``rpc/`` decode and real ``_app.serialize`` shapes.
+real client runtime — real ``rpc/`` decode, real ``_app.serialize`` shapes, and
+real ``_app.errors.classify`` → HTTP status projection.
 
 These tests close that gap by binding ``create_app`` to a real client and
-**replaying recorded cassettes** from ``tests/cassettes`` (the same recordings
-the ``tests/integration`` / CLI-VCR suites use). No new traffic is recorded — they
-reuse existing cassettes, so a real Google response shape flows through the full
-``decode → serialize → HTTP`` path of the server adapter.
+**replaying recorded cassettes** from ``tests/cassettes`` (the same recordings the
+``tests/integration`` / CLI-VCR suites use). No new traffic is recorded. VCR
+matches on ``rpcids`` + ``f.req`` body *shape* (not leaf id values), so a
+placeholder notebook id drives any same-shape recording.
 
-Note on error-classification coverage: the gRPC-status-5 → 404 contract is
-exercised end-to-end without a (nonexistent) not-found cassette by composing two
-existing tests — ``tests/unit/test_decoder.py`` proves a real status-5 frame
-decodes to ``ClientError(rpc_code=5)``, and ``tests/server/test_errors.py`` proves
-that exception projects to ``404 not_found`` through the server's ``classify``.
+Surface covered through the real stack:
 
-Runs only under the ``server`` extra (``importorskip``), i.e. in the dedicated
-``REST server`` CI job; skipped when cassettes are unavailable.
+* notebooks — list, get, create, delete (full)
+* sources   — list, add url, add text, delete
+* chat      — ask (full)
+* artifacts — list
+* errors    — a real 429 → RATE_LIMITED → 429 and a real 5xx → 502 projection
+
+Not covered here (and why): the file-upload, artifact generate/poll/download
+endpoints are multi-RPC orchestrations whose recorded shapes depend on inputs a
+single existing cassette can't supply in isolation; they stay covered by the
+``FakeClient`` adapter tests and (for upload's cross-platform file handling) the
+dedicated ``REST server`` CI matrix. The gRPC-status-5 → 404 contract is covered
+by composition: ``tests/unit/test_decoder.py`` (real status-5 frame →
+``ClientError(rpc_code=5)``) + ``tests/server/test_errors.py`` (that → 404).
+
+Runs only under the ``server`` extra (``importorskip``); skipped without cassettes.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from typing import Any
 
 import pytest
 
 pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
-
-# VCR replay machinery (shared with the integration / CLI-VCR suites). Importing
-# the modules only pulls in the objects — the integration conftest's autouse
-# fixtures/hooks stay scoped to their own directory tree.
 from tests.integration.conftest import skip_no_cassettes  # noqa: E402
 from tests.vcr_config import notebooklm_vcr  # noqa: E402
 
@@ -46,6 +51,12 @@ from notebooklm.server.app import create_app  # noqa: E402
 from .conftest import TEST_TOKEN  # noqa: E402
 
 pytestmark = skip_no_cassettes
+
+#: Recorded placeholder ids (shape-matched by VCR — see module docstring).
+_NB = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
+_SRC = "fdfc8ac4-3237-4f2a-8a79-3e24297a7040"
+#: A notebook id recorded in ``real_api_get_notebook.yaml`` (asserted by value).
+_GET_NB = "167481cd-23a3-4331-9a45-c8948900bf91"
 
 
 def _mock_auth() -> AuthTokens:
@@ -64,46 +75,116 @@ def _mock_auth() -> AuthTokens:
 
 
 @pytest.fixture
-def real_client_app() -> Any:
-    """A FastAPI app whose lifespan opens a real ``NotebookLMClient``."""
+def real_authed_client() -> Iterator[TestClient]:
+    """A TestClient over an app whose lifespan opens a real ``NotebookLMClient``."""
 
     @asynccontextmanager
     async def factory() -> AsyncIterator[NotebookLMClient]:
         async with NotebookLMClient(_mock_auth()) as client:
             yield client
 
-    return create_app(client_factory=factory)
-
-
-@pytest.fixture
-def real_authed_client(real_client_app: Any) -> Iterator[TestClient]:
+    app = create_app(client_factory=factory)
     headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
-    with TestClient(real_client_app, headers=headers, raise_server_exceptions=False) as c:
+    with TestClient(app, headers=headers, raise_server_exceptions=False) as c:
         yield c
 
 
-#: A notebook id recorded in ``real_api_get_notebook.yaml`` (GET_NOTEBOOK).
-_RECORDED_NB_ID = "167481cd-23a3-4331-9a45-c8948900bf91"
-
-
-class TestRealSerialization:
+class TestNotebooks:
     @notebooklm_vcr.use_cassette("cli_notebook_list.yaml")
-    def test_list_notebooks_real_shape(self, real_authed_client: TestClient) -> None:
-        # Real LIST_NOTEBOOKS cassette → real client decode → real to_jsonable.
+    def test_list(self, real_authed_client: TestClient) -> None:
         resp = real_authed_client.get("/v1/notebooks")
         assert resp.status_code == 200
         notebooks = resp.json()["notebooks"]
-        assert notebooks, "recorded LIST_NOTEBOOKS should yield a non-empty list"
-        # The real serialized shape carries id + title on every notebook.
-        first = notebooks[0]
-        assert isinstance(first.get("id"), str) and first["id"]
-        assert "title" in first
+        assert notebooks
+        assert isinstance(notebooks[0].get("id"), str) and notebooks[0]["id"]
+        assert "title" in notebooks[0]
 
     @notebooklm_vcr.use_cassette("real_api_get_notebook.yaml", allow_playback_repeats=True)
-    def test_get_notebook_real_shape(self, real_authed_client: TestClient) -> None:
-        # Real GET_NOTEBOOK cassette → real Notebook serialization for a known id.
-        resp = real_authed_client.get(f"/v1/notebooks/{_RECORDED_NB_ID}")
+    def test_get(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.get(f"/v1/notebooks/{_GET_NB}")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["id"] == _RECORDED_NB_ID
+        assert body["id"] == _GET_NB
         assert isinstance(body.get("title"), str) and body["title"]
+
+    @notebooklm_vcr.use_cassette("cli_notebook_create.yaml", allow_playback_repeats=True)
+    def test_create(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.post("/v1/notebooks", json={"title": "VCR CLI Test Notebook"})
+        assert resp.status_code == 201
+        body = resp.json()
+        assert isinstance(body.get("id"), str) and body["id"]
+        assert "title" in body
+
+    @notebooklm_vcr.use_cassette("cli_notebook_delete.yaml", allow_playback_repeats=True)
+    def test_delete(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.delete(f"/v1/notebooks/{_NB}")
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+
+class TestSources:
+    @notebooklm_vcr.use_cassette("sources_list.yaml", allow_playback_repeats=True)
+    def test_list(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.get(f"/v1/notebooks/{_NB}/sources")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["notebook_id"] == _NB
+        assert isinstance(body["sources"], list)
+
+    @notebooklm_vcr.use_cassette("sources_add_url.yaml", allow_playback_repeats=True)
+    def test_add_url(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.post(
+            f"/v1/notebooks/{_NB}/sources/url", json={"url": "https://example.com/x"}
+        )
+        assert resp.status_code == 201
+        assert isinstance(resp.json().get("id"), str)
+
+    @notebooklm_vcr.use_cassette("sources_add_text.yaml", allow_playback_repeats=True)
+    def test_add_text(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.post(
+            f"/v1/notebooks/{_NB}/sources/text", json={"text": "hello world", "title": "T"}
+        )
+        assert resp.status_code == 201
+        assert isinstance(resp.json().get("id"), str)
+
+    @notebooklm_vcr.use_cassette("sources_delete.yaml", allow_playback_repeats=True)
+    def test_delete(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.delete(f"/v1/notebooks/{_NB}/sources/{_SRC}")
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+
+class TestChatAndArtifacts:
+    @notebooklm_vcr.use_cassette("chat_ask.yaml", allow_playback_repeats=True)
+    def test_chat_ask(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.post(
+            f"/v1/notebooks/{_NB}/chat", json={"question": "What is this notebook about?"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body.get("answer"), str) and body["answer"]
+        assert body.get("conversation_id")
+
+    @notebooklm_vcr.use_cassette("artifacts_list.yaml", allow_playback_repeats=True)
+    def test_artifacts_list(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.get(f"/v1/notebooks/{_NB}/artifacts")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["notebook_id"] == _NB
+        assert isinstance(body["artifacts"], list)
+
+
+class TestErrorProjection:
+    """Real client-level error → ``classify`` → HTTP status, via synthetic-error
+    cassettes (existing recordings reused by the CLI error-contract suite)."""
+
+    @notebooklm_vcr.use_cassette("error_synthetic_429_rate_limit.yaml", allow_playback_repeats=True)
+    def test_rate_limit_maps_to_429(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.get("/v1/notebooks")
+        assert resp.status_code == 429
+        assert resp.json()["error"]["category"] == "rate_limited"
+
+    @notebooklm_vcr.use_cassette("error_synthetic_500_server.yaml", allow_playback_repeats=True)
+    def test_server_error_maps_to_502(self, real_authed_client: TestClient) -> None:
+        resp = real_authed_client.get("/v1/notebooks")
+        assert resp.status_code == 502
