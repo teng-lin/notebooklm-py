@@ -142,6 +142,13 @@ def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
     _configure_logging(args.log_level)
 
+    # The REST server is EXPERIMENTAL — its surface and behavior may change in a
+    # minor release. Surface this on every startup so operators aren't surprised.
+    logging.getLogger("notebooklm.server").warning(
+        "notebooklm-server is EXPERIMENTAL: the /v1 surface and behavior may "
+        "change without notice. Pin a version for automation."
+    )
+
     # A --token (or its NOTEBOOKLM_SERVER_TOKEN default) seeds the env the auth
     # dependency reads, so an explicit flag works even when the env was unset.
     if args.token:

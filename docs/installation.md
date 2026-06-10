@@ -292,6 +292,8 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 
 ## REST API server
 
+> **⚠️ Experimental.** Like the drafted MCP adapter, the REST server is experimental: the `/v1` surface and behavior may change in a minor release, and it is excluded from the public-API compatibility gate. Pin a version before relying on it for automation. The server also logs an experimental warning on every startup.
+
 A single-tenant, localhost REST API over the same transport-neutral core as the CLI — the natural shape for scripting and agent automation (feed a notebook, generate an artifact, pull it down) without spawning a CLI process per call.
 
 <!-- not mirrored: the server extra is end-user/automation tooling, not part of the contributor `uv sync` flow; CONTRIBUTING.md tracks only browser/dev/markdown. -->
@@ -335,7 +337,25 @@ curl -H "Authorization: Bearer $TOKEN" -d '{"question":"Summarize"}' \
      -H 'Content-Type: application/json' $BASE/v1/notebooks/<id>/chat # blocking answer
 ```
 
-Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact. Failures arrive as `{"error": {"category": "...", "message": "..."}}` with a category-derived HTTP status.
+Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact.
+
+**Artifacts & uploads:**
+
+<!-- not mirrored: REST-server artifact/upload curl examples (end-user/automation tooling); not part of the contributor install flow. -->
+```bash
+# Generate (non-blocking → 202 + task_id). Omit source_ids to use ALL sources
+# (like the CLI); pass them to scope. Some types (quiz/flashcards) need >=1 source.
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"type":"quiz"}' $BASE/v1/notebooks/<id>/artifacts        # → {"task_id": ...}
+curl -H "Authorization: Bearer $TOKEN" $BASE/v1/notebooks/<id>/artifacts/<task_id>  # poll
+curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"type":"audio"}' $BASE/v1/notebooks/<id>/artifacts/download -o out.mp3     # download
+# File upload is multipart (the original filename + content-type are preserved):
+curl -H "Authorization: Bearer $TOKEN" -F 'file=@./notes.pdf' \
+     $BASE/v1/notebooks/<id>/sources/file
+```
+
+**Error envelope:** every failure is `{"error": {"category": "...", "message": "..."}}` with a category-derived HTTP status — `not_found`→404, `validation`→400/422, `auth`→401/403, `rate_limited`→429, `notebook_limit`→409, server/network→502, timeouts→504. The category is classified once by `_app.errors.classify`, shared with the CLI.
 
 ---
 
