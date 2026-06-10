@@ -43,11 +43,29 @@ def _profile_is_reusable() -> bool:
     return True
 
 
+def _playwright_available() -> bool:
+    """True when the ``browser`` extra is importable.
+
+    Without it ``attempt_headless_reauth`` returns ``UNAVAILABLE`` (nothing to
+    drive), which is NOT one of the SUCCESS/FAILED outcomes this test asserts —
+    so the gate must skip rather than let the test fail on a missing optional
+    dependency.
+    """
+    try:
+        import playwright.sync_api  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 _GATE = pytest.mark.skipif(
-    os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH") != "1" or not _profile_is_reusable(),
+    os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH") != "1"
+    or not _profile_is_reusable()
+    or not _playwright_available(),
     reason=(
-        "headless re-auth e2e requires NOTEBOOKLM_HEADLESS_REAUTH=1 and a "
-        "non-empty persistent browser profile (run 'notebooklm login' first)"
+        "headless re-auth e2e requires NOTEBOOKLM_HEADLESS_REAUTH=1, a non-empty "
+        "persistent browser profile (run 'notebooklm login' first), and the "
+        "'browser' extra installed"
     ),
 )
 
