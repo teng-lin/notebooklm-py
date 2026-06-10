@@ -76,9 +76,12 @@ class _UnsetType:
 
     Used where ``None`` is itself a meaningful caller value
     (``refresh_callback=None`` means "no refresh callback";
-    ``keepalive_storage_path=None`` means "no keepalive persistence"), so
-    the production default ("use ``client.refresh_auth``" / "derive from
-    ``auth.storage_path``") needs a distinct marker.
+    ``keepalive_storage_path=None`` skips the constructor-level
+    canonicalization and lets ``compose_client_internals`` apply its own
+    raw ``auth.storage_path`` fallback — the historical test-shell
+    behavior), so the production default ("use ``client.refresh_auth``" /
+    "derive the canonicalized path from ``auth.storage_path``") needs a
+    distinct marker.
     """
 
 
@@ -180,7 +183,10 @@ def _assemble_client(
     # are intentionally left as the caller provided them — only the
     # internal-derived keepalive storage path is canonicalized. The test
     # factory passes its own ``keepalive_storage_path`` explicitly, which
-    # bypasses the derivation (preserving the historical shell semantics).
+    # bypasses THIS canonicalizing derivation (preserving the historical
+    # shell semantics); an explicit ``None`` still falls through to
+    # ``compose_client_internals``' own raw ``auth.storage_path``
+    # fallback downstream.
     if isinstance(keepalive_storage_path, _UnsetType):
         derived_keepalive_path: Path | None = auth.storage_path
         if derived_keepalive_path is not None:

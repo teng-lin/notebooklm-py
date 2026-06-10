@@ -70,8 +70,11 @@ def build_client_shell_for_tests(
 
     - ``refresh_callback=None`` — no auth-refresh coordination unless a
       test injects one (production wires ``client.refresh_auth``).
-    - ``keepalive_storage_path=None`` — passed through verbatim; the
-      production derivation from ``auth.storage_path`` is bypassed.
+    - ``keepalive_storage_path`` — passed through verbatim, bypassing the
+      production canonicalization (``expanduser().resolve()``) of
+      ``auth.storage_path``; an explicit ``None`` still falls through to
+      ``compose_client_internals``' own raw ``auth.storage_path``
+      fallback, as it always did.
     - The client is returned **unopened**: loop binding still happens at
       ``open()`` time (via ``__aenter__``), exactly as in production.
     """

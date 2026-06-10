@@ -26,7 +26,10 @@ CLIENT_HOST_NAMES = {"self", "client"}
 FEATURE_API_NAMES = {
     "ArtifactsAPI",
     "ChatAPI",
+    "LabelsAPI",
+    "MindMapsAPI",
     "NotebooksAPI",
+    "NoteBackedMindMapService",
     "NotesAPI",
     "ResearchAPI",
     "SettingsAPI",

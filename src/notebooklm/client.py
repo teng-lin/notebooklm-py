@@ -31,28 +31,39 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 if TYPE_CHECKING:
-    from ._artifacts import ArtifactsAPI
-    from ._chat import ChatAPI
-    from ._client_composed import ClientComposed
-    from ._client_seams import ClientSeams
-    from ._labels import LabelsAPI
-    from ._mind_maps_api import MindMapsAPI
-    from ._notebooks import NotebooksAPI
-    from ._notes import NotesAPI
-    from ._research import ResearchAPI
-    from ._rpc_executor import RpcExecutor
-    from ._runtime.init import RuntimeCollaborators
-    from ._settings import SettingsAPI
-    from ._sharing import SharingAPI
-    from ._source.upload import SourceUploadPipeline
-    from ._sources import SourcesAPI
     from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
+# The construction wiring lives in ``_client_assembly`` (the seam shared
+# with the canonical test factory), but the names below stay runtime
+# imports on purpose:
+#
+# - the feature-API / collaborator types annotate the class-level
+#   attribute block, and keeping them importable at runtime keeps
+#   ``typing.get_type_hints(NotebookLMClient)`` working for downstream
+#   introspection;
+# - this module's attribute surface (``notebooklm.client.SourcesAPI``
+#   etc.) predates the assembly split and is kept byte-compatible so
+#   external tooling/imports against it don't break. The F401-suppressed
+#   names are exactly the previously-importable names the annotations no
+#   longer reference.
+from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
+from ._chat import ChatAPI
 from ._client_assembly import _assemble_client
+from ._client_composed import ClientComposed
+from ._client_seams import ClientSeams
+from ._client_seams import resolve_client_seams as resolve_client_seams  # noqa: F401
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
+from ._labels import LabelsAPI
+from ._mind_map import NoteBackedMindMapService as NoteBackedMindMapService  # noqa: F401
+from ._mind_maps_api import MindMapsAPI
+from ._note_service import NoteService as NoteService  # noqa: F401
+from ._notebooks import NotebooksAPI
+from ._notes import NotesAPI
+from ._research import ResearchAPI
+from ._rpc_executor import RpcExecutor
 from ._runtime.config import (
     DEFAULT_CHAT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -60,7 +71,13 @@ from ._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
+from ._runtime.init import RuntimeCollaborators
+from ._runtime.init import compose_client_internals as compose_client_internals  # noqa: F401
 from ._runtime.lifecycle import CookieRotator, CookieSaver
+from ._settings import SettingsAPI
+from ._sharing import SharingAPI
+from ._source.upload import SourceUploadPipeline
+from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
 from .auth import authuser_query as authuser_query

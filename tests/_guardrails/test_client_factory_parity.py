@@ -98,6 +98,40 @@ def test_factory_shell_matches_production_constructor_surface() -> None:
     )
 
 
+def test_shared_wiring_identities_hold_on_both_paths() -> None:
+    """Identity pins the surface comparison cannot see.
+
+    The name+type comparison above would miss *same-type rewiring* — e.g.
+    a path that builds its ``ChatAPI`` against a privately constructed
+    ``NotebooksAPI`` instead of the client's own (the #1225 drift was an
+    open-time dependency on exactly this kind of shared wiring). Pin the
+    load-bearing identities on BOTH construction paths:
+
+    - ``chat`` resolves source ids through the client's own ``notebooks``;
+    - every collaborator consumer shares the one RPC executor;
+    - the uploader aliases the client-owned ``AuthTokens`` (ADR-0016's
+      Auth Instance Invariant).
+    """
+    for label, client in (
+        ("NotebookLMClient(...)", NotebookLMClient(_make_auth())),
+        ("build_client_shell_for_tests(...)", build_client_shell_for_tests(auth=_make_auth())),
+    ):
+        assert client.chat._notebooks is client.notebooks, (
+            f"{label}: chat must share the client's NotebooksAPI instance, "
+            "not a privately constructed one"
+        )
+        assert client.notebooks._rpc is client._rpc_executor, (
+            f"{label}: notebooks must dispatch through the client's shared RpcExecutor"
+        )
+        assert client._source_uploader._auth is client._auth, (
+            f"{label}: the upload pipeline must alias the client-owned AuthTokens "
+            "(ADR-0016 Auth Instance Invariant)"
+        )
+        assert client.auth is client._auth, (
+            f"{label}: the public auth property must alias the client-owned AuthTokens"
+        )
+
+
 # --- detector self-tests (non-vacuity, per docs/development.md) ------------
 
 
