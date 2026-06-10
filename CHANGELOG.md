@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or link-local target and write the response body to disk. Redirect requests
   are now checked before they are sent, and percent-encoded hosts are rejected
   instead of decoded into a trusted-looking hostname.
+- **Runtime secret redaction now comes from one canonical registry** (backport
+  of #1530). Logs and exception previews now scrub session cookies, secure
+  host-cookie names, `LSOLH` / `__Host-GAPS`-style cookies, and Google API key
+  token shapes consistently before diagnostics can include them.
 
 ## [0.7.3] - 2026-06-29
 

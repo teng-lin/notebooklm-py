@@ -353,8 +353,7 @@ class UnknownRPCMethodError(DecodingError):
     """RPC response structure doesn't match expectations.
 
     This often indicates Google has changed the API. Check for library updates.
-
-    Carries structured context to help diagnose schema drift:
+    Carries structured context to help diagnose schema drift.
 
     Attributes:
         method_id: The RPC method ID that was requested (or that drifted).
@@ -364,12 +363,11 @@ class UnknownRPCMethodError(DecodingError):
             this error (e.g. ``"_notebooks.list"``).
         found_ids: When raised by the response-level decoder, the list of RPC
             IDs actually present in the response.
-        raw_response: First 80 chars of the raw response, when available
-            (``NOTEBOOKLM_DEBUG=1`` preserves the full body). The string branch
-            is secret-scrubbed before truncation; non-string payloads are stored
-            as-is on this subclass.
-        data_at_failure: Truncated repr (~200 chars) of the data the helper
-            was attempting to index into when descent failed.
+        raw_response: As for :class:`RPCError` (secret-scrubbed, ~80 chars or
+            full body under ``NOTEBOOKLM_DEBUG=1``); non-string payloads are
+            stored as-is on this subclass.
+        data_at_failure: Secret-scrubbed repr of the data indexed into at
+            failure; the caller passes a ``reprlib``-bounded preview (not capped here).
     """
 
     def __init__(
@@ -415,7 +413,9 @@ class UnknownRPCMethodError(DecodingError):
         # class's ``str | None`` contract entirely.
         if not isinstance(raw_response, str):
             self.raw_response = raw_response
-        self.data_at_failure = data_at_failure
+        # Scrub at STORE time: ``data_at_failure`` is ``!r``-spliced into
+        # ``str``/``repr``/tracebacks, bypassing the ``RedactingFilter`` (#1518).
+        self.data_at_failure = None if data_at_failure is None else scrub_secrets(data_at_failure)
 
     def __str__(self) -> str:
         base = super().__str__()

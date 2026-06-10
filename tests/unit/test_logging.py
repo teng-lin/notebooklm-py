@@ -147,6 +147,216 @@ def test_formatter_scrubs_google_session_cookies():
         assert secret not in out
 
 
+#: Session / host cookies that #1517 added to the runtime redaction set. Each
+#: previously round-tripped VERBATIM through ``scrub_secrets`` because the
+#: cookie-name alternation omitted them (``NID`` / ``LSOLH`` are not substrings
+#: of any prior alternative; ``__Host-GAPS`` had no umbrella). The real leak
+#: sink is ``_auth.refresh._run_refresh_cmd`` logging refresh-cmd stdout/stderr
+#: at DEBUG through the redacting logger.
+_ISSUE_1517_COOKIE_PAIRS = [
+    ("NID", "g.a000-nidsecrettokenvalue123"),
+    ("LSOLH", "g.a000-lsolhsecrettokenvalue"),
+    ("__Host-GAPS", "gapssecretcookievalue456"),
+]
+
+
+@pytest.mark.parametrize(("cookie_name", "secret"), _ISSUE_1517_COOKIE_PAIRS)
+def test_formatter_scrubs_issue_1517_session_cookies(cookie_name, secret):
+    """Bare ``NID`` / ``LSOLH`` / ``__Host-GAPS`` tokens are redacted (#1517).
+
+    Red-first: before the runtime registry, the cookie-name alternation omitted
+    these three names, so a refresh-cmd stdout line like ``NID=g.a000-...`` (the
+    DEBUG sink in ``_auth.refresh``) passed through ``scrub_secrets`` verbatim.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record(f"refresh stdout: {cookie_name}={secret}")
+    out = fmt.format(rec)
+    assert secret not in out, f"{cookie_name} value leaked: {out!r}"
+    assert f"{cookie_name}=***" in out, f"missing {cookie_name}=***: {out!r}"
+
+
+#: ``(carrier-name, token, residual-prefix)`` triples. The carrier name is NOT
+#: on the cookie alternation, so only the field-agnostic auth-token-shape
+#: catch-all can redact these — defense in depth so disclosure fails closed
+#: regardless of which field carries the value (#1517).
+_AUTH_TOKEN_SHAPE_CASES = [
+    ("X_UNKNOWN", "g.a000-leakytokenunderunknownfield", "g.a000-"),
+    ("X_UNKNOWN", "sidts-1234567890abcdefghij", "sidts-"),
+    ("X_UNKNOWN", "ya29.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789", "ya29."),
+    # Google API key (``AIza`` + 35-char tail). Red-first: the key shape was
+    # absent from the runtime catch-alls, so ``JrWMbf``-carried keys routed
+    # through data_at_failure / payload_preview leaked (codex review of #1517).
+    ("X_UNKNOWN", "AIza" + "A" * 35, "AIza"),
+]
+
+
+@pytest.mark.parametrize(("carrier", "token", "prefix"), _AUTH_TOKEN_SHAPE_CASES)
+def test_formatter_scrubs_auth_token_shape_under_unknown_carrier(carrier, token, prefix):
+    """A token-shaped value under an UNKNOWN carrier name is still redacted.
+
+    Red-first: the cookie-name alternation only fires on known cookie names, so
+    ``X_UNKNOWN=g.a000-...`` would leak without the carrier-agnostic token-shape
+    catch-all ported from the cassette registry's ``_AUTH_TOKEN_PATTERNS``.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record(f"payload: {carrier}={token}")
+    out = fmt.format(rec)
+    assert token not in out, f"token leaked under unknown carrier: {out!r}"
+    assert prefix not in out, f"token prefix survived: {out!r}"
+    assert "***" in out
+
+
+def test_formatter_still_scrubs_osid_cookie():
+    """OSID stays redacted — it is caught by the ``SID`` alternative (#1517 regression guard).
+
+    The #1517 fix must not regress the cookies already covered; ``OSID`` was
+    incidentally caught by the ``SID`` alternation before the registry refactor
+    and must remain caught after it.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record("cookie jar: OSID=osidsecretvalue789")
+    out = fmt.format(rec)
+    assert "osidsecretvalue789" not in out
+    assert "OSID=***" in out
+
+
+#: ``(cookie-name, opaque-value)`` for ``__Secure-*`` / ``__Host-*`` cookies
+#: NOT enumerated in any name list — including a hypothetical future name with
+#: an OPAQUE (non-token-shaped) value, which only the prefix umbrella can catch.
+_UMBRELLA_COOKIE_CASES = [
+    ("__Secure-NEWSESSION", "opaqueBase64ValueNoTokenShape123"),
+    ("__Host-NEWTHING", "anotherOpaqueValue456nottoken"),
+    # Enumerated names still covered by the umbrella (they were dropped from the
+    # bare name list once the umbrella became the mechanism).
+    ("__Secure-OSID", "opaqueSecureOsidValue789"),
+    ("__Host-GAPS", "opaqueGapsValueabc"),
+    # RFC 6265 ``token``-charset names containing ``.`` / ``+`` / ``_`` and the
+    # rarer token punctuation (``! # $ % & ' * ^ ` | ~``). A name class narrower
+    # than "any run up to ``=``" (e.g. ``[A-Za-z0-9_-]+``) leaks these because
+    # the first non-class char (``.`` / ``+`` / ``'``) breaks the match early —
+    # codex re-review of #1517.
+    ("__Secure-NEW.SESSION", "opaqueDottedNameValue1"),
+    ("__Host-GAPS.v2", "opaqueDottedHostValue2"),
+    ("__Secure-A+B", "opaquePlusNameValue3"),
+    ("__Secure-x.y_z", "opaqueMixedNameValue4"),
+    ("__Host-a!#$%&'*+.^_`|~b", "opaqueFullTokenCharValue5"),
+]
+
+
+@pytest.mark.parametrize(("cookie_name", "opaque"), _UMBRELLA_COOKIE_CASES)
+def test_formatter_scrubs_secure_host_umbrella_cookies(cookie_name, opaque):
+    """ANY ``__Secure-*`` / ``__Host-*`` cookie value is redacted by prefix.
+
+    Red-first: with the secure/host names dropped from the enumerated list (the
+    umbrella is the mechanism), a name-list-only guard would leak a future
+    ``__Secure-NEWSESSION=opaqueBase64`` carrying an opaque, non-token-shaped
+    value (codex review of #1517). A too-narrow NAME charset additionally leaks
+    RFC 6265 ``token``-set names like ``__Secure-NEW.SESSION`` (codex re-review).
+    The umbrella's "any run up to ``=``" name class fails closed by construction.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record(f"refresh stdout: {cookie_name}={opaque}; Path=/")
+    out = fmt.format(rec)
+    assert opaque not in out, f"{cookie_name} opaque value leaked: {out!r}"
+    assert f"{cookie_name}=***" in out, f"missing {cookie_name}=***: {out!r}"
+    # The trailing cookie attribute is preserved (umbrella stops at ``;``).
+    assert "Path=/" in out
+
+
+#: ``(cookie-name, value)`` whose value the log line wraps in RFC 6265 double
+#: quotes (``cookie-value = … / DQUOTE *cookie-octet DQUOTE``). Covers a bare
+#: session cookie, both umbrellas, and a quoted TOKEN (caught two ways). Each
+#: leaked before the value classes gained an optional surrounding quote: the
+#: leading ``"`` was excluded by the value class so the whole name-anchored
+#: pattern failed to match and the value round-tripped verbatim.
+_QUOTED_VALUE_CASES = [
+    ("SID", "opaqueQuotedSessionValue1"),
+    ("__Secure-NEWSESSION", "opaqueQuotedSecureValue2"),
+    ("__Host-GAPS", "opaqueQuotedHostValue3"),
+    ("NID", "g.a000-quotedtokenvalue"),
+]
+
+
+@pytest.mark.parametrize(("cookie_name", "value"), _QUOTED_VALUE_CASES)
+def test_formatter_scrubs_double_quoted_cookie_values(cookie_name, value):
+    """An RFC 6265 double-quoted cookie value is redacted (gemini review of #1530).
+
+    Red-first: the value class excluded ``"``, so a quoted value's leading quote
+    made the name-anchored cookie / umbrella pattern fail to match entirely and
+    the (opaque, non-token-shaped) value LEAKED. The shared quote-aware suffix
+    now redacts the inner value while preserving the surrounding quotes.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record(f'refresh stdout: {cookie_name}="{value}"; Path=/')
+    out = fmt.format(rec)
+    assert value not in out, f"{cookie_name} quoted value leaked: {out!r}"
+    # Quotes preserved, value collapsed to ``***``.
+    assert f'{cookie_name}="***"' in out, f'missing {cookie_name}="***": {out!r}'
+    assert "Path=/" in out
+
+
+def test_formatter_double_quote_in_prose_not_swallowed():
+    """A double-quote in surrounding prose is not over-redacted (gemini #1530).
+
+    The optional outer quotes must not let the cookie pattern reach across
+    unrelated quoted prose; only the cookie value collapses to ``***``.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record('note "see the docs" then SID=plainvalue and more text')
+    out = fmt.format(rec)
+    assert "see the docs" in out, f"prose quote swallowed: {out!r}"
+    assert "plainvalue" not in out
+    assert "SID=***" in out
+
+
+#: ``(rendered-fragment, secret, expected-substring)`` for the query / form /
+#: header value patterns when the value is RFC 6265 / JSON double-quoted. These
+#: share the cookie patterns' root cause: the value class excluded ``"``, so a
+#: quoted value made the whole ``name=`` pattern miss and the value LEAKED
+#: (gemini review of #1530). Extended for consistency across ALL value-bearing
+#: name-anchored patterns, not just cookies.
+_QUOTED_QUERY_CASES = [
+    ('body at="SECRET_AT_TOKEN"', "SECRET_AT_TOKEN", 'at="***"'),
+    ('csrf="SECRET_CSRF_TOKEN"', "SECRET_CSRF_TOKEN", 'csrf="***"'),
+    ('f.sid="SECRET_FSID_VAL"', "SECRET_FSID_VAL", 'f.sid="***"'),
+    ('upload_id="SECRET_UPLOAD"', "SECRET_UPLOAD", 'upload_id="***"'),
+    ('refresh_token="SECRET_RT_VAL"', "SECRET_RT_VAL", 'refresh_token="***"'),
+    ('Authorization: Bearer "SECRET_BEARER_TOK"', "SECRET_BEARER_TOK", 'Bearer "***"'),
+]
+
+
+@pytest.mark.parametrize(("fragment", "secret", "expected"), _QUOTED_QUERY_CASES)
+def test_formatter_scrubs_double_quoted_query_and_header_values(fragment, secret, expected):
+    """Double-quoted query / form / header values are redacted (gemini #1530).
+
+    Red-first: the value classes excluded ``"``, so a JSON/prose fragment like
+    ``f.sid="opaque"`` or ``Bearer "token"`` round-tripped verbatim. The shared
+    optional-quote suffix now redacts the inner value, preserving the quotes.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record(fragment)
+    out = fmt.format(rec)
+    assert secret not in out, f"quoted value leaked: {out!r}"
+    assert expected in out, f"missing {expected!r}: {out!r}"
+
+
+def test_formatter_scrubs_google_api_key():
+    """A Google API key (``AIza…``) is redacted wherever it appears (codex #1517).
+
+    Red-first: the API-key shape was missing from the runtime catch-alls, so a
+    ``WIZ_global_data`` key (``JrWMbf`` / ``B8SWKb`` / ``VqImj``) surfaced in a
+    log line or — via the now-scrubbed ``data_at_failure`` — an exception leaked
+    the key verbatim. Mirrors the cassette registry's ``AIza`` + 35-char shape.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    key = "AIza" + "Z" * 35
+    rec = _record(f'WIZ field {{"JrWMbf":"{key}"}}')
+    out = fmt.format(rec)
+    assert key not in out, f"API key leaked: {out!r}"
+    assert "AIza" not in out
+    assert "***" in out
+
+
 def test_formatter_scrubs_fsid_query_param():
     fmt = RedactingFormatter(logging.Formatter("%(message)s"))
     rec = _record("requesting f.sid=tok-xyz-123")
@@ -416,11 +626,15 @@ def test_formatter_scrubs_papisid_with_correct_captured_name():
     correct.
     """
     from notebooklm._logging import _REDACT_PATTERNS
+    from notebooklm._secrets import COOKIE_VALUE_REPLACEMENT
 
-    # Find the cookie pattern (the one whose replacement is "\1=***" and
-    # whose source mentions __Secure-). Don't hardcode an index.
+    # Find the cookie pattern (the one whose replacement is the shared
+    # quote-aware cookie replacement and whose source mentions __Secure-).
+    # Don't hardcode an index.
     cookie_pattern = next(
-        p for p, repl in _REDACT_PATTERNS if repl == r"\1=***" and "__Secure" in p.pattern
+        p
+        for p, repl in _REDACT_PATTERNS
+        if repl == COOKIE_VALUE_REPLACEMENT and "__Secure" in p.pattern
     )
 
     # group(1) must be the FULL cookie name, not the APISID suffix.

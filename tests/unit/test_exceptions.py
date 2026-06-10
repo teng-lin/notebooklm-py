@@ -690,6 +690,89 @@ class TestRPCErrorAttributes:
         assert secret not in str(spliced)
         assert secret not in repr(spliced)
 
+    def test_unknown_rpc_method_error_scrubs_secrets_in_data_at_failure(self, monkeypatch):
+        """``data_at_failure`` is scrubbed at store time so str()/repr() are safe.
+
+        Red-first: ``data_at_failure`` was spliced verbatim with ``!r`` into
+        ``__str__`` / ``__repr__`` / tracebacks (a string splice that bypasses
+        the logging ``RedactingFilter``), unlike the sibling ``raw_response``
+        which was already scrubbed. A credential-shaped value therefore leaked
+        through every rendering regardless of ``NOTEBOOKLM_DEBUG`` (#1518).
+        """
+        monkeypatch.delenv("NOTEBOOKLM_DEBUG", raising=False)
+        secret = "AF1_QpN-supersecretcsrftoken1234567890abcdefghij"
+        e = UnknownRPCMethodError(
+            "safe_index drift",
+            method_id="abc123",
+            data_at_failure=repr({"SNlM0e": secret}),
+        )
+        # Scrubbed at STORE time: the attribute itself carries no secret.
+        assert secret not in str(e.data_at_failure)
+        assert "***" in str(e.data_at_failure)
+        # And both render paths that splice it stay clean.
+        assert secret not in str(e)
+        assert secret not in repr(e)
+
+    def test_unknown_rpc_method_error_data_at_failure_token_shape_scrubbed(self, monkeypatch):
+        """A token-shaped value under an unknown carrier is scrubbed in str()/repr().
+
+        Defense in depth: even a raw ``g.a000-`` SID token embedded in the
+        indexed data (no recognizable cookie/key name around it) is neutralized
+        by the shared ``scrub_secrets`` catch-all before it reaches any surface.
+        """
+        monkeypatch.delenv("NOTEBOOKLM_DEBUG", raising=False)
+        token = "g.a000-leakytokenburiedindata"
+        e = UnknownRPCMethodError(
+            "safe_index drift",
+            method_id="x",
+            data_at_failure=repr(["unrelated", token, 42]),
+        )
+        assert token not in str(e)
+        assert token not in repr(e)
+        assert e.data_at_failure is not None and "g.a000-" not in e.data_at_failure
+
+    def test_unknown_rpc_method_error_data_at_failure_api_key_scrubbed(self, monkeypatch):
+        """A Google API key (``AIza…``) in data_at_failure is scrubbed (codex #1517).
+
+        Red-first: the API-key shape was missing from the runtime catch-alls, so
+        ``UnknownRPCMethodError(data_at_failure=repr({"JrWMbf": api_key}))`` —
+        the WIZ_global_data key that the cassette registry already treats as
+        must-scrub — leaked the key verbatim through str()/repr().
+        """
+        monkeypatch.delenv("NOTEBOOKLM_DEBUG", raising=False)
+        api_key = "AIza" + "B" * 35
+        e = UnknownRPCMethodError(
+            "safe_index drift",
+            method_id="x",
+            data_at_failure=repr({"JrWMbf": api_key}),
+        )
+        assert api_key not in str(e)
+        assert api_key not in repr(e)
+        assert e.data_at_failure is not None and "AIza" not in e.data_at_failure
+
+    def test_unknown_rpc_method_error_data_at_failure_dotted_secure_cookie_scrubbed(
+        self, monkeypatch
+    ):
+        """A ``__Secure-NEW.SESSION=…`` pair in data_at_failure is scrubbed.
+
+        Red-first: a too-narrow umbrella NAME charset leaks RFC 6265
+        ``token``-set secure/host cookie names containing ``.`` (codex re-review
+        of #1517). The value rides into ``data_at_failure`` (e.g. a captured
+        Set-Cookie line) and must not survive str()/repr().
+        """
+        monkeypatch.delenv("NOTEBOOKLM_DEBUG", raising=False)
+        secret = "opaqueDottedSecureCookieValueXYZ"
+        # No ``Set-Cookie:`` prefix — exercises the umbrella directly, not the
+        # whole-jar ``Set-Cookie:`` header pattern.
+        e = UnknownRPCMethodError(
+            "safe_index drift",
+            method_id="x",
+            data_at_failure=repr({"cookie": f"__Secure-NEW.SESSION={secret}"}),
+        )
+        assert secret not in str(e)
+        assert secret not in repr(e)
+        assert e.data_at_failure is not None and secret not in e.data_at_failure
+
     def test_rpc_error_stores_found_ids(self):
         """RPCError stores found_ids list."""
         e = RPCError("Failed", found_ids=["id1", "id2"])
@@ -969,6 +1052,23 @@ class TestAuthExtractionErrorScrubbing:
 
         assert "SECRET_NEAR_BOUNDARY" not in exc.payload_preview
         assert "SECRET_NEAR_BOUNDARY" not in str(exc)
+
+    def test_auth_extraction_error_scrubs_google_api_key(self):
+        """payload_preview must not leak a Google API key (``AIza…``) (codex #1517).
+
+        Red-first: the WIZ_global_data page embeds a Google API key
+        (``JrWMbf`` / ``B8SWKb`` / ``VqImj``); a drift preview captured during
+        token extraction renders it verbatim until the API-key shape is in the
+        shared ``scrub_secrets`` catch-alls. ``payload_preview`` already routes
+        through ``scrub_secrets``, so the registry addition covers it.
+        """
+        api_key = "AIza" + "C" * 35
+        payload = f'<script>WIZ_global_data={{"JrWMbf":"{api_key}"}}</script>'
+        exc = AuthExtractionError("SNlM0e", payload)
+
+        assert api_key not in exc.payload_preview
+        assert api_key not in str(exc)
+        assert "AIza" not in exc.payload_preview
 
 
 class TestCatchAllPattern:
