@@ -199,24 +199,28 @@ def _catch_ordering_offenders(tree: ast.AST) -> list[tuple[int, str]]:
     """Return sorted ``(line, wrapped-class)`` violations of the catch-ordering rule.
 
     A violation is an ``except`` clause that catches :data:`BROAD_TYPE` (alone
-    or in a tuple) and wrap-and-raises a different exception class, without an
-    EARLIER clause in the same ``try`` that catches at least
-    :data:`REQUIRED_NARROW_RERAISE` and bare-re-raises. Clause order matters:
-    a narrow clause *after* the broad one is dead code for RPCError subclasses
-    and does not satisfy the rule. Pure on its input so the self-check probes
-    below can exercise it without touching the filesystem.
+    or in a tuple) and wrap-and-raises a different exception class, without
+    EARLIER clause(s) in the same ``try`` that bare-re-raise — together —
+    at least :data:`REQUIRED_NARROW_RERAISE`. Coverage ACCUMULATES across
+    preceding bare-re-raise clauses, so splitting the narrow types over
+    multiple clauses (e.g. a dedicated ``except AuthError: raise`` for logging
+    symmetry) satisfies the rule as long as the full required set is
+    re-raised before the broad clause. Clause order matters: a narrow clause
+    *after* the broad one is dead code for RPCError subclasses and does not
+    satisfy the rule. Pure on its input so the self-check probes below can
+    exercise it without touching the filesystem.
     """
     offenders: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
-        narrow_reraise_seen = False
+        reraised_narrows: set[str] = set()
         for handler in node.handlers:
             caught = _caught_names(handler)
-            if caught >= REQUIRED_NARROW_RERAISE and _is_bare_reraise(handler):
-                narrow_reraise_seen = True
+            if _is_bare_reraise(handler):
+                reraised_narrows |= caught & REQUIRED_NARROW_RERAISE
                 continue
-            if BROAD_TYPE in caught and not narrow_reraise_seen:
+            if BROAD_TYPE in caught and not REQUIRED_NARROW_RERAISE <= reraised_narrows:
                 offenders.extend(_wrap_and_raise_sites(handler))
     return sorted(offenders)
 
@@ -459,6 +463,28 @@ def test_detector_accepts_sibling_catch_ordering() -> None:
                 "    raise",
                 "except RPCError as e:",
                 "    raise SourceAddError(title, cause=e) from e",
+            ]
+        )
+    )
+    assert _catch_ordering_offenders(tree) == []
+
+
+def test_detector_accepts_split_narrow_clauses() -> None:
+    """Coverage accumulates: narrow types split over several bare-re-raise
+    clauses (e.g. a dedicated ``except AuthError`` for logging symmetry)
+    satisfy the rule as long as the union covers the required set before the
+    broad clause."""
+    tree = ast.parse(
+        "\n".join(
+            [
+                "try:",
+                "    work()",
+                "except AuthError:",
+                "    raise",
+                "except (RateLimitError, ServerError):",
+                "    raise",
+                "except RPCError as e:",
+                "    raise SourceAddError(title) from e",
             ]
         )
     )
