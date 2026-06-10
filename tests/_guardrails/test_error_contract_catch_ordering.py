@@ -157,12 +157,20 @@ def _caught_names(handler: ast.ExceptHandler) -> frozenset[str]:
 
 
 def _is_bare_reraise(handler: ast.ExceptHandler) -> bool:
-    """True when the clause body is exactly a bare ``raise`` (docstrings ignored)."""
-    statements = [
-        stmt
-        for stmt in handler.body
-        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
-    ]
+    """True when the clause body is exactly a bare ``raise`` (leading docstring ignored).
+
+    Only a LEADING string constant (a docstring/comment-string) is ignored —
+    dropping every constant expression would let ``except ...: 0; raise`` pass
+    as a compliant bare re-raise (a false negative).
+    """
+    statements = list(handler.body)
+    if (
+        statements
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    ):
+        statements = statements[1:]
     return (
         len(statements) == 1 and isinstance(statements[0], ast.Raise) and statements[0].exc is None
     )
@@ -220,7 +228,7 @@ def _catch_ordering_offenders(tree: ast.AST) -> list[tuple[int, str]]:
             if _is_bare_reraise(handler):
                 reraised_narrows |= caught & REQUIRED_NARROW_RERAISE
                 continue
-            if BROAD_TYPE in caught and not REQUIRED_NARROW_RERAISE <= reraised_narrows:
+            if BROAD_TYPE in caught and not reraised_narrows.issuperset(REQUIRED_NARROW_RERAISE):
                 offenders.extend(_wrap_and_raise_sites(handler))
     return sorted(offenders)
 
