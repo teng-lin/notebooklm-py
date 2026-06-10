@@ -195,7 +195,9 @@ class MindMapsAPI:
         not "empty" — call :meth:`get_tree` with ``kind=INTERACTIVE`` to fetch
         an individual interactive tree.
         """
-        result: builtins.list[MindMap] = await self.list_note_backed(notebook_id)
+        # Shallow-copy so appending interactive entries can never mutate a list
+        # a (future) caching/overriding list_note_backed might share.
+        result: builtins.list[MindMap] = list(await self.list_note_backed(notebook_id))
         for art in await self._artifacts.list(notebook_id, ArtifactType.MIND_MAP):
             if art.is_interactive_mind_map:
                 result.append(
