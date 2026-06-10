@@ -50,8 +50,10 @@ Everything else is deliberately ignored:
 
 Known evasions, accepted to keep the detector precise: binding the wrapper
 first (``err = X(...)`` … ``raise err``) and re-raising a pre-built exception
-name are not detected; if that idiom ever appears in a broad-``RPCError``
-handler, widen the detector rather than adopting the idiom.
+name are not detected, and ``except*`` exception groups (:class:`ast.TryStar`,
+PEP 654 — zero uses in ``src/`` today) are deliberately out of scope; if any
+of those idioms ever appears in a broad-``RPCError`` handler, widen the
+detector rather than adopting the idiom.
 
 **Scope.** ADR-0019 scopes the contract to the feature namespaces
 (``notebooks``, ``sources``, ``artifacts``, ``chat``, ``research``, ``notes``,
