@@ -120,32 +120,38 @@ class TestNoContentResponses:
         assert resp.content == b""
 
 
-class TestUploadSuffixSanitization:
-    """The temp-upload extension is rebuilt from a strict allowlist so no
-    attacker-controlled string from the multipart filename reaches the path."""
+class TestUploadPathIsServerControlled:
+    """The spooled upload temp path carries NO attacker-controlled multipart
+    filename — the name is fully server-generated and the original filename is
+    routed to the source title / mime instead."""
 
-    @pytest.mark.parametrize(
-        "filename,expected",
-        [
-            ("report.pdf", ".pdf"),
-            ("AUDIO.MP3", ".mp3"),  # lowercased
-            ("archive.tar.gz", ".gz"),  # only the final extension
-            ("noext", ""),
-            (None, ""),
-            ("evil.", ""),  # empty extension
-            ("x." + "a" * 20, ""),  # over the 16-char cap
-            ("dir.d/file", ""),  # dot before the final separator → no ext
-            ("../../etc/passwd", ""),  # traversal-shaped, no real extension
-            ("payload.sh;rm", ""),  # non-alphanumeric chars rejected
-        ],
-    )
-    def test_safe_suffix(self, filename: str | None, expected: str) -> None:
-        from notebooklm.server.routes.sources import _safe_suffix
+    def test_temp_path_has_no_filename_data(
+        self, authed_client: Any, fake_client: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+        orig = fake_client.sources.add_file
 
-        out = _safe_suffix(filename)
-        assert out == expected
-        # Invariant: whatever we return never contains a path separator.
-        assert "/" not in out and "\\" not in out
+        async def spy(notebook_id: str, path: str, *args: Any, **kwargs: Any) -> Any:
+            captured["path"] = path
+            captured["title"] = kwargs.get("title")
+            return await orig(notebook_id, path, *args, **kwargs)
+
+        monkeypatch.setattr(fake_client.sources, "add_file", spy)
+
+        evil = "../../etc/pa%73swd.evil;rm -rf.txt"
+        resp = authed_client.post(
+            "/v1/notebooks/nb-1/sources/file",
+            files={"file": (evil, b"data", "application/pdf")},
+        )
+        assert resp.status_code == 201
+        # The temp path is the server-generated mkstemp name only — none of the
+        # attacker's filename (not even a sanitized extension) appears in it.
+        assert "nblm-upload-" in captured["path"]
+        assert "evil" not in captured["path"]
+        assert "passwd" not in captured["path"]
+        assert captured["path"].count("/") >= 1 and ".." not in captured["path"]
+        # The original filename is preserved as the title instead.
+        assert captured["title"] == evil
 
 
 class TestErrorEnvelopeShape:
