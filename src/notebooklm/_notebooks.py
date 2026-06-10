@@ -15,6 +15,7 @@ from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
 from .exceptions import (
     AuthError,
+    DecodingError,
     NetworkError,
     NotebookLimitError,
     NotebookNotFoundError,
@@ -301,10 +302,29 @@ class NotebooksAPI:
         params = [None, 1, None, [2]]
         result = await self._rpc.rpc_call(RPCMethod.LIST_NOTEBOOKS, params)
 
-        if result and isinstance(result, list) and len(result) > 0:
-            raw_notebooks = result[0] if isinstance(result[0], list) else result
-            return [Notebook.from_api_response(nb) for nb in raw_notebooks]
-        return []
+        # LIST_NOTEBOOKS responses arrive as a single-element envelope whose
+        # first element is the notebook-row list (``[[row1, row2, ...]]``).
+        # The wrap probe mirrors the fail-loud dispatch in
+        # ``_artifact/listing.py::list_raw``: an empty/``None`` payload and a
+        # ``None`` row-list slot are legitimate "no notebooks" shapes (soft
+        # ``[]``), while a truthy payload that doesn't match the envelope — a
+        # non-list payload, or a truthy non-list where the row list belongs —
+        # is schema drift and raises ``DecodingError`` instead of flowing
+        # garbage rows into ``Notebook.from_api_response`` (which would
+        # silently fabricate empty-id notebooks).
+        if not result:
+            return []
+        if isinstance(result, list):
+            raw_notebooks = result[0]
+            if isinstance(raw_notebooks, list):
+                return [Notebook.from_api_response(nb) for nb in raw_notebooks]
+            if raw_notebooks is None:
+                return []
+        raise DecodingError(
+            "Unrecognized LIST_NOTEBOOKS payload shape",
+            raw_response=repr(result),
+            method_id=RPCMethod.LIST_NOTEBOOKS.value,
+        )
 
     async def create(self, title: str) -> Notebook:
         """Create a new notebook.

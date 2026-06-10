@@ -1259,6 +1259,34 @@ class TestGetHistoryErrorHandling:
         assert result == []
 
     @pytest.mark.asyncio
+    async def test_get_history_raises_on_malformed_turns_container(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A truthy non-list where the turn list belongs raises, not [] (#1485).
+
+        Historically this shape silently parsed to an empty history —
+        indistinguishable from a genuinely-empty conversation. The container
+        unwrap now raises ``UnknownRPCMethodError`` so wire drift is loud.
+        """
+        from notebooklm.exceptions import UnknownRPCMethodError
+
+        id_response = build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [[["conv_001"]]])
+        httpx_mock.add_response(content=id_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with patch.object(
+                client.chat,
+                "get_conversation_turns",
+                new_callable=AsyncMock,
+                return_value=["not-the-turn-list"],
+            ):
+                with pytest.raises(UnknownRPCMethodError):
+                    await client.chat.get_history("nb_123")
+
+    @pytest.mark.asyncio
     async def test_get_history_reverses_turns(
         self,
         auth_tokens,

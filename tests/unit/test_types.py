@@ -378,6 +378,46 @@ class TestNotebook:
 
         assert notebook.title == ""
 
+    def test_from_api_response_malformed_id_slot_warns(self, caplog):
+        """A present-but-non-str id slot fabricates ``""`` LOUDLY (#1485).
+
+        The degrade itself is kept (a raising row parser would abort
+        whole-list parsing), but the fabrication now leaves a WARNING with a
+        bounded payload preview instead of being silent.
+        """
+        import logging
+
+        data = ["My Notebook", [], 12345, "📓"]
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            notebook = Notebook.from_api_response(data)
+
+        assert notebook.id == ""
+        assert any(
+            r.levelno == logging.WARNING and "id slot malformed" in r.message
+            for r in caplog.records
+        )
+
+    def test_from_api_response_null_id_slot_is_silent(self, caplog):
+        """A ``None`` id slot is absence, not drift — silent ``""`` degrade."""
+        import logging
+
+        data = ["My Notebook", [], None, "📓"]
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            notebook = Notebook.from_api_response(data)
+
+        assert notebook.id == ""
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+    def test_from_api_response_short_row_is_silent(self, caplog):
+        """Rows too short to carry the id slot keep the silent degrade."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            notebook = Notebook.from_api_response(["Title only"])
+
+        assert notebook.id == ""
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
 
 class TestSource:
     def test_from_api_response_simple_format(self):
@@ -971,6 +1011,36 @@ class TestArtifact:
 
         assert artifact is not None
         assert artifact.created_at is None
+
+    def test_from_mind_map_deleted_tombstone_is_silent_none(self, caplog):
+        """The recognised ``[id, None, 2]`` tombstone filters silently."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            assert Artifact.from_mind_map(["mm_gone", None, 2]) is None
+
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+    def test_from_mind_map_unrecognized_tombstone_warns_and_stays_live(self, caplog):
+        """A null content slot WITHOUT the soft-delete sentinel WARNS (#1485).
+
+        This is the deleted-map-leaking-as-live bug class: were Google to
+        rotate the sentinel value, every deleted mind map would flow through
+        as a live artifact. The historical treat-as-live fallthrough is kept
+        (conservative), but it is no longer silent.
+        """
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            artifact = Artifact.from_mind_map(["mm_drift", None, 7])
+
+        assert artifact is not None
+        assert artifact.id == "mm_drift"
+        assert artifact.title == ""
+        assert any(
+            r.levelno == logging.WARNING and "soft-delete sentinel" in r.message
+            for r in caplog.records
+        )
 
     def test_from_api_response_audio_url(self):
         """Completed audio artifacts expose their download URL."""

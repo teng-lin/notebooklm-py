@@ -68,6 +68,37 @@ class TestSharedUser:
         assert user.email == ""
         assert user.permission == SharePermission.VIEWER
 
+    def test_from_api_response_malformed_email_warns(self, caplog):
+        """A present-but-non-str email slot fabricates ``""`` LOUDLY (#1485).
+
+        The degrade is kept (a raising entry parser would abort the whole
+        shared-user list), but the fabricated empty email now leaves a
+        WARNING with a bounded payload preview instead of silently flowing a
+        non-string into ``SharedUser.email``.
+        """
+        import logging
+
+        data = [12345, 2]
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            user = SharedUser.from_api_response(data)
+
+        assert user.email == ""
+        assert any(
+            r.levelno == logging.WARNING and "email slot malformed" in r.message
+            for r in caplog.records
+        )
+
+    def test_from_api_response_null_email_is_silent_empty(self, caplog):
+        """A ``None`` email slot is absence, not drift — silent ``""`` degrade."""
+        import logging
+
+        data = [None, 2]
+        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+            user = SharedUser.from_api_response(data)
+
+        assert user.email == ""
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
     def test_from_api_response_partial_user_info(self):
         """Test parsing with partial user info (only name, no avatar)."""
         data = ["user@example.com", 3, [], ["Just Name"]]

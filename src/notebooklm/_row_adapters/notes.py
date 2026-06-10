@@ -106,6 +106,28 @@ class NoteRow:
             and self._raw[self._STATUS_POS] == self._DELETED_SENTINEL
         )
 
+    @property
+    def has_unrecognized_tombstone(self) -> bool:
+        """Whether the content slot is ``None`` without the soft-delete sentinel.
+
+        A live note / mind-map row always carries content at position 1; the
+        only legitimate ``None``-content shape on the wire is the soft-delete
+        tombstone ``[id, None, 2]`` (see :attr:`is_deleted`). A ``None``
+        content slot that is NOT the recognised tombstone — a short
+        ``[id, None]`` row, or a drifted sentinel value at position 2 —
+        therefore signals tombstone drift: were Google to move the sentinel,
+        every deleted row would silently leak as live. Consumers
+        (``Artifact.from_mind_map``) WARN on this predicate before falling
+        through to their historical treat-as-live behavior, rather than
+        leaking silently (#1485 absence-vs-malformed policy).
+
+        ``False`` for rows too short to carry the content slot (no content
+        slot is genuine absence, not a null content value).
+        """
+        if len(self._raw) <= self._CONTENT_POS:
+            return False
+        return self._raw[self._CONTENT_POS] is None and not self.is_deleted
+
     # ---- Multi-shape content / title dispatch ----------------------------
     # Both descents short-circuit on the legacy ``str``-at-position-1
     # shape *before* invoking ``safe_index`` so the legitimate legacy

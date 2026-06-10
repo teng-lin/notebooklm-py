@@ -53,6 +53,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   propagate as exceptions through the standard CLI error handler instead of
   a soft-failure envelope.
 
+- **14 positional-decode sites no longer fabricate wrong-but-valid values
+  silently on wire drift.** Guarded single-level reads of decoded
+  `batchexecute` payloads could swallow a Google reshape into a plausible
+  default — an empty notebook / mind-map id, an empty share email, a deleted
+  mind map leaking as live, a silently-empty chat history, a `LIST_NOTEBOOKS`
+  wrapper mis-dispatch feeding garbage rows, an unvalidated source type code,
+  and a note lookup flipping found → not-found. Per the #1485
+  absence-vs-malformed policy, genuine absence (short rows, `None` slots,
+  legitimately-empty containers) keeps its soft degrade, while
+  present-but-malformed data is now loud: the chat conversation-history walk
+  moved behind a new `ConversationTurnRow` adapter and raises
+  `UnknownRPCMethodError` on a malformed turns container (malformed individual
+  turns are skipped with a DEBUG diagnostic); `notebooks.list()` raises
+  `DecodingError` on an unrecognized payload shape; mind-map rows are decoded
+  through `NoteRow` and WARN when a null content slot lacks the soft-delete
+  sentinel; notebook-id, share-email, and source-type-code slots WARN with a
+  bounded payload preview when present-but-wrong-type (keeping list parsing
+  alive); and `notes.get_or_none` id matching reads through `NoteRow.id`.
 - **Empty notebook summary no longer raises `UnknownRPCMethodError`** (#1485).
   A brand-new, source-less notebook has no summary yet, so the `SUMMARIZE` RPC
   returns an absent/`None` payload. `notebooks.get_summary()` and

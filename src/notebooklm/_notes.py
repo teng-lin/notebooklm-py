@@ -131,7 +131,12 @@ class NotesAPI:
         """
         all_items = await self._get_all_notes_and_mind_maps(notebook_id)
         for item in all_items:
-            if isinstance(item, list) and len(item) > 0 and item[0] == note_id:
+            # The id-slot read goes through ``NoteRow.id`` so the position
+            # knowledge stays in the adapter (``NoteRow`` stringifies the raw
+            # slot, matching the unified ``SourceRow.id`` convention) instead
+            # of an open-coded ``item[0]`` that silently flips found →
+            # not-found if the id slot ever moves.
+            if isinstance(item, list) and len(item) > 0 and NoteRow(item).id == note_id:
                 return self._parse_note(item, notebook_id)
         return None
 

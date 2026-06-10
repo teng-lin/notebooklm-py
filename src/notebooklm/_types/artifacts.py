@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import reprlib
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,6 +11,7 @@ from enum import Enum
 from typing import Any
 
 from .._row_adapters.artifacts import ArtifactRow
+from .._row_adapters.notes import NoteRow
 from ..rpc.types import (
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
@@ -18,6 +21,8 @@ from ..rpc.types import (
     artifact_status_to_str,
 )
 from .common import UnknownTypeWarning, _datetime_from_timestamp
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactType(str, Enum):
@@ -229,27 +234,43 @@ class Artifact:
 
         Deleted/cleared mind map: ["id", None, 2]
 
+        Mind-map rows ARE note-system rows (they come from
+        ``GET_NOTES_AND_MIND_MAPS``), so the id slot, the title, and the
+        deleted-tombstone predicate are read through
+        :class:`notebooklm._row_adapters.notes.NoteRow` — position knowledge
+        lives in the adapter, not here. A ``None`` content slot *without* the
+        recognised ``[id, None, 2]`` tombstone is sentinel drift (a deleted
+        mind map would otherwise silently leak as live): it logs a WARNING and
+        conservatively keeps the historical treat-as-live fallthrough.
+
         Returns:
             Artifact object, or None if deleted (status=2).
         """
         if not isinstance(data, list) or len(data) < 1:
             return None
 
-        mind_map_id = data[0] if len(data) > 0 else ""
+        row = NoteRow(data)
 
-        # Check for deleted status (item[1] is None with status=2)
-        if len(data) >= 3 and data[1] is None and data[2] == 2:
-            return None  # Deleted, don't include
+        # Deleted tombstone ([id, None, 2]): excluded from listings.
+        if row.is_deleted:
+            return None
+        if row.has_unrecognized_tombstone:
+            logger.warning(
+                "Mind-map row %s has a null content slot without the "
+                "soft-delete sentinel (tombstone drift? a deleted mind map "
+                "may be leaking as live): %s",
+                row.id,
+                reprlib.repr(data),
+            )
 
-        # Extract title and timestamp from nested structure
-        title = ""
+        # Title comes through the adapter (current-shape ``row[1][4]``;
+        # ``""`` for legacy/short/deleted shapes). Timestamp extraction below
+        # keeps its historical inline descent.
+        title = row.title
         created_at = None
 
         if len(data) > 1 and isinstance(data[1], list):
             inner = data[1]
-            # Title is at position [4]
-            if len(inner) > 4 and isinstance(inner[4], str):
-                title = inner[4]
             # Timestamp is at [2][2][0]. Bind the ``[2]`` metadata block first so
             # the ``[2]`` descent into it is a single-level index, not a chained
             # ``inner[2][2]`` (an absent block legitimately leaves created_at None).
@@ -260,7 +281,7 @@ class Artifact:
                     created_at = _datetime_from_timestamp(ts_data[0])
 
         return cls(
-            id=str(mind_map_id),
+            id=row.id,
             title=title,
             _artifact_type=ArtifactTypeCode.MIND_MAP.value,
             status=3,  # Mind maps are always "completed" once created

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import reprlib
 import weakref
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ from .._logging import get_request_id, reset_request_id, set_request_id
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._request_types import AuthSnapshot
+from .._row_adapters.chat import ConversationTurnRow, unwrap_conversation_turns
 from .._runtime.config import DEFAULT_CHAT_TIMEOUT
 from .._runtime.contracts import LoopGuard, RpcCaller
 from ..exceptions import ChatError, NetworkError, ValidationError
@@ -537,9 +539,8 @@ class ChatAPI(LoopBoundPrimitive):
                 newest-first, so limit=2 gives the latest Q&A pair.
 
         Returns:
-            Raw turn data from API. Each turn has:
-              turn[2] == 1: user question, text at turn[3]
-              turn[2] == 2: AI answer, text at turn[4][0][0]
+            Raw turn data from API; the per-turn position contract lives in
+            :class:`~notebooklm._row_adapters.chat.ConversationTurnRow`.
         """
         logger.debug(
             "Getting conversation turns for %s (conversation=%s, limit=%d)",
@@ -627,16 +628,12 @@ class ChatAPI(LoopBoundPrimitive):
         except (ChatError, NetworkError) as e:
             logger.warning("Failed to fetch conversation turns for %s: %s", notebook_id, e)
             return []
-        # API returns individual turns newest-first: [A2, Q2, A1, Q1, ...]
-        # Reverse to chronological order [Q1, A1, Q2, A2, ...] so the
-        # Q→A forward-pairing parser works correctly.
-        if (
-            turns_data
-            and isinstance(turns_data, list)
-            and turns_data[0]
-            and isinstance(turns_data[0], list)
-        ):
-            turns_data = [list(reversed(turns_data[0]))]
+        # API returns individual turns newest-first: [A2, Q2, A1, Q1, ...];
+        # reverse to chronological [Q1, A1, ...] for the Q→A forward-pairer.
+        # The unwrap keeps an empty history soft, raises on a malformed one.
+        turns = unwrap_conversation_turns(turns_data, source="_chat.get_history")
+        if turns:
+            turns_data = [list(reversed(turns))]
         return self._parse_turns_to_qa_pairs(turns_data)
 
     @staticmethod
@@ -644,36 +641,39 @@ class ChatAPI(LoopBoundPrimitive):
         """Parse raw turn data into (question, answer) pairs in array order.
 
         Pairs are returned in the same order as the input data (newest-first
-        from the API). Callers should reverse if oldest-first is needed.
-        Each user question (turn[2]==1) is followed by its AI answer (turn[2]==2).
-        """
-        if not turns_data or not isinstance(turns_data, list):
-            return []
-        first = turns_data[0]
-        if not isinstance(first, list):
-            return []
+        from the API); callers reverse if oldest-first is needed. Each user
+        question (role 1) is followed by its AI answer (role 2); per-turn
+        positions live in :class:`~notebooklm._row_adapters.chat.ConversationTurnRow`.
 
-        turns = first
+        Drift handling (#1485): an empty/absent history parses to ``[]``; a
+        truthy-but-malformed container raises ``UnknownRPCMethodError`` via
+        ``unwrap_conversation_turns``; a malformed turn row is skipped with a
+        DEBUG diagnostic (mirroring ``_notebooks._extract_suggested_topics``).
+        """
+        turns = unwrap_conversation_turns(turns_data, source="_chat._parse_turns_to_qa_pairs")
 
         pairs: list[tuple[str, str]] = []
         i = 0
         while i < len(turns):
-            turn = turns[i]
-            if not isinstance(turn, list) or len(turn) < 3:
+            turn = ConversationTurnRow(turns[i])
+            if not turn.is_well_formed:
+                logger.debug(
+                    "_parse_turns_to_qa_pairs: skipping malformed turn at index %d: %s",
+                    i,
+                    reprlib.repr(turns[i]),
+                )
                 i += 1
                 continue
-            if turn[2] == 1 and len(turn) > 3:
-                q = str(turn[3] or "")
+            if turn.is_question:
+                q = turn.question_text
                 a = ""
-                # Look for the answer immediately following
+                # Pair with the immediately-following answer turn, if any. A
+                # non-string content leaf yields "" (empty-answer fallback);
+                # genuine drift raises through ``safe_index`` (strict mode).
                 if i + 1 < len(turns):
-                    next_turn = turns[i + 1]
-                    if isinstance(next_turn, list) and len(next_turn) > 4 and next_turn[2] == 2:
-                        # A non-string leaf yields ``None`` (empty-answer
-                        # fallback); genuine shape drift raises
-                        # ``UnknownRPCMethodError`` through ``safe_index`` under
-                        # strict decoding (the only mode).
-                        content = _extract_next_turn_content(next_turn)
+                    next_turn = ConversationTurnRow(turns[i + 1])
+                    if next_turn.is_answer:
+                        content = _extract_next_turn_content(next_turn.raw)
                         a = str(content or "")
                         i += 1  # skip the answer turn
                 pairs.append((q, a))

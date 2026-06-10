@@ -598,3 +598,59 @@ class TestGetNotebookFailsClosed:
         err = NotebookNotFoundError("nb_x", method_id="rwIQyf")
         assert err.notebook_id == "nb_x"
         assert err.method_id == "rwIQyf"
+
+
+class TestListNotebooksPayloadDispatch:
+    """``list()`` wrapped-envelope dispatch — absence soft, malformed raises.
+
+    Mirrors the ``_artifact/listing.py::list_raw`` fail-loud pattern (#1485):
+    an empty/``None`` payload and a ``None`` row-list slot are legitimate "no
+    notebooks" shapes, while a truthy payload that doesn't match the
+    ``[[row, ...]]`` envelope is schema drift — it used to flow garbage rows
+    into ``Notebook.from_api_response`` and silently fabricate empty-id
+    notebooks.
+    """
+
+    @pytest.mark.asyncio
+    async def test_wrapped_envelope_parses_rows(self):
+        api = _make_api(
+            rpc_call=AsyncMock(
+                return_value=[[["Notebook A", [], "nb_a", "📓"], ["Notebook B", [], "nb_b", "📓"]]]
+            )
+        )
+
+        notebooks = await api.list()
+
+        assert [(nb.id, nb.title) for nb in notebooks] == [
+            ("nb_a", "Notebook A"),
+            ("nb_b", "Notebook B"),
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", [None, []])
+    async def test_empty_payload_is_soft_empty(self, payload):
+        api = _make_api(rpc_call=AsyncMock(return_value=payload))
+        assert await api.list() == []
+
+    @pytest.mark.asyncio
+    async def test_null_row_list_slot_is_soft_empty(self):
+        """A ``None`` where the row list belongs is absence, not drift."""
+        api = _make_api(rpc_call=AsyncMock(return_value=[None]))
+        assert await api.list() == []
+
+    @pytest.mark.asyncio
+    async def test_truthy_non_list_payload_raises_decoding_error(self):
+        from notebooklm.exceptions import DecodingError
+
+        api = _make_api(rpc_call=AsyncMock(return_value="garbage"))
+        with pytest.raises(DecodingError):
+            await api.list()
+
+    @pytest.mark.asyncio
+    async def test_truthy_non_list_row_slot_raises_decoding_error(self):
+        """A moved wrapper (non-list where the row list belongs) is drift."""
+        from notebooklm.exceptions import DecodingError
+
+        api = _make_api(rpc_call=AsyncMock(return_value=["garbage", "rows"]))
+        with pytest.raises(DecodingError):
+            await api.list()

@@ -1,9 +1,14 @@
-"""Chat row adapters for the streamed-chat (``GenerateFreeFormStreamed``) payload.
+"""Chat row adapters for the streamed-chat (``GenerateFreeFormStreamed``)
+payload and the conversation-history (``GET_CONVERSATION_TURNS`` / ``khqZz``)
+payload.
 
 The streamed-chat endpoint is **not** a ``batchexecute`` RPC, so there is no
 obfuscated method ID to thread through ``safe_index`` — descents pass
 ``method_id=None`` and rely on named ``source`` labels to localise schema drift
-in raised :class:`UnknownRPCMethodError` diagnostics (ADR-0011).
+in raised :class:`UnknownRPCMethodError` diagnostics (ADR-0011). The
+conversation-history rows (:class:`ConversationTurnRow` /
+:func:`unwrap_conversation_turns`) come from a regular ``batchexecute`` RPC and
+carry ``RPCMethod.GET_CONVERSATION_TURNS`` as their drift-diagnostic method id.
 
 These adapters centralise the positional knowledge that ``_chat/wire.py``
 previously open-coded as scattered single-level subscripts (``first[4]``,
@@ -55,24 +60,186 @@ Position contracts (pinned by ``tests/unit/test_chat_row_adapter.py``):
   1      source-side end char (int)
   2      nested text payload
   =====  ============================================================
+
+* :class:`ConversationTurnRow` — one ``GET_CONVERSATION_TURNS`` turn row:
+
+  =====  ============================================================
+  Index  Meaning
+  =====  ============================================================
+  2      role code (``1`` = user question, ``2`` = AI answer)
+  3      question text (str) — only on role-1 rows
+  4      nested answer-content payload — only on role-2 rows
+         (the ``[4][0][0]`` leaf descent lives in
+         ``_chat.api._extract_next_turn_content``)
+  =====  ============================================================
 """
 
 from __future__ import annotations
 
+import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ..rpc import safe_index
+from ..exceptions import UnknownRPCMethodError
+from ..rpc import RPCMethod, safe_index
 
 __all__ = [
     "AnswerRow",
     "CitationRow",
     "CitationDetail",
+    "ConversationTurnRow",
     "ErrorPayloadRow",
     "PassageRow",
     "StreamFrameRow",
     "TextLeafRow",
+    "unwrap_conversation_turns",
 ]
+
+# ``GET_CONVERSATION_TURNS`` method id, threaded into ``safe_index`` /
+# ``UnknownRPCMethodError`` so drift diagnostics point at the right RPC.
+_TURNS_METHOD_ID = RPCMethod.GET_CONVERSATION_TURNS.value
+
+# Envelope-unwrap position: ``GET_CONVERSATION_TURNS`` wraps the turn list as
+# the first element of a single-element envelope (``[[turn, ...], ...]``).
+_TURNS_CONTAINER_POS = 0
+
+
+def unwrap_conversation_turns(turns_data: Any, *, source: str) -> list[Any]:
+    """Return the flat turn list from a raw ``GET_CONVERSATION_TURNS`` result.
+
+    The wire shape is a single-element envelope whose first element is the
+    turn list (``[[turn, ...], ...]``). This centralises the ``turns_data[0]``
+    container probe so ``_chat/api.py`` stops open-coding it, with the
+    absence-vs-malformed split of the #1485 policy:
+
+    * **Absence stays soft** — a falsy / non-list payload (no history yet) and
+      a falsy first slot (``[[]]`` / ``[None]``, a legitimately-empty
+      conversation) return ``[]`` without logging, preserving the historical
+      "no history" contract.
+    * **Present-but-malformed RAISES** — a *truthy non-list* where the turn
+      list belongs is genuine schema drift, not an empty conversation, and
+      raises :class:`UnknownRPCMethodError` (consistent with the strict
+      ``safe_index`` leaf behavior in ``_extract_next_turn_content``) instead
+      of silently yielding an empty chat history.
+
+    Args:
+        turns_data: Raw decoded ``GET_CONVERSATION_TURNS`` payload.
+        source: Caller label for drift diagnostics
+            (e.g. ``"_chat.get_history"``).
+    """
+    if not turns_data or not isinstance(turns_data, list):
+        return []
+    # ``turns_data`` is a non-empty list here, so the descent is a no-op on
+    # the happy path; routed through ``safe_index`` for the shared telemetry
+    # seam (mirrors ``StreamFrameRow.tag``).
+    turns = safe_index(
+        turns_data,
+        _TURNS_CONTAINER_POS,
+        method_id=_TURNS_METHOD_ID,
+        source=source,
+    )
+    if not turns:
+        return []
+    if not isinstance(turns, list):
+        raise UnknownRPCMethodError(
+            f"conversation turns container holds {type(turns).__name__} (expected the turn list)",
+            method_id=_TURNS_METHOD_ID,
+            path=(_TURNS_CONTAINER_POS,),
+            source=source,
+            data_at_failure=reprlib.repr(turns_data),
+        )
+    return turns
+
+
+@dataclass(frozen=True)
+class ConversationTurnRow:
+    """Typed view of one ``GET_CONVERSATION_TURNS`` (``khqZz``) turn row.
+
+    Each turn is ``[id?, ?, role, ...]`` where ``role`` at position 2 is
+    ``1`` for a user question (text at position 3) or ``2`` for an AI answer
+    (nested content at position 4, whose ``[4][0][0]`` leaf descent lives in
+    ``_chat.api._extract_next_turn_content``). Position knowledge is
+    centralised here; ``_chat/api.py`` should NEVER open-code ``turn[2]`` /
+    ``turn[3]``.
+
+    Per the #1485 absence-vs-malformed policy, every read here is a soft
+    length-guarded degrade: a short or non-list row is a *skip-this-turn*
+    signal (the QA-pair walk preserves its load-bearing skip-row contract and
+    logs a diagnostic), never a raise. The strict raise for genuine drift
+    lives in the answer-content leaf descent, which the consumer routes
+    through ``safe_index``.
+    """
+
+    # Wrapped row; ``repr=False`` so logs don't explode with the entire
+    # conversation payload when a row appears in a stack trace.
+    _raw: Any = field(repr=False)
+
+    # ---- Position constants (the canary contract) ------------------------
+    # ClassVar so the frozen dataclass treats these as class-level constants.
+    # If any of these change,
+    # ``tests/unit/test_chat_row_adapter.py::TestConversationTurnPositionContract``
+    # MUST be updated in the same commit — that failure is the wire-shape
+    # change signal.
+    _ROLE_POS: ClassVar[int] = 2
+    _QUESTION_TEXT_POS: ClassVar[int] = 3
+    _ANSWER_CONTENT_POS: ClassVar[int] = 4
+    # A turn must carry at least its role slot to be classifiable — mirrors
+    # the historical ``len(turn) < 3`` skip in ``_parse_turns_to_qa_pairs``.
+    _MIN_LEN: ClassVar[int] = 3
+
+    #: Role code marking a user-question turn.
+    ROLE_QUESTION: ClassVar[int] = 1
+    #: Role code marking an AI-answer turn.
+    ROLE_ANSWER: ClassVar[int] = 2
+
+    @property
+    def raw(self) -> Any:
+        """The wrapped raw turn row (for the answer-content leaf descent)."""
+        return self._raw
+
+    @property
+    def is_well_formed(self) -> bool:
+        """Whether the row is a list long enough to carry its role slot."""
+        return isinstance(self._raw, list) and len(self._raw) >= self._MIN_LEN
+
+    @property
+    def role(self) -> Any:
+        """Role code at ``turn[2]`` — ``None`` when the row is malformed."""
+        if not self.is_well_formed:
+            return None
+        return self._raw[self._ROLE_POS]
+
+    @property
+    def is_question(self) -> bool:
+        """Whether this is a user-question turn carrying its text slot.
+
+        Mirrors the historical ``turn[2] == 1 and len(turn) > 3`` guard: a
+        role-1 row too short to carry its question text is not usable as a
+        question (soft skip, not drift).
+        """
+        return self.role == self.ROLE_QUESTION and len(self._raw) > self._QUESTION_TEXT_POS
+
+    @property
+    def is_answer(self) -> bool:
+        """Whether this is an AI-answer turn carrying its content slot.
+
+        Mirrors the historical ``len(next_turn) > 4 and next_turn[2] == 2``
+        guard: a role-2 row too short to carry its content payload is not
+        usable as an answer (the preceding question keeps its empty-answer
+        fallback).
+        """
+        return self.role == self.ROLE_ANSWER and len(self._raw) > self._ANSWER_CONTENT_POS
+
+    @property
+    def question_text(self) -> str:
+        """Question text at ``turn[3]`` — ``""`` for a null/absent slot.
+
+        Preserves the historical ``str(turn[3] or "")`` coercion (a ``None``
+        text slot legitimately yields the empty question).
+        """
+        if not self.is_question:
+            return ""
+        return str(self._raw[self._QUESTION_TEXT_POS] or "")
 
 
 @dataclass(frozen=True)

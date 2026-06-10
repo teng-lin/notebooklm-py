@@ -95,9 +95,23 @@ class TestParseTurnsToQaPairs:
     def test_empty_inner_list(self):
         assert ChatAPI._parse_turns_to_qa_pairs([[]]) == []
 
-    def test_inner_not_list(self):
-        assert ChatAPI._parse_turns_to_qa_pairs(["string"]) == []
-        assert ChatAPI._parse_turns_to_qa_pairs([42]) == []
+    def test_none_inner_slot_is_soft_empty(self):
+        """A ``None`` where the turn list belongs is absence, not drift."""
+        assert ChatAPI._parse_turns_to_qa_pairs([None]) == []
+
+    def test_inner_not_list_raises(self):
+        """A *truthy non-list* where the turn list belongs is wire drift.
+
+        Historically this silently parsed to ``[]`` — fabricating an empty
+        chat history on a Google reshape. Per the #1485 absence-vs-malformed
+        policy it now raises ``UnknownRPCMethodError`` (via
+        ``unwrap_conversation_turns``), consistent with the strict
+        ``safe_index`` leaf behavior in ``_extract_next_turn_content``.
+        """
+        with pytest.raises(UnknownRPCMethodError):
+            ChatAPI._parse_turns_to_qa_pairs(["string"])
+        with pytest.raises(UnknownRPCMethodError):
+            ChatAPI._parse_turns_to_qa_pairs([42])
 
     def test_malformed_turn_too_short(self):
         """Turns with fewer than 3 elements are skipped."""
@@ -110,6 +124,26 @@ class TestParseTurnsToQaPairs:
         ]
         result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
         assert result == [("Valid question?", "Valid answer.")]
+
+    def test_malformed_turn_skip_logs_debug_diagnostic(self, caplog):
+        """A skipped malformed turn leaves a DEBUG record (never fully silent)."""
+        import logging
+
+        turns_data = [
+            [
+                "not a turn",  # malformed row: skipped WITH a diagnostic
+                [None, None, 1, "Valid question?"],
+                [None, None, 2, None, [["Valid answer."]]],
+            ]
+        ]
+        with caplog.at_level(logging.DEBUG, logger="notebooklm"):
+            result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
+
+        assert result == [("Valid question?", "Valid answer.")]
+        assert any(
+            r.levelno == logging.DEBUG and "skipping malformed turn" in r.message
+            for r in caplog.records
+        )
 
     def test_non_list_turn_skipped(self):
         """Non-list items in the turns array are skipped but break Q-A adjacency."""

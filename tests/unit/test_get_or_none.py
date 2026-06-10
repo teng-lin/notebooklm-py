@@ -234,6 +234,21 @@ class TestNotesGetOrNone:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_id_match_reads_through_note_row_adapter(self, notes_api):
+        """The id-slot comparison goes through ``NoteRow.id`` (#1485).
+
+        ``NoteRow.id`` stringifies the raw slot (the unified ``SourceRow.id``
+        convention), so a non-string wire id still matches its string form
+        instead of silently flipping a found note to not-found.
+        """
+        notes_api._get_all_notes_and_mind_maps = AsyncMock(
+            return_value=[[12345, ["12345", "Body", None, None, "Title"]]]
+        )
+        result = await notes_api.get_or_none("nb_1", "12345")
+        assert result is not None
+        assert result.id == "12345"
+
+    @pytest.mark.asyncio
     async def test_propagates_rpc_error(self, notes_api):
         notes_api._get_all_notes_and_mind_maps = AsyncMock(side_effect=RPCError("boom"))
         with pytest.raises(RPCError):

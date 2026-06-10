@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import reprlib
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
 from .._env import get_base_url
 from ..rpc.types import ShareAccess, SharePermission, ShareViewLevel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,7 +29,25 @@ class SharedUser:
 
         Entry format: [email, permission, [], [name, avatar]]
         """
-        email = data[0] if data else ""
+        # ``data[0]`` is the user email. An absent / ``None`` slot keeps the
+        # historical silent ``""``-degrade (this factory parses entries out of
+        # the whole shared-user list, so raising would abort sibling entries).
+        # A *present-but-malformed* slot (non-str, non-None) also degrades to
+        # ``""`` for the same reason, but now logs a WARNING instead of
+        # silently fabricating an empty email (#1485 absence-vs-malformed
+        # policy).
+        email = ""
+        if data:
+            raw_email = data[0]
+            if isinstance(raw_email, str):
+                email = raw_email
+            elif raw_email is not None:
+                logger.warning(
+                    "Share user email slot malformed — fabricating empty email "
+                    "(expected str at entry[0], got %s; entry=%s)",
+                    type(raw_email).__name__,
+                    reprlib.repr(data),
+                )
         perm_value = data[1] if len(data) > 1 else 3
         try:
             permission = SharePermission(perm_value)

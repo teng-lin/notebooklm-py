@@ -166,7 +166,6 @@ SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "_mind_maps_api.py",
         "_note_service.py",
         "_notebooks.py",
-        "_notes.py",
         "_research.py",
         "_source/add.py",
         "_source/content.py",

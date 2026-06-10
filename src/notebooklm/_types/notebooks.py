@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import reprlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from .common import _datetime_from_timestamp
 from .sources import SourceType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,7 +53,25 @@ class Notebook:
         raw_title = data[0] if len(data) > 0 and isinstance(data[0], str) else ""
         title = raw_title.replace("thought\n", "").strip()
         sources_count = _extract_notebook_sources_count(data)
-        notebook_id = data[2] if len(data) > 2 and isinstance(data[2], str) else ""
+        # ``data[2]`` is the notebook id. A short row / ``None`` slot keeps
+        # the historical silent ``""``-degrade — this factory parses rows out
+        # of whole-list responses, so raising would abort sibling rows. A
+        # *present-but-malformed* slot (non-str, non-None) still degrades to
+        # ``""`` for the same reason, but now logs a WARNING: a silently
+        # fabricated empty id is otherwise indistinguishable from a real row
+        # (#1485 absence-vs-malformed policy).
+        notebook_id = ""
+        if len(data) > 2:
+            raw_id = data[2]
+            if isinstance(raw_id, str):
+                notebook_id = raw_id
+            elif raw_id is not None:
+                logger.warning(
+                    "Notebook row id slot malformed — fabricating empty id "
+                    "(expected str at data[2], got %s; row=%s)",
+                    type(raw_id).__name__,
+                    reprlib.repr(data),
+                )
 
         # ``data[5]`` is the metadata block; bind it once so the timestamp and
         # owner-flag descents read a single named local instead of re-chaining

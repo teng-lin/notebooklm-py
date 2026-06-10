@@ -22,12 +22,15 @@ from notebooklm._row_adapters.chat import (
     AnswerRow,
     CitationDetail,
     CitationRow,
+    ConversationTurnRow,
     ErrorPayloadRow,
     PassageRow,
     StreamFrameRow,
     TextLeafRow,
+    unwrap_conversation_turns,
 )
 from notebooklm.exceptions import UnknownRPCMethodError
+from notebooklm.rpc import RPCMethod
 
 # ---------------------------------------------------------------------------
 # 1. Position-contract pins (the canaries)
@@ -83,6 +86,18 @@ class TestFramePositionContract:
 
     def test_text_leaf_positions_pinned(self) -> None:
         assert TextLeafRow._TEXT_POS == 2
+
+
+class TestConversationTurnPositionContract:
+    def test_positions_pinned(self) -> None:
+        assert (
+            ConversationTurnRow._ROLE_POS,
+            ConversationTurnRow._QUESTION_TEXT_POS,
+            ConversationTurnRow._ANSWER_CONTENT_POS,
+            ConversationTurnRow._MIN_LEN,
+            ConversationTurnRow.ROLE_QUESTION,
+            ConversationTurnRow.ROLE_ANSWER,
+        ) == (2, 3, 4, 3, 1, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -300,3 +315,80 @@ class TestTextLeafRow:
         leaf = TextLeafRow(raw)
         assert leaf.is_well_formed is False
         assert leaf.text_value is None
+
+
+# ---------------------------------------------------------------------------
+# ConversationTurnRow + unwrap_conversation_turns (GET_CONVERSATION_TURNS)
+# ---------------------------------------------------------------------------
+
+
+class TestConversationTurnRow:
+    def test_question_turn_reads_role_and_text(self) -> None:
+        row = ConversationTurnRow([None, None, 1, "What is AI?"])
+        assert row.is_well_formed is True
+        assert row.role == 1
+        assert row.is_question is True
+        assert row.is_answer is False
+        assert row.question_text == "What is AI?"
+
+    def test_answer_turn_classified_with_content_slot(self) -> None:
+        row = ConversationTurnRow([None, None, 2, None, [["The answer."]]])
+        assert row.is_answer is True
+        assert row.is_question is False
+        assert row.question_text == ""
+
+    def test_role_one_without_text_slot_is_not_a_question(self) -> None:
+        """Mirrors the historical ``turn[2] == 1 and len(turn) > 3`` guard."""
+        row = ConversationTurnRow([None, None, 1])
+        assert row.is_well_formed is True
+        assert row.is_question is False
+        assert row.question_text == ""
+
+    def test_role_two_without_content_slot_is_not_an_answer(self) -> None:
+        """Mirrors the historical ``len(next_turn) > 4`` guard."""
+        row = ConversationTurnRow([None, None, 2, None])
+        assert row.is_answer is False
+
+    def test_none_question_text_coerces_to_empty(self) -> None:
+        """Preserves the historical ``str(turn[3] or "")`` coercion."""
+        row = ConversationTurnRow([None, None, 1, None])
+        assert row.is_question is True
+        assert row.question_text == ""
+
+    @pytest.mark.parametrize("raw", [[], [None], [None, None], "not a turn", 42, None])
+    def test_short_or_non_list_rows_are_malformed(self, raw: object) -> None:
+        row = ConversationTurnRow(raw)
+        assert row.is_well_formed is False
+        assert row.role is None
+        assert row.is_question is False
+        assert row.is_answer is False
+        assert row.question_text == ""
+
+    def test_raw_returns_wrapped_row(self) -> None:
+        turn = [None, None, 2, None, [["x"]]]
+        assert ConversationTurnRow(turn).raw is turn
+
+
+class TestUnwrapConversationTurns:
+    """Absence-vs-malformed split for the turns container (#1485 policy)."""
+
+    def test_unwraps_single_element_envelope(self) -> None:
+        turns = [[None, None, 1, "Q?"], [None, None, 2, None, [["A."]]]]
+        assert unwrap_conversation_turns([turns], source="test") is turns
+
+    @pytest.mark.parametrize("payload", [None, [], "not a list", 0, {}])
+    def test_absent_or_non_list_payload_is_soft_empty(self, payload: object) -> None:
+        assert unwrap_conversation_turns(payload, source="test") == []
+
+    @pytest.mark.parametrize("payload", [[[]], [None], [0], [""]])
+    def test_falsy_container_slot_is_soft_empty(self, payload: list) -> None:
+        """An empty/null turn list is a legitimately-empty history, not drift."""
+        assert unwrap_conversation_turns(payload, source="test") == []
+
+    @pytest.mark.parametrize("payload", [["string"], [42], [{"k": "v"}]])
+    def test_truthy_non_list_container_raises(self, payload: list) -> None:
+        """A truthy non-list where the turn list belongs is wire drift."""
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            unwrap_conversation_turns(payload, source="test-source")
+        assert exc_info.value.method_id == RPCMethod.GET_CONVERSATION_TURNS.value
+        assert exc_info.value.source == "test-source"

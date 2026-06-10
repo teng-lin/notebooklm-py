@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import builtins
 import logging
+import reprlib
 from typing import Any, Literal
 
+from .._row_adapters.sources import SourceRow
 from .._runtime.contracts import RpcCaller
 from .._types.research import SourceGuide
 from ..rpc import RPCMethod
@@ -99,8 +101,25 @@ class SourceContentRenderer:
 
             if len(descriptor) > 2 and isinstance(descriptor[2], list):
                 metadata = descriptor[2]
-                if len(metadata) > 4:
-                    source_type = metadata[4]
+                # The type-code read is delegated to ``SourceRow.type_code``
+                # (the descriptor row has the adapter's normalized-entry
+                # layout: id-envelope, title, metadata, ...), which validates
+                # that ``metadata[4]`` holds an int. An absent / ``None`` slot
+                # keeps the silent ``None`` default; a present-but-non-int
+                # value also degrades to ``None`` (the "unknown type" default)
+                # but logs a WARNING instead of silently passing a malformed
+                # value into ``SourceFulltext._type_code`` (#1485
+                # absence-vs-malformed policy).
+                source_row = SourceRow.from_entry(descriptor, method_id=RPCMethod.GET_SOURCE.value)
+                source_type = source_row.type_code
+                if source_type is None and len(metadata) > 4 and metadata[4] is not None:
+                    self._logger.warning(
+                        "Source %s metadata type-code slot malformed (expected "
+                        "int at metadata[4], got %s); treating type as unknown: %s",
+                        source_id,
+                        type(metadata[4]).__name__,
+                        reprlib.repr(metadata),
+                    )
                 url = _extract_source_url(metadata, allow_bare_http=False)
 
         if output_format == "markdown":

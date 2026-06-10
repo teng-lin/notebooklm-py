@@ -11,10 +11,12 @@ from .chat import (
     AnswerRow,
     CitationDetail,
     CitationRow,
+    ConversationTurnRow,
     ErrorPayloadRow,
     PassageRow,
     StreamFrameRow,
     TextLeafRow,
+    unwrap_conversation_turns,
 )
 from .labels import LabelRow
 from .notes import NoteRow
@@ -37,6 +39,7 @@ __all__ = [
     "ArtifactRow",
     "CitationDetail",
     "CitationRow",
+    "ConversationTurnRow",
     "ErrorPayloadRow",
     "LabelRow",
     "NoteRow",
@@ -49,5 +52,6 @@ __all__ = [
     "SourceRowShape",
     "StreamFrameRow",
     "TextLeafRow",
+    "unwrap_conversation_turns",
     "unwrap_poll_tasks",
 ]

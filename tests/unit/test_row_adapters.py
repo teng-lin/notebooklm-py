@@ -767,6 +767,34 @@ class TestNoteRowIsDeleted:
         assert NoteRow(["id", None]).is_deleted is False
 
 
+class TestNoteRowHasUnrecognizedTombstone:
+    """``None`` content slot without the recognised soft-delete sentinel.
+
+    The drift predicate consumed by ``Artifact.from_mind_map``: were Google
+    to move the ``[id, None, 2]`` sentinel, deleted rows would silently leak
+    as live — this property is the WARN trigger for that bug class (#1485).
+    """
+
+    def test_recognised_tombstone_is_not_drift(self) -> None:
+        assert NoteRow(_deleted_note_row()).has_unrecognized_tombstone is False
+
+    def test_null_content_with_drifted_sentinel_is_drift(self) -> None:
+        assert NoteRow(["id", None, 5]).has_unrecognized_tombstone is True
+        assert NoteRow(["id", None, 0]).has_unrecognized_tombstone is True
+
+    def test_null_content_without_status_slot_is_drift(self) -> None:
+        assert NoteRow(["id", None]).has_unrecognized_tombstone is True
+
+    def test_live_rows_are_not_drift(self) -> None:
+        assert NoteRow(_legacy_note_row()).has_unrecognized_tombstone is False
+        assert NoteRow(_current_note_row()).has_unrecognized_tombstone is False
+
+    def test_row_too_short_for_content_slot_is_absence(self) -> None:
+        """No content slot at all is genuine absence, not a null content value."""
+        assert NoteRow([]).has_unrecognized_tombstone is False
+        assert NoteRow(["id"]).has_unrecognized_tombstone is False
+
+
 # ---------------------------------------------------------------------------
 # NoteRow — multi-shape content dispatch (the whole point of the adapter)
 # ---------------------------------------------------------------------------
