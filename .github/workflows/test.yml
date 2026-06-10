@@ -113,6 +113,43 @@ jobs:
     - name: Verify e2e test fixtures
       run: uv run pytest tests/e2e --collect-only -q
 
+  server:
+    # The REST server ships behind the optional ``server`` extra, so the
+    # canonical install (browser+dev+markdown) used by the main matrix omits
+    # fastapi and ``tests/server`` is skipped there via ``importorskip``. This
+    # dedicated job installs the ``server`` extra and runs the suite across all
+    # three OSes — without it the adapter (incl. Unix-vs-Windows file handling)
+    # would have zero CI coverage.
+    name: REST server (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.custom_branch || github.ref }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Install dependencies (server extra)
+      run: uv sync --frozen --extra dev --extra server
+
+    - name: Run REST server suite
+      run: uv run pytest tests/server -q
+
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}

@@ -29,12 +29,11 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import cast
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
-from fastapi.responses import JSONResponse
 
 from ..client import NotebookLMClient
 from ._auth import require_auth
 from ._context import AppState
-from ._errors import install_exception_handlers
+from ._errors import http_error_response, install_exception_handlers
 from ._pending import PendingRegistry
 from .routes import artifacts, chat, notebooks, sources
 from .routes.sources import MAX_UPLOAD_BYTES
@@ -117,15 +116,9 @@ def create_app(*, client_factory: ClientFactory | None = None) -> FastAPI:
             except ValueError:
                 declared = -1
             if declared > MAX_UPLOAD_BYTES:
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "error": {
-                            "category": "VALIDATION",
-                            "message": "Request body exceeds the size limit",
-                        }
-                    },
-                )
+                # Route through the shared projector so the envelope shape +
+                # lowercase category match every other error response.
+                return http_error_response(413, "Request body exceeds the size limit")
         return await call_next(request)
 
     @app.get("/healthz")

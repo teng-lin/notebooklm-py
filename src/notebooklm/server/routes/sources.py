@@ -24,6 +24,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from typing import Annotated, Any
 
@@ -51,6 +52,23 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 #: Chunk size when streaming an upload to the temp file.
 _UPLOAD_CHUNK = 1024 * 1024
+
+#: Strict allowlist for the extension carried onto the spooled upload temp file.
+_SAFE_SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,16}")
+
+
+def _safe_suffix(filename: str | None) -> str:
+    """Return a sanitized file extension for the temp upload file, or ``""``.
+
+    The multipart ``filename`` is attacker-controlled. ``splitext`` already bars
+    path separators, but the extension is *additionally* required to match a
+    strict ``.[a-z0-9]{1,16}`` allowlist before it is used in the ``mkstemp``
+    name — so no user-controlled string reaches the path expression that
+    ``validate_upload_path`` later resolves (defense in depth; a useful extension
+    is still preserved for downstream type detection when it is well-formed).
+    """
+    suffix = os.path.splitext(filename or "")[1].lower()
+    return suffix if _SAFE_SUFFIX_RE.fullmatch(suffix) else ""
 
 
 class SourceAddUrl(BaseModel):
@@ -181,10 +199,14 @@ async def add_file(
     bypasses the pre-check, Starlette has already spooled the part before this
     runs, so the check is a backstop on our own write, not on Starlette's spool.
     """
-    suffix = os.path.splitext(file.filename or "")[1]
+    suffix = _safe_suffix(file.filename)
     fd, temp_path = tempfile.mkstemp(suffix=suffix, prefix="nblm-upload-")
     try:
-        os.fchmod(fd, 0o600)
+        # mkstemp already creates the file 0600 on POSIX; re-assert it where the
+        # call exists. os.fchmod is Unix-only — on Windows (a supported platform)
+        # it is absent, and mkstemp files are already owner-only there.
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
         total = 0
         with os.fdopen(fd, "wb") as out:
             while chunk := await file.read(_UPLOAD_CHUNK):

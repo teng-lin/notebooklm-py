@@ -42,3 +42,16 @@ def test_bad_port_fails_clean() -> None:
     with pytest.raises(SystemExit):
         launcher._resolve_port("not-a-number")
     assert launcher._resolve_port("8123") == 8123
+
+
+@pytest.mark.parametrize("raw", ["-1", "65536", "70000"])
+def test_out_of_range_port_fails_clean(raw: str) -> None:
+    # An in-range-int-but-out-of-socket-range port fails at parse time with a
+    # clear message, not later at bind time.
+    with pytest.raises(SystemExit):
+        launcher._resolve_port(raw)
+
+
+@pytest.mark.parametrize("raw,expected", [("0", 0), ("65535", 65535)])
+def test_boundary_ports_accepted(raw: str, expected: int) -> None:
+    assert launcher._resolve_port(raw) == expected

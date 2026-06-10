@@ -105,7 +105,7 @@ class TestUploadPreBufferLimit:
             )
         assert resp.status_code == 413
         assert called["add_file"] is False
-        assert resp.json()["error"]["category"] == "VALIDATION"
+        assert resp.json()["error"]["category"] == "validation"
 
 
 class TestNoContentResponses:
@@ -118,6 +118,34 @@ class TestNoContentResponses:
         resp = authed_client.delete("/v1/notebooks/nb-1/sources/src-1")
         assert resp.status_code == 204
         assert resp.content == b""
+
+
+class TestUploadSuffixSanitization:
+    """The temp-upload extension is rebuilt from a strict allowlist so no
+    attacker-controlled string from the multipart filename reaches the path."""
+
+    @pytest.mark.parametrize(
+        "filename,expected",
+        [
+            ("report.pdf", ".pdf"),
+            ("AUDIO.MP3", ".mp3"),  # lowercased
+            ("archive.tar.gz", ".gz"),  # only the final extension
+            ("noext", ""),
+            (None, ""),
+            ("evil.", ""),  # empty extension
+            ("x." + "a" * 20, ""),  # over the 16-char cap
+            ("dir.d/file", ""),  # dot before the final separator → no ext
+            ("../../etc/passwd", ""),  # traversal-shaped, no real extension
+            ("payload.sh;rm", ""),  # non-alphanumeric chars rejected
+        ],
+    )
+    def test_safe_suffix(self, filename: str | None, expected: str) -> None:
+        from notebooklm.server.routes.sources import _safe_suffix
+
+        out = _safe_suffix(filename)
+        assert out == expected
+        # Invariant: whatever we return never contains a path separator.
+        assert "/" not in out and "\\" not in out
 
 
 class TestErrorEnvelopeShape:

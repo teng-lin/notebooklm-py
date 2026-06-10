@@ -123,12 +123,18 @@ def _build_parser() -> argparse.ArgumentParser:
 def _resolve_port(raw: str) -> int:
     """Convert the (possibly env-derived) ``--port`` string to an int, or fail clean."""
     try:
-        return int(raw)
+        port = int(raw)
     except (TypeError, ValueError):
         raise SystemExit(
             f"Invalid port {raw!r}: must be an integer "
             f"(check the --port argument and NOTEBOOKLM_SERVER_PORT)."
         ) from None
+    if not 0 <= port <= 65535:
+        raise SystemExit(
+            f"Invalid port {raw!r}: must be between 0 and 65535 "
+            f"(check the --port argument and NOTEBOOKLM_SERVER_PORT)."
+        )
+    return port
 
 
 def main(argv: list[str] | None = None) -> None:
