@@ -75,6 +75,9 @@ __all__ = [
     # Validation/Config
     "ValidationError",
     "ConfigurationError",
+    # Headless re-auth (layer-3 auth recovery)
+    "HeadlessReauthError",
+    "HeadlessLoginRequiredError",
     # Network (NOT under RPC - happens before RPC)
     "NetworkError",
     # RPC Protocol
@@ -242,6 +245,34 @@ class ValidationError(NotebookLMError):
 
 class ConfigurationError(NotebookLMError):
     """Missing or invalid configuration (auth, storage)."""
+
+
+# =============================================================================
+# Headless re-auth (layer-3 auth recovery; not an RPC-protocol error)
+# =============================================================================
+
+
+class HeadlessReauthError(NotebookLMError):
+    """Base for layer-3 headless re-auth (silent browser re-mint) failures.
+
+    Raised by the headless arm of the browser-capture core and the
+    :mod:`notebooklm._auth.headless_reauth` decision layer. Distinct from
+    :class:`AuthError` (an RPC-protocol auth failure) because L3 is a *recovery*
+    step that drives a real browser, not a decoded batchexecute error.
+    """
+
+
+class HeadlessLoginRequiredError(HeadlessReauthError):
+    """The persisted browser profile's Google session is also dead.
+
+    Raised when the headless browser, launched against the persistent profile,
+    is redirected to the Google login page instead of landing on NotebookLM —
+    meaning even the longer-lived browser-profile session has expired and there
+    is no unattended path left. The unattended caller must surface this (it
+    never hangs waiting for a human) so the operator re-runs ``notebooklm
+    login``. Also raised when the unattended capture core aborts via its
+    ``io.fail`` sink (there is no interactive console to route an exit code to).
+    """
 
 
 # =============================================================================

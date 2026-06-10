@@ -51,6 +51,7 @@ from urllib.parse import urlparse
 
 from .._atomic_io import atomic_write_json
 from ..config import get_base_host, get_base_url
+from ..exceptions import HeadlessLoginRequiredError
 from .cookie_policy import build_cookie_domain_allowlist
 
 if TYPE_CHECKING:
@@ -313,31 +314,36 @@ def ensure_playwright_available(io: BrowserCaptureIO, *, browser: str) -> None:
 
 
 def _reject_unsupported_mode(*, headless: bool, interactive: bool, io: BrowserCaptureIO) -> None:
-    """Guard the P1 contract: only the interactive, non-headless arm is wired.
+    """Guard the supported ``(headless, interactive)`` combinations.
 
-    The ``headless`` / ``interactive`` parameters and their branch points exist
-    so the future headless re-auth layer (P2) can wire its arm without
-    re-carving this core. P1 ships refactor-only, so any other combination is an
-    explicit, programmer-facing error rather than a silent behavior change. The
-    interactive (``interactive=True, headless=False``) path is the sole mode the
-    existing ``notebooklm login`` flow exercises.
+    Two arms are wired:
 
-    ``io`` is accepted but deliberately unused in P1: this is a programmer-facing
+    * ``interactive=True, headless=False`` — the interactive ``notebooklm
+      login`` flow (a human completes the Google SSO in a visible browser).
+    * ``interactive=False, headless=True`` — the layer-3 headless re-auth flow
+      (P2): an unattended browser harvests a still-live Google session from the
+      persistent profile, with NO human to wait on.
+
+    Any other combination (interactive + headless, or non-interactive +
+    non-headless) is a programmer error: a visible-but-unattended browser would
+    hang waiting for a human who isn't there, and a headless-but-interactive
+    flow is contradictory. Refuse loudly so a caller cannot silently get a
+    half-wired flow.
+
+    ``io`` is accepted but deliberately unused: this is a programmer-facing
     guard that raises ``NotImplementedError`` (not an end-user condition routed
-    through ``io.fail``). The parameter is reserved so P2's headless arm can,
-    if it chooses, surface a user-facing ``io.fail`` / silent path here instead
-    of raising — without changing this signature.
+    through ``io.fail``).
     """
     if interactive and not headless:
         return
-    # P2 will implement the headless arm; until then refuse loudly so a caller
-    # cannot silently get a half-wired flow. (See ``io`` note above — this is a
-    # programmer error, not an ``io.fail`` end-user condition.)
-    _ = io  # reserved for P2's headless arm; intentionally unused in P1
+    if headless and not interactive:
+        return
+    _ = io  # programmer-facing guard; not an ``io.fail`` end-user condition
     raise NotImplementedError(
-        "Headless / non-interactive browser capture is not implemented yet "
-        "(reserved for the layer-3 headless re-auth feature). "
-        "Only interactive=True, headless=False is supported."
+        "Unsupported browser-capture mode "
+        f"(headless={headless}, interactive={interactive}). "
+        "Only interactive=True/headless=False (interactive login) and "
+        "interactive=False/headless=True (headless re-auth) are supported."
     )
 
 
@@ -463,7 +469,27 @@ def run_browser_capture(
                         logger.debug("Non-retryable error: %s", error_str)
                         raise
 
-            if url_matches_base_host(page.url):
+            if headless:
+                # Layer-3 headless re-auth: there is NO human to complete a
+                # login form, so we never wait. Classify the landing instead:
+                #   * lands on the NotebookLM host  → the persistent profile
+                #     still holds a live Google session; proceed to capture.
+                #   * redirected to a login page    → the profile's Google
+                #     session is ALSO dead; fail loudly (raise) rather than
+                #     hang. ``HeadlessLoginRequiredError`` is the typed,
+                #     honest signal the caller maps to a FAILED outcome.
+                if not url_matches_base_host(page.url):
+                    logger.warning(
+                        "Headless re-auth: landed off-host after navigation "
+                        "(the persisted browser profile's Google session is "
+                        "likely expired); cannot silently re-mint cookies."
+                    )
+                    raise HeadlessLoginRequiredError(
+                        "Headless re-auth could not reach NotebookLM: the "
+                        "persisted browser profile's Google session is "
+                        "expired. Run 'notebooklm login' to re-authenticate."
+                    )
+            elif url_matches_base_host(page.url):
                 # Persistent browser profile already has a valid session.
                 io.emit("[green]Already logged in.[/green]")
             else:

@@ -71,7 +71,12 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # on existing methods (ruff one-param-per-line wraps each 6-param signature);
     # it is irreducible without splitting these modules, which is out of scope for
     # the bug fix. New ceilings are the measured post-fix LOC.
-    "exceptions.py": 1515,
+    # +31 LOC: the two public layer-3 headless re-auth exceptions
+    # (``HeadlessReauthError`` / ``HeadlessLoginRequiredError``) belong in the
+    # canonical exceptions module — that is where ``__all__`` and the
+    # public-surface manifest pin them, so they cannot live in a sibling file
+    # without forking the public exception home. Irreducible for this feature.
+    "exceptions.py": 1546,
     "_artifacts.py": 1451,
     "_source/upload.py": 1236,
     "_sources.py": 1007,

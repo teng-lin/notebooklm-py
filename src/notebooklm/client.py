@@ -683,7 +683,7 @@ class NotebookLMClient:
             on_rpc_event=on_rpc_event,
         )
 
-    async def refresh_auth(self) -> AuthTokens:
+    async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
         """Refresh authentication tokens by fetching the NotebookLM homepage.
 
         This helps prevent 'Session Expired' errors by obtaining a fresh CSRF
@@ -703,11 +703,30 @@ class NotebookLMClient:
         constructor delegates to, so test shells observe the same
         resolution path.
 
+        Args:
+            allow_headless: Opt in to **layer-3 headless re-auth** when the
+                first-party NotebookLM cookies are fully dead (the homepage GET
+                302s to the Google login page) and neither L1 token refresh nor
+                L2 ``RotateCookies`` rotation can help. When ``True``, an
+                unattended **headless** browser is driven against the persistent
+                login profile to silently re-mint cookies from a still-live
+                Google session, then this refresh retries once. Defaults to
+                ``False`` — the locked design decision is that L3 NEVER fires by
+                default; with no opt-in and no profile the behavior is
+                byte-identical to before. (A *mid-RPC* auto-fire is separately
+                gated on ``NOTEBOOKLM_HEADLESS_REAUTH=1``.)
+
+                SECURITY: the persistent profile is an account-equivalent
+                credential (a live Google session). L3 is local-unattended-only
+                and must NOT be the auth path for a remote / hosted MCP server.
+
         Returns:
             Updated AuthTokens.
 
         Raises:
-            ValueError: If token extraction fails (page structure may have changed).
+            ValueError: If token extraction fails (page structure may have
+                changed), or if cookies are dead and L3 is unavailable / also
+                fails (the persisted profile's Google session is expired too).
         """
         return await refresh_auth_session(
             auth=self._auth,
@@ -715,6 +734,7 @@ class NotebookLMClient:
             auth_coord=self._collaborators.auth_coord,
             lifecycle=self._collaborators.lifecycle,
             cookie_persistence=self._collaborators.cookie_persistence,
+            allow_headless=allow_headless,
         )
 
 
