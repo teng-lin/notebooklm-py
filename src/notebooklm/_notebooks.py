@@ -1,6 +1,7 @@
 """Notebook operations API."""
 
 import logging
+import reprlib
 from typing import Any
 
 from ._idempotency import idempotent_create
@@ -322,7 +323,9 @@ class NotebooksAPI:
                 return []
         raise DecodingError(
             "Unrecognized LIST_NOTEBOOKS payload shape",
-            raw_response=repr(result),
+            # reprlib bounds the preview without materialising the full repr
+            # of a large/deep payload (mirrors safe_index's own truncation).
+            raw_response=reprlib.repr(result),
             method_id=RPCMethod.LIST_NOTEBOOKS.value,
         )
 
