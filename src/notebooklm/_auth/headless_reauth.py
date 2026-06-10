@@ -91,6 +91,13 @@ NOTEBOOKLM_HEADLESS_REAUTH_ENV = "NOTEBOOKLM_HEADLESS_REAUTH"
 # best-effort, single-process guard; cross-process coordination (two CLI
 # invocations) is out of scope here — they each own their own browser, the same
 # way the interactive ``notebooklm login`` flow does.
+#
+# Lifetime: this registry is keyed on the resolved storage path and is never
+# pruned, but it is bounded by the number of DISTINCT storage paths a process
+# ever re-auths against — i.e. the profile count, typically one. The same
+# never-pruned-but-profile-bounded shape as ``_REFRESH_GENERATIONS`` /
+# ``_LAST_POKE_ATTEMPT_MONOTONIC`` elsewhere in the auth layer; a long-running
+# process does not accumulate entries from RPC traffic, only from new profiles.
 _DRIVE_REGISTRY_LOCK = threading.Lock()
 _DRIVE_LOCKS_BY_PATH: dict[str, threading.Lock] = {}
 

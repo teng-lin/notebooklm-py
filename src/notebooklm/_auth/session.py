@@ -147,6 +147,19 @@ async def _try_headless_reauth(
     re-mints from and into ITS OWN profile, never silently harvesting another
     account's session or overwriting the wrong storage file. When no such
     sibling profile exists, ``attempt_headless_reauth`` returns UNAVAILABLE.
+
+    Cookie-domain policy (LIMITATION): the re-mint captures only the DEFAULT
+    cookie-domain set (required Google cookies + regional ccTLDs). The optional
+    ``--include-domains`` labels a user may have passed at ``notebooklm login``
+    time are NOT persisted anywhere, so an L3 re-mint cannot reproduce them: a
+    profile originally logged in with ``--include-domains=gmail`` will, after a
+    headless re-auth, hold a ``storage_state.json`` WITHOUT those optional
+    sibling-product cookies. The re-auth still SUCCEEDS for NotebookLM itself
+    (the required cookies are present); only opt-in extras are dropped.
+    Operators relying on optional domains should re-run ``notebooklm login
+    --include-domains=...`` after an L3 re-mint, or inspect their cookie domains.
+    Persisting the login-time domain set (a small sidecar metadata file) is a
+    tracked follow-up, out of scope for P2.
     """
     storage_path = auth.storage_path
     if storage_path is None:
