@@ -808,6 +808,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | File | Purpose |
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
+| `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
 | `_client_composed.py` | Client-owned composition holder for transport, executor, chain host, middleware metadata, and runtime collaborator bundle. |
 | `_client_seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
@@ -922,6 +923,7 @@ src/notebooklm/
 ├── _auth_refresh_retry.py       # Shared auth refresh-and-retry core (RefreshBudget + refresh_and_count) for both retry layers
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper
+├── _client_assembly.py          # Shared client-assembly seam (constructor + test factory)
 ├── _client_composed.py          # Client-owned composition holder
 ├── _client_seams.py             # Constructor-only injectable seams
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts

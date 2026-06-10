@@ -29,10 +29,10 @@ from _guardrails._ast_reach_in import (
     _assignment_value,
     _call_keyword_value,
     _facade_construction_lines,
-    _method_body,
+    _module_function_body,
+    _owned_attr_assignment,
+    _owned_attr_name,
     _RuntimeImportVisitor,
-    _self_attr_assignment,
-    _self_attr_name,
 )
 from _helpers.client_factory import build_client_shell_for_tests
 from notebooklm._artifacts import ArtifactsAPI
@@ -237,11 +237,21 @@ def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
 
 
 def test_client_constructs_sources_before_notebooks_and_injects_sources_api() -> None:
-    """Client wiring must avoid hidden SourcesAPI construction inside NotebooksAPI."""
-    client_tree = ast.parse((SRC_ROOT / "client.py").read_text(encoding="utf-8"))
-    init_body = _method_body(client_tree, "NotebookLMClient", "__init__")
-    sources_index, sources_assignment = _self_attr_assignment(init_body, "sources")
-    notebooks_index, notebook_assignment = _self_attr_assignment(init_body, "notebooks")
+    """Client wiring must avoid hidden SourcesAPI construction inside NotebooksAPI.
+
+    The wiring lives in :func:`notebooklm._client_assembly._assemble_client`
+    (the single construction seam ``NotebookLMClient.__init__`` and the
+    canonical test factory both run), where the client instance is bound to
+    the ``client`` parameter — hence the ``owner="client"`` matchers.
+    """
+    assembly_tree = ast.parse((SRC_ROOT / "_client_assembly.py").read_text(encoding="utf-8"))
+    assembly_body = _module_function_body(assembly_tree, "_assemble_client")
+    sources_index, sources_assignment = _owned_attr_assignment(
+        assembly_body, "sources", owner="client"
+    )
+    notebooks_index, notebook_assignment = _owned_attr_assignment(
+        assembly_body, "notebooks", owner="client"
+    )
 
     assert sources_index < notebooks_index
 
@@ -256,7 +266,10 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     assert isinstance(notebooks_call.func, ast.Name)
     assert notebooks_call.func.id == "NotebooksAPI"
 
-    assert _self_attr_name(_call_keyword_value(notebooks_call, "sources_api")) == "sources"
+    assert (
+        _owned_attr_name(_call_keyword_value(notebooks_call, "sources_api"), owner="client")
+        == "sources"
+    )
 
 
 @pytest.fixture

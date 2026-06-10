@@ -76,7 +76,9 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "_source/upload.py": 1236,
     "_sources.py": 1007,
     "_artifact/downloads.py": 1033,
-    "client.py": 993,
+    # client.py dropped below the budget when its ``__init__`` body moved to
+    # ``_client_assembly.py`` (the shared constructor/test-factory seam), so
+    # its ceiling entry was removed per the one-way-ratchet rule.
     "_research.py": 936,
     "_chat/api.py": 955,
 }

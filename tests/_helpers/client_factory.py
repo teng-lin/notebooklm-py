@@ -8,9 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from notebooklm._chat import ChatAPI
-from notebooklm._client_composed import ClientComposed
-from notebooklm._client_seams import resolve_client_seams
+from notebooklm._client_assembly import _assemble_client
 from notebooklm._runtime.config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -18,9 +16,7 @@ from notebooklm._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from notebooklm._runtime.init import compose_client_internals
 from notebooklm._runtime.lifecycle import CookieRotator, CookieSaver
-from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.types import RpcTelemetryEvent
@@ -52,20 +48,36 @@ def build_client_shell_for_tests(
     is_auth_error: Callable[[Exception], bool] | None = None,
     async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
 ) -> NotebookLMClient:
-    """Build a minimal client shell with composed runtime attributes populated.
+    """Build a client shell through the production assembly seam.
 
     The helper preserves the historical test-only seam kwargs without adding
-    them to :class:`NotebookLMClient`'s public constructor. It intentionally
-    does not construct feature API attributes; tests that need the public
-    feature surface should instantiate :class:`NotebookLMClient` directly.
+    them to :class:`NotebookLMClient`'s public constructor: it creates an
+    uninitialized instance and runs the same
+    :func:`notebooklm._client_assembly._assemble_client` function that
+    ``NotebookLMClient.__init__`` delegates to, forwarding the seam kwargs
+    that only exist on the assembly function.
+
+    Because the wiring is the production function itself, a constructor
+    refactor can no longer strand this factory the way issues #1196
+    (open-time upload-semaphore loop reset needed ``_source_uploader``)
+    and #1225 (open-time ChatAPI conversation-lock reset needed ``chat``)
+    did when this helper still hand-wired private attributes against
+    ``NotebookLMClient.__new__``. The shell therefore carries the full
+    production attribute surface (feature APIs included) — pinned by
+    ``tests/_guardrails/test_client_factory_parity.py``.
+
+    Shell-specific defaults (unchanged from the historical helper):
+
+    - ``refresh_callback=None`` — no auth-refresh coordination unless a
+      test injects one (production wires ``client.refresh_auth``).
+    - ``keepalive_storage_path=None`` — passed through verbatim; the
+      production derivation from ``auth.storage_path`` is bypassed.
+    - The client is returned **unopened**: loop binding still happens at
+      ``open()`` time (via ``__aenter__``), exactly as in production.
     """
-    seams = resolve_client_seams(
-        decode_response=decode_response,
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-    )
-    composed = ClientComposed(max_concurrent_rpcs=max_concurrent_rpcs)
-    internals = compose_client_internals(
+    client = NotebookLMClient.__new__(NotebookLMClient)
+    _assemble_client(
+        client,
         auth=auth,
         timeout=timeout,
         connect_timeout=connect_timeout,
@@ -82,41 +94,9 @@ def build_client_shell_for_tests(
         on_rpc_event=on_rpc_event,
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
+        decode_response=decode_response,
+        sleep=sleep,
+        is_auth_error=is_auth_error,
         async_client_factory=async_client_factory,
-        seams=seams,
-        composed=composed,
-    )
-
-    client = NotebookLMClient.__new__(NotebookLMClient)
-    client._auth = auth
-    client._seams = seams
-    client._composed = composed
-    client._collaborators = internals.collaborators
-    client._rpc_executor = internals.executor
-    # The shell skips feature-API construction, but ``ClientLifecycle.open``
-    # (driven via ``client.__aenter__``) now resets the upload semaphore's
-    # loop binding through ``client._source_uploader`` (issue #1196 upload
-    # variant), so the shell must wire a real uploader the same way
-    # ``NotebookLMClient.__init__`` does.
-    client._source_uploader = SourceUploadPipeline(
-        rpc=internals.executor,
-        drain=internals.collaborators.drain_tracker,
-        lifecycle=internals.collaborators.lifecycle,
-        kernel=internals.collaborators.kernel,
-        auth=auth,
-        max_concurrent_uploads=max_concurrent_uploads,
-        record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
-    )
-    # ``ClientLifecycle.open`` (driven via ``client.__aenter__``) also resets
-    # the ChatAPI conversation-lock loop binding through ``client.chat``
-    # (issue #1225), so the shell must wire a real ChatAPI the same way
-    # ``NotebookLMClient.__init__`` does. Defaults are sufficient: the shell
-    # exercises lifecycle open/close + cross-loop reset, not the full chat
-    # graph, so a bare ChatAPI over the composed collaborators is enough.
-    client.chat = ChatAPI(
-        rpc=internals.executor,
-        transport=composed.transport,
-        reqid=internals.collaborators.reqid,
-        loop_guard=internals.collaborators.lifecycle,
     )
     return client

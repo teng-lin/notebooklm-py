@@ -18,24 +18,31 @@ from __future__ import annotations
 import ast
 
 
-def _self_attr_name(node: ast.AST) -> str | None:
+def _owned_attr_name(node: ast.AST, owner: str = "self") -> str | None:
+    """``<owner>.<attr>`` → ``attr`` (``owner`` is the host-object name).
+
+    ``owner`` defaults to ``"self"`` for method bodies; the client-assembly
+    checks pass ``owner="client"`` because the construction seam
+    (``notebooklm._client_assembly._assemble_client``) binds the instance
+    to a ``client`` parameter instead of ``self``.
+    """
     if (
         isinstance(node, ast.Attribute)
         and isinstance(node.value, ast.Name)
-        and node.value.id == "self"
+        and node.value.id == owner
     ):
         return node.attr
     return None
 
 
-def _assigned_self_attr_name(node: ast.AST) -> str | None:
+def _assigned_owned_attr_name(node: ast.AST, owner: str = "self") -> str | None:
     if isinstance(node, ast.Assign):
         for target in node.targets:
-            attr_name = _self_attr_name(target)
+            attr_name = _owned_attr_name(target, owner=owner)
             if attr_name is not None:
                 return attr_name
     if isinstance(node, ast.AnnAssign):
-        return _self_attr_name(node.target)
+        return _owned_attr_name(node.target, owner=owner)
     return None
 
 
@@ -47,24 +54,23 @@ def _assignment_value(node: ast.AST) -> ast.AST | None:
     return None
 
 
-def _self_attr_assignment(body: list[ast.stmt], attr_name: str) -> tuple[int, ast.stmt]:
+def _owned_attr_assignment(
+    body: list[ast.stmt], attr_name: str, owner: str = "self"
+) -> tuple[int, ast.stmt]:
     for index, statement in enumerate(body):
-        if _assigned_self_attr_name(statement) == attr_name:
+        if _assigned_owned_attr_name(statement, owner=owner) == attr_name:
             return index, statement
-    raise AssertionError(f"self.{attr_name} assignment not found")
+    raise AssertionError(f"{owner}.{attr_name} assignment not found")
 
 
-def _method_body(tree: ast.AST, class_name: str, method_name: str) -> list[ast.stmt]:
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ClassDef) or node.name != class_name:
-            continue
-        for item in node.body:
-            if (
-                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and item.name == method_name
-            ):
-                return item.body
-    raise AssertionError(f"{class_name}.{method_name} not found")
+def _module_function_body(tree: ast.AST, function_name: str) -> list[ast.stmt]:
+    """Body of a module-level (non-class) function definition."""
+    if not isinstance(tree, ast.Module):
+        raise AssertionError("expected an ast.Module")
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            return node.body
+    raise AssertionError(f"module-level function {function_name} not found")
 
 
 def _facade_call_name(node: ast.AST, facade_names: set[str]) -> str | None:
