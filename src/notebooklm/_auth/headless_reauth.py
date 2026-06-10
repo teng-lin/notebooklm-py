@@ -247,6 +247,98 @@ def _resolve_reusable_profile(
     return candidate
 
 
+def _playwright_installed() -> bool:
+    """True when the ``browser`` extra (``playwright.sync_api``) can be imported.
+
+    Mirrors the lazy-import probe :func:`attempt_headless_reauth` runs before
+    driving a browser, so readiness and the real attempt agree on availability.
+    Kept function-local so importing this module never needs ``playwright``.
+    """
+    try:
+        import playwright.sync_api  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+@dataclass(frozen=True)
+class HeadlessReauthReadiness:
+    """Credential-free readiness snapshot for the L3 headless re-auth fallback.
+
+    Surfaced by ``doctor`` so an operator can tell — *before* a dead-cookie
+    wall is hit — whether the unattended L3 recovery could even run. It carries
+    NO cookie/token/session content: only two booleans plus a derived,
+    human-readable ``detail``.
+
+    Attributes:
+        profile_present: A reusable persistent browser profile dir exists on
+            disk for the active storage path (the prerequisite L3 harvests a
+            live Google SSO session from). Resolved by the same
+            :func:`_resolve_reusable_profile` the real attempt uses.
+        playwright_installed: The ``browser`` extra is importable, so a headless
+            browser can actually be driven.
+    """
+
+    profile_present: bool
+    playwright_installed: bool
+
+    @property
+    def available(self) -> bool:
+        """True only when BOTH prerequisites for an L3 attempt are in place.
+
+        Never asserts the profile's Google session is live — that can only be
+        known by driving the browser, which the readiness probe does not do —
+        and does not consider the opt-in, which is a call-time decision.
+        """
+        return self.profile_present and self.playwright_installed
+
+    @property
+    def detail(self) -> str:
+        """Short, credential-free, actionable one-liner for the doctor row."""
+        if self.available:
+            return (
+                "ready (persistent profile + playwright present; opt-in via "
+                "NOTEBOOKLM_HEADLESS_REAUTH=1 or refresh_auth(allow_headless=True))"
+            )
+        missing: list[str] = []
+        if not self.profile_present:
+            missing.append("no reusable browser profile (run 'notebooklm login' once)")
+        if not self.playwright_installed:
+            missing.append("playwright not installed (add the 'browser' extra)")
+        return "unavailable: " + "; ".join(missing)
+
+
+def headless_reauth_readiness(
+    *,
+    browser_profile: Path | None = None,
+    profile: str | None = None,
+) -> HeadlessReauthReadiness:
+    """Probe whether L3 headless re-auth *could* run, without driving a browser.
+
+    A read-only, credential-free diagnostic for ``doctor``: it resolves the
+    persistent browser-profile dir (the same way :func:`attempt_headless_reauth`
+    does) and checks the lazy ``playwright`` import — but launches NOTHING and
+    reads no cookie/session content. It deliberately does NOT assert the
+    profile's Google session is live (only driving the browser can know that),
+    nor does it consider the opt-in, which is a call-time decision.
+
+    Args:
+        browser_profile: Explicit persistent-profile dir; defaults to the
+            profile's ``get_browser_profile_dir`` when ``None`` (same resolution
+            as the real attempt).
+        profile: Profile name used to resolve the browser-profile dir.
+
+    Returns:
+        A :class:`HeadlessReauthReadiness` with the two prerequisite booleans
+        and a derived ``available`` / ``detail``.
+    """
+    resolved_profile = _resolve_reusable_profile(browser_profile=browser_profile, profile=profile)
+    return HeadlessReauthReadiness(
+        profile_present=resolved_profile is not None,
+        playwright_installed=_playwright_installed(),
+    )
+
+
 def attempt_headless_reauth(
     *,
     storage_path: Path,
@@ -330,9 +422,7 @@ def attempt_headless_reauth(
     # ``HeadlessLoginRequiredError``. We want that case classified as
     # UNAVAILABLE (nothing to drive), distinct from a genuine dead-session
     # FAILED. Check import availability up front so the two are not conflated.
-    try:
-        import playwright.sync_api  # noqa: F401
-    except ImportError:
+    if not _playwright_installed():
         return HeadlessReauthResult(
             HeadlessReauthStatus.UNAVAILABLE,
             "playwright is not installed (install the 'browser' extra to enable headless re-auth)",
@@ -433,8 +523,10 @@ def _drive_capture(plan: BrowserCapturePlan) -> HeadlessReauthResult:
 
 __all__ = [
     "NOTEBOOKLM_HEADLESS_REAUTH_ENV",
+    "HeadlessReauthReadiness",
     "HeadlessReauthResult",
     "HeadlessReauthStatus",
     "attempt_headless_reauth",
     "headless_reauth_env_enabled",
+    "headless_reauth_readiness",
 ]

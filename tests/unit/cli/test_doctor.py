@@ -237,7 +237,13 @@ def test_doctor_json_output_shape(runner, isolated_notebooklm_home):
     data = _invoke_json(runner, [], exit_code=1)
 
     assert set(data) == {"profile", "profile_source", "checks"}
-    assert set(data["checks"]) == {"migration", "profile_dir", "auth", "config"}
+    assert set(data["checks"]) == {
+        "migration",
+        "profile_dir",
+        "auth",
+        "config",
+        "headless_reauth",
+    }
     for check in data["checks"].values():
         assert set(check) == {"status", "detail"}
         assert check["status"] in {"pass", "warn", "fail"}

@@ -49,7 +49,23 @@ def _doctor_paths() -> DoctorPaths:
         get_profile_dir=paths.get_profile_dir,
         get_storage_path=paths.get_storage_path,
         get_config_path=paths.get_config_path,
+        headless_reauth_check=_headless_reauth_check,
     )
+
+
+def _headless_reauth_check() -> dict[str, str]:
+    """Mirror ``cli/doctor_cmd._headless_reauth_check`` for the neutral core.
+
+    Uses the real readiness probe pointed at the per-test browser-profile dir,
+    so these app-level tests exercise the same mapping the CLI forwards.
+    """
+    from notebooklm._auth.headless_reauth import headless_reauth_readiness
+
+    readiness = headless_reauth_readiness(browser_profile=paths.get_browser_profile_dir())
+    return {
+        "status": "pass" if readiness.available else "warn",
+        "detail": readiness.detail,
+    }
 
 
 def _run(*, fix: bool = False) -> DoctorReport:
@@ -287,12 +303,87 @@ def test_fix_migrates_legacy_layout(home: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# headless re-auth readiness check
+# ---------------------------------------------------------------------------
+
+
+def _make_browser_profile(home: Path, name: str = "default") -> Path:
+    """Create a populated persistent browser-profile dir under the profile."""
+    bp = home / "profiles" / name / "browser_profile"
+    bp.mkdir(parents=True)
+    (bp / "Default").mkdir()
+    return bp
+
+
+def test_headless_reauth_pass_when_profile_and_playwright(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A populated browser profile + playwright present → pass row."""
+    profile_dir = _make_profile(home)
+    _make_browser_profile(home)
+    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(home / "config.json", {"default_profile": "default"})
+    # The ``browser`` extra is installed in CI; pin it so the test is robust
+    # regardless of the runner's extras.
+    from notebooklm._auth import headless_reauth as hr
+
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    report = _run()
+
+    assert report.checks["headless_reauth"]["status"] == "pass"
+    assert "ready" in report.checks["headless_reauth"]["detail"]
+    # An otherwise-healthy install with an available L3 fallback has no failures.
+    assert not report.has_failures
+
+
+def test_headless_reauth_warns_without_browser_profile(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No persistent browser profile → warn (optional fallback unavailable)."""
+    _make_profile(home)
+    from notebooklm._auth import headless_reauth as hr
+
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    report = _run()
+
+    assert report.checks["headless_reauth"]["status"] == "warn"
+    assert "no reusable browser profile" in report.checks["headless_reauth"]["detail"]
+    # A warn never flips the install to failing.
+    assert report.checks["headless_reauth"]["status"] != "fail"
+
+
+def test_headless_reauth_warn_does_not_force_failure(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unavailable L3 fallback alone must not make ``has_failures`` true."""
+    profile_dir = _make_profile(home)
+    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(home / "config.json", {"default_profile": "default"})
+    from notebooklm._auth import headless_reauth as hr
+
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
+
+    report = _run()
+
+    assert report.checks["headless_reauth"]["status"] == "warn"
+    assert not report.has_failures
+
+
 def test_report_check_set_and_shape(home: Path) -> None:
     _make_profile(home)
 
     report = _run()
 
-    assert set(report.checks) == {"migration", "profile_dir", "auth", "config"}
+    assert set(report.checks) == {
+        "migration",
+        "profile_dir",
+        "auth",
+        "config",
+        "headless_reauth",
+    }
     for check in report.checks.values():
         assert set(check) == {"status", "detail"}
         assert check["status"] in {"pass", "warn", "fail"}

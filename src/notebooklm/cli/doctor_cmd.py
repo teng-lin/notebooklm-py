@@ -3,7 +3,7 @@
 Commands:
     doctor   Check profile setup, auth, and migration status
 
-The four checks + automatic fixes + health aggregation live in the
+The doctor checks + automatic fixes + health aggregation live in the
 transport-neutral :mod:`notebooklm._app.doctor`. This module owns the Rich
 rendering, the ``--json`` envelope, and the exit codes, and forwards the path
 helpers (read off this module at call time so the
@@ -16,6 +16,7 @@ from rich.table import Table
 
 from .._app.doctor import DoctorPaths, DoctorReport, run_checks
 from ..paths import (
+    get_browser_profile_dir,
     get_config_path,
     get_home_dir,
     get_path_info,
@@ -38,7 +39,31 @@ def _doctor_paths() -> DoctorPaths:
         get_profile_dir=get_profile_dir,
         get_storage_path=get_storage_path,
         get_config_path=get_config_path,
+        headless_reauth_check=_headless_reauth_check,
     )
+
+
+def _headless_reauth_check() -> dict[str, str]:
+    """Map the L3 readiness probe to the standard ``{status, detail}`` check shape.
+
+    The transport-neutral ``_app.doctor`` core must not import the private
+    ``_auth.headless_reauth`` runtime sibling (``_app`` boundary lint), so the
+    CLI adapter — which may — owns this credential-free, browser-free probe and
+    hands the neutral core a ready-made check row.
+
+    ``warn`` (never ``fail``) when L3 is unavailable: it is an optional, opt-in
+    fallback, so a missing persistent profile or an absent ``browser`` extra is
+    not a broken install — only an unavailable enhancement. The
+    ``headless_reauth_readiness`` import is function-local so ``doctor`` never
+    forces a ``playwright`` import on the common path.
+    """
+    from .._auth.headless_reauth import headless_reauth_readiness
+
+    readiness = headless_reauth_readiness(browser_profile=get_browser_profile_dir())
+    return {
+        "status": "pass" if readiness.available else "warn",
+        "detail": readiness.detail,
+    }
 
 
 def register_doctor_command(cli):
@@ -68,7 +93,7 @@ def register_doctor_command(cli):
 
 def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
     """Run doctor checks and emit either JSON or rich text output."""
-    # The four checks + automatic fixes + health aggregation are
+    # The doctor checks + automatic fixes + health aggregation are
     # transport-neutral and live in ``_app.doctor``. Path helpers are forwarded
     # via ``_doctor_paths`` (read off this module at call time so the
     # ``patch("...doctor_cmd.get_storage_path")`` seam lands); an unexpected

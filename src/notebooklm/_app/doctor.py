@@ -1,15 +1,17 @@
 """Transport-neutral doctor diagnostics business logic.
 
-This is the Click-free core of ``cli/doctor_cmd.py``: it runs the four install
-checks (migration / profile-dir / auth / config), optionally applies the
+This is the Click-free core of ``cli/doctor_cmd.py``: it runs the install
+checks (migration / profile-dir / auth / config / headless-reauth readiness),
+optionally applies the
 automatic fixes, aggregates the overall pass/fail health, and returns a typed
 :class:`DoctorReport`. Every transport adapter (the Click CLI today, a future
 HTTP / FastMCP surface tomorrow) drives :func:`run_checks` and renders the
 report into its own surface + exit-code policy; the Rich table + remediation
 hints stay in the CLI.
 
-The five path helpers the checks need (``get_path_info`` / ``get_home_dir`` /
-``get_profile_dir`` / ``get_storage_path`` / ``get_config_path``) are
+The path helpers the checks need (``get_path_info`` / ``get_home_dir`` /
+``get_profile_dir`` / ``get_storage_path`` / ``get_config_path``) plus the
+``headless_reauth_check`` readiness closure are
 **injected** via a :class:`DoctorPaths` bundle rather than imported, so this
 core never reaches into ``notebooklm.paths`` directly and the CLI's
 ``patch("notebooklm.cli.doctor_cmd.get_storage_path", ...)`` test seam keeps
@@ -36,6 +38,13 @@ class DoctorPaths:
 
     The CLI builds this from its own ``doctor_cmd``-namespace helpers (read at
     call time) so the ``patch("...doctor_cmd.get_storage_path")`` seam lands.
+
+    ``headless_reauth_check`` is an injected ``() -> {"status", "detail"}``
+    closure rather than a path helper: the L3 readiness probe lives in
+    ``notebooklm._auth.headless_reauth`` (a private runtime sibling this
+    transport-neutral core must NOT import — see the ``_app`` boundary lint),
+    so the adapter that *may* import ``_auth`` supplies the probe and maps its
+    credential-free outcome to the standard check shape.
     """
 
     get_path_info: Callable[[], dict[str, Any]]
@@ -43,6 +52,7 @@ class DoctorPaths:
     get_profile_dir: Callable[..., Path]
     get_storage_path: Callable[[], Path]
     get_config_path: Callable[[], Path]
+    headless_reauth_check: Callable[[], dict[str, str]]
 
 
 @dataclass(frozen=True)
@@ -177,7 +187,7 @@ def _apply_fixes(
 
 
 def run_checks(*, fix: bool, paths: DoctorPaths) -> DoctorReport:
-    """Run the four doctor checks and (optionally) apply fixes.
+    """Run the doctor checks and (optionally) apply fixes.
 
     Args:
         fix: When true, apply the automatic repairs (migration / profile-dir /
@@ -200,6 +210,7 @@ def run_checks(*, fix: bool, paths: DoctorPaths) -> DoctorReport:
         "profile_dir": _check_profile_dir(profile_dir),
         "auth": _check_auth(paths.get_storage_path()),
         "config": _check_config(paths.get_config_path(), paths.get_profile_dir),
+        "headless_reauth": paths.headless_reauth_check(),
     }
 
     fixes_applied: list[str] = []

@@ -322,5 +322,74 @@ class _DummyModule:
     """
 
 
+# ---------------------------------------------------------------------------
+# Readiness probe (doctor diagnostics): credential-free, launches nothing
+# ---------------------------------------------------------------------------
+
+
+def test_readiness_ready_when_profile_present_and_playwright(tmp_path: Path, monkeypatch) -> None:
+    """Profile present + playwright importable → available, ready detail."""
+    profile = _make_profile(tmp_path)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    readiness = hr.headless_reauth_readiness(browser_profile=profile)
+
+    assert readiness.profile_present is True
+    assert readiness.playwright_installed is True
+    assert readiness.available is True
+    assert "ready" in readiness.detail
+    assert "NOTEBOOKLM_HEADLESS_REAUTH" in readiness.detail
+
+
+def test_readiness_unavailable_without_profile(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    readiness = hr.headless_reauth_readiness(browser_profile=tmp_path / "nope")
+
+    assert readiness.profile_present is False
+    assert readiness.available is False
+    assert "no reusable browser profile" in readiness.detail
+
+
+def test_readiness_unavailable_without_playwright(tmp_path: Path, monkeypatch) -> None:
+    profile = _make_profile(tmp_path)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
+
+    readiness = hr.headless_reauth_readiness(browser_profile=profile)
+
+    assert readiness.profile_present is True
+    assert readiness.playwright_installed is False
+    assert readiness.available is False
+    assert "playwright not installed" in readiness.detail
+
+
+def test_readiness_reports_both_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
+
+    readiness = hr.headless_reauth_readiness(browser_profile=tmp_path / "nope")
+
+    assert readiness.available is False
+    assert "no reusable browser profile" in readiness.detail
+    assert "playwright not installed" in readiness.detail
+
+
+def test_readiness_never_drives_a_browser(tmp_path: Path, monkeypatch) -> None:
+    """The readiness probe must never launch the capture core."""
+
+    def _boom(*_a, **_k):  # pragma: no cover - must not be called
+        raise AssertionError("headless_reauth_readiness must not drive a browser")
+
+    monkeypatch.setattr(hr, "run_browser_capture", _boom)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    readiness = hr.headless_reauth_readiness(browser_profile=_make_profile(tmp_path))
+    assert readiness.available is True
+
+
+def test_playwright_installed_true_with_extra() -> None:
+    """The browser extra IS installed in the test env, so the probe is True."""
+    assert hr._playwright_installed() is True
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-v"]))

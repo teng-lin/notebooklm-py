@@ -213,6 +213,43 @@ def _is_browser_capture_alias_import(parent_parts: list[str], names: list[ast.al
     return parent_parts == ["_auth"] and all(alias.name == "browser_capture" for alias in names)
 
 
+# The ONLY ``_auth.headless_reauth`` names the CLI may import. Deliberately
+# narrow: the credential-free, browser-free readiness probe + its typed return,
+# consumed by the ``doctor`` diagnostic. The layer-3 *drive* path
+# (``attempt_headless_reauth`` and friends) is wired through the client runtime,
+# NOT the CLI, and stays behind the boundary so the CLI can never become an
+# auth-minting surface. Keep this set minimal.
+_HEADLESS_REAUTH_ALLOWED_NAMES = frozenset({"headless_reauth_readiness", "HeadlessReauthReadiness"})
+
+
+def _is_headless_reauth_symbol_import(parts: list[str], names: list[ast.alias]) -> bool:
+    """True ONLY for ``from ..._auth.headless_reauth import <readiness symbol>``.
+
+    A **second, deliberately name-level** sanctioned exception alongside
+    :func:`_is_browser_capture_path`, in the same spirit as ``_app`` and the
+    browser-capture core — but narrower. ``_auth/headless_reauth.py`` owns the
+    layer-3 headless re-auth feature; the CLI ``doctor`` command consumes its
+    ``headless_reauth_readiness()`` probe — a **credential-free, browser-free**
+    readiness snapshot (profile present + playwright installed). ``doctor``
+    cannot route this through ``_app`` because the ``_app`` boundary forbids
+    ``_app`` from importing ``_auth`` (the probe lives in ``_auth``), so the
+    adapter imports the symbol directly.
+
+    Unlike the module-level ``browser_capture`` carve-out, this exemption is
+    keyed on the imported *names*: ONLY :data:`_HEADLESS_REAUTH_ALLOWED_NAMES`
+    pass. A module-form import (``import notebooklm._auth.headless_reauth`` /
+    ``from .._auth import headless_reauth``) binds the whole module — including
+    the L3 drive path ``attempt_headless_reauth`` — so it is deliberately NOT
+    exempted and stays a boundary violation.
+
+    ``parts`` is the path *below* the ``notebooklm`` prefix, i.e. exactly
+    ``["_auth", "headless_reauth"]`` for the ``from`` target.
+    """
+    return parts == ["_auth", "headless_reauth"] and all(
+        alias.name in _HEADLESS_REAUTH_ALLOWED_NAMES for alias in names
+    )
+
+
 def _is_app_path(parts: list[str]) -> bool:
     """True if ``parts`` targets the ``notebooklm._app`` business-logic layer.
 
@@ -409,11 +446,14 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                         sub_parts = mod_parts[1:]
                         # ``notebooklm._app`` is the sanctioned shared layer;
                         # ``notebooklm._auth.browser_capture`` is the sanctioned
-                        # neutral browser-capture core (ADR-0021).
+                        # neutral browser-capture core (ADR-0021); the
+                        # ``notebooklm._auth.headless_reauth`` readiness symbols
+                        # are sanctioned for the doctor diagnostic (name-level).
                         if (
                             _is_app_path(sub_parts)
                             or _is_browser_capture_path(sub_parts)
                             or _is_browser_capture_alias_import(sub_parts, node.names)
+                            or _is_headless_reauth_symbol_import(sub_parts, node.names)
                         ):
                             continue
                         # Rule 1 (any private segment) or Rule 2 (rpc layer).
@@ -438,11 +478,14 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                 if mod:
                     # ``from .._app...`` / ``from ..._app...`` — sanctioned layer;
                     # ``from ..._auth.browser_capture import …`` — sanctioned
-                    # neutral browser-capture core (ADR-0021).
+                    # neutral browser-capture core (ADR-0021);
+                    # ``from ..._auth.headless_reauth import <readiness symbol>``
+                    # — sanctioned for the doctor diagnostic (name-level only).
                     if (
                         _is_app_path(mod_parts)
                         or _is_browser_capture_path(mod_parts)
                         or _is_browser_capture_alias_import(mod_parts, node.names)
+                        or _is_headless_reauth_symbol_import(mod_parts, node.names)
                     ):
                         continue
                     # Rule 1 (any private segment) or Rule 2 (rpc layer).
@@ -479,7 +522,10 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
                 sub_parts = parts[1:]
                 # ``import notebooklm._app[.x]`` is the sanctioned shared layer;
                 # ``import notebooklm._auth.browser_capture`` is the sanctioned
-                # neutral browser-capture core (ADR-0021).
+                # neutral browser-capture core (ADR-0021). NOTE: a *module-form*
+                # ``import notebooklm._auth.headless_reauth`` is deliberately NOT
+                # exempted — it binds the whole module incl. the L3 drive path;
+                # only name-level readiness-symbol imports are sanctioned.
                 if _is_app_path(sub_parts) or _is_browser_capture_path(sub_parts):
                     continue
                 # Rule 1 (any private segment) or Rule 2 (rpc layer).
@@ -934,4 +980,63 @@ def test_cli_boundary_browser_capture_allowlist_is_exact_not_prefix(
     source: str, expected: str
 ) -> None:
     """The browser_capture exemption must not leak to other ``_auth.*`` modules."""
+    assert expected in _violations(ast.parse(source))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from notebooklm._auth.headless_reauth import headless_reauth_readiness\n",
+        "from .._auth.headless_reauth import headless_reauth_readiness\n",
+        "from ..._auth.headless_reauth import headless_reauth_readiness\n",
+        "from notebooklm._auth.headless_reauth import HeadlessReauthReadiness\n",
+        "from .._auth.headless_reauth import (\n"
+        "    headless_reauth_readiness,\n"
+        "    HeadlessReauthReadiness,\n"
+        ")\n",
+    ],
+)
+def test_cli_boundary_allows_headless_reauth_readiness_symbols(source: str) -> None:
+    """The CLI ``doctor`` may import the credential-free L3 readiness probe.
+
+    ONLY the readiness symbols (``headless_reauth_readiness`` /
+    ``HeadlessReauthReadiness``) are sanctioned, across the ``from``-import
+    shapes. The L3 *drive* path stays behind the boundary (covered below).
+    """
+    assert _violations(ast.parse(source)) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # The L3 *drive* path must stay blocked — this is the security boundary.
+        (
+            "from notebooklm._auth.headless_reauth import attempt_headless_reauth\n",
+            "from notebooklm._auth.headless_reauth import ...",
+        ),
+        (
+            "from .._auth.headless_reauth import attempt_headless_reauth\n",
+            "from .._auth.headless_reauth import ...",
+        ),
+        # A readiness symbol imported ALONGSIDE the drive path is not sanctioned
+        # (the exemption requires EVERY imported name to be readiness-only).
+        (
+            "from notebooklm._auth.headless_reauth import "
+            "headless_reauth_readiness, attempt_headless_reauth\n",
+            "from notebooklm._auth.headless_reauth import ...",
+        ),
+        # Module-form imports bind the whole module (incl. the drive path) and
+        # are deliberately NOT exempted.
+        (
+            "import notebooklm._auth.headless_reauth\n",
+            "import notebooklm._auth.headless_reauth",
+        ),
+        ("from notebooklm._auth import headless_reauth\n", "from notebooklm._auth import ..."),
+        ("from .._auth import headless_reauth\n", "from .._auth import ..."),
+    ],
+)
+def test_cli_boundary_headless_reauth_carveout_blocks_drive_path(
+    source: str, expected: str
+) -> None:
+    """The headless_reauth carve-out is readiness-only; the L3 drive stays blocked."""
     assert expected in _violations(ast.parse(source))
