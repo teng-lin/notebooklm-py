@@ -1841,10 +1841,17 @@ class TestHandleGenerationResultPaths:
         assert result.exit_code == 0
         assert "task_gen_1" in result.output or "Started" in result.output
 
-    def test_generation_result_with_list_input(self, runner, mock_auth):
-        """Lines 205-207: result is a list → task_id from first element."""
+    def test_generation_result_with_dict_input(self, runner, mock_auth):
+        """A dict generation-start result surfaces its task id.
+
+        The raw positional-list path is gone — the facade ``generate_*``
+        methods return typed ``GenerationStatus`` objects (dicts remain a
+        tolerated seam shape at this boundary).
+        """
         mock_client = create_mock_client()
-        mock_client.artifacts.generate_audio = AsyncMock(return_value=["task_list_1", "extra"])
+        mock_client.artifacts.generate_audio = AsyncMock(
+            return_value={"task_id": "task_dict_1", "status": "processing"}
+        )
 
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
@@ -1855,7 +1862,7 @@ class TestHandleGenerationResultPaths:
             )
 
         assert result.exit_code == 0
-        assert "task_list_1" in result.output or "Started" in result.output
+        assert "task_dict_1" in result.output or "Started" in result.output
 
     def test_generation_result_falsy_shows_failed_message(self, runner, mock_auth):
         """Falsy result → stderr error message + non-zero exit (P1.T6).
@@ -1980,12 +1987,16 @@ class TestHandleGenerationResultListPathAndWait:
         assert "task_console_1" in result.output or "Generating" in result.output
         mock_client.artifacts.wait_for_completion.assert_called_once()
 
-    def test_list_result_extracts_task_id_for_wait(self, runner, mock_auth):
-        """Lines 205->210, 213: list result + wait=True → task_id from list[0]."""
+    def test_dict_result_extracts_task_id_for_wait(self, runner, mock_auth):
+        """Dict result without ``artifact_id`` + wait=True → task_id from ``task_id``.
+
+        (Formerly exercised the raw positional-list path; the facade returns
+        typed statuses, so the list-sniffing branch was removed.)
+        """
         from notebooklm.types import GenerationStatus
 
         completed_status = GenerationStatus(
-            task_id="task_list_wait",
+            task_id="task_dict_wait",
             status="completed",
             error=None,
             error_code=None,
@@ -1993,7 +2004,9 @@ class TestHandleGenerationResultListPathAndWait:
         )
 
         mock_client = create_mock_client()
-        mock_client.artifacts.generate_audio = AsyncMock(return_value=["task_list_wait", "extra"])
+        mock_client.artifacts.generate_audio = AsyncMock(
+            return_value={"task_id": "task_dict_wait", "status": "processing"}
+        )
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
 
         with patch(

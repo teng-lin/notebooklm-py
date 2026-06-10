@@ -1,10 +1,12 @@
 """Transport-neutral note business logic.
 
 This is the Click-free core of ``cli/note_cmd.py``: it owns the
-``create`` / ``get`` / ``save`` / ``rename`` / ``delete`` workflows, the
-new-note-id extraction from the ``notes.create`` RPC shape, and the
+``create`` / ``get`` / ``save`` / ``rename`` / ``delete`` workflows and the
 get-then-update "preserve content" rename path (``resolve_note_content``). It
-returns typed result dataclasses instead of an adapter-shaped envelope dict.
+consumes only the **typed** facade (``notes.create`` returns a
+:class:`~notebooklm.types.Note`; failures raise) — no raw RPC payloads cross
+into this layer — and returns typed result dataclasses instead of an
+adapter-shaped envelope dict.
 Every transport adapter (the Click CLI today, the FastMCP server / future HTTP
 later) drives this core and renders the typed result into its own surface +
 exit-code policy.
@@ -32,7 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from ..types import Note
 
@@ -48,20 +50,6 @@ ResolveNotebookIdFn = Callable[..., Awaitable[str]]
 ResolveNoteIdFn = Callable[..., Awaitable[str]]
 
 
-def extract_new_note_id(result: Any) -> str | None:
-    """Pull the new note id out of the ``notes.create`` RPC return.
-
-    ``notes.create`` returns a nested list whose first element is the new note
-    id, e.g. ``["note_xyz", ["note_xyz", content, ...]]``. Extract it
-    defensively; a non-list / empty / non-string-first shape yields ``None``.
-    """
-    if isinstance(result, list) and result:
-        first = result[0]
-        if isinstance(first, str):
-            return first
-    return None
-
-
 # ---------------------------------------------------------------------------
 # note create
 # ---------------------------------------------------------------------------
@@ -71,15 +59,17 @@ def extract_new_note_id(result: Any) -> str | None:
 class NoteCreateResult:
     """Outcome of ``note create``.
 
-    ``raw`` is the unmodified ``notes.create`` RPC return (the text view prints
-    it verbatim); ``note_id`` is the extracted new id (``None`` when the RPC
-    shape did not yield one, which the CLI renders as the failure envelope).
+    ``raw`` is the typed :class:`~notebooklm.types.Note` the facade returned
+    (the text view prints it verbatim); ``note_id`` is its server-assigned id.
+    The facade **raises** on failure (it never returns a degenerate value), so
+    a constructed result always describes a really-created note; ``created``
+    stays as a property because the adapters branch on it for their envelopes.
     """
 
     notebook_id: str
     title: str
-    note_id: str | None
-    raw: Any
+    note_id: str
+    raw: Note
 
     @property
     def created(self) -> bool:
@@ -95,14 +85,19 @@ async def execute_note_create(
     resolve_notebook_id: ResolveNotebookIdFn,
     json_output: bool = False,
 ) -> NoteCreateResult:
-    """Resolve the notebook + create a note, extracting the new id."""
+    """Resolve the notebook + create a note via the typed facade.
+
+    ``notes.create`` returns a typed :class:`~notebooklm.types.Note` and raises
+    on failure, so this core simply trusts the contract — no RPC-shape
+    extraction happens above the facade.
+    """
     nb_id_resolved = await resolve_notebook_id(client, notebook_id, json_output=json_output)
-    raw = await client.notes.create(nb_id_resolved, title, content)
+    note = await client.notes.create(nb_id_resolved, title, content)
     return NoteCreateResult(
         notebook_id=nb_id_resolved,
         title=title,
-        note_id=extract_new_note_id(raw),
-        raw=raw,
+        note_id=note.id,
+        raw=note,
     )
 
 
@@ -294,6 +289,5 @@ __all__ = [
     "execute_note_get",
     "execute_note_rename",
     "execute_note_save",
-    "extract_new_note_id",
     "resolve_note_for_delete",
 ]

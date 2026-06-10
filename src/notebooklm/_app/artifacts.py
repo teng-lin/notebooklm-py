@@ -25,10 +25,11 @@ Design seams worth calling out:
   ``rename`` path consults ``client.mind_maps.list`` (typed :class:`MindMap`
   objects carrying ``kind``) so it can route note-backed maps via ``UPDATE_NOTE``
   and interactive maps via ``RENAME_ARTIFACT`` behind the unified mind-map API
-  (#1256). The ``delete`` path consults ``client.notes.list_mind_maps`` (raw note
-  rows, matched on ``row[0] == artifact_id``) because note-backed maps are
-  cleared via ``notes.delete``, not removed. Both are preserved exactly so the
-  recorded RPC call sets stay cassette-stable.
+  (#1256). The ``delete`` path probes membership via the typed
+  ``client.notes.get_or_none`` (one ``GET_NOTES_AND_MIND_MAPS`` round-trip, the
+  same single RPC the old raw-row scan issued) because note-backed maps are
+  cleared via ``notes.delete``, not removed. Both call sets are preserved
+  exactly so the recorded RPC cassettes stay stable.
 
 * **The status DTO is neutral.** :class:`ArtifactStatusView` mirrors the public
   :class:`~notebooklm.types.GenerationStatus` fields the adapters read
@@ -143,18 +144,25 @@ async def delete_artifact(
     Note-backed mind maps live in the notes system; deleting one clears it (it
     is not removed — Google may garbage collect it later), so it routes through
     ``notes.delete`` while regular artifacts use ``artifacts.delete``. The
-    membership probe matches the raw note-row ``id`` (``row[0]``) against the
-    resolved artifact id, preserving the recorded RPC call set.
+    membership probe is the typed ``notes.get_or_none``, which issues the same
+    single ``GET_NOTES_AND_MIND_MAPS`` RPC the old raw-row scan did, so
+    recorded cassettes replay unchanged.
+
+    Deliberate nuance: ``get_or_none`` matches any note-row id (including
+    plain-note / soft-deleted rows), not only mind-map rows. That broader match
+    is unreachable in practice because ``artifact_id`` was already resolved
+    against the artifact listing before this runs, and ``notes.delete`` is
+    idempotent-on-missing, so a hypothetical plain-note collision still cannot
+    corrupt state.
 
     Returns ``True`` when the deleted id was a note-backed mind map (so the
     adapter can flag the cleared-not-removed carve-out in its output), ``False``
     for a regular artifact.
     """
-    mind_maps = await client.notes.list_mind_maps(notebook_id)
-    for mm in mind_maps:
-        if mm[0] == artifact_id:
-            await client.notes.delete(notebook_id, artifact_id)
-            return True
+    note = await client.notes.get_or_none(notebook_id, artifact_id)
+    if note is not None:
+        await client.notes.delete(notebook_id, artifact_id)
+        return True
     await client.artifacts.delete(notebook_id, artifact_id)
     return False
 

@@ -4,7 +4,8 @@ These pin the Click-free note workflows at the ``_app`` boundary with a
 ``MagicMock`` client + injected partial-id resolvers (the CLI normally injects
 ``cli.resolve.resolve_notebook_id`` / ``resolve_note_id``):
 
-* :func:`extract_new_note_id` over the ``notes.create`` RPC shapes,
+* ``create`` consuming the typed facade (``notes.create`` returns a ``Note``;
+  facade failures propagate as exceptions — no raw-shape extraction),
 * the ``created`` / ``found`` discriminator flags on the result dataclasses,
 * the concurrent-delete race (``found=False``) on ``get`` and ``rename`` — the
   **neutral** result shape; the CLI keeps ownership of the #1247 NOT_FOUND /
@@ -32,9 +33,9 @@ from notebooklm._app.notes import (
     execute_note_get,
     execute_note_rename,
     execute_note_save,
-    extract_new_note_id,
     resolve_note_for_delete,
 )
+from notebooklm.exceptions import RPCError
 from notebooklm.types import Note
 
 
@@ -53,38 +54,21 @@ async def _resolve_note(_client, _nb_id, note_id, *, json_output=False):
 
 
 # ---------------------------------------------------------------------------
-# extract_new_note_id — defensive RPC-shape extraction
-# ---------------------------------------------------------------------------
-
-
-def test_extract_new_note_id_pulls_first_string() -> None:
-    raw = ["note_xyz", ["note_xyz", "content", 0]]
-    assert extract_new_note_id(raw) == "note_xyz"
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        None,
-        [],
-        "note_xyz",  # bare string, not a list
-        [123, "x"],  # first element is not a string
-        [["note_xyz"]],  # first element is a list
-    ],
-)
-def test_extract_new_note_id_returns_none_on_unexpected_shape(raw) -> None:
-    assert extract_new_note_id(raw) is None
-
-
-# ---------------------------------------------------------------------------
-# note create
+# note create — typed facade contract (notes.create returns a Note)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_execute_note_create_extracts_id_and_is_created() -> None:
+async def test_execute_note_create_returns_typed_note_result() -> None:
+    """``create`` trusts the typed facade: ``note_id`` is the Note's id.
+
+    Regression for the dead-decoder bug: a leftover raw-shape extractor
+    returned ``None`` for every typed ``Note``, so ``note create`` reported
+    failure on every success.
+    """
     client = _client()
-    client.notes.create = AsyncMock(return_value=["note_new", ["note_new", "body"]])
+    note = Note(id="note_new", notebook_id="nb_1", title="Title", content="Body")
+    client.notes.create = AsyncMock(return_value=note)
 
     result = await execute_note_create(
         client, "nb_1", "Title", "Body", resolve_notebook_id=_resolve_nb
@@ -95,39 +79,23 @@ async def test_execute_note_create_extracts_id_and_is_created() -> None:
     assert result.title == "Title"
     assert result.note_id == "note_new"
     assert result.created is True
+    assert result.raw is note
     client.notes.create.assert_awaited_once_with("nb_1", "Title", "Body")
 
 
 @pytest.mark.asyncio
-async def test_execute_note_create_not_created_when_id_missing() -> None:
-    client = _client()
-    client.notes.create = AsyncMock(return_value=[])
+async def test_execute_note_create_facade_exception_propagates() -> None:
+    """A facade failure raises out of ``execute_note_create`` — no soft-failure result.
 
-    result = await execute_note_create(
-        client, "nb_1", "Title", "Body", resolve_notebook_id=_resolve_nb
-    )
-
-    assert result.note_id is None
-    assert result.created is False
-
-
-@pytest.mark.asyncio
-async def test_execute_note_create_not_created_when_truthy_raw_but_no_id() -> None:
-    """A truthy RPC return whose first element is not a string is also not-created.
-
-    Distinct from the empty-``raw`` branch: ``created`` is ``bool(raw) and
-    note_id is not None``, so a non-empty-but-unparseable shape still fails.
+    The facade raises on degenerate shapes (it never returns ``None``), so the
+    ``_app`` core must let that exception propagate to the adapter's standard
+    error handler instead of swallowing it into a ``created=False`` envelope.
     """
     client = _client()
-    client.notes.create = AsyncMock(return_value=[123, "x"])
+    client.notes.create = AsyncMock(side_effect=RPCError("boom"))
 
-    result = await execute_note_create(
-        client, "nb_1", "Title", "Body", resolve_notebook_id=_resolve_nb
-    )
-
-    assert result.note_id is None
-    assert result.raw == [123, "x"]
-    assert result.created is False
+    with pytest.raises(RPCError, match="boom"):
+        await execute_note_create(client, "nb_1", "Title", "Body", resolve_notebook_id=_resolve_nb)
 
 
 # ---------------------------------------------------------------------------

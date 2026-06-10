@@ -172,7 +172,7 @@ class TestNoteCreate:
         """Creates a note and confirms success message."""
         mock_client = create_mock_client()
         mock_client.notes.create = AsyncMock(
-            return_value=["note_new", ["note_new", "Hello world", None, None, "My Note"]]
+            return_value=make_note("note_new", "My Note", "Hello world")
         )
 
         with patch(
@@ -191,9 +191,7 @@ class TestNoteCreate:
     def test_note_create_empty(self, runner, mock_auth):
         """Creates an empty note with the default title."""
         mock_client = create_mock_client()
-        mock_client.notes.create = AsyncMock(
-            return_value=["note_new", ["note_new", "", None, None, "New Note"]]
-        )
+        mock_client.notes.create = AsyncMock(return_value=make_note("note_new", "New Note", ""))
 
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
@@ -204,22 +202,6 @@ class TestNoteCreate:
             )
 
         assert result.exit_code == 0
-
-    def test_note_create_failure(self, runner, mock_auth):
-        """Shows a warning when the API returns None."""
-        mock_client = create_mock_client()
-        mock_client.notes.create = AsyncMock(return_value=None)
-
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
-        ) as mock_fetch:
-            mock_fetch.return_value = ("csrf", "session")
-            result = runner.invoke(
-                cli, ["note", "create", "Test", "-n", "nb_123"], obj=inject_client(mock_client)
-            )
-
-        assert result.exit_code == 0
-        assert "Creation may have failed" in result.output
 
 
 # =============================================================================
@@ -557,9 +539,7 @@ class TestNoteCreateJson:
 
     def test_create_success(self, runner, mock_auth):
         mock_client = create_mock_client()
-        mock_client.notes.create = AsyncMock(
-            return_value=["note_new", ["note_new", "Hello", None, None, "My Note"]]
-        )
+        mock_client.notes.create = AsyncMock(return_value=make_note("note_new", "My Note", "Hello"))
 
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
@@ -587,9 +567,20 @@ class TestNoteCreateJson:
         assert data["title"] == "My Note"
         assert data["notebook_id"] == "nb_123"
 
-    def test_create_failure(self, runner, mock_auth):
+    def test_create_json_emits_real_id_on_typed_note(self, runner, mock_auth):
+        """``note create --json`` emits the REAL note id + ``"created": true``.
+
+        Regression for the dead-decoder bug: ``notes.create`` was typed to
+        return a ``Note``, but a leftover raw-list decoder in the ``_app``
+        layer still tried to read ``result[0]`` and yielded ``None`` — so the
+        CLI emitted ``{"id": null, "created": false, "error": "Creation may
+        have failed"}`` on EVERY successful create. The bug was masked in this
+        suite by stale raw-list mocks; this test pins the typed-facade path.
+        """
         mock_client = create_mock_client()
-        mock_client.notes.create = AsyncMock(return_value=None)
+        mock_client.notes.create = AsyncMock(
+            return_value=make_note("note_real_id", "Pinned", "Body")
+        )
 
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
@@ -597,14 +588,15 @@ class TestNoteCreateJson:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
                 cli,
-                ["note", "create", "X", "-n", "nb_123", "--json"],
+                ["note", "create", "Body", "--title", "Pinned", "-n", "nb_123", "--json"],
                 obj=inject_client(mock_client),
             )
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
-        assert data["created"] is False
-        assert "error" in data
+        assert data["id"] == "note_real_id"
+        assert data["created"] is True
+        assert "error" not in data
 
 
 class TestNoteGetJson:
@@ -937,7 +929,7 @@ class TestNoteCreateStdinDash:
     def test_note_create_content_flag_dash_reads_stdin(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.notes.create = AsyncMock(
-            return_value=["note_new", ["note_new", "from stdin", None, None, "New Note"]]
+            return_value=make_note("note_new", "New Note", "from stdin")
         )
 
         with patch(
@@ -959,7 +951,7 @@ class TestNoteCreateStdinDash:
     def test_note_create_positional_dash_reads_stdin(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.notes.create = AsyncMock(
-            return_value=["note_new", ["note_new", "piped body", None, None, "New Note"]]
+            return_value=make_note("note_new", "New Note", "piped body")
         )
 
         with patch(
@@ -981,7 +973,7 @@ class TestNoteCreateStdinDash:
         """Regression: ``--content "literal"`` is not interpreted as stdin."""
         mock_client = create_mock_client()
         mock_client.notes.create = AsyncMock(
-            return_value=["note_new", ["note_new", "literal", None, None, "New Note"]]
+            return_value=make_note("note_new", "New Note", "literal")
         )
 
         with patch(
@@ -1002,7 +994,9 @@ class TestNoteCreateStdinDash:
     def test_note_create_positional_and_content_flag_conflict(self, runner, mock_auth):
         """Passing both positional CONTENT and --content is a UsageError."""
         mock_client = create_mock_client()
-        mock_client.notes.create = AsyncMock(return_value=None)
+        # Never awaited — the UsageError fires before any client call; a typed
+        # Note keeps the mock contract-faithful anyway.
+        mock_client.notes.create = AsyncMock(return_value=make_note("note_new", "New Note", "x"))
 
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock

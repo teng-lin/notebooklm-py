@@ -34,6 +34,7 @@ from notebooklm.types import (
     GenerationStatus,
     MindMap,
     MindMapKind,
+    Note,
 )
 
 
@@ -116,24 +117,28 @@ async def test_rename_mind_map_dispatches_kind_aware(kind: MindMapKind) -> None:
 
 @pytest.mark.asyncio
 async def test_delete_regular_artifact() -> None:
+    """A miss on the typed ``notes.get_or_none`` probe routes to ``artifacts.delete``."""
     client = _client()
-    client.notes.list_mind_maps = AsyncMock(return_value=[])
+    client.notes.get_or_none = AsyncMock(return_value=None)
     client.notes.delete = AsyncMock()
     client.artifacts.delete = AsyncMock()
     assert await delete_artifact(client, "nb", "art_1") is False
+    client.notes.get_or_none.assert_awaited_once_with("nb", "art_1")
     client.artifacts.delete.assert_awaited_once_with("nb", "art_1")
     client.notes.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_delete_note_backed_mind_map_clears_via_notes() -> None:
+    """A hit on the typed ``notes.get_or_none`` probe clears via ``notes.delete``."""
     client = _client()
-    client.notes.list_mind_maps = AsyncMock(
-        return_value=[["mm_1", ["mm_1", "{}", None, None, "MM Title"]]]
+    client.notes.get_or_none = AsyncMock(
+        return_value=Note(id="mm_1", notebook_id="nb", title="MM Title", content="{}")
     )
     client.notes.delete = AsyncMock()
     client.artifacts.delete = AsyncMock()
     assert await delete_artifact(client, "nb", "mm_1") is True
+    client.notes.get_or_none.assert_awaited_once_with("nb", "mm_1")
     client.notes.delete.assert_awaited_once_with("nb", "mm_1")
     client.artifacts.delete.assert_not_called()
 

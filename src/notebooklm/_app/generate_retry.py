@@ -130,28 +130,27 @@ def _extract_generation_task_id(result: Any) -> str | None:
     Generation-start dicts historically prefer ``artifact_id`` over
     ``task_id``. Keep that precedence separate from final status rendering,
     where ``_extract_task_id`` preserves the existing ``task_id``-first order.
+    The facade ``generate_*`` methods return typed ``GenerationStatus``
+    objects, so no raw positional payload ever reaches this helper.
     """
     if isinstance(result, GenerationStatus):
         return result.task_id
     if isinstance(result, dict):
         return result.get("artifact_id") or result.get("task_id")
-    if isinstance(result, list) and len(result) > 0 and isinstance(result[0], str):
-        return result[0]
     return None
 
 
 def _extract_task_id(status: Any) -> str | None:
     """Extract task ID from various status formats.
 
-    Handles GenerationStatus objects, dicts with task_id/artifact_id keys,
-    and lists where the first element is an ID string.
+    Handles GenerationStatus objects (anything exposing ``task_id``) and dicts
+    with ``task_id``/``artifact_id`` keys. The facade returns typed statuses,
+    so no raw positional payload ever reaches this helper.
     """
     if hasattr(status, "task_id"):
         return status.task_id
     if isinstance(status, dict):
         return status.get("task_id") or status.get("artifact_id")
-    if isinstance(status, list) and len(status) > 0 and isinstance(status[0], str):
-        return status[0]
     return None
 
 

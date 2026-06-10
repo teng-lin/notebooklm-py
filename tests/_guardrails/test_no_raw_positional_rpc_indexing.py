@@ -96,11 +96,8 @@ ALLOWLIST: frozenset[str] = frozenset()
 # already-guarded inner list to a named local) is a follow-up to #1491.
 SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "_app/artifacts.py",
         "_app/download.py",
-        "_app/generate_retry.py",
         "_app/labels.py",
-        "_app/notes.py",
         "_app/resolve.py",
         "_app/skill.py",
         "_app/source_clean.py",

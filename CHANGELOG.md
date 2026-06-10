@@ -34,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`notebooklm note create --json` no longer reports failure on every
+  successful create.** It previously emitted `{"id": null, "created": false,
+  "error": "Creation may have failed"}` for every note it successfully
+  created: a leftover raw-shape decoder in the `_app` layer went dead when
+  `notes.create` was typed to return a `Note` (it expected the retired
+  raw-list RPC shape and yielded `None` for a typed `Note`). The bug was
+  masked in the unit suite by stale raw-list mocks of `notes.create`. The CLI
+  now emits the real note id with `"created": true`; facade failures
+  propagate as exceptions through the standard CLI error handler instead of
+  a soft-failure envelope.
+
 - **Empty notebook summary no longer raises `UnknownRPCMethodError`** (#1485).
   A brand-new, source-less notebook has no summary yet, so the `SUMMARIZE` RPC
   returns an absent/`None` payload. `notebooks.get_summary()` and

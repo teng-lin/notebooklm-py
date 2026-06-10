@@ -221,19 +221,12 @@ class TestGenerateWithRetry:
 
 
 class TestExtractTaskId:
-    """Direct tests for _extract_task_id() covering object/dict/list paths."""
+    """Direct tests for _extract_task_id() covering object/dict paths.
 
-    def test_extract_from_list_first_string(self):
-        result = _extract_task_id(["task_abc", "other"])
-        assert result == "task_abc"
-
-    def test_extract_from_list_first_not_string(self):
-        result = _extract_task_id([123, "other"])
-        assert result is None
-
-    def test_extract_from_empty_list(self):
-        result = _extract_task_id([])
-        assert result is None
+    The raw positional-list path is gone: the facade ``generate_*`` /
+    ``wait_for_completion`` methods return typed ``GenerationStatus`` objects
+    (or dicts at this seam), so no raw RPC payload reaches the extractor.
+    """
 
     def test_extract_from_dict_task_id(self):
         result = _extract_task_id({"task_id": "t1", "status": "pending"})
@@ -265,11 +258,17 @@ class TestExtractGenerationTaskId:
         status = GenerationStatus(task_id="gs_1", status="pending", error=None, error_code=None)
         assert _extract_generation_task_id(status) == "gs_1"
 
-    def test_list_first_string(self):
-        assert _extract_generation_task_id(["first", "x"]) == "first"
-
     def test_unhandled_returns_none(self):
         assert _extract_generation_task_id(42) is None
+
+    def test_raw_positional_list_is_not_decoded(self):
+        """A raw positional list yields ``None`` — the list-sniffing path is gone.
+
+        ``_app`` consumes typed facade returns only; an RPC-shaped list must
+        not be silently decoded above the facade.
+        """
+        assert _extract_generation_task_id(["task_raw", "x"]) is None
+        assert _extract_task_id(["task_raw", "x"]) is None
 
 
 # ---------------------------------------------------------------------------

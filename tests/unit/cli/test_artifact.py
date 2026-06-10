@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import Artifact, GenerationStatus
+from notebooklm.types import Artifact, GenerationStatus, Note
 
 from .conftest import create_mock_client, inject_client
 
@@ -656,7 +656,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.notes.get_or_none = AsyncMock(return_value=None)
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with patch(
@@ -677,7 +677,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.notes.get_or_none = AsyncMock(return_value=None)
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with patch(
@@ -701,7 +701,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.notes.get_or_none = AsyncMock(return_value=None)
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with patch(
@@ -726,7 +726,7 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
         )
-        mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+        mock_client.notes.get_or_none = AsyncMock(return_value=None)
         mock_client.artifacts.delete = AsyncMock(return_value=None)
 
         with (
@@ -759,10 +759,10 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="mm_456", title="Mind Map Title", _artifact_type=5, status=3)]
         )
-        mock_client.notes.list_mind_maps = AsyncMock(
-            return_value=[
-                ["mm_456", ["mm_456", "{}", None, None, "Mind Map Title"]],
-            ]
+        mock_client.notes.get_or_none = AsyncMock(
+            return_value=Note(
+                id="mm_456", notebook_id="nb_123", title="Mind Map Title", content="{}"
+            )
         )
         mock_client.notes.delete = AsyncMock(return_value=None)
 
@@ -788,10 +788,10 @@ class TestArtifactDelete:
         mock_client.artifacts.list = AsyncMock(
             return_value=[Artifact(id="mm_456", title="Mind Map Title", _artifact_type=5, status=3)]
         )
-        mock_client.notes.list_mind_maps = AsyncMock(
-            return_value=[
-                ["mm_456", ["mm_456", "{}", None, None, "Mind Map Title"]],
-            ]
+        mock_client.notes.get_or_none = AsyncMock(
+            return_value=Note(
+                id="mm_456", notebook_id="nb_123", title="Mind Map Title", content="{}"
+            )
         )
         mock_client.notes.delete = AsyncMock(return_value=None)
 

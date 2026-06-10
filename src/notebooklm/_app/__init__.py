@@ -132,7 +132,6 @@ from .notes import (
     execute_note_get,
     execute_note_rename,
     execute_note_save,
-    extract_new_note_id,
     resolve_note_for_delete,
 )
 from .profile import (
@@ -383,7 +382,6 @@ __all__ = [
     "execute_note_get",
     "execute_note_rename",
     "execute_note_save",
-    "extract_new_note_id",
     "resolve_note_for_delete",
     # research
     "ResearchStatusResult",
