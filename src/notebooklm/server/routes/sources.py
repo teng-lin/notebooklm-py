@@ -24,6 +24,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from typing import Annotated, Any
 
@@ -51,6 +52,20 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 #: Chunk size when streaming an upload to the temp file.
 _UPLOAD_CHUNK = 1024 * 1024
+
+
+def _safe_upload_name(filename: str | None) -> str:
+    """Return a safe basename for the spooled upload file.
+
+    The resumable-upload init derives the upload filename from the temp path and
+    the source-id extraction keys off it, so the file must keep the caller's
+    *real* name (with its extension — the API 400s on an extensionless one).
+    :func:`os.path.basename` strips any directory components (the path-traversal
+    guard); the file is then created inside a private ``mkdtemp`` directory, so
+    even an odd basename is isolated. Falls back to ``"upload"`` for an empty
+    name and bounds the length.
+    """
+    return (os.path.basename(filename or "") or "upload")[:255]
 
 
 class SourceAddUrl(BaseModel):
@@ -170,19 +185,21 @@ async def add_file(
 ) -> dict[str, Any]:
     """Add a file source by spooling the multipart upload to a temp file.
 
-    The temp file is created ``0o600`` with a unique, fully **server-generated**
-    ``mkstemp`` name (no part of the attacker-controlled multipart filename
-    reaches the path), written under :data:`MAX_UPLOAD_BYTES`, and removed in a
-    ``finally`` (so a mid-stream disconnect or a downstream error still cleans
-    up). The original ``filename`` is preserved as the source *title* and its
-    ``content_type`` is passed as the explicit upload mime — so the temp path
-    needs no caller-derived extension for type inference.
+    The upload is spooled into a private ``0o700`` ``mkdtemp`` directory, named
+    after the caller's basename (see :func:`_safe_upload_name`). The real name
+    matters: the resumable-upload init derives the upload filename from the path,
+    the source-id extraction keys off it, and the API 400s on an extensionless
+    name — a random temp name breaks all three. ``basename`` strips directory
+    components (traversal guard) and the unique directory isolates the file, so
+    the caller's name is reproduced safely. The file is ``0o600`` and the whole
+    directory is removed in a ``finally`` (so a mid-stream disconnect or a
+    downstream error still cleans up). ``content_type`` is passed as the explicit
+    upload mime.
 
     ``validate_upload_path`` guards a *caller-supplied* path string; our temp
-    path is trusted, so we canonicalize it with ``realpath`` first. That both
-    keeps the symlink-parent guard from tripping on a symlinked temp root (e.g.
-    macOS ``/var`` → ``/private/var``) and means no user data flows into the
-    resolved path expression.
+    path is trusted, so we canonicalize it with ``realpath`` first — keeping the
+    symlink-parent guard from tripping on a symlinked temp root (e.g. macOS
+    ``/var`` → ``/private/var``).
 
     The per-chunk size check below caps the copy into *our* temp file; the
     primary disk-exhaustion guard is the Content-Length pre-check in the app
@@ -190,13 +207,11 @@ async def add_file(
     bypasses the pre-check, Starlette has already spooled the part before this
     runs, so the check is a backstop on our own write, not on Starlette's spool.
     """
-    fd, temp_path = tempfile.mkstemp(prefix="nblm-upload-")
+    temp_dir = tempfile.mkdtemp(prefix="nblm-upload-")
+    temp_path = os.path.join(temp_dir, _safe_upload_name(file.filename))
     try:
-        # mkstemp already creates the file 0600 on POSIX; re-assert it where the
-        # call exists. os.fchmod is Unix-only — on Windows (a supported platform)
-        # it is absent, and mkstemp files are already owner-only there.
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)
+        # O_EXCL + 0o600: we own the unique dir, so the create cannot clobber.
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         total = 0
         with os.fdopen(fd, "wb") as out:
             while chunk := await file.read(_UPLOAD_CHUNK):
@@ -210,14 +225,11 @@ async def add_file(
             notebook_id,
             content=os.path.realpath(temp_path),
             source_type="file",
-            title=title or file.filename,
+            title=title,  # explicit override only; the upload already uses the real name
             mime_type=file.content_type,
         )
     finally:
-        try:
-            os.unlink(temp_path)
-        except FileNotFoundError:  # pragma: no cover - already gone
-            pass
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @router.delete("/{source_id}", status_code=204)

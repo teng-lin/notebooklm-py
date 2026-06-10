@@ -121,12 +121,13 @@ class TestNoContentResponses:
         assert resp.content == b""
 
 
-class TestUploadPathIsServerControlled:
-    """The spooled upload temp path carries NO attacker-controlled multipart
-    filename — the name is fully server-generated and the original filename is
-    routed to the source title / mime instead."""
+class TestUploadPathSafety:
+    """The upload spools into a private ``mkdtemp`` dir named after the caller's
+    *basename* — directory components are stripped (traversal guard) and the file
+    is isolated, so a malicious filename can neither escape nor reach a real path.
+    """
 
-    def test_temp_path_has_no_filename_data(
+    def test_malicious_filename_is_basenamed_and_isolated(
         self, authed_client: Any, fake_client: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured: dict[str, Any] = {}
@@ -134,28 +135,51 @@ class TestUploadPathIsServerControlled:
 
         async def spy(notebook_id: str, path: str, *args: Any, **kwargs: Any) -> Any:
             captured["path"] = path
-            captured["title"] = kwargs.get("title")
             return await orig(notebook_id, path, *args, **kwargs)
 
         monkeypatch.setattr(fake_client.sources, "add_file", spy)
 
-        evil = "../../etc/pa%73swd.evil;rm -rf.txt"
+        evil = "../../etc/passwd"
         resp = authed_client.post(
             "/v1/notebooks/nb-1/sources/file",
             files={"file": (evil, b"data", "application/pdf")},
         )
         assert resp.status_code == 201
-        # The temp path is the server-generated mkstemp name only — none of the
-        # attacker's filename (not even a sanitized extension) appears in it.
         path = captured["path"]
-        assert os.path.basename(path).startswith("nblm-upload-")
-        assert "evil" not in path
-        assert "passwd" not in path
-        # Absolute, canonical path with no traversal component (portable across
-        # POSIX "/" and Windows "\\").
+        # The traversal is stripped: the file lives directly under a unique
+        # server-owned ``nblm-upload-`` dir, named only by the basename.
+        assert os.path.basename(path) == "passwd"
+        assert os.path.basename(os.path.dirname(path)).startswith("nblm-upload-")
+        # Absolute, canonical, no traversal component escapes our temp dir.
         assert os.path.isabs(path) and ".." not in path
-        # The original filename is preserved as the title instead.
-        assert captured["title"] == evil
+
+    def test_safe_upload_name(self) -> None:
+        from notebooklm.server.routes.sources import _safe_upload_name
+
+        assert _safe_upload_name("report.pdf") == "report.pdf"
+        assert _safe_upload_name("../../etc/passwd") == "passwd"  # traversal stripped
+        assert _safe_upload_name("a/b/c.txt") == "c.txt"
+        assert _safe_upload_name("") == "upload"  # empty fallback
+        assert _safe_upload_name(None) == "upload"
+        assert len(_safe_upload_name("x" * 500)) <= 255  # length-bounded
+
+
+class TestGenerateSourceDefaulting:
+    """A bare generate (no ``source_ids``) scopes to ALL sources, like the CLI:
+    ``passthrough_source_ids`` resolves an empty selection to ``None`` (the
+    client's all-sources sentinel), not an empty tuple (which the API rejects as
+    "… generation is unavailable")."""
+
+    async def test_empty_resolves_to_none(self) -> None:
+        from notebooklm.server.routes._passthrough import passthrough_source_ids
+
+        assert await passthrough_source_ids(None, "nb", ()) is None
+        assert await passthrough_source_ids(None, "nb", []) is None
+
+    async def test_nonempty_passes_through(self) -> None:
+        from notebooklm.server.routes._passthrough import passthrough_source_ids
+
+        assert await passthrough_source_ids(None, "nb", ("s1", "s2")) == ("s1", "s2")
 
 
 class TestErrorEnvelopeShape:

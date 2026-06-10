@@ -38,8 +38,17 @@ async def passthrough_source_ids(
     *,
     json_output: bool = False,
 ) -> Any:
-    """Return ``source_ids`` unchanged (the REST adapter supplies full ids)."""
-    return source_ids
+    """Return the full source ids, or ``None`` when none were supplied.
+
+    The REST adapter already works in full ids, so resolution is a pass-through —
+    except for the empty case, which mirrors ``cli.resolve.resolve_source_ids``:
+    no selection resolves to ``None``, not an empty tuple. The client treats
+    ``None`` as "scope to all sources"; an empty sequence as "no sources", which
+    the API rejects for quiz/flashcards (``… generation is unavailable``). So a
+    bare ``POST .../artifacts`` (no ``source_ids``) generates over all sources,
+    matching the CLI's no-``--source`` behavior.
+    """
+    return source_ids or None
 
 
 async def passthrough_download_notebook(notebook_id: str) -> str:

@@ -12,22 +12,19 @@ These tests close that gap by binding ``create_app`` to a real client and
 matches on ``rpcids`` + ``f.req`` body *shape* (not leaf id values), so a
 placeholder notebook id drives any same-shape recording.
 
-Surface covered through the real stack:
+Surface covered through the real stack (every ``/v1`` endpoint):
 
 * notebooks — list, get, create, delete (full)
-* sources   — list, add url, add text, delete
+* sources   — list, add url, add text, add file, delete (full)
 * chat      — ask (full)
-* artifacts — list, generate, poll, download
+* artifacts — list, generate, poll, download (full)
 * errors    — a real 429 → RATE_LIMITED → 429 and a real 5xx → 502 projection
 
-The artifact generate/poll/download legs replay server-shaped cassettes recorded
-by ``tests/scripts/record_server_cassettes.py`` (the server emits a different
-``f.req`` than the CLI, so the CLI cassettes don't match).
+The artifact generate/poll/download and file-upload legs replay server-shaped
+cassettes recorded by ``tests/scripts/record_server_cassettes.py`` (the server
+emits a different ``f.req`` than the CLI, so the CLI cassettes don't match).
 
-Not covered here: ``POST /sources/file`` — the upload's recorded shape depends on
-the exact file/mime, so it stays covered by the ``FakeClient`` adapter tests and
-the cross-platform ``REST server`` CI matrix (where its file handling is the
-point). The gRPC-status-5 → 404 contract is covered by composition:
+The gRPC-status-5 → 404 contract is covered by composition:
 ``tests/unit/test_decoder.py`` (real status-5 frame → ``ClientError(rpc_code=5)``)
 + ``tests/server/test_errors.py`` (that → 404).
 
@@ -179,22 +176,16 @@ class TestChatAndArtifacts:
 
 class TestArtifactLifecycle:
     """The generate → poll → download legs, replayed from server-shaped cassettes
-    recorded by ``tests/scripts/record_server_cassettes.py``.
+    recorded by ``tests/scripts/record_server_cassettes.py``."""
 
-    Note: quiz/flashcards require explicit ``source_ids`` — with none the API
-    returns "… generation is unavailable" (the server, unlike the CLI, does not
-    default to all-sources). The recording + this test pass ``source_ids``.
-    """
-
-    @notebooklm_vcr.use_cassette("server_generate_flashcards.yaml", allow_playback_repeats=True)
+    @notebooklm_vcr.use_cassette("server_generate_quiz.yaml", allow_playback_repeats=True)
     def test_generate_and_poll(self, real_authed_client: TestClient) -> None:
-        gen = real_authed_client.post(
-            f"/v1/notebooks/{_NB}/artifacts",
-            json={"type": "flashcards", "source_ids": [_SRC]},
-        )
+        # No ``source_ids`` → the server defaults to ALL sources (matching the
+        # CLI). Before that fix this 502'd "Quiz generation is unavailable".
+        gen = real_authed_client.post(f"/v1/notebooks/{_NB}/artifacts", json={"type": "quiz"})
         assert gen.status_code == 202
         body = gen.json()
-        assert body["kind"] == "flashcards"
+        assert body["kind"] == "quiz"
         task_id = body["task_id"]
         assert isinstance(task_id, str) and task_id
 
@@ -210,6 +201,22 @@ class TestArtifactLifecycle:
         )
         assert resp.status_code == 200
         assert resp.content  # streamed artifact bytes
+
+
+class TestFileUpload:
+    """The multipart file-upload leg through the real upload stack (INIT_UPLOAD +
+    PUT bytes + ADD_SOURCE), replayed from ``server_add_file.yaml``."""
+
+    @notebooklm_vcr.use_cassette("server_add_file.yaml", allow_playback_repeats=True)
+    def test_add_file(self, real_authed_client: TestClient) -> None:
+        # The upload must reproduce the caller's real basename (the resumable-init
+        # 400s on an extensionless name and the source-id extraction keys off the
+        # filename) — regression-guarded here through the real upload stack. The
+        # filename matches the recording so the recorded registration replays.
+        files = {"file": ("server-vcr-upload.txt", b"server upload body\n", "text/plain")}
+        resp = real_authed_client.post(f"/v1/notebooks/{_NB}/sources/file", files=files)
+        assert resp.status_code == 201
+        assert isinstance(resp.json().get("id"), str)
 
 
 class TestErrorProjection:

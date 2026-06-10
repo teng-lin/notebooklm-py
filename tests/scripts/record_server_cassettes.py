@@ -11,13 +11,13 @@ It drives the **server** through FastAPI's ``TestClient`` with a real
 mode, so the recorded ``f.req`` shapes are exactly what the server emits.
 
 Records (into ``tests/cassettes``):
-  * ``server_generate_flashcards.yaml`` — POST artifacts (flashcards) → 202 + one poll
-  * ``server_download_mind_map.yaml``   — POST artifacts/download (mind-map) → bytes
+  * ``server_generate_quiz.yaml``     — POST artifacts (quiz, all sources) → 202 + poll
+  * ``server_download_mind_map.yaml`` — POST artifacts/download (mind-map) → bytes
+  * ``server_add_file.yaml``          — POST sources/file (multipart upload) → 201
 
 Usage (maintainer, one Google account with a populated generation notebook)::
 
     NOTEBOOKLM_GENERATION_NOTEBOOK_ID=<uuid> \
-        NOTEBOOKLM_GENERATION_SOURCE_ID=<uuid> \
         uv run python tests/scripts/record_server_cassettes.py
 
 The notebook must own at least one source (for generation) and one completed
@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 os.environ["NOTEBOOKLM_VCR_RECORD"] = "1"
 os.environ["NOTEBOOKLM_DISABLE_KEEPALIVE_POKE"] = "1"
 
+import io  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -55,14 +56,23 @@ from notebooklm.server.app import create_app  # noqa: E402
 
 _TOKEN = "record-token"  # nosec - local only; never leaves this process
 
+#: Content for the recorded file-upload source. Enough text to be a valid source.
+_UPLOAD_BYTES = (
+    b"NotebookLM REST server VCR upload fixture. This file exercises the multipart "
+    b"upload path: spool to a server-owned temp file, then INIT_UPLOAD + PUT bytes "
+    b"+ ADD_SOURCE through the real client.\n"
+)
 
-def _make_client(notebook_env: str) -> tuple[TestClient, str, str]:
-    notebook_id = os.environ.get(notebook_env, "").strip()
-    if not notebook_id:
-        sys.exit(f"Set {notebook_env}=<uuid> (a generation notebook with sources).")
-    source_id = os.environ.get("NOTEBOOKLM_GENERATION_SOURCE_ID", "").strip()
-    if not source_id:
-        sys.exit("Set NOTEBOOKLM_GENERATION_SOURCE_ID=<uuid> (a source in that notebook).")
+
+def _notebook_id() -> str:
+    nb = os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID", "").strip()
+    if not nb:
+        sys.exit("Set NOTEBOOKLM_GENERATION_NOTEBOOK_ID=<uuid> (a notebook with sources).")
+    return nb
+
+
+def _fresh_client() -> TestClient:
+    """A TestClient over a fresh real-client app (a TestClient is single-entry)."""
 
     @asynccontextmanager
     async def factory():
@@ -70,35 +80,36 @@ def _make_client(notebook_env: str) -> tuple[TestClient, str, str]:
         async with NotebookLMClient(auth) as client:
             yield client
 
+    os.environ["NOTEBOOKLM_SERVER_TOKEN"] = _TOKEN
     app = create_app(client_factory=factory)
     headers = {"Authorization": f"Bearer {_TOKEN}", "Host": "127.0.0.1"}
-    os.environ["NOTEBOOKLM_SERVER_TOKEN"] = _TOKEN
-    return TestClient(app, headers=headers, raise_server_exceptions=False), notebook_id, source_id
+    return TestClient(app, headers=headers, raise_server_exceptions=False)
 
 
 def main() -> int:
-    client, nb, src = _make_client("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
+    nb = _notebook_id()
 
-    # NOTE: quiz/flashcards require explicit ``source_ids`` — with none the API
-    # rejects them ("… generation is unavailable"). The server does not default
-    # to all-sources the way the CLI does.
-    print("Recording server_generate_flashcards.yaml (generate flashcards + one poll)...")
-    with notebooklm_vcr.use_cassette("server_generate_flashcards.yaml"), client as c:
-        gen = c.post(
-            f"/v1/notebooks/{nb}/artifacts",
-            json={"type": "flashcards", "source_ids": [src]},
-        )
+    # Generate over ALL sources (no source_ids) — the server now defaults to all
+    # sources like the CLI, so a bare generate no longer 502s "… unavailable".
+    print("Recording server_generate_quiz.yaml (generate quiz, all sources + one poll)...")
+    with notebooklm_vcr.use_cassette("server_generate_quiz.yaml"), _fresh_client() as c:
+        gen = c.post(f"/v1/notebooks/{nb}/artifacts", json={"type": "quiz"})
         print("  generate ->", gen.status_code, str(gen.json())[:120])
         task_id = gen.json().get("task_id")
         if task_id:
             poll = c.get(f"/v1/notebooks/{nb}/artifacts/{task_id}")
             print("  poll ->", poll.status_code, str(poll.json())[:120])
 
-    client2, nb2, _ = _make_client("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
     print("Recording server_download_mind_map.yaml (download completed mind-map)...")
-    with notebooklm_vcr.use_cassette("server_download_mind_map.yaml"), client2 as c:
-        dl = c.post(f"/v1/notebooks/{nb2}/artifacts/download", json={"type": "mind-map"})
+    with notebooklm_vcr.use_cassette("server_download_mind_map.yaml"), _fresh_client() as c:
+        dl = c.post(f"/v1/notebooks/{nb}/artifacts/download", json={"type": "mind-map"})
         print("  download ->", dl.status_code, f"{len(dl.content)} bytes")
+
+    print("Recording server_add_file.yaml (multipart file upload)...")
+    with notebooklm_vcr.use_cassette("server_add_file.yaml"), _fresh_client() as c:
+        files = {"file": ("server-vcr-upload.txt", io.BytesIO(_UPLOAD_BYTES), "text/plain")}
+        up = c.post(f"/v1/notebooks/{nb}/sources/file", files=files)
+        print("  upload ->", up.status_code, str(up.json())[:120])
 
     print(
         "Done. Now verify: uv run python tests/scripts/check_cassettes_clean.py --strict --recursive"
