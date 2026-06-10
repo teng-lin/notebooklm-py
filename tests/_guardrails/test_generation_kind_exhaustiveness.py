@@ -627,6 +627,11 @@ def test_download_specs_are_internally_sound() -> None:
     table = f"DOWNLOAD_SPECS ({LOC['DOWNLOAD_SPECS']})"
     names = [spec.name for spec in DOWNLOAD_SPECS]
     assert len(names) == len(set(names)), f"duplicate spec names in {table}: {sorted(names)}"
+    # Kind uniqueness must be asserted directly: the parity check below
+    # set-ifies ``spec.kind``, so two rows pointing at the same ArtifactType
+    # would otherwise pass as long as every type appears at least once.
+    kinds = [spec.kind.name for spec in DOWNLOAD_SPECS]
+    assert len(kinds) == len(set(kinds)), f"duplicate spec kinds in {table}: {sorted(kinds)}"
 
     dangling = sorted(
         f"{spec.name!r} -> {spec.download_attr!r}"
@@ -640,7 +645,7 @@ def test_download_specs_are_internally_sound() -> None:
 
     _assert_parity(
         parity_failures(
-            frozenset(m.name for m in ArtifactType),
+            frozenset(ArtifactType.__members__),
             {spec.kind.name for spec in DOWNLOAD_SPECS},
             table=f"{table} 'kind' column",
             axis_name="ArtifactType",
@@ -680,7 +685,7 @@ def test_artifact_type_enum_matches_kind_axis() -> None:
     _assert_parity(
         parity_failures(
             derived,
-            {member.name for member in ArtifactType},
+            set(ArtifactType.__members__),
             table=f"ArtifactType ({LOC['ArtifactType']})",
             axis_name="GenerationKind-derived artifact-type names",
             axis_location=LOC["GenerationKind"],
@@ -706,7 +711,7 @@ def test_artifact_type_code_enum_parity() -> None:
     """
     _assert_parity(
         parity_failures(
-            frozenset(m.name for m in ArtifactType) - set(ARTIFACT_TYPE_EXTRAS),
+            frozenset(ArtifactType.__members__) - set(ARTIFACT_TYPE_EXTRAS),
             set(ArtifactTypeCode.__members__),
             table=f"ArtifactTypeCode ({LOC['ArtifactTypeCode']})",
             axis_name="ArtifactType (minus UNKNOWN)",
@@ -729,7 +734,7 @@ def test_artifact_type_code_map_parity() -> None:
     table = f"_ARTIFACT_TYPE_CODE_MAP ({LOC['_ARTIFACT_TYPE_CODE_MAP']})"
     _assert_parity(
         parity_failures(
-            frozenset(m.name for m in ArtifactType) - set(ARTIFACT_TYPE_EXTRAS),
+            frozenset(ArtifactType.__members__) - set(ARTIFACT_TYPE_EXTRAS),
             {member.name for member in _ARTIFACT_TYPE_CODE_MAP.values()},
             table=table,
             axis_name="ArtifactType (minus UNKNOWN)",
@@ -789,7 +794,7 @@ def test_artifact_list_type_filter_covers_every_artifact_type() -> None:
     )
     _assert_parity(
         parity_failures(
-            frozenset(m.name for m in ArtifactType) - set(ARTIFACT_TYPE_EXTRAS),
+            frozenset(ArtifactType.__members__) - set(ARTIFACT_TYPE_EXTRAS),
             {t.name for t in mapped.values() if t is not None},
             table=table,
             axis_name="ArtifactType (minus UNKNOWN)",
