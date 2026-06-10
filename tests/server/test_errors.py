@@ -93,3 +93,19 @@ def test_long_message_is_truncated() -> None:
     assert "…" in body
     # The redacted message is capped well under the raw length.
     assert len(_redact(long)) <= 301
+
+
+def test_request_validation_message_has_no_source_paths(authed_client: object) -> None:
+    """A malformed body → 422 envelope with a compact field summary, NOT
+    ``str(exc)`` (which embeds server file paths / frame info under pydantic v2)."""
+    from fastapi.testclient import TestClient
+
+    assert isinstance(authed_client, TestClient)
+    resp = authed_client.post("/v1/notebooks/nb-1/chat", json={})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"]["category"] == "validation"
+    message = body["error"]["message"]
+    # The missing field is named, but no server path / source file leaks.
+    assert "question" in message
+    assert ".py" not in message and "/home/" not in message and 'File "' not in message

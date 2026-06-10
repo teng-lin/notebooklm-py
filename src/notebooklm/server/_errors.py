@@ -131,6 +131,22 @@ def _http_category(status: int) -> str:
     return ErrorCategory.SERVER.value
 
 
+def _validation_summary(exc: RequestValidationError) -> str:
+    """Render a request-validation error as a compact ``field: message`` summary.
+
+    Uses the structured :meth:`RequestValidationError.errors` (never ``str(exc)``,
+    which embeds server file paths under pydantic v2). The leading ``body`` /
+    ``query`` location segment is dropped for readability, and the per-error
+    ``input`` value is intentionally omitted so client data is not echoed back.
+    """
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err.get("loc", ()) if p not in ("body", "query"))
+        msg = str(err.get("msg", "invalid"))
+        parts.append(f"{loc}: {msg}" if loc else msg)
+    return "; ".join(parts) or "invalid request body"
+
+
 def http_error_response(status: int, detail: object) -> JSONResponse:
     """Build the typed envelope for a hand-raised ``HTTPException``.
 
@@ -192,9 +208,11 @@ def install_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _handle_validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        # A malformed request body — echo a scrubbed, capped summary (the client's
-        # own input, no secrets) under the validation category at 422.
-        return http_error_response(422, f"Request validation failed: {exc}")
+        # Build a compact field-level summary from the STRUCTURED errors — never
+        # ``str(exc)``, which under pydantic v2 embeds server source-file paths
+        # and frame info (information disclosure). ``input`` is omitted so we
+        # don't echo arbitrary request data back.
+        return http_error_response(422, f"Request validation failed: {_validation_summary(exc)}")
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(_request: Request, exc: Exception) -> JSONResponse:
