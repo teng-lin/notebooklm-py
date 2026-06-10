@@ -40,14 +40,18 @@ exception sets can only shrink). Cross-axis facts baked in as exceptions:
   has no row in ``_DISPLAY_NAME``.
 
 KNOWN PARITY BUG (baselined, not fixed here — see
-:func:`test_duration_hint_reachability_baseline_known_bug`):
+:func:`test_duration_hint_behavior_baseline_known_bug`):
 ``_TYPICAL_DURATIONS`` is keyed by *kind* names but the runtime lookup
 (``_format_status_message`` via ``handle_generation_result``) receives the
 plan's *display name* ("slide deck", "data table", "briefing document", ...).
 Five keys are therefore unreachable today and their hints never render;
-cinematic-video waits show the standard-video hint. The baseline pins the
-dead-key set so the bug is visible tracked debt and the pin self-drains the
-moment someone fixes the keying.
+cinematic-video waits show the standard-video hint. The baseline is
+**behavioral**: it drives the REAL ``execute_generation`` end-to-end (real
+``build_generation_plan`` plan, stub client) and pins the spinner message the
+executor actually emits per kind, so it self-drains on ANY fix path —
+re-keying the table by display names, changing the lookup inside
+``_format_status_message``, OR switching the executor call-site argument to
+``plan.kind``.
 
 Anti-vacuity: the axis floor (>= 11 kinds) is asserted so a broken derivation
 cannot pass silently, and pure-detector self-checks prove a planted
@@ -56,21 +60,25 @@ missing-kind / unknown-key / stale-exception is actually caught.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import inspect
 import re
 import typing
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from notebooklm import _artifact
-from notebooklm._app.generate import _KIND_TO_METHOD
+from notebooklm._app.generate import _KIND_TO_METHOD, execute_generation
 from notebooklm._app.generate_plans import (
     _BUILDERS,
     _DISPLAY_NAME,
     _REPORT_DISPLAY,
     GenerationKind,
+    build_generation_plan,
 )
-from notebooklm._app.generate_retry import _TYPICAL_DURATIONS
+from notebooklm._app.generate_retry import _TYPICAL_DURATIONS, _format_status_message
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._types.artifacts import _ARTIFACT_TYPE_CODE_MAP
 from notebooklm.cli import artifact_cmd
@@ -79,7 +87,7 @@ from notebooklm.cli.download_cmd import download as download_group
 from notebooklm.cli.generate_cmd import generate as generate_group
 from notebooklm.cli.rendering import cli_name_to_artifact_type
 from notebooklm.rpc.types import ArtifactTypeCode
-from notebooklm.types import ArtifactType
+from notebooklm.types import ArtifactType, GenerationStatus
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
@@ -149,8 +157,9 @@ def parity_failures(
     ``exceptions`` are axis members the table legitimately does NOT cover
     (each with a one-line reason); ``extras`` are keys the table legitimately
     carries beyond the axis. Both are self-draining: a stale entry (exception
-    now covered / extra now absent / either naming a retired member) is itself
-    a failure, so the documented sets can only shrink.
+    now covered / extra now absent / extra now an axis member / either naming
+    a retired member) is itself a failure, so the documented sets can only
+    shrink.
     """
     exceptions = exceptions or {}
     extras = extras or {}
@@ -178,6 +187,12 @@ def parity_failures(
             f"{table} carries key {key!r} which is not a {axis_name} member "
             f"({axis_location}) nor a documented extra. Add the kind to {axis_name} "
             f"(and every parallel table this gate checks) or remove the row."
+        )
+    for key in sorted(set(extras) & axis):
+        failures.append(
+            f"Documented extra {key!r} for {table} has JOINED {axis_name} "
+            f"({axis_location}) — it is no longer an extra beyond the axis. Drain it "
+            f"from the extras set in this guardrail."
         )
     for key in sorted(set(extras) - key_set):
         failures.append(
@@ -288,16 +303,40 @@ PAYLOAD_BUILDER_EXTRAS: Mapping[str, str] = {
     "build_suggest_reports_params": "AI report-topic suggestions; not a generation kind",
 }
 
-#: KNOWN BUG BASELINE (FIXME — see module docstring): _TYPICAL_DURATIONS keys
-#: that can never match the display-name lookup in _format_status_message.
-#: "report" additionally never matches because its display is per-format;
-#: "mind-map" is doubly dead (it renders synchronously, never entering the
-#: wait loop). Fixing the keying (or the lookup) drains this set to empty —
-#: at which point test_duration_hint_reachability_baseline_known_bug fails and
-#: tells you to delete the baseline.
-KNOWN_UNREACHABLE_DURATION_KEYS: frozenset[str] = frozenset(
-    {"cinematic-video", "slide-deck", "data-table", "mind-map", "report"}
-)
+#: KNOWN BUG BASELINE (FIXME — see module docstring): the per-kind duration-hint
+#: behavior OBSERVED by running the REAL ``execute_generation`` end-to-end
+#: (real ``build_generation_plan`` plan, stub client) and parsing the spinner
+#: message it emits into the injected ``wait_context`` — classified against the
+#: hint ``_TYPICAL_DURATIONS`` *intends* for that kind:
+#:
+#: * ``correct``          — the intended hint renders.
+#: * ``missing``          — an intended hint never renders (FIXME: the kind-named
+#:                          key can't match the display-name lookup).
+#: * ``wrong-hint``       — a different kind's hint renders (FIXME:
+#:                          cinematic-video displays as "video" and gets the
+#:                          standard-video estimate).
+#: * ``no-hint-intended`` — no hint recorded; graceful fallback (revise-slide).
+#: * ``never-waits``      — the kind never enters the wait loop (mind-map renders
+#:                          synchronously; FIXME: its hint key is dead weight).
+#:
+#: Behavioral on purpose: ANY fix path — re-keying ``_TYPICAL_DURATIONS`` by
+#: display names, fixing the lookup inside ``_format_status_message``, or
+#: passing ``plan.kind`` at the executor call site — changes the emitted
+#: message, flips outcomes to ``correct``, and fails this pin, forcing the
+#: baseline to drain.
+EXPECTED_DURATION_HINT_BEHAVIOR: Mapping[str, str] = {
+    "audio": "correct",
+    "video": "correct",
+    "cinematic-video": "wrong-hint",  # FIXME: shows the standard-video hint
+    "slide-deck": "missing",  # FIXME: key "slide-deck" vs display "slide deck"
+    "revise-slide": "no-hint-intended",
+    "quiz": "correct",
+    "flashcards": "correct",
+    "infographic": "correct",
+    "data-table": "missing",  # FIXME: key "data-table" vs display "data table"
+    "mind-map": "never-waits",  # FIXME: hint key exists but the kind never waits
+    "report": "missing",  # FIXME: key "report" vs per-format displays
+}
 
 ALL_DOCUMENTED_REASON_TABLES: Mapping[str, Mapping[str, str]] = {
     "DISPLAY_NAME_EXCEPTIONS": DISPLAY_NAME_EXCEPTIONS,
@@ -387,32 +426,169 @@ def test_duration_hints_cover_every_kind_except_revise_slide() -> None:
     )
 
 
-def test_duration_hint_reachability_baseline_known_bug() -> None:
-    """FIXME baseline: 5 duration-hint keys are unreachable (kind-vs-display keying bug).
+class _StubArtifactsAPI:
+    """Stub ``client.artifacts``: every dispatch target starts a pending task.
+
+    Method names are derived from the REAL ``_KIND_TO_METHOD`` so a future
+    kind is stubbed automatically; ``wait_for_completion`` resolves the task
+    so ``handle_generation_result``'s wait branch runs to completion.
+    """
+
+    def __init__(self) -> None:
+        async def _start(*_args: Any, **_kwargs: Any) -> GenerationStatus:
+            return GenerationStatus(task_id="task-1", status="pending")
+
+        for method_name in set(_KIND_TO_METHOD.values()):
+            setattr(self, method_name, _start)
+
+    async def wait_for_completion(
+        self, _notebook_id: str, task_id: str, **_kwargs: Any
+    ) -> GenerationStatus:
+        return GenerationStatus(task_id=task_id, status="completed")
+
+
+class _StubMindMapsAPI:
+    async def generate(self, *_args: Any, **_kwargs: Any) -> object:
+        return object()
+
+
+class _StubClient:
+    def __init__(self) -> None:
+        self.artifacts = _StubArtifactsAPI()
+        self.mind_maps = _StubMindMapsAPI()
+
+
+#: Kind-specific raw args ``build_generation_plan`` requires (the values the
+#: Click layer would default to). Kinds absent here need only the common keys.
+_EXECUTOR_RAW_ARGS: Mapping[str, dict[str, Any]] = {
+    "audio": {"audio_format": "deep-dive", "audio_length": "default"},
+    "slide-deck": {"deck_format": "detailed", "deck_length": "default"},
+    "revise-slide": {"artifact_id": "artifact-1", "slide_index": 1},
+    "quiz": {"quantity": "standard", "difficulty": "medium"},
+    "flashcards": {"quantity": "standard", "difficulty": "medium"},
+    "infographic": {"orientation": "landscape", "detail": "standard", "style": "auto"},
+}
+
+
+def _plan_variants(kind: str) -> list[dict[str, Any]]:
+    """Raw-arg variants to drive per kind — report fans out over its formats."""
+    if kind != "report":
+        return [dict(_EXECUTOR_RAW_ARGS.get(kind, {}))]
+    variants: list[dict[str, Any]] = [
+        {"report_format": fmt} for fmt in _REPORT_DISPLAY if fmt != "custom"
+    ]
+    variants.append({"description": "custom report prompt"})  # smart-custom path
+    return variants
+
+
+def _executor_wait_message(kind: str, extra_args: dict[str, Any]) -> str | None:
+    """Run the REAL executor for ``kind``; return the spinner message it emits.
+
+    Builds the plan via the real ``build_generation_plan`` and awaits the real
+    ``execute_generation`` against a stub client, capturing the first argument
+    of the injected ``wait_context`` — exactly the string a user's spinner
+    shows. ``None`` means the kind never entered the wait loop.
+    """
+    raw_args: dict[str, Any] = {"notebook_id": "nb-1", "wait": True, **extra_args}
+    plan = build_generation_plan(kind, raw_args)
+    captured: list[str] = []
+
+    def wait_context(message: str, _resume_hint: str) -> contextlib.nullcontext[None]:
+        captured.append(message)
+        return contextlib.nullcontext()
+
+    async def _resolve_notebook(_client: Any, notebook_id: str, **_kw: Any) -> str:
+        return notebook_id
+
+    async def _resolve_sources(_client: Any, _nb: str, source_ids: Any, **_kw: Any) -> Any:
+        return list(source_ids) or None
+
+    asyncio.run(
+        execute_generation(
+            plan,
+            _StubClient(),  # type: ignore[arg-type]
+            notebook_resolver=_resolve_notebook,
+            source_resolver=_resolve_sources,
+            wait_context=wait_context,
+            mind_map_context=contextlib.nullcontext,
+        )
+    )
+    return captured[0] if captured else None
+
+
+def _hint_from_message(message: str) -> str | None:
+    """Parse the parenthesized duration hint out of a spinner status message."""
+    match = re.search(r" generation \((.+)\)\.\.\.$", message)
+    return match.group(1) if match else None
+
+
+def _classify_hint(intended: str | None, observed: str | None) -> str:
+    """Classify one kind's hint behavior: intended (per ``_TYPICAL_DURATIONS``) vs observed."""
+    if intended is None:
+        return "no-hint-intended" if observed is None else "unintended-hint"
+    if observed is None:
+        return "missing"
+    return "correct" if observed == intended else "wrong-hint"
+
+
+def _hint_behavior(kind: str) -> str:
+    """Observed duration-hint behavior for ``kind`` through the production chain.
+
+    Runs the real executor for every plan variant of the kind and classifies
+    the emitted spinner message(s). ``never-waits`` means no variant entered
+    the wait loop; ``inconsistent`` (never expected) means variants disagreed.
+    """
+    messages = [_executor_wait_message(kind, extra) for extra in _plan_variants(kind)]
+    if all(m is None for m in messages):
+        return "never-waits"
+    if any(m is None for m in messages):
+        return "inconsistent"
+    observed = {_hint_from_message(m) for m in messages if m is not None}
+    if len(observed) != 1:
+        return "inconsistent"
+    return _classify_hint(_TYPICAL_DURATIONS.get(kind), observed.pop())
+
+
+def test_duration_hint_behavior_baseline_known_bug() -> None:
+    """FIXME baseline: per-kind hint behavior is pinned BEHAVIORALLY (keying bug).
 
     ``_format_status_message`` looks hints up by the plan's *display name*
-    (``handle_generation_result`` receives ``plan.display_name``), but
-    ``_TYPICAL_DURATIONS`` is keyed by *kind* names. Hyphenated keys therefore
-    never match: slide-deck/data-table/report waits show no hint, and
-    cinematic-video waits show the standard-video hint (display "video"). This
-    is REAL, pre-existing drift — baselined here (guardrail-only change), not
-    silently fixed.
+    (``execute_generation`` passes ``plan.display_name`` into
+    ``handle_generation_result``), but ``_TYPICAL_DURATIONS`` is keyed by
+    *kind* names. So slide-deck/data-table/report waits render no hint and
+    cinematic-video renders the standard-video hint. This is REAL,
+    pre-existing drift — baselined here (guardrail-only change), not silently
+    fixed.
 
-    Self-draining: fixing the keying (either side) shrinks the dead set and
-    this pin fails — update/delete KNOWN_UNREACHABLE_DURATION_KEYS in the fix
-    commit. A GROWN dead set means a new hint was added with the same bug.
+    The pin is computed by running the REAL ``execute_generation`` end-to-end
+    (real plan builder, stub client) and parsing the spinner message it
+    actually emits, so it self-drains on ANY fix path: re-keying
+    ``_TYPICAL_DURATIONS`` by display names, fixing the lookup inside
+    ``_format_status_message``, or passing ``plan.kind`` at the executor call
+    site — each changes the emitted message, flips outcomes to "correct", and
+    fails this pin; update EXPECTED_DURATION_HINT_BEHAVIOR (drain the FIXMEs)
+    in the fix commit. A NEW "missing"/"wrong-hint" means a new hint shipped
+    with the same bug — fix it instead of baselining more debt.
     """
-    reachable_display_names = set(_DISPLAY_NAME.values()) | set(_REPORT_DISPLAY.values())
-    dead = frozenset(k for k in _TYPICAL_DURATIONS if k not in reachable_display_names)
-    assert dead == KNOWN_UNREACHABLE_DURATION_KEYS, (
-        f"Unreachable _TYPICAL_DURATIONS ({LOC['_TYPICAL_DURATIONS']}) keys changed.\n"
-        f"  baselined dead keys: {sorted(KNOWN_UNREACHABLE_DURATION_KEYS)}\n"
-        f"  currently dead:      {sorted(dead)}\n"
-        "Shrunk => the keying bug was (partly) fixed: drain the fixed keys from "
-        "KNOWN_UNREACHABLE_DURATION_KEYS in this guardrail.\n"
-        "Grew => a new hint key cannot be reached by the display-name lookup in "
-        "_format_status_message — key it by the display name (or fix the lookup) "
-        "instead of baselining more debt."
+    # The pin itself is axis-keyed: a new kind must take an explicit position.
+    _assert_parity(
+        _check_kind_table(
+            EXPECTED_DURATION_HINT_BEHAVIOR,
+            table="EXPECTED_DURATION_HINT_BEHAVIOR (this guardrail)",
+        )
+    )
+    observed = {kind: _hint_behavior(kind) for kind in sorted(KINDS)}
+    assert observed == dict(EXPECTED_DURATION_HINT_BEHAVIOR), (
+        f"Per-kind duration-hint behavior changed (_TYPICAL_DURATIONS at "
+        f"{LOC['_TYPICAL_DURATIONS']}, lookup in _format_status_message).\n"
+        f"  baselined: {dict(sorted(EXPECTED_DURATION_HINT_BEHAVIOR.items()))}\n"
+        f"  observed:  {observed}\n"
+        "missing/wrong-hint -> correct: the keying bug was (partly) FIXED — drain "
+        "those FIXME entries from EXPECTED_DURATION_HINT_BEHAVIOR.\n"
+        "correct -> missing/wrong-hint: a hint regressed — key the entry so the "
+        "production lookup (display name today) actually reaches it.\n"
+        "Fix paths that drain this baseline: re-key _TYPICAL_DURATIONS by display "
+        "names, or pass plan.kind through to the lookup instead of plan.display_name."
     )
 
 
@@ -542,16 +718,50 @@ def test_artifact_type_code_enum_parity() -> None:
 
 
 def test_artifact_type_code_map_parity() -> None:
-    """``_ARTIFACT_TYPE_CODE_MAP`` decodes every wire type except the variant family."""
+    """``_ARTIFACT_TYPE_CODE_MAP`` decodes every wire type except the variant family.
+
+    Checks all three dimensions: the mapped ArtifactType VALUES (axis parity),
+    the integer KEYS (exactly the matching ``ArtifactTypeCode`` wire values,
+    minus the variant-resolved code 4), and the per-entry PAIRING (each code
+    decodes to the same-named type) — so a stale or transposed integer key
+    cannot hide behind a correct-looking value set.
+    """
+    table = f"_ARTIFACT_TYPE_CODE_MAP ({LOC['_ARTIFACT_TYPE_CODE_MAP']})"
     _assert_parity(
         parity_failures(
             frozenset(m.name for m in ArtifactType) - set(ARTIFACT_TYPE_EXTRAS),
             {member.name for member in _ARTIFACT_TYPE_CODE_MAP.values()},
-            table=f"_ARTIFACT_TYPE_CODE_MAP ({LOC['_ARTIFACT_TYPE_CODE_MAP']})",
+            table=table,
             axis_name="ArtifactType (minus UNKNOWN)",
             axis_location=LOC["ArtifactType"],
             exceptions=CODE_MAP_EXCEPTIONS,
         )
+    )
+
+    # Key parity: the wire code 4 family (QUIZ + its QUIZ_FLASHCARD alias) is
+    # variant-resolved in _map_artifact_kind (per CODE_MAP_EXCEPTIONS); every
+    # other ArtifactTypeCode value must appear as a key, and nothing else may.
+    variant_family = {"QUIZ", "QUIZ_FLASHCARD"}
+    expected_codes = {
+        member.value: name
+        for name, member in ArtifactTypeCode.__members__.items()
+        if name not in variant_family
+    }
+    assert set(_ARTIFACT_TYPE_CODE_MAP) == set(expected_codes), (
+        f"{table} integer keys drifted from ArtifactTypeCode ({LOC['ArtifactTypeCode']}) "
+        f"values (minus the variant-resolved code 4 family).\n"
+        f"  missing key(s): {sorted(set(expected_codes) - set(_ARTIFACT_TYPE_CODE_MAP))}\n"
+        f"  stale key(s):   {sorted(set(_ARTIFACT_TYPE_CODE_MAP) - set(expected_codes))}\n"
+        "Update the map's keys (or ArtifactTypeCode) so the wire codes agree."
+    )
+    mispaired = sorted(
+        f"{code} -> {_ARTIFACT_TYPE_CODE_MAP[code].name!r} (ArtifactTypeCode.{name} = {code})"
+        for code, name in expected_codes.items()
+        if _ARTIFACT_TYPE_CODE_MAP[code].name != name
+    )
+    assert mispaired == [], (
+        f"{table} pairs wire code(s) with the WRONG ArtifactType — the key set looks "
+        f"right but an entry is transposed:\n" + "\n".join(f"  {m}" for m in mispaired)
     )
 
 
@@ -763,6 +973,54 @@ def test_detector_flags_stale_exception_and_extra() -> None:
         extras={"vanished": "was once allowed"},
     )
     assert any("'vanished'" in f and "no longer present" in f for f in gone_extra), gone_extra
+
+
+def test_detector_flags_extra_that_joined_the_axis() -> None:
+    """Self-draining proof: a documented extra that became an axis member fails.
+
+    The shape this catches live: if ``generate_study_guide`` ever became a real
+    ``_KIND_TO_METHOD`` target (i.e. joined the axis the facade set is checked
+    against), the FACADE_GENERATE_EXTRAS entry would be stale — the detector
+    must say so instead of silently passing while the entry rots.
+    """
+    failures = parity_failures(
+        frozenset({"a", "b"}),
+        {"a", "b"},
+        table="planted table",
+        axis_name="axis",
+        axis_location="here",
+        extras={"b": "documented as an extra, but now an axis member"},
+    )
+    assert any("'b'" in f and "JOINED" in f for f in failures), failures
+    # ...and the same entry while still genuinely extra raises nothing.
+    assert (
+        parity_failures(
+            frozenset({"a"}),
+            {"a", "b"},
+            table="planted table",
+            axis_name="axis",
+            axis_location="here",
+            extras={"b": "genuinely beyond the axis"},
+        )
+        == []
+    )
+
+
+def test_hint_classifier_covers_all_categories() -> None:
+    """The behavioral-baseline classifier distinguishes every category it pins.
+
+    Pure-input proof that the categories EXPECTED_DURATION_HINT_BEHAVIOR pins
+    are actually computable and distinct — including 'unintended-hint', the
+    never-expected shape that would mean a hint renders with no intended entry.
+    """
+    assert _classify_hint(None, None) == "no-hint-intended"
+    assert _classify_hint(None, "typically 1 min") == "unintended-hint"
+    assert _classify_hint("typically 1 min", None) == "missing"
+    assert _classify_hint("typically 1 min", "typically 1 min") == "correct"
+    assert _classify_hint("typically 1 min", "typically 9 min") == "wrong-hint"
+    # The extractor reads the REAL formatter output shapes: hint and no-hint.
+    assert _hint_from_message(_format_status_message("audio")) == _TYPICAL_DURATIONS["audio"]
+    assert _hint_from_message(_format_status_message("slide deck")) is None
 
 
 def test_detector_accepts_a_clean_table() -> None:
