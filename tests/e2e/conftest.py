@@ -20,13 +20,15 @@ except ImportError:
 
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens, load_auth_from_storage
-from notebooklm.exceptions import ChatError
+from notebooklm.exceptions import ChatError, RateLimitError
 from notebooklm.paths import get_profile_dir
 
 # Substrings in ChatError / skip messages that mark a server-side rate-limit
 # or quota rejection rather than a client bug. Covers both the explicit
 # UserDisplayableError message and the HTTP-status-wrapped 429 path in
-# _chat/api.py:156, plus the generation skip phrase in assert_generation_started.
+# _chat/api.py:156, the generation skip phrase in assert_generation_started,
+# and the typed RateLimitError message ("API rate limit or quota exceeded...")
+# surfaced by _install_generation_rate_limit_skip.
 _RATE_LIMIT_PHRASES = (
     "rate limit",
     "rate limited",
@@ -53,6 +55,36 @@ def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
             raise
 
     client.chat.ask = _ask_with_skip
+
+
+def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
+    """Wrap ``client.artifacts.generate_*``/``revise_*`` so ``RateLimitError`` becomes a skip.
+
+    The RPC layer raises a typed ``RateLimitError`` when Google rejects
+    CREATE_ARTIFACT with a quota error (e.g. upstream status 8, Resource
+    exhausted) — before any ``GenerationStatus`` exists, so the
+    ``is_rate_limited`` skip in ``assert_generation_started`` never runs.
+    That is server-side throttling, not a client defect. Only the precise
+    typed ``RateLimitError`` skips; every other exception still raises so
+    real defects stay visible.
+    """
+
+    def _wrap(original):
+        async def _with_skip(*args, **kwargs):
+            try:
+                return await original(*args, **kwargs)
+            except RateLimitError as e:
+                pytest.skip(str(e))
+
+        return _with_skip
+
+    for name in dir(client.artifacts):
+        if not (name.startswith("generate_") or name.startswith("revise_")):
+            continue
+        original = getattr(client.artifacts, name)
+        if not callable(original):
+            continue
+        setattr(client.artifacts, name, _wrap(original))
 
 
 def _emit_auth_route_diagnostic(auth_tokens: AuthTokens) -> None:
@@ -356,6 +388,7 @@ def auth_tokens() -> AuthTokens:
 async def client(auth_tokens) -> AsyncGenerator[NotebookLMClient, None]:
     async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as c:
         _install_chat_rate_limit_skip(c)
+        _install_generation_rate_limit_skip(c)
         yield c
 
 

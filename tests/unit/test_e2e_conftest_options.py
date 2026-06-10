@@ -15,6 +15,10 @@ import os
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
+from notebooklm.exceptions import RateLimitError
+
 CONFTEST_PATH = Path(__file__).resolve().parents[1] / "e2e" / "conftest.py"
 
 
@@ -201,3 +205,69 @@ class TestRateLimitSkipSummary:
         # Still emits the pytest section locally — just no GH-specific bits.
         assert any(call[0] == "sep" for call in tr._writes)
         assert capsys.readouterr().out == ""
+
+
+class TestGenerationRateLimitSkip:
+    """_install_generation_rate_limit_skip turns typed RateLimitError into skips.
+
+    The RPC layer raises RateLimitError from generate_* before any
+    GenerationStatus exists, so assert_generation_started's is_rate_limited
+    path never runs. Only the typed RateLimitError may skip; every other
+    exception must propagate (no-xfail-live-service-errors policy).
+    """
+
+    @staticmethod
+    def _make_client():
+        class FakeArtifacts:
+            async def generate_audio(self, notebook_id):
+                raise RateLimitError(
+                    "API rate limit or quota exceeded. Please wait before retrying."
+                )
+
+            async def generate_video(self, notebook_id):
+                return f"video:{notebook_id}"
+
+            async def revise_slide(self, notebook_id):
+                raise ValueError("not a rate limit")
+
+            async def delete(self, notebook_id, artifact_id):
+                raise RateLimitError("should never be wrapped")
+
+        return SimpleNamespace(artifacts=FakeArtifacts())
+
+    async def test_rate_limit_error_becomes_skip(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            await client.artifacts.generate_audio("nb-1")
+
+        # Reason must match _RATE_LIMIT_PHRASES so pytest_terminal_summary
+        # surfaces the skip in the rate-limit section + GH annotations.
+        reason = str(excinfo.value).lower()
+        assert any(phrase in reason for phrase in conftest._RATE_LIMIT_PHRASES)
+
+    async def test_other_exceptions_propagate(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(ValueError, match="not a rate limit"):
+            await client.artifacts.revise_slide("nb-1")
+
+    async def test_successful_calls_pass_through_per_method(self):
+        # Closure safety: each wrapped name must bind its own original.
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        assert await client.artifacts.generate_video("nb-1") == "video:nb-1"
+
+    async def test_non_generation_methods_are_not_wrapped(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(RateLimitError):
+            await client.artifacts.delete("nb-1", "art-1")
