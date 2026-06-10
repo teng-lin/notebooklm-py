@@ -18,6 +18,26 @@ cassette's own ``rLM1Ne`` response, so it matches the recorded streamed body.
 streamed-body matcher rejects it — so it does not reuse cleanly. ``chat_ask.yaml``
 replays end-to-end AND already carries citations, so it covers the same shape.)
 
+Not covered here (no reusable cassette):
+
+* ``chat_ask`` multi-source / explicit-references variants — ``chat_ask.yaml``
+  already exercises the citation path, and the alternative cassettes do not
+  reuse: ``chat_ask_with_references.yaml`` fails the streamed-body matcher (see
+  above), and ``chat_ask_multi_source.yaml`` records only the trailing
+  ``GET_LAST_CONVERSATION_ID`` (``hPTbtc``) leg — it was recorded for the
+  *explicit ``source_ids``* path, which the MCP ``chat_ask`` tool does not expose
+  (the tool always lets the client resolve sources via ``GET_NOTEBOOK``), so it
+  lacks the ``rLM1Ne`` + streamed-ask legs the tool would issue.
+* ``chat_configure`` — its core RPC is ``RENAME_NOTEBOOK`` (``s0tc2d``) carrying
+  a chat-settings param block; the only ``s0tc2d`` cassettes
+  (``notebooks_rename.yaml`` / ``cli_notebook_rename.yaml``) record the *rename*
+  param shape (``[notebook_id, [[null,null,null,[null, title]]], null,
+  "generic"]``), which is structurally distinct from the chat-config body
+  (``[notebook_id, [[null×7, chat_settings]]]``) under the ``freq`` matcher.
+  ``settings_set_output_language.yaml`` is a different RPC entirely
+  (``GET_USER_SETTINGS`` ``ZwVcOc`` / ``SET_USER_SETTINGS`` ``hT54vc``), not the
+  per-notebook chat config. No recorded cassette matches ``chat_configure``'s RPC.
+
 The notebook is invoked by its recorded full UUID so the resolver skips its
 ``LIST_NOTEBOOKS`` preflight.
 """
