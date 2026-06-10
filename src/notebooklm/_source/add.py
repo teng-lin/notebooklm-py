@@ -149,6 +149,13 @@ class SourceAddService:
                 source_path=f"/notebook/{notebook_id}",
                 operation_variant="text",
             )
+        except (AuthError, RateLimitError, ServerError, NetworkError):
+            # Preserve transport-level signals so callers can act on the
+            # specific type (AuthError -> re-login, RateLimitError -> back-off
+            # with retry_after, ServerError -> transient retry) instead of
+            # receiving everything collapsed into SourceAddError — the same
+            # ADR-0019 catch ordering add_url and add_drive use.
+            raise
         except RPCError as e:
             raise SourceAddError(
                 title,

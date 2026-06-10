@@ -42,6 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`sources.add_text` no longer swallows typed transport errors into
+  `SourceAddError`.** Its bare `except RPCError` wrapped *everything* —
+  including the `RPCError` subclasses `RateLimitError`, `AuthError`, and
+  `ServerError` — so callers could not catch a rate-limited `add_text` to
+  back off via `retry_after` (or re-login on `AuthError`). It now re-raises
+  the narrow transport types unwrapped before wrapping only the residual
+  broad `RPCError`, matching the ADR-0019 catch ordering its siblings
+  `add_url`/`add_drive` already follow. The rule is now *enforced*, not just
+  documented: a new AST guardrail
+  (`tests/_guardrails/test_error_contract_catch_ordering.py`) fails any
+  `except RPCError` clause that wrap-and-raises a different exception class
+  without a preceding narrow-transport re-raise clause in the same `try`
+  (scope: `src/notebooklm/**` minus the `rpc/` protocol layer, where the
+  transport subtree originates).
+
 - **`notebooklm note create --json` no longer reports failure on every
   successful create.** It previously emitted `{"id": null, "created": false,
   "error": "Creation may have failed"}` for every note it successfully
