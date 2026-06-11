@@ -1,19 +1,20 @@
 # Auth cookie lifecycle — design notes and field findings
 
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-06-11
 
-> **Status:** design notes for the L1/L2/L3 keepalive code already in `main`
-> (L1 `RotateCookies` POST + 60 s mtime guard merged via
-> [#346](https://github.com/teng-lin/notebooklm-py/pull/346); concurrent-poke
-> throttling via [#348](https://github.com/teng-lin/notebooklm-py/pull/348);
-> L2 background task via
-> [#341](https://github.com/teng-lin/notebooklm-py/pull/341); L3
-> `notebooklm auth refresh` CLI shipped) plus the L5/L6 escalation paths that
-> are still proposed. Reflects empirical observations from a multi-hour A/B/C
-> field experiment in May 2026 and cross-project review of two ecosystem peers
-> ([HanaokaYuzu/Gemini-API](https://github.com/HanaokaYuzu/Gemini-API) and
-> [easychen/CookieCloud](https://github.com/easychen/CookieCloud)). Update as
-> the threat model evolves; flag stale claims with `<!-- stale: <date> -->`.
+> **Status:** current design notes for the auth refresh stack in `main`.
+> The numbered layer taxonomy below matches `docs/troubleshooting.md`: L1
+> per-call `RotateCookies`, L2 background keepalive, L3 headless re-auth/CDP,
+> L4 external refresh command, L5 manual login, and L6 external scheduling via
+> `notebooklm auth refresh`. Older sections that discuss "L5 CDP" or "L6
+> CookieCloud" are historical threat-model notes; CDP attach is now part of L3,
+> while CookieCloud remains an operator-provided refresh-command pattern rather
+> than an in-tree client. Reflects empirical observations from a multi-hour
+> A/B/C field experiment in May 2026 and cross-project review of two ecosystem
+> peers ([HanaokaYuzu/Gemini-API](https://github.com/HanaokaYuzu/Gemini-API)
+> and [easychen/CookieCloud](https://github.com/easychen/CookieCloud)).
+> Update as the threat model evolves; flag stale claims with
+> `<!-- stale: <date> -->`.
 
 ## TL;DR
 
@@ -34,16 +35,16 @@ the cleanest mechanism is a direct `POST` to
 rotation endpoint. This is the L1 primitive at the bottom of a tiered
 recovery design that escalates progressively as failure modes get harder.
 
-The headline tradeoffs:
+The current in-tree recovery layers, ordered cheapest to heaviest:
 
 | Layer | Mechanism | Cost | Survives DBSC? | Ship status |
 |---|---|---|---|---|
-| **L1** | Per-call `RotateCookies` POST + triple-guard throttle | ~150 ms / call (skipped if recently rotated) | No, but DBSC isn't enforced on this path today | Merged ([#346](https://github.com/teng-lin/notebooklm-py/pull/346) + [#348](https://github.com/teng-lin/notebooklm-py/pull/348)) |
-| **L2** | Background `keepalive=N` task | One POST every N s | Same as L1 | Merged ([#341](https://github.com/teng-lin/notebooklm-py/pull/341), races closed in [#342](https://github.com/teng-lin/notebooklm-py/pull/342)–[#344](https://github.com/teng-lin/notebooklm-py/pull/344)) |
-| **L3** | OS-scheduled `notebooklm auth refresh` | One POST per cron tick | Same as L1 | Merged (`auth refresh` subcommand) |
-| **L4** | `--browser-cookies <browser>` re-extract via rookiepy | One sqlite read + L1 POST | Yes (non-Chrome browsers not DBSC-enrolled) | Already supported (~16 browsers; Firefox is the recommended Windows path) |
-| **L5** | CDP-attach to user's running Chrome | Higher; needs Chrome on `:9222` | **Yes** (inherits Chrome's TPM-bound key) | Proposed; deferred until L1 weakens |
-| **L6** | CookieCloud client (browser extension + self-hosted server) | User infra; richest UX | **Yes** | Optional follow-up |
+| **L1** | Per-call `RotateCookies` POST + mtime / in-process throttle | ~150 ms / token fetch, skipped when recently rotated | No, but DBSC is not enforced on this path today | Default ON |
+| **L2** | Background `NotebookLMClient(keepalive=N)` task | One POST every N s | Same as L1 | Opt-in client kwarg |
+| **L3** | Headless re-auth from the persisted browser profile, optionally CDP-attaching to loopback Chrome | Browser launch/attach only after first-party cookies are dead | CDP arm inherits Chrome's DBSC enrollment | Opt-in via `refresh_auth(allow_headless=True)` or `NOTEBOOKLM_HEADLESS_REAUTH=1`; CDP via `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` |
+| **L4** | `NOTEBOOKLM_REFRESH_CMD` external recovery script | One subprocess on auth-expiry signal | Depends on the script; common case is browser-cookie re-extract | Merged, same-loop single-flight and cancel-safe |
+| **L5** | Manual `notebooklm login` | Human sign-in | Yes | Baseline recovery |
+| **L6** | OS-scheduled `notebooklm auth refresh` | One token-fetch per cron / launchd / systemd / Task Scheduler tick | Same as L1 | Recommended for idle profiles; 15-20 min cadence |
 
 A separate, complementary refresh hook also lives in the codebase:
 ``NOTEBOOKLM_REFRESH_CMD`` ([#336](https://github.com/teng-lin/notebooklm-py/pull/336))
@@ -57,10 +58,11 @@ orthogonal to L1–L3 — those proactively keep `*PSIDTS` fresh, while
 `NOTEBOOKLM_REFRESH_CMD` is the reactive "we lost the session anyway, run
 my recovery script" lever. See §9 below.
 
-L1 is empirically working today on every account type tested. L4 is the
-recommended unattended path for `notebooklm-py` users in May 2026. L5 is
-specified but not implemented; it's the durability insurance for the day
-Google extends DBSC enforcement to non-Chrome cookie paths.
+L1 is empirically working today on every account type tested. Long-running
+Python workers should add L2; idle profiles should add L6; operators who can
+keep a local Chrome open may opt into L3 CDP attach. If Google extends DBSC
+enforcement to non-Chrome cookie paths, the CDP arm becomes the primary
+unattended recovery path.
 
 ---
 
@@ -151,7 +153,8 @@ A few cookies sit outside this taxonomy:
 
 The library treats all of these uniformly: extract the full set at
 sign-in, persist them in `storage_state.json`, replay them on every
-RPC. `_is_allowed_cookie_domain` (in `auth.py`) is the gate that decides
+RPC. `_is_allowed_cookie_domain` (in `_auth/cookie_policy.py`, re-exported
+through `auth.py`) is the gate that decides
 which Set-Cookie headers from a redirect chain are worth keeping; it
 matches against `ALLOWED_COOKIE_DOMAINS` plus the regional
 `google.<cctld>` set.
@@ -258,9 +261,10 @@ DBSC against **Chrome itself** — i.e. Chrome refuses to use cookies
 that weren't bound at sign-in, even on the same machine. Non-Chrome
 HTTP clients (httpx, curl, Firefox) can still hit the legacy unsigned
 `RotateCookies` endpoint without a DBSC proof. The day Google extends
-enforcement to that endpoint, every L1–L3 strategy in this document
-breaks at the same time, and the only escape is to parasitize a real
-DBSC-enrolled Chrome session (L5 / L6).
+enforcement to that endpoint, every HTTP-only strategy in this document
+breaks at the same time, and the in-tree escape is to parasitize a real
+DBSC-enrolled Chrome session through the L3 CDP attach arm. CookieCloud-style
+federation remains an operator-provided `NOTEBOOKLM_REFRESH_CMD` pattern.
 
 ### 2.4 How browser cookie extraction works (the L4 dependency)
 
@@ -302,10 +306,10 @@ than it sounds:
 
 The library uses `rookiepy` (Rust extension with a Python binding)
 rather than implementing extraction itself. `rookiepy` covers ~16
-browsers across all three platforms; `_ROOKIEPY_BROWSER_ALIASES` in
-`cli/session_cmd.py` maps user-facing names (`firefox`, `arc`, `vivaldi`,
-…) to its functions, and `convert_rookiepy_cookies_to_storage_state`
-in `auth.py` reshapes the result into a Playwright-compatible
+browsers across all three platforms; the login service maps user-facing names
+(`firefox`, `arc`, `vivaldi`, …) to its functions, and
+`_auth/cookies.py::convert_rookiepy_cookies_to_storage_state` reshapes the
+result into a Playwright-compatible
 `storage_state.json`. From the rest of the codebase's perspective,
 browser-extracted cookies are indistinguishable from Playwright-minted
 ones.
@@ -363,9 +367,9 @@ When reading code or issue threads, distinguish:
 
 | Timer | Magnitude | Lives in | Meaning |
 |---|---|---|---|
-| **`*PSIDTS` server-side TTL** | ~600 s (10 min) | Google's identity surface | After this, Google rejects the cookie value. Self-reported as `["identity.hfcr",600]`. |
+| **`*PSIDTS` rotation cadence** | ~600 s (10 min) | Google's identity surface | Recommended active-client refresh interval, self-reported as `["identity.hfcr",600]`. This is not a hard rejection TTL; prior values can remain valid much longer on stable profiles. |
 | **`*SIDCC` sliding window** | ~5 min | Google's RPC surface | Different cookie family. Rotates on nearly every request; not load-bearing for our auth. |
-| **Client-side rotation throttle** | 60 s | Our `auth.py` and Gemini-API's `rotate_1psidts.py` | Don't fire two `RotateCookies` POSTs within a minute. Avoids 429. Has nothing to do with how often Google *requires* rotation. |
+| **Client-side rotation throttle** | 60 s | Our `_auth/keepalive.py` and Gemini-API's `rotate_1psidts.py` | Don't fire two `RotateCookies` POSTs within a minute. Avoids 429. Has nothing to do with how often Google *requires* rotation. |
 
 Reports that "cookies are expiring faster" usually trace to either the
 session entering a risk-flagged state (§3.2) or to the rotation
@@ -376,7 +380,7 @@ shorter server-side TTL.
 
 Not every Google cookie a logged-in browser holds is load-bearing for
 NotebookLM automation. The library splits the cookie-source domain list
-into two tiers (`src/notebooklm/auth.py:205-283`):
+into two tiers (`src/notebooklm/_auth/cookie_policy.py`):
 
 | Tier | Constant | Domains | Extracted by default | Opt-in via |
 |---|---|---|---|---|
@@ -424,7 +428,7 @@ allow-list. This matters because:
   the first place — the smallest set that lets all known flows succeed
   is the set we persist.
 - The runtime filter (`_is_allowed_cookie_domain` in
-  `auth.py`) stays permissive over the REQUIRED ∪ OPTIONAL
+  `_auth/cookie_policy.py`) stays permissive over the REQUIRED ∪ OPTIONAL
   union so that opted-in domains survive downstream filters — but it's
   not the load-bearing security control. The extraction-time filter is.
 
@@ -523,8 +527,8 @@ library can corrupt its own cookie state during the read-merge-write
 cycle. **If users report cookies "expiring fast" or "dying after a few
 hours", before assuming Google has changed something, walk this section
 first.** None of these are theoretical — they come straight from
-reading `auth.py` against the lifecycle of `NotebookLMClient` /
-`fetch_tokens_with_domains` / `save_cookies_to_storage`.
+reading `_auth/refresh.py`, `_auth/storage.py`, and the lifecycle of
+`NotebookLMClient` / `fetch_tokens_with_domains` / `save_cookies_to_storage`.
 
 #### 3.4.1 Stale in-memory clobbers fresh disk (the "few-hours" pattern)
 
@@ -627,7 +631,7 @@ makes sense. Current state of each former collapse site:
 | `extract_cookies_with_domains` (`_auth/cookies.py:356-380`) | `(name, domain, path)` | Path-aware since #369; per-path entries survive extraction. |
 | `_cookie_map_from_jar` (`_auth/cookies.py:592-606`) | `(name, domain, path)` | Path-aware on the way out of httpx. |
 | `cookies_by_key` in `save_cookies_to_storage` (`_auth/storage.py:432-458`) | `(name, domain, path)` | Merge keyed by full triple; previously-shadowed variants are now refreshed independently. |
-| `AuthTokens.cookies` | `DomainCookieMap` / `(name, domain, path)` | Path-aware type since refactoring. Backed by `DomainCookieMap` (maps `(name, domain, path)` to value). Normalizes legacy 2-tuple keys in `__post_init__` for compatibility (`auth.py:205-208,233-244` and `_auth/cookies.py:23-31`). |
+| `AuthTokens.cookies` | `DomainCookieMap` / `(name, domain, path)` | Path-aware type since refactoring. Backed by `DomainCookieMap` (maps `(name, domain, path)` to value). Normalizes legacy 2-tuple keys in `__post_init__` for compatibility (`_auth/tokens.py` and `_auth/cookies.py`). |
 
 RFC 6265 treats `path` as part of cookie identity. If Google ever
 path-scopes a rotation target — `OSID` for a per-product path is the
@@ -663,7 +667,8 @@ on the full triple.
 > alias. `_login_with_browser_cookies` automatically widens its rookiepy
 > `domains` list because it constructs it from `ALLOWED_COOKIE_DOMAINS`.
 
-**Original problem.** `ALLOWED_COOKIE_DOMAINS` (`auth.py:66-74`) was
+**Original problem.** `ALLOWED_COOKIE_DOMAINS` (now in
+`_auth/cookie_policy.py`) was
 narrowly NotebookLM-shaped. Two layered issues:
 
 1. **The extraction gap.** `_login_with_browser_cookies`
@@ -712,7 +717,7 @@ asymmetry into a hot bug.
 
 #### 3.4.4 The "differing-value-wins" merge heuristic
 
-`_find_cookie_for_storage` (`auth.py:1098–1119`) handles the case where
+`_auth/storage.py::_find_cookie_for_storage` handles the case where
 `http.cookiejar` has normalized `Domain=accounts.google.com` to
 `.accounts.google.com`. It walks variant keys and returns the first
 candidate whose value differs from disk:
@@ -740,9 +745,9 @@ symptom is "cookies look right on disk but fail when replayed."
 #### 3.4.5 `expires=-1` flattens age information
 
 `*PSIDTS` rotations come back from `RotateCookies` without `Max-Age` —
-they're "browser session" cookies. `_cookie_to_storage_state`
-(`auth.py:1080`) and `convert_rookiepy_cookies_to_storage_state`
-(`auth.py:402`) write them as `expires=-1` (Playwright session-cookie
+they're "browser session" cookies. `_auth/storage.py::_cookie_to_storage_state`
+and `_auth/cookies.py::convert_rookiepy_cookies_to_storage_state`
+write them as `expires=-1` (Playwright session-cookie
 convention) and persist them indefinitely. This means:
 
 - A `*PSIDTS` rotated 30 seconds ago is indistinguishable on disk from
@@ -775,8 +780,8 @@ silent drops would manifest as occasional auth-flow flakes.
 > The analysis below is retained for historical context.
 
 Every load path uses `cookies.set(name, value, domain=domain)` —
-`build_httpx_cookies_from_storage` (`auth.py:822`) and
-`load_httpx_cookies` (`auth.py:741`) both. httpx's `Cookies.set`
+`_auth/cookies.py::build_httpx_cookies_from_storage` and
+`_auth/cookies.py::load_httpx_cookies` both. httpx's `Cookies.set`
 accepts only `name`, `value`, `domain`, and `path`; we pass none of
 the other attributes we faithfully wrote out via
 `_cookie_to_storage_state` (`secure`, `httpOnly`, `sameSite`,
@@ -792,7 +797,7 @@ Concretely, after one load:
 | `sameSite` | always `"None"` (already hardcoded — see below) | not represented |
 
 If we save back without intervening Set-Cookie observations to refill
-the attributes, `_cookie_to_storage_state` (`auth.py:1080`) re-derives
+the attributes, `_auth/storage.py::_cookie_to_storage_state` re-derives
 all of these from the in-memory cookie object, which now reflects the
 defaults. Each load+save cycle erodes attribute fidelity until disk
 stabilizes at `Path=/`, `secure=false`, `httpOnly=false`,
@@ -807,7 +812,7 @@ future cookie shape that does enforce attributes server-side.
 
 Related: `convert_rookiepy_cookies_to_storage_state` and
 `_cookie_to_storage_state` both **hardcode `sameSite: "None"`**
-(`auth.py:405`, `auth.py:1083`). Real Google cookies are a mix of
+(`_auth/cookies.py`, `_auth/storage.py`). Real Google cookies are a mix of
 `Lax` and `None`; we flatten them all to `None` on the way to disk.
 Probably benign for our cross-site flow but it's another cell of the
 fidelity table that's wrong.
@@ -844,7 +849,7 @@ Before assuming Google has changed anything:
 
 Tracked separately from §3.4: which cookies does Google *actually* require?
 This section documents the empirical accept-rule that backs the library's
-two-tier `_validate_required_cookies()` pre-flight (see `auth.py` —
+two-tier `_validate_required_cookies()` pre-flight (see `_auth/cookies.py` —
 `MINIMUM_REQUIRED_COOKIES` and `_has_valid_secondary_binding()` for the
 authoritative values; the historical permissive `{"SID"}` check was
 replaced in [#371](https://github.com/teng-lin/notebooklm-py/issues/371)).
@@ -947,6 +952,8 @@ flows (e.g. Workspace SSO) that we haven't ablated. See
 
 ---
 
+<a id="4-the-architecture"></a>
+
 ## 4 · The architecture
 
 The library uses a tiered design that progressively escalates as cheaper
@@ -955,7 +962,7 @@ mechanisms fail. Each layer has a distinct trigger and target failure mode.
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ L1: per-call RotateCookies POST                              │
-│   - fires inside _fetch_tokens_with_jar before homepage GET  │
+│   - fires inside _auth.refresh._fetch_tokens_with_jar        │
 │   - cost: ~150ms per token fetch                             │
 │   - covers: short interactive use, every CLI invocation      │
 └──────────────────────────────────────────────────────────────┘
@@ -963,52 +970,49 @@ mechanisms fail. Each layer has a distinct trigger and target failure mode.
                           ▼ (long-lived clients also do)
 ┌──────────────────────────────────────────────────────────────┐
 │ L2: NotebookLMClient(keepalive=N) background task            │
-│   - asyncio.Task, fires _poke_session every N seconds        │
+│   - asyncio.Task, fires _auth.keepalive._poke_session        │
 │   - opt-in via parameter; floor 60s                          │
 │   - covers: agents, MCP servers, long-running workers        │
 └──────────────────────────────────────────────────────────────┘
                           │
                           ▼ (idle profiles between processes)
 ┌──────────────────────────────────────────────────────────────┐
-│ L3: notebooklm auth refresh (OS-scheduled)                   │
+│ L3: headless re-auth / CDP attach                            │
+│   - refresh_auth(allow_headless=True) or env-gated mid-RPC   │
+│   - launches the persisted browser_profile or attaches to    │
+│     NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL on loopback only      │
+│   - covers: dead first-party cookies when the browser        │
+│     profile can silently mint a fresh session                │
+└──────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (auth-expiry signal survives in-process refresh)
+┌──────────────────────────────────────────────────────────────┐
+│ L4: NOTEBOOKLM_REFRESH_CMD external recovery script          │
+│   - same-loop callers coalesce on one subprocess             │
+│   - cancellation of one waiter does not cancel the command   │
+│   - common command: notebooklm login --browser-cookies ...   │
+└──────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (operator intervention)
+┌──────────────────────────────────────────────────────────────┐
+│ L5: notebooklm login                                         │
+│   - human browser sign-in or --browser-cookies extraction    │
+│   - baseline recovery when all automatic paths fail          │
+└──────────────────────────────────────────────────────────────┘
+                          │
+                          ▼ (idle profiles between processes)
+┌──────────────────────────────────────────────────────────────┐
+│ L6: notebooklm auth refresh (OS-scheduled)                   │
 │   - cron / launchd / systemd / Task Scheduler / k8s          │
-│   - calls fetch_tokens_with_domains, exits 0/1               │
+│   - calls _auth.refresh.fetch_tokens_with_domains, exits 0/1 │
 │   - covers: profiles idle > SIDTS window between Python runs │
-└──────────────────────────────────────────────────────────────┘
-                          │
-                          ▼ (when L1's HTTP-only path weakens)
-┌──────────────────────────────────────────────────────────────┐
-│ L4: notebooklm login --browser-cookies firefox (cron)        │
-│   - rookiepy reads Firefox cookies.sqlite                    │
-│   - works without Keychain prompt on macOS                   │
-│   - DBSC-immune (Firefox isn't DBSC-enrolled by Google)      │
-│   - requires Firefox installed and signed in                 │
-└──────────────────────────────────────────────────────────────┘
-                          │
-                          ▼ (when DBSC extends to non-Chrome paths)
-┌──────────────────────────────────────────────────────────────┐
-│ L5 (proposed): CDP-attach to user's running Chrome           │
-│   - Playwright connect_over_cdp("http://localhost:9222")     │
-│   - harvest cookies from user's signed-in daily Chrome       │
-│   - inherits Chrome's TPM-bound DBSC enrollment              │
-│   - requires Chrome with --remote-debugging-port=9222        │
-└──────────────────────────────────────────────────────────────┘
-                          │
-                          ▼ (alternate L5: cross-machine federation)
-┌──────────────────────────────────────────────────────────────┐
-│ L6 (optional): CookieCloud client integration                │
-│   - browser extension watches user's daily Chrome cookies    │
-│   - encrypts (AES via CryptoJS) + uploads to self-hosted     │
-│     CookieCloud server                                       │
-│   - notebooklm-py pulls fresh cookies on demand              │
-│   - sidesteps Chrome 127+ App-Bound Encryption (extension    │
-│     reads via chrome.cookies API, not SQLite)                │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Each layer is a fallback for the next one above. The first three are
-HTTP-only (cheap, no browser dependency); L4 is the lightweight browser
-path; L5 is the durability insurance; L6 is the federation play.
+Each layer is a fallback for the next one above. L1/L2 are HTTP-only and
+cheap; L3 is the heaviest in-process recovery because it drives a browser;
+L4 delegates policy to the operator; L5 is manual; L6 is proactive scheduling
+for profiles that sit idle between Python runs.
 
 ---
 
@@ -1064,7 +1068,7 @@ The `)]}'` prefix is Google's standard anti-XSSI token. The JSPB body
   directly.**
 - `["di",N]` — opaque session/rotation counter (varies by profile).
 
-The library's [`save_cookies_to_storage`](../src/notebooklm/auth.py)
+The library's [`save_cookies_to_storage`](../src/notebooklm/_auth/storage.py)
 captures the rotated `Set-Cookie` headers and persists them atomically to
 `storage_state.json`.
 
@@ -1131,8 +1135,9 @@ the storage state was rewritten within the last minute. The
 `[["identity.hfcr",600], ...]` self-reported interval is 600 s, so a 60 s
 floor leaves a comfortable order of magnitude of headroom.
 
-The merged implementation (`auth.py::_poke_session` and
-`auth.py::_rotate_cookies`, [#346](https://github.com/teng-lin/notebooklm-py/pull/346)
+The merged implementation (`_auth/keepalive.py::_poke_session` and
+`_auth/keepalive.py::_rotate_cookies`,
+[#346](https://github.com/teng-lin/notebooklm-py/pull/346)
 + [#348](https://github.com/teng-lin/notebooklm-py/pull/348)) wraps the POST
 in **three concentric guards**, because a single mtime check is not enough
 once you have an L1 caller, an L2 background loop, and a fan-out of
@@ -1163,9 +1168,10 @@ parallel CLI invocations all keyed to the same `storage_state.json`:
    long-running save doesn't block rotations or vice versa.
 
 The L2 background loop bypasses guards 1 and 2 (it's already self-paced via
-`keepalive_min_interval`) and calls `_rotate_cookies` directly, which still
-performs the atomic per-profile claim — so a layer-1 `_poke_session` on a
-sibling event loop sees the in-flight rotation and skips.
+`keepalive_min_interval`) and calls `_auth.keepalive._rotate_cookies`
+directly, which still performs the atomic per-profile claim — so a layer-1
+`_auth.keepalive._poke_session` on a sibling event loop sees the in-flight
+rotation and skips.
 
 ### 5.6 Concurrency model: why three guards instead of one
 
@@ -1187,10 +1193,10 @@ automatically — bounded cache without an `id()`-reuse hazard.
 
 Introduced in PR #872 (resolving issue #865) to handle cold-start scenarios where the local cookie store exists but lacks the transient `__Secure-1PSIDTS` cookie entirely.
 
-Under normal operation, `__Secure-1PSIDTS` is short-lived. If a new `Session` starts (cold-start) and reads a profile storage state that has the persistent `__Secure-1PSID` but no `__Secure-1PSIDTS`, a standard request would fail with an authentication error.
+Under normal operation, `__Secure-1PSIDTS` is transient and can be absent from a cold local profile snapshot. If a new client runtime starts and reads a profile storage state that has the persistent `__Secure-1PSID` but no `__Secure-1PSIDTS`, a standard request would fail with an authentication error.
 
 To heal this proactively, `_recover_psidts_inline` (implemented in `src/notebooklm/_auth/psidts_recovery.py`) acts as a preflight healing step before session initialization:
-- **When it fires**: During session startup (inside `Session.from_storage` / client initialization).
+- **When it fires**: During client startup (inside `NotebookLMClient.from_storage()` / client initialization).
 - **Conditions & Gates**:
   1. It only runs if `__Secure-1PSID` is present but `__Secure-1PSIDTS` is missing.
   2. It respects `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` or other environment/auth skip configurations.
@@ -1352,9 +1358,10 @@ implements, no non-Chrome client can satisfy `RotateBoundCookies`. No
 public OSS DBSC client exists; the spec is deliberately designed to prevent
 one.
 
-If/when DBSC extends to non-Chrome cookie paths, the only escape is to
-parasitize a real DBSC-enrolled Chrome session via L5 (CDP attach) or L6
-(CookieCloud).
+If/when DBSC extends to non-Chrome cookie paths, the in-tree escape is to
+parasitize a real DBSC-enrolled Chrome session via the current L3 CDP attach
+arm. CookieCloud-style federation remains possible as an operator-provided
+`NOTEBOOKLM_REFRESH_CMD` flow.
 
 ### 7.5 Cookie database read on Chrome 127+
 
@@ -1430,8 +1437,8 @@ Two stacks, in order of preference:
 1. Self-host CookieCloud server.
 2. Install CookieCloud browser extension in your daily Chrome, configure to
    sync `*.google.com`.
-3. Use `PyCookieCloud` to pull cookies on demand (L6 — proposed, not yet
-   shipped in `notebooklm-py`).
+3. Use `PyCookieCloud` to pull cookies on demand from a custom
+   `NOTEBOOKLM_REFRESH_CMD` script. There is no in-tree CookieCloud client.
 
 #### 8.3.1 Anti-pattern: persisting `storage_state` on a redirect-to-login
 
@@ -1460,7 +1467,7 @@ profile copy, no on-disk backup short of one you took yourself. This is
 the same class of failure that `c7d7b0d` (#334, "keep NotebookLM
 subdomain cookies") and `fea8315` ("preserve cross-domain cookies")
 guard against on the library's *own* write path — but those guards live
-inside `auth.py`'s save pipeline and don't help code that calls
+inside `_auth/storage.py`'s save pipeline and don't help code that calls
 Playwright directly.
 
 The rule, for any wrapper that owns its own `context.storage_state`
@@ -1492,7 +1499,7 @@ async def verify_and_save(context, STORAGE):
     except (AuthError, ValueError):
         # ValueError: from_storage()'s CSRF / session-id extraction
         #   detected a redirect to accounts.google.com during fetch_tokens
-        #   (see auth.py:extract_csrf_token_from_html / extract_session_id_from_html)
+        #   (see _auth/extraction.py token extraction helpers)
         # AuthError: a subsequent RPC call decoded an auth-class failure
         return  # don't overwrite a good file with a bad jar
     await context.storage_state(path=STORAGE)
@@ -1515,14 +1522,16 @@ personal Google account for automation.
 
 ## 9 · Operational levers (environment variables)
 
-Two env vars in `auth.py` exist as escape hatches around the keepalive
-machinery. Documented here so operators don't have to grep for them.
+Auth refresh env vars live under `src/notebooklm/_auth/` and are re-exported
+through the public `notebooklm.auth` facade where compatibility requires it.
+Documented here so operators don't have to grep for them.
 
 ### 9.1 `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`
 
-Disables the `RotateCookies` POST entirely. Both L1 (`_poke_session` inside
-`_fetch_tokens_with_jar`) and L2 (the `_keepalive_loop` background task) honour
-this. The L2 task still wakes on its interval — only the network call becomes
+Disables the `RotateCookies` POST entirely. Both L1
+(`_auth.refresh._fetch_tokens_with_jar` calling `_auth.keepalive._poke_session`)
+and L2 (the keepalive background task) honour this. The L2 task still wakes on
+its interval — only the network call becomes
 a no-op — so to disable the loop *itself* pass `keepalive=None` to
 `NotebookLMClient`.
 
@@ -1541,8 +1550,8 @@ Reactive recovery hook (merged in
 [#336](https://github.com/teng-lin/notebooklm-py/pull/336), hardened to
 `shell=False` by default in
 [#475](https://github.com/teng-lin/notebooklm-py/pull/475);
-`auth.py::_should_try_refresh` and `_run_refresh_cmd`). When token fetch
-fails with an auth-expiry signal (the
+current owner: `src/notebooklm/_auth/refresh.py`). When token fetch fails with
+an auth-expiry signal (the
 "`Authentication expired or invalid`" / `accounts.google.com` redirect),
 the library:
 
@@ -1578,33 +1587,31 @@ the library:
 > secrets to the processes that need them
 > ([#1274](https://github.com/teng-lin/notebooklm-py/issues/1274)).
 
-A `ContextVar` (`_REFRESH_ATTEMPTED_CONTEXT`) gates same-task retries in
-the parent process, and a per-loop / per-resolved-storage-path asyncio
-lock registry (`_get_refresh_lock`, mirroring the keepalive
-`_get_poke_lock` pattern) combined with `_REFRESH_GENERATIONS` guarded
-by `_REFRESH_STATE_LOCK` (a sync `threading.Lock`) ensures that a fan-out
-of N concurrent failing requests triggers **exactly one refresh per
-loop**, and **at-most-twice across loops** sharing the same storage path
-— not N. The cross-loop guarantee is best-effort coalescing: two loops
-can both capture the same `_REFRESH_GENERATIONS` value and pass the
-`should_run_refresh` check before either bumps it, so a worst-case race
-between two loops can run the refresh command twice. The contract is
-encoded by `tests/unit/test_refresh_lock_registry.py` as
-`1 <= run_count <= 2`. Cross-loop client reuse is unsupported anyway
-per [ADR-0004](adr/0004-loop-affinity-contract.md) (one
-`NotebookLMClient` per event loop), so this race is only reachable when
-two independently-constructed clients in different loops share a
-storage path; filesystem-level locking on the storage path was
-considered and deferred (Windows-compat + stale-lock complexity for a
-worst-case "auth flow runs twice" outcome).
+A `ContextVar` (`_REFRESH_ATTEMPTED_CONTEXT`) gates same-task retries in the
+parent process. For same-loop fan-out, `_coalesced_run_refresh_cmd` stores a
+per-loop / per-resolved-storage-path in-flight `asyncio.Future`; concurrent
+callers await that same future rather than spawning duplicate subprocesses.
+Each awaiter wraps the future in `asyncio.shield`, and the subprocess task is
+held in `_REFRESH_INFLIGHT_TASKS`, so cancellation of one caller does not
+cancel the shared command. The caller keeps re-awaiting the shielded future
+under the per-loop lock until the subprocess settles, preventing a second
+caller from slipping in while the first caller is being cancelled.
 
-This is **orthogonal** to L1–L3:
+Across event loops, `_REFRESH_GENERATIONS` guarded by `_REFRESH_STATE_LOCK`
+still provides best-effort coalescing. Cross-loop client reuse is unsupported
+per [ADR-0004](adr/0004-loop-affinity-contract.md); two independently
+constructed clients in different loops can still race into two refresh
+commands against the same storage path, but the common same-loop cascade is a
+strict single-flight.
 
-- L1/L2/L3 keep `*PSIDTS` fresh proactively (no-op when nothing's broken).
-- `NOTEBOOKLM_REFRESH_CMD` runs only on auth-expiry failure — it's the
-  reactive last line of defense, useful when the upstream refresh has
-  already failed (e.g. password change, manual sign-out, DBSC enforcement
-  arriving on this client tomorrow). Common shapes:
+This is **orthogonal** to L1-L3:
+
+- L1/L2 keep `*PSIDTS` fresh proactively, and L3 tries to re-mint cookies
+  through a local browser profile when first-party cookies are already dead.
+- `NOTEBOOKLM_REFRESH_CMD` runs only on auth-expiry failure; it is useful when
+  the upstream refresh has already failed (e.g. password change, manual
+  sign-out, or a custom CookieCloud/browser-cookie re-extract flow). Common
+  shapes:
 
   ```bash
   # Re-extract from running Firefox
@@ -1614,8 +1621,31 @@ This is **orthogonal** to L1–L3:
   export NOTEBOOKLM_REFRESH_CMD='/opt/scripts/pull-cookies-from-cloud.sh'
   ```
 
-  The library does not validate the command's contents — the operator is
+  The library does not validate the command's contents; the operator is
   responsible for ensuring it produces a valid `storage_state.json`.
+
+### 9.3 `NOTEBOOKLM_HEADLESS_REAUTH=1`
+
+Opt into automatic L3 headless re-auth during mid-RPC auth refresh. Explicit
+Python calls to `await client.refresh_auth(allow_headless=True)` do not require
+the env var. The owner is `src/notebooklm/_auth/headless_reauth.py`; the
+integration point is `src/notebooklm/_auth/session.py::refresh_auth_session`.
+
+The L3 path runs only after the homepage token refresh sees dead first-party
+cookies. It launches the persisted `browser_profile` sibling of the active
+`storage_state.json`, re-mints cookies into the same profile storage, reloads
+the live HTTP client's cookie jar, and retries the homepage token fetch once.
+If the profile is missing, Playwright is unavailable, or the browser session is
+also dead, the original auth-expiry error stands.
+
+### 9.4 `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL=http://127.0.0.1:9222`
+
+Optional CDP endpoint for L3. When set, L3 attaches to an already-running local
+Chrome instead of launching the stored browser profile. The endpoint is
+operator-provided and never auto-discovered. Non-loopback hosts are refused
+(`127.0.0.0/8`, `::1`, and `localhost` are allowed) because a CDP endpoint is
+account-equivalent: remote or LAN CDP would expose the user's live browser
+session to the process.
 
 ---
 
@@ -1625,7 +1655,7 @@ When to panic:
 
 | Signal | Source | What it means | Action |
 |---|---|---|---|
-| `RotateCookies` returns 401 in production | Library logs | DBSC has been extended to non-Chrome paths for at least some accounts | Escalate to L5 (CDP-attach) implementation |
+| `RotateCookies` returns 401 in production | Library logs | DBSC has been extended to non-Chrome paths for at least some accounts | Turn on / harden the L3 CDP arm; direct users to `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` |
 | `RotateCookies` returns 200 but no `*PSIDTS` in `Set-Cookie` | Library logs | Silent failure mode — cookies on disk are not being rotated | Add WARN log and alert on this; manual re-auth required |
 | [HanaokaYuzu/Gemini-API#310](https://github.com/HanaokaYuzu/Gemini-API/pull/310) merges as default | GitHub | Activity-warmup workaround needed in production for the broader Gemini-API user base | Plan to mirror their approach within 4 weeks |
 | [HanaokaYuzu/Gemini-API#319](https://github.com/HanaokaYuzu/Gemini-API/issues/319) gets "me too" reports | GitHub | Account-specific failures spreading | Investigate whether our user base is affected |
@@ -1735,7 +1765,7 @@ Things we don't know that would inform future iterations:
   cross-references in body text. No semantic changes to §3–§12 content.
 - **2026-05-09 (rev 4)** — Added §3.4 *Internal threats: cookie-jar
   fidelity in the persistence pipeline*. Documents six fidelity hazards
-  in `auth.py` with file:line references, the most important being
+  in the auth persistence code with file:line references, the most important being
   §3.4.1 — a stale-overwrites-fresh race that the post-#344 cross-
   process flock does **not** cover. Verified via librarian survey of
   peer projects (Gemini-API, Bard-API, ytmusicapi, gpsoauth,

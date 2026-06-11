@@ -13,10 +13,9 @@ Closes #<issue_number>
 ## Test Plan
 
 - [ ] I tested these changes locally
-- [ ] Tests pass (`pytest`)
-- [ ] Linting passes (`ruff check .`)
-- [ ] Formatting passes (`ruff format --check .`)
-- [ ] Type checking passes (`mypy src/notebooklm --ignore-missing-imports`)
+- [ ] Tests pass (`uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90`)
+- [ ] Linting and formatting pass (`uv run pre-commit run --all-files`)
+- [ ] Type checking passes (`uv run mypy src/notebooklm --ignore-missing-imports`)
 - [ ] If this PR changes architectural shape, an ADR has been added or updated.
 
 ## Notes

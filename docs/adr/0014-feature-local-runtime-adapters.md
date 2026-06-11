@@ -1,15 +1,18 @@
 # ADR-0014: Feature-local runtime adapters as Protocol satisfiers
 
-> **Current state (2026-05-29).** The normative body below describes the state
+> **Current state (2026-06-11).** The normative body below describes the state
 > *at decision time*, when a concrete `Session` facade class and module still
 > existed. **`Session` and `_session.py` have since been deleted** (see
 > [Revision history](#revision-history) → "2026-05-28 — Session elimination"),
-> and the former `_session_*.py` collaborator modules were renamed to
-> `_runtime_*.py` (e.g. `_session_init.py` → `_runtime_init.py`,
-> `_session_transport.py` → `_runtime_transport.py`; the `SessionTransport` /
-> `SessionCollaborators` classes are now `RuntimeTransport` /
-> `RuntimeCollaborators`). Treat in-body references to `Session`, `_session.py`,
-> `_session_*.py`, and exact `client.py:NNN` line numbers as historical; the
+> and the former `_session_*` / `_runtime_*` collaborators now live under the
+> `_runtime/` package (for example `_runtime/init.py`,
+> `_runtime/transport.py`; the `SessionTransport` / `SessionCollaborators`
+> classes are now `RuntimeTransport` / `RuntimeCollaborators`). The
+> feature-local composite Protocols and adapter dataclasses discussed below
+> were also retired when direct keyword-only collaborator injection proved
+> clearer for their single consumers. Treat in-body references to `Session`,
+> `_session.py`, `_session_*`, and exact `client.py:NNN` line numbers as
+> historical; the
 > live runtime shape is documented in
 > [`docs/architecture.md`](../architecture.md).
 
@@ -25,15 +28,18 @@ recorded under [Revision history](#revision-history) below.
 
 [ADR-0013](./0013-composable-session-capabilities.md) introduced narrow capability Protocols
 (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AuthMetadata`, `Kernel` in
-`_session_contracts.py`) plus feature-local
+the then-current `_session_contracts.py`) plus feature-local
 composite runtime Protocols (`ChatRuntime` in `_chat.py`, `ArtifactsRuntime` in
 `_artifacts.py`, `UploadRuntime` in `_source_upload.py`). The goal was to decouple
 feature APIs from a concrete `Session` god-object.
 
 At compile time, the goal was achieved. Every feature API type-checks against the
 narrowest Protocol it needs, mypy verifies the satisfaction, and the
-`_session_contracts.py` module docstring enforces the "≥2 consumers ⇒ shared
-Protocol; otherwise feature-local" promotion rule.
+the contracts module docstring enforces the "≥2 consumers ⇒ shared
+Protocol; otherwise feature-local" promotion rule. Current shared
+contracts live in `_runtime/contracts.py` and are only `Kernel`,
+`RpcCaller`, and `LoopGuard`; `AuthMetadata` and `OperationScopeProvider`
+are local to their only consumers.
 
 At runtime, the goal was not achieved. `NotebookLMClient.__init__`
 ([`client.py:305-342`](../../src/notebooklm/client.py)) passes `self._session` (a
@@ -76,8 +82,10 @@ _implementation_ model.
 
 ## Decision
 
-Capability Protocols remain as defined in `_session_contracts.py` and the
-feature-local runtime modules. **This ADR does not change the interfaces.** Six
+Capability Protocols remain conceptually as defined by ADR-0013, but their
+homes changed after the migration. Current shared contracts live in
+`_runtime/contracts.py`, and single-consumer capabilities live beside their
+owners. **This ADR does not change the public API.** Six
 implementation rules change how those interfaces are satisfied at runtime.
 
 ### Rule 1 — Single-collaborator Protocols are satisfied directly (after method push-down)
@@ -321,8 +329,8 @@ takes the underlying collaborators as keyword-only constructor parameters
 instead.
 
 The ADR-0013 promotion rule (≥2 consumers ⇒ shared Protocol in
-`_session_contracts.py`) is unchanged. Adapters are _not_ promoted to
-`_session_contracts.py`; the file stays interface-only.
+`_runtime/contracts.py`) is unchanged. Adapters are _not_ promoted to the
+shared contracts module; it stays interface-only.
 
 ## Consequences
 
@@ -330,8 +338,9 @@ The ADR-0013 promotion rule (≥2 consumers ⇒ shared Protocol in
 
 **Wanted:**
 
-- `Session`'s method count stops growing with feature count. New features add a
-  new adapter (5-10 lines, local to the feature module), not a new `Session` method.
+- The deleted `Session` method count stopped growing with feature count.
+  New features receive direct collaborators, or a feature-local adapter only
+  when Rule 2's "earns its keep" test is met.
 - `RpcOwner` Protocol disappears entirely. No more underscore-prefixed
   Session-internal members in a "narrow" contract.
 - Tests fake the adapter or single collaborator, not `Session`. The ADR-0007
@@ -351,8 +360,9 @@ The ADR-0013 promotion rule (≥2 consumers ⇒ shared Protocol in
 - Each new feature requires a new adapter (5-10 lines). Small ongoing cost. The
   cost is local to the feature module and visible at construction time — preferable
   to invisible growth of `Session`.
-- Wider `NotebookLMClient.__init__`. Mitigated by `_session_init.build_collaborators`
-  already returning a typed bundle.
+- Wider client composition wiring. Mitigated by
+  `_client_assembly.py::_assemble_client(...)` and `_runtime/init.py`
+  centralizing collaborator construction.
 - Migration churn for existing tests. Tests that constructed a `Session` and then
   patched a method must migrate to fake-adapter construction. The ADR-0007
   program already pays for this migration; this ADR aligns the destination.
@@ -407,7 +417,8 @@ deferred follow-ups — see [Revision history](#revision-history).
 ### 2026-05-27 — Rule 3 Stage B closure (post-refactoring plan 2026-05-27 Stage B1, #1086 / #1089 / #1091)
 
 Issue #1084 (deferred Rule 3 Stage B) closed. `compose_session_internals()`
-became the composition root and now lives in `_session_init.py`:
+became the composition root and later became
+`_runtime/init.py::compose_client_internals`:
 `Session.__init__` was
 narrowed to `(*, collaborators, config, auth)` and the Stage A accessor
 properties (`Session.collaborators`, `Session.session_transport`,
@@ -434,7 +445,7 @@ Issue #1085 (deferred `MiddlewareChainHost` extraction) closed.
   `MiddlewareChainHost.await_refresh` (dynamic delegation to
   `host._auth_refresh.await_refresh()`) for the same reason.
 - **#1092** split
-  `_session_init.wire_middleware_chain` / `build_session_transport`
+  `_runtime/init.py::wire_middleware_chain` / `build_runtime_transport`
   to take `chain_host: MiddlewareChainHost` directly. The chain's
   provider lambdas (`chain_provider`,
   `rate_limit_max_retries_provider`,

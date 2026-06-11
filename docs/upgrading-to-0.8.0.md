@@ -218,18 +218,19 @@ output shape (works identically on both releases):
 
 ```bash
 # BEFORE — relies on the default (note-backed today, interactive in v0.8.0)
-notebooklm generate mind-map <notebook-id>
+notebooklm generate mind-map -n <notebook-id>
 
 # AFTER — pin your choice; behavior is stable across the version boundary
-notebooklm generate mind-map <notebook-id> --kind note-backed   # JSON tree, synchronous
-notebooklm generate mind-map <notebook-id> --kind interactive   # studio artifact, polled
+notebooklm generate mind-map -n <notebook-id> --kind note-backed   # JSON tree, synchronous
+notebooklm generate mind-map -n <notebook-id> --kind interactive   # studio artifact, polled
 ```
 
 > **Python API note.** This is a **CLI-only** default change. The Python methods
-> are already kind-specific and unaffected:
-> `client.artifacts.generate_mind_map(...)` returns the interactive
-> `MindMapResult`, and the note-backed path has its own methods. There is no
-> default to flip on the API.
+> are explicit and unaffected. Use the unified namespace when choosing a kind:
+> `client.mind_maps.generate(nb_id, kind=MindMapKind.INTERACTIVE)` returns the
+> interactive studio map, while `kind=MindMapKind.NOTE_BACKED` returns the
+> note-backed tree. The legacy `client.artifacts.generate_mind_map(...)` path is
+> note-backed.
 
 **Breaks in:** v0.8.0.
 Tracked by [#1272](https://github.com/teng-lin/notebooklm-py/issues/1272).
@@ -295,11 +296,14 @@ result = await client.research.poll(nb_id)
 
 # AFTER — pass the discriminator from start()
 started = await client.research.start(nb_id, query)
-if started is not None:                            # start() returns ResearchStart | None
-    result = await client.research.poll(nb_id, task_id=started.task_id)
-    # ...and likewise:
-    result = await client.research.wait_for_completion(nb_id, task_id=started.task_id)
+result = await client.research.poll(nb_id, task_id=started.task_id)
+# ...and likewise:
+result = await client.research.wait_for_completion(nb_id, task_id=started.task_id)
 ```
+
+`research.start()` now returns `ResearchStart` or raises when the kickoff
+response is unusable; it no longer uses `None` to signal a couldn't-start
+payload.
 
 **Breaks in:** v0.8.0.
 Tracked by [#1363](https://github.com/teng-lin/notebooklm-py/issues/1363).

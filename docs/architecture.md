@@ -30,7 +30,8 @@ this layering) lives in [`docs/refactor-history.md`](./refactor-history.md).
 | Client Layer (client.py + feature APIs)                  |
 |   NotebookLMClient + namespaced sub-clients:             |
 |     .notebooks  .sources  .artifacts  .chat              |
-|     .notes      .research  .settings  .sharing           |
+|     .notes      .mind_maps .research   .settings         |
+|     .sharing    .labels                                  |
 +----------------------------------------------------------+
                             ▼
 +----------------------------------------------------------+
@@ -221,7 +222,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 |------|---------------|
 | Source file upload | `SourcesAPI.add_file()` delegates to `SourceUploadPipeline.add_file()`. The pipeline opens an `operation_scope`, takes its own upload semaphore, registers the file source through `runtime.rpc_call(ADD_SOURCE_FILE)`, then uses a dedicated `httpx.AsyncClient` and live Kernel cookies for the Scotty resumable-upload start/finalize calls. Optional wait/rename steps return to `rpc_call`. |
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
-| Artifact generation | `ArtifactsAPI` builds `CREATE_ARTIFACT` params (via the `_artifact_payloads.build_*` helpers) and uses the normal `rpc_call` path directly — the former `ArtifactGenerationService` was folded into the facade (#1205). `ArtifactPollingService` owns leader/follower polling with `operation_scope(...)` and a feature-local `PollRegistry`; `ArtifactsAPI` registers a close-time drain hook for poll cleanup. |
+| Artifact generation | `ArtifactsAPI` builds `CREATE_ARTIFACT` params (via the `_artifact/payloads.py` builders) and uses the normal `rpc_call` path directly — the former `ArtifactGenerationService` was folded into the facade (#1205). `ArtifactPollingService` owns leader/follower polling with `operation_scope(...)` and a feature-local `PollRegistry`; `ArtifactsAPI` registers a close-time drain hook for poll cleanup. |
 | Artifact download | `ArtifactDownloadService` lists/selects artifacts through `RpcCaller`, but media downloads use a separate streaming `httpx.AsyncClient` with storage cookies, trusted-host checks, and a producer/writer split. They do not go through `RpcExecutor` or `Kernel.post`. |
 | Notes and mind maps | `NoteService` owns note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` adapts those note rows for artifact-facing mind-map behavior so notes and artifacts do not import each other. |
 
@@ -331,7 +332,7 @@ The single helper that decoders use to navigate row shapes is
 `notebooklm.rpc.safe_index` in
 [`rpc/_safe_index.py`](../src/notebooklm/rpc/_safe_index.py). It always
 raises a typed shape-drift error: strict decoding is the only mode (the
-`NOTEBOOKLM_STRICT_DECODE=0` soft-mode opt-out was retired in v0.7.0). The
+legacy soft-mode opt-out was retired in v0.7.0). The
 `RpcExecutor` decode path narrowly wraps
 `json.JSONDecodeError`, `KeyError`, `IndexError`, and `TypeError` into
 `RPCError`; other exception types (e.g. `AttributeError`) intentionally
@@ -349,16 +350,19 @@ intent at runtime: each feature receives the specific collaborator it
 needs, never a broad runtime facade. `NotebookLMClient.__init__` is the
 composition root that wires each feature with the satisfier it needs.
 
-Six Protocols live in
-[`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py) —
-four shared capability Protocols used by ≥2 features, plus `AuthMetadata`
-and `Kernel`, whose sole consumer today is `SourceUploadPipeline`. Per
-ADR-0013 §Decision §2, those two stay in the shared contracts module
-(rather than moving into `_source/upload.py`) because they front
-client-owned objects (the authenticated account snapshot and the
-transport kernel). ADR-0013 explicitly rejects anticipatory promotion —
-"No capability is promoted on speculation." Feature-module-local runtime
-Protocols live next to their single consumer.
+Three shared Protocols live in
+[`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py):
+`Kernel`, `RpcCaller`, and `LoopGuard`. `RpcCaller` and `LoopGuard`
+meet ADR-0013's "shared by at least two features" promotion bar.
+`Kernel` remains shared because it is the typed transport surface
+implemented by the concrete client-owned kernel and consumed by the
+upload pipeline. Single-consumer capabilities stay beside their owner:
+`AuthMetadata` lives in `_source/upload.py`, and
+`OperationScopeProvider` lives in `_artifact/polling.py`. The unused
+`AsyncWorkRuntime` composite and the feature-local composite runtime
+Protocols (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) were
+deleted once they no longer represented independently varying
+production dependencies.
 
 **Module-level Protocols** (defined in
 [`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py)):
@@ -367,13 +371,12 @@ Protocols live next to their single consumer.
 |----------|----------------|
 | `RpcCaller` | Exposes `rpc_call(method, params, ...)` — the chokepoint every feature API uses for batchexecute calls. |
 | `LoopGuard` | Exposes `assert_bound_loop()` — single-method cross-loop affinity check; consumed by anything that may touch the HTTP client. |
-| `OperationScopeProvider` | Exposes `operation_scope(label)` — async context manager that scopes drain admission for graceful shutdown. |
-| `AsyncWorkRuntime` | Composes `LoopGuard` + `OperationScopeProvider` for features that own async work. No production consumer at present (the artifact polling service now takes the two underlying Protocols directly); retained because the composition rule it pins is still useful documentation. |
-| `AuthMetadata` | Selected-account routing metadata — `authuser` + `account_email` properties. Single consumer today: `SourceUploadPipeline`. |
 | `Kernel` | Pure transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
 
-**Feature-module-local Protocols.** No feature-local composite-runtime
-unions or adapter dataclasses exist in production. Every
+**Feature-module-local Protocols.** Single-consumer capability shapes live
+next to their owner (`AuthMetadata` in `_source/upload.py`,
+`OperationScopeProvider` in `_artifact/polling.py`). No feature-local
+composite-runtime unions or adapter dataclasses exist in production. Every
 multi-capability feature takes its collaborators by keyword-only
 constructor argument:
 
@@ -382,18 +385,18 @@ constructor argument:
 - `ChatAPI` takes `rpc: RpcCaller`, `transport: RuntimeTransport`,
   `reqid: ReqidCounter`, `loop_guard: LoopGuard`.
 
-Production satisfies the shared Protocols via the underlying
-collaborators (ADR-0014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
-`ClientLifecycle` satisfies `LoopGuard`, `TransportDrainTracker`
-satisfies `OperationScopeProvider`). There is no production `Session`
+Production satisfies shared Protocols via the underlying collaborators
+(ADR-0014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
+`ClientLifecycle` satisfies `LoopGuard`, and the concrete `Kernel`
+satisfies the `Kernel` Protocol). There is no production `Session`
 class in the runtime graph.
 Tests substitute
 [`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py)
 (constructed via `make_fake_core(...)`) — the sanctioned ADR-0007 / ADR-0013
 fixture pattern. `FakeSession` is a backward-compatible test-fixture name,
-not a production runtime class. Tests that inject narrow fakes into a single feature
-(e.g. `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`) construct
-the feature directly under ADR-0014.
+not a production runtime class. Tests that inject narrow fakes into a
+single feature (e.g. `MagicMock(spec=RpcCaller,
+rpc_call=AsyncMock(...))`) construct the feature directly under ADR-0014.
 
 ### Executor takes its collaborators directly
 
@@ -452,7 +455,7 @@ the executor on direct collaborator dependencies.
 
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
-| `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, `_composed`, `_collaborators`, `_rpc_executor`, and the eight feature API attributes. `__aenter__`, `close`, `drain`, `is_connected`, `metrics_snapshot`, and `rpc_call` route directly to the owning collaborator. |
+| `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, `_composed`, `_collaborators`, `_rpc_executor`, and the ten feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`). `__aenter__`, `close`, `drain`, `is_connected`, `metrics_snapshot`, and `rpc_call` route directly to the owning collaborator. |
 | `ClientSeams` | [`_client_seams.py`](../src/notebooklm/_client_seams.py) | Mutable holder for runtime callables that closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
 | `ClientComposed` | [`_client_composed.py`](../src/notebooklm/_client_composed.py) | Write-once holder for composition state: `transport`, `executor`, `chain_host`, `chain_builder`, `middlewares`, lazy RPC semaphore, and `runtime_collaborators`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
 | `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
@@ -501,9 +504,9 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | `ArtifactDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Asynchronous download coordinator for finished artifacts. |
 | `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
 | `_artifact/listing` | [`_artifact/listing.py`](../src/notebooklm/_artifact/listing.py) | Listing and filtering operations for notebook artifacts. |
-| `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/research.py`](../src/notebooklm/_row_adapters/research.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `NoteRow`, `SourceRow`, the `POLL_RESEARCH` rows) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, research, and the chat parser don't open-code positional indices. Soft-degrade and strict-mode behavior is pinned in `tests/unit/test_row_adapters.py`, `tests/unit/test_chat_row_adapter.py`, and `tests/unit/test_research_row_adapter.py`. |
+| `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/labels.py`](../src/notebooklm/_row_adapters/labels.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/research.py`](../src/notebooklm/_row_adapters/research.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `LabelRow`, `NoteRow`, `SourceRow`, the `POLL_RESEARCH` rows) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, labels, research, and the chat parser don't open-code positional indices. Strict decode behavior is pinned in `tests/unit/test_row_adapters.py`, `tests/unit/test_chat_row_adapter.py`, and `tests/unit/test_research_row_adapter.py`. |
 | `_research_task_parser` | [`_research_task_parser.py`](../src/notebooklm/_research_task_parser.py) | Parses deep-research task results from raw rows. Returns dict-shaped output today; a typed-model migration is not yet complete. |
-| `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the dataclass and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `chat.py`, `notebooks.py`, `notes.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
+| `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the dataclass and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `chat.py`, `labels.py`, `mind_maps.py`, `notebooks.py`, `notes.py`, `research.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
 
 ## Authentication subpackage
 
@@ -758,16 +761,19 @@ Concretely, the client-owned runtime retains:
 
 `NotebookLMClient.rpc_call(method, params)` dispatches directly through
 `self._rpc_executor.rpc_call(...)` — the `RpcExecutor` captured during
-`NotebookLMClient.__init__` from `compose_client_internals(...)` and
-shared with every feature API.
+the shared `_client_assembly.py::_assemble_client(...)` construction path
+from `compose_client_internals(...)` and shared with every feature API.
 
 Feature APIs receive the collaborator they need (`RpcExecutor` for
-`RpcCaller`, `ClientLifecycle` for `LoopGuard`, `TransportDrainTracker`
-for `OperationScopeProvider` / `register_drain_hook`) per ADR-0014 Rules
-1 + 3. Features that need more than one capability — `ChatAPI`,
-`ArtifactsAPI`, and `SourceUploadPipeline` — take each collaborator by
-keyword-only constructor argument. The composition wiring is in
-[`client.py`](../src/notebooklm/client.py).
+`RpcCaller`, `ClientLifecycle` for `LoopGuard`, the concrete `Kernel`
+for upload cookies/posting, and `TransportDrainTracker` for local
+operation scopes / close hooks) per ADR-0014 Rules 1 + 3. Features that
+need more than one capability — `ChatAPI`, `ArtifactsAPI`, and
+`SourceUploadPipeline` — take each collaborator by keyword-only
+constructor argument. The composition wiring is centralized in
+[`_client_assembly.py`](../src/notebooklm/_client_assembly.py), which is
+called by both `NotebookLMClient.__init__` and the canonical test
+factory.
 
 ## Testing patterns
 
@@ -780,12 +786,11 @@ module-level seams and direct attribute assignment like
 `target.rpc_call = AsyncMock(...)`. The sanctioned substitute is
 [`tests/_fixtures/fake_core.py:make_fake_core(...)`](../tests/_fixtures/fake_core.py),
 which returns a `FakeSession` configured to satisfy the narrow
-capability Protocols features consume (`RpcCaller`, `LoopGuard`,
-`OperationScopeProvider`, `AuthMetadata`, `Kernel`). The name is
-backward-compatible test vocabulary; it is not a production `Session`
-replacement. Multi-capability features (`ChatAPI`, `ArtifactsAPI`,
-`SourceUploadPipeline`) take their direct collaborators by keyword-only
-constructor argument, so unit tests can inject narrow
+shared protocols plus the upload/polling local protocols used by legacy
+feature tests. The name is backward-compatible test vocabulary; it is
+not a production `Session` replacement. Multi-capability features
+(`ChatAPI`, `ArtifactsAPI`, `SourceUploadPipeline`) take their direct
+collaborators by keyword-only constructor argument, so unit tests can inject narrow
 `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style fakes
 directly via those constructors.
 
@@ -965,7 +970,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_auth/cookie_policy.py` | Cookie-domain allowlist, `build_cookie_domain_allowlist` builder, and policy decisions |
 | `_auth/browser_capture.py` | Transport-neutral browser launch→capture→filter→persist core (lazy `playwright`); shared by the interactive CLI login adapter (`cli/services/playwright_login.py`) and the layer-3 headless re-auth layer (ADR-0021) |
 | `_auth/headless_reauth.py` | Layer-3 headless re-auth decision layer: opt-in/profile-gated, typed honest outcomes (`HeadlessReauthStatus`); drives `run_browser_capture(headless=True, interactive=False)`. Local-unattended-only |
-| `cli/label_cmd.py` | `label` command group (list/sources/generate/create/rename/emoji/add/delete); thin Click shells over `client.labels` and the label-listing service (ADR-0008) |
+| `cli/label_cmd.py` | `label` command group (list/sources/generate/create/rename/emoji/add/remove/delete); thin Click shells over `client.labels`, `_app.labels`, and the label-listing service (ADR-0008/0021) |
 | `cli/services/label_listing.py` | `label` CLI service: the `label list` members→source-titles join (`execute_label_list`/`LabelListPlan`). Re-exports `resolve_label_id` + `LabelResolutionError` from `_app/labels.py` (the composite `<id\|name>` resolver moved to the neutral layer; the re-export keeps `from .services.label_listing import resolve_label_id` resolving for the command layer + tests) |
 
 ### Repository Structure
@@ -1195,7 +1200,7 @@ src/notebooklm/
     ├── grouped.py               # Custom Click group with sectioned help output
     ├── helpers.py               # Shared Click utilities
     ├── input.py                 # CLI prompt and stdin input helpers
-    ├── label_cmd.py             # label list/sources/generate/create/rename/emoji/add/delete
+    ├── label_cmd.py             # label list/sources/generate/create/rename/emoji/add/remove/delete
     ├── language_cmd.py          # Language configuration CLI commands
     ├── mcp_cmd.py               # `mcp install <client>` command — thin Click adapter over `_app/mcp_install.py`; resolves the client config path (`--config-path` override) and applies the merge inside `notebooklm.io.atomic_update_json` (locked, crash-safe, merge-not-clobber)
     ├── notebook_cmd.py          # list, create, delete, rename

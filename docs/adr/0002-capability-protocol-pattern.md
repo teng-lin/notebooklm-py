@@ -3,25 +3,28 @@
 > **Current state (2026-05-29).** This ADR is **Superseded** and documents a
 > pre-cutover pattern for historical context only. Since it was written, the
 > concrete `Session` facade class, `_session.py`, and `_core.py` have all been
-> **deleted**, and `_session_contracts.py` was renamed to `_runtime_contracts.py`
+> **deleted**, and the surviving shared Protocols now live in
+> `src/notebooklm/_runtime/contracts.py`
 > (see [ADR-0014](0014-feature-local-runtime-adapters.md) and
 > [`docs/architecture.md`](../architecture.md) for the live shape). The
 > feature-local composite Protocols `ChatRuntime` and `ArtifactsRuntime`
 > referenced in the Status line below were also **retired** — feature APIs now
-> take their narrow collaborators by keyword-only constructor argument. Read
+> take their narrow collaborators by keyword-only constructor argument. The
+> live client also has later-added namespaces such as `mind_maps` and `labels`.
+> Read
 > in-body references to `Session`, `_core.py`, `_session_contracts.py`,
 > `ChatRuntime`, `ArtifactsRuntime`, and exact `file.py:NNN` line numbers as
 > historical — they do not point at live code.
 
 ## Status
 
-Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol have been deleted; sub-clients now consume the Session facade directly, typed against shared capability Protocols in `_session_contracts.py` and feature-local runtimes (`ChatRuntime` in `_chat.py:90`, `ArtifactsRuntime` in `_artifacts.py:154`). The broader composable-capabilities arc continued in [ADR-0013](0013-composable-session-capabilities.md) (#866), which finalized the per-feature Protocol model.
+Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol were deleted at cutover time; the later composable-capabilities arc continued in [ADR-0013](0013-composable-session-capabilities.md) (#866) and then retired the concrete `Session` facade itself. Current feature APIs depend on direct collaborators and the small shared Protocol set in `src/notebooklm/_runtime/contracts.py` (`Kernel`, `RpcCaller`, `LoopGuard`); single-consumer Protocols stay local to their owners. `NotebookLMClient` wires those collaborators in `src/notebooklm/_client_assembly.py`.
 
 This ADR documents the pre-cutover pattern for historical context. The "Decision" section below describes the state prior to D2 cutover; the "Alternatives considered" section describes the replacement now adopted.
 
 ## Context
 
-`NotebookLMClient` exposes eight namespaced feature APIs (`notebooks`, `sources`, `artifacts`, `chat`, `research`, `notes`, `settings`, `sharing`). Each feature API is implemented in its own module (`_notebooks.py`, `_sources.py`, etc.) and needs structured access to `Session` collaborators (RPC dispatch, auth routing, request-id allocation, polling registry, transport bookkeeping, upload concurrency, etc.).
+At the original baseline, `NotebookLMClient` exposed eight namespaced feature APIs (`notebooks`, `sources`, `artifacts`, `chat`, `research`, `notes`, `settings`, `sharing`). The live client has since added namespaces such as `mind_maps` and `labels`; this ADR describes the earlier pattern that shaped the cutover away from a broad `SessionCapabilities` adapter. Each feature API is implemented in its own module (`_notebooks.py`, `_sources.py`, etc.) and needed structured access to `Session` collaborators (RPC dispatch, auth routing, request-id allocation, polling registry, transport bookkeeping, upload concurrency, etc.).
 
 Two non-negotiable forces shaped the original design:
 
@@ -61,7 +64,7 @@ The pattern is *Accepted* today because:
 **Wanted:**
 
 - A single, mypy-verified seam between sub-clients and `Session`.
-- The capability Protocols document the collaborator graph in one place, which is useful for greenfield comparison (`docs/architecture-evolution.md`).
+- The capability Protocols documented the collaborator graph in one place, which was useful for comparison. The live graph now lives in [`docs/architecture.md`](../architecture.md).
 
 **Unwanted (and the reason for the sunset clause):**
 

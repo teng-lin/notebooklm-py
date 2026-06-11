@@ -37,15 +37,16 @@ This means most "CSRF token expired" errors resolve automatically.
 
 #### Cookie freshness for long-running / unattended use
 
-Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) on its own cadence; the on-disk `Expires` field is **not** a reliable predictor of server-side validity. The library handles freshness in five layers, ordered cheapest to heaviest:
+Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) on its own cadence; the on-disk `Expires` field is **not** a reliable predictor of server-side validity. The library handles freshness in layered fallbacks, ordered cheapest to heaviest:
 
 1. **Per-call rotation poke** (default ON) — every `fetch_tokens` makes a best-effort POST to `accounts.google.com/RotateCookies`. Disable with `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`.
 2. **Periodic background poke** — pass `keepalive=<seconds>` to `NotebookLMClient` for clients held open for hours.
-3. **External recovery script** — `NOTEBOOKLM_REFRESH_CMD` runs when auth has fully expired, then retries once.
-4. **Manual re-login** — `notebooklm login`.
-5. **External scheduler** — `notebooklm auth refresh` driven by cron / launchd / systemd / Task Scheduler / k8s CronJob, for idle profiles with no Python process running. Recommended cadence: 15–20 minutes.
+3. **Layer-3 headless re-auth** — explicit Python opt-in via `await client.refresh_auth(allow_headless=True)`, or automatic mid-RPC opt-in with `NOTEBOOKLM_HEADLESS_REAUTH=1`. This drives the persisted browser profile, or attaches to a loopback Chrome DevTools endpoint from `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`. Treat CDP as account-equivalent: only use `127.0.0.1` / `localhost`, never a remote browser.
+4. **External recovery script** — `NOTEBOOKLM_REFRESH_CMD` runs when auth has fully expired, then retries once.
+5. **Manual re-login** — `notebooklm login`.
+6. **External scheduler** — `notebooklm auth refresh` driven by cron / launchd / systemd / Task Scheduler / k8s CronJob, for idle profiles with no Python process running. Recommended cadence: 15–20 minutes.
 
-Most users only need layer 1 — it's on by default and requires no configuration. For the full strategy (trade-offs between layers, including Python kwargs like `keepalive_min_interval` and environment variables like `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`, and ready-to-paste launchd / systemd / cron / Task Scheduler / k8s CronJob recipes), see **[docs/auth-cookie-lifecycle.md#tldr](auth-cookie-lifecycle.md#tldr)** for a quick orientation, then [§4 The architecture](auth-cookie-lifecycle.md#4--the-architecture) for the per-layer deep dive.
+Most users only need layer 1 — it's on by default and requires no configuration. For the full strategy (trade-offs between layers, including Python kwargs like `keepalive_min_interval` and environment variables like `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`, and ready-to-paste launchd / systemd / cron / Task Scheduler / k8s CronJob recipes), see **[docs/auth-cookie-lifecycle.md#tldr](auth-cookie-lifecycle.md#tldr)** for a quick orientation, then [§4 The architecture](auth-cookie-lifecycle.md#4-the-architecture) for the per-layer deep dive.
 
 #### macOS: `--browser-cookies` prompts for your password
 
@@ -295,18 +296,24 @@ This walkthrough takes ~2 minutes. You never copy a cookie, a token, or the raw 
 
 ### Generation Failures
 
-#### Audio/Video generation returns None
+#### Audio/Video generation is refused immediately
 
-**Cause:** Known issue with artifact generation under heavy load or rate limiting.
+**Cause:** NotebookLM refused the generation kickoff synchronously (often quota,
+feature availability, rate limiting, or an RPC shape drift). In v0.8.0 the
+Python API raises instead of returning `None`.
 
-**Workaround:**
+**What to do:**
 ```bash
-# Use --wait to see if it eventually succeeds
-notebooklm generate audio --wait
+# Let the CLI surface the typed error envelope / message
+notebooklm generate audio --wait --json
 
-# Or poll manually
-notebooklm artifact poll <task_id>
+# If generation was accepted and you have a task id, poll manually
+notebooklm artifact poll <task_id> --json
 ```
+
+In Python, catch `RateLimitError`, `ArtifactFeatureUnavailableError`, or
+`RPCError` depending on the failure. If kickoff succeeds and later polling
+times out, use the timeout guidance below.
 
 #### Audio/Video task times out as pending or in progress
 
@@ -357,11 +364,15 @@ You can also pipe extracted text through stdin:
 python extract_article_text.py ./article.html | notebooklm source add - --type text --title "Article"
 ```
 
-#### Text/Markdown files upload but return None
+#### Text/Markdown upload succeeds but processing/content is wrong
 
-**Cause:** Known issue with native text file uploads.
+**Cause:** The upload was accepted, but NotebookLM processed unexpected content
+or reported a source-processing error. Current `add_file()` returns a `Source`;
+missing or untrusted source IDs raise `SourceAddError` instead of returning
+`None`.
 
-**Workaround:** Use `add_text` instead:
+**Workaround:** When you control the text, bypass file-type inference and use
+`add_text`:
 ```bash
 # Instead of: notebooklm source add ./notes.txt
 # Do:
@@ -454,7 +465,7 @@ notebooklm source delete-by-title "Exact Source Title"
 Google enforces strict rate limits on the batchexecute endpoint.
 
 **Symptoms:**
-- RPC calls return `None`
+- `RateLimitError` in Python, or CLI JSON with `code: "RATE_LIMITED"`
 - `RPCError` with ID `R7cb6c`
 - `UserDisplayableError` with code `[3]`
 

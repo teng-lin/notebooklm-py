@@ -1,12 +1,9 @@
 # Concurrency Integration Test Harness
 
-Reusable fixtures and a smoke test for the **thread-safety / concurrency
-hardening work**. Every fix PR consumes the fixtures here to TDD
-red-green against a specific concurrency bug.
-
-This directory is **infrastructure**, not regression tests. Per-bug
-tests live in their own modules (also under `tests/integration/`) that
-import the fixtures from `conftest.py`.
+Reusable fixtures **and regression tests** for the thread-safety / concurrency
+hardening work. This package contains the shared deterministic harness plus
+per-bug regression modules that exercise core/upload/download/auth behavior with
+`httpx.MockTransport` and scheduler-controllable timing.
 
 ## Fixture API
 
@@ -102,9 +99,9 @@ process.
 - **NOT a thread-pool stress harness.** Pure asyncio. If a future bug
   involves real threads, add a separate `tests/integration/threaded/`
   package.
-- **NOT a place for per-bug regression tests.** Those go in dedicated
-  PR-aligned modules in `tests/integration/`. This directory is fixture
-  infrastructure only.
+- **NOT a place for unrelated integration tests.** Per-bug concurrency tests do
+  live here when they need these fixtures; non-concurrency mock tests should use
+  the normal unit or integration taxonomy.
 
 ## pytest-xdist + asyncio caveat
 
@@ -133,21 +130,20 @@ only applies to contributors who pass `-n auto` locally or in CI.
 4. Add a sanity check to `test_harness_smoke.py` so the fixture is
    exercised by `uv run pytest tests/integration/concurrency`.
 
-## How to add a per-bug test (not here)
+## How to add a per-bug concurrency test
 
-Per-bug tests live in `tests/integration/<bug-slug>/` (or a flat
-`tests/integration/test_<bug-slug>.py`), NOT in this package. They
-should:
+Per-bug concurrency tests may live in this package as
+`tests/integration/concurrency/test_<bug-slug>.py`. They should:
 
 - Use the fixtures by parameter name — pytest auto-discovers them via
-  this package's `conftest.py` for any test that lives *underneath*
+  this package's `conftest.py` for tests underneath
   `tests/integration/concurrency/`. (pytest fixtures are not imported,
-  they are injected by name.) If you need the *class* types for type
-  annotations or for constructing transports manually, import them:
-  `from tests.integration.concurrency.conftest import ConcurrentMockTransport, EventBarrier`.
+  they are injected by name.) Shared helper functions/classes should be imported
+  from `.helpers` or `tests.integration.concurrency.helpers`; fixture classes may
+  be imported from `conftest.py` for annotations.
 - Be one PR per bug.
 - Include a docstring linking the audit item (e.g.
-  `audit/thread-safety-concurrency-audit.md#NN`).
+  the relevant issue, PR, or regression identifier.
 
 ## Running the harness
 
@@ -155,7 +151,14 @@ should:
 uv run pytest tests/integration/concurrency -v
 ```
 
-Expected wall time: < 2s locally, < 5s in CI.
+For a quick harness smoke check, run:
+
+```bash
+uv run pytest tests/integration/concurrency/test_harness_smoke.py -q
+```
+
+The full subtree includes real regression coverage; do not rely on a fixed wall
+time in docs or tests.
 
 ## Why `concurrency/` and not `concurrent/`?
 

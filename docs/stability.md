@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-11
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -67,16 +67,20 @@ NotebookLMClient.notes
 NotebookLMClient.settings
 NotebookLMClient.sharing
 NotebookLMClient.labels
+NotebookLMClient.mind_maps
 NotebookLMClient.rpc_call()
 
 # Types
-Notebook, Source, Artifact, Note, Label
-GenerationStatus, AskResult
+Notebook, Source, Artifact, Note, Label, MindMap
+GenerationState, GenerationStatus, AskResult
 NotebookDescription, ConversationTurn
 ShareStatus, SharedUser, SourceFulltext
 NotebookMetadata, SourceSummary
 AccountLimits, AccountTier
 ChatReference, ReportSuggestion, SuggestedTopic
+MindMapKind, MindMapResult
+ResearchStart, ResearchStatus, ResearchTask, ResearchSource
+ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
 # Exceptions (all inherit from NotebookLMError)
 NotebookLMError                    # Base exception
@@ -97,14 +101,14 @@ SourceError, SourceAddError, SourceProcessingError, SourceTimeoutError, SourceNo
 NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactFeatureUnavailableError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
 ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError
-ResearchError, ResearchTimeoutError, ResearchTaskMismatchError
-# Note: MindMapNotFoundError is raised by the client.mind_maps mutation paths
-# (issue #1291). NoteNotFoundError is defined but not raised by any method yet —
-# the prerequisite for the note not-found work landing in v0.8.0 (umbrella #1346).
+ResearchError, ResearchTimeoutError, ResearchTaskMismatchError, AmbiguousResearchTaskError
+# Note: notes.get/update/delete and mind_maps.get/rename/delete now raise
+# their domain *NotFoundError on a missing target; use get_or_none() for
+# warning-free None-on-miss lookups.
 NoteError, NoteNotFoundError
 MindMapError, MindMapNotFoundError
 LabelError, LabelNotFoundError
-ChatError
+ChatError, ChatResponseParseError
 
 # Enums
 AudioFormat, AudioLength
@@ -164,15 +168,14 @@ UnknownTypeWarning        # Warning category emitted when .kind falls back to UN
 
 ```python
 # These are NOT part of the public API:
-notebooklm.rpc.*          # RPC protocol internals, except the documented RPCMethod import path for NotebookLMClient.rpc_call()
-notebooklm._core.*        # Core infrastructure
+notebooklm.rpc.*          # RPC protocol internals, except documented power-user imports
 notebooklm._*.py          # All underscore-prefixed modules
 notebooklm.auth.*         # Auth internals (except documented AuthTokens, cookie conversion, and cookie-domain constants)
 ```
 
-For raw-RPC power-user calls, import the method enum explicitly:
+For raw-RPC power-user calls, import the documented RPC helpers explicitly:
 ```python
-from notebooklm.rpc import RPCMethod
+from notebooklm.rpc import RPCMethod, resolve_rpc_id
 ```
 
 ### Strict decoding (the only mode since v0.7.0)
@@ -210,7 +213,7 @@ for the design rationale behind the strict-decode policy.
 
 See [`docs/deprecations.md`](deprecations.md) for the canonical list of
 currently-deprecated APIs and their scheduled removal versions, plus the
-deprecations removed in v0.6.0 and v0.7.0.
+deprecations removed in v0.6.0, v0.7.0, and v0.8.0.
 
 ### Removed in v0.5.0
 
@@ -234,7 +237,7 @@ The following v0.3-era deprecations completed their removal cycle in v0.5.0:
 
 | Deprecated | Replacement | Notes |
 |------------|-------------|-------|
-| `NotebooksAPI.share()` | `client.sharing.set_public()` | Compatibility wrapper around the sharing API |
+| Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | Emits `DeprecationWarning`; scheduled for v1.0 removal |
 
 ### Permanent aliases
 
@@ -264,7 +267,7 @@ removal. The historical migration examples below show the replacement surface.
 
 **Before (removed in v0.5.0):**
 ```python
-source = await client.sources.list(notebook_id)[0]
+source = (await client.sources.list(notebook_id))[0]
 if source.source_type == "pdf":
     print("This is a PDF")
 ```
@@ -273,7 +276,7 @@ if source.source_type == "pdf":
 ```python
 from notebooklm import SourceType
 
-source = await client.sources.list(notebook_id)[0]
+source = (await client.sources.list(notebook_id))[0]
 
 # Option 1: Use enum comparison (recommended)
 if source.kind == SourceType.PDF:
@@ -291,7 +294,7 @@ if source.kind == "pdf":
 
 **Before (removed in v0.5.0):**
 ```python
-artifact = await client.artifacts.list(notebook_id)[0]
+artifact = (await client.artifacts.list(notebook_id))[0]
 if artifact.artifact_type == 1:
     print("This is an audio artifact")
 ```
@@ -300,7 +303,7 @@ if artifact.artifact_type == 1:
 ```python
 from notebooklm import ArtifactType
 
-artifact = await client.artifacts.list(notebook_id)[0]
+artifact = (await client.artifacts.list(notebook_id))[0]
 
 # Option 1: Use enum comparison (recommended)
 if artifact.kind == ArtifactType.AUDIO:
@@ -393,13 +396,14 @@ If the library breaks before we release a fix:
 1. Open browser devtools on NotebookLM
 2. Perform the failing operation manually
 3. Find the new RPC method ID in Network tab
-4. Temporarily patch your local copy:
-   ```python
-   # In your code, before using the library
-   from notebooklm.rpc import RPCMethod
-
-   RPCMethod.SOME_METHOD._value_ = "NewMethodId"
+4. Temporarily override the rotated ID without mutating the enum:
+   ```bash
+   export NOTEBOOKLM_RPC_OVERRIDES='{"LIST_NOTEBOOKS": "NewMethodId"}'
    ```
+
+   The override key is the `RPCMethod` enum name. See
+   [configuration.md#environment-variables](configuration.md#environment-variables)
+   for validation and host-allowlist behavior.
 
 ## Upgrade Recommendations
 

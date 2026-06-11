@@ -1,7 +1,16 @@
 # Source Labels — Implementation Plan
 
-**Status:** Proposed (execution plan; not started)
-**Last Updated:** 2026-06-07 (rev 13 — source-removal capability folded in)
+**Status:** Historical execution plan — implemented in v0.8.0
+**Last Updated:** 2026-06-11 (current-state pass; do not use this as a future
+work plan. The durable docs now live in `docs/python-api.md`,
+`docs/cli-reference.md`, `docs/rpc-reference.md`, and `docs/stability.md`.)
+- **Current state (2026-06-11)** — source labels are shipped: `client.labels`,
+  `Label`, the label RPC builders/adapters, the `notebooklm label` group, and
+  `source list --label` all exist. Label CLI VCR cassettes are recorded under
+  `tests/cassettes/`, `label` is in `GROUP_COVERAGE`, and
+  `tests/scripts/check_method_coverage.py` has an empty `PREEXISTING_GAPS`.
+  `add_sources` and `remove_sources` dedupe duplicate source ids preserving order,
+  then issue one `UPDATE_LABEL` RPC per unique id.
 - **rev 13** — live capture (2026-06-07, `rpc.md` "Confirmed (2026-06-07)") proved
   `le8sX` supports **source removal** via the third fieldmask slot (`sources_remove`)
   and that **only the first id per group is honoured per call**. Plan changes:
@@ -11,7 +20,7 @@
   `remove_source_id`) and the prior multi-id `[[sid] for sid in …]` add shape is
   **dropped** (it silently kept only the first id — a real bug); Phase 2.1 adds
   `remove_sources` and makes both `add_sources`/`remove_sources` **loop one `le8sX`
-  call per id**; Phase 3.2 adds a `label remove` CLI command (inverse of `label add`,
+  call per unique id**; Phase 3.2 adds a `label remove` CLI command (inverse of `label add`,
   **no `--yes` gate** — un-assign is non-destructive, distinct from `label delete`);
   §3.4 + Files-map extend the CLI inventory/JSON gates for `label remove`.
 - **rev 12** — three-lens momus (claude+codex; agy stalled/0-output, timeout-killed)
@@ -41,8 +50,8 @@
   guard (no inventory edit); golden fixtures are **hand-authored** (no regen mechanism); a precise
   CLI-JSON-sweep disposition (`JSON_COMMANDS` vs waivers + fake `client.labels`);
   `--cov-fail-under=90` coverage gate; the **decided cassette split** (main PR adds the
-  4 method **names** to `PREEXISTING_GAPS` + tracking issue → green without maintainer auth; follow-up
-  records cassettes + removes the entries). Downgraded `test_exceptions.py` from
+  4 method **names** to `PREEXISTING_GAPS` + tracking issue → green without maintainer auth; the
+  shipped v0.8.0 state has recorded cassettes and removed those entries). Downgraded `test_exceptions.py` from
   hard gate to **forward-only hygiene**. Reflected api.md contracts: `delete()`
   idempotent-no-op→`None`, `rename()` emoji-preservation, `--yes/-y` standardization.
 - **rev 9** — RPCMethod names singularized to the enum convention (mutations singular, only `LIST_` plural): `CREATE_LABEL` / `UPDATE_LABEL` / `DELETE_LABEL` (mirroring `CREATE_ARTIFACT` / `UPDATE_SOURCE` / `DELETE_ARTIFACT`) + `LIST_LABELS` (mirroring `LIST_ARTIFACTS`). Wire ids unchanged.
@@ -82,8 +91,8 @@ the exact entry to add, because a vague "register it" lands RED.
 | `tests/unit/test_rpc_golden_payloads.py:~229` | one `tests/fixtures/rpc_golden/<METHOD>.json` per `RPCMethod` | `ALL_METHODS = list(RPCMethod)` drives schema/envelope checks |
 | `tests/unit/test_rpc_health_coverage.py:66,147` | `MUTATING_SKIP_LIST` (in this test file) / probe in `check_rpc_health.py` | every `RPCMethod` probed-or-skipped |
 | `tests/unit/test_exceptions.py:58` (forward-only hygiene, **NOT a hard gate**) | `exceptions` list in `test_all_exceptions_inherit_from_base` | hand-maintained list; no test forces every exception into it, so omitting Label* does **not** RED — add for parity only |
-| `tests/_guardrails/test_module_size_ratchet.py:65,66,71` | `ALLOWLISTED_CEILINGS` for `cli/source_cmd.py`(949)/`exceptions.py`(1460)/`client.py`(986) | files are **at ceiling now** — any net growth RED; raise the ceiling or split. **`client.py` is AT its 986 ceiling**, so adding `self.labels` (Phase 2.2) requires bumping the ceiling — but the ratchet's own header comment (`:62`, "DO NOT raise a ceiling to make room for new code in a fat module — split it") prefers a split. Reconcile in the PR: either call out the bump explicitly with justification, or split `client.py`. |
-| `tests/scripts/check_method_coverage.py` (CI step, **not pytest**) | add the 4 enum member **names** (`CREATE_LABEL`/`LIST_LABELS`/`UPDATE_LABEL`/`DELETE_LABEL` — the set is keyed by `RPCMethod.<NAME>`, **not** the wire id, `:94`/`:194`) to `PREEXISTING_GAPS` **in Phase 1.1b** (when the enum members land — the gate sees them immediately; with a tracking-issue ref; ⚠️ deviates from the must-not-grow ratchet `:90-95` — justify in PR); a follow-up cassette PR records `tests/cassettes/*.yaml` + removes them | recording needs maintainer auth (see M12 / Phase 1.1b + 3.2) |
+| `tests/_guardrails/test_module_size_ratchet.py:65,66,71` | Historical ceiling notes for `cli/source_cmd.py`, `exceptions.py`, and `client.py` | Current implementation moved constructor wiring into `_client_assembly.py`; use the active ratchet output rather than these historical line counts. |
+| `tests/scripts/check_method_coverage.py` (CI step, **not pytest**) | Current `PREEXISTING_GAPS` is empty | Label cassettes are recorded; no label methods are grandfathered. |
 | `.github/workflows/test.yml:215` (`uv run pytest … --cov-fail-under=90`, **CI step, not a list edit**) | the new modules need ≥90% branch coverage | the whole-suite run fails if total coverage drops below 90% — cover every new branch (the `sources()` race-skip, `create` 0/>1-id error, drift-raise, no-op `ValueError`s) |
 | `scripts/check_claude_md_freshness.py` (CI step, **not pytest**; `test.yml:90` + `tests/unit/test_claude_md_freshness.py`) | `CLAUDE.md` file-table **and** repo-structure map | every new `src/notebooklm` module/package must be documented in BOTH |
 | `tests/_guardrails/test_public_surface_manifest.py:207` | `_FROZEN_TYPES_ALL` (exact order) | `assert list(types.__all__) == _FROZEN_TYPES_ALL` (:464) |
@@ -212,8 +221,8 @@ member (and the Phase-1-exit command `-m "not repo_lint"` collects them). Edit *
   `LIST_LABELS`/`UPDATE_LABEL`/`DELETE_LABEL` — keyed by `RPCMethod.<NAME>`, `:94`/`:194`)
   to `PREEXISTING_GAPS` in **this same commit**, each with a tracking-issue ref. ⚠️ Deviates
   from the script's must-not-grow ratchet (`:90-95`) — justify in the PR. The Phase-3
-  cassette follow-up **removes** these entries (§3.2). *(Without this, Phase 1 is RED: the
-  gate sees the new methods the moment the enum + goldens land.)*
+  label cassette work later removed these entries; the current gate has an empty
+  `PREEXISTING_GAPS`.
 - **Already-compliant (note, no edit):** `tests/unit/test_rpc_types.py` (id shape
   `^[A-Za-z0-9]{4,12}$` + uniqueness — the 4 ids pass); `tests/_guardrails/test_rpc_method_ids_only_in_types.py`
   (builders reference `RPCMethod.*`, no raw id strings in src); `tests/_guardrails/test_no_raw_positional_rpc_indexing.py`
@@ -302,7 +311,7 @@ api.md refs: §7, §9.
     the mock to return an **empty** `LIST_LABELS` envelope `[[]]` so the preflight
     raises.)
   - `add_sources([a,b,c])` and `remove_sources([a,b,c])` each issue **one
-    `rpc_call` per id** (assert call count == 3, one per source — NOT a single
+    `rpc_call` per unique id** (order-preserving dedupe; NOT a single
     multi-id call), then one preflight re-fetch. Empty `source_ids` → `ValueError`
     before any `rpc_call`. `remove_sources` of a non-member does not raise (no-op).
   - `rename` **preserves emoji** (api.md A3): with the preflight returning a label
@@ -325,7 +334,7 @@ api.md refs: §7, §9.
   `get -> Label` (non-Optional), `get_or_none -> Label | None`, `delete -> None`,
   `sources -> list[Source]`, mutations (`rename`/`set_emoji`/`update`/`add_sources`/
   `remove_sources`) `-> Label | None`. Both `add_sources` and `remove_sources` loop
-  one `build_update_label_params(...)` call per id (api.md §7).
+  one `build_update_label_params(...)` call per unique id (api.md §7).
 - **Facade-reach-in guard: no edit needed — `_labels.py` is auto-covered.**
   `test_no_facade_reach_in.py::test_feature_apis_do_not_add_direct_core_private_state_access`
   globs **every** top-level `src/notebooklm/_*.py` (`:214`), so a new `_labels.py`
@@ -339,9 +348,9 @@ api.md refs: §7, §9.
 - **Verify:** `uv run pytest tests/unit/test_labels_api.py tests/_guardrails/test_no_facade_reach_in.py`
 
 ### 2.2 Client wiring + public exports + ALL surface gates (atomic)
-- **Edit** `src/notebooklm/client.py` — after `self.sources` (`:390`), add
-  `self.labels = LabelsAPI(internals.executor, list_sources=self.sources.list)`;
-  add `labels` to the client docstring Attributes.
+- **Edit** `src/notebooklm/_client_assembly.py` — after `client.sources`, add
+  `client.labels = LabelsAPI(internals.executor, list_sources=client.sources.list)`;
+  keep the `client.py` annotation and Attributes docs in sync.
 - **Edit** `src/notebooklm/types.py` — re-export `Label` (set `Label.__module__ =
   "notebooklm.types"`), add to `types.__all__`; **also** re-export `LabelError`/
   `LabelNotFoundError` from `.exceptions` and add to `types.__all__` (back-compat,
@@ -411,9 +420,11 @@ api.md refs: §12. ADR-0008: logic in `cli/services/`, commands thin
     misses. Do **not** rely on `title_of` for resolution.
   - title-join builds `{source_id: title}` from a **single** `sources.list()`
     (assert exactly one source-list call; no N+1).
-- **Add** `src/notebooklm/cli/services/label_listing.py` — `resolve_label_id`, the
-  members+titles join over `client.labels` + one `sources.list()`, and a
-  `LabelListPlan`/executor using `prepare_list` with `items_key="labels"`.
+- **Add** `src/notebooklm/_app/labels.py` for the transport-neutral workflows and
+  `resolve_label_id`; `src/notebooklm/cli/services/label_listing.py` keeps the
+  members+titles join over `client.labels` + one `sources.list()`, re-exports the
+  resolver, and provides `LabelListPlan`/executor using `prepare_list` with
+  `items_key="labels"`.
 - **Verify:** `uv run pytest tests/unit/cli/test_label_listing.py`
 
 ### 3.2 `label` command group
@@ -442,19 +453,14 @@ api.md refs: §12. ADR-0008: logic in `cli/services/`, commands thin
   the 4 enum names (`CREATE_LABEL`/`LIST_LABELS`/`UPDATE_LABEL`/`DELETE_LABEL`) were added
   to `PREEXISTING_GAPS` when the enum members landed (Phase 1 is the first phase the CI
   gate sees them), each with a tracking-issue ref; ⚠️ that addition deviates from the
-  script's must-not-grow ratchet (`:90-95`) — justified in the PR. **Nothing to add here**
-  for gate (b). The **follow-up PR (needs maintainer auth)** records the CLI VCR cassettes
-  for the `label` group (and one `source list --label`) exercising
-  list/generate/create/rename/emoji/add/remove/delete via `NOTEBOOKLM_VCR_RECORD=1` under
-  `tests/cassettes/*.yaml` + `tests/integration/cli_vcr/`, then **REMOVES** the 4 names
-  from `PREEXISTING_GAPS` (whose `STALE` check then confirms real coverage). Do
-  **not** use `COVERAGE_EXEMPT` — exemption ships no cassette and is the wrong tool.
+  script's must-not-grow ratchet (`:90-95`) — justified in the PR. **Current
+  state:** the label CLI VCR cassettes are recorded under `tests/cassettes/`, the
+  label group is in `GROUP_COVERAGE`, and `PREEXISTING_GAPS` is empty. Do **not**
+  use `COVERAGE_EXEMPT` for labels.
 - **Verify:** `uv run pytest tests/unit/cli/test_label_cmd.py
   tests/unit/cli/test_grouped.py tests/_guardrails/test_cli_boundary.py
   tests/_guardrails/test_cli_vcr_coverage.py` **and** `uv run python
-  tests/scripts/check_method_coverage.py` — the latter is **green in the main PR via
-  the `PREEXISTING_GAPS` entries** (no maintainer cassettes required); the follow-up
-  cassette PR is what removes those entries and proves real coverage.
+  tests/scripts/check_method_coverage.py`.
 
 ### 3.3 `source list --label` selector
 - **Test first:** extend `tests/unit/cli/test_source_*` — `source list --label
@@ -462,15 +468,10 @@ api.md refs: §12. ADR-0008: logic in `cli/services/`, commands thin
   read-only; `--json` envelope key stays `"sources"`; `count`/rows are consistent
   with the filtered set.
 - **Edit** `src/notebooklm/cli/services/source_listing.py` — add `label_filter`
-  to `SourceListPlan` (it is `@dataclass(frozen=True)`, fields at :24). The current
-  `_build_spec` (:35) sets `ListSpec(fetch=lambda c, nb: c.sources.list(nb))` and
-  `execute_source_list` (:69) just calls `prepare_list`. **Inject the filter into
-  the `fetch` closure** (so `prepare_list`'s `count`/rows match the filtered set —
-  do **not** post-filter after `prepare_list`). Reuse the `client.labels.sources()`
-  result for the id set to avoid a second `sources.list()`. Thread `label_filter`
-  through `_build_spec` — its signature is `_build_spec(source_type_display)` today
-  (:35), so it grows a `label_filter` param (or `execute_source_list` builds the
-  filtered fetch closure directly).
+  to `SourceListPlan` and inject it into the fetch closure before `prepare_list`
+  counts/slices. Current implementation delegates the fetch decision to
+  `_app.source_listing.fetch_sources()`, which resolves the label and returns
+  `client.labels.sources(notebook_id, label_id)` directly.
 - **Edit** `src/notebooklm/cli/source_cmd.py` — add the `--label` option and pass it
   into the `SourceListPlan(...)` construction at `cli/source_cmd.py:164` (frozen plan
   built here). **Module-size ratchet:** `cli/source_cmd.py` is **at its 949 ceiling**
@@ -567,9 +568,9 @@ RED — edit **every** one:
 | 1.4 | `_types/labels.py` | `tests/unit/test_label_model.py` |
 | 1.5 | `exceptions.py` (+raise ratchet ceiling) | `tests/unit/test_label_exceptions.py`, `tests/unit/test_exceptions.py`, `tests/_guardrails/test_module_size_ratchet.py` |
 | 2.1 | `_labels.py` | `tests/unit/test_labels_api.py` (mock RpcCaller — unit tier) |
-| 2.2 | `client.py`, `types.py`, `__init__.py`, `scripts/audit_public_api_compat.py` | `test_public_surface_manifest.py` (`_FROZEN_TYPES_ALL`+`_TOP_LEVEL_TYPE_EXPORTS`+`_TOP_LEVEL_EXCEPTION_EXPORTS`+`_TYPES_EXCEPTION_REEXPORTS`), `test_public_api_contract.py`, `test_public_api_behavior.py`, `test_public_api_compat_audit.py`, `tests/unit/test_types.py` (`_PUBLIC_MOVABLE_CLASSES`), `test_module_size_ratchet.py` (client.py) |
-| 3.1 | `cli/services/label_listing.py` | `tests/unit/cli/test_label_listing.py` |
-| 3.2 | `cli/label_cmd.py`, `cli/__init__.py`, `cli/grouped.py`, **`notebooklm_cli.py`** | `test_label_cmd.py`, `test_grouped.py`, `test_cli_boundary.py`, `test_cli_vcr_coverage.py` (add `label` to `GROUP_COVERAGE`). **Follow-up PR (maintainer auth):** record `tests/cassettes/*.yaml` + `tests/integration/cli_vcr/`, remove the 4 names from `PREEXISTING_GAPS` (added back in Phase 1.1b) |
+| 2.2 | `_client_assembly.py`, `client.py`, `types.py`, `__init__.py`, `scripts/audit_public_api_compat.py` | `test_public_surface_manifest.py` (`_FROZEN_TYPES_ALL`+`_TOP_LEVEL_TYPE_EXPORTS`+`_TOP_LEVEL_EXCEPTION_EXPORTS`+`_TYPES_EXCEPTION_REEXPORTS`), `test_public_api_contract.py`, `test_public_api_behavior.py`, `test_public_api_compat_audit.py`, `tests/unit/test_types.py` (`_PUBLIC_MOVABLE_CLASSES`) |
+| 3.1 | `_app/labels.py`, `cli/services/label_listing.py` | `tests/unit/cli/test_label_listing.py`, `tests/unit/app/test_app_labels.py` |
+| 3.2 | `cli/label_cmd.py`, `cli/__init__.py`, `cli/grouped.py`, **`notebooklm_cli.py`** | `test_label_cmd.py`, `test_grouped.py`, `test_cli_boundary.py`, `test_cli_vcr_coverage.py`, `tests/integration/cli_vcr/test_label.py`; current label cassettes are recorded and `PREEXISTING_GAPS` is empty |
 | 3.3 | `cli/services/source_listing.py`, `cli/source_cmd.py` (+raise ratchet ceiling) | `tests/unit/cli/test_source_*`, `test_cli_rpc_envelope.py`, `test_module_size_ratchet.py` |
 | 3.4 | (gate-table edits only) | `test_cli_contract.py` (+`cli_contract_baseline.json`), `test_services_boundary.py` (`GUARDED_PATHS`), `test_json_stdout_purity.py`, `test_json_error_exit.py`, `test_no_module_shadowing.py`, `test_cli_boundary.py` |
 | 4 | `docs/rpc-reference.md`, `python-api.md`, `stability.md`, `cli-reference.md`, **`CLAUDE.md`** | `uv run pytest -m repo_lint`, `check_claude_md_freshness.py` (CI), `check_docs_module_refs.py` (CI) |
@@ -583,15 +584,15 @@ RED — edit **every** one:
 - **Facade reach-in.** → inject `list_sources` callable. No guard edit needed —
   `_labels.py` is auto-covered by the globbed `_*.py` `_core`-reach-in guard (Phase 2.1).
 - **CLI boundary.** → logic in `cli/services/label_listing.py`; `test_cli_boundary`.
-- **`source list --label` count/row desync.** → filter inside the `fetch` closure,
-  not after `prepare_list`.
+- **`source list --label` count/row desync.** → resolve/fetch inside the fetch
+  closure through `_app.source_listing.fetch_sources`, not after `prepare_list`.
 - **UUID-shaped label name misresolved as id.** → disable full-id passthrough in
   `resolve_label_id` (id/prefix pass), then fall back to explicit exact-name matching
   (NOT `title_of`, which is diagnostics-only — see §3.1).
 - **One source per `le8sX` call (confirmed).** The server honours only the first
   id of the add/remove group per call — a multi-id payload silently drops the rest
   (the bug the singular builder + per-id loop fixes). → builder is singular;
-  `add_sources`/`remove_sources` loop per id; tests assert call-count == len(ids).
+  `add_sources`/`remove_sources` loop per unique id after order-preserving dedupe.
 - **Combined add+remove in one call drops the add (confirmed).** → the API never
   sets both fieldmask groups in one call; add and remove are separate calls.
 - **Unverified wire semantics** (delete already-absent; add_sources dedup;

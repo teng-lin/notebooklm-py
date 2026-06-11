@@ -7,8 +7,8 @@ This directory holds the canonical decisions that shape the `notebooklm-py` code
 - Read the relevant ADR before changing the pattern it describes. If you disagree, write a new ADR that supersedes it — do not edit the original past correcting typos.
 - Numbering is append-only. Retired ADR numbers are never re-used.
 - Filenames follow `NNNN-short-title.md` (lowercase, kebab-case).
-- Status values: `Proposed`, `Accepted`, `Accepted (Sunset = <event>)`, `Superseded by ADR-NNN (#PR)`, `Deprecated`, `Rejected`.
-- Format: lightweight hybrid — six sections in this exact order: _Title heading_ (`# ADR-NNN: <Title>`), _Status_, _Context_, _Decision_, _Consequences_, _Alternatives considered_. See [0000-template.md](0000-template.md).
+- Status values: `Proposed`, `Proposed — <short explanation>`, `Accepted`, `Accepted (retroactive)`, `Accepted (#PR)`, `Accepted (Sunset = <event>)`, `Superseded by ADR-NNNN (#PR)`, `Deprecated`, `Rejected`.
+- Format: lightweight hybrid — six sections in this exact order: _Title heading_ (`# ADR-NNNN: <Title>`), _Status_, _Context_, _Decision_, _Consequences_, _Alternatives considered_. See [0000-template.md](0000-template.md).
 
 ## When an ADR is required
 
@@ -23,12 +23,13 @@ Pure bug fixes, additive RPC method IDs, and CLI ergonomics changes do not requi
 
 ### Status Format Legend
 
-The ADR Index table utilizes four eras of Status notation to reflect the lifecycle of decisions:
+The ADR Index table utilizes five eras of Status notation to reflect the lifecycle of decisions:
 
 1. **`Accepted` / `Accepted (retroactive)`** — The decision is currently active and adopted.
 2. **`Accepted (Tier X PR Y.Z)`** — Historical PR-naming convention from the early refactoring tiers (Tiers 11-12).
-3. **`Superseded by ADR-NNN (#PR)`** — Canonical post-Tier-12 supersession form, linking to the replacing ADR and PR.
-4. **`Superseded by <named-PR> (D1/D2 PR-X)`** — Pre-canonical historical supersession form, linking to specific branch-refactoring PRs.
+3. **`Superseded by ADR-NNNN (#PR)`** — Canonical post-Tier-12 supersession form, linking to the replacing ADR and PR.
+4. **`Accepted (#PR)` / `Accepted; <note>` / `Proposed — <note>`** — Short explanatory forms used when a status needs one compact qualifier.
+5. **`Superseded by <named-PR> (D1/D2 PR-X)`** — Pre-canonical historical supersession form, linking to specific branch-refactoring PRs.
 
 ## Index
 
@@ -51,9 +52,10 @@ The ADR Index table utilizes four eras of Status notation to reflect the lifecyc
 | [0015](0015-json-envelope-contract-for-post-parse-click-exceptions.md) | Typed JSON error envelope covers post-parse `ClickException` failures | Accepted                                                                                                            |
 | [0016](0016-auth-identity-and-core-logger-compatibility.md) | Auth identity and core logger compatibility | Accepted                                                                                                            |
 | [0017](0017-public-facade-private-implementation.md) | Public-facade / private-implementation re-export convention | Accepted (retroactive) |
-| [0018](0018-deprecation-strategy.md) | Deprecation strategy (`_deprecation.py` + `MappingCompatMixin`) | Accepted (retroactive) |
-| [0019](0019-error-and-return-contract.md) | Error-and-return contract for the public API | Accepted; v0.8.0 implementation tracked separately |
+| [0018](0018-deprecation-strategy.md) | Deprecation strategy (`_deprecation.py`) | Accepted (retroactive) |
+| [0019](0019-error-and-return-contract.md) | Error-and-return contract for the public API | Accepted; v0.8.0 implementation landed |
 | [0020](0020-sealed-async-result-types.md) | Sealed async result types for artifact generation | Proposed — design of record; recommends continued deferral (ADR-0019 Tier 3 / #1345) |
+| [0021](0021-transport-neutral-app-layer.md) | Transport-neutral application layer (`_app/`) | Accepted |
 
 ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

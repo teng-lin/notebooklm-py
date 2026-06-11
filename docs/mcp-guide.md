@@ -125,8 +125,11 @@ source_wait(notebook="Quantum Computing")                 # block until sources 
 chat_ask(notebook="Quantum Computing", question="What are the open problems?")
 ```
 
-`source_type` is one of `url`, `text`, `file` (local `path`), `drive` (a `document_id` + `mime_type`),
-or `youtube`. `chat_ask` continues the most-recent conversation unless you pass a `conversation_id`.
+`source_type` is one of `url`, `text`, `file` (local `path`), `drive` (a
+`document_id` + `mime_type`), or `youtube`. URL and YouTube adds reject
+internal/loopback hosts by default; pass `allow_internal=true` only for
+deliberate local NotebookLM tests. `chat_ask` continues the most-recent
+conversation unless you pass a `conversation_id`.
 
 ### Generate and download a studio artifact
 
@@ -145,19 +148,21 @@ the other kinds use fixed defaults.
 
 ```text
 task = research_start(notebook="Quantum Computing", query="post-quantum cryptography", source="web", mode="deep")
-research_status(notebook="Quantum Computing")             # returns the task_id + progress
-research_import(notebook="Quantum Computing", task_id="<task_id>")
+research_status(notebook="Quantum Computing", task_id=task["task_id"])
+research_import(notebook="Quantum Computing", task_id=task["task_id"])
 ```
 
-`source` is `web` or `drive`; `mode` is `fast` or `deep`. `research_status` surfaces the `task_id`
-you pass to `research_import`.
+`source` is `web` or `drive`; `mode` is `fast` or `deep`. Pass the `task_id`
+returned by `research_start` when polling or importing so the request is pinned
+to the intended research task; omitting it is allowed only when the notebook has
+a single in-flight task.
 
 ## Tool reference
 
 | Domain | Tools |
 |--------|-------|
 | **Notebooks** | `notebook_list` · `notebook_create(title)` · `notebook_describe(notebook)` · `notebook_rename(notebook, new_title)` · `notebook_delete(notebook, confirm)` |
-| **Sources** | `source_list(notebook)` · `source_get_content(notebook, source)` · `source_rename(notebook, source, new_title)` · `source_delete(notebook, source, confirm)` · `source_wait(notebook, source?, timeout, interval)` · `source_add(notebook, source_type, …)` |
+| **Sources** | `source_list(notebook)` · `source_get_content(notebook, source)` · `source_rename(notebook, source, new_title)` · `source_delete(notebook, source, confirm)` · `source_wait(notebook, source?, timeout, interval)` · `source_add(notebook, source_type, ..., allow_internal?)` |
 | **Chat** | `chat_ask(notebook, question, conversation_id?)` · `chat_configure(notebook, goal?, response_length?)` |
 | **Notes** | `note_create(notebook, title, content)` · `note_list(notebook)` · `note_update(notebook, note, content)` · `note_delete(notebook, note, confirm)` |
 | **Artifacts** | `artifact_list(notebook)` · `artifact_generate(notebook, artifact_type, …)` · `artifact_status(notebook, task_id)` · `artifact_download(notebook, artifact_type, path, output_format?)` |

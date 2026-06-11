@@ -6,8 +6,8 @@ Only the latest minor release receives security fixes. Earlier `0.x` releases pr
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.6.x   | :white_check_mark: |
-| < 0.6   | :x:                |
+| 0.8.x   | :white_check_mark: |
+| < 0.8   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -24,7 +24,7 @@ This library stores authentication credentials locally. Please understand these 
 
 ### Storage Locations
 
-By default, files are stored per-profile under `~/.notebooklm/profiles/<profile>/` (configurable via the `NOTEBOOKLM_HOME` and `NOTEBOOKLM_PROFILE` environment variables). Legacy layouts store files directly in the root of `~/.notebooklm/` (representing the `default` profile):
+By default, files are stored per-profile under `~/.notebooklm/profiles/<profile>/` (configurable via the `NOTEBOOKLM_HOME` and `NOTEBOOKLM_PROFILE` environment variables). Legacy layouts store files directly in the root of `~/.notebooklm/` (representing the `default` profile). Permission modes below are POSIX modes; Windows uses the inherited filesystem ACLs and intentionally skips `chmod`.
 
 | File Path | Contents | Permissions |
 |-----------|----------|-------------|
@@ -34,7 +34,7 @@ By default, files are stored per-profile under `~/.notebooklm/profiles/<profile>
 | `config.json` | Global CLI config (e.g. language/active profile) | Default |
 | `storage_state.json` *(legacy)* | Fallback root storage state (for `default` profile) | `0o600` (owner-only) |
 | `browser_profile/` *(legacy)* | Fallback root Playwright profile | `0o700` (owner-only) |
-| `context.json` *(legacy)* | Fallback root active notebook context | Default |
+| `context.json` *(legacy)* | Fallback root active notebook context | `0o600` (owner-only, POSIX) |
 
 ### Security Best Practices
 
@@ -67,29 +67,45 @@ By default, files are stored per-profile under `~/.notebooklm/profiles/<profile>
 
 - Does not transmit credentials to any third party
 - Does not store passwords (uses browser-based OAuth)
-- Does not access data outside of NotebookLM
+- Does not access data outside of NotebookLM except for user-selected local files
+  and opt-in browser-cookie extraction during login/refresh
 - Does not modify Google account settings
 
 ## Dependency Security
 
-This library uses minimal dependencies:
+This library keeps the base dependency set small and puts optional surfaces behind
+extras:
 
-| Dependency | Purpose | Security Notes |
-|------------|---------|----------------|
-| `httpx` | HTTP client | Well-maintained, security-focused |
-| `click` | CLI framework | Stable, minimal attack surface |
-| `rich` | Terminal output | Cosmetic, no network access |
-| `playwright` | Browser automation (optional) | Used only for login |
+| Dependency | Scope | Purpose |
+|------------|-------|---------|
+| `httpx` | base | HTTP client |
+| `click` | base | CLI framework |
+| `rich` | base | Terminal output |
+| `filelock` | base | Cross-process file locking for profile/context writes |
+| `markdownify` | `markdown` extra | HTML-to-Markdown conversion |
+| `playwright` | `browser` extra | Interactive/headless browser login |
+| `rookiepy` | `cookies` extra | Opt-in browser-cookie import |
+| `fastmcp` | `mcp` extra | MCP server adapter |
+| `fastapi`, `uvicorn[standard]`, `python-multipart` | `server` extra | Optional REST server and file uploads |
 
 ### Auditing Dependencies
 
 ```bash
-# Install pip-audit
-pip install pip-audit
+# Mirror CI: audit the locked selected-extra graph
+uv sync --frozen --extra browser --extra dev --extra markdown
+uv run python -m pip install "pip-audit>=2.7.0,<3"
+uv export --frozen --extra browser --extra dev --extra markdown --format requirements-txt --no-emit-project \
+  | uv run pip-audit --strict --require-hashes --disable-pip -r /dev/stdin
 
-# Run security audit
-pip-audit
+# Release/security sweep: include maintained MCP + REST server extras too
+uv export --frozen --extra browser --extra dev --extra markdown --extra mcp --extra server \
+  --format requirements-txt --no-emit-project \
+  | uv run pip-audit --strict --require-hashes --disable-pip -r /dev/stdin
 ```
+
+The `cookies` extra remains an explicit opt-in because `rookiepy` has had
+interpreter compatibility issues; audit that graph separately when changing the
+browser-cookie import surface.
 
 ## Known Limitations
 

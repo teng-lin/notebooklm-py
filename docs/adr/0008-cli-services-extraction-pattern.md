@@ -6,7 +6,7 @@ Accepted (retroactive). Documents the pattern established during the cli-ux-reme
 
 ## Context
 
-CLI commands grew organically: every new feature added a new Click command (or sub-command), and the command body co-located argument parsing, validation, business logic, error handling, and presentation. By the time of the cli-ux audit, the largest CLI module (`cli/session.py`, the `login` / `use` / `status` / `clear` family) had reached ~1,973 lines with 64 top-level / async functions. Most of those functions were *business logic*: browser-profile enumeration, cookie extraction, multi-account fan-out, profile validation.
+CLI commands grew organically: every new feature added a new Click command (or sub-command), and the command body co-located argument parsing, validation, business logic, error handling, and presentation. By the time of the cli-ux audit, the largest CLI module (`cli/session.py`, later renamed `cli/session_cmd.py`, the `login` / `use` / `status` / `clear` family) had reached ~1,973 lines with 64 top-level / async functions. Most of those functions were *business logic*: browser-profile enumeration, cookie extraction, multi-account fan-out, profile validation.
 
 The audit identified three concrete failure modes:
 
@@ -19,13 +19,16 @@ The cli-ux-remediation arc moved business logic into a sibling sub-package:
 ```text
 src/notebooklm/cli/services/
 ├── __init__.py
-├── artifact_generation.py   business logic for `generate audio/video/...`
-├── login.py                 browser-cookie auth flows + profile enumeration
-├── source_add.py            url/text/file/youtube source plan + execute
-└── source_clean.py          stale-source garbage-collection logic
+├── download.py              download workflow planning
+├── generate.py              generation workflow planning
+├── login/                   browser-cookie auth flows + profile enumeration
+├── research.py              research task workflow helpers
+├── source_listing.py        source list rendering data
+├── source_mutations.py      source mutation helpers
+└── source_research.py       source-grounded research helpers
 ```
 
-Each `cli/services/<name>.py` module exposes the *pure logic* of one CLI domain. The Click commands in `cli/<name>.py` shrink to thin shells: parse arguments, construct a service-layer plan or call, render results.
+Each `cli/services/<name>.py` module exposes CLI-adjacent workflow logic for one domain. The Click commands in `cli/<name>_cmd.py` shrink to thin shells: parse arguments, construct a service-layer plan or call, render results. Shared user-facing workflows that are no longer CLI-specific now live in `src/notebooklm/_app/` so both CLI, MCP, and server adapters can reuse them without importing Click.
 
 A typical service module exposes:
 
@@ -37,7 +40,7 @@ The Click command then becomes `parse args → build_plan → execute_plan(plan,
 
 ## Decision
 
-CLI business logic lives in `src/notebooklm/cli/services/<domain>.py`. Click commands in `src/notebooklm/cli/<domain>.py` are thin shells that:
+CLI business logic lives in `src/notebooklm/cli/services/<domain>.py` when it is genuinely CLI-specific, and in `src/notebooklm/_app/<domain>.py` when it is adapter-neutral. Click commands in `src/notebooklm/cli/<domain>_cmd.py` are thin shells that:
 
 1. Parse arguments via Click decorators.
 2. Validate inputs (using helpers from the service module where possible).
@@ -53,9 +56,9 @@ Service modules must:
 
 During staged migrations, transitional service modules may appear in the
 `tests/unit/cli/test_services_boundary.py` inventory with exact documented
-violations. That inventory is not an approval to add new rendering or Click
-reach-ins; it is the burn-down list for moving output, confirmation, and exit
-policy back to command modules.
+violations. That inventory is currently empty; every module under
+`cli/services/` must be classified as guarded or explicitly waived, and new
+rendering or Click reach-ins fail the boundary tests.
 
 The pattern is deliberately *light*: there is no service-layer base class, no DI container, no plugin system. Service modules are plain Python modules with plain functions.
 
@@ -63,21 +66,21 @@ The pattern is deliberately *light*: there is no service-layer base class, no DI
 
 **Wanted:**
 
-- CLI commands shrink toward thin shells. The post-cli-ux-remediation target for `cli/session.py` is ≤ 1,100 lines (down from the current 1,973); the residual proxy block that prevents reaching that target is on the deletion list for the D1 CLI-side PR (`arch-d1-cli-side`). The extraction pattern itself — business logic in `cli/services/login.py`, command shell in `cli/session.py` — is already in place; the line-count gate lands when the proxy block goes.
+- CLI commands shrink toward thin shells. The active command modules are named `*_cmd.py`; `cli/session_cmd.py` is below the historical ≤1,100-line target after the retired patch-surface bridge was removed, and module-size ratchets guard the remaining large CLI modules.
 - Business logic is unit-testable without driving Click. Tests can call `build_source_add_plan(...)` directly and assert on the returned plan; tests can call `execute_source_add(plan, fake_facade)` and assert on the facade calls.
 - The service modules document the *contract* of each CLI domain via their `Plan` dataclass and their facade `Protocol`. A reviewer reading `cli/services/source_add.py` sees the entire decision graph for `source add` in one file.
-- Business logic is re-usable. The Python API can import from `cli/services/<domain>.py` when a Python-side feature wants the same logic without re-implementing it (this is rare but real — `cli/services/source_clean.py` is consumed by both the CLI and an internal cleanup helper).
+- Business logic is re-usable. Adapter-neutral workflows should live under `_app/` (for example `_app/source_clean.py`), while `cli/services/` keeps CLI-only planning and compatibility helpers.
 - The pattern composes with ADR-0007's test-fixture pattern (constructor injection): service-layer functions take their collaborators as parameters, so test fixtures provide them; no monkeypatching of module globals.
 
 **Unwanted:**
 
 - Some Click commands have *no* business logic and still gain a service module if they cross a complexity threshold; reviewers must agree on where that threshold is. The current rule of thumb is "if the command body exceeds 50 lines or has more than one branch on validation results, extract a service."
 - The pattern *requires* a `Protocol`-typed facade for testability; in some cases the protocol has a single implementer (`NotebookLMClient`) and looks ceremonial. The audit ADR-0002 calls out this exact failure mode for capability Protocols; the mitigation here is that the facade Protocols are narrow (per-service, listing only the methods that service uses) so they do not slip into fat-union shape.
-- The split is visible in the file count. `cli/services/login.py` is ~1,300 lines because the business logic is genuinely complex; the parent `cli/session.py` plus the service module exceeds the original monolith. The trade is "two reviewable files" vs "one unreviewable file"; the audit chose the former.
+- The split is visible in the file count. The login service is now a package of small modules rather than a single `login.py`, and some workflows also have an `_app/` module. The trade is "several reviewable files" vs "one unreviewable file"; the audit chose the former.
 
 ## Alternatives considered
 
-- **Keep business logic inline in `cli/<command>.py`.** Rejected. The proxy block in `cli/session.py` lines 141-490 demonstrates the anti-pattern: the file became a sink of helper functions, monkeypatch surfaces, and "import this for tests" hooks. Even after the cli-ux-remediation arc, the residual proxy block exists to support legacy test patches and is on the deletion list for the D1 CLI-side PR (`arch-d1-cli-side`). The lesson is that business logic in CLI modules *will* attract test gravity, and the only durable fix is to move the logic out.
+- **Keep business logic inline in `cli/<command>_cmd.py`.** Rejected. The retired proxy block in `cli/session_cmd.py` demonstrated the anti-pattern: the file became a sink of helper functions, monkeypatch surfaces, and "import this for tests" hooks. The lesson is that business logic in CLI modules *will* attract test gravity, and the durable fix is to move the logic out.
 - **Full `cli/<verb>/<noun>.py` hierarchy** (e.g. `cli/generate/audio.py`, `cli/generate/video.py`). Rejected as overkill for the current size of the surface. The flat `cli/<noun>.py` + `cli/services/<noun>.py` pattern handles the current 9-command surface cleanly; a hierarchical layout would add directory noise without solving a real problem. The pattern is open to revisit if the command count doubles.
 - **A service-locator / DI container (e.g. `wired`, `dependency-injector`).** Rejected. The codebase has < 10 service modules and < 30 distinct collaborators; the cognitive cost of a DI framework dwarfs the benefit. Plain Python imports + `Protocol`-typed parameters are sufficient at this scale.
 - **Move business logic into the Python API layer (`_<domain>.py`) and have the CLI call the Python API.** Partial alternative, applied where it fits. The Python API (`NotebooksAPI`, `SourcesAPI`, etc.) carries the *protocol-level* concerns (one RPC = one method). CLI services carry the *workflow-level* concerns (validate user input, choose between two RPC paths, fan out across multiple accounts). The split between "protocol verb" (Python API) and "workflow verb" (CLI service) is real and intentional; not every CLI helper belongs on the Python API.

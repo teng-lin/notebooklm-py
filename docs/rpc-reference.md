@@ -1,14 +1,15 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-05-14
-**Source of Truth:** `src/notebooklm/rpc/types.py`
+**Last Updated:** 2026-06-11
+**Source of Truth:** `src/notebooklm/rpc/types.py` for method IDs; payload builders in `src/notebooklm/` and golden tests under `tests/unit/`
 **Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
 
-> **Note:** Payload structures extracted from actual implementation in `src/notebooklm/`.
-> Each payload includes a reference to its source file. The CREATE_ARTIFACT
-> payloads below were re-verified against the live builders in `_artifacts.py`
-> on 2026-05-14 (AUDIO, VIDEO_EXPLAINER, VIDEO_BRIEF, VIDEO_CINEMATIC,
+> **Note:** Payload structures are extracted from the implementation builders in
+> `src/notebooklm/` and pinned by golden unit tests. Each payload includes a
+> reference to its owning source file. The CREATE_ARTIFACT payloads below were
+> re-verified against the live builders in `_artifact/payloads.py` on
+> 2026-06-11 (AUDIO, VIDEO_EXPLAINER, VIDEO_BRIEF, VIDEO_CINEMATIC,
 > STUDY_GUIDE, BRIEFING_DOC, BLOG_POST, MIND_MAP, QUIZ, FLASHCARDS,
 > INFOGRAPHIC, SLIDE_DECK, DATA_TABLE).
 
@@ -25,15 +26,15 @@
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_notebooks.py` |
 | `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat/api.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
-| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube source | `_sources.py` |
-| `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_sources.py` |
+| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_source/add.py` via `_sources.py` |
+| `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_source/upload.py`, `_source/upload_payloads.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
 | `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_source/content.py` |
 | `agX4Bc` | CREATE_LABEL | AI-generate label groupings and create manual labels | `_labels.py` |
 | `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_labels.py` |
-| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add sources | `_labels.py` |
+| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_labels.py`, `_label/params.py` |
 | `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) | `_labels.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
@@ -57,7 +58,7 @@
 | `LBwxtb` | IMPORT_RESEARCH | Import research results | `_research.py` |
 | `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_artifacts.py` |
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_artifacts.py` |
-| `RGP97b` | SHARE_ARTIFACT | Toggle per-artifact public deep-link sharing | `_sharing.py` |
+| `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_sharing_manager.py` |
 | `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_sharing.py` |
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
@@ -171,8 +172,8 @@ params = [
     title,  # 0: Notebook title
     None,   # 1
     None,   # 2
-    [2],    # 3: Fixed flag
-    [1],    # 4: Fixed flag
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            # 3: Shared request-options wrapper (`build_template_block()`)
 ]
 ```
 
@@ -249,51 +250,49 @@ ADD_SOURCE_MODAL = {
 
 ### RPC: ADD_SOURCE (izAoDd) - URL
 
-**Source:** `_sources.py::_add_url_source()`
+**Source:** `_source/add.py::SourceAddService.add_url_source()`
 
 ```python
-# URL goes at position [2] in an 8-element array
+# URL goes at position [2] in an 11-element source spec.
 params = [
-    [[None, None, [url], None, None, None, None, None]],  # 0: Source config
+    [[None, None, [url], None, None, None, None, None, None, None, 1]],
     notebook_id,                                           # 1: Notebook ID
-    [2],                                                   # 2: Source type flag
-    None,                                                  # 3
-    None,                                                  # 4
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+                                                           # 2: Shared request-options wrapper
 ]
 ```
 
 ### RPC: ADD_SOURCE (izAoDd) - Text
 
-**Source:** `_sources.py::add_text()`
+**Source:** `_source/add.py::SourceAddService.add_text()`
 
 ```python
-# [title, content] at position [1] in an 8-element array
+# [title, content] at position [1] in an 11-element source spec; slot [3] is
+# the captured source-type code for pasted text.
 params = [
-    [[None, [title, content], None, None, None, None, None, None]],  # 0
-    notebook_id,                                                      # 1
-    [2],                                                              # 2
-    None,                                                             # 3
-    None,                                                             # 4
+    [[None, [title, content], None, 2, None, None, None, None, None, None, 1]],
+    notebook_id,
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
 ]
 ```
 
 ### RPC: ADD_SOURCE (izAoDd) - YouTube
 
-**Source:** `_sources.py::_add_youtube_source()`
+**Source:** `_source/add.py::SourceAddService.add_youtube_source()`
 
 ```python
-# YouTube URL at position [7] in an 11-element array (different from regular URL!)
+# YouTube URL at position [7] in the source spec (different from regular URL).
 params = [
     [[None, None, None, None, None, None, None, [url], None, None, 1]],  # 0
     notebook_id,                                                          # 1
-    [2],                                                                  # 2
-    [1, None, None, None, None, None, None, None, None, None, [1]],      # 3: Extra config
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+                                                                            # 2: Shared wrapper
 ]
 ```
 
 ### RPC: ADD_SOURCE (izAoDd) - Google Drive
 
-**Source:** `_sources.py::add_drive()`
+**Source:** `_source/add.py::SourceAddService.add_drive()`
 
 ```python
 # Drive source structure - single-wrapped (not double!)
@@ -311,7 +310,10 @@ params = [
 ]
 ```
 
-**Note:** The nesting level is critical. Web UI sends `[source_data]` (single wrap), not `[[source_data]]` (double wrap).
+**Note:** Drive add is intentionally still on the older `[2]`,
+`[1, ..., [1]]` tail pending a fresh live Drive capture. URL, YouTube, text,
+CREATE_NOTEBOOK, and ADD_SOURCE_FILE use the shared nested wrapper from
+`_source/upload_payloads.py::build_template_block()`.
 
 ### RPC: DELETE_SOURCE (tGMBJ)
 
@@ -444,11 +446,12 @@ its source UUIDs, so one `list()` call gives the complete source→label mapping
 
 ### RPC: UPDATE_LABEL (le8sX)
 
-**Source:** `_labels.py::update()`, `rename()`, `set_emoji()`, `add_sources()`
+**Source:** `_labels.py::update()`, `rename()`, `set_emoji()`,
+`add_sources()`, `remove_sources()` (builder: `_label/params.py`)
 
 A unified label-update RPC covering rename, emoji, and source membership. Slot
-`[3]` is a fieldmask `[[name_emoji, sources]]`; populate only the group(s) you
-want to change.
+`[3]` is a fieldmask `[[name_emoji, sources_add, sources_remove]]`; populate
+only the group(s) you want to change.
 
 ```python
 # Rename (name_emoji = [name]; sources omitted)
@@ -459,13 +462,18 @@ params = [OPTS, notebook_id, label_id, [[[None, emoji]]]]
 
 # Add source(s) (name_emoji None, sources set) - APPENDS, does not replace
 params = [OPTS, notebook_id, label_id, [[None, [[source_id]]]]]
+
+# Remove source from this label only (sources_add None, sources_remove set)
+params = [OPTS, notebook_id, label_id, [[None, None, [[source_id]]]]]
 ```
 
 **Note:** the `sources` group **appends** (send only the IDs to add — existing
 members survive) and labels may **overlap** (adding a source does not remove it
 from any other label). Source **removal** is supported via the `UPDATE_LABEL`
 fieldmask's `sources_remove` slot (`[3][0][2]`) — un-assigning the source from
-this label only (it stays in the notebook and in any other label).
+this label only (it stays in the notebook and in any other label). The current
+API loops one RPC per unique source id for add/remove membership changes; the
+wire shape honors only the first id in each group.
 
 **Response:** `[]` on success.
 
@@ -970,7 +978,8 @@ params = [
 
 #### Interactive Mind Map (Type 4 / variant 4) - Uses CREATE_ARTIFACT (R7cb6c)
 
-**Source:** `_artifact_payloads.py::build_interactive_mind_map_artifact_params()`, `_mind_maps_api.py::MindMapsAPI.generate()`
+**Source:** `_artifact/payloads.py::build_interactive_mind_map_artifact_params()`,
+`_mind_maps_api.py::MindMapsAPI.generate()`
 
 NotebookLM's web app now generates an **interactive** mind map — a studio
 artifact in the type-4 family with `variant 4` (distinct from the note-backed
@@ -1043,7 +1052,8 @@ params = [
 
 ### RPC: CREATE_NOTE (saved-from-chat variant) (CYK0Xb)
 
-**Source:** `_chat_notes.py::save_chat_answer_as_note()` (canonical owner) — exposed publicly as `ChatAPI.save_answer_as_note(...)`.
+**Source:** `_chat/notes.py::save_chat_answer_as_note()` (canonical owner) —
+exposed publicly as `ChatAPI.save_answer_as_note(...)`.
 
 **Note:** This is the same RPC method ID as plain CREATE_NOTE above, but uses a **7-element** params array (vs the 5-element blank-note form) and **mode flag `[2]`** to tell the server the note carries a saved chat answer. The server stores per-citation source-passage metadata so `[N]` markers in the answer render as hover-anchored links in the NotebookLM web UI. No follow-up UPDATE_NOTE is needed — this is a single round-trip.
 
@@ -1411,11 +1421,14 @@ params = [
 
 ### Notebook Sharing Overview
 
-**Sharing is a notebook-level setting.** When you share a notebook, ALL artifacts become accessible.
+Notebook sharing and artifact deep-link sharing are separate toggles:
+`SHARE_NOTEBOOK` governs who can open the notebook at all, while
+`SHARE_ARTIFACT` is the legacy share-link path used to build or toggle a
+notebook URL with an optional `?artifactId=` target.
 
 Notebooks have **three sharing dimensions**:
 
-1. **Visibility** (SHARE_NOTEBOOK - QDyure or SHARE_ARTIFACT - RGP97b):
+1. **Notebook visibility** (SHARE_NOTEBOOK - QDyure):
    - `[0]` = Restricted (only explicitly shared users)
    - `[1]` = Anyone with the link
 
@@ -1442,7 +1455,10 @@ await client.sharing.add_user(notebook_id, "user@example.com", SharePermission.V
 - Notebook: `https://notebooklm.google.com/notebook/{notebook_id}`
 - Artifact deep-link: `https://notebooklm.google.com/notebook/{notebook_id}?artifactId={artifact_id}`
 
-The `?artifactId=xxx` parameter creates a deep link that opens the notebook and navigates to that specific artifact. Mind Maps cannot be shared (no public URLs).
+The `?artifactId=xxx` parameter creates a deep link that opens the notebook and
+navigates to that specific artifact. It does not make the artifact an
+independent public resource outside the notebook. Mind Maps cannot be shared
+(no public URLs).
 
 ---
 
@@ -1903,9 +1919,11 @@ callers decide whether to re-invoke.
 
 ### RPC: SHARE_ARTIFACT (RGP97b)
 
-**Source:** `_sharing.py` (per-artifact deep-link toggle)
+**Source:** `_sharing_manager.py::ShareManager.share()` (legacy share-link toggle)
 
-Toggle per-artifact public deep-link sharing. Distinct from `SHARE_NOTEBOOK` (`QDyure`), which governs overall notebook visibility. `SHARE_ARTIFACT` toggles the public deep-link state of a specific artifact within an already-shared notebook context.
+Toggle the legacy share-link state for a notebook URL, optionally with an
+artifact deep-link target. Distinct from `SHARE_NOTEBOOK` (`QDyure`), which
+governs notebook visibility and user permissions.
 
 Note: Mind Maps are NOT shareable (they don't have public URLs).
 

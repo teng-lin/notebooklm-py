@@ -2,32 +2,11 @@
 
 ## Status
 
-Accepted. The library-wide error-and-return contract is ratified; this ADR
-records the decision ahead of the work. The v0.8.0 implementation is tracked
-separately under umbrella #1346, with the additive half landed and the breaking
-flips still pending. Ratifies the already-committed v0.8.0 work
-(#1247, #1254, #1251) as instances of one contract.
-
-**Status update (v0.7.0):** the additive, non-breaking half of the enforcement
-floor has landed. The Tier-1 *static* conformance gate
-(`tests/unit/test_public_api_contract.py`) is in force — its
-`inspect.signature` walk pins the whole public surface's return-shape rules —
-and the `mind_maps` divergence it names (`mind_maps.get() -> MindMap | None`
-added without the deprecation warning) is fixed. The Tier-1 *behavioural*
-companion (`tests/unit/test_public_api_behavior.py`) executes each namespace's
-miss path to assert today's warn-contract (`get()` warns + returns `None`;
-`get_or_none()` is silent), so a correctly-annotated `get()` that forgets to
-warn — the exact historical `mind_maps` bug — is now caught at runtime, not just
-by signature. Tier-2's single-sourced `unwrap_or_raise` helper (`_lookup.py`)
-also landed.
-
-**Status update (v0.8.0):** the *breaking* flips this ADR queued have now
-shipped — most notably issue #1247 (`get()` → **raises** `*NotFoundError`,
-dropping `| None`, single-sourced through `_lookup.py`'s `unwrap_or_raise`), so
-every namespace `get()` now raises on a miss and `get_or_none()` is the
-sanctioned `None`-on-miss lookup. The "Enforcement (in scope for 0.8.0)" section
-below describes that work; the static + behavioural gates that guarded the
-rollout are green against the post-flip surface.
+Accepted and implemented in v0.8.0. The additive enforcement floor landed in
+v0.7.0, and the breaking flips this ADR queued shipped in v0.8.0: namespace
+`get()` methods raise their `*NotFoundError`, `get_or_none()` is the sanctioned
+`None`-on-miss lookup, dict-subscript compatibility was removed, deprecated
+keyword aliases were removed, and synchronous kickoff refusals now raise.
 
 ## Context
 
@@ -95,12 +74,11 @@ Absence detection is single-sourced where shared (e.g. `_detect_kind` for mind m
 
 Ratify the existing tree (`NotebookLMError` root; multi-base
 `*NotFoundError(NotFoundError, RPCError, <Domain>Error)`; the `RPCError`
-transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
-`SourceNotFoundError`: `NoteError`+`NoteNotFoundError`, `MindMapError`+`MindMapNotFoundError`
-(none exist yet). Standardize the `*TimeoutError` base order umbrella-first
-(`ArtifactTimeoutError(ArtifactError, WaitTimeoutError)` is the outlier,
-`exceptions.py:1117`). No new "refusal" exception — refusal reuses the existing
-`RateLimitError`/`RPCError`.
+transport subtree; `WaitTimeoutError(…, TimeoutError)`). `NoteError` /
+`NoteNotFoundError` and `MindMapError` / `MindMapNotFoundError` have landed,
+mirroring `SourceNotFoundError`. `ArtifactTimeoutError` now inherits
+umbrella-first from `WaitTimeoutError` before `ArtifactError`. No new "refusal"
+exception — refusal reuses the existing `RateLimitError`/`RPCError`.
 
 ### Rules
 
@@ -109,12 +87,11 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
    not a genuine miss. (Poll-observed task absence is *not* resource absence —
    see Rule 4.)
 2. **Refusal raises.** A synchronous `USER_DISPLAYABLE_ERROR` propagates as the
-   `RateLimitError`/`RPCError` the transport layer raises. The kickoff methods
-   **currently swallow** it into `GenerationStatus(status="failed")`
-   (`_artifacts.py:1150-1158` `_call_generate`, `:541-549` `revise_slide`) and
-   `_parse_generation_result` synthesizes `failed` for a missing artifact id
-   (`:1251-1260`); v0.8.0 **removes** both, re-raising the refusal and raising
-   `DecodingError`/`ArtifactFeatureUnavailableError` for a missing/degenerate id.
+   `RateLimitError`/`RPCError` the transport layer raises. The old kickoff
+   behavior that swallowed refusal into `GenerationStatus(status="failed")` or
+   synthesized `failed` for a missing artifact id was removed in v0.8.0;
+   kickoff refusal now raises, and missing/degenerate ids raise
+   `DecodingError`/`ArtifactFeatureUnavailableError`.
 3. **Drift raises.** A malformed/unparseable RPC payload raises
    `DecodingError`/`UnknownRPCMethodError` ([ADR-0011](0011-schema-validation-policy.md));
    it is not collapsed to `None`/`""`/`[]`/a sentinel. v0.8.0 tightens the
@@ -138,10 +115,11 @@ transport subtree; `WaitTimeoutError(…, TimeoutError)`). Add, mirroring
    callers needing a terminal answer use `wait_for_completion`.
 5. **The facade owns the contract.** Per [ADR-0017](0017-public-facade-private-implementation.md)
    the public facade *surface* owns the compatibility contract (logic stays
-   private); breaks ship via [ADR-0018](0018-deprecation-strategy.md) — #1247/#1254/#1251
-   had a v0.7.0 deprecation runway, the refusal/`ValueError`/`update` changes are
-   deliberate clean breaks in the already-breaking 0.8.0 — are allowlisted
-   (`scripts/api-compat-allowlist.json`), and idempotency is unchanged
+   private); breaks ship via [ADR-0018](0018-deprecation-strategy.md). The
+   #1247/#1254/#1251 breaks had a v0.7.0 deprecation runway, while the
+   refusal/`ValueError`/`update` changes were deliberate clean breaks in the
+   already-breaking v0.8.0 and were allowlisted
+   (`scripts/api-compat-allowlist.json`). Idempotency is unchanged
    ([ADR-0005](0005-idempotency-taxonomy.md): kickoffs stay non-blind-replayable).
 
 `ValueError` remains valid for **input validation**; it is banned only for
@@ -217,21 +195,16 @@ enforcement floor**:
   irreducibly per-namespace (`mind_maps.delete(..., kind=...)` is non-idempotent
   + kind-dispatched), so `delete` stays per-namespace.
 - **Tier 3 — sealed async result types (resolved #1345: rejected).** Replacing
-  the stringly-typed `GenerationStatus.status` with a sealed/discriminated result
-  was evaluated and **rejected**. The load-bearing overload it targeted — a
-  synchronous *couldn't-start* masquerading as `status="failed"` — was already
-  removed by Tier 1 (#1342 makes refusals raise), so a returned `failed` now
-  means only *started-then-failed*. The residual `not_found`/`removed`/rate-limit
-  juggling is poll-loop interpretation (`removed` is `wait_for_completion`'s
-  conclusion over a sustained run of missed polls, not a result property), cause
-  classification (`is_rate_limited` is a `Failed`/`Removed` detail, not a
-  lifecycle state), and a CLI-local DTO string (`cli/services/artifact_generation.py`
-  synthesizes `"rate_limited"`) — none of which a union dissolves; it relocates
-  them. This ADR keeps the typed-string states. The optional, *non-breaking*
-  follow-up is a `GenerationState(str, Enum)` for `GenerationStatus.status`
-  mirroring `ResearchStatus` (or a `Literal[...]` alias). If sealed types are ever
-  revisited, introduce them via parallel `poll_result()`/`wait_result()` APIs
-  rather than breaking the existing ones in place.
+  `GenerationStatus` with a sealed/discriminated result was evaluated and
+  **rejected**. The load-bearing overload it targeted — a synchronous
+  *couldn't-start* masquerading as `status="failed"` — was removed by Tier 1
+  (#1342 makes refusals raise), so a returned `failed` now means only
+  *started-then-failed*. The residual `not_found`/`removed`/rate-limit juggling
+  is poll-loop interpretation and adapter projection. The non-breaking follow-up
+  did land as `GenerationState(str, Enum)` for `GenerationStatus.status`,
+  mirroring `ResearchStatus`. If sealed types are ever revisited, introduce them
+  via parallel `poll_result()`/`wait_result()` APIs rather than breaking the
+  existing ones in place.
 
 Tier 1 + Tier 2 are required for 0.8.0; together they make this contract
 type/CI-enforced rather than review-enforced.

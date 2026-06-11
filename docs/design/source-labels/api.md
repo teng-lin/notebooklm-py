@@ -1,13 +1,16 @@
-# Source Labels — Proposed API Design
+# Source Labels — Historical API Design
 
-**Status:** Proposed (design only — not implemented)
-**Last Updated:** 2026-06-07 (**source removal added**: live capture confirmed `le8sX`
+**Status:** Historical design record — implemented in v0.8.0
+**Last Updated:** 2026-06-11 (current-state pass; the durable API, CLI, and RPC
+details are now in `docs/python-api.md`, `docs/cli-reference.md`,
+`docs/rpc-reference.md`, and `docs/stability.md`.)
+**Earlier (2026-06-07, source removal added):** live capture confirmed `le8sX`
 removes via the third fieldmask slot `sources_remove`, so the design now includes
 `labels.remove_sources()` + a `label remove` CLI command + a `remove_sources`
 idempotency variant `IDEMPOTENT_SET_OP`. Also confirmed **one source per le8sX
 call** — `add_sources`/`remove_sources` loop per id, and the prior multi-id add
-builder shape was corrected to singular. See `rpc.md` "Confirmed (2026-06-07)".)
-**Earlier (2026-06-07):** (AI-grouping primitive named `generate(scope="all"|"unlabeled")` — the UI's "Reorganize" verb — replacing the earlier `auto_label`; safe default `scope="unlabeled"`. RPCMethod names follow the enum convention — singular mutations `CREATE_LABEL` / `UPDATE_LABEL` / `DELETE_LABEL` (the multi-mode `CREATE_LABEL`, id `agX4Bc`, backs both `generate` and `create`), plural `LIST_LABELS`. Oracle/momus fix pass folded in: root re-exports of `Label`/`LabelError`/`LabelNotFoundError` from `notebooklm/__init__.py`; `delete()` idempotent-no-op contract and `rename()` emoji-preservation contract clarified; CLI confirm standardized on `--yes/-y`; `safe_index` wording softened for the `NOTEBOOKLM_STRICT_DECODE=0` opt-out.)
+builder shape was corrected to singular. See `rpc.md` "Confirmed (2026-06-07)".
+**Earlier (2026-06-07):** (AI-grouping primitive named `generate(scope="all"|"unlabeled")` — the UI's "Reorganize" verb — replacing the earlier `auto_label`; safe default `scope="unlabeled"`. RPCMethod names follow the enum convention — singular mutations `CREATE_LABEL` / `UPDATE_LABEL` / `DELETE_LABEL` (the multi-mode `CREATE_LABEL`, id `agX4Bc`, backs both `generate` and `create`), plural `LIST_LABELS`. Oracle/momus fix pass folded in: root re-exports of `Label`/`LabelError`/`LabelNotFoundError` from `notebooklm/__init__.py`; `delete()` idempotent-no-op contract and `rename()` emoji-preservation contract clarified; CLI confirm standardized on `--yes/-y`; row adapters fail loud on drift.)
 **Wire source of truth:** [`rpc.md`](./rpc.md) (reverse-engineered RPC capture)
 **Convention sources:** `docs/conventions.md`, `docs/python-api.md`,
 `docs/rpc-development.md`, the ADRs in `docs/adr/`, and the existing `SharingAPI`
@@ -19,9 +22,9 @@ strict drift parsing, return-contract on `return_object=False`, fresh options
 builder, complete export/test checklist) and adopts the **separate-facade**
 shape (no `kind`, no dual-membership object).
 
-This proposes source-labeling support for `notebooklm-py`, matching existing
-resource-API conventions, and designs forward-compat for **artifact labels**
-*without* changing the source-label public surface.
+This records the source-labeling support added to `notebooklm-py`, matching
+existing resource-API conventions, and documents forward-compat for **artifact
+labels** *without* changing the source-label public surface.
 
 ---
 
@@ -42,11 +45,9 @@ resource-API conventions, and designs forward-compat for **artifact labels**
    ADR-0013/0014 ("no capability promoted on speculation") (§10).
 4. **Centralize wire-shape knowledge & fail loud.** Positional payload/response
    knowledge lives in `_label/params.py` and `_row_adapters/labels.py`; the row
-   adapter is **strict by default** — descent via `safe_index` raises on schema
-   drift (ADR-0019/0011) rather than collapsing to sentinels. Under the ADR-0011
-   `NOTEBOOKLM_STRICT_DECODE=0` opt-out a drifted `sources` slot degrades to an
-   empty label — acceptable, and identical to every existing row adapter; **name
-   and id drift still raise** regardless of the opt-out.
+   adapter is strict-only — descent via `safe_index` raises on schema drift
+   (ADR-0019/0011) rather than collapsing to sentinels. The old soft-decode
+   opt-out was retired before this implementation shipped.
 5. **Honor observed semantics.** Source assignment is **append**, labels may
    **overlap** sources, and source **removal** is supported via the third
    `le8sX` fieldmask slot (`sources_remove`) even though the web UI never sends
@@ -59,7 +60,7 @@ resource-API conventions, and designs forward-compat for **artifact labels**
 
 ## 2. Wire → API mapping (source labels)
 
-| Wire RPC (rpc.md) | RPCMethod (proposed) | Public method(s) |
+| Wire RPC (rpc.md) | Live `RPCMethod` | Public method(s) |
 |---------------------|----------------------|------------------|
 | `agX4Bc` (scope `[]`/`[0]`) | `CREATE_LABEL` | `labels.generate(nb, scope=...)` |
 | `agX4Bc` (slot `[5]` manual) | `CREATE_LABEL` (same id) | `labels.create(nb, name, emoji="")` |
@@ -90,7 +91,7 @@ generically; the `at` CSRF token is injected by `encoder.py` for every write).
 
 ## 4. Idempotency registration (ADR-0005 — REQUIRED, hard CI gate)
 
-`docs/adr/0005`: *"every active `RPCMethod` is registered in
+`docs/adr/0005-idempotency-taxonomy.md`: *"every active `RPCMethod` is registered in
 `IDEMPOTENCY_REGISTRY`."* `tests/unit/test_idempotency_registry.py` iterates
 `for method in RPCMethod` and fails any member left `UNCLASSIFIED`. **The 4 new
 methods MUST be registered** in `src/notebooklm/_idempotency_policy.py`.
@@ -163,7 +164,7 @@ request-options wrapper is slot `[0]`, and `notebook_id` is in params (slot `[1]
 per call (no shared mutable wrapper — cf. `_settings.build_get_user_settings_params`).
 
 ```python
-from typing import Any
+from typing import Any, Literal
 
 
 def _opts() -> list[Any]:
@@ -285,14 +286,12 @@ class Label:
         )
 ```
 
-Row adapter `src/notebooklm/_row_adapters/labels.py` (new) — **strict by default**
-per ADR-0019/0011: descent uses `safe_index` (raises `UnknownRPCMethodError` on
+Row adapter `src/notebooklm/_row_adapters/labels.py` (new) — strict-only per
+ADR-0019/0011: descent uses `safe_index` (raises `UnknownRPCMethodError` on
 positional drift, like the mind-map accessors), and type drift raises too. A
 *legitimately* empty label (`sources` slot is `None`) is the only tolerated
-"absence" — it is not drift. Under the ADR-0011 `NOTEBOOKLM_STRICT_DECODE=0`
-opt-out a drifted `sources` slot degrades to an empty label — acceptable, and
-identical to every existing row adapter; **name and id drift still raise** even
-under the opt-out.
+"absence" — it is not drift. Malformed source rows, non-list source slots, and
+non-string name/id/emoji values raise.
 
 ```python
 from dataclasses import dataclass
@@ -331,9 +330,9 @@ class LabelRow:
         elif isinstance(sources, list):
             ids: list[str] = []
             for s in sources:
-                # Each member must be [source_id]. A malformed member is drift —
+                # Each member must be exactly [source_id]. A malformed member is drift —
                 # RAISE, never silently skip (ADR-0019/0011).
-                if not (isinstance(s, list) and s and isinstance(s[0], str)):
+                if not (isinstance(s, list) and len(s) == 1 and isinstance(s[0], str)):
                     raise UnknownRPCMethodError(
                         method_id=method_id, source=_SRC,
                         message="malformed label member row",
@@ -404,9 +403,9 @@ class LabelsAPI:
     """
 
     def __init__(self, rpc: RpcCaller, *, list_sources: ListSources):
-        """list_sources is `client.sources.list` (wired in client.py after the
+        """list_sources is `client.sources.list` (wired in `_client_assembly.py` after the
         SourcesAPI is constructed) — needed for the membership→Source join in
-        sources() and list(with_titles=...). Same client/bound loop, so no
+        sources(). Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""
         self._rpc = rpc
         self._list_sources = list_sources
@@ -516,18 +515,20 @@ async def add_sources(self, notebook_id, label_id, source_ids, *, return_object=
     Raises ValueError on an empty `source_ids` BEFORE issuing any RPC — an empty
     add is a no-op fieldmask and must fail loud, never round-trip to the wire.
 
-    ONE le8sX call PER source: the server honours only the first id of the add
+    ONE le8sX call PER unique source: the server honours only the first id of the add
     group per call (confirmed 2026-06-07), so a single multi-id call would
-    silently drop all but the first. The method therefore loops `len(source_ids)`
-    writes, then a contract-load-bearing preflight re-fetch (`get_or_none`) that
+    silently drop all but the first. The method therefore loops once per
+    order-preserved unique id, then a contract-load-bearing preflight re-fetch
+    (`get_or_none`) that
     backs the ADR-0019 return/not-found contract (`le8sX` echoes `[]`, carrying no
     label to return, and the existence check must raise on a missing label even
     when `return_object=False`). The final fetch is **NOT removable** — unlike
     `sources.rename`'s 1-RPC fast path, the label wire gives no return payload."""
     if not source_ids:
         raise ValueError("add_sources requires at least one source id")
-    logger.debug("Adding %d source(s) to label %s", len(source_ids), label_id)
-    for sid in source_ids:                     # one call per source (wire honours first id only)
+    unique_ids = list(dict.fromkeys(source_ids))
+    logger.debug("Adding %d source(s) to label %s", len(unique_ids), label_id)
+    for sid in unique_ids:                     # one call per unique source (wire honours first id only)
         await self._rpc.rpc_call(
             RPCMethod.UPDATE_LABEL,
             build_update_label_params(notebook_id, label_id, add_source_id=sid),
@@ -552,12 +553,13 @@ async def remove_sources(self, notebook_id, label_id, source_ids, *, return_obje
     last member leaves the label present but empty.
 
     Mirrors `add_sources`: ValueError on empty `source_ids` before any RPC; ONE
-    le8sX call PER source (first-id-only wire); a trailing `get_or_none` preflight
-    backing the ADR-0019 return/not-found contract."""
+    le8sX call PER unique source (first-id-only wire); a trailing `get_or_none`
+    preflight backing the ADR-0019 return/not-found contract."""
     if not source_ids:
         raise ValueError("remove_sources requires at least one source id")
-    logger.debug("Removing %d source(s) from label %s", len(source_ids), label_id)
-    for sid in source_ids:                     # one call per source (wire honours first id only)
+    unique_ids = list(dict.fromkeys(source_ids))
+    logger.debug("Removing %d source(s) from label %s", len(unique_ids), label_id)
+    for sid in unique_ids:                     # one call per unique source (wire honours first id only)
         await self._rpc.rpc_call(
             RPCMethod.UPDATE_LABEL,
             build_update_label_params(notebook_id, label_id, remove_source_id=sid),
@@ -617,13 +619,13 @@ class LabelNotFoundError(NotFoundError, RPCError, LabelError):
 
 ## 9. Client wiring & exports (ADR-0012/0017 — complete the promotion)
 
-- `src/notebooklm/client.py` — after `self.sources` is constructed (the
-  `list_sources` join needs it), next to `self.sharing = SharingAPI(...)`:
+- `src/notebooklm/_client_assembly.py` — after `client.sources` is constructed
+  (the `list_sources` join needs it), next to `client.sharing = SharingAPI(...)`:
   ```python
-  self.labels = LabelsAPI(internals.executor, list_sources=self.sources.list)
+  client.labels = LabelsAPI(internals.executor, list_sources=client.sources.list)
   ```
-  Add `labels` to the client class docstring's Attributes list. (Mirrors
-  `NotebooksAPI(internals.executor, sources_api=self.sources)`.)
+  `src/notebooklm/client.py` keeps the class annotation and Attributes docs.
+  (Mirrors `NotebooksAPI(internals.executor, sources_api=client.sources)`.)
 - `src/notebooklm/cli/__init__.py` + `cli/grouped.py` — register the `label`
   group: export it from `cli/__init__.py` (imported by `notebooklm_cli.py`) and
   add it to `SectionedGroup.command_groups` so the no-orphan help gate
@@ -728,8 +730,9 @@ per above, the source-label public surface does not move.
   survive (confirmed). No `set_sources` (full-replace) until the wire supports it.
 - **One source per le8sX call.** Both add and remove honour only the first id of
   their group per call (confirmed 2026-06-07), so `add_sources`/`remove_sources`
-  loop one call per id. A combined add+remove in one call dropped the add — the
-  API never sends both groups together.
+  loop one call per unique id after order-preserving dedupe. A combined
+  add+remove in one call dropped the add — the API never sends both groups
+  together.
 - **Overlap allowed.** A source can be in multiple labels; `add_sources` never
   removes from other labels, and `remove_sources` only touches the target label.
 - **Source removal IS supported (confirmed 2026-06-07).** `remove_sources` writes
@@ -754,8 +757,9 @@ manages the entity; the high-value agent affordances are **discovering** groups,
 > Console script is **`notebooklm`** (`pyproject.toml [project.scripts]`); examples
 > use it. ADR-0008: Click commands are thin shells — `parse → build_plan →
 > execute_plan(plan, facade) → render`. The label join + resolver logic lives in
-> a service module `src/notebooklm/cli/services/label_listing.py`, not in
-> `label_cmd.py`.
+> `_app/labels.py` (transport-neutral workflows/resolver) plus
+> `src/notebooklm/cli/services/label_listing.py` (the CLI members-to-titles join),
+> not in `label_cmd.py`.
 
 ### `label` command group
 
@@ -793,34 +797,28 @@ A label is a saved filter, so source *reads* accept `--label`:
 notebooklm source list --label <id|name> [--json]               # sources in the group
 ```
 
-`source list` has **no post-fetch filter hook today** (`prepare_list` only slices
-by `limit`). Implementation: add a `label_filter` field to `SourceListPlan`,
-resolve it to `source_ids` in `execute_source_list`
-(`cli/services/source_listing.py`), and intersect before render — **not** in the
-renderer. **Read-only** selector; reuses `client.labels.sources()` for the
-expansion.
+`source list` applies the filter inside the fetch path, before `prepare_list`
+counts and slices. `cli/services/source_listing.py` builds the `ListSpec`, while
+the transport-neutral `_app.source_listing.fetch_sources()` resolves the label
+and returns `client.labels.sources(notebook_id, label_id)` directly. **Read-only**
+selector; no post-render filtering.
 
 ### Name-or-id resolution (decision 2)
 
 `<id|name>` and `--label` accept a label **id** (or partial prefix) **or** a
 **name**. This is a **new composite resolver** (`resolve_label_id()` in
-`cli/services/label_listing.py`) over `client.labels.list()` — it is **not** a
+`_app/labels.py`, re-exported from `cli/services/label_listing.py`) over
+`client.labels.list()` — it is **not** a
 mirror of `resolve_source_id`/`resolve_notebook_id`, which are **id/prefix-only**
-(names appear only in their diagnostics). It combines two existing precedents:
-- the id/prefix half = `resolve_partial_id_in_items` (`cli/resolve.py`);
-- the exact-name half = `resolve_source_by_exact_title`
-  (`cli/services/source_mutations.py`), which raises `AMBIGUOUS_TITLE` listing
-  candidates.
+(names appear only in their diagnostics). The resolver is self-contained rather
+than delegating to `resolve_partial_id_in_items`.
 
-Resolution order: **try id/prefix match first** — full-id passthrough is **disabled**
-(`allow_full_id_passthrough=False`), so even a full-UUID-shaped input is matched against
-actual label ids, never blindly accepted; this guards a label *name* that looks like a
-UUID — **then exact name** (a UUID-shaped *name* is found by the name pass after the id
-pass finds nothing). On
-a name matching **>1** label → **error listing candidates** (id + emoji + source
-count), never guess. The error routes through the ADR-0015 typed `--json`
-envelope (like `source_cmd`'s `_handle_source_mutation_error`); plain mode exits
-non-zero.
+Resolution order: exact id, then unambiguous id prefix, then exact name. An
+ambiguous prefix raises `AMBIGUOUS_ID` before the name fallback; an ambiguous name
+raises `AMBIGUOUS_NAME`. Both errors list candidate ids with emoji and source
+count. Full-id passthrough is disabled, so a UUID-shaped *name* is found by the
+name pass after the id pass finds nothing. The error routes through the ADR-0015
+typed `--json` envelope; plain mode exits non-zero.
 
 ### No by-label mutation in v1 (decision 3)
 
@@ -854,8 +852,12 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
   payload to `label list`); acceptable absent a batch-get-by-id endpoint.
 - `label sources` / `source list --label` give the agent the group-as-collection
   primitive (both via `client.labels.sources()`); per-source ops compose from there.
-- All `--json` output uses the `{<items_key>: [...], "count": N}` envelope and
-  stable ids; destructive ops (`generate --scope all`, `delete`) require `--yes`/confirm.
+- List-style `--json` output uses the `{<items_key>: [...], "count": N}` envelope
+  and stable ids. Mutation outputs are single-object command envelopes: create /
+  rename / emoji return `{notebook_id, id, name, emoji, source_ids}`, add/remove
+  also echo `added_source_ids` / `removed_source_ids`, and delete returns
+  `{notebook_id, label_ids, deleted}`. Destructive ops (`generate --scope all`,
+  `delete`) require `--yes`/confirm.
 
 ---
 
@@ -867,18 +869,21 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
 4. `_label/params.py` — builders w/ `_opts()` (§5).
 5. `_row_adapters/labels.py` — strict `LabelRow` via `safe_index` (§6).
 6. `_labels.py` — `LabelsAPI(rpc, *, list_sources)`, incl. read-only `sources()`,
-   `add_sources`/`remove_sources` (both loop one call per source) (§7).
+   `add_sources`/`remove_sources` (both loop one call per unique source) (§7).
 7. `exceptions.py` — `LabelError`, `LabelNotFoundError` + `__all__` + `NotFoundError` doc (§8).
-8. `client.py` — `self.labels = LabelsAPI(internals.executor, list_sources=self.sources.list)`
-   (after `self.sources`) + docstring (§9). (`_labels.py`/`LabelsAPI` stay private;
+8. `_client_assembly.py` — `client.labels = LabelsAPI(internals.executor,
+   list_sources=client.sources.list)` (after `client.sources`) plus the
+   `client.py` annotation/docstring (§9). (`_labels.py`/`LabelsAPI` stay private;
    **not** in root `__all__`.)
 8b. `__init__.py` — root-re-export `Label`, `LabelError`, `LabelNotFoundError` in
    the import block **and** `__all__` (mirrors Source/Note dataclasses + their
    exceptions); also add the 3 to `_DOCUMENTED_PUBLIC_IMPORTS` if that manifest
    list is edited (§9, A1). (`LabelsAPI` excepted — stays private.)
 9. `scripts/audit_public_api_compat.py` — add `"labels"` to `CLIENT_NAMESPACE_ATTRIBUTES` (§9).
-10. `cli/services/label_listing.py` — the join (members→titles) + composite
-    `resolve_label_id()` (id/prefix OR exact-name, ambiguity error) (§12, ADR-0008).
+10. `_app/labels.py` — transport-neutral label workflows + composite
+    `resolve_label_id()` (id/prefix OR exact-name, ambiguity error);
+    `cli/services/label_listing.py` keeps the members→titles join and re-exports
+    the resolver (§12, ADR-0008/0021).
 11. `cli/label_cmd.py` (thin shell; `sources` via `client.labels.sources()`;
     `label add`/`label remove` ids via `resolve_source_ids`); export from
     `cli/__init__.py`; bin in `cli/grouped.py` `command_groups`. Add `label_filter`
@@ -937,11 +942,14 @@ partial-failure report — never as a `label` verb. Purely additive; deferred.
   a committed-then-retried delete is proven to no-op on the wire, then downgrade
   to `IDEMPOTENT_SET_OP`. This open item is axis (2) only.
 - **`add_sources` dedup-on-retry** — unverified; hence `NON_IDEMPOTENT_NO_RETRY`.
-- **Name-only update emoji effect** — whether a length-1 `name_emoji` (`[name]`)
-  preserves vs clears an existing emoji is uncaptured (§5); verify before
-  documenting `update(name=...)` as emoji-preserving.
-- **`create` echo** — confirm locating the new label in the returned full set
-  (match on the id not present pre-call rather than by name).
+- **Name-only wire update emoji effect** — whether a raw length-1 `name_emoji`
+  (`[name]`) preserves vs clears an existing emoji is uncaptured (§5). The public
+  `LabelsAPI.update(name=...)` / `rename()` surface already preserves emoji by
+  prefetching the current label and sending `[name, current_emoji]`.
+- ~~**`create` echo**~~ — resolved in the shipped API. `LabelsAPI.create()` takes
+  a pre-call `LIST_LABELS` snapshot, calls `CREATE_LABEL`, then returns the single
+  new id from the echoed full label set; zero or multiple new ids raise
+  `LabelError`.
 - ~~**Source removal from a label**~~ — **RESOLVED 2026-06-07.** `le8sX` removes
   via the third fieldmask slot (`sources_remove`); `remove_sources` ships it (§7,
   §11). Residual: combined add+remove in one call dropped the add (the API never

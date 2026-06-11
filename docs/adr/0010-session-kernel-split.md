@@ -1,16 +1,17 @@
 # ADR-0010: Session/Kernel split
 
-> **Current state (2026-05).** This ADR is **Superseded** (by
+> **Current state (2026-06).** This ADR is **Superseded** (by
 > [ADR-0013](0013-composable-session-capabilities.md), then
 > [ADR-0014](0014-feature-local-runtime-adapters.md)) and documents a transient
 > tier-13 shape for historical context only. Since it was written, the broad
 > `Session: Protocol` was **deleted**, `_session_contracts.py` was **renamed
-> to `_runtime_contracts.py`**, and the feature-local composite Protocols
-> `ChatRuntime` and `ArtifactsRuntime` were **retired** (feature APIs now take
-> their narrow collaborators by keyword-only constructor argument). The live
-> shared capability Protocols are `RpcCaller`, `LoopGuard`,
-> `OperationScopeProvider`, and `AsyncWorkRuntime` (plus `AuthMetadata` and
-> `Kernel`) in `_runtime_contracts.py`; drain-hook registration is the
+> to `src/notebooklm/_runtime/contracts.py`**, and the feature-local composite
+> Protocols `ChatRuntime` and `ArtifactsRuntime` were **retired** (feature APIs
+> now take their narrow collaborators by keyword-only constructor argument).
+> The live shared capability Protocols are `Kernel`, `RpcCaller`, and
+> `LoopGuard` in `_runtime/contracts.py`; single-consumer seams such as
+> upload auth metadata and artifact polling scope live in their owning feature
+> modules, and the old `AsyncWorkRuntime` composite was deleted. Drain-hook registration is the
 > `register_drain_hook(...)` method on `TransportDrainTracker` in
 > `_transport_drain.py`. Read in-body references to `Session`,
 > `_session_contracts.py`, `_capabilities.py`, `ChatRuntime`,

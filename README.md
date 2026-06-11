@@ -35,12 +35,14 @@
 
 📥 **Downloads & Export** - Download all generated artifacts locally (MP3, MP4, PDF, PNG, CSV, JSON, Markdown). Export to Google Docs/Sheets. **Features the web UI doesn't offer**: batch downloads, quiz/flashcard export in multiple formats, mind map JSON extraction.
 
-## Three Ways to Use
+## Ways to Use
 
 | Method | Best For |
 |--------|----------|
 | **Python API** | Application integration, async workflows, custom pipelines |
 | **CLI** | Shell scripts, quick tasks, CI/CD automation |
+| **MCP Server** | Exposing NotebookLM tools to Claude Desktop/Code, Cursor, Windsurf, and other MCP clients |
+| **REST Server** | Local automation over guarded HTTP routes without spawning a CLI process per call |
 | **Agent Integration** | Claude Code, Codex, LLM agents, natural language automation |
 
 ## Features
@@ -52,6 +54,8 @@
 | **Notebooks** | Create, list, rename, delete |
 | **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, EPUB, audio, video, images), Google Drive, pasted text; refresh, get guide/fulltext |
 | **Chat** | Questions, conversation history, custom personas |
+| **Notes** | Create, list, rename, delete, save chat answers, save conversation history |
+| **Source Labels** | AI-generated or manual topic labels; add/remove source membership; filter sources by label |
 | **Research** | Web and Drive research agents (fast/deep modes) with auto-import |
 | **Sharing** | Public/private links, user permissions (viewer/editor), view level control |
 
@@ -248,6 +252,8 @@ Fetches the canonical [SKILL.md](SKILL.md) directly from GitHub.
 
 - **[CLI Reference](docs/cli-reference.md)** - Complete command documentation
 - **[Python API](docs/python-api.md)** - Full API reference
+- **[MCP Guide](docs/mcp-guide.md)** - MCP server setup, transports, and tool reference
+- **[REST API Server](docs/installation.md#rest-api-server)** - Experimental localhost FastAPI server
 - **[Configuration](docs/configuration.md)** - Storage and settings
 - **[Release Guide](docs/releasing.md)** - Release checklist and packaging verification
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions

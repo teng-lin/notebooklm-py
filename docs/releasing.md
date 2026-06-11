@@ -56,7 +56,8 @@ Proceed with release preparation?
   ```
 - [ ] Set up the development environment:
   ```bash
-  # `[all]` excludes the cookies extra (Python 3.13+ rookiepy issue) — see docs/installation.md#all-vs-all-extras
+  # Canonical contributor install; `[all]` expands to browser+dev+markdown+mcp+server
+  # and deliberately excludes cookies (Python 3.13+ rookiepy issue).
   uv sync --frozen --extra browser --extra dev --extra markdown
   uv run playwright install chromium
   ```
@@ -189,8 +190,9 @@ no break against the baseline) is a CI failure, not silent cruft.
   ```bash
   uv run python scripts/check_ci_install_parity.py
   uv run python scripts/check_claude_md_freshness.py
+  uv run python scripts/check_docs_module_refs.py
   # second run confirms release edits did not introduce new API drift
-  uv run python scripts/audit_public_api_compat.py
+  uv run python scripts/audit_public_api_compat.py --check-stale
   ```
 - [ ] Fix any issues before proceeding
 
@@ -280,7 +282,7 @@ no break against the baseline) is a CI failure, not silent cruft.
 
 The **Verify Package** workflow (`.github/workflows/verify-package.yml`) exercises a published wheel in two phases so packaging bugs cannot silently fall through to a stale PyPI mirror:
 
-1. **Dep tree from `uv.lock`.** `uv sync --frozen --extra browser --extra dev --extra markdown` installs every locked dep into `.venv/` — the same canonical extras documented in `docs/installation.md`. This produces a deterministic dep tree without any TestPyPI lookups.
+1. **Dep tree from `uv.lock`.** `uv sync --frozen --extra browser --extra dev --extra markdown` installs the locked dependency tree for those selected extras into `.venv/` — the same canonical contributor extras documented in `docs/installation.md`. Other optional extras (`cookies`, `mcp`, `server`) are covered by their own install/test paths. This produces a deterministic dep tree without any TestPyPI lookups.
 2. **Wheel from the chosen index, `--no-deps`.** `uv pip install --python .venv/bin/python --no-deps --reinstall --no-cache --only-binary=:all: --index-url <testpypi|pypi> "notebooklm-py==<version>"` swaps the editable install left behind by `uv sync` for the actual published wheel. `--no-deps` is load-bearing: without it the previous `--extra-index-url https://pypi.org/simple/` fallback would mask a broken/missing TestPyPI upload by resolving an older version from PyPI. `--reinstall --no-cache --only-binary=:all:` guarantee we test the freshly-uploaded wheel and never a cached sdist. The explicit `--python .venv/bin/python` is required because `uv sync` does not seed `pip` into the project venv — a bare `source .venv/bin/activate && pip install …` would silently fall back to the runner's system pip and leave the editable install in place.
 
 The same chain runs for `source: pypi` (post-publish verification) — only the wheel index changes; the locked dep tree is identical.

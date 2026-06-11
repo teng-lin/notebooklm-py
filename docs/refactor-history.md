@@ -3,15 +3,15 @@
 > **Status:** Shipped in v0.5.0.
 > **Current runtime shape:** [`docs/architecture.md`](architecture.md).
 > **Ratifying decision:** [ADR-0013 — composable session capabilities](adr/0013-composable-session-capabilities.md), which supersedes [ADR-0010 — Session/Kernel split](adr/0010-session-kernel-split.md).
-> **Last updated:** 2026-05-21
+> **Last updated:** 2026-06-11
 
 > **⚠️ Superseded in part by [ADR-0014](adr/0014-feature-local-runtime-adapters.md).**
-> A later refactor removed the `Session` facade class entirely and renamed the
-> `_session_*` home modules to `_runtime_*` (`_session_contracts` →
-> `_runtime_contracts`, `_session_auth` → `_runtime_auth`, `_session_lifecycle`
-> → `_runtime_lifecycle`, `_session_config` → `_runtime_config`,
-> `_session_helpers` → `_runtime_helpers`). The module names in the tables below
-> are the **v0.5.0 as-shipped** names, not the current tree — see
+> Later refactors removed the `Session` facade class entirely and then promoted
+> the flat `_session_*` / `_runtime_*` helpers into the current package homes:
+> `_runtime/contracts.py`, `_runtime/auth.py`, `_runtime/lifecycle.py`,
+> `_runtime/config.py`, `_runtime/helpers.py`, `_runtime/transport.py`,
+> `_runtime/init.py`, and `_middleware/*`. The module names in the migration
+> tables below are the **v0.5.0 as-shipped** names, not the current tree — see
 > [`docs/architecture.md`](architecture.md) for the current module map.
 
 This document is the historical record of the Tier 12 / Tier 13 refactor arc.
@@ -44,8 +44,9 @@ restructured the **private** core layer of `notebooklm-py`:
   orchestrator) and `Kernel` (the pure transport core — owns the
   `httpx.AsyncClient` and the cookie jar). It also renamed every
   `_core_*` module out of the legacy `_core` namespace into final
-  homes (`_session_auth`, `_session_lifecycle`, `_request_types`,
-  `_transport_errors`, `_streaming_post`, `_rpc_executor`, and so on).
+  homes that later consolidated under `_runtime/`, `_middleware/`, `_chat/`,
+  `_request_types`, `_transport_errors`, `_streaming_post`, `_rpc_executor`,
+  and so on.
 - The **capability refactor** that followed (ADR-0013) replaced the
   broad `Session` Protocol that Tier 13 originally shipped with a
   composable set of narrow capability Protocols
@@ -54,6 +55,10 @@ restructured the **private** core layer of `notebooklm-py`:
   (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`). Feature APIs
   now depend on the narrowest slice of capability they actually use,
   not on the orchestrator class.
+  Later ADR-0014/#1327 cleanup tightened this further: the current code
+  passes each concrete collaborator directly, keeps `AuthMetadata` and
+  `OperationScopeProvider` local to their only consumers, and leaves only
+  `Kernel`, `RpcCaller`, and `LoopGuard` in `_runtime/contracts.py`.
 
 The public `NotebookLMClient` API — `client.notebooks.*`,
 `client.sources.*`, `client.chat.*`, `client.artifacts.*`, and
@@ -71,16 +76,17 @@ return type:
 from notebooklm import NotebookLMClient, AuthTokens
 from notebooklm.rpc import RPCMethod
 
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     notebooks = await client.notebooks.list()
     await client.sources.add_url(notebook_id, url)
     result = await client.chat.ask(notebook_id, question)
     status = await client.artifacts.generate_audio(notebook_id)
 ```
 
-The one additive surface change: `client.chat.save_answer_as_note(...)`
-is new. `client.notes.create_from_chat(...)` continues to work but
-emits a `DeprecationWarning` and forwards to the chat-owned workflow.
+One additive surface from this arc was
+`client.chat.save_answer_as_note(...)`, which is now the canonical
+citation-rich saved-from-chat workflow. The transitional
+`client.notes.create_from_chat(...)` forwarder was removed in v0.7.0.
 
 See [`docs/stability.md`](stability.md) for the public stability
 contract.
@@ -96,19 +102,19 @@ imported them during Tier 11 or earlier.
 
 - The `notebooklm._core` compatibility shim and the
   `NotebookLMClient._core` attribute alias were both deleted in
-  Phase 4 (#889). Downstream code and tests must import from
-  `notebooklm._session` or the other final modules directly.
+  Phase 4 (#889). Downstream code and tests must import from the
+  current owning modules documented in `docs/architecture.md`.
 - Prefer the public surface — `notebooklm.NotebookLMClient`,
   `notebooklm.AuthTokens`, `notebooklm.rpc.RPCMethod`, and the
   types / exceptions re-exported from the top-level package.
 - Feature APIs (`NotebooksAPI`, `SourcesAPI`, `ArtifactsAPI`,
-  `ChatAPI`, `ResearchAPI`, `NotesAPI`, `SharingAPI`, `SettingsAPI`)
+  `ChatAPI`, `ResearchAPI`, `NotesAPI`, `MindMapsAPI`, `SharingAPI`,
+  `SettingsAPI`, `LabelsAPI`)
   depend on the **narrow capability Protocols** in
-  `notebooklm._session_contracts` (`RpcCaller`, `LoopGuard`,
-  `OperationScopeProvider`, `AsyncWorkRuntime`) or on feature-local
-  runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`,
-  `UploadRuntime`) defined in their owning modules — not on the
-  concrete `Session` class and not on a broad `Session` Protocol.
+  `notebooklm._runtime.contracts` (`Kernel`, `RpcCaller`,
+  `LoopGuard`) or on single-consumer Protocols defined in their owning
+  modules — not on the deleted concrete `Session` class and not on a
+  broad `Session` Protocol.
 
 #### Renamed modules
 
@@ -119,14 +125,14 @@ right:
 
 | Tier 12 path | Tier 13 path |
 |---|---|
-| `notebooklm._core_auth` | `notebooklm._session_auth` |
+| `notebooklm._core_auth` | `notebooklm._runtime.auth` |
 | `notebooklm._core_cache` | `notebooklm._conversation_cache` |
-| `notebooklm._core_constants` | `notebooklm._session_config` |
+| `notebooklm._core_constants` | `notebooklm._runtime.config` |
 | `notebooklm._core_cookie_persistence` | `notebooklm._cookie_persistence` |
 | `notebooklm._core_drain` | `notebooklm._transport_drain` |
 | `notebooklm._core_error_injection` | `notebooklm._error_injection` |
-| `notebooklm._core_helpers` | `notebooklm._session_helpers` |
-| `notebooklm._core_lifecycle` | `notebooklm._session_lifecycle` |
+| `notebooklm._core_helpers` | `notebooklm._runtime.helpers` |
+| `notebooklm._core_lifecycle` | `notebooklm._runtime.lifecycle` |
 | `notebooklm._core_metrics` | `notebooklm._client_metrics` |
 | `notebooklm._core_polling` | `notebooklm._polling_registry` |
 | `notebooklm._core_reqid` | `notebooklm._reqid_counter` |
@@ -143,18 +149,18 @@ not change, only their home module did.
 
 | Tier 12 symbol | Tier 13 home | Notes |
 |---|---|---|
-| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` was retired. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-0013. |
+| `notebooklm._core.ClientCore` (class) | Direct collaborators + `notebooklm._runtime.contracts` | `ClientCore` was retired. Feature APIs accept direct collaborators or the narrow shared Protocols in `notebooklm._runtime.contracts` (`Kernel`, `RpcCaller`, `LoopGuard`); the broad `Session` Protocol and `_session_contracts` module were retired — see ADR-0013. |
 | `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._transport_errors.MAX_RETRY_AFTER_SECONDS` | No longer re-exported via `_session` or `_core`. |
-| `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._session_config.DEFAULT_*` | |
-| `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._session_helpers` | |
+| `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._runtime.config.DEFAULT_*` | |
+| `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._runtime.helpers` | |
 | `notebooklm._core.ERROR_INJECT_ENV_VAR` | `notebooklm._error_injection.ERROR_INJECT_ENV_VAR` | |
-| `notebooklm._core._SyntheticErrorTransport` (class) | _Removed_ | Synthetic-error substitution moved into `notebooklm._middleware_error_injection.ErrorInjectionMiddleware` in Tier 12 PR 12.6. The env-var resolver (`_get_error_injection_mode`) and startup guard (`_refuse_synthetic_error_outside_test_context`) survive in `notebooklm._error_injection`. |
-| `notebooklm._core.AuthRefreshCoordinator` | `notebooklm._session_auth.AuthRefreshCoordinator` | Class unchanged; only the home module moved. |
+| `notebooklm._core._SyntheticErrorTransport` (class) | _Removed_ | Synthetic-error substitution moved into `notebooklm._middleware.error_injection.ErrorInjectionMiddleware`. The env-var resolver (`_get_error_injection_mode`) and startup guard (`_refuse_synthetic_error_outside_test_context`) survive in `notebooklm._error_injection`. |
+| `notebooklm._core.AuthRefreshCoordinator` | `notebooklm._runtime.auth.AuthRefreshCoordinator` | Class unchanged; only the home module moved. |
 | `notebooklm._core.TransportDrainTracker` | `notebooklm._transport_drain.TransportDrainTracker` | Same. |
 | `notebooklm._core.ClientMetrics` | `notebooklm._client_metrics.ClientMetrics` | Same. |
 | `notebooklm._core.ReqidCounter` | `notebooklm._reqid_counter.ReqidCounter` | Same. |
 | `notebooklm._core.CookiePersistence` | `notebooklm._cookie_persistence.CookiePersistence` | Same. |
-| `notebooklm._core.ClientLifecycle` | `notebooklm._session_lifecycle.ClientLifecycle` | Same. |
+| `notebooklm._core.ClientLifecycle` | `notebooklm._runtime.lifecycle.ClientLifecycle` | Same. |
 | `notebooklm._core.RpcExecutor` | `notebooklm._rpc_executor.RpcExecutor` | Same. |
 | `notebooklm._core` authed transport helpers | `notebooklm._request_types` + `notebooklm._transport_errors` + `notebooklm._streaming_post` | The interim authed-transport Adapter and catch-all helper module were retired; request types, transport errors, and streaming POST behavior now have separate owning modules. |
 
@@ -164,17 +170,17 @@ These modules did not exist before Tier 12 began:
 
 | Module | Purpose |
 |---|---|
-| `notebooklm._session_contracts` | `AuthMetadata`, `Kernel`, and the four shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-0013). The originally-shipped broad `Session` Protocol and the standalone `DrainHookRegistration` Protocol were deleted in the final phase. The follow-up feature-local composite-runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses introduced in their owning feature modules were retired once it was clear they only hid three stable collaborators with one production satisfier; feature constructors take their three runtime collaborators (`rpc` + `drain` + `lifecycle`) directly. |
+| `notebooklm._session_contracts` | Historical v0.5.0 home for `AuthMetadata`, `Kernel`, and the shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-0013). Current home: `notebooklm._runtime.contracts`, exporting only `Kernel`, `RpcCaller`, and `LoopGuard`; `AuthMetadata` is local to `_source/upload.py`, `OperationScopeProvider` is local to `_artifact/polling.py`, and `AsyncWorkRuntime` was deleted. |
 | `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Located at root (`src/notebooklm/_kernel.py`), not nested. |
 | `notebooklm._middleware` | Middleware chain primitives (`Middleware` Protocol, `NextCall` callable type, `RpcRequest` / `RpcResponse` envelope dataclasses, `build_chain` composer). |
 | `notebooklm._middleware_tracing` | Tier 12 PR 12.3 — request tracing middleware. |
 | `notebooklm._middleware_metrics` | Tier 12 PR 12.4 — metrics collection middleware. |
 | `notebooklm._middleware_drain` | Tier 12 PR 12.5 — drain bookkeeping middleware. |
-| `notebooklm._middleware_error_injection` | Tier 12 PR 12.6 — test-only error-injection middleware. |
+| `notebooklm._middleware.error_injection` | Test-only error-injection middleware. |
 | `notebooklm._middleware_retry` | Tier 12 PR 12.7 — 429 / 5xx retry middleware. |
 | `notebooklm._middleware_auth_refresh` | Tier 12 PR 12.8 — auth-refresh-on-401 middleware. |
 | `notebooklm._middleware_semaphore` | Tier 12 PR 12.9 — global RPC concurrency cap. |
-| `notebooklm._chat_transport` | Chat-domain consumer-side error mapping over the shared authed POST pipeline. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
+| `notebooklm._chat.transport` | Chat-domain consumer-side error mapping over the shared authed POST pipeline. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
 | `notebooklm._transport_errors` | Terminal `Kernel.post` error mapping into transport exceptions consumed by retry/auth middleware. |
 | `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction: `AuthSnapshot`, `BuildRequest`, `PostBody`, and `BuildRequestResult`. |
 | `notebooklm._streaming_post` | Size-capped streaming POST helper used by `Kernel.post`. |
@@ -183,8 +189,8 @@ These modules did not exist before Tier 12 began:
 
 | Symbol or default | Replacement / new behavior |
 |---|---|
-| `notebooklm._core._SyntheticErrorTransport` (deleted) | `notebooklm._middleware_error_injection.ErrorInjectionMiddleware` (chain-resident; mode is still resolved from `NOTEBOOKLM_VCR_RECORD_ERRORS` via `_error_injection._get_error_injection_mode`). |
-| Strict-decode opt-in (changed default) | `NOTEBOOKLM_STRICT_DECODE` now defaults to `1` (flipped in Tier 13 PR 13.9a). Set it to `0` to restore the legacy lenient decode. See [ADR-0011](adr/0011-schema-validation-policy.md). |
+| `notebooklm._core._SyntheticErrorTransport` (deleted) | `notebooklm._middleware.error_injection.ErrorInjectionMiddleware` (chain-resident; mode is still resolved from `NOTEBOOKLM_VCR_RECORD_ERRORS` via `_error_injection._get_error_injection_mode`). |
+| Strict-decode soft mode | Strict decoding is now the only mode. The legacy lenient opt-out was removed in v0.7.0; setting old lenient-decode environment toggles no longer restores legacy behavior. See [ADR-0011](adr/0011-schema-validation-policy.md). |
 
 ## Design intent
 
@@ -215,13 +221,14 @@ runtime slices.
 
 The capability model is built on six rules:
 
-1. Promote a capability to `_session_contracts.py` only when it is
-   shared by more than one feature or service.
+1. Promote a capability to `_runtime/contracts.py` only when it is
+   shared by more than one feature or service, except for `Kernel`,
+   which is the typed transport surface of the concrete client-owned
+   kernel.
 2. Keep single-feature runtime needs local to the owning feature
    module.
-3. Concrete `_session.Session` may still implement many methods and
-   properties, but feature-facing Protocols must not advertise
-   unrelated capabilities.
+3. Feature-facing Protocols must not advertise unrelated capabilities
+   from a broad host object.
 4. Prefer feature-owned collaborators over widening shared session
    contracts.
 5. Remove old `core` vocabulary from touched feature APIs.
@@ -231,8 +238,8 @@ The capability model is built on six rules:
 
 ### Shared capability Protocols
 
-`src/notebooklm/_session_contracts.py` ended up containing only
-shared capability Protocols:
+`src/notebooklm/_session_contracts.py` originally ended up containing
+only shared capability Protocols:
 
 ```python
 class RpcCaller(Protocol):
@@ -261,24 +268,30 @@ class AsyncWorkRuntime(LoopGuard, OperationScopeProvider, Protocol):
     """Runtime support for feature-owned async work."""
 ```
 
+Current code has tightened that further: `_runtime/contracts.py`
+exports `Kernel`, `RpcCaller`, and `LoopGuard`; `OperationScopeProvider`
+is local to `_artifact/polling.py`; `AuthMetadata` is local to
+`_source/upload.py`; `AsyncWorkRuntime` was removed.
+
 The following were **not** globally promoted:
 
 - `auth`, `kernel`, `transport_post(...)`, `next_reqid(...)` —
   needed only by uploads and chat respectively. They live on the
   concrete `Session` and on feature-local runtimes that consume
   them, not on a shared Protocol.
-- `register_drain_hook(...)` — moved to a `DrainHookRegistration`
-  Protocol local to `_artifacts.py`, since artifact polling is the
-  only behavior that registers close-time feature cleanup.
+- `register_drain_hook(...)` — kept on the concrete drain collaborator
+  passed into `ArtifactsAPI`, since artifact polling is the only behavior
+  that registers close-time feature cleanup.
 
 ### Feature-local runtimes
 
-Where a feature needed a specialised slice of runtime capability,
-that slice was declared as a Protocol in the feature's own module:
+For part of the migration, features that needed a specialised slice of
+runtime capability declared that slice as a Protocol in the feature's
+own module:
 
 - `ChatRuntime` in `_chat.py` — `RpcCaller + LoopGuard +
   transport_post + next_reqid`. `transport_post` is consumed via
-  `chat_aware_authed_post(...)` in `_chat_transport.py`.
+  `chat_aware_authed_post(...)` in `_chat/transport.py`.
 - `ArtifactsRuntime` in `_artifacts.py` — `RpcCaller +
   AsyncWorkRuntime + DrainHookRegistration`. Artifact polling owns
   the only close-time cleanup hook in the codebase today.
@@ -290,8 +303,15 @@ that slice was declared as a Protocol in the feature's own module:
 
 If a future feature ever needs the same local slice that another
 feature has carved out, the rule is: promote the Protocol to
-`_session_contracts.py` only when there is a real second consumer,
+`_runtime/contracts.py` only when there is a real second consumer,
 not on speculation.
+
+Those composite runtime Protocols were later removed. Current
+constructors take the direct collaborators they need by keyword:
+`ArtifactsAPI(rpc=..., drain=..., lifecycle=...)`,
+`ChatAPI(rpc=..., transport=..., reqid=..., loop_guard=...)`, and
+`SourceUploadPipeline(rpc=..., drain=..., lifecycle=..., kernel=...,
+auth=...)`.
 
 ### Note / mind-map service split
 
@@ -319,11 +339,9 @@ These were factored apart:
   `NotesAPI.list_mind_maps(...)` and `NotesAPI.delete_mind_map(...)`
   forward through this service, preserving their public signatures.
 - **Saved-from-chat note encoding** moved out of `_mind_map.py` and
-  into `_chat_notes.py`, where `ChatAPI.save_answer_as_note(...)`
-  owns the workflow. `NotesAPI.create_from_chat(...)` survives as a
-  deprecated forwarder that emits a `DeprecationWarning` and
-  delegates to `ChatAPI.save_answer_as_note(...)` via an injected
-  callback.
+  into `_chat/notes.py`, where `ChatAPI.save_answer_as_note(...)`
+  owns the workflow. `NotesAPI.create_from_chat(...)` was a deprecated
+  forwarder during the migration window and was removed in v0.7.0.
 
 `NoteRowKind` stays private — it is an internal classification of
 rows returned by the undocumented `GET_NOTES_AND_MIND_MAPS` RPC, not
@@ -335,7 +353,8 @@ Feature APIs adopted consistent dependency-naming conventions:
 
 - Pure-RPC features store `self._rpc`. Constructor parameter is
   named `rpc: RpcCaller`.
-- Features with composite runtime needs store `self._runtime`.
+- Features with multiple runtime needs take direct keyword-only
+  collaborators and store only the fields they use.
 - The old `self._core` vocabulary was removed from every touched
   feature module.
 - Extra collaborators are keyword-only:
@@ -343,17 +362,21 @@ Feature APIs adopted consistent dependency-naming conventions:
 ```python
 SourcesAPI(rpc, *, uploader=source_uploader)
 NotebooksAPI(rpc, *, sources_api=sources)
-ChatAPI(runtime, *, notebooks=notebooks)
-ArtifactsAPI(runtime, *, notebooks=notebooks, mind_maps=mind_maps,
+ChatAPI(rpc=rpc, transport=transport, reqid=reqid, loop_guard=lifecycle,
+        notebooks=notebooks)
+ArtifactsAPI(rpc=rpc, drain=drain, lifecycle=lifecycle,
+             notebooks=notebooks, mind_maps=mind_maps,
              note_service=note_service)
-NotesAPI(*, notes=note_service, mind_maps=mind_maps,
-         save_chat_answer=...)
+NotesAPI(*, notes=note_service, mind_maps=mind_maps)
+MindMapsAPI(rpc=rpc, mind_maps=mind_maps, artifacts=artifacts,
+            notebooks=notebooks)
+LabelsAPI(rpc, list_sources=sources.list)
 ```
 
 Compatibility aliases and fallback constructors that read missing
-collaborators off the session were removed — every feature now
-requires its dependencies explicitly. `NotebookLMClient` is the
-single wiring root that hands them out.
+collaborators off a broad session were removed — every feature now
+requires its dependencies explicitly. `_client_assembly.py::_assemble_client`
+is the single wiring root that hands them out.
 
 ## How it landed
 
@@ -386,7 +409,8 @@ high-level shape was:
   artifact generation and download paths were rewired through them,
   `ChatAPI.save_answer_as_note(...)` was added, and
   `NotesAPI.create_from_chat(...)` was converted to a deprecated
-  forwarder. The module-level `_mind_map` wrappers were removed.
+  forwarder (later removed in v0.7.0). The module-level `_mind_map`
+  wrappers were removed.
   The broad `Session` Protocol was deleted from
   `_session_contracts.py`, along with the broad `FakeSession`
   defaults shape and the broad-Protocol test pin. The `_core.py`
@@ -402,9 +426,8 @@ runtime shape is canonicalized in [`docs/architecture.md`](architecture.md).
 
 ## See also
 
-- [`docs/architecture.md`](architecture.md) — post-refactor runtime
-  shape (`Session` collaborator graph, capability-protocol model,
-  dispatch path).
+- [`docs/architecture.md`](architecture.md) — current runtime shape,
+  capability-protocol model, and dispatch path.
 - [ADR-0010 — Session / Kernel split](adr/0010-session-kernel-split.md) —
   the design driver for Tier 13. **Superseded by ADR-0013.**
 - [ADR-0011 — Schema validation policy](adr/0011-schema-validation-policy.md) —

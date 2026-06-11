@@ -1,11 +1,12 @@
 # Source Labels (Auto-label by Topic)
 
-**Status:** Proposed / reverse-engineered (not yet implemented in `src/notebooklm/`)
-**Last Updated:** 2026-06-06
+**Status:** Historical reverse-engineering record — implemented in v0.8.0
+**Last Updated:** 2026-06-11
 **Source of Truth:** Live traffic capture (Chrome DevTools Protocol) against
 `https://notebooklm.google.com/notebook/c3f6285f-...` on 2026-06-06.
 **Purpose:** Document the RPCs behind NotebookLM's "Auto-label sources by topic"
-feature so it can be added to the client.
+feature. The shipped client surface is `client.labels` plus the `notebooklm
+label` CLI group.
 
 > All payloads below are the **decoded `f.req` inner arrays** exactly as observed
 > on the wire, rendered in Python (`null` → `None`). Each labeling RPC begins with
@@ -21,7 +22,7 @@ topic **labels**. A label is a standalone entity, **not** a field on a source �
 a source carries no back-reference to its label; the label owns a list of source
 IDs. Membership is therefore **many-to-many**: a source can appear under more
 than one label at once (confirmed empirically — see
-[UPDATE_LABEL](#rpc-update_label-le8sx)).
+[UPDATE_LABEL](#rpc-update-label-le8sx)).
 
 The UI control lives in the source panel, just above the source list:
 
@@ -40,7 +41,7 @@ The UI control lives in the source panel, just above the source list:
 |--------|------------------|---------|
 | `agX4Bc` | CREATE_LABEL | Auto-generate label groupings **and** create manual labels |
 | `I3xc3c` | LIST_LABELS | List existing labels for a notebook |
-| `le8sX` | UPDATE_LABEL | Rename a label, set its emoji, and/or add sources |
+| `le8sX` | UPDATE_LABEL | Rename a label, set its emoji, add sources, and remove sources |
 | `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) |
 
 All endpoints: `POST /_/LabsTailwindUi/data/batchexecute?rpcids=<id>&source-path=/notebook/<notebook_id>&...`
@@ -178,6 +179,8 @@ of a list.
 
 ---
 
+<a id="rpc-update-label-le8sx"></a>
+
 ## RPC: UPDATE_LABEL (le8sX)
 
 A single label-update RPC covering **rename, emoji, and source membership**. The
@@ -281,7 +284,7 @@ Observed from a live `curl` of `agX4Bc`:
 
 ---
 
-## Suggested client surface
+## Shipped client surface
 
 ```python
 # Generate (AI grouping — the UI's "Auto-label" first run AND "Reorganize" re-run)
@@ -293,9 +296,14 @@ labels.create(notebook_id, name, emoji="")         # -> agX4Bc, slot[5]=[[name, 
 
 # Read
 labels.list(notebook_id)                           # -> I3xc3c
+labels.get(notebook_id, label_id)                  # scans list(); raises on miss
+labels.get_or_none(notebook_id, label_id)          # scans list(); None on miss
+labels.sources(notebook_id, label_id)              # expands label members to Source objects
 
 # Mutate (all via le8sX; set only the fields you want to change)
 labels.update(notebook_id, label_id, name=None, emoji=None)  # -> le8sX (name_emoji group)
+labels.rename(notebook_id, label_id, name)                  # -> le8sX, preserving emoji
+labels.set_emoji(notebook_id, label_id, emoji)              # -> le8sX
 labels.add_sources(notebook_id, label_id, source_ids)        # -> le8sX (sources_add; one call PER source)
 labels.remove_sources(notebook_id, label_id, source_ids)     # -> le8sX (sources_remove; one call PER source)
 labels.delete(notebook_id, label_ids)              # -> GyzE7e (accepts a list)
@@ -331,12 +339,10 @@ Verified against a live throwaway notebook with raw `le8sX` payloads:
   and the first of `sources_remove`. Multi-element lists silently drop all but the
   first. A combined add+remove in one call dropped the add. Do one mutation per call.
 
-> ⚠️ **Client-code implication:** the current `add_sources` /
-> `build_update_label_params` pack a multi-id add into a single `le8sX` call
-> (`sources_add = [[a], [b], [c]]`), which the server truncates to the first id.
-> Multi-id `client.labels.add_sources(nb, lbl, [a, b, c])` therefore only adds
-> `a`. A correct implementation must loop one call per source (and the same holds
-> for any future `remove_sources`).
+> **Client-code implication:** `build_update_label_params` is singular
+> (`add_source_id` / `remove_source_id`), and `client.labels.add_sources()` /
+> `remove_sources()` loop one `le8sX` call per unique source id. Multi-id
+> fieldmask payloads are intentionally not emitted.
 
 ## Open items (not yet captured)
 

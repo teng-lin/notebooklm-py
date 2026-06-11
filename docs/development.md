@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-06-04
+**Last Updated:** 2026-06-11
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -14,7 +14,8 @@ This guide covers everything you need to contribute to `notebooklm-py`: architec
 ## Architecture
 
 > **Canonical post-refactor map:** see [`docs/architecture.md`](./architecture.md)
-> for the v0.5.0 collaborator graph + capability-protocol model. This section
+> for the current adapter/app/client/runtime/RPC graph and
+> capability-protocol model. This section
 > remains as the contributor on-ramp (package layout + adding-features
 > guidance) and links out to the architecture doc rather than duplicating it.
 
@@ -24,10 +25,11 @@ This guide covers everything you need to contribute to `notebooklm-py`: architec
 src/notebooklm/
 ├── __init__.py          # Public exports
 ├── client.py            # NotebookLMClient main class
-├── auth.py              # Authentication handling
+├── auth.py              # Public auth facade
 ├── types.py             # Dataclasses and type definitions
+├── _app/                # Transport-neutral business logic shared by adapters
 ├── _client_composed.py  # Client-owned composition holder
-├── _runtime_init.py     # Runtime collaborator construction and wiring
+├── _runtime/            # Runtime contracts, config, lifecycle, auth, transport
 ├── _notebooks.py        # NotebooksAPI implementation
 ├── _notebook_metadata.py # Private notebook metadata composition service
 ├── _sources.py          # SourcesAPI implementation
@@ -38,6 +40,8 @@ src/notebooklm/
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # NotesAPI implementation
 ├── _mind_map.py         # Private note-backed mind-map service
+├── _mind_maps_api.py    # MindMapsAPI implementation
+├── _labels.py           # LabelsAPI implementation
 ├── _settings.py         # SettingsAPI implementation
 ├── _sharing.py          # SharingAPI implementation
 ├── _sharing_manager.py  # Private legacy notebook share-link service
@@ -46,25 +50,22 @@ src/notebooklm/
 │   ├── types.py         # RPCMethod enum and constants
 │   ├── encoder.py       # Request encoding
 │   └── decoder.py       # Response parsing
-└── cli/                 # CLI implementation
-    ├── __init__.py      # CLI package exports
-    ├── helpers.py       # Shared utilities
-    ├── session.py       # login, use, status, clear
-    ├── notebook.py      # list, create, delete, rename
-    ├── source.py        # source add, list, delete
-    ├── artifact.py      # artifact list, get, delete
-    ├── generate.py      # generate audio, video, etc.
-    ├── download.py      # download audio, video, etc.
-    ├── chat.py          # ask, configure, history
-    └── ...
+├── cli/                 # Click adapter (`*_cmd.py`) plus `cli/services/`
+├── mcp/                 # FastMCP adapter (optional `mcp` extra)
+└── server/              # FastAPI REST adapter (optional `server` extra)
 ```
 
 ### Layered Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         CLI Layer                           │
-│   cli/session.py, cli/notebook.py, cli/generate.py, etc.    │
+│                      Adapter Layer                          │
+│        cli/ (Click), mcp/ (FastMCP), server/ (FastAPI)       │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────┐
+│                  App Core Layer (`_app/`)                    │
+│        transport-neutral request/plan/result workflows       │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -88,7 +89,8 @@ src/notebooklm/
 
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
-| **CLI** | `cli/*.py` | User commands, input validation, Rich output |
+| **Adapters** | `cli/`, `mcp/`, `server/` | User commands/tools/routes, transport-specific input/output, auth envelopes |
+| **App core** | `_app/*.py` | Transport-neutral workflows reused by adapters |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
 | **Runtime** | `client.py`, `_client_composed.py`, `_runtime/init.py`, `_kernel.py`, runtime collaborators | `NotebookLMClient` composition root plus seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
@@ -105,12 +107,14 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | Module | Class | Responsibility |
 |---|---|---|
 | `_client_composed.py` | `ClientComposed` | Client-owned holder for transport, executor, chain host, middleware metadata, and session collaborator bundle. |
-| `_runtime/init.py` | `ClientInternals` helpers | Validates constructor args, builds collaborators, wires middleware, and binds `ClientComposed`. |
+| `_runtime/init.py` | `RuntimeCollaborators` helpers | Validates constructor args, builds collaborators, wires middleware, and binds `ClientComposed`. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
 | `_reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_runtime/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
+| `_runtime/contracts.py` | Runtime Protocols | Shared capability Protocols: `Kernel`, `RpcCaller`, and `LoopGuard`. Single-consumer capabilities stay local to their owner modules. |
 | `_runtime/lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
+| `_runtime/transport.py` | `RuntimeTransport` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. |
 | `_rpc_executor.py` | `RpcExecutor` | RPC dispatch executor with direct collaborator dependencies. |
 | `_request_types.py` | `AuthSnapshot`, `BuildRequest`, request materialization | Shared request construction Interface. |
 | `_transport_errors.py` | transport exceptions, `parse_retry_after`, `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
@@ -120,20 +124,21 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
 
 The feature-facing surface is the set of **capability Protocols** in
-`notebooklm._runtime_contracts` — `RpcCaller`, `LoopGuard`,
-`OperationScopeProvider`, `AsyncWorkRuntime`, plus the standalone
-`AuthMetadata` and `Kernel` consumed by the upload pipeline. The
-broad `Session` Protocol that previously bundled these together was
-deleted in the final phase of the capability refactor (see
-[`docs/refactor-history.md`](refactor-history.md) and ADR-0013); each
-feature now depends on the narrowest slice it needs and takes those
-collaborators by keyword-only constructor argument. The feature-local
-composite-runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`,
-`UploadRuntime`) and their adapter dataclasses that previously bundled
-three capability Protocols apiece were retired once it was clear they
-only hid three stable collaborators with one production satisfier; see
-ADR-0013 for the promotion criterion (≥2 consumers) that still gates
-adding any new shared Protocol.
+`notebooklm._runtime.contracts` — `Kernel`, `RpcCaller`, and
+`LoopGuard`. Single-consumer capability shapes stay in the owning
+feature module (`AuthMetadata` in `_source/upload.py`,
+`OperationScopeProvider` in `_artifact/polling.py`), and the unused
+`AsyncWorkRuntime` composite was deleted. The broad `Session` Protocol
+that previously bundled these together was deleted in the final phase
+of the capability refactor (see [`docs/refactor-history.md`](refactor-history.md)
+and ADR-0013); each feature now depends on the narrowest slice it needs
+and takes those collaborators by keyword-only constructor argument. The
+feature-local composite-runtime Protocols (`ChatRuntime`,
+`ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
+previously bundled three capability Protocols apiece were retired once
+it was clear they only hid stable collaborators with one production
+satisfier; see ADR-0013 for the promotion criterion (at least two
+production consumers) that still gates adding any new shared Protocol.
 
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
@@ -209,24 +214,27 @@ from those catalogues rather than introducing parallel patterns.
 **New API Class:**
 1. Create `_newfeature.py` with `NewFeatureAPI` class.
 2. Type each constructor parameter against the **narrowest shared
-   capability Protocol** it actually uses (`RpcCaller`,
-   `AsyncWorkRuntime`, etc. — see
+   capability Protocol** it actually uses (`RpcCaller`, `LoopGuard`,
+   `Kernel` — see
    [`docs/architecture.md`](./architecture.md) for the protocol
-   catalog). Pass each collaborator by keyword-only argument; do not
-   bundle them into a feature-local composite-runtime Protocol unless a
-   second consumer materialises. **Do NOT depend on a broad runtime
-   facade for type annotations** — there is no concrete `Session` class
-   (the broad `Session` Protocol was deleted; see ADR-0013). Depend on the
-   narrow capability Protocols in `_runtime_contracts` instead.
-3. Add to `client.py`: wire each collaborator explicitly from the
-   composition root (e.g. `self.newfeature = NewFeatureAPI(rpc=internals.executor,
-   ...)`, where `internals = compose_client_internals(...)`). The concrete
-   collaborator instances on `ClientInternals.collaborators` structurally
-   satisfy every capability Protocol, so the wiring stays straightforward.
-4. **Tests** should use `tests/_fixtures/fake_core.py:FakeSession`
-   which exposes the union of all capability protocols — it lets a
-   feature test substitute the broad runtime without constructing a
-   real client.
+   catalog). If the capability has only one consumer, define the
+   Protocol locally beside that consumer instead of promoting it to
+   `_runtime/contracts.py`. Pass each collaborator by keyword-only
+   argument; do not bundle them into a feature-local composite-runtime
+   Protocol unless a second production consumer materialises. **Do NOT
+   depend on a broad runtime facade for type annotations** — there is no
+   concrete `Session` class (the broad `Session` Protocol was deleted;
+   see ADR-0013).
+3. Add the wiring in `_client_assembly.py::_assemble_client(...)`, not
+   directly in `client.py`. The assembly seam is shared by
+   `NotebookLMClient.__init__` and the canonical test factory; set every
+   constructor-time attribute there and thread concrete collaborators
+   from `compose_client_internals(...)`.
+4. **Tests** should inject the narrow collaborator the feature actually
+   needs. `tests/_fixtures/fake_core.py:FakeSession` remains available
+   for legacy broad-fixture tests, but new direct feature tests should
+   prefer `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style
+   fakes or local protocol fakes.
 5. Export types from `__init__.py`.
 
 ---
@@ -246,10 +254,10 @@ left on disk after release — `filelock` reuses them).
 
 | Lock file | Owner | Scope | Acquisition |
 |---|---|---|---|
-| `<profile>/storage_state.json.lock` | `auth.save_cookies_to_storage` (`auth.py:1935`) | Read-merge-write of `storage_state.json` (cookie sync after a rotation or 302) | Blocking exclusive |
-| `<profile>/.storage_state.json.rotate.lock` | `auth._poke_session` (`auth.py:2817`) | Cross-process dedup of the `accounts.google.com/RotateCookies` keepalive POST | Non-blocking exclusive (`LOCK_NB`); skip on contention |
-| `<home>/.migration.lock` | `migration.migrate_to_profiles` (`migration.py:28`) | One-shot legacy→profile layout migration on startup | Blocking exclusive, 30s timeout (raises `MigrationLockTimeoutError`) |
-| `<profile>/context.json.lock` | `cli.helpers.set_context` / `clear_context` via `_atomic_io.atomic_update_json` (`_atomic_io.py:136`) | Read-modify-write of the active-notebook/account-routing context for a profile | Blocking exclusive, 10s timeout |
+| `<profile>/storage_state.json.lock` | `_auth/storage.py::save_cookies_to_storage` | Read-merge-write of `storage_state.json` (cookie sync after a rotation or 302) | Blocking exclusive |
+| `<profile>/.storage_state.json.rotate.lock` | `_auth/keepalive.py::_poke_session` | Cross-process dedup of the `accounts.google.com/RotateCookies` keepalive POST | Non-blocking exclusive (`LOCK_NB`); skip on contention |
+| `<home>/.migration.lock` | `migration.py::migrate_to_profiles` | One-shot legacy→profile layout migration on startup | Blocking exclusive, 30s timeout (raises `MigrationLockTimeoutError`) |
+| `<profile>/context.json.lock` | `_atomic_io.py::atomic_update_json` through CLI context helpers | Read-modify-write of the active-notebook/account-routing context for a profile | Blocking exclusive, 10s timeout |
 
 Design notes:
 
@@ -267,7 +275,7 @@ Design notes:
   the sentinel across invocations, so cleanup is not required — and a
   TOCTOU race between unlink and reacquire is avoided.
 - **In-process serializers complement, not replace, file locks.**
-  `auth._poke_session` also takes an `asyncio.Lock` keyed on
+  `_auth/keepalive.py::_poke_session` also takes an `asyncio.Lock` keyed on
   `(event_loop, profile)` to dedupe an `asyncio.gather` fan-out before
   reaching the cross-process flock — the file lock only sees one
   contender per process per rate-limit window.

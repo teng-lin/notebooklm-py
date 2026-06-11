@@ -1,7 +1,7 @@
 # RPC Development Guide
 
 **Status:** Active
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-11
 
 This guide covers everything about NotebookLM's RPC protocol: capturing calls, debugging issues, and implementing new methods.
 
@@ -36,7 +36,14 @@ NotebookLM uses Google's `batchexecute` RPC protocol.
 ### Source of Truth
 
 - **RPC method IDs:** `src/notebooklm/rpc/types.py`
-- **Payload structures:** `docs/rpc-reference.md`
+- **Payload builders:** the owning implementation modules, for example
+  `_notebooks.py::build_create_notebook_params`,
+  `_source/upload_payloads.py`, `_source/add.py`, `_label/params.py`, and
+  `_artifact/payloads.py`
+- **Golden payload tests:** `tests/unit/test_rpc_golden_payloads.py` and
+  feature-specific unit tests such as `tests/unit/test_label_params.py`
+- **Human reference:** `docs/rpc-reference.md`, updated after the builder and
+  tests land
 
 ---
 
@@ -105,7 +112,7 @@ async def setup_capture_session():
     page = browser.pages[0] if browser.pages else await browser.new_page()
     captured_rpcs = []
 
-    async def handle_request(request):
+    def handle_request(request):
         if "batchexecute" in request.url:
             post_data = request.post_data
             if post_data and "f.req" in post_data:
@@ -252,12 +259,11 @@ Use Chrome DevTools or Playwright (see above).
 Document each position in the params array:
 
 ```python
-# Example: ADD_SOURCE for URL
+# Example: ADD_SOURCE for URL after the Gemini-3.5 wire-shape migration
 params = [
-    [[None, None, [url], None, None, None, None, None]],  # 0: Source data
-    notebook_id,   # 1: Notebook ID
-    [2],           # 2: Fixed flag
-    None,          # 3: Optional settings
+    [[None, None, [url], None, None, None, None, None, None, None, 1]],
+    notebook_id,
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
 ]
 ```
 
@@ -325,7 +331,7 @@ def test_encode_new_method():
     assert result[0][0][0] == "AbCdEf"
 ```
 
-**Integration test** (`tests/integration/`):
+**Unit test with a fake RPC executor** (`tests/unit/`):
 ```python
 @pytest.mark.asyncio
 async def test_new_method(mock_client):
@@ -336,7 +342,8 @@ async def test_new_method(mock_client):
         assert result.id == "result_id"
 ```
 
-**E2E test** (`tests/e2e/`):
+**VCR-backed integration test** (`tests/integration/`) or authenticated E2E
+test (`tests/e2e/`):
 ```python
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -469,15 +476,18 @@ Document:
 ### Validation
 
 ```python
-async def validate_rpc_call(rpc_id: str, params: list, expected_action: str):
+async def validate_root_rpc_call(method_name: str, params: list, expected_action: str):
     from notebooklm import NotebookLMClient
     from notebooklm.rpc import RPCMethod
 
     async with NotebookLMClient.from_storage() as client:
-        result = await client.rpc_call(RPCMethod(rpc_id), params)
+        # Public raw calls use the default root source path. For notebook-scoped
+        # calls that need source_path="/notebook/<id>", prefer the typed
+        # namespace API or a focused internal test around RpcExecutor.
+        result = await client.rpc_call(RPCMethod[method_name], params)
 
-    assert result is not None, f"RPC {rpc_id} returned None"
-    return {"rpc_id": rpc_id, "action": expected_action, "status": "verified"}
+    assert result is not None, f"RPC {method_name} returned None"
+    return {"method": method_name, "action": expected_action, "status": "verified"}
 ```
 
 ## RPC Health Check Triage Policy

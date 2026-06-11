@@ -7,16 +7,17 @@ e2e tests (real API, real auth).
 
 ## How cassette matching actually works
 
-The VCR matcher (`tests/vcr_config.py` — `_rpcids_matcher` + `_freq_body_matcher`)
-selects a cassette by:
+The default VCR matcher (`tests/vcr_config.py`) matches on:
 
-1. the RPC **method id** (`rpcids=` in the `batchexecute` URL), and
-2. the decoded request **body shape**.
+1. HTTP method, scheme, host, port, and path,
+2. the RPC **method id** (`rpcids=` in the `batchexecute` URL), and
+3. the decoded request **body shape** (`freq` matcher).
 
 It does **not** match on the notebook id, source id, or any other id in the
-request. The 105 cassettes were recorded against **15 distinct notebooks**, yet
-`mock_context` injects a single notebook id (`PLACEHOLDER_NOTEBOOK_ID`,
-`c3f6285f…`) for every test, and replay still succeeds.
+request. The cassette corpus changes over time; do not pin docs or tests to a
+literal cassette count or notebook count. `mock_context` injects a single
+notebook id (`PLACEHOLDER_NOTEBOOK_ID`, `c3f6285f…`) for most tests, and replay
+still succeeds because ids are scrubbed/decorative for matcher purposes.
 
 ### Consequence: the ids are decorative
 
@@ -45,24 +46,30 @@ different data**. The allowed vocabulary:
    (`assert_json_envelope(result, schema=...)`, schemas defined in
    `conftest.py`).
 2. **Invariants** — each id is UUID-shaped, each title is non-empty,
-   `count > 0`. **Never `== N`.**
+   `count > 0`.
 3. **Cross-render** — text vs `--json` of the *same* cassette agree on row count
    / id set.
 4. **Filter correctness** — e.g. `artifact list --type audio` ⇒ every item is
-   audio (proves decoder logic, not a recorded value).
+   audio (proves decoder logic, not a recorded value). `test_sources.py` and
+   `test_artifacts.py` also use `_cassette_expectations.py` to derive expected
+   projections from the same cassette payload.
 5. **Input-echo** — a mutation's output id `==` the placeholder the test passed.
 
 ❌ **Never** pin a value that came from the recorded *response*: a recorded
-title, a server-returned id, or an exact count. Those break on re-record without
-signalling a real regression.
+title, a server-returned id, or a literal count. Exact count equality is fine
+only when the expected value is derived from the same cassette projection or
+the same JSON array length.
 
 `test_sources.py` is the worked template for tiers 1–3 + 5;
 `test_artifacts.py::TestArtifactListByType` covers tier 4.
 
 ## Re-recording
 
-Cassettes replay at `record_mode="none"` by default. To re-record (maintainer,
-with a valid local profile):
+Cassettes replay at `record_mode="none"` by default. Setting
+`NOTEBOOKLM_VCR_RECORD=1` switches VCR to `record_mode="new_episodes"`: existing
+matching episodes replay, and only missing episodes are appended. To truly
+re-record, delete or move the target cassette first, then run (maintainer, with
+a valid local profile):
 
 ```bash
 NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/cli_vcr/<file>.py -m vcr
@@ -70,7 +77,9 @@ NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/cli_vcr/<file>.py -m vcr
 
 Record against **whatever notebook is handy** — the assertions are
 notebook-agnostic, so a fresh cassette recorded against a different notebook
-drops in without any fixture surgery.
+drops in without any fixture surgery. Some command families (`settings`,
+`profile`, `doctor`) pin `NOTEBOOKLM_HOME` or local profile state in their tests;
+they are not always auto-recordable through the normal live-profile path.
 
 You only need to touch the tests when the response **shape** changes (a new
 field, a renamed field, a changed type). In that case update the affected schema

@@ -18,11 +18,12 @@ concern into a dedicated middleware. **PR 12.9 closes the tier** — the
 seven-middleware chain `[Drain, Metrics, Semaphore, Retry, AuthRefresh,
 ErrorInjection, Tracing]` is fully wired, the leaf
 is a pure POST, and the underscore-prefixed compatibility aliases were
-removed. A later architecture cleanup retired the interim authed-transport
-Adapter; the current terminal is `Session._authed_post_chain_terminal →
-Kernel.post`. The chain ordering, the `RpcRequest.context` key
-vocabulary, and the Protocol shape pinned below are the load-bearing
-contract.
+removed. Later architecture cleanup retired the interim authed-transport
+Adapter; the current terminal path is
+`MiddlewareChainHost._authed_post_chain_terminal ->
+RuntimeTransport.terminal -> Kernel.post`. The chain ordering, the
+`RpcRequest.context` key vocabulary, and the Protocol shape pinned below
+are the load-bearing contract.
 
 Two implementation realities diverged from the original PR-12.1 pin and
 are documented in the "PR 12.9 close-out notes" section at the bottom of
@@ -33,14 +34,12 @@ this ADR:
 2. The RPC concurrency semaphore wraps the chain dispatch (not the leaf),
    restoring pre-Tier-12 "one slot per logical RPC" semantics.
 
-The `Kernel.post` terminal revisit for (1) has landed; closure callbacks
-remain pinned as the target shape for future chain-terminal rewrites.
-
-The signatures pinned in this ADR (especially the `AuthRefreshMiddleware`
-constructor, §"AuthRefreshMiddleware constructor signature") are
-load-bearing: PR 12.8's implementation has zero degrees of freedom on
-shape. PRs 12.2–12.7 also depend on the chain ordering and the
-`RpcRequest.context` keys defined below.
+The `Kernel.post` terminal revisit has landed. The live
+`AuthRefreshMiddleware` constructor uses injected callables
+(`refresh_callable`, `is_auth_error`, `refresh_callback_enabled`,
+`refresh_retry_delay`, optional `snapshot_provider`) rather than the
+older closure-callback target described below; that historical target is
+kept as tier-12 context, not as the current implementation signature.
 
 ADR-0002 ("Capability Protocol pattern, `SessionCapabilities` fat
 union") was superseded by the `arch-d2-cutover` PR (D2 PR-2), per
@@ -75,9 +74,9 @@ that leaf, which meant: (a) a new concern grew the host Interface, and
 (b) every change to one concern risked regressing the others because they
 shared a function body.
 
-The greenfield design in `docs/architecture-evolution.md` §3.4 proposes
-lifting each concern into a composable middleware, leaving `Kernel.post`
-as a pure-transport function. The chain is the composition substrate.
+The greenfield design proposed lifting each concern into a composable
+middleware, leaving `Kernel.post` as a pure-transport function. The chain
+is the composition substrate.
 
 Five details that shaped this ADR:
 
@@ -143,7 +142,8 @@ The chain is composed in this exact order (outermost → innermost):
 Drain → Metrics → Semaphore → Retry → AuthRefresh → ErrorInjection → Tracing → terminal
 ```
 
-Where `terminal` is `Session._authed_post_chain_terminal → Kernel.post`.
+Where `terminal` is
+`MiddlewareChainHost._authed_post_chain_terminal -> RuntimeTransport.terminal -> Kernel.post`.
 
 The leftmost middleware in the sequence becomes the outermost wrapper.
 `build_chain` enforces this ordering by composing in reverse (last
@@ -208,15 +208,16 @@ Per-position rationale:
 
 | Key | Type | Set by | Read by |
 |---|---|---|---|
-| `rpc_method` | `str \| None` | `Session._perform_authed_post` (receives the resolved method-name string from `RpcExecutor._execute_once`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
-| `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware`, `AuthRefreshMiddleware` (when set, skips the auth-refresh-and-retry replay so a non-idempotent / probe-then-create write is not re-issued after a mid-flight 401/403 — issue #1157) |
-| `build_request` | `BuildRequest` | `Session._perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `Session._authed_post_chain_terminal` (via `_refresh_request_for_current_auth`) |
-| `log_label` | `str` | `Session._perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `Session._authed_post_chain_terminal` |
-| `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
+| `rpc_method` | `str \| None` | `RuntimeTransport.perform_authed_post` (receives the resolved method-name string from `RpcExecutor._execute_once`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
+| `disable_internal_retries` | `bool` | `RuntimeTransport.perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware`, `AuthRefreshMiddleware` (when set, skips the auth-refresh-and-retry replay so a non-idempotent / probe-then-create write is not re-issued after a mid-flight 401/403 — issue #1157) |
+| `build_request` | `BuildRequest` | `RuntimeTransport.perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `RuntimeTransport.refresh_request_for_current_auth`, `RuntimeTransport.terminal` |
+| `log_label` | `str` | `RuntimeTransport.perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `RuntimeTransport.terminal` |
+| `auth_snapshot` | `AuthSnapshot` | `RuntimeTransport.perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `RuntimeTransport.refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `RuntimeTransport.refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh, **before** the retry leg) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry on the post-refresh leg cannot drive a second refresh on a fresh 401) |
-| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` from `_middleware_context.py`; `RPC_QUEUE_WAIT_CONTEXT_KEY` remains a compatibility alias in `_middleware_semaphore.py`) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
+| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` from `_middleware/context.py`; `RPC_QUEUE_WAIT_CONTEXT_KEY` remains a compatibility alias in `_middleware/semaphore.py`) | `RuntimeTransport.perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
 | `read_timeout` | `float \| None` | `RuntimeTransport.perform_authed_post` (seeded only when a per-request read timeout is supplied — currently the chat path's `chat_timeout`; absent otherwise so metadata RPCs keep the base read window) | `RuntimeTransport.terminal` (forwards to `Kernel.post(read_timeout=...)`, which widens only the streamed-response `read` slot) |
 | `disable_read_timeout_retries` | `bool` | `RuntimeTransport.perform_authed_post` (seeded `True` by the chat path) | `RetryMiddleware` (re-raises read-side post-transmission failures — `ReadTimeout` / `ReadError` / `RemoteProtocolError`, see `_NON_REPLAYABLE_POST_SEND_ERRORS` — instead of replaying the non-idempotent in-flight chat generation; connect/write/pool stay retryable and 401 auth refresh is unaffected) |
+| `refresh_budget` | `RefreshBudget` | `RpcExecutor.rpc_call` / `RuntimeTransport.perform_authed_post` when a logical RPC carries a shared refresh allowance | `AuthRefreshMiddleware` (shares one once-per-logical-call refresh allowance with decoded-RPC retry handling; absent callers fall back to `auth_refreshed`) |
 
 Middlewares are forbidden from inventing new keys without an ADR update.
 The dict is mutable by reference (deliberately) but read-mostly in
@@ -293,20 +294,19 @@ than deferred to a future arc):
   the call. Context keys are for cross-middleware contract.
 
 The vocabulary is also centralized in
-`_middleware_context.ALLOWED_RPC_CONTEXT_KEYS`, and
+`_middleware.context.ALLOWED_RPC_CONTEXT_KEYS`, and
 `tests/_guardrails/test_middleware_context_contract.py` scans production
 middleware and transport code for non-approved literal context keys.
-Adding a key must update this table, `_middleware_context.py`, and the
+Adding a key must update this table, `_middleware/context.py`, and the
 guard test in the same PR.
 
-### AuthRefreshMiddleware constructor signature (Tier-13 target, NOT shipped in Tier-12)
+### AuthRefreshMiddleware constructor signature (historical Tier-13 target)
 
-The signature pinned in this section is the **target** shape for the
-post-`Kernel.post` rewrite (Tier-13 row 13.2). PR 12.8 SHIPPED a simpler
-interim shape that defers request-rebuilding to the leaf — see "PR 12.9
-close-out notes" §"AuthRefreshMiddleware shipped without rebuild
-closures" for the details and rationale. Until Tier 13 makes the chain
-leaf a pure POST, the closure-callback pair below remains aspirational:
+The signature pinned in this section was the **target** shape for the
+post-`Kernel.post` rewrite (Tier-13 row 13.2), but the live implementation
+settled on a smaller callable-injection constructor. Current code should
+consult `src/notebooklm/_middleware/auth_refresh.py`; the closure-callback
+pair below is retained only to explain the tier-12 design path:
 
 ```python
 class AuthRefreshMiddleware:
@@ -493,7 +493,7 @@ The `max_concurrent_rpcs` slot is acquired by `SemaphoreMiddleware`,
 which sits between `MetricsMiddleware` and `RetryMiddleware` in the
 chain. The middleware writes the per-call queue-wait duration to
 `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` and
-`Session._perform_authed_post` forwards that value to
+`RuntimeTransport.perform_authed_post` forwards that value to
 `ClientMetrics.record_rpc_queue_wait` after the chain returns.
 
 The placement is constrained by three simultaneous invariants the
@@ -576,7 +576,7 @@ ADR-0010 (the original target of this forward reference) was itself
 superseded by ADR-0013 ("Composable Session Capabilities") in v0.5.0.
 ADR-0009's middleware-chain ordering remains load-bearing; chain
 construction now lives in `MiddlewareChainBuilder`
-(`_middleware_chain.py`) — an extraction performed inside this ADR's
+(`_middleware/chain.py`) — an extraction performed inside this ADR's
 domain, not a supersession — and the order is preserved by
 `tests/unit/test_chain_wiring.py`. Status: Accepted (chain order
 load-bearing).

@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Status:** Active
-**Last Updated:** 2026-05-15
+**Last Updated:** 2026-06-11
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
@@ -40,7 +40,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 - **Session commands** - Authentication and context management
 - **Notebook commands** - CRUD operations on notebooks
 - **Chat commands** - Querying and conversation management
-- **Grouped commands** - `source`, `label`, `artifact`, `agent`, `generate`, `download`, `note`, `share`, `research`, `language`, `skill`, `auth`, `profile`
+- **Grouped commands** - `source`, `label`, `artifact`, `agent`, `generate`, `download`, `note`, `share`, `research`, `language`, `skill`, `auth`, `profile`, `mcp`
 - **Utility commands** - `metadata`, `doctor`
 
 ---
@@ -147,7 +147,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
 | `list` | - | `--json`, `--limit N`, `--no-truncate` | `source list --limit 20 --no-truncate` |
-| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add---mime-type-file-sources)) | `source add "https://..." --timeout 90` |
+| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal`, `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
 | `add-research [query]` | Search query (or `--prompt-file -` for stdin) | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--cited-only`, `--no-wait`, `--timeout`, `--prompt-file PATH` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | `--json` | `source get src123` |
@@ -292,7 +292,7 @@ Every `download` subcommand accepts the same selection / safety / output flag se
 
 All `note` subcommands also accept `-n/--notebook ID`.
 
-> **`source get` / `artifact get` / `note get` exit `1` on not-found (BREAKING).** All three `get` commands now exit `1` when the requested ID does not resolve to an existing item, matching the rest of the CLI's user-error convention. Under `--json` the failure body is the standard typed error envelope (`{"error": true, "code": "NOT_FOUND", "message": "...", "id": "...", "notebook_id": "..."}`); without `--json` the message is written to stderr. The previous behavior was exit `0` with a "not found" line on stdout. The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id` as a `ClickException`) was already exit `1` and is unchanged. See [CLI Exit-Code Convention](cli-exit-codes.md#get-on-not-found-exits-1-was-0--landed) for migration guidance.
+> **`source get` / `artifact get` / `note get` exit `1` on not-found (BREAKING).** All three `get` commands now exit `1` when the requested ID does not resolve to an existing item, matching the rest of the CLI's user-error convention. Under `--json` the failure body is the standard typed error envelope (`{"error": true, "code": "NOT_FOUND", "message": "...", "id": "...", "notebook_id": "..."}`); without `--json` the message is written to stderr. The previous behavior was exit `0` with a "not found" line on stdout. The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id` as a `ClickException`) was already exit `1` and is unchanged. See [CLI Exit-Code Convention](cli-exit-codes.md#get-on-not-found-exits-1-was-0-landed) for migration guidance.
 
 ### Metadata Command
 
@@ -329,10 +329,24 @@ Defaults:
 - `claude` maps to `.claude/skills/notebooklm/SKILL.md`
 - `agents` maps to `.agents/skills/notebooklm/SKILL.md`
 - `show --target source` prints the canonical packaged skill file
+- Project-scope installs support `--dry-run`, `--no-clobber`, and `--force`; these flags are rejected for user-scope installs.
 
 The packaged wheel includes the repo-root `SKILL.md`, so the same skill content powers `notebooklm skill install`, GitHub discovery, and `npx skills add teng-lin/notebooklm-py`.
 
 Codex does not use the `skill` subcommand. In this repository it reads the root [`AGENTS.md`](../AGENTS.md) file and invokes the `notebooklm` CLI or Python API directly.
+
+### MCP Commands (`notebooklm mcp <cmd>`)
+
+Install the NotebookLM MCP server block into supported MCP client configs.
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `install <client>` | Configure `claude-desktop`, `claude-code`, `cursor`, or `windsurf` | `mcp install claude-desktop` |
+| `install <client> --config-path PATH` | Write a non-standard config path | `mcp install cursor --config-path ./mcp.json` |
+
+The installer writes a `notebooklm` server entry that launches `notebooklm-mcp`
+through `uvx`. Re-running is idempotent and preserves unrelated servers in the
+same config file. See [MCP server guide](mcp-guide.md).
 
 ### Agent Commands (`notebooklm agent <cmd>`)
 
@@ -782,6 +796,11 @@ For `-s` and `-a` the active notebook is resolved with the same precedence the c
 
 File-source uploads reject symlinks by default. If the path you pass (or any ancestor directory) is a symbolic link, `source add` refuses the upload rather than silently following it — a workspace symlink could otherwise exfiltrate the file it points at (e.g. `~/Downloads/foo.pdf -> /etc/passwd`). Pass `--follow-symlinks` to opt in explicitly.
 
+URL sources reject internal hosts (`localhost`, loopback, private IP ranges,
+and link-local addresses) by default so the CLI cannot be used as an SSRF
+trampoline. Pass `--allow-internal` only for a deliberate local NotebookLM test;
+non-HTTP(S) schemes remain rejected even with the flag.
+
 > **Python equivalent:** [`client.sources.add_file(nb_id, path, title=...)`](python-api.md#sourcesapi-clientsources). The symlink gate is a CLI-only safeguard; callers using the Python API are responsible for resolving symbolic links before passing the path.
 
 ```bash
@@ -793,6 +812,8 @@ notebooklm source add ./link-to-doc.pdf --type file --follow-symlinks
 ```
 
 The same gate applies on the explicit `--type file` path (no auto-detect), so typing the source type as `file` does not bypass the check.
+
+<a id="source-add-mime-type-file-sources"></a>
 
 ### Source: `add` `--mime-type` (file sources)
 
@@ -1370,13 +1391,21 @@ notebooklm skill <install|status|uninstall|show> [OPTIONS]
 
 `skill show --target source` prints the packaged `SKILL.md` straight out of the wheel (the canonical content); the other `show` targets read the materialized copy from disk.
 
+Project-scope install hardening:
+
+- `--dry-run` prints the target files and actions without writing.
+- `--no-clobber` creates missing targets but skips differing existing files.
+- `--force` overwrites differing project targets.
+- These flags are project-scope only; `--scope user` preserves the historical always-overwrite behavior.
+
 **Examples:**
 ```bash
 # Install both targets for the current user (default scope+target)
 notebooklm skill install
 
 # Install only the Claude Code target into the current project
-notebooklm skill install --scope project --target claude
+notebooklm skill install --scope project --target claude --dry-run
+notebooklm skill install --scope project --target claude --force
 
 # Inspect what's installed in the user-scope agents directory
 notebooklm skill status --scope user --target agents
@@ -1469,22 +1498,19 @@ Find information on a topic and create a podcast about it.
 
 ```bash
 # 1. Create a notebook for this research
-notebooklm create "Climate Change Research"
-# Output: Created notebook: abc123
+notebooklm create "Climate Change Research" --use --json
+# Output includes: {"active_notebook_id": "...", "notebook": {...}}
 
-# 2. Set as active
-notebooklm use abc123
-
-# 3. Add a starting source
+# 2. Add a starting source
 notebooklm source add "https://en.wikipedia.org/wiki/Climate_change"
 
-# 4. Research more sources automatically (blocking; --import-all retry budget defaults to 1800s)
+# 3. Research more sources automatically (blocking; --import-all retry budget defaults to 1800s)
 notebooklm source add-research "climate change policy 2024" --mode deep --import-all
 
-# 5. Generate a podcast
+# 4. Generate a podcast
 notebooklm generate audio "Focus on policy solutions and future outlook" --format debate --wait
 
-# 6. Download the result
+# 5. Download the result
 notebooklm download audio ./climate-podcast.mp3
 ```
 
@@ -1493,20 +1519,21 @@ notebooklm download audio ./climate-podcast.mp3
 For LLM agents, use non-blocking mode to avoid timeout:
 
 ```bash
-# 1-3. Create notebook and add initial source (same as above)
-notebooklm create "Climate Change Research"
-notebooklm use abc123
+# 1. Create notebook and set it active
+notebooklm create "Climate Change Research" --use
+
+# 2. Add initial source
 notebooklm source add "https://en.wikipedia.org/wiki/Climate_change"
 
-# 4. Start deep research (non-blocking)
+# 3. Start deep research (non-blocking)
 notebooklm source add-research "climate change policy 2024" --mode deep --no-wait
 # Returns immediately
 
-# 5. In a subagent, wait for research and import
+# 4. In a subagent, wait for research and import
 notebooklm research wait --import-all --timeout 300
 # Blocks until complete, then imports sources
 
-# 6. Continue with podcast generation...
+# 5. Continue with podcast generation...
 ```
 
 **Research commands:**

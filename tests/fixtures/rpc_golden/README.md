@@ -104,9 +104,17 @@ cassette-scrubber pipeline documented in
 | Account user index | `0` |
 
 No real credentials, no real notebook IDs, no real account identifiers.
-The pre-commit `check_cassettes_clean.py` guard does not scan this
-directory because these fixtures are synthetic by construction — no
-recording pipeline produces them.
+The default cassette scan does not treat this directory as recorded
+cassettes, but CI/repo-lint still runs a secrets-only recursive scan over
+`tests/fixtures/`, including these JSON files:
+
+```bash
+uv run python tests/scripts/check_cassettes_clean.py --secrets-only --recursive tests/fixtures
+```
+
+`tests/unit/test_rpc_golden_payloads.py` also rejects forbidden placeholder
+drift in the JSON/README files. The cassette-shape heuristics do not treat
+these fixtures as VCR recordings.
 
 ## How the chunked response is reconstructed
 

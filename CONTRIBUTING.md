@@ -26,12 +26,12 @@ uv run ruff format --check . && \
 **No uv?** Plain pip works as a fallback (won't enforce the lockfile, so you may resolve newer dep versions than CI):
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[all]"   # [all] = browser + dev + markdown (no cookies; see installation.md)
+pip install -e ".[all]"   # [all] = browser + dev + markdown + mcp + server (no cookies; see installation.md)
 playwright install chromium
 pre-commit install
 ```
 
-For full prerequisites, headless setup, optional extras (`[cookies]`, `[markdown]`), and platform notes, see [docs/installation.md#e-contributor](docs/installation.md#e-contributor).
+For full prerequisites, headless setup, optional extras (`[cookies]`, `[markdown]`, `[mcp]`, `[server]`), and platform notes, see [docs/installation.md#e-contributor](docs/installation.md#e-contributor).
 
 > **Install-doc parity.** `docs/installation.md` is the canonical install guide; this file mirrors a small contributor-focused subset. Every fenced ``bash`` block in `installation.md` must EITHER appear verbatim in `CONTRIBUTING.md`, OR be marked with `<!-- not mirrored: <reason> -->` on the line directly before its opening fence. CI enforces this via `scripts/check_ci_install_parity.py` so a stale block can't drift in unnoticed. When you edit `installation.md`, decide on the spot whether the new content also belongs in this file.
 
@@ -229,7 +229,7 @@ Agents should ignore files marked `Deprecated`.
 ```
 docs/
 ├── adr/                   # Architectural Decision Records (ADRs)
-├── architecture.md        # Monolithic Session to composable capabilities architecture map
+├── architecture.md        # Layered architecture and repository map
 ├── auth-cookie-lifecycle.md      # Cookie expiration mitigation strategies and keepalive loops
 ├── cli-exit-codes.md      # CLI exit-code convention (binding contract for scripts/CI)
 ├── cli-reference.md       # CLI command reference
@@ -237,6 +237,7 @@ docs/
 ├── deprecations.md        # Staged API deprecations tracker
 ├── development.md         # Architecture, testing, and VCR cassette practices
 ├── installation.md        # Canonical install guide (personas, extras, platform notes)
+├── mcp-guide.md           # MCP server setup, tools, and troubleshooting
 ├── python-api.md          # Python API reference
 ├── refactor-history.md    # Historical record of the Tier 12/13 refactor + downstream migration tables
 ├── releasing.md           # Release checklist

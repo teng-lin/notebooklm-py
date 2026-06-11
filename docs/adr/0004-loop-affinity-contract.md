@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (retroactive). Documents the contract shipped in the tier-7 thread-safety/concurrency arc; reaffirmed by the seam extractions in tier-8 and tier-10.
+Accepted (retroactive). Documents the contract shipped in the tier-7 thread-safety/concurrency arc; reaffirmed by the seam extractions in tier-8/tier-10 and the later `_runtime/` package split.
 
 ## Context
 
@@ -12,22 +12,23 @@ Three failure modes appeared during the tier-7 audit:
 
 1. **Cross-loop reuse.** A client opened on loop A, then awaited on loop B (e.g. a different `asyncio.run` invocation, or a different thread's loop). `asyncio.Lock.acquire()` from loop B on a lock owned by loop A either deadlocks (the wake-up is scheduled on a loop that will never run again) or raises a confusing `RuntimeError`, depending on the primitive.
 2. **Cross-thread reuse.** Each OS thread has its own default loop. Sharing one `NotebookLMClient` instance across threads guarantees cross-loop reuse because each thread enters its own `asyncio.run`.
-3. **Multi-tenant `AuthTokens` sharing.** The conversation cache (`ChatAPI._cache`) is per-instance for a reason: it keys on `notebook_id` but not on `account_email`, so sharing one client between two tenants would leak conversation IDs between accounts.
+3. **Multi-tenant `AuthTokens` sharing.** The conversation cache is per-instance for a reason: it keys conversation turns by `conversation_id` and does not include `account_email`, so sharing one client between two tenants would leak conversation IDs/turns between accounts.
 
-The audit chose the simplest possible contract: *one `NotebookLMClient` instance is bound to its `open()`-time event loop. Cross-loop, cross-thread, and cross-tenant reuse are unsupported.*
+The audit chose the simplest possible contract: *an open `NotebookLMClient` instance is bound to its `open()`-time event loop. Open-client cross-loop, cross-thread, and cross-tenant reuse are unsupported. Closing and reopening the same instance on a new loop is supported; `open()` is the binding moment and resets loop-bound collaborators.*
 
 The contract is enforced at two layers:
 
 - `src/notebooklm/_loop_affinity.py` exposes `assert_bound_loop(bound_loop)` which compares the current loop to the captured one and raises `RuntimeError` with an actionable diagnostic if they differ.
-- `src/notebooklm/_session_lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. Every authed POST path forwards the captured loop into `assert_bound_loop()` before touching any loop-bound primitive.
+- `src/notebooklm/_runtime/lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. It propagates the binding into collaborators that own loop-bound primitives.
+- `src/notebooklm/_runtime/transport.py::RuntimeTransport.perform_authed_post()` calls the injected loop check before it enters the middleware chain and before any loop-bound primitive is touched.
 
-`Session.bound_loop()` (`src/notebooklm/_session.py`, symbol `bound_loop`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call. The capability-Protocol surface that feature APIs depend on lives in `src/notebooklm/_session_contracts.py` (symbols `AuthMetadata`, `Kernel`, `RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`); per ADR-0013 the broad `SessionCapabilities` adapter and its `_capabilities.py` home were retired in favor of these narrow shared Protocols plus feature-local runtimes.
+`ClientLifecycle.get_bound_loop()` returns `None` before `open()` is called, and `assert_bound_loop(None)` is a silent no-op. That keeps fresh test fixtures from being misclassified as cross-loop calls before they have opened a transport. The shared capability-Protocol surface that feature APIs depend on lives in `src/notebooklm/_runtime/contracts.py` (`Kernel`, `RpcCaller`, `LoopGuard`). Single-consumer protocols stay local to their owners, such as `AuthMetadata` in `src/notebooklm/_source/upload.py` and `OperationScopeProvider` in `src/notebooklm/_artifact/polling.py`.
 
 ## Decision
 
 One `NotebookLMClient` instance is bound to the event loop that ran `open()`. The contract is:
 
-- **Cross-loop sharing is unsupported.** Re-using a client across `asyncio.run` invocations raises `RuntimeError` on the first authed POST.
+- **Open-client cross-loop sharing is unsupported.** Re-using an already-open client across `asyncio.run` invocations raises `RuntimeError` on the first authed POST. Close → reopen on a different loop is supported and rebuilds/resets loop-bound primitives.
 - **Cross-thread sharing is unsupported.** Create one `NotebookLMClient` per thread.
 - **Cross-tenant sharing is unsupported.** Each `AuthTokens` tenant gets its own `NotebookLMClient` instance — `ChatAPI._cache` is per-instance for exactly this reason.
 
@@ -46,7 +47,7 @@ The contract is enforced via `assert_bound_loop()` (raises `RuntimeError`) rathe
 **Unwanted:**
 
 - Callers that *want* multi-loop / multi-thread reuse must construct multiple clients. For test code this is mildly verbose; for production code this is the right design (each loop owns its own connection pool) so the tax is paid in tests only.
-- The loop-affinity bridge on `Session.bound_loop()` (in `_session.py`) has to defensively handle `MagicMock`-shaped fixtures. The defensive code is small but it is a reminder that the contract is enforced via Protocol forwarding through the capability surface in `_session_contracts.py`, not via a hard constructor invariant.
+- The pre-open `None` path exists for fixture ergonomics, so the constructor does not enforce a hard loop invariant. The contract is enforced at async entry points that touch transport or loop-bound primitives.
 - The contract is *advisory* to multi-process callers. Processes do not share Python objects, so the contract is trivially satisfied across fork/spawn boundaries — but the diagnostic message says "loop", not "loop or process", so a reader of an error report has to know that processes are out of scope.
 
 ## Alternatives considered

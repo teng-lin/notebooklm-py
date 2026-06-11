@@ -10,8 +10,10 @@ setup (scrubbing, matchers, record modes).
 ```text
 tests/cassettes/
 ├── README.md                           (this file)
-├── <object>_<operation>.yaml           (real recorded interactions)
-├── <object>_<operation>_<context>.yaml (real, with extra context)
+├── <object>_<operation>.yaml           (recorded interactions or synthetic error cassettes)
+├── <object>_<operation>_<context>.yaml (recorded interactions with extra context)
+├── gzip_coverage/
+│   └── *.yaml                          (derived replay fixtures for gzip coverage)
 └── examples/
     └── example_<description>.yaml      (illustrative fixtures, not recordings)
 ```
@@ -20,8 +22,10 @@ tests/cassettes/
 
 ### Real cassettes — `<object>_<operation>[_<context>].yaml`
 
-Recorded against the live NotebookLM API. Live in `tests/cassettes/` (top
-level — no subdirectory).
+Recorded against the live NotebookLM API. Most live in the top level of
+`tests/cassettes/`. A few top-level `error_synthetic_*.yaml` files are
+synthetic error recordings used by error-replay tests, and
+`gzip_coverage/` holds a derived replay cassette for gzip decoding coverage.
 
 `<object>` is the API surface — typically the `client.<area>` namespace name:
 
@@ -63,20 +67,22 @@ Tests that reference them must use the subpath:
 @notebooklm_vcr.use_cassette("examples/example_scrubbed_cookies.yaml")
 ```
 
-The subdirectory placement keeps illustrative fixtures out of the cassette
-loops in `tests/integration/conftest.py` (`_real_cassettes`),
-`tests/_guardrails/test_cassette_shapes.py`, and
-`tests/scripts/check_cassettes_clean.py`, all of which scan the top level
-of `tests/cassettes/` non-recursively. Adding a new example only needs to
-land in `examples/` — no allowlist or filter edits required.
+The subdirectory placement keeps illustrative fixtures out of the replay-time
+real-cassette discovery in `tests/integration/conftest.py` (`_real_cassettes`).
+Cleanliness and shape guards are broader: CI runs
+`tests/scripts/check_cassettes_clean.py --strict --recursive`, and golden decode
+coverage also scans recursively while excluding `examples/`.
 
 ## When to add a cassette
 
 - **New real cassette**: record against the live API with
-  `NOTEBOOKLM_VCR_RECORD=1`. The slug is `<object>_<operation>` plus an
-  optional `_<context>` if the test parametrizes. Verify sensitive data is
-  scrubbed (`uv run python tests/scripts/check_cassettes_clean.py`) before
-  committing.
+  `NOTEBOOKLM_VCR_RECORD=1`. This uses VCR `new_episodes` mode: existing
+  matching interactions replay, and only missing ones append. To fully
+  re-record an existing cassette, delete or move it first. The slug is
+  `<object>_<operation>` plus an optional `_<context>` if the test parametrizes.
+  Verify sensitive data is scrubbed
+  (`uv run python tests/scripts/check_cassettes_clean.py --strict --recursive`)
+  before committing.
 - **New illustrative example**: hand-author the YAML under `examples/`
   with the `example_` prefix. Reference it from the test via the
   `examples/example_<description>.yaml` subpath.
@@ -88,6 +94,6 @@ land in `examples/` — no allowlist or filter edits required.
 - [tests/cassette_patterns.py](../cassette_patterns.py) — canonical scrub
   pattern registry.
 - [tests/scripts/check_cassettes_clean.py](../scripts/check_cassettes_clean.py)
-  — pre-commit guard that asserts no sensitive data slips into a cassette.
+  — CI/repo-lint guard that asserts no sensitive data slips into cassettes.
 - [docs/development.md](../../docs/development.md) — recording workflow,
   test notebook IDs, scrubbing details.

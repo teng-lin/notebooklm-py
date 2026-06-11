@@ -48,24 +48,26 @@ See **[docs/architecture.md](docs/architecture.md)** for the layered design, cal
 ## Usage
 
 ```python
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     notebooks = await client.notebooks.list()
     await client.sources.add_url(nb_id, url)
     answer = await client.chat.ask(nb_id, question)
     status = await client.artifacts.generate_audio(nb_id)
 ```
 
-CLI: top-level commands (`login`, `use`, `status`, `list`, `ask`) plus grouped subcommands (`source add`, `artifact list`, `generate audio`, `download video`, `note create`, `mcp install <client>`, …). Full reference: [docs/cli-reference.md](docs/cli-reference.md).
+CLI: top-level commands (`login`, `use`, `status`, `list`, `ask`) plus grouped subcommands (`source add`, `label list`, `artifact list`, `generate audio`, `download video`, `note create`, `mcp install <client>`, …). Full reference: [docs/cli-reference.md](docs/cli-reference.md).
 
 An opt-in MCP server (`mcp` extra, console script `notebooklm-mcp`) exposes the same `_app/` business logic over the Model Context Protocol; `notebooklm mcp install <client>` wires it into Claude Desktop/Code, Cursor, or Windsurf, and `desktop-extension/` packages a one-click `.mcpb` bundle.
 
+An opt-in single-tenant REST server (`server` extra, console script `notebooklm-server`) exposes guarded `/v1` FastAPI routes over the same `_app/` layer. It is experimental, loopback-bound by default, and requires `NOTEBOOKLM_SERVER_TOKEN`; see [docs/installation.md#rest-api-server](docs/installation.md#rest-api-server).
+
 ## Testing
 
-Unit (`tests/unit/`, no network) · integration (`tests/integration/`, mocked HTTP) · e2e (`tests/e2e/`, real API, `@pytest.mark.e2e`). VCR cassettes match on `rpcids` + decoded body shape. Details: [docs/development.md](docs/development.md).
+Unit (`tests/unit/`, no network; includes `_app`, CLI, server, and guardrail tests) · integration (`tests/integration/`, VCR cassette replay) · e2e (`tests/e2e/`, real API, `@pytest.mark.e2e`). VCR cassettes match on `rpcids` + decoded body shape. Details: [docs/development.md](docs/development.md).
 
 ## Docs
 
-`docs/`: installation · cli-reference · python-api · configuration · troubleshooting · development · architecture · mcp-guide · rpc-development · rpc-reference · adr/.
+`docs/`: installation · cli-reference · python-api · configuration · troubleshooting · development · architecture · mcp-guide · rpc-development · rpc-reference · stability · adr/.
 
 ## Pull Request Workflow (required)
 

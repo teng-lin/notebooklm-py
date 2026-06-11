@@ -4,7 +4,8 @@
 > retired pattern for historical context only. The `_core.py` monolith it
 > describes was decomposed and **deleted long ago**; the later `Session`
 > facade and `_session.py` that replaced it have **also been deleted**, and the
-> `_session_*.py` collaborators were renamed to `_runtime_*.py`. No
+> `_session_*.py` collaborators moved into the `_runtime/` package and
+> sibling runtime modules. No
 > `_core.py`/`_session.py` file exists today — read every in-body
 > `src/notebooklm/_core.py:NNN` reference and `Session` mention as historical.
 > The live runtime decomposition is documented in
@@ -32,7 +33,7 @@ whose allowlist is empty.
 - **Independent testability** — the auth-refresh loop, the keepalive task, and the drain coordinator each have non-trivial timing semantics. Testing them through `NotebookLMClient` required spinning the full client and patching half a dozen unrelated collaborators per test.
 - **Independent reasoning** — landlocked invariants (e.g. "drain must complete before close returns") had no module-level home, so reviewers had to re-derive them on every PR.
 
-Tier 8/9/10 extracted the cross-cutting concerns into named seam modules. As of HEAD the seams are:
+Tier 8/9/10 extracted the cross-cutting concerns into named seam modules. At the tier-10 baseline the seams were:
 
 ```text
 _request_types.py               authed-POST request construction types
@@ -49,7 +50,7 @@ _session_lifecycle.py            Open/close lifecycle (loop-affinity guard + kee
 _cookie_persistence.py   Cookie-jar persistence + __Secure-1PSIDTS rotation
 _session_config.py            Module-level DEFAULT_* knobs
 _session_helpers.py              is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
-_error_injection.py      env-var guard (live implementation is chain-level `ErrorInjectionMiddleware` in `_middleware_error_injection.py:97`; `_SyntheticErrorTransport` retired)
+_error_injection.py      env-var guard (live implementation is chain-level `ErrorInjectionMiddleware` in `src/notebooklm/_middleware/error_injection.py`; `_SyntheticErrorTransport` retired)
 ```
 
 The extraction was constrained by an unusually high test-coupling load: tests reach into the live `Session` instance with `core._save_lock`, `core._metrics_lock`, `core._on_rpc_event`, and many other private attributes — patterns that pre-date the seam extraction. When the storage for these attributes moved into the seams, the legacy attribute names had to keep resolving on the `Session` instance or hundreds of tests would break in a single PR.

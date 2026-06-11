@@ -131,7 +131,7 @@ four verbs above.
 ## 2. RPC-callable Protocol names (CC3)
 
 Most feature modules type their RPC dependency as the shared
-`RpcCaller` object Protocol from `_runtime_contracts`. Only middleware-chain
+`RpcCaller` object Protocol from `_runtime/contracts.py`. Only middleware-chain
 callables and upload's keyword-injected registration callback keep local
 callable shapes. These names are NOT interchangeable — the divergence is
 structural, not stylistic. This section explains what each name signals so new
@@ -173,9 +173,10 @@ lets mypy flag keyword-name typos at the call site.
 ### Choosing a name in new code
 
 - New pure-RPC feature API? Type the dependency as
-  **`RpcCaller`** from `_runtime_contracts`. This is the shared capability
+  **`RpcCaller`** from `_runtime/contracts.py`. This is the shared capability
   Protocol; see [`docs/architecture.md`](./architecture.md) for the protocol
-  catalogue. Concrete `Session` satisfies it structurally.
+  catalogue. The concrete `RpcExecutor` and `NotebookLMClient` satisfy it
+  structurally.
 - New middleware? Use **`NextCall`** from `_middleware/core.py` for the chain
   callable — do not invent a new alias.
 - New feature that takes the RPC entrypoint as a **keyword argument** at call
@@ -216,8 +217,8 @@ Examples (all on `ClientMetrics`):
 Shared backend: `ClientMetrics._record_wait` (private; the three public
 methods are typed wrappers around it).
 
-> A `Session.record_upload_queue_wait` proxy exists too; it forwards to the
-> `ClientMetrics` instance. The verb stays `record_*` because the contract is
+> Upload queue waits are recorded through the `ClientMetrics` instance injected
+> into the upload pipeline. The verb stays `record_*` because the contract is
 > still sync + lock-protected counter mutation.
 
 ### `emit_X` — async, fires the user-supplied callback
@@ -263,7 +264,7 @@ one, this is what it means:
 | Token | Meaning |
 |-------|---------|
 | **`#NNNN`** | A GitHub pull request or issue number in `teng-lin/notebooklm-py`, e.g. <https://github.com/teng-lin/notebooklm-py/pull/1205>. Bare numbers are not clickable in most renderers; resolve them on GitHub. |
-| **ADR-NNN** | An Architecture Decision Record under [`docs/adr/`](./adr/) (zero-padded, e.g. ADR-0014 → `docs/adr/0014-*.md`). The authoritative source for a design decision and its trade-offs. |
+| **ADR-NNNN** | An Architecture Decision Record under [`docs/adr/`](./adr/) (zero-padded, e.g. ADR-0014 -> `docs/adr/0014-*.md`). The authoritative source for a design decision and its trade-offs. |
 | **Wave N** | A sequenced step of a larger multi-PR migration (e.g. the session-decoupling / host-protocol-removal effort). Waves are *planning* units, not releases; the durable record of what a wave did is the ADR it closed and the merged PRs. |
 | **Phase N** | A coarser planning grouping than a Wave, used by some older migrations. |
 | **Tier N** | Yet another planning grouping (e.g. "tier-12-13" migration); interchangeable with Phase in intent. |
@@ -276,7 +277,7 @@ rationale survives without the label.
 
 ## Related documents
 
-- [`docs/architecture.md`](./architecture.md) — the v0.5.0 collaborator graph,
+- [`docs/architecture.md`](./architecture.md) — the current runtime graph,
   capability Protocols, and the `RpcCaller` catalogue entry.
 - [`docs/development.md`](./development.md) — contributor on-ramp; this
   conventions doc is linked from its "Key Design Decisions" section.

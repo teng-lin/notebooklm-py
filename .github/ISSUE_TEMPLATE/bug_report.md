@@ -34,6 +34,7 @@ Paste error output here
 - Python version: (e.g., 3.12)
 - notebooklm-py version: (run `notebooklm --version`)
 - Install method: (pip, uv, pipx)
+- Surface: (CLI, Python API, MCP, REST server, desktop extension, docs)
 
 ## Debug Output
 
@@ -41,6 +42,15 @@ If applicable, run the failing command with `-vv` for verbose logging and paste 
 
 ```bash
 notebooklm -vv <your-command-here>
+```
+
+For auth/context issues, also include these outputs with cookies, emails, notebook
+titles, and paths redacted as needed:
+
+```bash
+notebooklm doctor --json
+notebooklm status --paths --json
+notebooklm auth check --test --json
 ```
 
 ## Checklist

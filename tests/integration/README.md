@@ -31,7 +31,14 @@ violating node IDs.
 
 `allow_no_vcr` exists for tests that legitimately live under
 `tests/integration/` for tree-organization reasons but make no real (or
-recorded) HTTP calls. Today these include:
+recorded) HTTP calls. The authoritative allowlists live in:
+
+- `tests/_fixtures/integration_allow_no_vcr_files.txt`
+- `tests/_fixtures/integration_allow_no_vcr_nodeids.txt`
+- `tests/_fixtures/integration_vcr_allow_no_vcr_nodeids.txt` for the rare
+  intentional VCR/allow-no-VCR overlap
+
+Current categories include:
 
 - `test_auto_refresh.py` — asserts that the refresh callback is *wired*;
   doesn't fire a real refresh.
@@ -39,17 +46,19 @@ recorded) HTTP calls. Today these include:
   paths; no real socket.
 - `test_*_idempotency.py` — mock-transport regression tests for retry /
   idempotency behavior; no live or recorded HTTP.
-- `test_gzip_cassette_replay.py` — pure cassette-replay helper coverage.
 - The whole `concurrency/` subtree — uses `httpx.MockTransport` to inject
   scheduler-controllable behavior into the core/upload/download paths
   (real HTTP would defeat the determinism these tests need).
 
 Per the project's testing strategy, **new mock-only tests should land in
 `tests/unit/`** (or `tests/unit/concurrency/`). `allow_no_vcr` is a
-transitional marker for the legacy mock-tier files above — adding more of
-them under `tests/integration/` should be a conscious decision (e.g. the
-test needs `tests/integration/cassettes/` discovery to round-trip a path)
-not a default.
+transitional marker for the legacy mock-tier files above. Adding more of
+them under `tests/integration/` should be a conscious decision, with the
+allowlist manifests updated in the same PR. Real cassettes live in
+`tests/cassettes/`, not under `tests/integration/`.
+
+`test_gzip_cassette_replay.py` is VCR-tier, not `allow_no_vcr`: it uses a scoped
+VCR instance over a derived cassette in `tests/cassettes/gzip_coverage/`.
 
 ## When to use `@pytest.mark.vcr` vs `@notebooklm_vcr.use_cassette`
 
@@ -70,3 +79,6 @@ not a default.
 - Marker registration: `pyproject.toml` `[tool.pytest.ini_options].markers`
 - Regression test (committed, pytester-based):
   `tests/unit/test_tier_enforcement_hook.py`
+- Taxonomy guard: `tests/_guardrails/test_integration_allow_no_vcr_allowlist.py`
+- Replay network guard: `tests/integration/conftest.py` refuses live sockets when
+  cassette replay should be deterministic.

@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-05-15
+**Last Updated:** 2026-06-11
 
 Complete reference for the `notebooklm` Python library.
 
@@ -239,11 +239,9 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `ArtifactTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ArtifactError`, `NotebookLMError` |
 | `ResearchTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ResearchError`, `NotebookLMError` |
 
-`MindMapNotFoundError` is raised by the `client.mind_maps` mutation paths
-(`rename`) on a missing target (issue #1291). `NoteNotFoundError` (with its
-`NoteError` domain base) is defined now but **not raised by any method yet** —
-it is the prerequisite type for the note not-found work landing in **v0.8.0**
-(issue #1346).
+`MindMapNotFoundError` is raised by `client.mind_maps.get(...)` and mutation
+paths such as `rename` on a missing target. `NoteNotFoundError` is raised by
+`client.notes.get(...)` when the note is absent.
 
 Use the table to pick the right level of catch. As of **v0.8.0** (the #1247
 flip), `client.sources.get(...)`, `client.artifacts.get(...)`,
@@ -315,10 +313,9 @@ except WaitTimeoutError as exc:
 `ResearchAPI.wait_for_completion` previously raised the bare built-in
 `TimeoutError`; it now raises `ResearchTimeoutError`, which is a
 `WaitTimeoutError` (and therefore still a `TimeoutError`), so the change is
-backward-compatible. The poll cadence keyword on that method is now
+backward-compatible. The poll cadence keyword on that method is
 `initial_interval=` (matching the source/artifact waiters); the old `interval=`
-keyword still works with a `DeprecationWarning` and is removed in v0.8.0 — see
-[deprecations](deprecations.md#migration-researchapiwait_for_completion-poll-interval-keyword).
+alias was removed in v0.8.0. See [deprecations](deprecations.md#removed-in-v080).
 
 ##### Catching any "not found" across domains
 
@@ -729,7 +726,7 @@ conversation cache, etc.) is split across single-responsibility runtime
 and kernel collaborator modules such as `notebooklm._rpc_executor`,
 `notebooklm._transport_drain`, and `notebooklm._transport_errors`. The
 split is internal — module-level constants and helpers live in canonical
-seam modules (`_runtime_config`, `_runtime_helpers`, `_error_injection`,
+seam modules (`_runtime/config.py`, `_runtime/helpers.py`, `_error_injection`,
 `_request_types`, `_transport_errors`, `_streaming_post`) and are imported
 from those modules directly. The historical `notebooklm._core`
 compatibility shim was removed in v0.5.0.
@@ -737,17 +734,17 @@ compatibility shim was removed in v0.5.0.
 | Module | Owns | Notes |
 |---|---|---|
 | `_client_composed` | `ClientComposed`: bound runtime holder for transport, executor, middleware chain metadata, and the collaborator bundle. | The composition root binds this once; public methods read the bound collaborators from the client. |
-| `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_runtime_contracts`). |
-| `_runtime_init` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
-| `_runtime_transport` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
-| `_runtime_config` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
-| `_runtime_helpers` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
+| `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_runtime/contracts.py`). |
+| `_runtime/init.py` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
+| `_runtime/transport.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
+| `_runtime/config.py` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
+| `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
 | `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
-| `_runtime_auth` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
+| `_runtime/auth.py` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
 | `_conversation_cache` | Per-instance true-LRU `_conversation_cache` for `ChatAPI` continuity; bounds the conversation count and the turns retained per conversation. | Pure in-process state; not shared across client instances. |
 | `_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
 | `_transport_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
-| `_runtime_lifecycle` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Client lifecycle collaborator. |
+| `_runtime/lifecycle.py` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Client lifecycle collaborator. |
 | `_client_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts to coordinate and cancel pending polls. |
 | `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
@@ -757,7 +754,7 @@ compatibility shim was removed in v0.5.0.
 | `_streaming_post` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
 
 Feature APIs depend on narrow per-capability Protocols defined in
-`notebooklm._runtime_contracts` rather than on a broad runtime facade.
+`notebooklm._runtime.contracts` rather than on a broad runtime facade.
 `ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` each take
 their direct collaborators by keyword-only constructor argument. The
 feature-local composite-runtime Protocols (`ChatRuntime`,
@@ -773,7 +770,7 @@ If you previously imported from `notebooklm._core` modules, see
 [`docs/refactor-history.md`](refactor-history.md) for the
 Tier 12 → Tier 13 rename table. The `notebooklm._core` compatibility
 shim was removed in v0.5.0; first-party callers should import directly
-from the canonical seam modules (`_runtime_config`, `_runtime_helpers`,
+from the canonical seam modules (`_runtime/config.py`, `_runtime/helpers.py`,
 `_request_types`, `_transport_errors`, `_streaming_post`, `_error_injection`,
 `_transport_drain`, etc.).
 
@@ -793,6 +790,7 @@ class NotebookLMClient:
     chat: ChatAPI              # Conversations
     research: ResearchAPI      # Web/Drive research
     notes: NotesAPI            # User notes
+    mind_maps: MindMapsAPI     # Note-backed and interactive mind maps
     settings: SettingsAPI      # User settings (language, etc.)
     sharing: SharingAPI        # Notebook sharing
     labels: LabelsAPI          # Source labels (topic grouping)
@@ -836,7 +834,7 @@ class NotebookLMClient:
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
     ):
 
-    async def refresh_auth(self) -> AuthTokens:
+    async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
 
     async def rpc_call(
         self,
@@ -947,7 +945,6 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 | `get_description(notebook_id)` | `notebook_id: str` | `NotebookDescription` | Get AI summary and topics |
 | `get_metadata(notebook_id)` | `notebook_id: str` | `NotebookMetadata` | Get notebook metadata and sources |
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
-| `share(notebook_id, public=True, artifact_id=None)` | `notebook_id: str, bool, str \| None` | `dict` | Deprecated; use `client.sharing.set_public()` for notebook-level public sharing |
 | `get_share_url(notebook_id, artifact_id=None)` | `notebook_id: str, str \| None` | `str` | Get a share URL |
 | `remove_from_recent(notebook_id)` | `notebook_id: str` | `None` | Remove from recently viewed |
 | `get_raw(notebook_id)` | `notebook_id: str` | `Any` | Get raw API response data |
@@ -996,15 +993,16 @@ print(url)
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `list(notebook_id, strict=False)` | `notebook_id: str, strict: bool = False` | `list[Source]` | List sources |
-| `get(notebook_id, source_id)` | `str, str` | `Source \| None` | Get source details (returns None if not found) |
+| `get(notebook_id, source_id)` | `str, str` | `Source` | Get source details; raises `SourceNotFoundError` on a miss |
+| `get_or_none(notebook_id, source_id)` | `str, str` | `Source \| None` | Optional lookup; returns `None` when absent |
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
-| `get_guide(notebook_id, source_id)` | `str, str` | `SourceGuide` | Get AI-generated `summary` + `keywords`. Use attribute access (`guide.summary`); legacy `guide["summary"]` dict-subscript still works (with a `DeprecationWarning`) until v0.8.0. |
+| `get_guide(notebook_id, source_id)` | `str, str` | `SourceGuide` | Get AI-generated `summary` + `keywords`; use attribute access (`guide.summary`) |
 | `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `rename(notebook_id, source_id, new_title, *, return_object=True)` | `str, str, str` | `Source \| None` | Rename source (prefers the `UPDATE_SOURCE` echo, else re-fetched; raises `SourceNotFoundError` if missing). `return_object=False` returns `None` without hydrating. |
-| `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
+| `refresh(notebook_id, source_id)` | `str, str` | `None` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
 | `delete(notebook_id, source_id)` | `str, str` | `None` | Delete source (idempotent; returns `None` whether or not it existed) |
 | `wait_until_ready(notebook_id, source_id, timeout=120.0, ...)` | `str, str, float, ...` | `Source` | Poll until `status == READY` (fully processed). Raises `SourceTimeoutError`/`SourceProcessingError`/`SourceNotFoundError`. |
@@ -1059,8 +1057,7 @@ print(f"Content ({fulltext.char_count} chars): {fulltext.content[:500]}...")
 guide = await client.sources.get_guide(nb_id, src.id)
 print(f"Summary: {guide.summary}")
 print(f"Keywords: {guide.keywords}")
-# Legacy guide["summary"] dict-subscript still works (with a
-# DeprecationWarning) until v0.8.0; prefer attribute access.
+# SourceGuide is a typed value; prefer attribute access.
 ```
 
 ---
@@ -1074,7 +1071,8 @@ print(f"Keywords: {guide.keywords}")
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `list(notebook_id, artifact_type=None)` | `str, ArtifactType \| None` | `list[Artifact]` | List artifacts |
-| `get(notebook_id, artifact_id)` | `str, str` | `Artifact \| None` | Get artifact details (returns None if not found) |
+| `get(notebook_id, artifact_id)` | `str, str` | `Artifact` | Get artifact details; raises `ArtifactNotFoundError` on a miss |
+| `get_or_none(notebook_id, artifact_id)` | `str, str` | `Artifact \| None` | Optional lookup; returns `None` when absent |
 | `delete(notebook_id, artifact_id)` | `str, str` | `None` | Delete artifact (idempotent; returns `None` whether or not it existed) |
 | `rename(notebook_id, artifact_id, new_title, *, return_object=True)` | `str, str, str` | `Artifact \| None` | Rename artifact (re-fetched; raises `ArtifactNotFoundError` if missing). `return_object=False` skips the re-fetch and returns `None`. |
 | `poll_status(notebook_id, task_id)` | `str, str` | `GenerationStatus` | Check generation status |
@@ -1104,13 +1102,17 @@ print(f"Keywords: {guide.keywords}")
 |--------|------------|---------|-------------|
 | `generate_audio(...)` | See below | `GenerationStatus` | Generate podcast |
 | `generate_video(...)` | See below | `GenerationStatus` | Generate video |
+| `generate_cinematic_video(...)` | See below | `GenerationStatus` | Generate Cinematic Video Overview |
 | `generate_report(...)` | See below | `GenerationStatus` | Generate report |
+| `generate_study_guide(...)` | See below | `GenerationStatus` | Generate a Study Guide report |
 | `generate_quiz(...)` | See below | `GenerationStatus` | Generate quiz |
 | `generate_flashcards(...)` | See below | `GenerationStatus` | Generate flashcards |
 | `generate_slide_deck(...)` | See below | `GenerationStatus` | Generate slide deck |
 | `generate_infographic(...)` | See below | `GenerationStatus` | Generate infographic |
 | `generate_data_table(...)` | See below | `GenerationStatus` | Generate data table |
-| `generate_mind_map(...)` | See below | `MindMapResult` | Generate a mind map and persist it as a note. Use attribute access (`result.mind_map`, `result.note_id`); legacy `result["mind_map"]` dict-subscript still works (with a `DeprecationWarning`) until v0.8.0. |
+| `generate_mind_map(...)` | See below | `MindMapResult` | Generate a note-backed mind map and persist it as a note; use attribute access (`result.mind_map`, `result.note_id`) |
+| `revise_slide(notebook_id, artifact_id, slide_index, prompt)` | `str, str, int, str` | `GenerationStatus` | Revise one slide in a completed slide deck |
+| `suggest_reports(notebook_id)` | `str` | `list[ReportSuggestion]` | Return suggested report formats/prompts for a notebook |
 
 #### Retrying a Failed Artifact
 
@@ -1278,6 +1280,7 @@ that language.
 from notebooklm import (
     AudioFormat,
     AudioLength,
+    InfographicStyle,
     VideoFormat,
     VideoStyle,
     ReportFormat,
@@ -1379,7 +1382,7 @@ else:
 | `configure(notebook_id, ...)` | `str, ...` | `None` | Set chat persona |
 | `get_history(notebook_id, limit=100, conversation_id=None)` | `str, int, str` | `list[tuple[str, str]]` | Get Q&A pairs from most recent conversation |
 | `get_conversation_id(notebook_id)` | `str` | `str \| None` | Get most recent conversation ID from server |
-| `delete_conversation(notebook_id, conversation_id)` | `str, str` | `bool` | **DESTRUCTIVE.** Permanently delete a server-side conversation (web UI's "Delete history" action). The next `ask()` with no `conversation_id` then starts a brand-new conversation. |
+| `delete_conversation(notebook_id, conversation_id)` | `str, str` | `None` | **DESTRUCTIVE.** Permanently delete a server-side conversation (web UI's "Delete history" action). The next `ask()` with no `conversation_id` then starts a brand-new conversation. |
 | `save_answer_as_note(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Owns the saved-from-chat workflow on `ChatAPI` (the data owner). Raises `ValueError` if `ask_result.references` is empty. When `title is None`, derives `f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"`. |
 
 **ask() Parameters:**
@@ -1476,17 +1479,15 @@ if result.references:
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
-| `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `ResearchStart \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
-| `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `ResearchTask` | Check research status |
-| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `ResearchTask` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`). The legacy `interval=` keyword is a deprecated alias for `initial_interval=` (removed in v0.8.0). |
+| `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `ResearchStart` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode and `DecodingError` if no task is created |
+| `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `ResearchTask` | Check research status. If multiple tasks are in flight and `task_id` is omitted, raises `AmbiguousResearchTaskError` |
+| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `ResearchTask` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`) and `AmbiguousResearchTaskError` when unpinned polling is ambiguous. |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, Sequence[dict[str, Any] \| ResearchSource]` | `list[dict]` | Import findings. Accepts plain dicts **or** the typed `ResearchSource` objects from `poll().sources`. |
 
-> **Typed returns (since v0.7.0).** `start` / `poll` / `wait_for_completion`
-> return the typed dataclasses `ResearchStart` / `ResearchTask` (whose
-> `.sources` are `ResearchSource` objects), with `.status` a `ResearchStatus`
-> str-enum (`status == "completed"` still holds). Legacy dict-subscript
-> (`result["status"]` / `result["sources"][0]["url"]`) keeps working with a
-> `DeprecationWarning` until v0.8.0; prefer attribute access. `import_sources`
+> **Typed returns.** `start` / `poll` / `wait_for_completion` return the typed
+> dataclasses `ResearchStart` / `ResearchTask` (whose `.sources` are
+> `ResearchSource` objects), with `.status` a `ResearchStatus` str-enum
+> (`status == "completed"` still holds). Use attribute access. `import_sources`
 > still accepts `list[dict]` **or** `ResearchSource` objects, so feeding
 > `result.sources` straight back in works.
 
@@ -1498,20 +1499,20 @@ async def start(
     query: str,
     source: str = "web",   # "web" or "drive"
     mode: str = "fast",    # "fast" or "deep" (deep only for web)
-) -> ResearchStart | None:
+) -> ResearchStart:
     """
     Returns: a ResearchStart with .task_id / .report_id / .notebook_id /
-        .query / .mode, or None if the RPC returns an empty/unexpected payload.
-        Legacy result["task_id"] dict-subscript still works (with a
-        DeprecationWarning) until v0.8.0.
-    Raises: ValidationError if source/mode combination is invalid
+        .query / .mode.
+    Raises: ValidationError if source/mode combination is invalid;
+        DecodingError if NotebookLM does not create a task.
     """
 
 async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
     """
     Returns a ResearchTask for the selected research task. If task_id is None,
-    selects the latest research task and emits an ambiguity warning if multiple
-    tasks are in-flight. When task_id is supplied but no in-flight task matches,
+    selects the single visible research task. If multiple tasks are in-flight,
+    raises AmbiguousResearchTaskError; pass task_id from start() to disambiguate.
+    When task_id is supplied but no in-flight task matches,
     returns ResearchTask.not_found(task_id) — status NOT_FOUND, a typed
     poll-observed-absence sentinel (does not raise); the unfiltered empty poll
     stays NO_RESEARCH. Attributes:
@@ -1523,9 +1524,6 @@ async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
       - summary:   str            — summary text when present
       - report:    str            — deep-research report markdown when present
       - tasks:     tuple[ResearchTask, ...] — ALL parsed tasks visible at this poll
-
-    Legacy dict-subscript (result["status"], result["sources"][0]["url"]) keeps
-    working with a DeprecationWarning until v0.8.0; prefer attribute access.
 
     Each ResearchSource exposes:
       - url, title
@@ -1540,7 +1538,6 @@ async def wait_for_completion(
     *,
     timeout: float = 1800,
     initial_interval: float = 5,   # canonical poll-cadence keyword
-    interval: float = 5,           # DEPRECATED alias for initial_interval (removed in v0.8.0)
 ) -> ResearchTask:
     """
     Loops on poll() until research returns "completed" / "failed" or the
@@ -1556,8 +1553,8 @@ async def wait_for_completion(
         TimeoutError, so `except TimeoutError` / `except WaitTimeoutError`
         both catch it).
       - ValueError for invalid timeout or non-positive poll interval.
-      - TypeError if both the deprecated `interval=` and `initial_interval=`
-        are passed.
+      - AmbiguousResearchTaskError if multiple tasks are visible and `task_id`
+        was omitted.
     """
 
 async def import_sources(
@@ -1590,8 +1587,6 @@ async def import_sources(
 ```python
 # Start research and capture the task_id discriminator (typed ResearchStart)
 result = await client.research.start(nb_id, "AI safety regulations")
-if result is None:
-    raise RuntimeError("Research start returned None")
 task_id = result.task_id
 
 # If you launch multiple concurrent research tasks on the same notebook
@@ -1604,7 +1599,7 @@ status = await client.research.wait_for_completion(
     nb_id,
     task_id=task_id,
     timeout=1800,
-    initial_interval=5,  # canonical keyword; `interval=` is a deprecated alias
+    initial_interval=5,
 )
 
 # `status` is a typed ResearchTask; `.sources` are ResearchSource objects,
@@ -1614,6 +1609,8 @@ print(f"Imported {len(imported)} sources")
 ```
 
 ---
+
+<a id="mindmapsapi-clientmind-maps"></a>
 
 ### MindMapsAPI (`client.mind_maps`)
 
@@ -1627,7 +1624,7 @@ Each operation dispatches to the correct backend; you work with `MindMap` /
 |--------|------|---------|-------------|
 | `list(notebook_id)` | `str` | `list[MindMap]` | Both kinds, as distinct `MindMap` entries. `MindMap.tree` is populated for note-backed entries but `None` for interactive ones (`None` = not fetched, not empty — see below) |
 | `list_note_backed(notebook_id)` | `str` | `list[MindMap]` | **Note-backed** entries only (every `kind` is `NOTE_BACKED`, `tree` populated, deleted rows excluded), via a single `GET_NOTES_AND_MIND_MAPS` RPC — no `LIST_ARTIFACTS`. Use `list()` for the union with interactive maps |
-| `get(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Single mind map by id. **Deprecated** `None`-on-miss (warns in v0.7.0, raises `MindMapNotFoundError` in v0.8.0 — issues #1247/#1358); use `get_or_none()` for the warning-free optional lookup |
+| `get(notebook_id, mind_map_id)` | `str, str` | `MindMap` | Single mind map by id; raises `MindMapNotFoundError` on a miss |
 | `get_or_none(notebook_id, mind_map_id)` | `str, str` | `MindMap \| None` | Sanctioned `None`-on-miss lookup (silent — no deprecation warning) |
 | `generate(notebook_id, source_ids=None, *, kind, language="en", instructions=None, wait=True)` | … | `MindMap` | Note-backed (sync) or interactive (`CREATE_ARTIFACT` + poll). A null `CREATE_ARTIFACT` raises `ArtifactFeatureUnavailableError` (a subclass of `ArtifactError`) |
 | `rename(notebook_id, mind_map_id, new_title, *, kind=None, return_object=True)` | … | `MindMap \| None` | `UPDATE_NOTE` / `RENAME_ARTIFACT` by kind (re-fetched; raises `MindMapNotFoundError` if missing). `return_object=False` returns `None`. |
@@ -1666,7 +1663,8 @@ In the CLI, mind maps are handled as a **type** within the existing groups (matc
 |--------|------------|---------|-------------|
 | `list(notebook_id)` | `str` | `list[Note]` | List text notes (excludes mind maps) |
 | `create(notebook_id, title="New Note", content="")` | `str, str, str` | `Note` | Create plain-text note (no citation anchors) |
-| `get(notebook_id, note_id)` | `str, str` | `Optional[Note]` | Get note by ID |
+| `get(notebook_id, note_id)` | `str, str` | `Note` | Get note by ID; raises `NoteNotFoundError` on a miss |
+| `get_or_none(notebook_id, note_id)` | `str, str` | `Note \| None` | Optional lookup; returns `None` when absent |
 | `update(notebook_id, note_id, content, title)` | `str, str, str, str` | `None` | Update note content and title |
 | `delete(notebook_id, note_id)` | `str, str` | `None` | Delete note (idempotent; returns `None` whether or not it existed) |
 | `list_mind_maps(notebook_id)` | `str` | `list[Any]` | List mind maps in the notebook |
@@ -1712,7 +1710,7 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 
 **Note:** Mind maps are detected by checking if the content contains `'"children":' or `'"nodes":'` keys, which indicate JSON mind map data structure.
 
-**Two mind-map kinds (issue #1256):** NotebookLM has two distinct mind-map objects — the **note-backed** kind above (`list_mind_maps()`), and the newer **interactive** kind the web GUI now creates (a studio artifact, internally `type 4 / variant 4`). Both are first-class: the interactive kind appears in `client.artifacts.list(ArtifactType.MIND_MAP)` (and `Artifact.is_interactive_mind_map` distinguishes the backing), `download_mind_map` exports either kind's JSON tree, and the unified [`client.mind_maps`](#mindmapsapi-clientmind_maps) surface generates/reads/renames/deletes both behind a `MindMapKind` discriminator. The `notes.*_mind_map` helpers here remain fully supported for the note-backed kind.
+**Two mind-map kinds (issue #1256):** NotebookLM has two distinct mind-map objects — the **note-backed** kind above (`list_mind_maps()`), and the newer **interactive** kind the web GUI now creates (a studio artifact, internally `type 4 / variant 4`). Both are first-class: the interactive kind appears in `client.artifacts.list(ArtifactType.MIND_MAP)` (and `Artifact.is_interactive_mind_map` distinguishes the backing), `download_mind_map` exports either kind's JSON tree, and the unified [`client.mind_maps`](#mindmapsapi-clientmind-maps) surface generates/reads/renames/deletes both behind a `MindMapKind` discriminator. The `notes.*_mind_map` helpers here remain fully supported for the note-backed kind.
 
 ---
 
