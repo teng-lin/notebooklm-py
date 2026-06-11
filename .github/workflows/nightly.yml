@@ -122,7 +122,21 @@ jobs:
       # (same as the contributor workflow in docs/installation.md). Extras
       # cover the full E2E surface: `browser` = playwright, `dev` = pytest +
       # plugins, `markdown` = markdownify (used by source-conversion tests).
-      run: uv sync --frozen --extra browser --extra dev --extra markdown
+      # Retried to ride out transient registry/network blips: a real lockfile
+      # problem fails all 3 attempts identically, so this only absorbs flakes
+      # — it never masks a genuine resolution error.
+      shell: bash
+      run: |
+        attempt=1
+        until uv sync --frozen --extra browser --extra dev --extra markdown; do
+          if [ "$attempt" -ge 3 ]; then
+            echo "::error::uv sync failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
 
     - name: Get Playwright version
       id: playwright-version

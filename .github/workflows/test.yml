@@ -46,7 +46,23 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies
-      run: uv sync --frozen --extra browser --extra dev --extra markdown
+      shell: bash
+      run: |
+        # Retry to ride out transient registry/network blips during dep
+        # resolution: a single PyPI/GitHub hiccup was hard-failing the leg.
+        # `uv sync` has no internal retry across the full resolve+download.
+        # A real lockfile problem fails all 3 attempts identically, so this
+        # only absorbs flakes — it never masks a genuine resolution error.
+        attempt=1
+        until uv sync --frozen --extra browser --extra dev --extra markdown; do
+          if [ "$attempt" -ge 3 ]; then
+            echo "::error::uv sync failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
 
     - name: Run pre-commit checks
       run: uv run pre-commit run --all-files
@@ -145,7 +161,22 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies (mcp extra)
-      run: uv sync --frozen --extra dev --extra mcp
+      # Retried to ride out transient registry/network blips: a real lockfile
+      # problem fails all 3 attempts identically, so this only absorbs flakes
+      # — it never masks a genuine resolution error. (The windows leg of this
+      # job has flaked on the `Install uv` / dep-resolution network hop.)
+      shell: bash
+      run: |
+        attempt=1
+        until uv sync --frozen --extra dev --extra mcp; do
+          if [ "$attempt" -ge 3 ]; then
+            echo "::error::uv sync failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
 
     - name: Run MCP suite
       run: uv run pytest tests/unit/mcp tests/integration/mcp_vcr -q
@@ -182,7 +213,21 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies (server extra)
-      run: uv sync --frozen --extra dev --extra server
+      # Retried to ride out transient registry/network blips: a real lockfile
+      # problem fails all 3 attempts identically, so this only absorbs flakes
+      # — it never masks a genuine resolution error.
+      shell: bash
+      run: |
+        attempt=1
+        until uv sync --frozen --extra dev --extra server; do
+          if [ "$attempt" -ge 3 ]; then
+            echo "::error::uv sync failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
 
     - name: Run REST server suite
       run: uv run pytest tests/server -q
@@ -224,7 +269,24 @@ jobs:
         enable-cache: true
 
     - name: Install dependencies
-      run: uv sync --frozen --extra browser --extra dev --extra markdown
+      shell: bash
+      run: |
+        # Retry to ride out transient registry/network blips during dep
+        # resolution: a single PyPI/GitHub hiccup on one matrix entry was
+        # hard-failing the whole leg while the other 14 passed. `uv sync`
+        # has no internal retry across the full resolve+download. A real
+        # lockfile problem fails all 3 attempts identically, so this only
+        # absorbs flakes — it never masks a genuine resolution error.
+        attempt=1
+        until uv sync --frozen --extra browser --extra dev --extra markdown; do
+          if [ "$attempt" -ge 3 ]; then
+            echo "::error::uv sync failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
 
     - name: Get Playwright version
       id: playwright-version

@@ -95,7 +95,21 @@ jobs:
       # `uv sync --frozen` reproduces the lockfile-pinned dep tree. The RPC
       # health script (`scripts/check_rpc_health.py`) only needs the core
       # runtime deps — no `[browser]`/`[dev]`/`[markdown]` extras required.
-      run: uv sync --frozen
+      # Retried to ride out transient registry/network blips: a real lockfile
+      # problem fails all 3 attempts identically, so this only absorbs flakes
+      # — it never masks a genuine resolution error.
+      shell: bash
+      run: |
+        attempt=1
+        until uv sync --frozen; do
+          if [ "$attempt" -ge 3 ]; then
+            echo "::error::uv sync failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
 
     # Fail-fast preflight. The script itself rejects empty
     # NOTEBOOKLM_AUTH_JSON downstream, but checking at the workflow layer
