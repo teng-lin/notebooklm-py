@@ -244,18 +244,14 @@ unset (still truncated).
 
 **If it only affects _write_ operations** (`create`, `source add`, `generate`) while reads (`list`, `ask`) keep working — **and the web UI still works** — the likely cause is that Google changed the request payload (wire format) for those RPCs and `notebooklm-py` is still sending the old shape. Google rolls these out gradually, so it can hit some accounts before others.
 
-**Help us fix it — capture the web UI's request *without leaking cookies*:**
+> **First, rule out a mis-decoded success.** Re-run the failing action, then check `notebooklm list`: if the resource was actually **created** despite the error, it's a *response*-decoding issue (share the **Response** below). If it was **not** created, Google rejected our **request** (share the **Payload** below).
 
-1. In your browser, open DevTools → **Network**, then perform the failing action (e.g. create a notebook) in the NotebookLM web UI.
-2. Find the `batchexecute?rpcids=...` POST (e.g. `rpcids=CCqFvf` for create) → right-click → **Copy → Copy as cURL**.
-3. Run it through the scrubber. It reads **only** the `f.req` payload and redacts every text value; cookies, the `at=` CSRF token, and headers are never parsed, so the output is safe by construction:
+**Help us fix it — share the web UI's payload (no cookies needed).** DevTools already isolates the RPC payload from your cookies, so no special tooling is required:
 
-   ```bash
-   pbpaste | python scripts/scrub_rpc_capture.py        # macOS clipboard (or: --file capture.txt)
-   ```
-
-   It prints just the payload _shape_, e.g. `CCqFvf  →  ["<str:7>",null,null,[2],[1]]`.
-4. Paste that one line into your GitHub issue. We diff it against what the library sends and update the payload.
+1. Open DevTools → **Network**, then perform the action (e.g. create a notebook) in the NotebookLM web UI.
+2. Click the `batchexecute?rpcids=...` POST (e.g. `rpcids=CCqFvf` for create).
+3. Open the **Payload** tab (Chrome) / **Request** tab (Firefox). Copy **only** the decoded `f.req` value — **not** the `at=` field beside it (your CSRF token), and stay out of the **Cookies**/**Headers** tabs (cookies live there, never in `f.req`). For the mis-decode case instead, use the **Response** / **Preview** tab — the response body carries no cookies.
+4. Replace your notebook title (the only free-text value) with `REDACTED` and paste the array into the issue. We diff it against what the library sends — `["<title>", null, null, [2], [1]]` for create — and update the payload.
 
 ### Generation Failures
 
