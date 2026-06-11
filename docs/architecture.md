@@ -55,7 +55,7 @@ exactly one client runtime and one RPC stack:
 | --- | --- | --- | --- | --- | --- |
 | **CLI** | `cli/` | terminal (Click) | `notebooklm` | base | exit codes + the byte-stable `--json` error envelope (ADR-0015) |
 | **MCP** | `mcp/` | Model Context Protocol (FastMCP) | `notebooklm-mcp` | `mcp` extra · experimental | MCP tool error content (`CODE: message`) |
-| **REST** | `server/` | HTTP (FastAPI) | `notebooklm-server` | `server` extra · experimental | HTTP status + `{"error": {"category", "message"}}` |
+| **REST** | `server/` | HTTP (FastAPI) | `notebooklm-server` | `server` extra · experimental | HTTP status + `{"error": {"category": "...", "message": "..."}}` |
 
 ### Transport-neutral application layer (`_app/`)
 
@@ -667,7 +667,7 @@ The MCP server is a second thin adapter beside `cli/`, opt-in behind the `mcp`
 extra and **experimental** (preview). `create_server()` builds a FastMCP server
 that exposes the `_app/` cores as MCP tools driving a single long-lived
 `NotebookLMClient`; run it with the `notebooklm-mcp` console script (stdio or
-loopback HTTP). Like the CLI it imports no `click` / `rich` / `cli` — it is built
+loopback HTTP). It imports no `click` / `rich` / `cli` — like the CLI, it is built
 on the `_app/` cores only (enforced by `tests/_guardrails/test_mcp_boundary.py`).
 Failures surface as `CODE: message` strings projected from `_app.errors.classify`,
 and mutating tools are confirmation-gated (they return a `needs_confirmation`
@@ -689,7 +689,7 @@ surface is disabled. Long-running work (source ingest, artifact generation) uses
 the **poll-the-resource** model — the create call returns immediately and the
 matching `GET` reports `pending` / `200` / `404` / `409` / `410`. Failures project
 from `_app.errors.classify` onto an HTTP status plus the
-`{"error": {"category", "message"}}` envelope. It imports no `click` / `rich` /
+`{"error": {"category": "...", "message": "..."}}` envelope. It imports no `click` / `rich` /
 `cli` (enforced by `tests/_guardrails/test_server_boundary.py`). Launch and
 configuration: [`docs/installation.md`](./installation.md#rest-api-server).
 
