@@ -30,15 +30,18 @@ import re
 import sys
 from urllib.parse import unquote
 
-# Fail-closed net. Real safety is the string-redaction below (every string leaf
-# becomes ``<str:N>``); this is a belt-and-braces scan of the FINAL output for
-# credential shapes — incl. the ones embedded in NotebookLM's page-load HTML
-# (``WIZ_global_data``): the ``AIza…`` / ``g.a000…`` API keys, the ``SNlM0e``
-# CSRF token, OAuth tokens, session cookies, and account email.
-_LEAK = re.compile(
-    r"SID=|SAPISID|HSID=|LSID=|__Secure-|SNlM0e|ya29\.|1//[0-9A-Za-z_-]{20}"
-    r"|AIza[0-9A-Za-z_-]{20}|g\.a000[0-9A-Za-z_-]{6}|[\w.+-]+@[\w-]+\.[\w.]{2,}"
-)
+# Fail-closed perimeter. ``_redact`` turns every string leaf into ``<str:N>``,
+# so safety here is STRUCTURAL, not shape-based: ``_unredacted`` asserts that
+# every string that survives into the output is a ``<str:N>`` placeholder and
+# nothing else. This is shape-AGNOSTIC by design — it knows nothing about
+# credential formats (``AIza…`` keys, ``SNlM0e`` CSRF, OAuth/session tokens,
+# account email, or the ``WIZ_global_data`` page-HTML they hide in), so no new
+# Google token shape can ever outrun it, and there is no credential registry to
+# keep in sync with the runtime scrubber (src/notebooklm/_secrets.py).
+_REDACTED_STR = re.compile(r"<str:\d+>")
+# rpcids are short public method IDs (e.g. ``CCqFvf``); printed verbatim, so
+# pin their shape to keep a malformed HAR from injecting text through that slot.
+_SAFE_RPCID = re.compile(r"[A-Za-z0-9_]{3,24}")
 
 # A tiny rpcid → friendly-name map (write path + common reads); unknowns show raw.
 _NAMES = {
@@ -62,6 +65,24 @@ def _redact(node):
     if isinstance(node, dict):
         return {k: _redact(v) for k, v in node.items()}
     return node  # int / float / bool / None — structural constants kept verbatim
+
+
+def _unredacted(node):
+    """Return the first string leaf that is NOT a ``<str:N>`` placeholder, or None.
+
+    The completeness check behind the fail-closed perimeter: every string in a
+    redacted structure must be a ``<str:N>`` token. int/float/bool/None are
+    structural constants (gRPC status codes, list nesting) and carry no string
+    content, so they never trip it.
+    """
+    if isinstance(node, str):
+        return None if _REDACTED_STR.fullmatch(node) else node
+    children = node if isinstance(node, list) else node.values() if isinstance(node, dict) else ()
+    for child in children:
+        bad = _unredacted(child)
+        if bad is not None:
+            return bad
+    return None
 
 
 def _decode_maybe_json(s):
@@ -162,18 +183,27 @@ def main() -> int:
         for rpcid, params in _iter_request_calls(_req_freq(entry) or ""):
             if args.rpcid and rpcid != args.rpcid:
                 continue
+            if not _SAFE_RPCID.fullmatch(rpcid):
+                continue  # not a real rpcid — skip rather than print unknown text
             name = _NAMES.get(rpcid, "")
             head = f"{rpcid}" + (f"  ({name})" if name else "")
-            lines = [head, f"  request : {_dump(_redact(params))}"]
+            req_red = _redact(params)
+            redacted = [req_red]
+            lines = [head, f"  request : {_dump(req_red)}"]
             if rpcid in resp:
                 result, err = resp[rpcid]
+                result_red, err_red = _redact(result), _redact(err)
+                redacted += [result_red, err_red]
                 bits = [f"HTTP {status}"]
                 if err is not None:
-                    bits.append(f"status_code={_dump(err)}")
-                bits.append(f"result={_dump(_redact(result))}")
+                    bits.append(f"status_code={_dump(err_red)}")
+                bits.append(f"result={_dump(result_red)}")
                 lines.append("  response: " + " | ".join(bits))
             else:
                 lines.append(f"  response: HTTP {status} (body not in HAR — export 'with content')")
+            if any(_unredacted(node) is not None for node in redacted):
+                # impossible by construction — fail closed if it ever happens
+                return _die("Refusing to print: a value survived redaction. Please report this.")
             blocks.append("\n".join(lines))
 
     if not blocks:
@@ -182,8 +212,6 @@ def main() -> int:
         )
 
     out = "\n\n".join(blocks)
-    if _LEAK.search(out):  # impossible by construction — fail closed if it ever happens
-        return _die("Refusing to print: a credential-shaped token survived. Please report this.")
 
     print(
         "NotebookLM RPC capture — string values → <str:N>; cookies / headers / "

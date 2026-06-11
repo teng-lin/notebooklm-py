@@ -84,15 +84,19 @@ def test_html_in_response_result_is_redacted() -> None:
     assert red == [f"<str:{len(secret_html)}>", ["<str:6>", 7, None]]
 
 
-def test_leak_net_matches_page_html_credential_shapes() -> None:
-    for token in (
+def test_unredacted_completeness_check() -> None:
+    # A fully-redacted structure passes (no surviving raw string → None).
+    assert har._unredacted(["<str:7>", None, [2], {"k": "<str:3>"}]) is None
+    # int / bool / None are structural constants — never tripped.
+    assert har._unredacted([3, True, None, [5]]) is None
+    # Any raw string leaf is caught regardless of its shape — the check is
+    # shape-AGNOSTIC, so it needs no credential-format knowledge to catch these.
+    for raw in (
         "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ01",
         "SNlM0e",
-        "g.a000ABCDEF",
         "person@example.com",
-        "LSID=abc",
-        "1//0abcdefghijklmnopqrstuv",
+        "g.a000ABCDEF",
+        "an ordinary unredacted string",
+        "",
     ):
-        assert har._LEAK.search(token), token
-    # A clean redacted line must NOT trip the net.
-    assert not har._LEAK.search('CCqFvf  request : ["<str:7>",null,[2],[1]]')
+        assert har._unredacted([1, ["<str:2>", raw]]) == raw
