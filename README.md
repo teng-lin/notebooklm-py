@@ -90,19 +90,20 @@ These features are available via API/CLI but not exposed in NotebookLM's web int
 
 The full install guide — six personas (agent, end-user, library, headless, contributor, power-user), optional extras matrix, platform notes — lives in **[docs/installation.md](docs/installation.md)**.
 
-**Quickest start** (CLI users and AI agents):
+**Quickest start** (CLI users and AI agents) — install in an isolated tool environment, which also sidesteps the locked-down system Python on modern macOS/Linux ([PEP 668](https://peps.python.org/pep-0668/)):
 
 ```bash
-pip install "notebooklm-py[browser]"   # core + Playwright
-playwright install chromium             # ~170 MB; no progress bar — be patient (30–90 s)
-notebooklm login                        # opens browser for Google sign-in
-notebooklm auth check --test --json     # verify: expect "status": "ok"
+uv tool install "notebooklm-py[browser]"   # or: pipx install "notebooklm-py[browser]"
+notebooklm login                           # first run auto-downloads Chromium (~170 MB), then Google sign-in
+notebooklm auth check --test --json        # verify: expect "status": "ok"
 ```
+
+> Plain `pip install "notebooklm-py[browser]"` works **inside a virtualenv**. Outside one, modern macOS (Homebrew Python) and Debian/Ubuntu reject it with `error: externally-managed-environment` — use `uv tool` / `pipx` above, or a venv. (On Windows, python.org's Python is not externally-managed, so `pip install` is fine.)
 
 **As a library** (embedded in your app — no Playwright, no Chromium):
 
 ```bash
-pip install notebooklm-py               # ~10 MB; ship a pre-acquired storage_state.json
+uv add notebooklm-py                    # or, inside a virtualenv: pip install notebooklm-py
 ```
 
 If `playwright install chromium` fails on Linux with `TypeError: onExit is not a function`, see the [Linux workaround](docs/troubleshooting.md#linux). **Contributors:** see [CONTRIBUTING.md](CONTRIBUTING.md).

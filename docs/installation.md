@@ -37,14 +37,25 @@ This is the canonical installation guide for `notebooklm-py`. The README has a q
 
 ## Quick install (TL;DR by persona)
 
+> **Installing the CLI on macOS / Linux — use an isolated installer.** Plain
+> `pip install` into the *system* interpreter fails on modern macOS (Homebrew
+> Python) and Debian/Ubuntu with `error: externally-managed-environment`
+> ([PEP 668](https://peps.python.org/pep-0668/)). For CLI/app use, prefer
+> **`uv tool install`** or **`pipx install`** — they put `notebooklm` (and
+> `notebooklm-mcp` / `notebooklm-server`) on your PATH in a dedicated environment
+> without touching system Python. Plain `pip` still works **inside a virtualenv**
+> and on **Windows** (python.org's Python is not externally-managed). Library
+> users install into their own project's venv (`uv add` / `pip install`), so
+> PEP 668 never applies.
+
 | Persona | Install command |
 |---|---|
-| **A — AI Agent** | `pip install "notebooklm-py[browser]"` (then optionally `pip install "notebooklm-py[cookies]"` if Python < 3.13) |
-| **B — End user** | `pip install "notebooklm-py[browser]"` (or `pipx install "notebooklm-py[browser]"` for isolation) |
-| **C — Library user** | `pip install notebooklm-py` |
-| **D — Headless server / CI** | `pip install notebooklm-py` (no Playwright; ship a `storage_state.json`) |
+| **A — AI Agent** | `pip install "notebooklm-py[browser]"` in the user's active env (fall back to `uv tool install` / `pipx install` on an *externally-managed-environment* error) |
+| **B — End user** | `uv tool install "notebooklm-py[browser]"` or `pipx install "notebooklm-py[browser]"` (isolated; avoids the PEP 668 error) |
+| **C — Library user** | `uv add notebooklm-py` (or `pip install notebooklm-py` inside your project venv) |
+| **D — Headless server / CI** | `pip install notebooklm-py` inside a venv/container; ship a `storage_state.json` (no Playwright) |
 | **E — Contributor** | `uv sync --frozen --extra browser --extra dev --extra markdown && uv run playwright install chromium && uv run pre-commit install` |
-| **F — Power user** | `pip install "notebooklm-py[browser,cookies,markdown]"` (Python ≤ 3.12 only) |
+| **F — Power user** | `uv tool install "notebooklm-py[browser,cookies,markdown]"` (Python ≤ 3.12 only) |
 
 ---
 
@@ -73,6 +84,8 @@ else
     echo "Skipping [cookies] on Python 3.13+ (rookiepy unavailable). Use 'notebooklm login' interactively."
 fi
 ```
+
+> If `pip install` errors with `externally-managed-environment` (modern macOS / Debian system Python, [PEP 668](https://peps.python.org/pep-0668/)), retry with `uv tool install "notebooklm-py[browser]"` or `pipx install "notebooklm-py[browser]"` — isolated installs that don't touch system Python. Inside an active virtualenv, `pip` works as-is.
 
 **Why two separate calls (not `[browser,cookies]`):** the combined form is atomic — if `rookiepy` fails to compile, the whole install fails and the user gets **nothing**. Splitting means `[browser]` always succeeds; `[cookies]` is recoverable.
 
@@ -129,20 +142,22 @@ Occasional CLI use.
 
 **Prerequisites:** Python 3.10+ already installed.
 
-**Recommended (cross-platform default, including Windows):**
-
-<!-- not mirrored: end-user pip install (Persona B); CONTRIBUTING.md tracks the in-repo `uv sync` flow only -->
-```bash
-pip install "notebooklm-py[browser]"
-```
-
-For an isolated install (avoids polluting your env), use `pipx` or `uv tool`:
+**Recommended — isolated install (macOS / Linux / Windows):**
 
 <!-- not mirrored: end-user isolated install (pipx / uv tool); CONTRIBUTING.md targets in-repo contributors -->
 ```bash
-pipx install "notebooklm-py[browser]"
-# OR (if you already have uv: https://docs.astral.sh/uv/getting-started/installation/)
 uv tool install "notebooklm-py[browser]"
+# OR, with pipx:
+pipx install "notebooklm-py[browser]"
+```
+
+Both put `notebooklm` on your PATH in a dedicated environment, so they work even where the system Python is locked down — modern macOS (Homebrew) and Debian/Ubuntu reject a plain `pip install` into it with `error: externally-managed-environment` ([PEP 668](https://peps.python.org/pep-0668/)). (If you don't have `uv` yet: <https://docs.astral.sh/uv/getting-started/installation/>.)
+
+Plain `pip` is fine **inside a virtualenv**, or on Windows (python.org's Python is not externally-managed):
+
+<!-- not mirrored: end-user pip install in a venv (Persona B); CONTRIBUTING.md tracks the in-repo `uv sync` flow only -->
+```bash
+pip install "notebooklm-py[browser]"
 ```
 
 **Post-install:** Run `notebooklm login` once. The CLI auto-installs Chromium on first run (~170 MB, 30–90 s, **no progress bar — be patient**).
@@ -293,13 +308,14 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 
 ## REST API server
 
-> **⚠️ Experimental.** Like the drafted MCP adapter, the REST server is experimental: the `/v1` surface and behavior may change in a minor release, and it is excluded from the public-API compatibility gate. Pin a version before relying on it for automation. The server also logs an experimental warning on every startup.
+> **⚠️ Experimental.** Like the MCP adapter, the REST server is experimental: the `/v1` surface and behavior may change in a minor release, and it is excluded from the public-API compatibility gate. Pin a version before relying on it for automation. The server also logs an experimental warning on every startup.
 
 A single-tenant, localhost REST API over the same transport-neutral core as the CLI — the natural shape for scripting and agent automation (feed a notebook, generate an artifact, pull it down) without spawning a CLI process per call.
 
 <!-- not mirrored: the server extra is end-user/automation tooling, not part of the contributor `uv sync` flow; CONTRIBUTING.md tracks only browser/dev/markdown. -->
 ```bash
-pip install "notebooklm-py[server]"        # fastapi + uvicorn + python-multipart
+uv tool install "notebooklm-py[server]"    # fastapi + uvicorn + python-multipart
+# OR, with pipx:  pipx install "notebooklm-py[server]"   (or plain pip inside a venv)
 ```
 
 **Prerequisite:** a provisioned account (`storage_state.json`) from `notebooklm login`. The server holds one account for the process; it does not run browser login itself.
