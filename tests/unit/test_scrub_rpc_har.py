@@ -81,7 +81,7 @@ def test_html_in_response_result_is_redacted() -> None:
     rendered = json.dumps(red)
     for token in ("AIza", "SNlM0e", "user@gmail.com", "g.a000", "nested"):
         assert token not in rendered
-    assert red == ["<str:%d>" % len(secret_html), ["<str:6>", 7, None]]
+    assert red == [f"<str:{len(secret_html)}>", ["<str:6>", 7, None]]
 
 
 def test_leak_net_matches_page_html_credential_shapes() -> None:
