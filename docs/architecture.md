@@ -1,9 +1,8 @@
-# Architecture (post-v0.5.0)
+# Architecture
 
-This document describes the runtime shape of `notebooklm-py` after the
-v0.5.0 refactor program closed. It is the canonical post-refactor map;
-the historical narrative lives in
-[`docs/refactor-history.md`](./refactor-history.md).
+This document is the canonical map of `notebooklm-py`'s current runtime shape.
+The historical refactor narrative (including the program that first established
+this layering) lives in [`docs/refactor-history.md`](./refactor-history.md).
 
 ## Layered overview
 
@@ -1277,7 +1276,7 @@ src/notebooklm/
 - [ADR-0010](./adr/0010-session-kernel-split.md) — Session/Kernel split (Superseded by ADR-0013).
 - [ADR-0011](./adr/0011-schema-validation-policy.md) — Schema validation policy (Accepted; `safe_index` is the canonical decode helper).
 - [ADR-0012](./adr/0012-implementation-surface-convention.md) — Implementation surface convention (Accepted; underscore-prefix = unsupported import surface).
-- [ADR-0013](./adr/0013-composable-session-capabilities.md) — Composable Session Capabilities (the post-v0.5.0 capability model).
+- [ADR-0013](./adr/0013-composable-session-capabilities.md) — Composable Session Capabilities (the composable session-capability model).
 - [ADR-0014](./adr/0014-feature-local-runtime-adapters.md) — Feature-local runtime adapters (Accepted; features receive direct collaborators instead of `Session`).
 - [ADR-0015](./adr/0015-json-envelope-contract-for-post-parse-click-exceptions.md) — Typed JSON error envelope for post-parse CLI failures (Accepted).
 - [ADR-0021](./adr/0021-transport-neutral-app-layer.md) — Transport-neutral application layer (`_app/`) (Accepted; boundary enforced by `tests/_guardrails/test_app_boundary.py`, classify↔error_handler agreement by `tests/_guardrails/test_classify_error_handler_consistency.py`).
