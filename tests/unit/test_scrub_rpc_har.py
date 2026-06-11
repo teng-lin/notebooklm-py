@@ -11,6 +11,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "scrub_rpc_har.py"
 _spec = importlib.util.spec_from_file_location("scrub_rpc_har", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
@@ -21,6 +23,12 @@ _spec.loader.exec_module(har)
 def test_redact_strings_keep_structure() -> None:
     assert har._redact(["Title", None, [2], [1]]) == ["<str:5>", None, [2], [1]]
     assert har._redact(42) == 42 and har._redact(None) is None and har._redact(True) is True
+
+
+def test_redact_redacts_dict_keys_not_just_values() -> None:
+    # A decoded object's KEYS come off the wire too — they must be redacted, or
+    # {"user@gmail.com": ...} would leak the email through the key.
+    assert har._redact({"user@gmail.com": "x"}) == {"<str:14>": "<str:1>"}
 
 
 def test_req_freq_from_text_ignores_at() -> None:
@@ -85,8 +93,9 @@ def test_html_in_response_result_is_redacted() -> None:
 
 
 def test_unredacted_completeness_check() -> None:
-    # A fully-redacted structure passes (no surviving raw string → None).
-    assert har._unredacted(["<str:7>", None, [2], {"k": "<str:3>"}]) is None
+    # A fully-redacted structure passes (no surviving raw string → None);
+    # dict keys are <str:N> too, since _redact redacts keys.
+    assert har._unredacted(["<str:7>", None, [2], {"<str:1>": "<str:3>"}]) is None
     # int / bool / None are structural constants — never tripped.
     assert har._unredacted([3, True, None, [5]]) is None
     # Any raw string leaf is caught regardless of its shape — the check is
@@ -100,3 +109,49 @@ def test_unredacted_completeness_check() -> None:
         "",
     ):
         assert har._unredacted([1, ["<str:2>", raw]]) == raw
+    # A raw dict KEY must be caught too — the guard walks keys, not just values.
+    assert har._unredacted({"raw@key.com": "<str:1>"}) == "raw@key.com"
+
+
+def _chunk(frame: list) -> str:
+    s = json.dumps([frame])
+    return f"{len(s)}\n{s}\n"
+
+
+def _write_har(tmp_path: Path, freq: str, body: str) -> str:
+    har_doc = {
+        "log": {
+            "entries": [
+                {
+                    "request": {
+                        "url": "https://notebooklm.google.com/_/batchexecute?rpcids=CCqFvf",
+                        "headers": [{"name": "cookie", "value": "SID=g.a000SECRET"}],
+                        "postData": {"text": f"f.req={freq}&at=AOsecretCSRF"},
+                    },
+                    "response": {"status": 200, "content": {"text": body}},
+                }
+            ]
+        }
+    }
+    path = tmp_path / "capture.har"
+    path.write_text(json.dumps(har_doc), encoding="utf-8")
+    return str(path)
+
+
+def test_main_prefers_populated_frame_over_null_placeholder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A streamed null placeholder before the populated frame for the same rpcid
+    must not win — the populated result is what gets reported."""
+    freq = json.dumps([[["CCqFvf", '["t",null,null,[2],[1]]', None, "generic"]]])
+    body = (
+        ")]}'\n"
+        + _chunk(["wrb.fr", "CCqFvf", None, None, None, None, "generic"])  # null placeholder first
+        + _chunk(["wrb.fr", "CCqFvf", json.dumps([["nb-id"]]), None, None, None, "generic"])
+    )
+    monkeypatch.setattr("sys.argv", ["scrub_rpc_har.py", _write_har(tmp_path, freq, body)])
+    assert har.main() == 0
+    out = capsys.readouterr().out
+    assert 'result=[["<str:5>"]]' in out and "result=null" not in out
+    # End-to-end: no secret from cookies / at= survives.
+    assert "SECRET" not in out and "g.a000" not in out

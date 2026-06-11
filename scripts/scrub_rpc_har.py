@@ -63,7 +63,9 @@ def _redact(node):
     if isinstance(node, list):
         return [_redact(x) for x in node]
     if isinstance(node, dict):
-        return {k: _redact(v) for k, v in node.items()}
+        # Keys are wire strings too — redact them, else a decoded object like
+        # {"user@gmail.com": ...} would leak the key verbatim.
+        return {_redact(k): _redact(v) for k, v in node.items()}
     return node  # int / float / bool / None — structural constants kept verbatim
 
 
@@ -71,13 +73,19 @@ def _unredacted(node):
     """Return the first string leaf that is NOT a ``<str:N>`` placeholder, or None.
 
     The completeness check behind the fail-closed perimeter: every string in a
-    redacted structure must be a ``<str:N>`` token. int/float/bool/None are
-    structural constants (gRPC status codes, list nesting) and carry no string
-    content, so they never trip it.
+    redacted structure must be a ``<str:N>`` token. Dict keys are walked as well
+    as values (both come off the wire); int/float/bool/None are structural
+    constants (gRPC status codes, list nesting) and carry no string content, so
+    they never trip it.
     """
     if isinstance(node, str):
         return None if _REDACTED_STR.fullmatch(node) else node
-    children = node if isinstance(node, list) else node.values() if isinstance(node, dict) else ()
+    if isinstance(node, list):
+        children = node
+    elif isinstance(node, dict):
+        children = [*node.keys(), *node.values()]
+    else:
+        return None
     for child in children:
         bad = _unredacted(child)
         if bad is not None:
@@ -176,10 +184,13 @@ def main() -> int:
     blocks: list[str] = []
     for entry in entries:
         status = entry.get("response", {}).get("status", "?")
-        # response frames indexed by rpcid
+        # response frames indexed by rpcid. A streamed response can emit a null
+        # placeholder frame before the populated one for the same rpcid, so let
+        # a later informative frame win — but never let a null clobber a hit.
         resp = {}
         for rpcid, result, err in _response_frames(entry):
-            resp.setdefault(rpcid, (result, err))
+            if rpcid not in resp or result is not None or err is not None:
+                resp[rpcid] = (result, err)
         for rpcid, params in _iter_request_calls(_req_freq(entry) or ""):
             if args.rpcid and rpcid != args.rpcid:
                 continue
