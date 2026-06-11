@@ -477,10 +477,10 @@ def attempt_headless_reauth(
 
     This function performs the *recovery*, not the retry. On ``SUCCESS`` the
     caller re-runs the normal auth path (L1 token refresh) which now finds the
-    freshly-persisted cookies. It is a recovery, not the hot path, and the
-    actual browser drive is single-flight-coalesced by the caller (the client
-    wiring routes concurrent failing calls through the existing refresh
-    single-flight so N failures spawn at most one browser).
+    freshly-persisted cookies. It is a recovery, not the hot path. Browser
+    drives are coalesced in two places: mid-RPC callers join the existing
+    refresh single-flight, and explicit ``attempt_headless_reauth`` callers
+    serialize per storage path in :func:`_drive_capture_coalesced`.
 
     Args:
         storage_path: ``storage_state.json`` to (re)write on success.

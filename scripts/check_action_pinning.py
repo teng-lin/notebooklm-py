@@ -61,6 +61,7 @@ PRIVILEGED_WORKFLOWS: tuple[str, ...] = (
     "claude.yml",
     "rpc-health.yml",
     "nightly.yml",
+    "verify-artifacts.yml",
     "verify-package.yml",
 )
 

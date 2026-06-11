@@ -3,10 +3,9 @@
 This private module owns the ``NOTEBOOKLM_REFRESH_CMD`` subprocess flow, the
 per-loop coalescing of refresh attempts, and the public ``fetch_tokens`` /
 ``fetch_tokens_with_domains`` entry points. ``notebooklm.auth`` re-exports
-every name listed here; the facade write-through in ``_AuthFacadeModule``
-mirrors any monkeypatched values back to this module so the existing white-box
-tests (``monkeypatch.setattr(auth_mod, "_run_refresh_cmd", ...)``,
-``..., "snapshot_cookie_jar"``, etc.) keep working after the move.
+compatibility names, but production no longer mirrors facade-level rebindings;
+tests that substitute moved refresh bodies should patch
+``notebooklm._auth.refresh`` directly.
 
 Logger name is pinned to ``"notebooklm.auth"`` (NOT ``__name__``) so existing
 ``caplog`` assertions targeting ``notebooklm.auth`` keep matching the records
@@ -43,11 +42,9 @@ logger = logging.getLogger("notebooklm.auth")
 
 # --- Names aliased from sibling modules --------------------------------------
 # The moved bodies historically resolved these names against ``notebooklm.auth``
-# (where they were direct-assigned). Re-aliasing them here gives each one a
-# rebindable bare name local to this module; the ``notebooklm.auth`` facade
-# write-through (``_AuthFacadeModule._REFRESH_DEP_MIRROR_NAMES``) mirrors any
-# monkeypatched value back to this module so the bare-name lookups inside the
-# moved bodies still observe the patch.
+# when they lived there. They are now local aliases in this module; tests that
+# need to substitute one of these dependencies should patch the alias on
+# ``notebooklm._auth.refresh`` directly.
 build_httpx_cookies_from_storage = _auth_cookies.build_httpx_cookies_from_storage
 _replace_cookie_jar = _auth_cookies._replace_cookie_jar
 _cookie_map_from_jar = _auth_cookies._cookie_map_from_jar
@@ -67,9 +64,9 @@ NOTEBOOKLM_REFRESH_CMD_ENV = _auth_paths.NOTEBOOKLM_REFRESH_CMD_ENV
 NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV = _auth_paths.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV
 _REFRESH_ATTEMPTED_ENV = _auth_paths._REFRESH_ATTEMPTED_ENV
 
-# ``_poke_session`` lives in ``_auth.keepalive``; aliased here as a rebindable
-# bare name so monkeypatches to ``notebooklm.auth._poke_session`` flow through
-# the facade write-through into this module's slot.
+# ``_poke_session`` lives in ``_auth.keepalive``; aliased here as a local bare
+# name because refresh bodies call it directly. Tests that need to substitute it
+# should patch ``notebooklm._auth.refresh._poke_session``.
 _poke_session = _keepalive._poke_session
 
 

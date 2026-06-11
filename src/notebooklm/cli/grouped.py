@@ -49,11 +49,11 @@ class SectionedGroup(click.Group):
     """Click group that displays commands organized in sections.
 
     Instead of a flat alphabetical list, commands are grouped by function:
-    - Session: login, use, status, clear, doctor, auth
+    - Session: login, use, status, clear, doctor, auth, completion
     - Notebooks: list, create, delete, rename, summary, metadata
     - Chat: ask, configure, history
-    - Command Groups: source, artifact, note, share, research, profile, agent,
-      skill, language (show subcommands)
+    - Command Groups: source, artifact, note, label, share, research, profile,
+      agent, skill, language, mcp (show subcommands)
     - Artifact Actions: generate, download (show types)
     - Other: only commands explicitly tagged ``category="misc"``
     """

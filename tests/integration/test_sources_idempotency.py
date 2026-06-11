@@ -106,7 +106,7 @@ def _make_client_with_transport(
     Mirrors the helper used in tests/integration/concurrency/
     test_idempotency_create.py: stub in a pre-built httpx.AsyncClient
     wired to the supplied mock transport, bypassing the full
-    Session.open() path that would otherwise build a real connection
+    ``ClientLifecycle.open()`` path that would otherwise build a real connection
     pool.
     """
     client = NotebookLMClient(

@@ -468,7 +468,8 @@ def test_auth_bootstrap_non_filenotfound_logs_failed_result(
 ) -> None:
     """Bootstrap exceptions other than FileNotFoundError emit ``log_result('failed', ...)``.
 
-    Regression guard for Gemini feedback on PR #455 (helpers.py:1030): previously
+    Regression guard for Gemini feedback on PR #455
+    (``cli.auth_runtime.with_auth_and_errors``): previously
     only ``FileNotFoundError`` produced the structured debug log entry, so an
     ``AuthError`` during bootstrap would be handled by ``handle_errors`` but the
     timing/cmd-name pair never reached the debug log — an observability gap when

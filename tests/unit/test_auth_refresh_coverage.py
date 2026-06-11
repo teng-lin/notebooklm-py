@@ -1,5 +1,4 @@
 """Coverage-focused tests for ``notebooklm._auth.refresh`` branches.
-
 Targets the refresh-cmd driver branches that the concern-aligned
 ``test_auth_refresh.py`` / ``test_refresh_cmd_shlex.py`` /
 ``test_refresh_cmd_redaction.py`` suites do not exercise: the
@@ -8,7 +7,6 @@ missing-command and subprocess-failure (timeout / OSError) raises, the
 shell-mode and empty-target basename extraction in the non-zero-exit raise,
 the ``_settle`` future-cancel callback, and the post-refresh retry
 ``route_kwargs`` (``account_email`` / ``force_authuser_query``) plumbing.
-
 New file per ADR-0007: patches the owning ``_auth.refresh`` module at the
 bare-name call site rather than editing the existing concern-aligned files.
 """
@@ -36,10 +34,10 @@ def _clear_refresh_env(monkeypatch):
 
 
 class TestShouldTryRefresh:
-    """``_should_try_refresh`` guard branches (line 247)."""
+    """``_should_try_refresh`` guard branches ."""
 
     def test_false_when_context_flag_set(self, monkeypatch):
-        # ContextVar attempted flag set → no second refresh attempt (line 247).
+        # ContextVar attempted flag set → no second refresh attempt .
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         token = _auth_refresh._REFRESH_ATTEMPTED_CONTEXT.set(True)
         try:
@@ -65,7 +63,7 @@ class TestShouldTryRefresh:
 
 
 class TestRunRefreshCmdMissing:
-    """``_run_refresh_cmd`` raises when the env var is unset (line 315)."""
+    """``_run_refresh_cmd`` raises when the env var is unset ."""
 
     @pytest.mark.asyncio
     async def test_missing_cmd_raises_runtime_error(self):
@@ -74,7 +72,7 @@ class TestRunRefreshCmdMissing:
 
 
 class TestRunRefreshCmdSubprocessFailure:
-    """``subprocess.run`` raising → RuntimeError (lines 370-371)."""
+    """``subprocess.run`` raising → RuntimeError ."""
 
     def _stub_storage(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
@@ -126,7 +124,7 @@ class TestRunRefreshCmdNonZeroExitBasename:
     @pytest.mark.asyncio
     async def test_shell_mode_string_target_basename(self, monkeypatch, tmp_path):
         # Shell-mode keeps ``run_target`` as a raw string; basename comes from
-        # its first whitespace-split token (lines 390-391).
+        # its first whitespace-split token .
         self._stub_storage(monkeypatch, tmp_path)
         monkeypatch.setenv(
             _auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV,
@@ -134,10 +132,8 @@ class TestRunRefreshCmdNonZeroExitBasename:
         )
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "1")
         self._stub_nonzero_run(monkeypatch)
-
         with pytest.raises(RuntimeError) as exc_info:
             await _auth_refresh._run_refresh_cmd()
-
         message = exc_info.value.args[0]
         assert "exited 7" in message
         assert "do-refresh.sh" in message
@@ -157,10 +153,8 @@ class TestRunRefreshCmdNonZeroExitBasename:
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "   ")
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "1")
         self._stub_nonzero_run(monkeypatch)
-
         with pytest.raises(RuntimeError) as exc_info:
             await _auth_refresh._run_refresh_cmd()
-
         message = exc_info.value.args[0]
         assert "exited 7" in message
         assert "executable: shell" in message
@@ -169,7 +163,7 @@ class TestRunRefreshCmdNonZeroExitBasename:
 class TestSplitRefreshCmdWindowsBranch:
     """Cover the Windows ``CommandLineToArgvW`` branch on non-Windows hosts.
 
-    Lines 270-295 are gated on ``os.name == "nt"`` and call into
+    The branch is gated on ``os.name == "nt"`` and calls into
     ``ctypes.windll`` (which does not exist off-Windows). We fake ``os.name``
     and inject a stand-in ``ctypes.windll`` so the parsing logic — including
     the NULL-pointer empty-input guard and the empty-entry filter — is
@@ -204,7 +198,6 @@ class TestSplitRefreshCmdWindowsBranch:
 
         monkeypatch.setattr(_auth_refresh.os, "name", "nt")
         monkeypatch.setattr(ctypes, "windll", _WinDLL(), raising=False)
-
         # ``ctypes.byref`` wraps the ``c_int`` so the fake can mutate ``.value``.
         real_byref = ctypes.byref
 
@@ -224,31 +217,30 @@ class TestSplitRefreshCmdWindowsBranch:
         )
         argv = _auth_refresh._split_refresh_cmd('"C:\\Program Files\\python.exe" script.py')
         assert argv == [r"C:\Program Files\python.exe", "script.py"]
-        # The ``finally`` LocalFree cleanup ran (line 295).
+        # The ``finally`` LocalFree cleanup ran .
         assert freed["count"] == 1
 
     def test_windows_filters_empty_entries(self, monkeypatch):
         # Whitespace-only input → CommandLineToArgvW returns a single empty
         # entry; the comprehension filters it so the caller's empty-argv guard
-        # trips (line 293 filter).
+        # trips.
         self._install_fake_windll(monkeypatch, parsed=[""])
         assert _auth_refresh._split_refresh_cmd("   ") == []
 
     def test_windows_null_pointer_returns_empty(self, monkeypatch):
-        # NULL pointer for some empty-input edge cases → early empty list
-        # return (lines 282->286).
+        # NULL pointer for some empty-input edge cases -> early empty list return.
         self._install_fake_windll(monkeypatch, parsed=None, null=True)
         assert _auth_refresh._split_refresh_cmd("") == []
 
 
 class TestSettleCallbackCancel:
-    """``_settle`` propagates task cancellation to the future (line 195)."""
+    """``_settle`` propagates task cancellation to the future ."""
 
     @pytest.mark.asyncio
     async def test_cancelled_task_cancels_future(self, monkeypatch):
         # Drive ``_coalesced_run_refresh_cmd`` where the underlying
         # ``_run_refresh_cmd`` task is cancelled mid-flight. ``_settle`` must
-        # call ``future.cancel()`` (line 195), surfacing CancelledError to the
+        # call ``future.cancel()`` , surfacing CancelledError to the
         # awaiter.
         started = asyncio.Event()
 
@@ -276,8 +268,7 @@ class TestSettleCallbackCancel:
 
 
 class TestFetchTokensCancelSettleRace:
-    """Caller-cancel + already-settled in-flight future race (lines 575, 578, 580, 581).
-
+    """Caller-cancel + already-settled in-flight future race .
     When ``_coalesced_run_refresh_cmd`` raises ``CancelledError`` (caller-side
     cancellation) but the underlying subprocess future is already ``done()``
     and left in the registry by ``_settle``, ``_fetch_tokens_with_refresh``
@@ -315,10 +306,8 @@ class TestFetchTokensCancelSettleRace:
             raise asyncio.CancelledError()
 
         monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced)
-
         with pytest.raises(asyncio.CancelledError):
             await _auth_refresh._fetch_tokens_with_refresh(httpx.Cookies(), storage, None)
-
         # Clean up the leftover registry entry so other tests start clean.
         registry = _auth_refresh._get_inflight_registry()
         with _auth_refresh._REFRESH_STATE_LOCK:
@@ -348,10 +337,8 @@ class TestFetchTokensCancelSettleRace:
             raise asyncio.CancelledError()
 
         monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced)
-
         with pytest.raises(asyncio.CancelledError):
             await _auth_refresh._fetch_tokens_with_refresh(httpx.Cookies(), storage, None)
-
         registry = _auth_refresh._get_inflight_registry()
         with _auth_refresh._REFRESH_STATE_LOCK:
             registry.pop(refresh_key, None)
@@ -364,7 +351,6 @@ class TestPostRefreshRetryRouteKwargs:
     async def test_retry_forwards_account_email_and_force_authuser(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text("{}", encoding="utf-8")
-
         # First fetch raises an auth-expiry ValueError to trigger refresh; the
         # retry fetch records the route kwargs it received.
         calls: list[dict[str, Any]] = []
@@ -396,7 +382,6 @@ class TestPostRefreshRetryRouteKwargs:
         monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build_jar)
         monkeypatch.setattr(_auth_refresh, "_replace_cookie_jar", fake_replace)
         monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
-
         csrf, session_id, refreshed, _snap = await _auth_refresh._fetch_tokens_with_refresh(
             httpx.Cookies(),
             storage,
@@ -405,7 +390,6 @@ class TestPostRefreshRetryRouteKwargs:
             account_email="bob@example.com",
             force_authuser_query=True,
         )
-
         assert refreshed is True
         assert csrf == "csrf_after"
         assert session_id == "sess_after"

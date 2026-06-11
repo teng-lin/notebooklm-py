@@ -7,7 +7,7 @@ surface has one home (this file) instead of being woven into the runtime
 composition root alongside metrics, drain, and auth state.
 
 Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` and
-``tests/unit/test_reqid_counter_concurrent.py``):
+``tests/unit/test_session_reqid_concurrent.py``):
 
 * ``__init__`` MUST be event-loop-agnostic — it must NOT instantiate
   ``asyncio.Lock()`` eagerly. ``NotebookLMClient`` is routinely built outside a
@@ -56,7 +56,7 @@ def _noop_record_lock_wait(_wait_seconds: float) -> None:
     """Default ``on_lock_wait`` — does nothing.
 
     Used when the counter is constructed standalone (e.g. in
-    ``tests/unit/test_reqid_counter_unit.py``) without a metrics sink wired up.
+    ``tests/unit/test_reqid_counter.py``) without a metrics sink wired up.
     """
 
 

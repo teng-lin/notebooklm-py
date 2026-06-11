@@ -49,11 +49,9 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-# Load ``tests/vcr_config.py`` via ``importlib`` rather than mutating
-# ``sys.path``. The ``tests`` directory is not a package (no ``__init__.py``),
-# so a plain ``from tests.vcr_config import scrub_string`` fails; a
-# ``sys.path`` insertion would work but is module-load-time side-effectful and
-# would silently shadow any future top-level module named ``vcr_config``.
+# Load ``tests/vcr_config.py`` via ``importlib`` so this test depends on the
+# repository file path directly and avoids mutating ``sys.path``. Loading by
+# file path keeps the dependency localized to this test module.
 # Loading by file path keeps the dependency localized to this test module.
 _vcr_config_path = Path(__file__).resolve().parent.parent / "vcr_config.py"
 _spec = importlib.util.spec_from_file_location("tests_vcr_config", _vcr_config_path)

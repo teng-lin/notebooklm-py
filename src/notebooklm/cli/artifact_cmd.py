@@ -190,7 +190,7 @@ def artifact_get(ctx, artifact_id, notebook_id, json_output, client_auth):
             # since-deleted artifact). Render the historical ``NOT_FOUND``
             # envelope here so the CLI ``--json`` body + exit-1 contract stay
             # byte-stable (BREAKING vs the old exit-0 ``found: false``; see the
-            # matching ``cli/source.py::source_get`` change and the BREAKING
+            # matching ``cli/source_cmd.py::source_get`` change and the BREAKING
             # entry in ``CHANGELOG.md``).
             try:
                 art = await get_artifact(client, nb_id_resolved, resolved_id)

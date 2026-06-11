@@ -103,7 +103,8 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # ``_artifacts.py``), so a token-dedupe strategy is impossible.
     #
     # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
-    # which suppresses ``_perform_authed_post``'s inner retry loop. Without
+    # which suppresses the retry middleware inside
+    # ``RuntimeTransport.perform_authed_post``. Without
     # this, a 5xx between server-side commit and client-side response would
     # trigger a naive re-POST and duplicate the artifact (the original
     # audit finding). Callers can layer a list-based probe + retry on top of
@@ -139,10 +140,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # expensive LLM inference, and (b) LLM nondeterminism means a retried
     # generation may return a *different* mind-map JSON, which would
     # silently mismatch what the client saw on the first commit before the
-    # response was lost. Classifying CREATE_NOTE for the persisted-write side
-    # of the chain is a separate follow-up (out of scope per the b-generation
-    # task spec, which restricted edits to the artifact-generation path —
-    # now folded into ``_artifacts.py`` — and ``_idempotency.py``).
+    # response was lost. The persisted-write side is classified too:
+    # ``CREATE_NOTE`` is ``NON_IDEMPOTENT_NO_RETRY`` for both note-create
+    # variants, while ``UPDATE_NOTE`` is an idempotent set op.
     registry.register(
         RPCMethod.GENERATE_MIND_MAP,
         IdempotencyPolicy.PROBE_THEN_CREATE,

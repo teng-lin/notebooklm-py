@@ -17,7 +17,9 @@ corpus, so each ``name=realvalue`` substring is contiguous in the raw text and a
 literal replace to ``name=SCRUBBED`` is exact and formatting-preserving. Bodies
 and byte-count prefixes are untouched.
 
-DELETE THIS SCRIPT after the one-time re-scrub is committed.
+Retained as a historical repair utility; use
+``tests/scripts/check_cassettes_clean.py`` for ongoing cassette cleanliness
+checks.
 """
 
 from __future__ import annotations

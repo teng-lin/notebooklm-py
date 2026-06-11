@@ -84,7 +84,8 @@ class ShareStatus:
     def from_api_response(cls, data: list[Any], notebook_id: str) -> ShareStatus:
         """Parse from GET_SHARE_STATUS response.
 
-        Response format: [[[user_entries]], [is_public], 1000]
+        Response format: [user_entries, public_block_or_null, 1000], where
+        user_entries is a list of [email, permission, [], [name, avatar]] rows.
         """
         # Parse users from [0]
         users = []

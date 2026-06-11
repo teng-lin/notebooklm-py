@@ -169,7 +169,7 @@ async def test_skips_emit_when_rpc_method_absent(
     Pins the regression guard for the pre-PR-12.4 invariant: requests
     flowing through the chain WITHOUT ``rpc_method`` in context must not
     appear in the RPC counters or telemetry stream. The chat streaming
-    path (``_chat.transport.send_authed_post``) is the production caller
+    path (``_chat.transport.chat_aware_authed_post``) is the production caller
     that exercises this branch — chat requests have never been counted
     as RPCs and continue not to be.
     """
@@ -185,7 +185,7 @@ async def test_skips_emit_when_rpc_method_absent(
     chain = build_chain([middleware], _make_terminal_returning(expected_response))
 
     # log_label present, rpc_method ABSENT — exact shape produced by
-    # ``Session._perform_authed_post`` for the chat path (which
+    # ``RuntimeTransport.perform_authed_post`` for the chat path (which
     # defaults ``rpc_method=None``).
     request = make_request(context={"log_label": "chat.ask"})
     result = await chain(request)
@@ -204,7 +204,7 @@ async def test_skips_emit_when_rpc_method_is_none(
 ) -> None:
     """Explicit ``rpc_method=None`` in context is treated the same as absent.
 
-    ``Session._perform_authed_post`` populates the context with
+    ``RuntimeTransport.perform_authed_post`` populates the context with
     ``"rpc_method": rpc_method`` where the kwarg defaults to ``None``.
     The middleware's ``context.get("rpc_method")`` returns ``None`` in
     both cases, but pin the explicit-None case in a separate test so a

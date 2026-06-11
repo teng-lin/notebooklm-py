@@ -7,13 +7,12 @@ Commands:
     clear   Clear current notebook context
     auth    Authentication management (logout / inspect / check / refresh)
 
-This module is split into thin Click handlers over four service
-modules:
-
-* :mod:`notebooklm.cli.services.playwright_login` — Playwright login flow
-* :mod:`notebooklm.cli.services.session_context` — ``use`` / ``status``
-* :mod:`notebooklm.cli.services.auth_diagnostics` — ``auth check``
-* :mod:`notebooklm.cli.services.auth_source` — auth-source precedence
+This module is split into thin Click handlers over service modules for
+Playwright login, browser-cookie login/refresh, session context,
+auth diagnostics, and auth-source precedence. Command-side wrappers in
+:mod:`notebooklm.cli.playwright_login_io` provide the concrete rendering,
+exit, and async-runner seams for the Playwright and browser-cookie login
+services.
 
 Body-used names that *moved* into those services are re-imported here as
 the command layer's own bindings. A handful are also bound on the
@@ -675,19 +674,25 @@ def register_session_commands(cli):
     )
     @click.pass_context
     def auth_refresh(ctx, browser_cookies, include_domains_raw, quiet):
-        """Refresh stored cookies by exercising the auth path once.
+        """Refresh stored cookies by exercising the auth path once or reading browser cookies.
 
-        One-shot keepalive: opens a session, runs the layer-1 poke against
-        ``accounts.google.com`` to elicit ``__Secure-1PSIDTS`` rotation,
-        fetches CSRF + session ID from ``notebooklm.google.com`` (discarded;
-        their side effect is the cookie jar), and persists the rotated jar
-        to ``storage_state.json`` on close. Designed to be scheduled by the
-        OS (launchd / systemd / cron) so that an otherwise-idle profile
-        does not stale out between user-driven calls.
+        Default mode is a one-shot keepalive: opens a session, runs the
+        layer-1 poke against ``accounts.google.com`` to elicit
+        ``__Secure-1PSIDTS`` rotation, fetches CSRF + session ID from
+        ``notebooklm.google.com`` (discarded; their side effect is the cookie
+        jar), and persists the rotated jar to ``storage_state.json`` on close.
 
-        Cadence: 15-20 minutes is the recommended interval. Tighter is
-        wasteful; significantly looser may cross the SIDTS server-side
-        validity window for your account/region.
+        With ``--browser-cookies``, re-extracts cookies from the selected
+        installed browser, matches the stored profile account, rewrites the
+        profile's ``storage_state.json``, and refreshes account metadata.
+
+        Designed to be scheduled by the OS (launchd / systemd / cron) so
+        that an otherwise-idle profile does not stale out between
+        user-driven calls.
+
+        Cadence: 15-20 minutes is the recommended interval for the default
+        keepalive path. Tighter is wasteful; significantly looser may cross
+        the SIDTS server-side validity window for your account/region.
 
         Transient errors (e.g. ``httpx.RequestError`` from a flaky network)
         are surfaced as exit 1 rather than retried in-process; the OS

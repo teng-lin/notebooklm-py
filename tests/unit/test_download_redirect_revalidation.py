@@ -75,9 +75,10 @@ def _patch_real_client_with_transport(handler: Callable[[httpx.Request], httpx.R
     return (
         patch.object(httpx, "AsyncClient", side_effect=_factory),
         # Freeze the PUBLIC ``load_httpx_cookies`` import, not the private
-        # ``_load_httpx_cookies`` wrapper: both the single (downloads.py:717) and
-        # batch (:817) paths call ``_load_httpx_cookies``, which delegates to this
-        # name — so patching it here covers BOTH surfaces. Patching the private
+        # ``_load_httpx_cookies`` wrapper: both the single and batch download
+        # paths in ``src/notebooklm/_artifact/downloads.py`` call
+        # ``_load_httpx_cookies``, which delegates to this name — so patching
+        # it here covers BOTH surfaces. Patching the private
         # ``_load_httpx_cookies`` alias directly would trip the ADR-0007
         # private-attribute monkeypatch guardrail.
         patch.object(_downloads_mod, "load_httpx_cookies", return_value=httpx.Cookies()),

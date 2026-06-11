@@ -151,8 +151,8 @@ class RpcExecutor:
         # (``_is_retry=True``) inherits the parent's id so a single
         # decode-error → refresh → retry sequence appears under one
         # ``[req=<id>]`` in the logs. HTTP-status retries (auth + 429) happen
-        # inside ``_perform_authed_post`` without recursion, so they don't
-        # need this guard.
+        # inside ``RuntimeTransport.perform_authed_post`` without recursion, so
+        # they don't need this guard.
         if _is_retry:
             return await self._execute_once(
                 method,

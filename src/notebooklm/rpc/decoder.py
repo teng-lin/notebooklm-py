@@ -224,8 +224,8 @@ def parse_chunked_response(response: str) -> list[Any]:
         List of parsed JSON chunks
 
     Raises:
-        RPCError: If more than 10% of attempted payload records are malformed,
-            indicating API issues.
+        RPCError: If more than 10% of payload, framing, or aggregate response
+            records are malformed, indicating API issues.
 
     Note:
         Malformed chunks are skipped with a warning logged. A byte-count line
@@ -542,8 +542,9 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
     ``UserDisplayableError`` markers still raise immediately — those are
     terminal signals, not placeholders to be superseded.
 
-    For single-frame responses (every existing golden fixture) the first and
-    last usable frame are identical, so behaviour is unchanged.
+    For single-frame responses, the first and last usable frame are identical,
+    so behaviour is unchanged; multi-frame golden fixtures pin the
+    "last non-null frame wins" behavior.
     """
     source = "decoder.extract_rpc_result"
     # Track the last usable result so a later populated frame wins over an

@@ -1,12 +1,8 @@
 """Unit tests for :class:`notebooklm._transport_drain.TransportDrainTracker`.
 
-Covers the drain helper in isolation — the ``Session`` facade contract
-(``drain``, ``_begin_transport_post``, ``_begin_transport_task``,
-``_finish_transport_post``, ``_current_operation_depth``,
-``_get_drain_condition``) is exercised end-to-end in
-``tests/unit/test_observability.py`` and the close-cancellation suite at
-``tests/unit/concurrency/test_close_cancellation_leak.py``. This file
-pins the helper-class invariants the facade depends on:
+Covers the drain helper in isolation. Public ``NotebookLMClient.drain``
+delegation is exercised end-to-end elsewhere. This file pins the helper-class
+invariants the client/runtime depends on:
 
 * ``__init__`` is event-loop-agnostic (no ``asyncio.*`` primitives).
 * ``get_drain_condition`` lazily constructs the ``asyncio.Condition``
@@ -229,7 +225,7 @@ async def test_drain_rejects_child_task_spawned_from_admitted_operation() -> Non
 async def test_drain_timeout_raises_and_keeps_draining_flag() -> None:
     """Drain timeout must raise ``TimeoutError`` and leave the flag set.
 
-    Shutdown callers (``Session.close``) must not accidentally admit new
+    Shutdown callers (``NotebookLMClient.close``) must not accidentally admit new
     work after a missed deadline. The contract is "drain mode is sticky";
     pin it.
     """

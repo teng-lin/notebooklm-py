@@ -53,7 +53,7 @@ class MiddlewareChainBuilder:
     used by ``RetryMiddleware`` / ``AuthRefreshMiddleware`` so
     post-construction mutations on ``MiddlewareChainHost`` still take
     effect — the integration-test idiom of poking
-    ``core._chain_host._rate_limit_max_retries = 0`` must keep working.
+    ``core._composed.chain_host._rate_limit_max_retries = 0`` must keep working.
     """
 
     def __init__(
@@ -120,10 +120,9 @@ class MiddlewareChainBuilder:
             # delegates to ``AuthRefreshCoordinator.await_refresh``, so
             # the coalesced single-flight refresh contract from the
             # coordinator is preserved end-to-end.
-            # ``refresh_callback_enabled_provider`` reads the
-            # coordinator's internal callback slot to skip refresh when
-            # no callback was configured (matches the legacy
-            # ``host._refresh_callback is not None`` gate in the leaf).
+            # ``refresh_callback_enabled_provider`` reads the coordinator's
+            # ``has_refresh_callback`` property to skip refresh when no
+            # callback was configured.
             # ``refresh_retry_delay_provider`` is callable for
             # live-binding parity with retry budgets.
             # ``is_auth_error`` is supplied as a live-binding callable from

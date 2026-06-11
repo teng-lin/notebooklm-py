@@ -316,8 +316,8 @@ def register_chat_commands(cli):
                     if last_conv_id:
                         # ``--json`` implies ``--yes`` so scripted callers don't
                         # hang on stdin (which would also clobber JSON stdout
-                        # purity). See cli/artifact.py:artifact_delete for the
-                        # same pattern.
+                        # purity). See ``cli/artifact_cmd.py::artifact_delete``
+                        # for the same pattern.
                         if (
                             not assume_yes
                             and not json_output
@@ -539,7 +539,7 @@ def register_chat_commands(cli):
     ):
         """Get conversation history or save it as a note.
 
-        Shows all Q&A turns from the most recent conversation.
+        Shows up to ``--limit`` Q&A turns from the most recent conversation.
 
         \b
         Example:

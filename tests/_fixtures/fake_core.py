@@ -2,15 +2,15 @@
 
 This module provides a single entry point — :func:`make_fake_core` — that
 returns a ``FakeSession`` instance shaped to satisfy the **shared
-capability Protocols** in :mod:`notebooklm._runtime_contracts`
+capability Protocols** in :mod:`notebooklm._runtime.contracts`
 (``RpcCaller``, ``LoopGuard``, ``Kernel``) plus the single-consumer
 Protocols inlined into their owning feature modules in issue #1327
-(``AuthMetadata`` in ``_source_upload``, ``OperationScopeProvider`` in
-``_artifact_polling``). Feature APIs that
+(``AuthMetadata`` in ``notebooklm._source.upload``,
+``OperationScopeProvider`` in ``notebooklm._artifact.polling``). Feature APIs that
 need more than one capability take their direct collaborators by
-keyword-only constructor argument (``ChatAPI`` in ``_chat.py``,
+keyword-only constructor argument (``ChatAPI`` in ``notebooklm._chat.api``,
 ``ArtifactsAPI`` in ``_artifacts.py``, ``SourceUploadPipeline`` in
-``_source_upload.py``); the feature-local composite Protocols
+``notebooklm._source.upload``); the feature-local composite Protocols
 ``ArtifactsRuntime`` and ``UploadRuntime`` (and their adapter
 dataclasses) were retired once it was clear they only hid three stable
 collaborators with one production satisfier. (``ChatRuntime`` was
@@ -25,7 +25,7 @@ feature API. Both attributes are wired to the same underlying mock so
 ``fake.rpc_executor.rpc_call.assert_awaited`` observe the same calls.
 Tests pass the result to a sub-client constructor (e.g.
 ``NotebooksAPI(fake.rpc_executor)``) instead of constructing a real
-``Session`` and mutating its attributes after the fact.
+client/runtime stack and mutating its attributes after the fact.
 
 Phase 7 (refactor-history.md §Migration Plan step 10) deleted the broad
 ``Session`` Protocol that this factory's defaults dict previously
@@ -146,13 +146,12 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # executor as a SimpleNamespace mirror so test sites address it
         # the same way production code does (``fake.rpc_executor.rpc_call``
         # mirrors ``client._rpc_executor.rpc_call``); the direct
-        # ``rpc_call`` attribute is kept for composite Protocols
-        # (``ArtifactsRuntime``) that the fake satisfies as a single
-        # bag-of-attributes.
+        # ``rpc_call`` attribute is kept for legacy single-attribute test sites
+        # that still treat the fake as a single bag-of-attributes.
         "rpc_call": rpc_call_mock,
         "rpc_executor": SimpleNamespace(rpc_call=rpc_call_mock),
-        # LoopGuard + OperationScopeProvider (the latter inlined into
-        # ``_artifact_polling`` in #1327) — used by ArtifactsAPI polling
+        # LoopGuard + OperationScopeProvider (the latter lives in
+        # ``notebooklm._artifact.polling`` after #1327) — used by ArtifactsAPI polling
         # and SourceUploadPipeline.
         "assert_bound_loop": MagicMock(return_value=None),
         "operation_scope": MagicMock(side_effect=_operation_scope),

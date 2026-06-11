@@ -127,8 +127,10 @@ class RPCMethod(str, Enum):
 class ArtifactTypeCode(int, Enum):
     """Integer codes for artifact types used in RPC calls.
 
-    These are the raw codes used in the CREATE_ARTIFACT (R7cb6c) RPC call.
-    Values correspond to artifact_data[2] in API responses.
+    Codes 1, 2, 3, 4, 7, 8, and 9 are raw CREATE_ARTIFACT / LIST_ARTIFACTS
+    values. MIND_MAP (5) is the library's synthetic code for note-backed mind
+    maps returned by GET_NOTES_AND_MIND_MAPS; interactive mind maps are type 4 /
+    variant 4.
 
     Note: This is an internal enum. Users should use ArtifactType (str enum)
     from notebooklm.types for a cleaner API.
@@ -414,7 +416,7 @@ def source_status_to_str(status_code: int | SourceStatus) -> str:
         status_code: Status code as int or SourceStatus enum.
 
     Returns:
-        String status: "processing", "ready", "error", or "unknown".
+        String status: "processing", "ready", "error", "preparing", or "unknown".
         Returns "unknown" for unrecognized codes (future-proofing).
     """
     return _SOURCE_STATUS_MAP.get(status_code, "unknown")

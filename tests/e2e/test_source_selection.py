@@ -12,7 +12,7 @@ Notebook lifecycle:
 - Artifacts cleaned BEFORE tests to ensure clean state
 - Sources preserved (tests need them)
 - In CI (CI=true): notebook deleted after tests
-- Locally: notebook persists, ID stored in NOTEBOOKLM_HOME
+- Locally: notebook persists, ID stored in the active profile cache
 """
 
 import random

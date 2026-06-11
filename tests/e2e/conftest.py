@@ -26,9 +26,9 @@ from notebooklm.paths import get_profile_dir
 # Substrings in ChatError / skip messages that mark a server-side rate-limit
 # or quota rejection rather than a client bug. Covers both the explicit
 # UserDisplayableError message and the HTTP-status-wrapped 429 path in
-# _chat/api.py:156, the generation skip phrase in assert_generation_started,
-# and the "Rate limit:" prefix _install_generation_rate_limit_skip adds to
-# typed RateLimitError skips.
+# ``notebooklm._chat.transport.chat_aware_authed_post``, the generation skip
+# phrase in assert_generation_started, and the "Rate limit:" prefix
+# _install_generation_rate_limit_skip adds to typed RateLimitError skips.
 _RATE_LIMIT_PHRASES = (
     "rate limit",
     "rate limited",
@@ -406,7 +406,7 @@ def read_only_notebook_id():
     list, get, or query but do NOT modify the notebook. Do not use this
     fixture for tests that create, update, or delete resources.
 
-    See docs/contributing/testing.md for setup instructions.
+    See docs/development.md for setup instructions.
     """
     notebook_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
     if not notebook_id:
@@ -419,7 +419,7 @@ def read_only_notebook_id():
             "  3. Generate some artifacts (audio, quiz, etc.)\n"
             "  4. Copy notebook ID from URL and run:\n"
             "     export NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID='your-notebook-id'\n\n"
-            "See docs/contributing/testing.md for details.\n",
+            "See docs/development.md for details.\n",
             returncode=1,
         )
     return notebook_id

@@ -1,8 +1,9 @@
 """Regression test for the httpx connection-pool tuning via ConnectionLimits.
 
 Audit item #3 (`thread-safety-concurrency-audit.md` §3, also §19):
-Pre-fix, `Session.open()` instantiated `httpx.AsyncClient(...)` with
-no `limits=` kwarg, defaulting to httpx's `~100 / 20-per-host` pool.
+Pre-fix, runtime configuration used by ``NotebookLMClient.__init__`` /
+``from_storage`` did not pass a ``limits=`` kwarg to ``httpx.AsyncClient(...)``,
+defaulting to httpx's `~100 / 20-per-host` pool.
 Heavy fan-out workloads (FastAPI services sharing a client across many
 concurrent requests, large `wait_for_sources` batches) tripped
 `httpx.PoolTimeout`.
@@ -10,8 +11,8 @@ concurrent requests, large `wait_for_sources` batches) tripped
 Post-fix: a stable `ConnectionLimits` dataclass on
 `notebooklm.types` exposes pool tuning, defaults to
 `max_connections=100, max_keepalive_connections=50,
-keepalive_expiry=30.0`, and is plumbed through `Session.__init__`
-and `NotebookLMClient.__init__` / `from_storage`.
+keepalive_expiry=30.0`, and is plumbed through runtime configuration used by
+``NotebookLMClient.__init__`` / ``from_storage``.
 
 The test asserts the limits passed to `httpx.AsyncClient` match the
 configured values. A real-pool stress test (200-way fan-out against
@@ -57,7 +58,7 @@ def test_connection_limits_to_httpx_limits_round_trip() -> None:
 
 
 async def test_default_limits_passed_to_async_client(auth_tokens, monkeypatch) -> None:
-    """No explicit `limits=` -> Session uses ConnectionLimits() defaults."""
+    """No explicit ``limits=`` -> runtime config uses ConnectionLimits() defaults."""
     captured: dict[str, httpx.Limits | None] = {"limits": None}
     calls = {"count": 0}
     real_async_client = httpx.AsyncClient

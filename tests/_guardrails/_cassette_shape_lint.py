@@ -21,8 +21,9 @@ import re
 # string. Anchored on the escape `\"` so we don't fire on legitimate
 # capitalized prose appearing in plain text. Hyphenated tokens are *not*
 # matched (to skip HTTP header names like `Content-Type` and font families
-# like `Google-Sans-Text`). The broader scrub registry tightens this
-# further by requiring an adjacent JSON-key context.
+# like `Google-Sans-Text`). The broader scrub registry tightens this further
+# with an explicit false-positive allowlist before replacing escaped
+# display-name literals.
 LEAK_DISPLAY_NAME = re.compile(r'\\"(?:[A-Z][a-z]+)(?: [A-Z][a-z]+)+\\"')
 # Two-capitalized-word strings that are legitimate UI / artifact / notebook
 # titles produced during E2E test runs — NOT human display-name leaks. Keeping

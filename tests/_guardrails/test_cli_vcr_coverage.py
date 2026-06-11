@@ -11,9 +11,9 @@ silently develops holes. This gate enumerates the top-level command groups of
    exist), OR
 2. **Exempt** — listed in :data:`COVERAGE_EXEMPT` with a one-line reason.
 
-This is group-level, not leaf-command-level: 77 leaf commands across 12 groups
-would be noise. A group is the right granularity — when a group is exercised at
-all, the per-command depth is the job of the re-record-safe assertion tiers
+This is group-level, not leaf-command-level: per-command enumeration would be
+noisy and unstable. A group is the right granularity — when a group is exercised
+at all, the per-command depth is the job of the re-record-safe assertion tiers
 (issue #1452), not this gate.
 
 Mapping is **explicit** rather than ``test_<group>*.py`` filename inference,

@@ -1,6 +1,7 @@
 """Assert cli/services/login/__init__.py contains only re-exports.
 
-See phase-3.md → DoD Verification Helpers for the policy specification.
+See ``src/notebooklm/cli/services/login/__init__.py`` and this guard for the
+re-export-only policy.
 """
 
 from __future__ import annotations
@@ -90,5 +91,7 @@ def test_login_init_reexport_only() -> None:
     ]
     assert not offenders, (
         f"{INIT_PATH} contains disallowed node(s): {offenders}. "
-        f"See phase-3.md → DoD Verification Helpers for the re-export-only policy."
+        "See src/notebooklm/cli/services/login/__init__.py and "
+        "tests/_guardrails/test_login_init_is_reexport_only.py for the "
+        "re-export-only policy."
     )

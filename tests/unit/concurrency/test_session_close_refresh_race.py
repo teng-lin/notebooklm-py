@@ -138,7 +138,7 @@ async def test_close_cancels_in_flight_refresh_task() -> None:
     - The task is ``cancelled()`` once close returns.
     - No ``CancelledError`` propagates out of ``close()`` itself
       (``gather(..., return_exceptions=True)`` absorbs it).
-    - The lifecycle's ``_http_client`` is ``None`` (the standard close
+    - The lifecycle kernel's ``http_client`` is ``None`` (the standard close
       contract is preserved).
     """
     lifecycle = _make_lifecycle()
@@ -148,10 +148,8 @@ async def test_close_cancels_in_flight_refresh_task() -> None:
     host = _StubHost()
     transport = httpx.MockTransport(lambda req: httpx.Response(200))
 
-    # Monkey-patch the construction: we need lifecycle._http_client to be a
-    # real AsyncClient so close()'s aclose runs. Easiest: build it inline
-    # since ClientLifecycle.open expects to read an httpx client mode from
-    # _core which we can't easily stub here.
+    # Install a real AsyncClient directly into the lifecycle kernel so
+    # close()'s aclose path runs without constructing a full client runtime.
     install_http_client_for_test(lifecycle._kernel, httpx.AsyncClient(transport=transport))
     lifecycle._bound_loop = asyncio.get_running_loop()
 

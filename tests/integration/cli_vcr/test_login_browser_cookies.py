@@ -12,10 +12,12 @@ locally-imported module that the run actually resolves — ADR-0007):
    set instead of opening the user's real browser DB.
 2. ``_sync_server_language_to_config`` — neutralized so it does not fire the
    ``get_output_language`` batchexecute RPC that ``_login_with_browser_cookies``
-   normally invokes at line ``session.py:984``. The default browser-cookies
-   path resolves this name in the ``refresh`` module namespace, so the patch
-   targets ``refresh._sync_server_language_to_config`` rather than the
-   ``session_cmd`` re-export.
+   normally invokes from
+   ``notebooklm.cli.services.login.refresh._login_with_browser_cookies`` after
+   writing storage. The default browser-cookies path resolves this name in the
+   ``refresh`` module namespace, so the patch targets
+   ``refresh._sync_server_language_to_config`` rather than the ``session_cmd``
+   re-export.
 
 ``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`` suppresses the layer-1 RotateCookies
 POST. ``NOTEBOOKLM_HOME`` is redirected to ``tmp_path`` so the test never
@@ -158,14 +160,14 @@ class TestLoginBrowserCookies:
         monkeypatch.setattr(_browser_accounts, "_read_browser_cookies", _fake_reader)
         monkeypatch.setattr(_refresh, "_read_browser_cookies", _fake_reader)
 
-        # Skip the post-verification settings RPC (line session.py:984) so the
-        # cassette only captures the homepage GET. Without this, the run would
-        # also fire a batchexecute call for ``get_output_language``. The default
-        # browser-cookies path resolves ``_sync_server_language_to_config`` in
-        # the ``refresh`` module namespace (``refresh.py:436``), so the object-
-        # form patch must target ``_refresh`` — patching the ``session_cmd``
-        # re-export would silently no-op on this path. ``_sync_calls`` records
-        # the invocation so the patch is bite-checkable (``assert_called``).
+        # Skip the post-verification settings RPC so the cassette only captures
+        # the homepage GET. Without this, the run would also fire a batchexecute
+        # call for ``get_output_language``. The default browser-cookies path
+        # resolves ``_sync_server_language_to_config`` in the ``refresh`` module
+        # namespace, so the object-form patch must target ``_refresh`` — patching
+        # the ``session_cmd`` re-export would silently no-op on this path.
+        # ``_sync_calls`` records the invocation so the patch is bite-checkable
+        # (``assert_called``).
         _sync_calls: list[bool] = []
         monkeypatch.setattr(
             _refresh,

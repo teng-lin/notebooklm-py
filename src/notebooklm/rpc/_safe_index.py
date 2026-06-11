@@ -57,7 +57,7 @@ def safe_index(
     method_id: str | int | None,
     source: str,
 ) -> Any:
-    """Walk ``data`` by ``path`` indices with soft-strict drift handling.
+    """Walk ``data`` by ``path`` indices with strict schema-drift handling.
 
     Args:
         data: Nested list/tuple structure (typically a decoded RPC payload).

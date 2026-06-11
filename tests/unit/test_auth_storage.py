@@ -1,8 +1,8 @@
-"""Tests for auth storage and loader behavior (split from tests/unit/test_auth.py for D1 PR-2).
+"""Tests for auth storage and loader behavior (split in D1 PR-2).
 
 This file owns one concern from the auth subpackage. The original
-``tests/unit/test_auth.py`` (4090 LOC) was split into six concern-aligned
-files alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
+monolithic auth test module was split into six concern-aligned files
+alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
 (superseded) and ADR-0007 (test-monkeypatch policy) for the rationale.
 """
 

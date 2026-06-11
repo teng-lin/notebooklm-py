@@ -12,12 +12,12 @@ These tests close that gap by binding ``create_app`` to a real client and
 matches on ``rpcids`` + ``f.req`` body *shape* (not leaf id values), so a
 placeholder notebook id drives any same-shape recording.
 
-Surface covered through the real stack (every ``/v1`` endpoint):
+Surface sampled through the real stack (broad ``/v1`` coverage, not every route):
 
-* notebooks — list, get, create, delete (full)
-* sources   — list, add url, add text, add file, delete (full)
-* chat      — ask (full)
-* artifacts — list, generate, poll, download (full)
+* notebooks — list, get, create, delete
+* sources   — list, add url, add text, add file, delete
+* chat      — ask
+* artifacts — list, generate, poll, download
 * errors    — a real 429 → RATE_LIMITED → 429 and a real 5xx → 502 projection
 
 The artifact generate/poll/download and file-upload legs replay server-shaped

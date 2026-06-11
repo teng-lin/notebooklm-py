@@ -67,7 +67,8 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     """Convert internal artifact type and variant to user-facing ArtifactType.
 
     Args:
-        artifact_type: ArtifactTypeCode integer value from API.
+        artifact_type: Raw ArtifactTypeCode integer from LIST_ARTIFACTS, or the
+            library's synthetic note-backed mind-map code.
         variant: Optional variant code (e.g., for quiz vs flashcards vs
             interactive mind map).
 
@@ -244,7 +245,8 @@ class Artifact:
         conservatively keeps the historical treat-as-live fallthrough.
 
         Returns:
-            Artifact object, or None if deleted (status=2).
+            Artifact object, or None for the note-system delete tombstone
+            ``[id, None, 2]``.
         """
         if not isinstance(data, list) or len(data) < 1:
             return None
@@ -355,7 +357,8 @@ class Artifact:
         """Get the report subtype for type 2 artifacts.
 
         Returns:
-            'briefing_doc', 'study_guide', 'blog_post', or None if not a report.
+            'briefing_doc', 'study_guide', 'blog_post', 'report', or None if
+            not a report.
         """
         if self._artifact_type != ArtifactTypeCode.REPORT.value:
             return None

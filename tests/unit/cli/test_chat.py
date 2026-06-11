@@ -870,7 +870,7 @@ class TestAskStdinDash:
 class TestChatJsonStdoutContract:
     """P1.T1 — chat ``--json`` modes emit pure JSON on stdout.
 
-    Audit-driven regression suite for `cli/chat.py`. Rich / text status
+    Audit-driven regression suite for ``cli/chat_cmd.py``. Rich / text status
     output is allowed on stderr in ``--json`` mode, but stdout must be
     parseable as a single JSON document end-to-end.
     """
@@ -878,9 +878,9 @@ class TestChatJsonStdoutContract:
     def test_ask_json_save_as_note_emits_pure_json(self, runner, mock_auth):
         """``ask --json --save-as-note`` (plain-text save path) keeps stdout valid JSON.
 
-        Pre-fix bug (`cli/chat.py:269`): the note-save branch ran
-        ``console.print(...)`` after ``json_output_response(...)``,
-        polluting stdout with Rich-styled status lines. Acceptance is
+        Pre-fix bug in the chat command: the note-save branch ran
+        ``console.print(...)`` after ``json_output_response(...)``, polluting
+        stdout with Rich-styled status lines. Acceptance is
         that ``json.loads(result.stdout)`` succeeds and the parsed
         envelope carries a ``note`` field describing the saved note.
 
@@ -979,9 +979,9 @@ class TestChatJsonStdoutContract:
     def test_ask_json_save_as_note_plain_text_path_emits_pure_json(self, runner, mock_auth):
         """No-citations plain-text fallback also keeps stdout valid JSON.
 
-        Pre-fix bug: the ``[dim]No citations…[/dim]`` status line at
-        `cli/chat.py:285` printed to stdout. Acceptance is that the line
-        does not appear on stdout in ``--json`` mode.
+        Pre-fix bug: the ``[dim]No citations…[/dim]`` status line printed to
+        stdout. Acceptance is that the line does not appear on stdout in
+        ``--json`` mode.
         """
         import json
 
@@ -1010,7 +1010,7 @@ class TestChatJsonStdoutContract:
         """Empty-answer warning routes to stderr; JSON envelope still parses.
 
         Pre-fix bug: the ``[yellow]Warning: No answer to save as note[/yellow]``
-        line at ``cli/chat.py:271`` printed to stdout and the function
+        line printed to stdout and the function
         returned without ever emitting JSON. Acceptance: stdout parses
         and ``note_save_error`` is recorded inside the envelope.
         """
@@ -1042,9 +1042,9 @@ class TestChatJsonStdoutContract:
     def test_ask_json_save_as_note_failure_records_error_in_envelope(self, runner, mock_auth):
         """A note-save exception still leaves stdout parseable as JSON.
 
-        Pre-fix bug (`cli/chat.py:292`): the ``[yellow]Warning: Failed to
-        save note…[/yellow]`` line printed to stdout, breaking JSON. The
-        fix routes the warning to stderr and records the error inside the
+        Pre-fix bug in the chat command: the ``[yellow]Warning: Failed to
+        save note…[/yellow]`` line printed to stdout, breaking JSON. The fix
+        routes the warning to stderr and records the error inside the
         JSON envelope under ``note_save_error``.
         """
         import json
@@ -1073,7 +1073,7 @@ class TestChatJsonStdoutContract:
     def test_history_json_clear_emits_pure_json(self, runner, mock_auth):
         """``history --clear --json`` must emit JSON instead of Rich text.
 
-        Pre-fix bug (`cli/chat.py:454`): the clear-cache branch printed
+        Pre-fix bug in the chat command: the clear-cache branch printed
         ``[green]Chat history cleared[/green]`` and returned without any
         JSON emission at all. Acceptance is a parseable envelope on
         stdout with ``cleared`` and ``count`` fields.
@@ -1131,10 +1131,10 @@ class TestChatJsonStdoutContract:
     def test_history_json_save_emits_pure_json(self, runner, mock_auth):
         """``history --save --json`` must keep stdout valid JSON.
 
-        Pre-fix bug (`cli/chat.py:469`): the save branch ran before the
-        JSON branch at `cli/chat.py:480` and used ``console.print`` for
-        status, so stdout was Rich text and the JSON envelope was never
-        emitted. Acceptance: stdout is a single JSON envelope that
+        Pre-fix bug in the chat command: the save branch ran before the
+        JSON branch and used ``console.print`` for status, so stdout was Rich
+        text and the JSON envelope was never emitted. Acceptance: stdout is a
+        single JSON envelope that
         includes both the history payload and the note-save outcome.
         """
         import json

@@ -1,11 +1,10 @@
 """Stage B1 PR 2 — executor persists across ``close()`` → ``open()``.
 
 Replacement regression test for the deleted
-``test_runtime_lifecycle.test_close_nulls_rpc_executor``. Before
-Stage B1 PR 2 of the post-refactoring plan, :meth:`ClientLifecycle.close`
-nulled out ``host._rpc_executor`` so a follow-up :meth:`open` would
-trigger the lazy ``Session._get_rpc_executor`` factory to rebuild the
-executor against the new ``httpx.AsyncClient``.
+``test_runtime_lifecycle.test_close_nulls_rpc_executor``. Before Stage B1 PR 2
+of the post-refactoring plan, lifecycle close logic nulled out the client-owned
+executor so a follow-up :meth:`open` would rebuild it against the new
+``httpx.AsyncClient``.
 
 PR 2 deleted both that null line and the lazy factory itself — the
 executor is bound exactly once by the composition root
@@ -22,8 +21,8 @@ This module pins three load-bearing invariants:
    a full ``close()`` → ``open()`` cycle.
 2. The reused executor can still execute an RPC after the cycle (it is
    not bound to a stale transport reference).
-3. The one-wave ``Session._rpc_executor`` property forwards to the
-   client-owned composed executor.
+3. ``NotebookLMClient._rpc_executor`` is the same client-owned executor stored
+   on ``ClientComposed``.
 """
 
 from __future__ import annotations
@@ -91,11 +90,8 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
     Production callers reach the executor as ``client._rpc_executor``;
     if Stage B1 PR 2 had accidentally re-nulled the slot inside
     :meth:`ClientLifecycle.close`, the second dispatch after the cycle
-    would raise ``AttributeError`` (Session keeps the binding through
-    close/open, so deleting the slot at close time would break a re-opened
-    Session's first dispatch). This test exercises the call path
-    end-to-end through a stubbed executor to confirm the binding
-    survives.
+    would raise ``AttributeError``. This test exercises the call path end-to-end
+    through a stubbed executor to confirm the binding survives.
     """
     core = build_client_shell_for_tests(_make_auth())
     executor = core._rpc_executor
@@ -139,7 +135,7 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
 
 
 def test_session_rpc_executor_forwards_to_client_composed() -> None:
-    """The temporary Session executor seam reads through ``ClientComposed``."""
+    """``NotebookLMClient._rpc_executor`` reads through ``ClientComposed``."""
     core = build_client_shell_for_tests(_make_auth())
 
     assert core._rpc_executor is core._composed.executor

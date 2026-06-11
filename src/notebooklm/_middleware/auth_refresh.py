@@ -95,18 +95,16 @@ class AuthRefreshMiddleware:
       reaches into the coordinator directly; this keeps the seam thin
       and testable.
     - ``is_auth_error``: predicate that decides whether an exception is
-      an auth failure (HTTP 400 / 401 / 403). Production wires
-      :func:`notebooklm._runtime.helpers.is_auth_error` through a lambda
-      that resolves it via the canonical module's globals at call time,
-      so ``monkeypatch.setattr("notebooklm._runtime.helpers.is_auth_error",
-      ...)`` reaches the chain live; tests that build the middleware
+      an auth failure (HTTP 400 / 401 / 403). Production wires a closure
+      over ``ClientSeams.is_auth_error`` so rebinding
+      ``client._seams.is_auth_error`` / ``seams.is_auth_error`` after
+      construction steers the chain; tests that build the middleware
       directly typically pass the function itself.
     - ``refresh_callback_enabled``: a zero-arg callable returning ``True``
-      iff a refresh callback is wired on the host. Production wires
-      ``lambda: self._auth_coord._refresh_callback is not None`` so a
+      iff a refresh callback is wired on the coordinator. Production wires
+      ``lambda: collaborators.auth_coord.has_refresh_callback`` so a
       client built without ``refresh_callback`` skips the refresh path
-      entirely (matches the legacy leaf gate on
-      ``host._refresh_callback is not None``).
+      entirely.
     - ``refresh_retry_delay``: zero-arg callable returning the
       post-refresh sleep duration. Production wires
       ``lambda: chain_host._refresh_retry_delay`` so a test that mutates

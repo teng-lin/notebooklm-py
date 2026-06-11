@@ -1,7 +1,8 @@
 """Cookie conversion and jar helpers for authentication.
 
-This private module is safe to import directly, but ``notebooklm.auth`` owns the
-compatibility facade for monkeypatched validation policy.
+This private module is safe to import directly. Runtime cookie policy lives in
+:mod:`notebooklm._auth.cookie_policy`; ``notebooklm.auth`` passively re-exports
+the compatibility names.
 """
 
 from __future__ import annotations
@@ -35,8 +36,9 @@ _EXTRACTION_HINT = _cookie_policy._EXTRACTION_HINT
 _auth_domain_priority = _cookie_policy._auth_domain_priority
 _is_allowed_auth_domain = _cookie_policy._is_allowed_auth_domain
 _is_allowed_cookie_domain = _cookie_policy._is_allowed_cookie_domain
-# Rebound by notebooklm.auth at import time so moved helpers still honor the
-# public facade's monkeypatch-compatible policy state.
+# Local alias to the canonical validator. The validator reads policy constants
+# from ``_auth.cookie_policy`` at call time; tests that rebind policy state
+# should patch that owning module directly.
 _validate_required_cookies = _cookie_policy._validate_required_cookies
 
 
@@ -124,7 +126,7 @@ def convert_rookiepy_cookies_to_storage_state(
 
     Returns:
         Dict matching storage_state.json schema: ``{"cookies": [...], "origins": []}``.
-        Cookies missing required fields or from non-Google domains are silently skipped.
+        Cookies missing required fields or from non-allowlisted domains are silently skipped.
     """
     converted = []
     for cookie in rookiepy_cookies:
@@ -161,11 +163,11 @@ def convert_rookiepy_cookies_to_storage_state(
 def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str]:
     """Extract Google cookies from Playwright storage state for NotebookLM auth.
 
-    Filters cookies to include those from .google.com, notebooklm.google.com,
-    .googleusercontent.com domains, and regional Google domains
-    (e.g., .google.com.sg, .google.com.au). The regional domains are needed
-    because Google sets SID cookies on country-specific domains for users
-    in those regions.
+    Filters through the canonical auth-domain allowlist: the NotebookLM hosts,
+    Google auth hosts (``.google.com`` / ``accounts.google.com`` plus regional
+    ccTLDs), Googleusercontent media domains, Drive-ingest domains, and any
+    optional sibling-product domains already present because the user opted in
+    at extraction time.
 
     Cookie Priority Rules:
         When the same cookie name exists on multiple domains (e.g., SID on both
@@ -196,6 +198,9 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         >>> storage = {"cookies": [
         ...     {"name": "SID", "value": "regional", "domain": ".google.com.sg"},
         ...     {"name": "SID", "value": "base", "domain": ".google.com"},
+        ...     {"name": "__Secure-1PSIDTS", "value": "tts", "domain": ".google.com"},
+        ...     {"name": "APISID", "value": "apisid", "domain": ".google.com"},
+        ...     {"name": "SAPISID", "value": "sapisid", "domain": ".google.com"},
         ... ]}
         >>> cookies = extract_cookies_from_storage(storage)
         >>> cookies["SID"]
@@ -263,7 +268,9 @@ def _load_storage_state(path: Path | None = None) -> dict[str, Any]:
     Precedence:
     1. Explicit path argument (from --storage CLI flag)
     2. NOTEBOOKLM_AUTH_JSON environment variable (inline JSON, no file needed)
-    3. File at $NOTEBOOKLM_HOME/storage_state.json (or ~/.notebooklm/storage_state.json)
+    3. Profile storage path from :func:`notebooklm.paths.get_storage_path`
+       (``$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json`` with legacy
+       home-root fallback for the default profile)
 
     Args:
         path: Path to storage_state.json. If provided, takes precedence over env vars.
@@ -323,7 +330,8 @@ def load_httpx_cookies(path: Path | None = None) -> httpx.Cookies:
     Supports the same precedence as load_auth_from_storage():
     1. Explicit path argument (from --storage CLI flag)
     2. NOTEBOOKLM_AUTH_JSON environment variable
-    3. File at $NOTEBOOKLM_HOME/storage_state.json
+    3. Profile storage path from :func:`notebooklm.paths.get_storage_path`
+       (with legacy home-root fallback for the default profile)
 
     Args:
         path: Path to storage_state.json. If provided, takes precedence over env vars.

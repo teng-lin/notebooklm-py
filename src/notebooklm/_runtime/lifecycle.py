@@ -132,7 +132,7 @@ def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
     ``def`` (not ``async def``) is load-bearing: this wrapper is invoked
     INSIDE ``asyncio.to_thread(_save)`` in
     :meth:`CookiePersistence._save`. ``save_cookies_to_storage`` itself is
-    a sync writer at ``_auth/storage.py:303``. Making this wrapper ``async``
+    a sync writer in ``notebooklm._auth.storage``. Making this wrapper ``async``
     would surface as a ``TypeError`` at runtime when ``to_thread`` tries
     to call the coroutine in a worker thread.
     """
@@ -401,7 +401,7 @@ class ClientLifecycle:
         ``NotebookLMClient.refresh_auth``. The storage writer is delegated
         to ``self._cookie_saver`` (injectable seam). The
         default :func:`_default_cookie_saver` wrapper performs a late-bound
-        ``from ._auth.storage import save_cookies_to_storage`` lookup inside
+        ``from notebooklm._auth.storage import save_cookies_to_storage`` lookup inside
         its body so a ``monkeypatch.setattr`` on the canonical seam keeps
         affecting the live save path through the wrapper. Custom callables
         bypass the late-bind hop entirely.
@@ -521,10 +521,12 @@ class ClientLifecycle:
         """Background loop that periodically pokes the identity surface.
 
         Sleeps ``interval`` seconds between iterations, then calls
-        :func:`notebooklm.auth._rotate_cookies` to elicit ``__Secure-1PSIDTS``
-        rotation. Any rotated cookies are persisted to ``storage_state.json``
-        immediately (off-loop, via :func:`asyncio.to_thread`) so a long-lived
-        client's freshness survives a crash.
+        ``self._cookie_rotator`` (defaulting to
+        :func:`notebooklm._auth.keepalive._rotate_cookies`) to elicit
+        ``__Secure-1PSIDTS`` rotation. Any rotated cookies are persisted to
+        ``storage_state.json`` immediately (off-loop, via
+        :func:`asyncio.to_thread`) so a long-lived client's freshness survives
+        a crash.
 
         Error handling is split by failure mode:
 

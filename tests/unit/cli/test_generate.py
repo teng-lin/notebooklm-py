@@ -55,7 +55,6 @@ def mock_auth():
 # per-type ``test_generate_<type>`` + ``TestGenerateJsonOutput`` clusters
 # (issues #1315 and #1317). Tests that assert option-specific kwargs, distinct
 # return structures, or wait/timeout behavior remain standalone below.
-
 # (cmd, method, task_id, extra_args) — extra_args carries the required
 # positional description for commands that need one (data-table).
 _STANDARD_GENERATE_CASES = [
@@ -89,17 +88,14 @@ class TestGenerateStandardTypes:
             method,
             AsyncMock(return_value={"task_id": task_id, "status": "processing"}),
         )
-
         args = ["generate", cmd, *extra_args, "-n", "nb_123"]
         if output_mode == "json":
             args.append("--json")
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(cli, args, obj=inject_client(mock_client))
-
         assert result.exit_code == 0, result.output
         if output_mode == "json":
             data = json.loads(result.output)
@@ -111,15 +107,12 @@ class TestGenerateStandardTypes:
 # =============================================================================
 # GENERATE AUDIO TESTS
 # =============================================================================
-
-
 class TestGenerateAudio:
     def test_generate_audio_with_format(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(
             return_value={"artifact_id": "audio_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -129,7 +122,6 @@ class TestGenerateAudio:
                 ["generate", "audio", "--format", "debate", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.generate_audio.assert_called()
 
@@ -138,7 +130,6 @@ class TestGenerateAudio:
         mock_client.artifacts.generate_audio = AsyncMock(
             return_value={"artifact_id": "audio_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -148,7 +139,6 @@ class TestGenerateAudio:
                 ["generate", "audio", "--length", "long", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
     def test_generate_audio_with_wait(self, runner, mock_auth):
@@ -163,7 +153,6 @@ class TestGenerateAudio:
         completed_status.url = "https://example.com/audio.mp3"
         completed_status.artifact_id = "audio_123"
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -171,7 +160,6 @@ class TestGenerateAudio:
             result = runner.invoke(
                 cli, ["generate", "audio", "--wait", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         assert "Audio ready" in result.output
         assert "https://example.com/audio.mp3" in result.output
@@ -182,7 +170,6 @@ class TestGenerateAudio:
     def test_generate_audio_with_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`generate audio --wait --timeout 60 --interval 5` plumbs both into
         artifacts.wait_for_completion.
-
         The new `--timeout`/`--interval` flags must reach the polling call so
         that scripts can bound the wait and the cadence — not just toggle the
         wait on/off as the legacy `--wait` flag did. The CLI surface is
@@ -199,7 +186,6 @@ class TestGenerateAudio:
         completed_status.url = "https://example.com/audio.mp3"
         completed_status.task_id = "audio_xyz"
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -219,7 +205,6 @@ class TestGenerateAudio:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0, result.output
         mock_client.artifacts.wait_for_completion.assert_awaited_once()
         kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
@@ -232,7 +217,6 @@ class TestGenerateAudio:
     def test_generate_audio_timeout_interval_without_wait_is_no_op(self, runner, mock_auth):
         """`generate audio --timeout 60 --interval 5` (without --wait) is
         accepted but does not call wait_for_completion.
-
         The polling flags only take effect when paired with --wait; supplying
         them without --wait must NOT trigger a wait (preserves the default
         no-wait behavior promised by the original `--wait/--no-wait` toggle).
@@ -242,7 +226,6 @@ class TestGenerateAudio:
             return_value={"artifact_id": "audio_xyz", "status": "processing"}
         )
         mock_client.artifacts.wait_for_completion = AsyncMock()
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -261,13 +244,11 @@ class TestGenerateAudio:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0, result.output
         mock_client.artifacts.wait_for_completion.assert_not_awaited()
 
     def test_generate_audio_with_wait_invokes_console_status(self, runner, mock_auth):
         """`generate audio --wait` wraps the polling call in `console.status`.
-
         The spinner gives interactive users feedback during the long wait, with
         a transient line naming the artifact kind (and a typical-duration hint).
         Asserts the wrap by patching `notebooklm.cli.polling_ui.console.status`
@@ -286,7 +267,6 @@ class TestGenerateAudio:
         completed_status.url = "https://example.com/audio.mp3"
         completed_status.task_id = "audio_xyz"
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with (
             patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
@@ -301,7 +281,6 @@ class TestGenerateAudio:
             result = runner.invoke(
                 cli, ["generate", "audio", "--wait", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0, result.output
         assert mock_status.called, "expected console.status to wrap the --wait polling call"
         status_msg = mock_status.call_args.args[0]
@@ -312,7 +291,6 @@ class TestGenerateAudio:
     def test_generate_audio_failure(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -320,7 +298,6 @@ class TestGenerateAudio:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         # P1.T6: failed generation now exits non-zero in text mode (was 0
         # pre-fix). Message lands on stderr via ``output_error`` →
         # ``safe_echo(err=True)``.
@@ -331,15 +308,12 @@ class TestGenerateAudio:
 # =============================================================================
 # GENERATE VIDEO TESTS
 # =============================================================================
-
-
 class TestGenerateVideo:
     def test_generate_video_with_style(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_video = AsyncMock(
             return_value={"artifact_id": "video_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -349,7 +323,6 @@ class TestGenerateVideo:
                 ["generate", "video", "--style", "kawaii", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
     def test_generate_video_with_custom_style_prompt(self, runner, mock_auth):
@@ -357,7 +330,6 @@ class TestGenerateVideo:
         mock_client.artifacts.generate_video = AsyncMock(
             return_value={"artifact_id": "video_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -376,7 +348,6 @@ class TestGenerateVideo:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.generate_video.assert_awaited_once()
         kwargs = mock_client.artifacts.generate_video.await_args.kwargs
@@ -390,7 +361,6 @@ class TestGenerateVideo:
             cli,
             ["generate", "video", "--style", "custom", "-n", "nb_123"],
         )
-
         # Per ADR-0015, post-parse validation failures exit 1 via
         # ``output_error`` (VALIDATION_ERROR), not 2 via Click's UsageError.
         assert result.exit_code == 1
@@ -412,7 +382,6 @@ class TestGenerateVideo:
                 "nb_123",
             ],
         )
-
         assert result.exit_code == 1
         assert "--style custom requires --style-prompt" in result.output
 
@@ -432,7 +401,6 @@ class TestGenerateVideo:
                 "nb_123",
             ],
         )
-
         assert result.exit_code == 1
         assert "--style-prompt requires --style custom" in result.output
 
@@ -440,15 +408,12 @@ class TestGenerateVideo:
 # =============================================================================
 # GENERATE CINEMATIC VIDEO TESTS
 # =============================================================================
-
-
 class TestGenerateCinematicVideo:
     def test_generate_cinematic_video_with_description(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_cinematic_video = AsyncMock(
             return_value={"artifact_id": "cin_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -464,7 +429,6 @@ class TestGenerateCinematicVideo:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
     def test_generate_cinematic_video_ignores_style(self, runner, mock_auth):
@@ -473,7 +437,6 @@ class TestGenerateCinematicVideo:
         mock_client.artifacts.generate_cinematic_video = AsyncMock(
             return_value={"artifact_id": "cin_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -483,7 +446,6 @@ class TestGenerateCinematicVideo:
                 ["generate", "cinematic-video", "--style", "anime", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         # Should call generate_cinematic_video (not generate_video) despite --style
         mock_client.artifacts.generate_cinematic_video.assert_called_once()
@@ -502,7 +464,6 @@ class TestGenerateCinematicVideo:
                 "nb_123",
             ],
         )
-
         # Per ADR-0015, post-parse validation exits 1 via ``output_error``.
         assert result.exit_code == 1
         assert "--style-prompt cannot be used with cinematic video" in result.output
@@ -525,7 +486,6 @@ class TestGenerateCinematicVideo:
                     "nb_123",
                 ],
             )
-
             assert result.exit_code == 1, (
                 f"--format {bad_format} should exit 1, got {result.exit_code}: {result.output}"
             )
@@ -538,7 +498,6 @@ class TestGenerateCinematicVideo:
         mock_client.artifacts.generate_cinematic_video = AsyncMock(
             return_value={"artifact_id": "cin_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -555,7 +514,6 @@ class TestGenerateCinematicVideo:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0, result.output
         mock_client.artifacts.generate_cinematic_video.assert_called_once()
 
@@ -565,7 +523,6 @@ class TestGenerateCinematicVideo:
         mock_client.artifacts.generate_cinematic_video = AsyncMock(
             return_value={"artifact_id": "cin_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -573,7 +530,6 @@ class TestGenerateCinematicVideo:
             result = runner.invoke(
                 cli, ["generate", "cinematic-video", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0, result.output
         mock_client.artifacts.generate_cinematic_video.assert_called_once()
 
@@ -591,15 +547,12 @@ class TestGenerateCinematicVideo:
 # =============================================================================
 # GENERATE QUIZ TESTS
 # =============================================================================
-
-
 class TestGenerateQuiz:
     def test_generate_quiz_with_options(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_quiz = AsyncMock(
             return_value={"artifact_id": "quiz_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -618,22 +571,18 @@ class TestGenerateQuiz:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
 
 # =============================================================================
 # GENERATE SLIDE DECK TESTS
 # =============================================================================
-
-
 class TestGenerateSlideDeck:
     def test_generate_slide_deck_with_options(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_slide_deck = AsyncMock(
             return_value={"artifact_id": "slides_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -652,22 +601,18 @@ class TestGenerateSlideDeck:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
 
 # =============================================================================
 # GENERATE INFOGRAPHIC TESTS
 # =============================================================================
-
-
 class TestGenerateInfographic:
     def test_generate_infographic_with_options(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_infographic = AsyncMock(
             return_value={"artifact_id": "info_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -688,7 +633,6 @@ class TestGenerateInfographic:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.generate_infographic.assert_awaited_once()
         kwargs = mock_client.artifacts.generate_infographic.await_args.kwargs
@@ -700,8 +644,6 @@ class TestGenerateInfographic:
 # =============================================================================
 # GENERATE MIND MAP TESTS
 # =============================================================================
-
-
 class TestGenerateMindMap:
     def test_generate_mind_map_note_backed(self, runner, mock_auth):
         """--kind note-backed routes through client.artifacts.generate_mind_map."""
@@ -711,7 +653,6 @@ class TestGenerateMindMap:
                 {"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -721,7 +662,6 @@ class TestGenerateMindMap:
                 ["generate", "mind-map", "--kind", "note-backed", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.generate_mind_map.assert_awaited_once()
         mock_client.mind_maps.generate.assert_not_called()
@@ -739,7 +679,6 @@ class TestGenerateMindMap:
                 kind=MindMapKind.INTERACTIVE,
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -749,7 +688,6 @@ class TestGenerateMindMap:
                 ["generate", "mind-map", "--kind", "interactive", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         # Interactive path dispatches to the unified API, not the note-backed
         # artifacts.generate_mind_map.
@@ -772,7 +710,6 @@ class TestGenerateMindMap:
                 tree={"name": "Root", "children": []},
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -782,7 +719,6 @@ class TestGenerateMindMap:
                 ["generate", "mind-map", "--kind", "interactive", "--json", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         data = json.loads(result.output)
         # Converged shape: id under note_id, tree under mind_map, plus kind.
@@ -803,7 +739,6 @@ class TestGenerateMindMap:
                 kind=MindMapKind.INTERACTIVE,
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -822,7 +757,6 @@ class TestGenerateMindMap:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         assert "--instructions is ignored" in result.output
         # The warning must be backed by behaviour: the interactive
@@ -835,7 +769,6 @@ class TestGenerateMindMap:
         self, runner, mock_auth
     ):
         """Under --json the dropped-instructions warning goes to stderr, stdout stays pure JSON.
-
         Silently ignoring an explicit --instructions in JSON mode would surprise
         scripted callers, so the behavioral warning must surface on stderr — while
         stdout remains a parseable JSON payload (no warning text leaking in).
@@ -851,7 +784,6 @@ class TestGenerateMindMap:
                 kind=MindMapKind.INTERACTIVE,
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -871,7 +803,6 @@ class TestGenerateMindMap:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         # Warning surfaces on stderr even in JSON mode...
         assert "--instructions is ignored" in result.stderr
@@ -896,7 +827,6 @@ class TestGenerateMindMap:
                 kind=MindMapKind.INTERACTIVE,
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -904,7 +834,6 @@ class TestGenerateMindMap:
             result = runner.invoke(
                 cli, ["generate", "mind-map", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         # The bare default dispatches to the unified interactive API, not the
         # note-backed artifacts.generate_mind_map.
@@ -917,15 +846,12 @@ class TestGenerateMindMap:
 # =============================================================================
 # GENERATE REPORT TESTS
 # =============================================================================
-
-
 class TestGenerateReport:
     def test_generate_report_study_guide(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -935,7 +861,6 @@ class TestGenerateReport:
                 ["generate", "report", "--format", "study-guide", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
     def test_generate_report_custom(self, runner, mock_auth):
@@ -943,7 +868,6 @@ class TestGenerateReport:
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -953,7 +877,6 @@ class TestGenerateReport:
                 ["generate", "report", "Create a white paper", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
     @pytest.mark.parametrize(
@@ -972,7 +895,6 @@ class TestGenerateReport:
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -991,7 +913,6 @@ class TestGenerateReport:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         call_kwargs = mock_client.artifacts.generate_report.call_args.kwargs
         assert call_kwargs["extra_instructions"] == extra_text
@@ -1004,7 +925,6 @@ class TestGenerateReport:
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1023,7 +943,6 @@ class TestGenerateReport:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         assert "Warning" in result.output
         assert "--format custom" in result.output
@@ -1036,7 +955,6 @@ class TestGenerateReport:
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1046,7 +964,6 @@ class TestGenerateReport:
                 ["generate", "report", "My custom prompt", "--append", "extra", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         assert "Warning" in result.output
         call_kwargs = mock_client.artifacts.generate_report.call_args.kwargs
@@ -1062,8 +979,6 @@ class TestGenerateReport:
 # by ``TestGenerateStandardTypes`` above. Only mind-map keeps a dedicated JSON
 # test here because its return payload (``mind_map`` + ``note_id``) is a
 # materially different structure, not "same data, other format".
-
-
 class TestGenerateJsonOutput:
     """JSON-output tests for commands whose envelope differs from the standard shape."""
 
@@ -1075,7 +990,6 @@ class TestGenerateJsonOutput:
                 {"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
             )
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1085,7 +999,6 @@ class TestGenerateJsonOutput:
                 ["generate", "mind-map", "--kind", "note-backed", "--json", "-n", "nb_123"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "mind_map" in data
@@ -1095,8 +1008,6 @@ class TestGenerateJsonOutput:
 # =============================================================================
 # COMMAND EXISTENCE TESTS
 # =============================================================================
-
-
 class TestGenerateCommandsExist:
     def test_generate_group_exists(self, runner):
         result = runner.invoke(cli, ["generate", "--help"])
@@ -1133,13 +1044,10 @@ class TestGenerateCommandsExist:
 # =============================================================================
 # LANGUAGE VALIDATION TESTS
 # =============================================================================
-
-
 class TestGenerateLanguageValidation:
     def test_invalid_language_code_rejected(self, runner, mock_auth):
         """Test that invalid language codes are rejected with helpful error."""
         mock_client = create_mock_client()
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1149,7 +1057,6 @@ class TestGenerateLanguageValidation:
                 ["generate", "audio", "-n", "nb_123", "--language", "invalid_code"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code != 0
         assert "Unknown language code: invalid_code" in result.output
         assert "notebooklm language list" in result.output
@@ -1160,7 +1067,6 @@ class TestGenerateLanguageValidation:
         mock_client.artifacts.generate_audio = AsyncMock(
             return_value={"artifact_id": "audio_123", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1170,7 +1076,6 @@ class TestGenerateLanguageValidation:
                 ["generate", "audio", "-n", "nb_123", "--language", "ja"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
 
 
@@ -1182,8 +1087,6 @@ class TestGenerateLanguageValidation:
 # directly; the function is defined in ``_app/generate_retry.py``). The
 # ``--retry`` Click *option* surface stays here.
 # =============================================================================
-
-
 class TestRetryOptionAvailable:
     """Test that --retry option is available on generate commands."""
 
@@ -1228,10 +1131,8 @@ class TestRateLimitDetection:
         rate_limited = GenerationStatus(
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1239,7 +1140,6 @@ class TestRateLimitDetection:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert "rate limited by Google" in result.output
         assert "--retry" in result.output
 
@@ -1250,10 +1150,8 @@ class TestRateLimitDetection:
         rate_limited = GenerationStatus(
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1261,7 +1159,6 @@ class TestRateLimitDetection:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--json"], obj=inject_client(mock_client)
             )
-
         data = json.loads(result.output)
         assert data["error"] is True
         assert data["code"] == "RATE_LIMITED"
@@ -1270,8 +1167,6 @@ class TestRateLimitDetection:
 # =============================================================================
 # RESOLVE_LANGUAGE DIRECT TESTS
 # =============================================================================
-
-
 class TestResolveLanguageDirect:
     """Direct tests for resolve_language() covering uncovered branches."""
 
@@ -1290,7 +1185,7 @@ class TestResolveLanguageDirect:
         assert "notebooklm language list" in captured.err
 
     def test_none_language_with_config_returns_config(self):
-        """Line 118: language is None, config_lang is not None → returns config_lang."""
+        """language is None, config_lang is not None -> returns config_lang."""
         import importlib
 
         generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
@@ -1299,7 +1194,7 @@ class TestResolveLanguageDirect:
         assert result == "fr"
 
     def test_none_language_no_config_returns_default(self):
-        """Line 139: language is None and config_lang is None → returns DEFAULT_LANGUAGE."""
+        """language is None and config_lang is None -> returns DEFAULT_LANGUAGE."""
         import importlib
 
         generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
@@ -1417,8 +1312,6 @@ class TestResolveLanguageDirect:
 # =============================================================================
 # _OUTPUT_GENERATION_OUTCOME DIRECT TESTS
 # =============================================================================
-
-
 class TestOutputGenerationOutcomeDirect:
     """Direct tests for command-layer generation outcome rendering."""
 
@@ -1525,13 +1418,9 @@ class TestOutputGenerationOutcomeDirect:
 
 # ``TestExtractTaskIdDirect`` moved to ``tests/unit/app/test_app_generate_retry.py``
 # (``_extract_task_id`` is defined in ``_app/generate_retry.py``).
-
-
 # =============================================================================
 # _OUTPUT_MIND_MAP_RESULT DIRECT TESTS
 # =============================================================================
-
-
 class TestOutputMindMapResultDirect:
     """Direct tests for _output_mind_map_result() covering uncovered branches."""
 
@@ -1541,19 +1430,19 @@ class TestOutputMindMapResultDirect:
         self.generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
 
     def test_falsy_result_json_calls_error(self):
-        """Lines 624-626: falsy result with json_output → json_error_response."""
+        """Falsy result with json_output -> json_error_response."""
         with patch.object(self.generate_module, "json_error_response") as mock_err:
             self.generate_module._output_mind_map_result(None, json_output=True)
         mock_err.assert_called_once_with("GENERATION_FAILED", "Mind map generation failed")
 
     def test_falsy_result_no_json_prints_message(self):
-        """Lines 627-628: falsy result without json_output → console.print yellow."""
+        """Falsy result without json_output -> console.print yellow."""
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_mind_map_result(None, json_output=False)
         mock_console.print.assert_called_with("[yellow]No result[/yellow]")
 
     def test_truthy_result_json_calls_output(self):
-        """Line 631: truthy result with json_output → converged {mind_map, note_id, kind}."""
+        """Truthy result with json_output -> converged {mind_map, note_id, kind}."""
         result_data = {"note_id": "n1", "mind_map": {"name": "Root", "children": []}}
         with patch.object(self.generate_module, "json_output_response") as mock_json:
             self.generate_module._output_mind_map_result(result_data, json_output=True)
@@ -1562,7 +1451,7 @@ class TestOutputMindMapResultDirect:
         )
 
     def test_truthy_result_dict_text_output(self):
-        """Lines 633-635: truthy result dict with text output prints note_id and children count."""
+        """Truthy result dict with text output prints note_id and children count."""
         result_data = {
             "note_id": "n1",
             "mind_map": {"name": "Root", "children": [{"label": "Child1"}, {"label": "Child2"}]},
@@ -1587,18 +1476,15 @@ class TestOutputMindMapResultDirect:
 # =============================================================================
 # GENERATE REVISE-SLIDE CLI TESTS
 # =============================================================================
-
-
 class TestGenerateReviseSlide:
-    """Tests for the 'generate revise-slide' CLI command (lines 971-989)."""
+    """Tests for the 'generate revise-slide' CLI command."""
 
     def test_revise_slide_basic(self, runner, mock_auth):
-        """Lines 971-975: revise-slide command invokes client.artifacts.revise_slide."""
+        """revise-slide command invokes client.artifacts.revise_slide."""
         mock_client = create_mock_client()
         mock_client.artifacts.revise_slide = AsyncMock(
             return_value={"artifact_id": "art_rev_1", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1618,17 +1504,15 @@ class TestGenerateReviseSlide:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.revise_slide.assert_called_once()
 
     def test_revise_slide_passes_correct_args(self, runner, mock_auth):
-        """Lines 985-989: verify artifact_id, slide_index, and prompt are forwarded."""
+        """Verify artifact_id, slide_index, and prompt are forwarded."""
         mock_client = create_mock_client()
         mock_client.artifacts.revise_slide = AsyncMock(
             return_value={"artifact_id": "art_rev_2", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1648,7 +1532,6 @@ class TestGenerateReviseSlide:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         call_kwargs = mock_client.artifacts.revise_slide.call_args
         assert call_kwargs is not None, "revise_slide was not called"
@@ -1659,7 +1542,6 @@ class TestGenerateReviseSlide:
     def test_revise_slide_missing_artifact_fails(self, runner, mock_auth):
         """revise-slide requires --artifact option."""
         mock_client = create_mock_client()
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1677,13 +1559,11 @@ class TestGenerateReviseSlide:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code != 0
 
     def test_revise_slide_missing_slide_fails(self, runner, mock_auth):
         """revise-slide requires --slide option."""
         mock_client = create_mock_client()
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1701,7 +1581,6 @@ class TestGenerateReviseSlide:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code != 0
 
     def test_revise_slide_json_output(self, runner, mock_auth):
@@ -1710,7 +1589,6 @@ class TestGenerateReviseSlide:
         mock_client.artifacts.revise_slide = AsyncMock(
             return_value={"artifact_id": "art_rev_3", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1731,7 +1609,6 @@ class TestGenerateReviseSlide:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "task_id" in data or "artifact_id" in data or "status" in data
@@ -1740,22 +1617,18 @@ class TestGenerateReviseSlide:
 # =============================================================================
 # GENERATE REPORT WITH DESCRIPTION (LINE 1057)
 # =============================================================================
-
-
 class TestGenerateReportWithNonBriefingFormat:
     """Test generate report when description is provided with non-briefing-doc format.
-
-    Line 1057: the else-branch that sets custom_prompt = description when
-    report_format != 'briefing-doc' and description is provided.
+    The else-branch sets custom_prompt = description when report_format !=
+    'briefing-doc' and description is provided.
     """
 
     def test_report_description_with_study_guide_format(self, runner, mock_auth):
-        """Line 1057: description + non-default format → custom_prompt = description."""
+        """Description + non-default format -> custom_prompt = description."""
         mock_client = create_mock_client()
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_xyz", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1773,7 +1646,6 @@ class TestGenerateReportWithNonBriefingFormat:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.generate_report.assert_called_once()
         call_kwargs = mock_client.artifacts.generate_report.call_args.kwargs
@@ -1781,12 +1653,11 @@ class TestGenerateReportWithNonBriefingFormat:
         assert call_kwargs.get("custom_prompt") == "Focus on beginners"
 
     def test_report_description_with_blog_post_format(self, runner, mock_auth):
-        """Line 1057: description + blog-post format → custom_prompt set."""
+        """Description + blog-post format -> custom_prompt set."""
         mock_client = create_mock_client()
         mock_client.artifacts.generate_report = AsyncMock(
             return_value={"artifact_id": "report_abc", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1804,7 +1675,6 @@ class TestGenerateReportWithNonBriefingFormat:
                 ],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.generate_report.assert_called_once()
         call_kwargs = mock_client.artifacts.generate_report.call_args.kwargs
@@ -1812,24 +1682,20 @@ class TestGenerateReportWithNonBriefingFormat:
 
 
 # =============================================================================
-# HANDLE_GENERATION_RESULT PATHS (GenerationStatus and list result formats)
+# HANDLE_GENERATION_RESULT PATHS (GenerationStatus, dict seam inputs, and wait paths)
 # =============================================================================
-
-
 class TestHandleGenerationResultPaths:
-    """Test handle_generation_result branches: GenerationStatus input and list input."""
+    """Test handle_generation_result branches: GenerationStatus and dict seam inputs."""
 
     def test_generation_result_with_generation_status_object(self, runner, mock_auth):
-        """Lines 200-201: result is a GenerationStatus → task_id = result.task_id."""
+        """result is a GenerationStatus -> task_id = result.task_id."""
         from notebooklm.types import GenerationStatus
 
         status = GenerationStatus(
             task_id="task_gen_1", status="pending", error=None, error_code=None
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1837,13 +1703,11 @@ class TestHandleGenerationResultPaths:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         assert "task_gen_1" in result.output or "Started" in result.output
 
     def test_generation_result_with_dict_input(self, runner, mock_auth):
         """A dict generation-start result surfaces its task id.
-
         The raw positional-list path is gone — the facade ``generate_*``
         methods return typed ``GenerationStatus`` objects (dicts remain a
         tolerated seam shape at this boundary).
@@ -1852,7 +1716,6 @@ class TestHandleGenerationResultPaths:
         mock_client.artifacts.generate_audio = AsyncMock(
             return_value={"task_id": "task_dict_1", "status": "processing"}
         )
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1860,20 +1723,17 @@ class TestHandleGenerationResultPaths:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         assert "task_dict_1" in result.output or "Started" in result.output
 
     def test_generation_result_falsy_shows_failed_message(self, runner, mock_auth):
         """Falsy result → stderr error message + non-zero exit (P1.T6).
-
         Pre-fix exited 0 in text mode; post-fix routes through
         ``output_error`` → ``SystemExit(1)`` and writes the message to
         stderr. See ``TestArtifactGenerationExitCodes`` for the contract.
         """
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1881,13 +1741,11 @@ class TestHandleGenerationResultPaths:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code != 0
         assert "generation failed" in result.stderr.lower()
 
     def test_generation_result_falsy_json_shows_error(self, runner, mock_auth):
         """Falsy result with --json → GENERATION_FAILED envelope + non-zero exit.
-
         Post-P1.T6 the path routes through ``output_error`` (not the older
         ``json_error_response`` helper) so this test pins the JSON-mode
         contract here; ``TestArtifactGenerationExitCodes`` covers the same
@@ -1895,7 +1753,6 @@ class TestHandleGenerationResultPaths:
         """
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1903,7 +1760,6 @@ class TestHandleGenerationResultPaths:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--json"], obj=inject_client(mock_client)
             )
-
         # ``output_error`` raises ``SystemExit(1)``; Click reports exit_code 1.
         assert result.exit_code != 0
         data = json.loads(result.output)
@@ -1911,7 +1767,7 @@ class TestHandleGenerationResultPaths:
         assert data["code"] == "GENERATION_FAILED"
 
     def test_generation_with_wait_and_generation_status(self, runner, mock_auth):
-        """Line 213: wait=True with GenerationStatus triggers wait_for_completion."""
+        """wait=True with GenerationStatus triggers wait_for_completion."""
         from notebooklm.types import GenerationStatus
 
         initial_status = GenerationStatus(
@@ -1924,11 +1780,9 @@ class TestHandleGenerationResultPaths:
             error_code=None,
             url="https://example.com/result.mp3",
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1936,7 +1790,6 @@ class TestHandleGenerationResultPaths:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--wait"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.wait_for_completion.assert_called_once()
 
@@ -1944,19 +1797,15 @@ class TestHandleGenerationResultPaths:
 # =============================================================================
 # ADDITIONAL TARGETED COVERAGE TESTS
 # =============================================================================
-
-
 # ``TestGenerateWithRetryConsoleOutput`` (the pure ``on_retry``-sink retry test)
 # moved to ``tests/unit/app/test_app_generate_retry.py`` as
 # ``test_retry_fires_on_retry_sink`` (retargeted at the injected sink, no
 # Click coupling).
-
-
 class TestHandleGenerationResultListPathAndWait:
-    """Test handle_generation_result: list path and wait with console message."""
+    """Test generation-result rendering branches and wait console messages."""
 
     def test_wait_with_task_id_shows_generating_message(self, runner, mock_auth):
-        """Line 211->213: wait=True, task_id present, not json → console.print generating."""
+        """wait=True, task_id present, not json -> console.print generating."""
         from notebooklm.types import GenerationStatus
 
         initial_status = GenerationStatus(
@@ -1969,11 +1818,9 @@ class TestHandleGenerationResultListPathAndWait:
             error_code=None,
             url="https://example.com/audio.mp3",
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -1981,7 +1828,6 @@ class TestHandleGenerationResultListPathAndWait:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--wait"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         # The console message "Generating audio... Task: task_console_1" should appear
         assert "task_console_1" in result.output or "Generating" in result.output
@@ -1989,7 +1835,6 @@ class TestHandleGenerationResultListPathAndWait:
 
     def test_dict_result_extracts_task_id_for_wait(self, runner, mock_auth):
         """Dict result without ``artifact_id`` + wait=True → task_id from ``task_id``.
-
         (Formerly exercised the raw positional-list path; the facade returns
         typed statuses, so the list-sniffing branch was removed.)
         """
@@ -2002,13 +1847,11 @@ class TestHandleGenerationResultListPathAndWait:
             error_code=None,
             url="https://example.com/audio.mp3",
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(
             return_value={"task_id": "task_dict_wait", "status": "processing"}
         )
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2016,7 +1859,6 @@ class TestHandleGenerationResultListPathAndWait:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--wait"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0
         mock_client.artifacts.wait_for_completion.assert_called_once()
 
@@ -2031,7 +1873,6 @@ class TestHandleGenerationResultListPathAndWait:
             error_code=None,
             url="https://example.com/audio.mp3",
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(
             return_value={
@@ -2041,7 +1882,6 @@ class TestHandleGenerationResultListPathAndWait:
             }
         )
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2049,7 +1889,6 @@ class TestHandleGenerationResultListPathAndWait:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--wait"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code == 0, result.output
         mock_client.artifacts.wait_for_completion.assert_awaited_once()
         args = mock_client.artifacts.wait_for_completion.await_args.args
@@ -2057,7 +1896,7 @@ class TestHandleGenerationResultListPathAndWait:
 
 
 class TestOutputMindMapNonDictMindMap:
-    """Test _output_mind_map_result when mind_map value is not a dict (line 985->else)."""
+    """Test _output_mind_map_result when mind_map value is not a dict."""
 
     def setup_method(self):
         import importlib
@@ -2065,7 +1904,7 @@ class TestOutputMindMapNonDictMindMap:
         self.generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
 
     def test_mind_map_non_dict_value_prints_directly(self):
-        """Line 985->else (988-989): mind_map is not a dict → console.print(result)."""
+        """A dict result with non-dict ``mind_map`` still prints header and note id."""
         result_data = {
             "note_id": "n1",
             "mind_map": ["node1", "node2"],  # list, not dict → else branch
@@ -2079,7 +1918,6 @@ class TestOutputMindMapNonDictMindMap:
 
 class TestStatusWithElapsed:
     """Cover the polling-UI spinner helper.
-
     The pure ``_format_status_message`` tests moved to
     ``tests/unit/app/test_app_generate_retry.py`` (the formatter is defined in
     ``_app/generate_retry.py``); the CLI-coupled ``status_with_elapsed``
@@ -2102,11 +1940,8 @@ class TestStatusWithElapsed:
 # =============================================================================
 # SIGINT / RESUME-HINT TESTS
 # =============================================================================
-
-
 class TestGenerateWaitSigintResumeHint:
     """Ctrl-C during ``generate <kind> --wait`` surfaces the resume hint.
-
     The hint follows the canonical phrasing
     ``Cancelled. Resume with: notebooklm artifact poll <task_id>``
     and the process exits 130. This guards against the prior regression
@@ -2117,7 +1952,6 @@ class TestGenerateWaitSigintResumeHint:
     def test_generate_audio_wait_sigint_prints_resume_hint_and_exits_130(self, runner, mock_auth):
         """SIGINT during ``generate audio --wait`` exits 130 with a resume hint
         naming the task_id.
-
         Simulates the Ctrl-C by patching ``client.artifacts.wait_for_completion``
         to raise ``KeyboardInterrupt`` — the same exception Python delivers
         when the user hits Ctrl-C during the polling loop.
@@ -2127,7 +1961,6 @@ class TestGenerateWaitSigintResumeHint:
         initial_status = GenerationStatus(
             task_id="task_sigint_1", status="pending", error=None, error_code=None
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
         # The polling call is where Ctrl-C lands (asyncio.sleep inside the
@@ -2135,7 +1968,6 @@ class TestGenerateWaitSigintResumeHint:
         # KeyboardInterrupt from the awaitable is the cleanest way to
         # simulate that without spinning up a real polling loop.
         mock_client.artifacts.wait_for_completion = AsyncMock(side_effect=KeyboardInterrupt)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2143,7 +1975,6 @@ class TestGenerateWaitSigintResumeHint:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--wait"], obj=inject_client(mock_client)
             )
-
         # Exit 130 = 128 + signal 2 (SIGINT). Standard convention.
         assert result.exit_code == 130, (
             f"expected SIGINT exit 130, got {result.exit_code}; output={result.output!r}"
@@ -2158,7 +1989,6 @@ class TestGenerateWaitSigintResumeHint:
 
     def test_generate_audio_wait_sigint_json_emits_cancelled_envelope(self, runner, mock_auth):
         """SIGINT under ``--json`` emits a structured CANCELLED envelope on stdout.
-
         Automation parsing stdout-as-JSON gets a parseable cancellation
         instead of a half-printed JSON document or a Python traceback. The
         envelope carries the resume hint so an agent can re-issue the resume
@@ -2169,11 +1999,9 @@ class TestGenerateWaitSigintResumeHint:
         initial_status = GenerationStatus(
             task_id="task_sigint_json", status="pending", error=None, error_code=None
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
         mock_client.artifacts.wait_for_completion = AsyncMock(side_effect=KeyboardInterrupt)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2183,7 +2011,6 @@ class TestGenerateWaitSigintResumeHint:
                 ["generate", "audio", "-n", "nb_123", "--wait", "--json"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code == 130
         # Last JSON document on stdout is the cancellation envelope (the
         # earlier ``Started`` line is suppressed under --wait + --json since
@@ -2196,7 +2023,6 @@ class TestGenerateWaitSigintResumeHint:
 
     def test_status_with_elapsed_propagates_keyboardinterrupt_when_no_resume_hint(self):
         """Without ``resume_hint``, KeyboardInterrupt propagates to the generic handler.
-
         Preserves the existing ``error_handler.handle_errors`` ownership of
         non-wait commands — the SIGINT-with-hint path is opt-in via the
         ``resume_hint`` argument so unrelated callers (e.g. mind-map's static
@@ -2218,17 +2044,13 @@ class TestGenerateWaitSigintResumeHint:
 # =============================================================================
 # P1.T6 — Exit-code parity across text/JSON modes on artifact generation failure
 # =============================================================================
-
-
 class TestArtifactGenerationExitCodes:
     """Failed artifact generation must exit non-zero in BOTH text and JSON modes.
-
     Pre-fix behavior: text mode printed a Rich error to stdout and returned
     normally (exit 0); JSON mode emitted a ``json_error_response`` envelope and
     exited 1. The exit-code asymmetry meant shell scripts driving
     ``notebooklm generate audio ...`` without ``--json`` could not detect
     failures via ``$?``.
-
     These tests pin the unified contract: every failure path inside
     ``handle_generation_result`` (and the command-layer outcome renderer for
     terminal failures reached via ``--wait``) routes through ``output_error``,
@@ -2237,12 +2059,10 @@ class TestArtifactGenerationExitCodes:
     """
 
     # --- Initial-call failure (result is None / falsy) ---------------------
-
     def test_text_mode_none_result_exits_nonzero(self, runner, mock_auth):
         """``generate audio`` without ``--json`` exits != 0 when the API returns None."""
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2250,7 +2070,6 @@ class TestArtifactGenerationExitCodes:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code != 0
         # Message routed to stderr via safe_echo(err=True) under Click 8.2+ which
         # separates stdout/stderr by default.
@@ -2260,7 +2079,6 @@ class TestArtifactGenerationExitCodes:
         """``generate audio --json`` exits != 0 when the API returns None."""
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2268,7 +2086,6 @@ class TestArtifactGenerationExitCodes:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--json"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code != 0
         data = json.loads(result.output)
         assert data["error"] is True
@@ -2276,7 +2093,6 @@ class TestArtifactGenerationExitCodes:
         assert "Audio generation failed" in data["message"]
 
     # --- Rate-limit failure --------------------------------------------------
-
     def test_text_mode_rate_limited_exits_nonzero(self, runner, mock_auth):
         """Rate-limited result (no retries left) exits != 0 in text mode."""
         from notebooklm.types import GenerationStatus
@@ -2284,10 +2100,8 @@ class TestArtifactGenerationExitCodes:
         rate_limited = GenerationStatus(
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2295,7 +2109,6 @@ class TestArtifactGenerationExitCodes:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code != 0
         # The "rate limited" message and the daily-quota hint both land on
         # stderr; the second goes through ``output_error``'s ``hint`` arg.
@@ -2309,10 +2122,8 @@ class TestArtifactGenerationExitCodes:
         rate_limited = GenerationStatus(
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2320,14 +2131,12 @@ class TestArtifactGenerationExitCodes:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--json"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code != 0
         data = json.loads(result.output)
         assert data["error"] is True
         assert data["code"] == "RATE_LIMITED"
 
     # --- Wait-then-failed terminal status -----------------------------------
-
     def test_text_mode_wait_then_failed_exits_nonzero(self, runner, mock_auth):
         """``--wait`` that observes a terminal is_failed status exits != 0 in text mode."""
         from notebooklm.types import GenerationStatus
@@ -2341,11 +2150,9 @@ class TestArtifactGenerationExitCodes:
             error="Transcription error",
             error_code="INTERNAL_ERROR",
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=initial)
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=terminal)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2353,7 +2160,6 @@ class TestArtifactGenerationExitCodes:
             result = runner.invoke(
                 cli, ["generate", "audio", "-n", "nb_123", "--wait"], obj=inject_client(mock_client)
             )
-
         assert result.exit_code != 0
         assert "Transcription error" in result.stderr
 
@@ -2370,11 +2176,9 @@ class TestArtifactGenerationExitCodes:
             error="Transcription error",
             error_code="INTERNAL_ERROR",
         )
-
         mock_client = create_mock_client()
         mock_client.artifacts.generate_audio = AsyncMock(return_value=initial)
         mock_client.artifacts.wait_for_completion = AsyncMock(return_value=terminal)
-
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
@@ -2384,7 +2188,6 @@ class TestArtifactGenerationExitCodes:
                 ["generate", "audio", "-n", "nb_123", "--wait", "--json"],
                 obj=inject_client(mock_client),
             )
-
         assert result.exit_code != 0
         data = json.loads(result.output)
         assert data["error"] is True

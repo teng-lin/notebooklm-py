@@ -2,9 +2,9 @@
 
 This private module hosts the rotation throttle + POST that
 ``notebooklm.auth`` previously owned at module level. ``notebooklm.auth`` keeps
-re-exporting every name listed here (and the facade write-through in
-``_AuthFacadeModule`` mirrors any monkeypatched values back to this module so
-white-box tests keep working when they patch ``notebooklm.auth.X``).
+re-exporting compatibility names, but production no longer mirrors facade-level
+rebindings; tests that substitute keepalive internals should patch this
+canonical module directly.
 
 Logger name is pinned to ``"notebooklm.auth"`` (NOT ``__name__``) so existing
 ``caplog`` assertions targeting ``notebooklm.auth`` keep matching the records
@@ -120,9 +120,9 @@ _LAST_POKE_ATTEMPT_MONOTONIC: dict[Path | None, float] = {}
 _rotation_lock_path = _auth_paths._rotation_lock_path
 
 # Cross-process file-lock primitives live in ``_auth.storage``. Aliased into
-# this module's namespace so the keepalive bodies resolve them locally — this
-# also lets tests that monkeypatch ``notebooklm.auth._file_lock`` propagate
-# through the facade write-through.
+# this module's namespace so the keepalive bodies resolve them locally; tests
+# that need to substitute the lock primitive should patch
+# ``notebooklm._auth.keepalive._file_lock`` directly.
 _file_lock = _auth_storage._file_lock
 
 

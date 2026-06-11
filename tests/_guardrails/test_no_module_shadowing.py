@@ -1,7 +1,7 @@
 """Guard the click-group / package-attribute shadowing fix from P3.T0.
 
 Before P3.T0, ``cli/__init__.py`` did ``from .download import download`` and
-similar for 14 other command groups. Because the click group was bound at the
+similar for 15 other command groups. Because the click group was bound at the
 package level under the SAME name as the source module, ``import
 notebooklm.cli.download`` returned the click ``Group`` object instead of the
 module — tests that wanted to patch a symbol inside the module had to use a
@@ -9,13 +9,13 @@ module — tests that wanted to patch a symbol inside the module had to use a
 
 P3.T0 renamed the source modules to ``*_cmd.py`` (e.g. ``download_cmd``) so
 the click groups can keep their historical public names without overwriting
-the module's package attribute. This test asserts that, for each of the 15
+the module's package attribute. This test asserts that, for each of the 16
 renamed modules:
 
 1. ``importlib.import_module("notebooklm.cli.<name>_cmd")`` returns a real
    module (``inspect.ismodule`` is ``True``).
 2. The click group is still reachable at its historical public path
-   ``notebooklm.cli.<name>`` (for the 11 groups exported under their original
+   ``notebooklm.cli.<name>`` (for the 12 groups exported under their original
    name from ``cli/__init__.py``; ``chat``, ``doctor``, ``notebook`` and
    ``session`` use ``register_*`` helpers instead of a top-level click group
    so they are exempt from check 2).
@@ -36,7 +36,7 @@ import inspect
 import click
 import pytest
 
-# The 15 modules renamed in P3.T0.
+# The 16 modules renamed in P3.T0.
 RENAMED_MODULES = (
     "agent",
     "artifact",

@@ -178,12 +178,16 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         ``await`` — so the lock is uncontested in steady state and refresh's
         tiny write block cannot block RPC throughput.
 
-        The whole-request atomicity for ``(csrf, sid, cookies)`` on the wire
-        still depends on the no-await invariant between this method returning
-        and ``client.post(...)`` inside ``_perform_authed_post`` (see the AST
-        guard in ``tests/unit/test_concurrency_refresh_race.py``). The lock
-        guarantees the four scalars in the snapshot are coherent with each
-        other; the no-await rule keeps the cookie axis aligned with them.
+        The whole-attempt atomicity for ``(csrf, sid, cookies)`` on the wire
+        is completed at the transport terminal:
+        :meth:`RuntimeTransport.refresh_request_for_current_auth` captures a
+        fresh snapshot, rebuilds the envelope, and
+        :meth:`RuntimeTransport.terminal` calls ``Kernel.post`` with no await
+        between materialization and the POST (see the AST guards in
+        ``tests/unit/test_concurrency_refresh_race.py``). This lock guarantees
+        the four scalars in the returned snapshot are coherent with each other;
+        the terminal no-await rule keeps the cookie axis aligned with the
+        materialized envelope.
 
         ``auth`` is passed explicitly per call; the lock-wait metric is
         recorded through ``self._metrics`` (supplied at construction).

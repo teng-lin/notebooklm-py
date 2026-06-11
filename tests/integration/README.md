@@ -33,17 +33,13 @@ violating node IDs.
 `tests/integration/` for tree-organization reasons but make no real (or
 recorded) HTTP calls. Today these include:
 
-- `test_skill_packaging.py` — runs `uv build` on the wheel and inspects
-  packaged files; no HTTP.
-- `test_artifacts_drift.py`, `test_get_summary_drift.py` — exercise
-  `_parse_*` parsers against constructed dicts to pin RPC-shape drift; the
-  parser doesn't go through HTTP.
 - `test_auto_refresh.py` — asserts that the refresh callback is *wired*;
   doesn't fire a real refresh.
 - `test_session_integration.py` — `httpx.MockTransport` + `AsyncMock` exercising error
   paths; no real socket.
-- `test_download_multi_artifact.py` — pure helper-logic tests for
-  `select_artifact` / `artifact_title_to_filename`.
+- `test_*_idempotency.py` — mock-transport regression tests for retry /
+  idempotency behavior; no live or recorded HTTP.
+- `test_gzip_cassette_replay.py` — pure cassette-replay helper coverage.
 - The whole `concurrency/` subtree — uses `httpx.MockTransport` to inject
   scheduler-controllable behavior into the core/upload/download paths
   (real HTTP would defeat the determinism these tests need).

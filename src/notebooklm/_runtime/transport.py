@@ -41,7 +41,7 @@ The chain itself is reached by the transport through an injected
 ``chain_host._authed_post_chain`` live, late on every
 :meth:`perform_authed_post` call; this both breaks the construction
 cycle and preserves the long-standing test pattern of reassigning
-``core._chain_host._authed_post_chain`` to install a fake chain. The
+``core._composed.chain_host._authed_post_chain`` to install a fake chain. The
 :class:`AuthRefreshCoordinator` snapshot is reached via an injected
 ``snapshot_provider`` callable so :class:`RuntimeTransport` never has
 to hold a direct back-reference to the composition root.
@@ -122,7 +122,7 @@ class RuntimeTransport:
         # :class:`MiddlewareChainHost` AFTER :class:`RuntimeTransport`
         # is constructed (the chain's leaf is :meth:`terminal`, so the
         # transport must exist first). Tests also reassign
-        # ``core._chain_host._authed_post_chain`` post-construction to
+        # ``core._composed.chain_host._authed_post_chain`` post-construction to
         # install a fake chain — going through a provider closure
         # (called late in :meth:`perform_authed_post`) ensures those
         # reassignments take effect on the next call without any

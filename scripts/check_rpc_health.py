@@ -831,7 +831,8 @@ async def setup_temp_resources(
 
     Tests CREATE_NOTEBOOK, ADD_SOURCE, ADD_SOURCE_FILE, START_FAST_RESEARCH,
     CREATE_NOTE, and CREATE_ARTIFACT RPC methods.
-    Polls for artifact completion before testing DELETE_ARTIFACT in cleanup.
+    Gives artifact generation a short grace period before testing DELETE_ARTIFACT
+    in cleanup.
     """
     temp = TempResources()
 
@@ -1001,18 +1002,20 @@ async def setup_temp_resources(
                 preview = scrub_secrets(repr(data))[:200]
                 print(f"  WARNING: CREATE_ARTIFACT ID extraction failed. Response: {preview}")
 
-        # Poll for artifact completion
+        # Probe LIST_ARTIFACTS briefly so artifact generation gets a grace
+        # period before DELETE_ARTIFACT cleanup.
         if temp.artifact_id:
-            # Poll up to 30 seconds for flashcard generation to complete
+            # Probe for up to 30 seconds before cleanup.
             max_polls = 15
             poll_interval = 2.0
-            artifact_ready = False
+            artifact_list_live = False
             polls_done = 0
 
             for _ in range(max_polls):
                 await asyncio.sleep(poll_interval)
                 polls_done += 1
-                # Use LIST_ARTIFACTS and find by ID (no poll-by-ID RPC exists)
+                # LIST_ARTIFACTS is the available liveness probe; there is no
+                # poll-by-ID RPC here.
                 poll_result = await test_rpc_method(
                     client,
                     auth,
@@ -1020,17 +1023,18 @@ async def setup_temp_resources(
                     [[2], temp.notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],
                     source_path=f"/notebook/{temp.notebook_id}",
                 )
-                # Check if status indicates completion (status code 3 = ready)
-                # We don't add poll results to avoid cluttering output
+                # We only need the method to succeed; poll results are omitted
+                # to keep output focused on the primary checks.
                 if poll_result.status == CheckStatus.OK:
-                    artifact_ready = True
+                    artifact_list_live = True
                     break
 
-            if artifact_ready:
-                print(f"  Artifact ready after {polls_done * poll_interval:.0f}s polling")
+            if artifact_list_live:
+                print(f"  Artifact list live after {polls_done * poll_interval:.0f}s polling")
             else:
                 print(
-                    f"  Artifact not ready after {max_polls * poll_interval:.0f}s (continuing anyway)"
+                    f"  Artifact list not live after {max_polls * poll_interval:.0f}s "
+                    "(continuing anyway)"
                 )
     else:
         # Skip artifact tests - no source_id available

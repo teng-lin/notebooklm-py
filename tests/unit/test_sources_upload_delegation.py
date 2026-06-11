@@ -300,7 +300,7 @@ def test_sources_module_holds_no_scotty_implementation() -> None:
     leaked = [token for token in forbidden if token in code]
     assert not leaked, (
         "_sources.py leaked resumable-upload implementation tokens in executable "
-        f"code (should delegate to _source_upload.py): {leaked}"
+        f"code (should delegate to notebooklm._source.upload): {leaked}"
     )
 
 

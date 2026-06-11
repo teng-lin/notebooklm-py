@@ -4,7 +4,7 @@ The env-var name is intentionally centralized in
 ``cli/services/auth_source.py``. Other CLI modules must import
 ``AUTH_JSON_ENV_NAME`` / ``has_env_auth_json`` instead of re-declaring
 the literal in source comments, docs, or logic. This keeps the original
-phase-3 grep gate enforceable.
+auth-source consolidation grep gate enforceable.
 """
 
 from __future__ import annotations

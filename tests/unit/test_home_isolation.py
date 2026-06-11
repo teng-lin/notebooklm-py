@@ -16,9 +16,8 @@ from pathlib import Path
 import pytest
 
 # Load the root conftest by file path to reach its module-level decision helper
-# without depending on pytest's ``conftest`` import-name resolution. This is the
-# same file-path idiom the conftest itself uses for ``vcr_config`` /
-# ``cassette_patterns`` (``tests/`` is not a package).
+# without depending on pytest's special ``conftest`` import-name resolution or
+# unwrapping the autouse fixture.
 _spec = importlib.util.spec_from_file_location(
     "tests_root_conftest", Path(__file__).resolve().parents[1] / "conftest.py"
 )

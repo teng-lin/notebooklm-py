@@ -5,9 +5,8 @@ layout (plus ``Local State``) on disk and prove
 :func:`notebooklm.cli._chromium_profiles.discover_chromium_profiles` returns
 the right :class:`ChromiumProfile` records for issue #571's fan-out path.
 
-We don't exercise rookiepy decryption here — that's covered against the real
-Chrome cookie DB during local validation, and at the
-:mod:`tests.unit.cli.test_session` level via mocked ``rookiepy.any_browser``.
+We don't exercise real rookiepy decryption here; mocked ``rookiepy.any_browser``
+coverage lives in this file and in :mod:`tests.unit.cli.test_login_chromium_fanout`.
 """
 
 from __future__ import annotations

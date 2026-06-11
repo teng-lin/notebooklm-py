@@ -393,7 +393,7 @@ async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic
     monkeypatch.setattr(api, "_get_or_none", AsyncMock(side_effect=[processing, ready]))
     # Object-form patches against the locally-imported `_sources` seam alias:
     # the production code resolves `asyncio.sleep`/`monotonic` from this module
-    # namespace (see `_sources.wait_until_ready`), so substituting them here
+    # namespace (see `_sources.SourcesAPI.wait_until_ready`), so substituting them here
     # exercises that resolution without an import-string patch.
     # `_sources.monotonic` is a module-local alias (`from time import monotonic`),
     # so patching it is already isolated. For `asyncio.sleep` we swap the whole

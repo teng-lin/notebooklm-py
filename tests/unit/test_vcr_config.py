@@ -35,11 +35,8 @@ from notebooklm._error_injection import (
 )
 from tests._helpers.client_factory import build_client_shell_for_tests
 
-# Load ``tests/vcr_config.py`` via ``importlib`` rather than mutating
-# ``sys.path``. The ``tests`` directory is not a package (no ``__init__.py``),
-# so a plain ``from tests.vcr_config import _freq_body_matcher`` fails; a
-# ``sys.path`` insertion would work but is module-load-time side-effectful and
-# would silently shadow any future top-level module named ``vcr_config``.
+# Load ``tests/vcr_config.py`` via ``importlib`` by file path to keep the
+# dependency localized and avoid module-load-time ``sys.path`` mutation.
 # Loading by file path keeps the dependency localized to this test module
 # (mirrors the pattern used in ``tests/unit/test_cookie_redaction.py``).
 _TESTS_DIR = Path(__file__).resolve().parent.parent
@@ -249,8 +246,8 @@ def test_recompute_chunk_prefix_uses_utf8_byte_count():
 
     For non-ASCII payloads (emoji, accented characters) ``len(payload)`` differs
     from ``len(payload.encode("utf-8"))``. The on-wire protocol uses byte count,
-    so the helper must too — matching what the decoder computes at
-    ``decoder.py:228``.
+    so the helper must too — matching what ``parse_chunked_response`` computes
+    in the decoder.
     """
     # The emoji takes 4 UTF-8 bytes but is 1 Python char.
     payload = '["🚀"]'  # len() == 5, len(.encode()) == 8
@@ -375,11 +372,9 @@ def test_scrub_response_does_not_corrupt_non_chunked_html_body():
 # 2. The ``before_record_response`` hook in vcr_config.py performs a
 #    defense-in-depth substitution when the env var is set, and is a no-op
 #    when unset.
-# 3. The chain-layer ``ErrorInjectionMiddleware`` substitutes the synthetic
-#    response on every chain invocation (short-circuiting batchexecute
-#    POSTs) and is only wired into the chain when the env var resolves to
-#    a valid mode. PR 12.6 lifted this from a transport-layer wrapper
-#    (``_SyntheticErrorTransport``, deleted in PR 12.9) into the chain.
+# 3. The runtime chain includes ``ErrorInjectionMiddleware`` with
+#    ``builder=None``; substitution behavior is covered by direct middleware
+#    tests.
 
 build_synthetic_error_response = _cassette_patterns.build_synthetic_error_response
 synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
@@ -475,7 +470,7 @@ def test_vcr_get_error_injection_mode_typo_returns_none(monkeypatch):
 def test_scrub_response_substitutes_when_env_var_set(monkeypatch, mode):
     """When the env var resolves to a valid mode, ``scrub_response`` rewrites
     the response shape to the canonical synthetic body, regardless of what
-    came in. This is the defense-in-depth layer below the transport wrapper."""
+    came in. This is the VCR hook layer used while recording."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
     incoming = {
         "status": {"code": 200, "message": "OK"},
@@ -493,8 +488,7 @@ def test_scrub_response_substitutes_when_env_var_set(monkeypatch, mode):
 
 
 def test_scrub_response_noop_when_env_var_unset(monkeypatch):
-    """With the env var absent, ``scrub_response`` is byte-for-byte the same
-    as before the synthetic-error transport landed — only sensitive-data scrubbing runs."""
+    """With the env var absent, only normal sensitive-data scrubbing runs."""
     monkeypatch.delenv(ERROR_INJECT_ENV_VAR, raising=False)
     incoming = {
         "status": {"code": 200, "message": "OK"},
@@ -509,7 +503,7 @@ def test_scrub_response_noop_when_env_var_unset(monkeypatch):
     assert b"original wire response" in out["body"]["string"]
 
 
-# --- (3) _core.py transport wrapper -----------------------------------------
+# --- (3) _error_injection.py mode resolver ----------------------------------
 
 
 def test_core_get_error_injection_mode_unset(monkeypatch):
@@ -536,24 +530,17 @@ def test_core_get_error_injection_mode_typo_returns_none(monkeypatch):
     assert _get_error_injection_mode() is None
 
 
-# --- Session wiring after PR 12.6/12.9 -----------------------------------
+# --- Client-runtime wiring after PR 12.6/12.9 -----------------------------
 #
-# Pre-Tier-12 these tests exercised a ``_SyntheticErrorTransport`` that
-# wrapped the ``httpx.AsyncClient`` BELOW VCR. PR 12.6 lifted the
-# substitution into ``ErrorInjectionMiddleware`` (chain layer, ABOVE VCR)
-# and PR 12.9 deleted the legacy transport class entirely. The only
-# end-to-end assertion left at this layer is "the chain seed contains
-# ``ErrorInjectionMiddleware`` when the env var is set" — substitution
-# behavior is covered exhaustively by
+# The runtime chain includes ``ErrorInjectionMiddleware`` with ``builder=None``;
+# substitution behavior is covered by direct middleware tests in
 # ``tests/unit/test_error_injection_middleware.py``.
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["429", "5xx", "expired_csrf"])
 async def test_error_injection_middleware_present_when_env_var_set_in_session(monkeypatch, mode):
-    """When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, ``Session`` wires
-    ``ErrorInjectionMiddleware`` into the chain so each chain invocation
-    short-circuits with the synthetic shape."""
+    """Client startup wires pass-through ``ErrorInjectionMiddleware`` into the chain."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
     from notebooklm._middleware.error_injection import ErrorInjectionMiddleware
     from notebooklm.auth import AuthTokens

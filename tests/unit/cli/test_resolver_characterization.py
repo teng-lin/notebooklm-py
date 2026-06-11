@@ -1,8 +1,8 @@
 """Characterization tests for the notebook + partial-ID resolver.
 
-These tests pin observable CLI behavior across the resolver paths in
-``cli/chat.py`` and ``cli/download.py`` BEFORE the P2.T1 consolidation
-refactor. They are intentionally end-to-end at the ``CliRunner`` level so
+These tests pin observable CLI behavior across the chat and download resolver
+paths before the P2.T1 consolidation refactor. They are intentionally
+end-to-end at the ``CliRunner`` level so
 they capture exit codes, stdout/stderr structure, and side-effect counts
 (e.g. "did the notebook listing fire?") that the lower-level unit tests in
 ``test_resolve.py`` and ``test_download_helpers.py`` do not cover holistically.
@@ -19,9 +19,9 @@ Coverage matrix (resolver fallback paths):
 | Context-file fallback               | yes       | yes             |
 | Partial artifact id (download only) | n/a       | yes             |
 
-The chat path also pins the conversation-id fallback order (which is a
-separate concern but co-located here because both fallback ladders live in
-the same file and risk collision during refactoring).
+The chat path also pins the conversation-id fallback order, co-located here
+because it shares the same command workflow and can regress during resolver
+refactors.
 """
 
 from __future__ import annotations

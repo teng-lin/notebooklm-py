@@ -227,10 +227,11 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
     re-import ``notebooklm.rpc.decode_response`` on every call, so a late
     string-target monkeypatch of that module attribute (after the executor
     was already constructed) still affected the live decode path.
-    The constructor-DI seam (``Session(..., decode_response=…)``) intentionally
-    captures the callable at construction time — see
-    ``docs/improvement.md`` §4.1. This test asserts the new contract: the
-    injected callable reaches :class:`RpcExecutor` end-to-end.
+    The client-shell seam
+    (``build_client_shell_for_tests(..., decode_response=...)``) intentionally
+    captures the callable at construction time; see ``docs/architecture.md``'s
+    ClientSeams wiring. This test asserts the new contract: the injected
+    callable reaches :class:`RpcExecutor` end-to-end.
     """
     decode_calls: list[dict[str, Any]] = []
 
@@ -253,7 +254,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
 
     # ADR-0014 Rule 5 (Wave 4 of session-decoupling): the executor calls
     # ``self._transport.perform_authed_post(...)`` directly instead of
-    # routing through ``Session._perform_authed_post``. Patch the
+    # routing through the retired ``Session._perform_authed_post`` forward. Patch the
     # collaborator the executor actually reaches.
     monkeypatch.setattr(core._composed.transport, "perform_authed_post", fake_perform_authed_post)
 
@@ -662,8 +663,8 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     ``asyncio.sleep`` on every call, so a late string-target monkeypatch of
     the ``notebooklm._runtime.helpers`` ``asyncio.sleep`` attribute (after the
     executor was already constructed) still affected the live sleep path.
-    The constructor-DI seam (``Session(..., sleep=…)``) intentionally captures
-    the callable at construction time — see ``docs/improvement.md`` §4.1.
+    The ``RpcExecutor(..., sleep=...)`` seam intentionally captures the callable
+    at construction time; see ``docs/architecture.md``'s RpcExecutor wiring.
     This test asserts the new contract: the injected callable reaches
     :class:`RpcExecutor`'s refresh-and-retry delay.
     """

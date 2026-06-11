@@ -1,18 +1,18 @@
 """Source management CLI commands — thin Click-handler layer (ADR-0008).
 
-Each command builds a plan dataclass and delegates to its executor. The
-read-only and clean/add cores are transport-neutral (``_app/source_*``); the
-remaining cores still live under ``cli/services/source_*``:
+Each command builds a plan or command-layer input values and delegates to
+transport-neutral ``_app/source_*`` cores, with CLI service adapters kept
+where they provide presentation-pipeline glue or compatibility imports:
 
 * ``_app/source_content.py``       — data fetchers for get, fulltext, guide, stale
 * ``_app/source_wait.py``          — wait
 * ``_app/source_add.py``           — add
 * ``_app/source_clean.py``         — clean (pure orchestration: classify +
   batched delete; rendering + exit codes live here in the command layer)
-* ``services/source_listing.py``   — list
-* ``services/source_mutations.py`` — delete, delete-by-title, rename,
+* ``_app/source_listing.py`` via ``services/source_listing.py`` — list
+* ``_app/source_mutations.py`` via ``services/source_mutations.py`` — delete, delete-by-title, rename,
   refresh, add-drive
-* ``services/source_research.py``  — add-research
+* ``_app/source_research.py`` via ``services/source_research.py`` — add-research
 
 The full per-command listing lives in the ``source`` click group docstring
 below (it is what ``notebooklm source --help`` shows).

@@ -1,7 +1,7 @@
 """Unit tests for :mod:`notebooklm._atomic_io` / :mod:`notebooklm.io`.
 
-Covers the contract required by both write sites (auth.py cookie sync and
-cli/session.py initial login save):
+Covers the contract required by auth storage writers and public
+``notebooklm.io`` / CLI save helpers:
 
 - Round-trip: data written can be read back unchanged.
 - Permissions: file mode is ``0o600`` on POSIX (sensitive cookies).

@@ -491,7 +491,7 @@ def _build_rpc_executor() -> Any:
     The executor is driven via its ``_execute_once()`` method (the lowest of the
     five consultation sites). The fixture stubs the transport so we can
     assert on the ``disable_internal_retries`` value that the executor
-    actually hands to ``_perform_authed_post``.
+    actually hands to ``RuntimeTransport.perform_authed_post``.
     """
     from notebooklm._rpc_executor import RpcExecutor
 

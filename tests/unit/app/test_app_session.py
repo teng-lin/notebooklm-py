@@ -14,7 +14,8 @@ Covers the three Click-free workflows that back ``use`` / ``status`` /
   callable must NOT abort logout before the storage/browser steps run).
 
 Direct ``_app`` calls only — a ``MagicMock`` client + injected collaborators,
-no Click / CliRunner (mirrors ``tests/unit/cli/test_label_listing.py``).
+no Click / CliRunner; CLI adapter tests own command rendering and exit-code
+behavior.
 """
 
 from __future__ import annotations

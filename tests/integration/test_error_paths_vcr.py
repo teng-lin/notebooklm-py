@@ -4,9 +4,8 @@ SYNTHETIC error response — validates client exception mapping, not real Google
 error shapes. The cassettes in this module carry the canonical synthetic-error
 shapes from :mod:`tests.cassette_patterns.build_synthetic_error_response`
 (the plumbing landed in PR #638): minimal JSON bodies whose ONLY purpose is
-to drive the client's exception-mapping branches in
-``src/notebooklm/_core.py`` — status code + a stub body, NOT Google's actual
-error response semantics.
+    to drive the client's HTTP-status exception-mapping branches — status code +
+    a stub body, NOT Google's actual error response semantics.
 
 Three modes are exercised here:
 
@@ -106,8 +105,8 @@ class TestErrorPaths:
         POST returns HTTP 429 with a ``Retry-After: 1`` header and a minimal
         ``{"error": {"code": 429, ...}}`` body. With the rate-limit retry
         budget set to 0 on the client core, the first 429 surfaces directly
-        as :class:`RateLimitError` (the documented mapping in
-        ``_core.py::TransportRateLimited`` → ``rpc_call`` exception handler).
+        as :class:`RateLimitError` (the documented
+        ``TransportRateLimited`` → ``RpcExecutor.rpc_call`` exception handler).
         """
         client = NotebookLMClient(_synthetic_auth())
         # Disable rate-limit retries so the single synthetic 429 in the
@@ -146,8 +145,8 @@ class TestErrorPaths:
         returns HTTP 500 with a minimal ``{"error": {"code": 500, ...}}`` body.
         With the server-error retry budget set to 0 on the client core, the
         first 500 surfaces as :class:`ServerError` via the
-        ``TransportServerError`` → ``_raise_rpc_error_from_http_status`` chain
-        in ``_core.py``.
+        ``TransportServerError`` → ``RpcExecutor.raise_rpc_error_from_http_status``
+        chain.
         """
         client = NotebookLMClient(_synthetic_auth())
         # Disable 5xx retries so the single synthetic 500 in the cassette
@@ -177,18 +176,18 @@ class TestErrorPaths:
 
         Replays ``error_synthetic_stale_csrf.yaml``: the first batchexecute
         POST returns HTTP 400 (NotebookLM's documented stale-CSRF response —
-        see :func:`notebooklm._core.is_auth_error`); the client's auth-refresh
+        see :func:`notebooklm._runtime.helpers.is_auth_error`); the client's auth-refresh
         branch fires once via the stub callback installed below; the second
         cassette interaction returns the same synthetic 400, which surfaces
         as :class:`ClientError` via the standard 4xx mapping in
-        ``_raise_rpc_error_from_http_status``.
+        ``RpcExecutor.raise_rpc_error_from_http_status``.
 
         The behavior under test is the REFRESH-PATH WIRING — that
         ``refresh_auth`` ran exactly once before the second 400 ended the
         attempt. The exact post-refresh exception type is incidental
         (``ClientError`` because 400 is not 401/403, 5xx, or 429); what
         matters is that the auth-refresh hook fired, observed via a spy
-        installed on ``_core._auth_coord._refresh_callback`` and corroborated by the
+        installed on ``client._collaborators.auth_coord._refresh_callback`` and corroborated by the
         ``play_count == 2`` assertion on the cassette.
         """
         client = NotebookLMClient(_synthetic_auth())
@@ -207,8 +206,8 @@ class TestErrorPaths:
         async def stub_refresh() -> AuthTokens:
             refresh_calls.append(None)
             # Mutate the in-memory CSRF token to simulate a successful refresh.
-            # The retry loop in ``_perform_authed_post`` rebuilds the request
-            # body from the live ``self.auth.csrf_token`` after refresh, so
+            # The retry loop rebuilds the request body from the refreshed
+            # auth snapshot after refresh, so
             # this mutation is observable on the wire — and the cassette's
             # request-side body would carry the refreshed value if VCR
             # matched on body (it doesn't; the default matcher uses

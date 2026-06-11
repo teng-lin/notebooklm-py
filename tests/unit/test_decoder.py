@@ -767,14 +767,15 @@ class TestNullResultStatusCodeEnrichment:
     Issues #114 / #294 saw GET_NOTEBOOK return a wrb.fr entry where result_data
     is null and index 5 carries a bare `[code]`. These tests pin the new
     enrichment path: NOT_FOUND / PERMISSION_DENIED must surface as ClientError
-    (so _core.is_auth_error does not misclassify them and retry on a token
-    refresh), other codes stay as RPCError, and the hint never contains any
-    AUTH_ERROR_PATTERNS substring.
+    (which ``notebooklm._runtime.helpers.is_auth_error`` treats as non-auth),
+    other codes stay as RPCError, and the account-routing hint avoids legacy
+    auth-word substrings.
     """
 
     RPC_ID = RPCMethod.GET_NOTEBOOK.value
 
-    # Must stay in sync with _core.AUTH_ERROR_PATTERNS.
+    # Keep this legacy auth-word list in sync with
+    # ``notebooklm._runtime.helpers.AUTH_ERROR_PATTERNS``.
     _AUTH_PATTERNS = ("authentication", "expired", "unauthorized", "login", "re-authenticate")
 
     def _build_raw(self, error_info: list | None) -> str:
@@ -786,7 +787,7 @@ class TestNullResultStatusCodeEnrichment:
         for pattern in self._AUTH_PATTERNS:
             assert pattern not in lower, (
                 f"Message contains AUTH_ERROR_PATTERN {pattern!r}: would trigger "
-                f"spurious auth-refresh retry in _core.is_auth_error: {message!r}"
+                f"spurious auth-refresh retry in is_auth_error: {message!r}"
             )
 
     def test_not_found_raises_client_error(self):

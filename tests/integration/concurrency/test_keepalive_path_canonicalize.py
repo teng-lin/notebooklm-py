@@ -3,7 +3,7 @@
 Regression test for keepalive-path canonicalization: the rotation throttle keys the
 in-process dedupe (``_LAST_POKE_ATTEMPT_MONOTONIC`` /
 ``_POKE_LOCKS_BY_LOOP``) by the raw ``Path`` object stored on
-``Session._lifecycle._keepalive_storage_path``. Without canonicalization, two
+``ClientLifecycle._keepalive_storage_path``. Without canonicalization, two
 clients constructed with different syntactic representations of the SAME
 underlying file (e.g. a relative path and the absolute path; a
 ``~``-prefixed path and the expanded one; with or without a symlink
@@ -16,9 +16,9 @@ generation/lock. ``NotebookLMClient`` must do the same for the keepalive
 path before it reaches ``_get_poke_lock`` / ``_try_claim_rotation`` /
 ``_rotation_lock_path``.
 
-The public ``storage_path`` argument type (``str | Path | None``) is
-preserved; only the internal-derived ``Session._lifecycle._keepalive_storage_path``
-is canonicalized.
+The public ``storage_path`` argument type (``str | Path | None``) is preserved;
+only the internal-derived ``ClientLifecycle._keepalive_storage_path`` is
+canonicalized.
 """
 
 from __future__ import annotations
@@ -169,8 +169,8 @@ def test_public_storage_path_argument_unchanged(
 
     client = NotebookLMClient(_auth_tokens, storage_path=raw_path)
 
-    # auth.storage_path was normalized onto the auth object by __init__
-    # (see client.py:153-154). The PUBLIC value remains the caller's
+    # auth.storage_path was normalized onto the auth object by
+    # ``NotebookLMClient.__init__``. The PUBLIC value remains the caller's
     # original (non-canonical) Path — not the canonicalized one.
     assert client.auth.storage_path == raw_path
     assert client.auth.storage_path != target.resolve()

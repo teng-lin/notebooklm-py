@@ -152,11 +152,10 @@ class SourcePoller:
     ) -> builtins.list[Source]:
         """Wait for multiple sources to become ready in parallel."""
         # A bare ``asyncio.gather(*coros)`` propagates the first
-        # exception but does NOT await the sibling tasks it cancels. The
-        # cancelled siblings are left in a "cancellation requested but not
-        # yet observed" state - their ``finally`` blocks may not have run by
-        # the time we re-raise. Drive the fan-out as explicit tasks so any
-        # failure cancels and drains every sibling before re-raising.
+        # exception before sibling pollers have necessarily finished their
+        # cleanup, and it does not cancel still-running siblings for us.
+        # Drive the fan-out as explicit tasks so any failure cancels and
+        # drains every pending sibling before re-raising.
         tasks: builtins.list[asyncio.Task[Source]] = [
             asyncio.create_task(wait_until_ready(notebook_id, sid, timeout=timeout, **kwargs))
             for sid in source_ids

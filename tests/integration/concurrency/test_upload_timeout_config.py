@@ -170,7 +170,7 @@ async def test_from_storage_accepts_upload_timeout(monkeypatch, auth_tokens) -> 
 
     custom = httpx.Timeout(7.0, read=14.0)
     # Context not entered — only inspecting constructor-level wiring.
-    # ``__aenter__`` / ``Session.open()`` never run, so there are no
+    # ``NotebookLMClient.__aenter__()`` / ``ClientLifecycle.open()`` never run, so there are no
     # background tasks or open sockets to clean up. We use the legacy
     # await form to get a built-but-unentered client; suppress the
     # DeprecationWarning since this is intentional.

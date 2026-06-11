@@ -21,8 +21,10 @@ PKG_PATH = Path("src/notebooklm/cli/services/login")
 # ``ALLOWED_EDGES`` is an UPPER BOUND, not an equality check — the DAG test
 # verifies ``actual_edges ⊆ allowed_edges``. Edges marked "allowed but
 # currently unused" below are pre-declared room for likely future imports
-# (per the phase-3.md DAG diagram); the implementation modules don't take
-# them today. If you remove an "unused" entry, the test will still pass —
+# (per the leaf-ward DAG documented in
+# ``src/notebooklm/cli/services/login/__init__.py`` and encoded below); the
+# implementation modules don't take them today. If you remove an "unused"
+# entry, the test will still pass —
 # but you also remove the documented design intent that says "this edge is
 # legitimate when needed". Keep the entry; add a comment when you start
 # using it.
@@ -72,7 +74,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "cookie_jar",
         "outcomes",
         "rookiepy_errors",
-        # The phase-3 DAG diagram routes cookie_domains via chromium/firefox
+        # The documented leaf-ward DAG routes cookie_domains via chromium/firefox
         # subordinates, but ``_read_browser_cookies``'s "auto" + named-alias
         # branch (the legacy ``rookiepy.load`` path) constructs its own domain
         # list — that call site lives in browser_accounts, not in the
@@ -172,7 +174,9 @@ def test_login_package_dag() -> None:
     assert actual_modules == expected_modules, (
         f"Module set mismatch.\n  expected: {sorted(expected_modules)}\n"
         f"  actual:   {sorted(actual_modules)}\n"
-        f"Update ALLOWED_EDGES (and phase-3.md DAG) if the layout intentionally changed."
+        "Update ALLOWED_EDGES and the leaf-ward DAG notes in "
+        "src/notebooklm/cli/services/login/__init__.py if the layout "
+        "intentionally changed."
     )
 
     actual_edges: dict[str, set[str]] = {}

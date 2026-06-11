@@ -1,11 +1,11 @@
 """Source-label management CLI commands — thin Click-handler layer (ADR-0008).
 
-Each command resolves its inputs, delegates to ``client.labels`` (and the
-``cli/services/label_listing.py`` service for the ``<id|name>`` resolver + the
-list join), and renders. The resolver/join logic lives in the service module;
-the command bodies stay thin (parse → resolve → call → render) and route
-failures through ``handle_errors`` plus the typed :class:`LabelResolutionError`
-mapper so the ``--json`` envelope contract (ADR-0015) holds throughout.
+Each command resolves CLI inputs, delegates mutation/read workflows to the
+transport-neutral :mod:`notebooklm._app.labels` core, uses
+``cli/services/label_listing.py`` for the members-to-titles ``label list``
+render pipeline and resolver re-export, and renders results. The typed
+:class:`LabelResolutionError` is mapped through ``output_error`` so the
+``--json`` envelope contract (ADR-0015) holds throughout.
 
 Commands:
     list      List labels (with member ids + titles)

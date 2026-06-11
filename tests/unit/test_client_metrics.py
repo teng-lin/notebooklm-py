@@ -1,10 +1,9 @@
 """Unit tests for :class:`notebooklm._client_metrics.ClientMetrics`.
 
-Covers the metrics helper in isolation — the ``Session`` facade contract
-(``metrics_snapshot``, ``_increment_metrics``, ``_record_rpc_queue_wait``,
-``_record_lock_wait``, ``_emit_rpc_event``) is exercised end-to-end in
-``tests/unit/test_observability.py``. This file pins the helper-class
-invariants the facade depends on:
+Covers the metrics helper in isolation; NotebookLMClient observability plumbing
+(``metrics_snapshot`` and RPC telemetry emission) is exercised end-to-end in
+``tests/unit/test_observability.py``. This file pins the helper-class invariants
+that client/runtime observability depends on:
 
 * ``__init__`` is event-loop-agnostic (no ``asyncio.*`` primitives).
 * ``snapshot()`` returns a defensive copy, not a live reference.

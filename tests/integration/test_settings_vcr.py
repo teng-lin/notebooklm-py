@@ -1,7 +1,7 @@
 """VCR-backed integration tests for SettingsAPI.GET_USER_TIER.
 
 These tests replay a recorded ``settings_get_user_tier.yaml`` cassette to
-exercise the response parser at ``_settings.py:239`` against real-shape
+exercise ``notebooklm._settings.extract_account_tier`` against real-shape
 batchexecute output without hitting the network.
 
 Record with::

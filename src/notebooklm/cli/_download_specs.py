@@ -11,18 +11,20 @@ Adding a new download type is a single registry edit + a corresponding
 ``ArtifactsAPI.download_<name>`` coroutine on the client.
 
 See also:
-    - :mod:`notebooklm.cli.services.download` — the pure-logic plan / executor
+    - :mod:`notebooklm._app.download` — the transport-neutral plan / executor
       that consumes ``DownloadTypeSpec`` rows at run time.
+    - :mod:`notebooklm.cli.services.download` — the CLI adapter that
+      re-exports those types and projects typed results to CLI envelopes.
 """
 
 from __future__ import annotations
 
 from ..types import ArtifactType
 
-# The dataclass + format-extension table live in the service module so the
-# executor can depend on them without crossing the
-# ``cli/services -> cli/_*`` boundary the CLI lint guards against.
-# This data-only file imports them and supplies the concrete registry rows.
+# The dataclass + format-extension table live in the transport-neutral
+# ``_app.download`` core and are re-exported by ``cli.services.download``.
+# Import through the service adapter to preserve the historical CLI import
+# surface while keeping this file data-only.
 from .services.download import FORMAT_EXTENSIONS, DownloadTypeSpec
 
 

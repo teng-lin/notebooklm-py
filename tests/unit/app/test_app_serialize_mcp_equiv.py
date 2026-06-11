@@ -1,16 +1,9 @@
-"""MCP-dedup litmus: ``_app.serialize.to_jsonable`` is a wire-byte-identical
-drop-in for the MCP server's ``mcp/_serialize.to_jsonable``.
+"""Compatibility guard for the former MCP serializer behavior.
 
-The MCP server (branch ``feat/mcp-server``) ships its own private
-``mcp/_serialize.py``. The relocation's whole point is that MCP can delete that
-copy and import ``notebooklm._app.serialize`` instead. This test pins that the
-swap is **provably safe**: for every value the MCP server serializes, the JSON
-*wire output* of ``_app.to_jsonable`` equals that of the MCP reference
-implementation.
-
-(The actual file swap — ``mcp/_serialize.py`` -> ``from .._app.serialize import
-to_jsonable`` + deleting the body — lands when ``feat/mcp-server`` rebases onto
-``_app/``; this test is the green-light for that follow-up.)
+MCP tools now import ``notebooklm._app.serialize.to_jsonable`` directly. This
+test keeps a small inlined copy of the former MCP serializer as a reference so
+values that mattered to MCP before the dedup still produce identical JSON wire
+output.
 
 One intentional intermediate difference, neutralized at the wire: ``_app`` passes
 JSON-scalar mapping keys through while MCP eagerly ``str()``-ifies them — but
@@ -28,7 +21,7 @@ import pytest
 
 from notebooklm._app.serialize import to_jsonable
 
-# --- the MCP server's mcp/_serialize.to_jsonable, inlined verbatim as the reference ---
+# --- Former MCP serializer behavior, inlined as the compatibility reference ---
 _MCP_PRIMS = (str, int, float, bool)
 
 

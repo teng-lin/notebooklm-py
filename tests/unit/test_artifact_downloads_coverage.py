@@ -1,12 +1,10 @@
 """Coverage-focused tests for ``_artifact.downloads`` error/edge branches.
-
 These tests target branches not exercised by ``test_artifact_downloads.py`` /
 ``test_download_url.py``: module-level helpers, ``UnknownRPCMethodError`` /
 missing-URL handling per download type, format validation, interactive
 artifact-id lookup, parse-error wrapping, the batch non-HTTPS reject path,
 the streaming HTML-payload reject, the ``_await_writer_exit`` cancellation
 shield-loop, and the producer ``except``-block queue-drain.
-
 The ``ArtifactDownloadService`` is constructed directly with ``MagicMock``
 collaborators (mirroring ``TestStoragePathEncapsulation`` in
 ``test_artifact_downloads.py``), and ``_select_artifact`` is stubbed to
@@ -70,10 +68,8 @@ def _row_with(prop_name, *, value=None, exc=None):
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
-
-
 def test_is_trusted_download_host_none_returns_false():
-    """Line 136: ``None`` hostname is never trusted."""
+    """``None`` hostname is never trusted."""
     assert _is_trusted_download_host(None) is False
 
 
@@ -88,7 +84,6 @@ def test_is_trusted_download_host_none_returns_false():
 )
 def test_is_trusted_download_host_rejects_percent_encoded(host):
     """Percent-encoded hosts are never trusted (parser-differential bypass, #1521).
-
     httpx connects to the RAW host; the guard must validate that same raw
     string and never percent-decode it, or ``evil%2egoogleapis.com`` would be
     judged trusted while the connection goes to a non-Google host.
@@ -112,7 +107,7 @@ def test_is_trusted_download_host_accepts_legitimate_google_hosts(host):
 
 
 def test_download_display_host_falls_back_to_netloc():
-    """Line 149: with no parsed hostname, strip userinfo from netloc."""
+    """with no parsed hostname, strip userinfo from netloc."""
     from urllib.parse import urlparse
 
     # A URL whose netloc is only userinfo yields hostname=None, so the
@@ -120,40 +115,32 @@ def test_download_display_host_falls_back_to_netloc():
     p2 = urlparse("scheme://user@")
     assert p2.hostname is None
     assert _download_display_host(p2) == ""
-
     # And the normal case returns the hostname directly.
     assert _download_display_host(urlparse("https://host.example/x")) == "host.example"
 
 
 # ---------------------------------------------------------------------------
-# _list_mind_maps delegation (line 174)
+# _list_mind_maps delegation
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_list_mind_maps_delegates_to_service():
     mind_maps = MagicMock()
     mind_maps.list_mind_maps = AsyncMock(return_value=["mm"])
     service = _make_service(mind_maps=mind_maps)
-
     result = await service._list_mind_maps("nb_1")
-
     assert result == ["mm"]
     mind_maps.list_mind_maps.assert_awaited_once_with("nb_1")
 
 
 # ---------------------------------------------------------------------------
-# Audio (lines 242-243)
+# Audio
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_audio_unknown_rpc_method_wrapped():
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     row = _row_with("audio_url", exc=UnknownRPCMethodError("boom"))
     service._select_artifact = MagicMock(return_value=row)
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_audio("nb", "/tmp/a.mp4")
 
@@ -163,16 +150,13 @@ async def test_download_audio_missing_url_raises():
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(return_value=_row_with("audio_url", value=None))
-
     with pytest.raises(ArtifactParseError, match="Could not extract download URL"):
         await service.download_audio("nb", "/tmp/a.mp4")
 
 
 # ---------------------------------------------------------------------------
-# Video (lines 277-278, 285)
+# Video
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_video_unknown_rpc_method_wrapped():
     service = _make_service()
@@ -180,7 +164,6 @@ async def test_download_video_unknown_rpc_method_wrapped():
     service._select_artifact = MagicMock(
         return_value=_row_with("video_url", exc=UnknownRPCMethodError("boom"))
     )
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_video("nb", "/tmp/v.mp4")
 
@@ -190,48 +173,41 @@ async def test_download_video_missing_url_raises():
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(return_value=_row_with("video_url", value=""))
-
     with pytest.raises(ArtifactParseError, match="Could not extract download URL"):
         await service.download_video("nb", "/tmp/v.mp4")
 
 
 # ---------------------------------------------------------------------------
-# Infographic (lines 310, 317-318)
+# Infographic
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_infographic_missing_url_raises():
-    """Line 310: empty infographic URL -> ArtifactParseError."""
+    """empty infographic URL -> ArtifactParseError."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(return_value=_row_with("infographic_url", value=None))
-
     with pytest.raises(ArtifactParseError, match="Could not find metadata"):
         await service.download_infographic("nb", "/tmp/i.png")
 
 
 @pytest.mark.asyncio
 async def test_download_infographic_index_error_wrapped():
-    """Lines 317-318: structural IndexError/TypeError wrapped as parse error."""
+    """structural IndexError/TypeError wrapped as parse error."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(
         return_value=_row_with("infographic_url", exc=TypeError("bad shape"))
     )
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_infographic("nb", "/tmp/i.png")
 
 
 # ---------------------------------------------------------------------------
-# Slide deck (lines 334, 350, 356)
+# Slide deck
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_slide_deck_invalid_format_rejected():
-    """Line 334: only pdf/pptx are accepted."""
+    """only pdf/pptx are accepted."""
     service = _make_service()
     with pytest.raises(Exception, match="Invalid format"):
         await service.download_slide_deck("nb", "/tmp/s.bin", output_format="docx")
@@ -239,22 +215,20 @@ async def test_download_slide_deck_invalid_format_rejected():
 
 @pytest.mark.asyncio
 async def test_download_slide_deck_pptx_url_missing():
-    """Line 350: missing PPTX URL -> ArtifactDownloadError."""
+    """missing PPTX URL -> ArtifactDownloadError."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(return_value=_row_with("slide_deck_pptx_url", value=None))
-
     with pytest.raises(ArtifactDownloadError, match="PPTX URL not available"):
         await service.download_slide_deck("nb", "/tmp/s.pptx", output_format="pptx")
 
 
 @pytest.mark.asyncio
 async def test_download_slide_deck_pdf_url_missing():
-    """Line 356: missing PDF URL -> ArtifactDownloadError."""
+    """missing PDF URL -> ArtifactDownloadError."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(return_value=_row_with("slide_deck_pdf_url", value=None))
-
     with pytest.raises(ArtifactDownloadError, match="Could not find PDF download URL"):
         await service.download_slide_deck("nb", "/tmp/s.pdf", output_format="pdf")
 
@@ -266,16 +240,13 @@ async def test_download_slide_deck_unknown_rpc_method_wrapped():
     service._select_artifact = MagicMock(
         return_value=_row_with("slide_deck_pdf_url", exc=UnknownRPCMethodError("boom"))
     )
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_slide_deck("nb", "/tmp/s.pdf")
 
 
 # ---------------------------------------------------------------------------
-# Interactive artifact (lines 398-400, 411)
+# Interactive artifact
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_interactive_invalid_format_rejected():
     service = _make_service()
@@ -285,11 +256,10 @@ async def test_interactive_invalid_format_rejected():
 
 @pytest.mark.asyncio
 async def test_interactive_specific_id_not_found():
-    """Lines 398-400: requested artifact_id absent among completed."""
+    """requested artifact_id absent among completed."""
     completed = MagicMock(id="other", is_completed=True, created_at=None, title="Q")
     service = _make_service()
     service._list_artifacts = AsyncMock(return_value=[completed])
-
     with pytest.raises(ArtifactNotFoundError):
         await service.download_interactive_artifact(
             "nb", "/tmp/q.json", "wanted_id", "json", "quiz"
@@ -298,7 +268,7 @@ async def test_interactive_specific_id_not_found():
 
 @pytest.mark.asyncio
 async def test_interactive_json_decode_error_wrapped(monkeypatch):
-    """Line 411: JSONDecodeError from app-data extraction -> ArtifactParseError."""
+    """JSONDecodeError from app-data extraction -> ArtifactParseError."""
     artifact = MagicMock(id="q1", is_completed=True, created_at=None, title="Q")
     service = _make_service()
     service._list_artifacts = AsyncMock(return_value=[artifact])
@@ -308,7 +278,6 @@ async def test_interactive_json_decode_error_wrapped(monkeypatch):
         "_extract_app_data",
         MagicMock(side_effect=json.JSONDecodeError("bad", "doc", 0)),
     )
-
     with pytest.raises(ArtifactParseError, match="Failed to parse content"):
         await service.download_interactive_artifact("nb", "/tmp/q.json", None, "json", "quiz")
 
@@ -317,7 +286,6 @@ async def test_interactive_json_decode_error_wrapped(monkeypatch):
 async def test_interactive_no_completed_raises_not_ready():
     service = _make_service()
     service._list_artifacts = AsyncMock(return_value=[MagicMock(is_completed=False)])
-
     with pytest.raises(ArtifactNotReadyError):
         await service.download_interactive_artifact("nb", "/tmp/q.json", None, "json", "quiz")
 
@@ -328,77 +296,66 @@ async def test_interactive_empty_content_raises_download_error():
     service = _make_service()
     service._list_artifacts = AsyncMock(return_value=[artifact])
     service._get_artifact_content = AsyncMock(return_value=None)
-
     with pytest.raises(ArtifactDownloadError, match="Failed to fetch content"):
         await service.download_interactive_artifact("nb", "/tmp/q.json", None, "json", "quiz")
 
 
 # ---------------------------------------------------------------------------
-# Report (lines 449, 464-465)
+# Report
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_report_non_string_markdown_raises():
-    """Line 449: non-str report markdown -> ArtifactParseError."""
+    """non-str report markdown -> ArtifactParseError."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(return_value=_row_with("report_markdown", value=[1, 2, 3]))
-
     with pytest.raises(ArtifactParseError, match="Invalid structure"):
         await service.download_report("nb", "/tmp/r.md")
 
 
 @pytest.mark.asyncio
 async def test_download_report_unknown_rpc_method_wrapped():
-    """Lines 464-465: UnknownRPCMethodError -> ArtifactParseError."""
+    """UnknownRPCMethodError -> ArtifactParseError."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(
         return_value=_row_with("report_markdown", exc=UnknownRPCMethodError("boom"))
     )
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_report("nb", "/tmp/r.md")
 
 
 # ---------------------------------------------------------------------------
-# Mind map (lines 494, 508-509)
+# Mind map
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_mind_map_none_content_raises():
-    """Line 494: extract_content returning None -> ArtifactParseError."""
+    """extract_content returning None -> ArtifactParseError."""
     mind_maps = MagicMock()
     mind_maps.list_mind_maps = AsyncMock(return_value=[["mm_1", None, None, None, "Title"]])
     mind_maps.extract_content = MagicMock(return_value=None)
     service = _make_service(mind_maps=mind_maps)
-
     with pytest.raises(ArtifactParseError, match="Invalid structure"):
         await service.download_mind_map("nb", "/tmp/m.json")
 
 
 @pytest.mark.asyncio
 async def test_download_mind_map_bad_json_wrapped():
-    """Lines 508-509: invalid JSON string -> ArtifactParseError."""
+    """invalid JSON string -> ArtifactParseError."""
     mind_maps = MagicMock()
     mind_maps.list_mind_maps = AsyncMock(return_value=[["mm_1", None, None, None, "Title"]])
     mind_maps.extract_content = MagicMock(return_value="{not valid json")
     service = _make_service(mind_maps=mind_maps)
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_mind_map("nb", "/tmp/m.json")
 
 
 # ---------------------------------------------------------------------------
-# Data table (line 550)
+# Data table
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_data_table_parse_error_wrapped(monkeypatch):
-    """Line 550: ValueError from parsing -> ArtifactParseError."""
+    """ValueError from parsing -> ArtifactParseError."""
     service = _make_service()
     service._list_raw = AsyncMock(return_value=[])
     service._select_artifact = MagicMock(
@@ -409,23 +366,18 @@ async def test_download_data_table_parse_error_wrapped(monkeypatch):
         "_parse_data_table",
         MagicMock(side_effect=ValueError("bad table")),
     )
-
     with pytest.raises(ArtifactParseError, match="Failed to parse structure"):
         await service.download_data_table("nb", "/tmp/t.csv")
 
 
 # ---------------------------------------------------------------------------
-# Quiz/flashcards delegation (lines 565, 577)
+# Quiz/flashcards delegation
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_quiz_delegates():
     service = _make_service()
     service.download_interactive_artifact = AsyncMock(return_value="/tmp/q.json")
-
     result = await service.download_quiz("nb", "/tmp/q.json")
-
     assert result == "/tmp/q.json"
     service.download_interactive_artifact.assert_awaited_once_with(
         "nb", "/tmp/q.json", None, "json", "quiz", artifacts=None
@@ -436,9 +388,7 @@ async def test_download_quiz_delegates():
 async def test_download_flashcards_delegates():
     service = _make_service()
     service.download_interactive_artifact = AsyncMock(return_value="/tmp/f.json")
-
     result = await service.download_flashcards("nb", "/tmp/f.json", output_format="markdown")
-
     assert result == "/tmp/f.json"
     service.download_interactive_artifact.assert_awaited_once_with(
         "nb", "/tmp/f.json", None, "markdown", "flashcards", artifacts=None
@@ -446,20 +396,16 @@ async def test_download_flashcards_delegates():
 
 
 # ---------------------------------------------------------------------------
-# Batch non-HTTPS reject (line 600)
+# Batch non-HTTPS reject
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_urls_batch_non_https_recorded_as_failure(tmp_path):
-    """Line 600: http:// URL is rejected and aggregated into ``failed``."""
+    """http:// URL is rejected and aggregated into ``failed``."""
     service = _make_service(storage_path=tmp_path / "storage.json")
-
     with patch.object(artifact_downloads, "_load_httpx_cookies", return_value={}):
         result = await service.download_urls_batch(
             [("http://storage.googleapis.com/x.bin", str(tmp_path / "out.bin"))]
         )
-
     assert result.succeeded == []
     assert len(result.failed) == 1
     url, exc = result.failed[0]
@@ -469,13 +415,11 @@ async def test_download_urls_batch_non_https_recorded_as_failure(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Streaming HTML payload reject (line 698)
+# Streaming HTML payload reject
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_url_html_payload_rejected(tmp_path):
-    """Line 698: an HTML content-type aborts with an auth-hint error."""
+    """an HTML content-type aborts with an auth-hint error."""
     service = _make_service(storage_path=tmp_path / "storage.json")
 
     async def mock_aiter_bytes(chunk_size: int = 8192):
@@ -488,12 +432,10 @@ async def test_download_url_html_payload_rejected(tmp_path):
     mock_response.aiter_bytes = mock_aiter_bytes
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-
     mock_client = AsyncMock()
     mock_client.stream = MagicMock(return_value=mock_response)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
@@ -501,20 +443,16 @@ async def test_download_url_html_payload_rejected(tmp_path):
         pytest.raises(ArtifactDownloadError, match="received HTML instead of media"),
     ):
         await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))
-
     assert not output_path.exists()
     assert list(tmp_path.glob("out.bin.*.tmp")) == []
 
 
 # ---------------------------------------------------------------------------
-# _await_writer_exit cancellation shield-loop (lines 96, 100, 102-103)
+# _await_writer_exit cancellation shield-loop
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_await_writer_exit_reraises_cancel_after_join():
-    """Lines 96/100/102-103: a cancellation arriving during the join is
-    preserved and re-raised once the writer thread has exited."""
+    """A cancellation during writer join is re-raised after the writer exits."""
     release = threading.Event()
 
     def _block():
@@ -522,9 +460,7 @@ async def test_await_writer_exit_reraises_cancel_after_join():
 
     writer = threading.Thread(target=_block, daemon=True)
     writer.start()
-
     task = asyncio.ensure_future(_await_writer_exit(writer, re_raise_cancel=True))
-
     # Let the helper start awaiting the shielded join, then cancel it.
     await asyncio.sleep(0.05)
     task.cancel()
@@ -533,17 +469,15 @@ async def test_await_writer_exit_reraises_cancel_after_join():
     # re-raised.
     await asyncio.sleep(0.05)
     release.set()
-
     with pytest.raises(asyncio.CancelledError):
         await task
-
     assert not writer.is_alive()
 
 
 @pytest.mark.asyncio
 async def test_await_writer_exit_cleanup_path_swallows_cancel():
     """re_raise_cancel=False (cleanup path) returns normally even after a
-    cancellation was observed mid-join (line 102 false branch)."""
+    cancellation was observed mid-join."""
     release = threading.Event()
 
     def _block():
@@ -551,31 +485,26 @@ async def test_await_writer_exit_cleanup_path_swallows_cancel():
 
     writer = threading.Thread(target=_block, daemon=True)
     writer.start()
-
     task = asyncio.ensure_future(_await_writer_exit(writer, re_raise_cancel=False))
     await asyncio.sleep(0.05)
     task.cancel()
     await asyncio.sleep(0.05)
     release.set()
-
     # No CancelledError surfaces because re_raise_cancel is False.
     await task
     assert not writer.is_alive()
 
 
 # ---------------------------------------------------------------------------
-# Producer except-block queue drain (lines 844-848, 852)
+# Producer except-block queue drain
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_url_error_path_drains_full_queue(tmp_path):
-    """Lines 840-852: when the producer fails mid-stream while the bounded
+    """when the producer fails mid-stream while the bounded
     queue is already full (the writer is parked and not consuming), the
     ``except`` block must drop one buffered item (``get_nowait``) to make
     room for the ``None`` sentinel, otherwise ``put_nowait(None)`` keeps
     raising ``queue.Full`` and the writer stays blocked forever.
-
     To force the queue-full path deterministically the writer thread is
     made to block on its very first ``write`` (it never drains the queue),
     so the producer saturates the bounded queue. ``aiter_bytes`` then
@@ -584,13 +513,11 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
     and the writer exit so cleanup can unlink the temp file.
     """
     service = _make_service(storage_path=tmp_path / "storage.json")
-
     real_open = open
     release_writer = threading.Event()
 
     class _BlockingHandle:
         """File-like wrapper whose first ``write`` blocks until released.
-
         The writer thread does one ``chunk_q.get()`` and then parks on its
         first ``write``, so it never drains the rest of the queue — letting
         the test hold the bounded queue at full capacity while the producer
@@ -643,7 +570,7 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
         # parked (so it will not consume further), then top the queue off
         # to its max so the producer's failure-handler ``put_nowait(None)``
         # is guaranteed to hit ``queue.Full`` and drive the ``get_nowait``
-        # drain (lines 844-852).
+        # drain .
         await asyncio.to_thread(_fill_queue_to_full)
         raise boom
 
@@ -670,7 +597,6 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
     mock_response.aiter_bytes = mock_aiter_bytes
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-
     mock_client = AsyncMock()
     mock_client.stream = MagicMock(return_value=mock_response)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -697,7 +623,6 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
     finally:
         release_writer.set()
         await releaser
-
     # Temp file cleaned up; writer exited.
     assert not output_path.exists()
     assert list(tmp_path.glob("out.bin.*.tmp")) == []
@@ -706,20 +631,16 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Writer fails immediately: short-circuit + surfaced error (lines 764-774,
-# 798, 827)
+# Writer fails immediately: short-circuit + surfaced error
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_url_writer_failure_surfaced(tmp_path):
     """Writer thread fails on ``open`` -> captures the error and sets
-    ``writer_failed``. The producer short-circuits (line 798 ``break``) and
-    re-raises the writer's captured exception (line 827), exercising the
-    writer ``except`` block (lines 764-774) too.
+    ``writer_failed``. The producer short-circuits and
+    re-raises the writer's captured exception , exercising the
+    writer ``except`` block  too.
     """
     service = _make_service(storage_path=tmp_path / "storage.json")
-
     boom = OSError("disk full")
     real_open = open
 
@@ -739,12 +660,10 @@ async def test_download_url_writer_failure_surfaced(tmp_path):
     mock_response.aiter_bytes = mock_aiter_bytes
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-
     mock_client = AsyncMock()
     mock_client.stream = MagicMock(return_value=mock_response)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
@@ -753,29 +672,24 @@ async def test_download_url_writer_failure_surfaced(tmp_path):
         pytest.raises(OSError, match="disk full"),
     ):
         await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))
-
     assert not output_path.exists()
     assert list(tmp_path.glob("out.bin.*.tmp")) == []
 
 
 # ---------------------------------------------------------------------------
 # Back-pressure: producer falls back to to_thread(put) when the queue is
-# full (lines 807-808, 813-814)
+# full
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_url_backpressure_to_thread_put(tmp_path):
     """A slow writer forces the queue full so the producer's chunk ``put``
     and the final ``None`` sentinel ``put`` both fall back to
-    ``asyncio.to_thread(chunk_q.put, ...)`` (lines 807-808 and 813-814).
-
+    ``asyncio.to_thread(chunk_q.put, ...)``.
     The writer sleeps briefly per write so the bounded queue saturates
     while the producer streams many small chunks, but the download still
     completes successfully.
     """
     service = _make_service(storage_path=tmp_path / "storage.json")
-
     real_open = open
 
     class _SlowHandle:
@@ -814,12 +728,10 @@ async def test_download_url_backpressure_to_thread_put(tmp_path):
     mock_response.aiter_bytes = mock_aiter_bytes
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-
     mock_client = AsyncMock()
     mock_client.stream = MagicMock(return_value=mock_response)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
@@ -829,52 +741,42 @@ async def test_download_url_backpressure_to_thread_put(tmp_path):
         result = await service.download_url(
             "https://storage.googleapis.com/x.bin", str(output_path)
         )
-
     assert result == str(output_path)
     assert output_path.read_bytes() == b"".join(content_chunks)
     assert list(tmp_path.glob("out.bin.*.tmp")) == []
 
 
 # ---------------------------------------------------------------------------
-# download_url scheme/host policy rejects (line 665)
+# download_url scheme/host policy rejects
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_url_non_https_rejected(tmp_path):
-    """Line 665: a single-URL ``download_url`` rejects non-HTTPS schemes
+    """a single-URL ``download_url`` rejects non-HTTPS schemes
     (the batch surface absorbs, but ``download_url`` raises)."""
     service = _make_service(storage_path=tmp_path / "storage.json")
-
     with pytest.raises(ArtifactDownloadError, match="must use HTTPS"):
         await service.download_url("http://storage.googleapis.com/x.bin", str(tmp_path / "out.bin"))
 
 
 # ---------------------------------------------------------------------------
-# _list_raw delegation (line 182)
+# _list_raw delegation
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_list_raw_delegates_to_listing():
     listing = MagicMock()
     listing.list_raw = AsyncMock(return_value=["raw"])
     service = _make_service(listing=listing)
-
     result = await service._list_raw("nb_1")
-
     assert result == ["raw"]
     listing.list_raw.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
-# _get_artifact_content safe_index path (line 217)
+# _get_artifact_content safe_index path
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_get_artifact_content_indexes_result():
-    """Line 217: a non-null RPC result is indexed via ``safe_index``."""
+    """a non-null RPC result is indexed via ``safe_index``."""
     # safe_index(result, 0, 9, 0) -> result[0][9][0] is the HTML string.
     inner = [None] * 10
     inner[9] = ["<html>quiz</html>"]
@@ -882,20 +784,16 @@ async def test_get_artifact_content_indexes_result():
     # attribute assignment onto a duck-typed collaborator).
     rpc = MagicMock(rpc_call=AsyncMock(return_value=[inner]))
     service = _make_service(rpc=rpc)
-
     result = await service._get_artifact_content("nb_1", "quiz_1")
-
     assert result == "<html>quiz</html>"
 
 
 # ---------------------------------------------------------------------------
-# Interactive artifact success write path (lines 415-426)
+# Interactive artifact success write path
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_interactive_artifact_writes_output(tmp_path, monkeypatch):
-    """Lines 415-426: the happy path formats content and writes the file."""
+    """the happy path formats content and writes the file."""
     artifact = MagicMock(id="q1", is_completed=True, created_at=None, title="My Quiz")
     service = _make_service()
     service._list_artifacts = AsyncMock(return_value=[artifact])
@@ -908,18 +806,15 @@ async def test_interactive_artifact_writes_output(tmp_path, monkeypatch):
         "_format_interactive_content",
         MagicMock(return_value="FORMATTED"),
     )
-
     out = tmp_path / "nested" / "quiz.json"
     result = await service.download_interactive_artifact("nb", str(out), None, "json", "quiz")
-
     assert result == str(out)
     assert out.read_text(encoding="utf-8") == "FORMATTED"
 
 
 @pytest.mark.asyncio
 async def test_interactive_artifact_default_title_when_untitled(tmp_path, monkeypatch):
-    """Line 415 branch: a flashcards artifact with no title uses the
-    flashcards default title."""
+    """A flashcards artifact with no title uses the flashcards default title."""
     artifact = MagicMock(id="f1", is_completed=True, created_at=None, title=None)
     service = _make_service()
     service._list_artifacts = AsyncMock(return_value=[artifact])
@@ -932,18 +827,14 @@ async def test_interactive_artifact_default_title_when_untitled(tmp_path, monkey
         return "OUT"
 
     monkeypatch.setattr(artifact_downloads, "_format_interactive_content", _fmt)
-
     out = tmp_path / "cards.md"
     await service.download_interactive_artifact("nb", str(out), None, "markdown", "flashcards")
-
     assert captured_titles == ["Untitled Flashcards"]
 
 
 # ---------------------------------------------------------------------------
-# _list_artifacts delegation (line 182)
+# _list_artifacts delegation
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_list_artifacts_delegates_to_listing():
     from notebooklm.types import ArtifactType
@@ -951,9 +842,7 @@ async def test_list_artifacts_delegates_to_listing():
     listing = MagicMock()
     listing.list_artifacts = AsyncMock(return_value=["typed"])
     service = _make_service(listing=listing)
-
     result = await service._list_artifacts("nb_1", ArtifactType.QUIZ)
-
     assert result == ["typed"]
     listing.list_artifacts.assert_awaited_once()
     _, kwargs = listing.list_artifacts.call_args
@@ -965,8 +854,6 @@ async def test_list_artifacts_delegates_to_listing():
 # Success-path branch arcs that fall through to download_url / file write
 # (349->369, 399->404, 486->491)
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_slide_deck_pptx_success_falls_through(tmp_path):
     """Branch 349->369: a present PPTX URL skips the error and downloads."""
@@ -976,9 +863,7 @@ async def test_slide_deck_pptx_success_falls_through(tmp_path):
         return_value=_row_with("slide_deck_pptx_url", value="https://x.google.com/s.pptx")
     )
     service.download_url = AsyncMock(return_value=str(tmp_path / "s.pptx"))
-
     result = await service.download_slide_deck("nb", str(tmp_path / "s.pptx"), output_format="pptx")
-
     assert result == str(tmp_path / "s.pptx")
     service.download_url.assert_awaited_once_with(
         "https://x.google.com/s.pptx", str(tmp_path / "s.pptx")
@@ -1003,10 +888,8 @@ async def test_interactive_specific_id_found_branch(tmp_path, monkeypatch):
     monkeypatch.setattr(
         artifact_downloads, "_format_interactive_content", MagicMock(return_value="OUT")
     )
-
     out = tmp_path / "q.json"
     await service.download_interactive_artifact("nb", str(out), "wanted", "json", "quiz")
-
     assert captured == ["wanted"]
     assert out.read_text(encoding="utf-8") == "OUT"
 
@@ -1023,10 +906,8 @@ async def test_mind_map_specific_id_found_branch(tmp_path):
     )
     mind_maps.extract_content = MagicMock(return_value='{"name": "Root"}')
     service = _make_service(mind_maps=mind_maps)
-
     out = tmp_path / "mm.json"
     result = await service.download_mind_map("nb", str(out), artifact_id="wanted")
-
     assert result == str(out)
     # The matching row (id == "wanted") is the one passed to extract_content.
     (selected_row,), _ = mind_maps.extract_content.call_args
@@ -1035,17 +916,14 @@ async def test_mind_map_specific_id_found_branch(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Producer except-block: queue.Empty race branch (lines 848-852)
+# Producer except-block: queue.Empty race branch
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_download_url_error_path_drain_observes_empty_queue(tmp_path):
-    """Lines 848-852: when the producer fails and tries to enqueue the
+    """when the producer fails and tries to enqueue the
     ``None`` sentinel, the first ``put_nowait`` can hit ``queue.Full`` and
     the follow-up ``get_nowait`` can find the queue already drained by the
     writer (``queue.Empty``). The loop then retries the put successfully.
-
     This race is reproduced deterministically with a ``queue.Queue``
     subclass that, for the sentinel only, raises ``Full`` on the first put
     and ``Empty`` on the immediately following get, then accepts the
@@ -1087,12 +965,10 @@ async def test_download_url_error_path_drain_observes_empty_queue(tmp_path):
     mock_response.aiter_bytes = mock_aiter_bytes
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=None)
-
     mock_client = AsyncMock()
     mock_client.stream = MagicMock(return_value=mock_response)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
@@ -1101,6 +977,5 @@ async def test_download_url_error_path_drain_observes_empty_queue(tmp_path):
         pytest.raises(RuntimeError, match="connection dropped"),
     ):
         await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))
-
     assert not output_path.exists()
     assert list(tmp_path.glob("out.bin.*.tmp")) == []

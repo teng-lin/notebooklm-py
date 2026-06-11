@@ -4,7 +4,7 @@ The ``cli_vcr`` suite (``tests/integration/cli_vcr/``) runs the real CLI →
 Client → RPC path against VCR cassettes, but the cassette matcher
 (``tests/vcr_config.py`` — ``_rpcids_matcher`` + ``_freq_body_matcher``) keys on
 the RPC method id and the decoded body *shape*, **never** on the notebook/source
-id in the request. The 105 cassettes were recorded against 15 distinct
+id in the request. The cli_vcr cassette set is recorded across multiple
 notebooks, and ``mock_context`` injects one placeholder id regardless of which
 notebook a cassette was recorded against (see ``cli_vcr/_fixtures.py``).
 

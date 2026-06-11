@@ -139,9 +139,8 @@ class SourcesAPI:
 
         Args:
             notebook_id: The notebook ID.
-            strict: Raise RPCError on malformed source-list responses instead
-                of returning an empty list. Intended for internal flows where
-                a malformed snapshot must not be treated as an empty notebook.
+            strict: Retained for call-site clarity; malformed source-list
+                responses always raise ``RPCError``. Empty notebooks return ``[]``.
 
         Returns:
             List of Source objects.
@@ -192,9 +191,7 @@ class SourcesAPI:
             list_sources=self.list,
         )
 
-    # Internal optional-lookup alias: the readiness pollers and CLI service
-    # layer probe for a source without tripping the public ``get`` deprecation
-    # warning. Kept as a stable private name so those call sites need no churn.
+    # Internal silent lookup for pollers/service code avoiding public ``get()`` misses.
     _get_or_none = get_or_none
 
     async def wait_until_ready(
@@ -209,8 +206,10 @@ class SourcesAPI:
     ) -> Source:
         """Wait for a source to become ready.
 
-        Polls the source status until it becomes READY or ERROR, or timeout.
-        Uses exponential backoff to reduce API load.
+        Polls until READY, terminal ERROR, or timeout. Configured transient
+        source types (audio/media and unclassified by default) keep polling
+        through status=ERROR because NotebookLM can report it briefly during
+        transcription/classification.
 
         Args:
             notebook_id: The notebook ID.
@@ -219,6 +218,8 @@ class SourcesAPI:
             initial_interval: Initial polling interval in seconds (default: 1).
             max_interval: Maximum polling interval in seconds (default: 10).
             backoff_factor: Multiplier for polling interval (default: 1.5).
+            transient_error_types: Source type codes whose status=ERROR is
+                transient; ``None`` uses the default media/unclassified policy.
 
         Returns:
             The ready Source object.
@@ -469,15 +470,13 @@ class SourcesAPI:
             The upload section runs under the Sources-owned upload
             pipeline semaphore, which bounds simultaneous in-flight
             uploads at ``max_concurrent_uploads`` (default 4).
-            Each in-flight upload holds **one open file descriptor** for
-            the duration of the upload, so the cap doubles as an
-            FD-exhaustion guard. The file is opened ONCE during validation
-            and the resulting FD is held across the size-check, RPC
-            registration, upload-session start, and streamed body POST —
-            closing the TOCTOU window where the path could have been
-            replaced between two separate ``open()`` calls. A
-            ``try``/``with`` guarantees the FD is released on every exit
-            path, including ``CancelledError``.
+            Each admitted upload holds **one open file descriptor**, so the cap
+            also guards FD exhaustion. The path is resolved/checked before
+            semaphore admission; once admitted, ``add_file`` opens that path
+            once, gets size with ``os.fstat()``, and streams the same file object
+            through registration/session/body POST. No second path-based open
+            occurs, so a later path swap cannot change the uploaded bytes. The
+            streaming helper closes the FD when finalize completes or unwinds.
 
         Args:
             notebook_id: The notebook ID.
@@ -764,8 +763,9 @@ class SourcesAPI:
             SourceNotFoundError: If the source is not found or returns no data.
 
         Note:
-            Source type codes: 1=google_docs, 2=google_other, 3=pdf, 4=pasted_text,
-            5=web_page, 8=generated_text, 9=youtube
+            Source type codes include: 1=google_docs, 2=google_slides, 3=pdf,
+            4=pasted_text, 5=web_page, 8=markdown, 9=youtube, 10=media,
+            11=docx, 13=image, 14=google_spreadsheet, 16=csv, 17=epub.
 
             The ``"markdown"`` format works by requesting the HTML rendition
             from the API (params ``[3],[3]`` instead of ``[2],[2]``) and

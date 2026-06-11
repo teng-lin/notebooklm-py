@@ -153,8 +153,9 @@ def pytest_collection_modifyitems(config, items):
     Every collected test under ``tests/integration/`` MUST be VCR-tier: it must carry
     ``@pytest.mark.vcr``, be decorated with ``@notebooklm_vcr.use_cassette``,
     or explicitly opt out with ``@pytest.mark.allow_no_vcr`` (for mock-only
-    or no-network tests that legitimately live under ``tests/integration/``
-    — e.g. ``test_skill_packaging.py``, ``concurrency/test_*``). Violations
+    or no-network tests that legitimately live under ``tests/integration/`` —
+    e.g. ``test_auto_refresh.py``, ``test_sources_integration.py``,
+    ``concurrency/test_*``). Violations
     raise ``pytest.UsageError`` so the test suite refuses to collect rather
     than silently letting a new mock test slip into the integration tier.
     """

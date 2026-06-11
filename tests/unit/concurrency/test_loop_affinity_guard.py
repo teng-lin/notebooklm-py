@@ -6,23 +6,23 @@ new shared chokepoint that every async entry point on the seam helpers
 ``_reqid_counter.ReqidCounter.next_reqid``,
 ``_runtime.auth.AuthRefreshCoordinator.await_refresh``,
 ``_artifact.polling.ArtifactPollingService.wait_for_completion``,
-``_chat.ChatAPI.ask``) now consults so a cross-loop call surfaces an
+``_chat.ChatAPI.ask``,
+``_source.upload.SourceUploadPipeline.add_file``) now consults so a cross-loop call surfaces an
 actionable ``RuntimeError`` at the call site rather than hanging on a
 lock bound to a dead loop.
 
-The guard in ``Session._perform_authed_post`` already covers the
+The guard in ``RuntimeTransport.perform_authed_post`` already covers the
 transport-POST path. The shared guard extends the same contract to the
 four async entry points that don't pass through that POST path (drain,
-reqid, auth refresh, artifact polling) and to the chat-ask lock that
-``_perform_authed_post`` only catches *after* the per-conversation lock
-acquire — too late.
+reqid, auth refresh, artifact polling) and to the chat-ask/upload locks
+that the transport path only catches *after* a loop-bound acquire — too late.
 
 Acceptance:
 - ``bound_loop=None`` is a silent no-op (lazy / unopened helpers).
 - ``bound_loop=<current loop>`` is a silent no-op (steady state).
 - ``bound_loop=<a different loop>`` raises ``RuntimeError`` with the same
   diagnostic the transport guard uses.
-- Each of the 5 guarded entry points calls :func:`assert_bound_loop` with
+- Each of the 6 guarded entry points calls :func:`assert_bound_loop` with
   its own bound-loop reference before any awaits that touch loop-bound
   primitives (so cross-loop misuse never hits the lock-wait path).
 """

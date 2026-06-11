@@ -235,7 +235,7 @@ async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
     exactly once when the injected ``is_auth_error`` predicate returns
     ``True``, regardless of the actual HTTP status code.
 
-    This test avoids the legacy ``_core.is_auth_error`` string-target
+    This test avoids the retired ``_core`` auth-predicate string-target
     monkeypatch and instead constructs the middleware directly with an
     injected predicate. The
     production chain seeds ``AuthRefreshMiddleware`` with a live-binding
@@ -300,13 +300,9 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
        ``ClientSeams.is_auth_error``.
 
     Restored in Phase 2 PR 4 after the migration of
-    ``test_chain_uses_late_bound_is_auth_error`` (which string-target
-    monkeypatched ``_core.is_auth_error`` to a ``lambda exc: True`` to
-    force ANY exception to be treated as an auth error)
-    deleted the only end-to-end check of that wiring. This test re-adds the coverage
-    without depending on the soon-to-be-retired ``_core`` indirection
-    by using a real 401 that the canonical predicate already
-    recognises.
+    ``test_chain_uses_late_bound_is_auth_error`` deleted the only end-to-end
+    check of that wiring. This test avoids the retired ``_core`` indirection
+    and uses a real 401 recognized by the canonical predicate.
     """
     refresh_calls: list[bool] = []
 

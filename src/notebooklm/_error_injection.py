@@ -103,9 +103,10 @@ def _get_error_injection_mode() -> str | None:
 def _refuse_synthetic_error_outside_test_context() -> None:
     """Refuse client instantiation when the test-only env var leaks.
 
-    ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only. Leaving it
-    set in a deploy env would activate ``ErrorInjectionMiddleware`` so every
-    chain call returns a fake response. The guard remains load-bearing.
+    ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only. Production
+    wiring constructs ``ErrorInjectionMiddleware`` without a builder, so the
+    env var alone cannot substitute responses; this guard still fail-fast
+    rejects leaked cassette-recording config before the client starts.
 
     The guard fires only when:
 

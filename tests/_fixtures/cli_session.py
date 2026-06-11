@@ -12,14 +12,14 @@ have the patch be visible to ``cli.services.login`` internals that referenced
 ``X`` by local name.
 
 D1 PR-3 retired that 350-LOC forwarding block in favor of direct re-imports.
-The trade-off: a patch on ``cli.session.X`` now rebinds *only*
-``cli.session``'s module namespace; ``cli.services.login``'s own local
+The trade-off: a patch on ``notebooklm.cli.session_cmd.<name>`` now rebinds
+*only* ``session_cmd``'s module namespace; ``cli.services.login``'s own local
 binding (the canonical source of truth) is untouched. Tests that want a
 helper intercepted regardless of which entry point reaches it must patch
 both surfaces.
 
-P3.T4 split ``cli/services/login.py`` into a package whose implementation
-modules each bind their own copies of the external helpers
+P3.T4 split the former ``cli.services.login`` module into a package whose
+implementation modules each bind their own copies of the external helpers
 (``get_storage_path``, ``run_async``, ``console``, …). A patch on the
 package's ``__init__.py`` attribute would no longer reach those binding
 sites. To preserve the historical "patch once, intercept everywhere"
@@ -98,7 +98,7 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
     The patches share the same mock object, so call assertions made
     against the returned mock count *every* invocation across all
     surfaces — matching the historical pre-D1 PR-3 behavior of the
-    forwarding wrappers in ``cli.session``.
+    forwarding wrappers in ``session_cmd``.
 
     Args:
         name: Bare symbol name (e.g. ``"_login_with_browser_cookies"``).

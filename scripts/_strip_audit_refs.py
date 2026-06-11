@@ -12,7 +12,7 @@ Whitespace is preserved outside the deleted-token regions; the script never
 collapses runs of whitespace or reformats multi-line constructs.
 
 The script is run repeatedly across the cleanup phases (Phase 1: src/, docs/,
-CHANGELOG, pyproject, CLAUDE.md; Phase 2: tests/; Phase 3: scripts/, CI).
+CHANGELOG, pyproject, CLAUDE.md; Phase 2: tests/).
 Each invocation is restricted to a phase-specific allow-list of file paths so
 that one phase's run cannot accidentally edit another phase's files.
 
@@ -20,7 +20,6 @@ Usage::
 
     python scripts/_strip_audit_refs.py phase1
     python scripts/_strip_audit_refs.py phase2
-    python scripts/_strip_audit_refs.py phase3
 """
 
 from __future__ import annotations
@@ -105,15 +104,11 @@ PHASE_1_FILES: list[str] = [
     "src/notebooklm/_artifacts.py",
     "src/notebooklm/_auth/cookie_policy.py",
     "src/notebooklm/_auth/storage.py",
-    "src/notebooklm/_chat.py",
-    "src/notebooklm/_core.py",
-    "src/notebooklm/_core_transport.py",
     "src/notebooklm/_idempotency.py",
     "src/notebooklm/_logging.py",
     "src/notebooklm/_mind_map.py",
     "src/notebooklm/_notebooks.py",
     "src/notebooklm/_research.py",
-    "src/notebooklm/_source_polling.py",
     "src/notebooklm/_sources.py",
     "src/notebooklm/auth.py",
     "src/notebooklm/cli/artifact_cmd.py",
@@ -153,18 +148,12 @@ PHASE_2_FILES: list[str] = [
     # Integration top-level.
     "tests/integration/conftest.py",
     "tests/integration/README.md",
-    "tests/integration/test_artifacts_drift.py",
     "tests/integration/test_artifacts_integration.py",
     "tests/integration/test_auth_refresh_vcr.py",
     "tests/integration/test_auto_refresh.py",
     "tests/integration/test_chat_multi_source_vcr.py",
-    "tests/integration/test_chat_passage_resolver.py",
-    "tests/integration/test_cli_session_local.py",
-    "tests/integration/test_core.py",
-    "tests/integration/test_download_multi_artifact.py",
     "tests/integration/test_empty_results_vcr.py",
     "tests/integration/test_error_paths_vcr.py",
-    "tests/integration/test_get_summary_drift.py",
     "tests/integration/test_mind_map_chain_vcr.py",
     "tests/integration/test_notebooks_integration.py",
     "tests/integration/test_notes_integration.py",
@@ -174,8 +163,6 @@ PHASE_2_FILES: list[str] = [
     "tests/integration/test_settings_integration.py",
     "tests/integration/test_settings_vcr.py",
     "tests/integration/test_sharing_integration.py",
-    "tests/integration/test_sharing_vcr.py",
-    "tests/integration/test_skill_packaging.py",
     "tests/integration/test_sources_integration.py",
     "tests/integration/test_vcr_comprehensive.py",
     "tests/integration/test_vcr_example.py",
@@ -250,7 +237,6 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/cli/test_research.py",
     "tests/unit/cli/test_resolve.py",
     "tests/unit/cli/test_root_group.py",
-    "tests/unit/cli/test_session.py",
     "tests/unit/cli/test_share.py",
     "tests/unit/cli/test_skill.py",
     "tests/unit/cli/test_source.py",
@@ -270,14 +256,11 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_artifacts_polling_retries.py",
     "tests/unit/test_atomic_io.py",
     "tests/unit/test_atomic_update_json.py",
-    "tests/unit/test_auth.py",
     "tests/unit/test_auth_cookie_save_race.py",
     "tests/unit/test_auth_session.py",
     "tests/unit/test_backoff.py",
-    "tests/unit/test_capabilities.py",
     "tests/unit/test_cassette_patterns.py",
     "tests/unit/test_cassette_sanitizer.py",
-    "tests/unit/test_cassette_shapes.py",
     "tests/unit/test_chat.py",
     "tests/unit/test_chat_ask_invariants.py",
     "tests/unit/test_chat_characterization.py",
@@ -291,7 +274,6 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_ci_audit_scripts.py",
     "tests/unit/test_ci_install_parity.py",
     "tests/unit/test_claude_md_freshness.py",
-    "tests/unit/test_cli_boundary.py",
     "tests/unit/test_cli_source_delete.py",
     "tests/unit/test_client.py",
     "tests/unit/test_client_keepalive.py",
@@ -300,14 +282,6 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_conversation.py",
     "tests/unit/test_cookie_domain_split.py",
     "tests/unit/test_cookie_redaction.py",
-    "tests/unit/test_core_cache.py",
-    "tests/unit/test_core_close.py",
-    "tests/unit/test_core_cookie_persistence.py",
-    "tests/unit/test_core_polling.py",
-    "tests/unit/test_core_reqid.py",
-    "tests/unit/test_core_reqid_concurrent.py",
-    "tests/unit/test_core_rpc.py",
-    "tests/unit/test_core_transport.py",
     "tests/unit/test_decoder.py",
     "tests/unit/test_docstrings.py",
     "tests/unit/test_download_helpers.py",
@@ -320,14 +294,12 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_exceptions.py",
     "tests/unit/test_firefox_containers.py",
     "tests/unit/test_init_order.py",
-    "tests/unit/test_install_docs.py",
     "tests/unit/test_json_error_exit.py",
     "tests/unit/test_json_stdout_purity.py",
     "tests/unit/test_logging.py",
     "tests/unit/test_logging_correlation.py",
     "tests/unit/test_migration.py",
     "tests/unit/test_migration_lock.py",
-    "tests/unit/test_mind_map_service.py",
     "tests/unit/test_notebook_api.py",
     "tests/unit/test_notebook_metadata.py",
     "tests/unit/test_notebooks_extractors.py",
@@ -335,7 +307,6 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_observability.py",
     "tests/unit/test_paths.py",
     "tests/unit/test_public_shims.py",
-    "tests/unit/test_public_surface.py",
     "tests/unit/test_quota_failure_detection.py",
     "tests/unit/test_rate_limit_retry.py",
     "tests/unit/test_refresh_cmd_shlex.py",
@@ -369,7 +340,6 @@ PHASE_2_FILES: list[str] = [
     "tests/unit/test_swallow_observability.py",
     "tests/unit/test_tier_enforcement_hook.py",
     "tests/unit/test_token_regex.py",
-    "tests/unit/test_type_boundaries.py",
     "tests/unit/test_types.py",
     "tests/unit/test_url_utils.py",
     "tests/unit/test_user_settings_api.py",

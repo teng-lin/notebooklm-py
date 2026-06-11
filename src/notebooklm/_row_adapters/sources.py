@@ -182,9 +182,9 @@ class SourceRow:
            bare ``http(s)://...`` at ``metadata[0]`` act as the URL).
         2. **Medium nested** — ``[[[id], title, metadata, ...]]``.
            Unwraps ``data[0]`` to reach the entry.
-        3. **Flat** — ``[id, title, ...]``. Wraps directly; metadata is
-           absent so :attr:`url`, :attr:`type_code`, :attr:`created_at`
-           all return ``None`` / ``0``.
+        3. **Flat** — ``[id, title, ...]``. Wraps directly with the id at
+           ``self._raw[0]``; metadata-dependent properties are absent only when
+           no metadata list is present at position 2.
 
         Args:
             data: Raw decoded payload. Must be a non-empty list.
@@ -269,8 +269,8 @@ class SourceRow:
         )
 
     # ---- Top-level required positions ------------------------------------
-    # Length guards (not ``safe_index``) so short rows continue to
-    # receive sensible defaults in BOTH soft and strict modes.
+    # Length guards (not ``safe_index``) so short rows continue to receive
+    # sensible defaults under the current strict-only drift policy.
 
     @property
     def id(self) -> str:

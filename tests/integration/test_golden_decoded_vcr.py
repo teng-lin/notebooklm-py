@@ -5,8 +5,8 @@ Why this file exists
 VCR cassette replay matches on the ``rpcids`` query param plus a *structural*
 ``f.req`` body matcher (``tests/vcr_config.py`` — ``_rpcids_matcher`` /
 ``_freq_body_matcher``). That matcher deliberately compares request **shape**,
-**not** leaf values (see the ``_shape_only`` docstring near
-``tests/vcr_config.py:420``: it compares structure, "not 'same leaf values'").
+**not** leaf values (see the ``_shape_only`` docstring in ``tests/vcr_config.py``:
+it compares structure, "not 'same leaf values'").
 Those tolerant matchers earn the suite cross-platform stability — a cassette
 recorded against one notebook replays for a different one — and we keep them.
 

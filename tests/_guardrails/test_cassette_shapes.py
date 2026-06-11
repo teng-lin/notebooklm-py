@@ -91,10 +91,11 @@ AUDIT_REPAIR_LIST: dict[str, str] = {
     # REVISE_SLIDE RPC so f.req carries the real urlencoded JSON payload
     # again (only sensitive scalars scrubbed inside, not the whole body
     # collapsed to ``"SCRUBBED"``).
-    # chat_ask.yaml + chat_ask_with_references.yaml were re-recorded
-    # against the current 9-param streaming-chat builder
-    # (src/notebooklm/_chat/api.py:459-469) with the ``freq`` body matcher
-    # opted in per-cassette in tests/integration/test_vcr_comprehensive.py.
+    # chat_ask.yaml + chat_ask_with_references.yaml were re-recorded against
+    # the current 9-param streaming-chat builder
+    # (src/notebooklm/_chat/wire.py:90-127, reached via ChatAPI._build_chat_request)
+    # with the ``freq`` body matcher opted in per-cassette in
+    # tests/integration/test_vcr_comprehensive.py.
     # sources_add_file.yaml was repaired — upload tokens scrubbed in
     # place. sources_add_drive.yaml + sources_check_freshness_drive.yaml
     # were repaired — Drive AONS tokens scrubbed in place.
@@ -603,8 +604,9 @@ def test_gzip_coverage_cassettes_round_trip_through_helper() -> None:
         from yaml import SafeDumper as Dumper  # type: ignore[assignment]
         from yaml import SafeLoader as Loader
 
-    # ``tests/`` is not a Python package, so import the helper by file path —
-    # same pattern :mod:`tests.vcr_config` uses for sibling modules.
+    # Import the helper by file path so this guard does not depend on
+    # test-package import state; this mirrors the file-path fallback used by
+    # :mod:`tests.vcr_config`.
     helper_path = REPO_ROOT / "tests" / "scripts" / "inject_gzip_into_cassette.py"
     spec = importlib.util.spec_from_file_location(
         "tests_scripts_inject_gzip_into_cassette", helper_path

@@ -31,7 +31,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
 
     As of Tier-12 PR 12.4 the per-RPC success/failure counters and the
     ``on_rpc_event`` fire live inside ``MetricsMiddleware`` (which sits
-    in the chain around ``_perform_authed_post``), not inside
+    in the shared authed transport chain), not inside
     ``RpcExecutor.rpc_call``. The seam the test mocks therefore has to
     live below the chain. We mock the chain terminal so the chain runs
     end-to-end, and we return a wire-format payload that the real decoder
@@ -44,8 +44,8 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     """
     events: list[RpcTelemetryEvent] = []
 
-    # Inject the decoder at construction time (Session DI seam — see
-    # ``docs/improvement.md`` §4.1). The real decoder requires a wire
+    # Inject the decoder at construction time (NotebookLMClient test seam; see
+    # ``docs/architecture.md``'s ClientSeams wiring). The real decoder requires a wire
     # payload that matches the method's RPC ID; constructing one makes
     # the test brittle to RPC-ID changes. Stubbing keeps the test focused
     # on observability semantics (counters + events + correlation) rather
@@ -62,7 +62,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     # Mock the chain LEAF (innermost wrapper around
     # ``Kernel.post``) so the real chain runs
     # end-to-end and ``MetricsMiddleware`` sees the call. Mocking
-    # ``_perform_authed_post`` itself would bypass the chain entirely
+    # the shared authed transport itself would bypass the chain entirely
     # and silence the counters this test exists to assert. Mocking above
     # the chain would do the same.
     from notebooklm._middleware.core import RpcResponse

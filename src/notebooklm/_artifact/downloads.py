@@ -122,7 +122,7 @@ class DownloadResult:
     from "partial" via the properties below.
 
     `succeeded`: paths that downloaded cleanly (matches existing list[str] shape).
-    `failed`: (url, exception) tuples for transient httpx / ValueError failures.
+    `failed`: (url, exception) tuples for transport, URL parsing, or download failures.
     """
 
     succeeded: list[str] = field(default_factory=list)

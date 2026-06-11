@@ -1,15 +1,12 @@
 """Meta-lint: a module-size ratchet for ``src/notebooklm/``.
 
-ADR-0008 (``docs/adr/0008-cli-services-extraction-pattern.md``) records that the
-line-count gate is *owed* but not yet built: it says the ``cli/session.py``
-shrink target "lands when the proxy block goes", and the only line-count code in
-the tree today is **diagnostic** (``scripts/audit_test_suite.py`` prints the top
-files by line count but never fails). With no enforcement, the feature modules
-that absorbed bulk during the session-shrink arc re-accrete freely — a dozen of
-them are 900-1500 LOC.
-
-This lint turns that diagnostic into a **ratchet** that complements #1331 (which
-tracks three concrete splits):
+ADR-0008 (``docs/adr/0008-cli-services-extraction-pattern.md``) recorded the
+missing line-count gate at the time this guard was introduced: the session
+command shrink target "lands when the proxy block goes", while the existing
+diagnostic (``scripts/audit_test_suite.py``) only printed the top files by line
+count. This lint is the enforcement that closes that gap and prevents oversized
+modules from re-accreting. It complements #1331 (which tracks three concrete
+splits):
 
 1. **No new fat modules.** Any module under ``src/notebooklm/`` that exceeds
    :data:`MODULE_SIZE_BUDGET` lines and is *not* in :data:`ALLOWLISTED_CEILINGS`
@@ -54,10 +51,10 @@ SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 # split before merge.
 MODULE_SIZE_BUDGET = 900
 
-# Every module currently over budget, pinned at its MEASURED current LOC. These
-# are the only sanctioned exceedances; the map can only shrink (entries removed
-# as modules drop to/under budget) and ceilings can only tighten (lowered as a
-# module shrinks). Paths are POSIX-relative to ``src/notebooklm/``.
+# Every module currently over budget, pinned at its ratchet ceiling. These are
+# the only sanctioned exceedances; the map can only shrink and ceilings can only
+# tighten when the ratchet reports slack. Paths are POSIX-relative to
+# ``src/notebooklm/``.
 #
 # DO NOT raise a ceiling to make room for new code in a fat module — split it.
 # DO lower a ceiling when a module shrinks (the gate will tell you the value).
@@ -77,7 +74,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # public-surface manifest pin them, so they cannot live in a sibling file
     # without forking the public exception home. Irreducible for this feature.
     "exceptions.py": 1546,
-    "_artifacts.py": 1451,
+    "_artifacts.py": 1447,
     "_source/upload.py": 1236,
     "_sources.py": 1007,
     # _artifact/downloads.py: raised for the #1521 per-redirect-hop revalidation

@@ -209,11 +209,9 @@ def _install_client(
 ) -> Any:
     """Build a ``create_mock_client`` instance wired with the test artifacts.
 
-    Returns the ``mock_client`` so individual tests can introspect call counts
-    or attached mocks. The patch target is the canonical download module
-    (``download_cmd`` post-P3.T0); after the extraction lands, the same
-    import path remains valid because the registry-driven file still imports
-    ``NotebookLMClient`` from there.
+    Returns the ``mock_client`` so callers can pass it through
+    ``inject_client(...)``; the Click adapter receives it via the client-factory
+    seam.
     """
     mock_client = create_mock_client()
     mock_client.artifacts.list = AsyncMock(return_value=artifacts or [])

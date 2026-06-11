@@ -6,8 +6,9 @@ Two checks:
    ``uv sync --frozen --extra browser --extra dev --extra markdown`` — must
    appear verbatim in both ``.github/workflows/test.yml`` and
    ``CONTRIBUTING.md``. The exact wording is deliberate (per
-   ``docs/installation.md``): the broader ``--all-extras`` form pulls in
-   ``cookies`` (and ``ai``), which fails on Python 3.13/3.14.
+   ``docs/installation.md``): the broader ``--all-extras`` form installs every
+   optional group, including ``cookies`` plus ``mcp``/``server``; ``cookies``
+   fails on Python 3.13/3.14.
 
 2. **Block-mirror policy:** every fenced ``bash`` code block
    in ``docs/installation.md`` (the canonical install guide) must EITHER

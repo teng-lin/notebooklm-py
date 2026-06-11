@@ -91,7 +91,7 @@ _PATTERN_STRING_PATCH = re.compile(
 )
 
 # Every test file with at least one string-target ``patch("notebooklm…")``
-# site, pinned at its MEASURED count (2026-06-10 baseline: 52 files, 776
+# site, pinned at its MEASURED count (2026-06-10 baseline: 52 files, 768
 # sites). Paths are POSIX-relative to the repository root. The map can only
 # shrink (entries removed as files reach zero) and ceilings can only tighten.
 #

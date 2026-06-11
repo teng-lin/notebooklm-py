@@ -99,6 +99,7 @@ class NotebookLMClient:
     - chat: Ask questions and manage conversations
     - research: Start research sessions and import sources
     - notes: Create and manage user notes
+    - mind_maps: Generate and manage note-backed and interactive mind maps
     - settings: Manage user settings (output language, etc.)
     - sharing: Manage notebook sharing and permissions
     - labels: AI-group sources into topic labels (auto-label / reorganize)
@@ -120,6 +121,7 @@ class NotebookLMClient:
         chat: ChatAPI for conversations
         research: ResearchAPI for web/drive research
         notes: NotesAPI for user notes
+        mind_maps: MindMapsAPI for note-backed and interactive mind maps
         settings: SettingsAPI for user settings
         sharing: SharingAPI for notebook sharing
         labels: LabelsAPI for source labels (topic grouping)
@@ -198,8 +200,9 @@ class NotebookLMClient:
             server_error_max_retries: Max automatic retries for retryable
                 transient failures: HTTP 5xx and network-layer
                 ``httpx.RequestError`` (timeouts, connect errors). Defaults to
-                ``3``. Uses exponential backoff ``min(2 ** attempt, 30)``
-                seconds. Set to ``0`` to disable.
+                ``3``. Uses capped exponential backoff
+                ``min(2 ** attempt, 30)`` seconds with ±20% jitter and a 0.1s
+                floor. Set to ``0`` to disable.
             limits: HTTP connection-pool tuning (``ConnectionLimits``). ``None``
                 (default) uses ``ConnectionLimits()`` defaults sized for typical
                 batchexecute fan-out (max_connections=100,

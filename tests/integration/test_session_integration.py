@@ -566,7 +566,7 @@ class TestBuildUrlHL:
     ``session_id`` / ``authuser`` / ``account_email`` from it rather
     than reading ``self.auth`` live). Tests construct a snapshot inline
     from the fixture's ``AuthTokens`` so the URL-construction logic is
-    exercised without spinning up ``_perform_authed_post``.
+    exercised without spinning up the shared authed transport path.
     """
 
     @staticmethod

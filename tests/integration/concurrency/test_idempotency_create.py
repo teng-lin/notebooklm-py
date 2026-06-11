@@ -2,7 +2,7 @@
 
 Audit item #2 (`thread-safety-concurrency-audit.md` §2):
 Pre-fix, mutating create RPCs (CREATE_NOTEBOOK, ADD_SOURCE) ran inside
-`_perform_authed_post`'s transport retry loop, so a 5xx / network blip
+the shared transport retry loop, so a 5xx / network blip
 between server-side commit and client-side response triggered a naive
 re-POST that duplicated the resource.
 
@@ -26,7 +26,7 @@ Test plan:
 5. sources.add_url (YouTube) — idempotent on 5xx retry
 6. sources.add_text — raises NonIdempotentRetryError when idempotent=True
 7. sources.add_text — default behavior unchanged
-8. disable_internal_retries — propagates through to _perform_authed_post
+8. disable_internal_retries — propagates through to RuntimeTransport.perform_authed_post
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def _make_client_with_transport(
     """Construct a ``NotebookLMClient`` whose underlying httpx client
     uses the supplied mock transport.
 
-    Bypasses the full ``Session.open()`` path (which would try to
+    Bypasses the full ``ClientLifecycle.open()`` path (which would try to
     construct a real ``httpx.AsyncClient`` with cookies + connection
     pool) by stubbing in a pre-built ``AsyncClient`` wired to the
     ``transport`` argument.

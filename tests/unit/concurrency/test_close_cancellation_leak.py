@@ -16,7 +16,7 @@ a different cancel-injection site:
 - ``_rotate_cookies`` monkeypatched to hang on an unset ``asyncio.Event``
   so the keepalive task is genuinely parked when close starts cancelling
   it. CancelledError is intentionally NOT trapped — the keepalive task
-  must remain cancellable so that ``_core.close()`` can tear it down and
+  must remain cancellable so that ``client.close()`` can tear it down and
   reach the shielded ``aclose`` block.
 - The httpx client's ``aclose`` is also monkeypatched to insert a short
   ``await asyncio.sleep(0.2)`` so the close path doesn't run to
@@ -90,9 +90,9 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
     - ``__aexit__`` wrapped in ``wait_for(timeout=0.1)`` so the cancel
       fires during ``aclose``.
 
-    The shield in :meth:`Session.close` wraps
-    ``self._kernel.http_client.aclose()`` in ``asyncio.shield`` inside an
-    outer ``finally``. Without that shield, a cancel arriving inside
+    The shield in ``NotebookLMClient.close`` / ``ClientLifecycle.close`` wraps
+    the httpx client's ``aclose()`` in ``asyncio.shield`` inside an outer
+    ``finally``. Without that shield, a cancel arriving inside
     ``aclose`` aborts the close and leaks the httpx transport. With
     it, the captured ``http_client_ref.is_closed`` must read ``True``
     once the shielded Task has had a moment to finish.
@@ -110,14 +110,14 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
 
     # The unset event the patched rotate hangs on. Never set by the
     # test — the keepalive task's only exit is the ``CancelledError``
-    # that ``_core.close()`` injects via ``_keepalive_task.cancel()``.
+    # that ``client.close()`` injects via ``_keepalive_task.cancel()``.
     hang_event = asyncio.Event()
     rotate_entered = asyncio.Event()
 
     async def _hanging_rotate(*_args: object, **_kwargs: object) -> None:
         """Park the keepalive loop on an unset event.
 
-        With keepalive's poke stuck here, ``_core.close()`` has to
+        With keepalive's poke stuck here, ``client.close()`` has to
         cancel the keepalive task and ``gather()`` it before reaching
         ``save_cookies`` and the shielded ``aclose``. The outer
         ``wait_for(timeout=0.1)`` below — combined with the patched
@@ -155,7 +155,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
     await client.__aenter__()
     try:
         # Save the transport ref BEFORE the cancel — successful close
-        # sets ``_core._kernel.http_client = None`` (inner finally), so we'd
+        # clears ``client._collaborators.kernel.http_client`` (inner finally), so we'd
         # have no handle otherwise.
         http_client_ref = client._collaborators.kernel.get_http_client()
         assert http_client_ref is not None, "open() must have installed a transport"
@@ -180,10 +180,9 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
             await asyncio.sleep(0.2)
             await original_aclose()
 
-        # Patching the bound method on the instance — _core.close()
-        # calls through ``self._kernel.http_client.aclose()`` which dispatches off
-        # the instance attribute first. ``setattr`` shadows the class
-        # method for this one instance.
+        # Patching the bound method on the instance — lifecycle close calls through
+        # the current httpx client and dispatches off the instance attribute first.
+        # ``setattr`` shadows the class method for this one instance.
         monkeypatch.setattr(http_client_ref, "aclose", _slow_aclose)
 
         # Wait for the patched rotate to be called at least once so the
@@ -227,7 +226,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
 
         assert http_client_ref.is_closed, (
             "transport leaked: cancel during _slow_aclose left the httpx "
-            "client open — the asyncio.shield in Session.close was "
+            "client open — the asyncio.shield in NotebookLMClient.close was "
             "either removed, repositioned, or no longer wraps aclose()"
         )
     finally:

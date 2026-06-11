@@ -319,8 +319,8 @@ def build_collaborators(
     #
     # Event-loop affinity guard rationale: the lifecycle captures
     # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
-    # and the cross-loop check in ``_perform_authed_post`` does a cheap
-    # ``is`` comparison against it. Each client is per-loop — the asyncio primitives we hold
+    # and ``RuntimeTransport.perform_authed_post`` does the cross-loop
+    # check with a cheap ``is`` comparison against it. Each client is per-loop — the asyncio primitives we hold
     # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
     # ``_rpc_semaphore``, the ``httpx.AsyncClient``
     # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)

@@ -5,8 +5,8 @@ These pin the relocated download business logic at the ``_app`` boundary
 
 * the pure :func:`select_artifact` / :func:`artifact_title_to_filename`
   helpers (filter → count → select, filename sanitization + dedup) — moved
-  wholesale from the former ``tests/unit/cli/test_download_multi_artifact.py``
-  (they are *defined* here and only re-exported via ``cli.download_helpers``);
+  from the former multi-artifact CLI download coverage (they are *defined*
+  here and only re-exported via ``cli.download_helpers``);
 * :func:`build_download_plan` flag-conflict validation + format-extension
   resolution + notebook-required hook;
 * :func:`execute_download` against a ``MagicMock`` facade: no-artifacts,
@@ -43,9 +43,9 @@ from notebooklm.types import Artifact, ArtifactType
 # ---------------------------------------------------------------------------
 # Pure artifact-selection logic (Filter → Count → Select).
 #
-# Moved wholesale from tests/unit/cli/test_download_multi_artifact.py: these
-# call ``select_artifact`` directly (no CliRunner), and the function is defined
-# in ``_app.download`` — the CLI only re-exports it.
+# Moved from the former multi-artifact CLI download coverage: these call
+# ``select_artifact`` directly (no CliRunner), and the function is defined in
+# ``_app.download`` — the CLI only re-exports it.
 # ---------------------------------------------------------------------------
 
 

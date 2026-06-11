@@ -117,8 +117,8 @@ async def chat_aware_authed_post(
                 f"after retries: {exc.original}"
             ) from exc
         # Network-layer failure (RequestError / Timeout).
-        # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
-        # ``TransportServerError`` on the network path; this guard keeps
+        # ``RuntimeTransport.perform_authed_post`` only wraps
+        # ``httpx.RequestError`` into ``TransportServerError`` on the network path; this guard keeps
         # the contract enforced under ``python -O`` (where ``assert``
         # would be stripped) and gives a clear diagnostic if the
         # invariant ever drifts.
@@ -154,13 +154,13 @@ async def chat_aware_authed_post(
         ) from exc
     except httpx.HTTPStatusError as exc:
         # Non-5xx / non-401 / non-429 status errors fall through
-        # ``_perform_authed_post``'s "Anything else" branch (e.g. a 404
-        # or unhandled 4xx).
+        # ``RuntimeTransport.perform_authed_post``'s "Anything else"
+        # branch (e.g. a 404 or unhandled 4xx).
         raise ChatError(
             f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
         ) from exc
     # NOTE: bare ``httpx.TimeoutException`` / ``httpx.RequestError``
-    # handlers were removed here because ``_perform_authed_post`` always
+    # handlers were removed here because the shared authed transport always
     # either retries those errors or wraps them in
     # ``TransportServerError`` (handled above), so they cannot reach
     # this scope.

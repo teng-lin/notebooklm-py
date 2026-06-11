@@ -36,10 +36,8 @@ from typing import Any
 
 import pytest
 
-# Load ``tests/cassette_patterns.py`` by file path — the ``tests`` directory is
-# not a package, so a plain ``from tests.cassette_patterns import ...`` is not
-# reliable under pytest's per-module import. This mirrors the loader idiom used
-# by ``tests/unit/test_cookie_redaction.py``.
+# Load ``tests/cassette_patterns.py`` by file path to keep the dependency
+# localized to this test module.
 _patterns_path = Path(__file__).resolve().parent.parent / "cassette_patterns.py"
 _spec = importlib.util.spec_from_file_location("tests_cassette_patterns_scrub", _patterns_path)
 assert _spec is not None and _spec.loader is not None, (

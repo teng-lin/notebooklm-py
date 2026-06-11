@@ -93,9 +93,9 @@ def _swap_kernel_post(core: NotebookLMClient, fake: FakeKernelPost) -> None:
 async def test_chain_routes_perform_authed_post_to_transport() -> None:
     """``RuntimeTransport.perform_authed_post`` flows through the chain.
 
-    Covers direct callers of ``RuntimeTransport.perform_authed_post``:
-    the chat path in ``_chat/transport.py:64`` and any first-party
-    caller via ``client._composed.transport.perform_authed_post``.
+    Covers direct callers of ``RuntimeTransport.perform_authed_post``: the chat
+    path in :func:`notebooklm._chat.transport.chat_aware_authed_post` and any
+    first-party caller via ``client._composed.transport.perform_authed_post``.
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")
     fake = FakeKernelPost(response=expected_response)
@@ -311,10 +311,10 @@ async def test_chain_seeded_with_final_adr_009_ordering() -> None:
 async def test_chain_with_test_middleware_observes_request_and_response() -> None:
     """A test middleware can observe the request and response around the leaf.
 
-    Demonstrates the contract every middleware PR 12.3–12.8 will rely on:
-    insert a middleware into the chain, drive a request through, and
-    assert the middleware saw both the inbound request and the outbound
-    response. This is the wire-up smoke test for middleware extractions.
+    Demonstrates the contract middleware components rely on: insert a
+    middleware into a chain, drive a request through, and assert the middleware
+    saw both the inbound request and the outbound response. This is the wire-up
+    smoke test for middleware composition.
 
     Builds the chain locally (rather than mutating ``core._composed.middlewares``
     in-place) because production code does not yet support hot-swapping

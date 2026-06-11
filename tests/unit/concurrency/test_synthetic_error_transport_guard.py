@@ -7,7 +7,7 @@ error responses for real RPC calls. The transport's docstring warned
 about this but nothing actually gated against accidental production
 exposure (e.g. a leaked environment variable in a deployment).
 
-P1-12 closes that hole: ``Session.__init__`` (the constructor
+P1-12 closes that hole: ``NotebookLMClient`` construction (the constructor
 consultation site) refuses instantiation when the env var is set without
 ``PYTEST_CURRENT_TEST`` in the environment, logging a WARNING and raising
 ``RuntimeError`` with remediation guidance. Tests legitimately set the
@@ -17,7 +17,7 @@ transparent in CI / unit test contexts.
 
 Acceptance:
 - Env var set + no ``PYTEST_CURRENT_TEST`` → ``RuntimeError`` from
-  ``Session`` instantiation.
+  client instantiation.
 - Env var set + ``PYTEST_CURRENT_TEST`` set → instantiation succeeds
   (the pytest path remains unchanged).
 - Env var unset → instantiation succeeds (baseline production path).

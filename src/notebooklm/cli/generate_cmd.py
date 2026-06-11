@@ -1,12 +1,13 @@
 """Generate content CLI commands — thin Click handlers (ADR-0008).
 
-All validation, enum mapping, retry/wait orchestration, and output
-dispatch live in ``cli/services/generate.py``. Tests patch
-``console`` / ``json_error_response`` /
-``json_output_response`` / ``get_language`` / ``_output_mind_map_result``
-as module-level attributes here, so those names remain imported at
-module scope and ``_output_mind_map_result`` + ``resolve_language``
-remain defined inline rather than re-exported.
+Plan validation, enum mapping, retry/wait orchestration, and per-kind
+generation execution live in the transport-neutral ``_app.generate`` core plus
+the CLI adapter in ``cli/services/generate.py``. Command-layer rendering and
+exit policy stay in this module. Tests patch ``console`` /
+``json_error_response`` / ``json_output_response`` / ``get_language`` /
+``_output_mind_map_result`` as module-level attributes here, so those names
+remain imported at module scope and ``_output_mind_map_result`` +
+``resolve_language`` remain defined inline rather than re-exported.
 """
 
 import os

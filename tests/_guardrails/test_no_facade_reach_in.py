@@ -224,7 +224,7 @@ def _collect_core_private_accesses(path: Path) -> list[tuple[str, str]]:
 
 
 def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
-    """Pending guard: no new feature API reaches directly into Session internals."""
+    """Pending guard: no new feature API reaches directly into client/runtime internals."""
     observed_counts: Counter[tuple[str, str]] = Counter()
     for path in _feature_modules_for_core_private_guard():
         observed_counts.update(_collect_core_private_accesses(path))
@@ -236,8 +236,8 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
     }
     assert not unexpected, (
         "Feature APIs must not add new direct `self._core._private` accesses. "
-        "Add a public Session capability first, or temporarily extend the "
-        f"TODO baseline with a migration note. New accesses: {unexpected}"
+        "Add an explicit collaborator/capability first, or temporarily extend "
+        f"the TODO baseline with a migration note. New accesses: {unexpected}"
     )
 
     stale = {
@@ -474,12 +474,12 @@ def test_api_reach_in_visitor_catches_annassign_alias() -> None:
 
 
 def test_legacy_capabilities_module_is_deleted() -> None:
-    """Feature APIs now type against ``Session`` plus explicit collaborators."""
+    """Feature APIs now type against explicit collaborators/capability protocols."""
     assert not (SRC_ROOT / "_capabilities.py").exists()
 
 
 def test_lifted_core_modules_are_retired() -> None:
-    """Session collaborators should not regress to the old ``_core_*`` layout."""
+    """Client/runtime collaborators should not regress to the old ``_core_*`` layout."""
     assert sorted(path.name for path in SRC_ROOT.glob("_core_*.py")) == []
 
 
@@ -601,7 +601,7 @@ def test_source_service_modules_do_not_runtime_import_facades_or_core() -> None:
 
 
 def test_notebook_composition_services_do_not_runtime_import_facades_or_core() -> None:
-    """Notebook composition services stay below facade APIs and Session."""
+    """Notebook composition services stay below facade APIs and client composition."""
     forbidden_by_module: dict[str, list[str]] = {}
     forbidden_construction_by_module: dict[str, dict[str, list[int]]] = {}
 

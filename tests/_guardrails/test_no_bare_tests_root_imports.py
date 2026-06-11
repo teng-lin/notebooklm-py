@@ -9,17 +9,17 @@ worker that doesn't collect a path-inserting sibling fails collection).
 ``conftest`` is additionally *ambiguous* — many ``conftest.py`` exist — so a bare
 import can silently grab the wrong one depending on ``sys.path`` order.
 
-The fix is to import via the ``tests.`` package path (which resolves as a
-namespace package regardless of ``sys.path`` order) or a relative import.
+The fix is to import via the fully qualified ``tests.`` package path
+(``tests/__init__.py`` plus ``pythonpath = ["."]`` in ``pyproject.toml``) or a
+relative import.
 
 **Scope (deliberately narrow):** the loose tests-root ``.py`` modules
 (``conftest``, ``vcr_config``, ``cassette_patterns``, ``cassette_sanitizer``) and
 the top-level group dirs (``integration`` / ``unit`` / ``e2e``, e.g. a bare
-``from integration.conftest import …``). The shared helper *packages*
-(``_fixtures``, ``_helpers``, ``_guardrails``) are intentionally NOT covered: they
-are unique packages that resolve unambiguously via the standard ``tests/``-on-path
-mechanism (they collect fine in isolation and under xdist) and are an established
-convention. Tightening those to ``tests.*`` too is a separate, optional sweep.
+``from integration.conftest import …``). The shared helper packages
+(``_fixtures``, ``_helpers``, ``_guardrails``) are intentionally NOT covered by
+this narrow rule; tightening bare helper imports to ``tests.*`` is a separate,
+optional sweep.
 
 Detection is by import *target* (AST), covering both module-level and
 function-local imports, so an aliased or nested form cannot slip past.

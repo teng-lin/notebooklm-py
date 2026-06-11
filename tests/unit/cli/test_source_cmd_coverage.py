@@ -1,8 +1,6 @@
 """Coverage gap tests for ``notebooklm.cli.source_cmd`` render helpers.
-
 These exercise the small pure render/handler helpers that own the
 text-vs-JSON branching and exit-code policy for ``source`` subcommands:
-
 * ``_resolve_source_fulltext_output_path`` force/no-clobber conflict
 * ``_handle_source_mutation_error`` status-message → JSON-extra vs text-hint
 * ``_render_source_delete_result`` status-message emission
@@ -11,7 +9,6 @@ text-vs-JSON branching and exit-code policy for ``source`` subcommands:
 * ``_render_add_research_result`` JSON branches for ``no_research``,
   ``failed``/``timeout``, ``unknown_status``
 * ``_dispatch_source_clean_result`` text partial-failure overflow + exit
-
 Plus one ``source add`` CLI invocation to cover the validation-error
 JSON branch in the command body.
 """
@@ -56,10 +53,8 @@ def _research_result(outcome: str, **kw) -> SourceAddResearchResult:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_source_fulltext_output_path — force + no-clobber conflict (line 223)
+# _resolve_source_fulltext_output_path — force + no-clobber conflict
 # ---------------------------------------------------------------------------
-
-
 class TestResolveFulltextOutputPath:
     def test_force_and_no_clobber_conflict_text_raises_usage_error(self, tmp_path):
         path = tmp_path / "out.md"
@@ -81,10 +76,8 @@ class TestResolveFulltextOutputPath:
 
 
 # ---------------------------------------------------------------------------
-# _render_source_wait_outcome — defensive unreachable guard (line 399)
+# _render_source_wait_outcome — defensive unreachable guard
 # ---------------------------------------------------------------------------
-
-
 class TestRenderSourceWaitOutcomeGuard:
     def test_unknown_outcome_type_raises_assertion(self):
         class _Bogus:
@@ -95,10 +88,8 @@ class TestRenderSourceWaitOutcomeGuard:
 
 
 # ---------------------------------------------------------------------------
-# _handle_source_mutation_error — status-message branches (452-457)
+# _handle_source_mutation_error — status-message branches
 # ---------------------------------------------------------------------------
-
-
 class TestHandleSourceMutationError:
     def test_status_message_routed_to_json_extra(self, capsys):
         exc = SourceMutationError(
@@ -122,10 +113,8 @@ class TestHandleSourceMutationError:
 
 
 # ---------------------------------------------------------------------------
-# _render_source_delete_result — status-message emission (line 476)
+# _render_source_delete_result — status-message emission
 # ---------------------------------------------------------------------------
-
-
 class TestRenderSourceDeleteResult:
     def test_status_message_emitted_text_mode(self, capsys):
         ctx = click.Context(click.Command("x"))
@@ -145,8 +134,6 @@ class TestRenderSourceDeleteResult:
 # ---------------------------------------------------------------------------
 # _render_source_refresh_result — None-success branch
 # ---------------------------------------------------------------------------
-
-
 class TestRenderSourceRefreshResult:
     def test_result_none_prints_source_id(self, capsys):
         # v0.8.0 (#1290): refresh() returns None on success; the renderer prints
@@ -160,10 +147,8 @@ class TestRenderSourceRefreshResult:
 
 
 # ---------------------------------------------------------------------------
-# _exit_with_add_research_status (918-921)
+# _exit_with_add_research_status
 # ---------------------------------------------------------------------------
-
-
 class TestExitWithAddResearchStatus:
     def test_emits_payload_and_exits_one(self, capsys):
         with pytest.raises(SystemExit) as exc_info:
@@ -174,10 +159,8 @@ class TestExitWithAddResearchStatus:
 
 
 # ---------------------------------------------------------------------------
-# _render_add_research_result — JSON outcome branches (962-988)
+# _render_add_research_result — JSON outcome branches
 # ---------------------------------------------------------------------------
-
-
 class TestRenderAddResearchResultJson:
     def test_no_research_json(self, capsys):
         with pytest.raises(SystemExit):
@@ -233,10 +216,8 @@ class TestRenderAddResearchResultText:
 
 
 # ---------------------------------------------------------------------------
-# _dispatch_source_clean_result — text partial-failure overflow (1477, 1482)
+# _dispatch_source_clean_result — text partial-failure overflow
 # ---------------------------------------------------------------------------
-
-
 class TestDispatchSourceCleanResultTextFailures:
     def test_text_partial_failure_overflow_and_exit(self, capsys):
         ctx = click.Context(click.Command("x"))
@@ -258,10 +239,8 @@ class TestDispatchSourceCleanResultTextFailures:
 
 
 # ---------------------------------------------------------------------------
-# source add — validation-error JSON branch in the command body (line 691)
+# source add — validation-error JSON branch in the command body
 # ---------------------------------------------------------------------------
-
-
 class TestSourceAddValidationErrorJson:
     def test_invalid_url_json_emits_validation_error(self, runner, mock_auth):
         with patch(

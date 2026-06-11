@@ -37,7 +37,7 @@ def test_create_server_returns_fastmcp(mock_client: MagicMock) -> None:
 async def test_in_memory_client_connects(server_factory) -> None:
     """The in-memory FastMCP Client can open a session against the server."""
     async with Client(server_factory()) as client:
-        # No tools registered in Phase 1 — listing must still succeed (empty/seam).
+        # Tool listing must succeed for the registered server surface.
         tools = await client.list_tools()
         assert isinstance(tools, list)
 

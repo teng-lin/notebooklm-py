@@ -39,7 +39,7 @@ from dataclasses import dataclass
 class AuthSnapshot:
     """Point-in-time view of auth headers used to build a single request.
 
-    Captured once per HTTP attempt by ``_perform_authed_post`` and passed
+    Captured once per HTTP attempt by the shared authed transport and passed
     into the caller-supplied ``build_request`` factory so the URL/body are
     consistent for that attempt. On retry, a *new* snapshot is taken so
     refreshed credentials are picked up before the rebuild.

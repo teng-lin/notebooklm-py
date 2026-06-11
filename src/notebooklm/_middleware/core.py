@@ -11,16 +11,16 @@ This module defines:
   style: each middleware receives the request and a ``next_call`` callable;
   it decides whether (and how) to invoke ``next_call(request)``, optionally
   observing or transforming the response.
-- :func:`materialize_rpc_request` — converts the legacy ``BuildRequest``
-  callback shape into the future populated ``RpcRequest`` envelope.
+- :func:`materialize_rpc_request` — converts the ``BuildRequest``
+  callback shape into the populated ``RpcRequest`` envelope.
 - :func:`build_chain` — composes a ``Sequence[Middleware]`` around a terminal
   ``NextCall`` so the leftmost middleware in the sequence becomes the
   *outermost* wrapper (matches the ordering documented in ADR-0009).
 
 Production ``NotebookLMClient`` wiring composes these envelopes through the current
-middleware stack. During the request-materialization migration, the chain
-enters with populated ``RpcRequest(url, headers, body)`` fields and the
-terminal consumes that envelope directly through ``Kernel.post``. See
+middleware stack. The chain enters with populated
+``RpcRequest(url, headers, body)`` fields and the terminal consumes that
+envelope directly through ``Kernel.post``. See
 ``docs/adr/0009-middleware-chain.md`` for the load-bearing decisions.
 """
 
@@ -62,9 +62,10 @@ class RpcRequest:
     callback, etc.) travels through :attr:`context`.
 
     Frozen: middlewares that want to alter the request build a new
-    :class:`RpcRequest` via :func:`dataclasses.replace`. The
-    :class:`AuthRefreshMiddleware` does exactly this when
-    rebuilding headers and URL after an auth refresh.
+    :class:`RpcRequest`. Some can use :func:`dataclasses.replace`;
+    :class:`AuthRefreshMiddleware` rematerializes via
+    :func:`materialize_rpc_request` after refresh so URL, headers, and body
+    are rebuilt from the fresh auth snapshot.
 
     :attr:`context` is mutable by reference (it's a plain :class:`dict`) and
     is shared across the chain by design — see ADR-0009 §"Per-request
@@ -139,12 +140,12 @@ def materialize_rpc_request(
     snapshot: AuthSnapshot,
     context: dict[str, Any],
 ) -> RpcRequest:
-    """Build a populated chain envelope from the legacy request callback.
+    """Build a populated chain envelope from the request callback.
 
     ``NotebookLMClient`` uses this helper to enter the chain with populated
-    ``RpcRequest(url, headers, body)`` fields while the terminal delegates
-    through the ``BuildRequest`` callback. A ``Kernel.post`` terminal can
-    consume the same envelope directly.
+    ``RpcRequest(url, headers, body)`` fields, and
+    :class:`RuntimeTransport.terminal` consumes that envelope directly through
+    ``Kernel.post``.
 
     ``context`` is intentionally retained by reference, matching ADR-0009's
     mutable per-request metadata contract.
@@ -165,8 +166,9 @@ def materialize_rpc_request(
 #: Callable shape of the "call the next link" function passed to each
 #: middleware. Implementations invoke ``await next_call(request)`` (or a
 #: replaced ``await next_call(new_request)`` after transforming the
-#: request via :func:`dataclasses.replace` — what
-#: :class:`AuthRefreshMiddleware` does on its retry leg) to continue the
+#: request via a new ``RpcRequest`` (for example, a dataclasses.replace
+#: rewrite or an auth-refresh rematerialization via
+#: :func:`materialize_rpc_request`) to continue the
 #: chain. A middleware may also short-circuit by returning a response
 #: without invoking ``next_call`` at all; no production middleware does
 #: this, but test middlewares (e.g. a "deny all" canary) are free to.
@@ -181,8 +183,8 @@ class Middleware(Protocol):
     :class:`RpcResponse`. Implementations may:
 
     - Observe the request before calling ``next_call`` (logging, metrics).
-    - Transform the request via :func:`dataclasses.replace` and pass the new
-      one to ``next_call`` (auth refresh).
+    - Transform the request by creating a new :class:`RpcRequest` and pass it
+      to ``next_call`` (for example, auth refresh rematerializes the envelope).
     - Wrap ``next_call`` in a try/except to handle specific exceptions
       (retry, auth refresh).
     - Observe or transform the response after ``next_call`` returns

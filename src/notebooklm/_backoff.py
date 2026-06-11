@@ -1,9 +1,9 @@
 """Shared exponential-backoff helper for retry loops.
 
-A single ``compute_backoff_delay`` is used by every transient-retry path in
-the package so the curve, jitter shape, and cap-behavior are defined in one
-place. The function is pure math (sync, no I/O) — callers pair it with their
-own sleep primitive.
+``compute_backoff_delay`` is shared by transport and polling retry loops;
+artifact rate-limit retry uses the public
+:func:`notebooklm.artifacts.calculate_backoff_delay` helper. The function is
+pure math (sync, no I/O) — callers pair it with their own sleep primitive.
 
 Jitter uses an ``rng`` parameter so tests can pass a seeded ``random.Random``
 for deterministic output. In production callers pass ``rng=None`` and the

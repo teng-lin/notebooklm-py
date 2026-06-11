@@ -23,7 +23,7 @@ def build_share_url(base_url: str, notebook_id: str, artifact_id: str | None = N
 
 
 class ShareManager:
-    """Legacy ``SHARE_ARTIFACT`` manager used by ``NotebooksAPI.share``."""
+    """Legacy ``SHARE_ARTIFACT`` manager kept behind share URL internals."""
 
     def __init__(
         self,

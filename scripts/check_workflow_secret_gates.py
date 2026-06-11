@@ -23,8 +23,8 @@ the auto-provisioned token whose scopes are bounded by the top-level
 in scope.
 
 The check exists to prevent silent regressions where a workflow grows a
-new ``env: FOO: ${{ secrets.SOMETHING }}`` block without picking up the
-corresponding environment or ``is_standard`` gate. CI rejects the change.
+new ``env: FOO: ${{ secrets.SOMETHING }}`` block without picking up an approved
+environment or trusted actor/branch ``if:`` gate. CI rejects the change.
 
 Usage::
 
@@ -34,8 +34,8 @@ Usage::
 Exit codes::
 
     0  All secret-consuming jobs are gated.
-    1  One or more jobs use ``secrets.*`` without an environment or
-       ``is_standard`` guard. Offending file/line/job is printed to stderr.
+    1  One or more jobs use ``secrets.*`` without an approved environment or
+       trusted actor/branch guard. Offending file/line/job is printed to stderr.
     2  Argument error (missing directory, etc.).
 
 Implementation notes
@@ -219,7 +219,7 @@ def main() -> int:
 
     print(
         "OK: every workflow job that references user-provided secrets is "
-        "gated by either `environment:` or an `is_standard`-style `if:` guard."
+        "gated by an approved `environment:` or trusted actor/branch `if:` guard."
     )
     return 0
 
@@ -283,8 +283,7 @@ def _scan_workflow(path: Path) -> list[str]:
             violations.append(
                 f"{path}:{line_no}: secrets.{secret_name} used in job "
                 f"{current_job!r} without an `environment:` declaration "
-                "and without an `is_standard`-style / `sender.login`-style "
-                "`if:` guard on the job or step."
+                "and without a trusted actor/branch `if:` guard on the job or step."
             )
 
     def reset_for_new_job(job_name: str) -> None:
@@ -342,16 +341,12 @@ def _scan_workflow(path: Path) -> list[str]:
         if current_job is None:
             continue
 
-        # Track job-level ``environment:`` declaration. The value must
-        # name an environment from ``_APPROVED_ENVIRONMENTS`` — bare or
-        # quoted ("protected-readonly") for an always-on gate, or
-        # embedded in an expression for a conditional gate (e.g.
-        # ``${{ event == 'workflow_dispatch' && 'protected-readonly' || '' }}``).
-        # The check defends against C-CODEX-2: GitHub auto-creates an
-        # environment that doesn't exist, with NO protection rules, so
-        # a typoed name (``protectd-readonly``) would silently pass CI
-        # AND bypass maintainer approval at runtime. Pinning to an
-        # explicit allow-list forces deliberate setup.
+        # Track job-level ``environment:`` declaration. The value must name an
+        # environment from ``_APPROVED_ENVIRONMENTS`` as a bare or quoted
+        # literal. Expression-valued environments are rejected; use a trusted
+        # job/step ``if:`` for conditional gating instead. The allow-list
+        # defends against GitHub auto-creating typoed environments with no
+        # protection rules.
         m_env = _JOB_ENVIRONMENT_RE.match(line)
         if m_env:
             value = m_env.group(1)

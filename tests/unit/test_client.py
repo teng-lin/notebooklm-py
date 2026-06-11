@@ -319,17 +319,11 @@ class TestRefreshAuth:
     ):
         """refresh_auth delegates token mutation through the auth-refresh coordinator.
 
-        Wave 2 of plan ``host-protocol-removal`` rewired
-        :meth:`NotebookLMClient.refresh_auth` to call
-        :func:`refresh_auth_session` with explicit collaborator kwargs
-        — the token-mutation hop now invokes
-        ``auth_coord.update_auth_tokens(auth=..., csrf=..., session_id=...)``
-        directly instead of going through the ``Session.update_auth_tokens``
-        delegate. Tests that want to observe the mutation patch the
-        coordinator method (matching the new keyword-only signature) and
-        read the live ``AuthTokens`` instance via ``client._auth``, which
-        the Auth Instance Invariant keeps aliased with the composed
-        Session's ``auth`` attribute.
+        Tests that want to observe the mutation patch the coordinator method
+        (matching the new keyword-only signature) and read the live
+        ``AuthTokens`` instance via ``client._auth``, which the Auth Instance
+        Invariant keeps aliased with the composed runtime's auth snapshot
+        provider.
         """
         client = NotebookLMClient(mock_auth)
         html = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'

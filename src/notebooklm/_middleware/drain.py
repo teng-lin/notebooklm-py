@@ -13,7 +13,7 @@ so the middleware reads it via ``RPC_CONTEXT_LOG_LABEL`` and falls back
 to a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
 Drain admission is owned by the chain rather than by the logical RPC
-wrapper or ``_chat.transport.send_authed_post`` (the chat-streaming
+wrapper or ``_chat.transport.chat_aware_authed_post`` (the chat-streaming
 entry); those two call sites carry no explicit bookkeeping calls.
 
 Drain admission semantics:
@@ -90,7 +90,7 @@ class DrainMiddleware:
         the tracker is in draining mode and the current task has no
         prior operation depth. The exception propagates out of the
         chain unchanged; the RPC dispatch path and
-        ``_chat.transport.send_authed_post`` both let drain admission errors
+        ``_chat.transport.chat_aware_authed_post`` both let drain admission errors
         propagate without catching.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")

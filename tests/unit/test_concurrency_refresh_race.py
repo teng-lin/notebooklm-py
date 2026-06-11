@@ -1,27 +1,27 @@
 """Snapshot-invariant for the shared POST helper.
 
 httpx merges the cookie jar into the outgoing ``httpx.Request`` synchronously
-when ``Kernel.post`` opens the stream. ``_perform_authed_post`` materializes a
-``RpcRequest`` from an auth snapshot before the middleware chain, and the
-``Kernel.post`` terminal refreshes that envelope if auth changed while the
-request waited in the chain. Therefore, within a single terminal attempt the
-entire ``(csrf, session_id, cookies)`` snapshot is atomic from a concurrent
+when ``Kernel.post`` opens the stream. ``RuntimeTransport.perform_authed_post``
+materializes a ``RpcRequest`` from an auth snapshot before the middleware chain,
+and the ``Kernel.post`` terminal refreshes that envelope if auth changed while
+the request waited in the chain. Therefore, within a single terminal attempt
+the entire ``(csrf, session_id, cookies)`` snapshot is atomic from a concurrent
 coroutine standpoint: no other task can mutate state between the terminal
 freshness check and the wire.
 
 The POST lives in the shared authed transport path used by
-``_perform_authed_post`` so chat can share the same transport pipeline.
+``RuntimeTransport.perform_authed_post`` so chat can share the same transport pipeline.
 The AST guard below follows the POST; the invariant still belongs at the
 shared site.
 
 The auth-snapshot lock hardened the invariant by:
 
-- making ``_snapshot()`` ``async def`` and acquiring a dedicated
+- making ``AuthRefreshCoordinator.snapshot()`` ``async def`` and acquiring a dedicated
   ``_auth_snapshot_lock`` for the read, so the four scalar fields
   (``csrf_token``/``session_id``/``authuser``/``account_email``) are
   observed atomically with respect to ``refresh_auth``'s
   write-block; and
-- refactoring ``_build_url()`` to consume the resulting
+- refactoring ``RpcExecutor.build_url()`` to consume the resulting
   ``AuthSnapshot`` rather than reading ``self.auth`` LIVE — that
   prior live-read was the actual torn-read hazard, since it let a
   refresh's write to ``self.auth.session_id`` slip into the URL between
@@ -204,10 +204,8 @@ def test_terminal_freshness_check_has_no_await_after_materialization():
     """Freshness rebuild must not yield after materializing a new envelope.
 
     The freshness-rebuild body lives on
-    :meth:`RuntimeTransport.refresh_request_for_current_auth` after move
-    #4c — ``Session._refresh_request_for_current_auth`` is now a one-line
-    forward to it, so the AST guard must inspect the collaborator method
-    that carries the actual body.
+    :meth:`RuntimeTransport.refresh_request_for_current_auth`, so the AST guard
+    inspects the collaborator method that carries the actual body.
     """
     src = textwrap.dedent(inspect.getsource(RuntimeTransport.refresh_request_for_current_auth))
     tree = ast.parse(src)
@@ -228,7 +226,7 @@ def test_terminal_freshness_check_has_no_await_after_materialization():
         if isinstance(n, ast.Await) and (n.lineno, n.col_offset) > materialize_position
     ]
     assert later_awaits == [], (
-        "Session._refresh_request_for_current_auth must not await after "
+        "RuntimeTransport.refresh_request_for_current_auth must not await after "
         "materialize_rpc_request; that would let auth/cookies move between "
         "request rebuild and Kernel.post."
     )
@@ -279,10 +277,10 @@ def test_auth_refresh_rebuild_has_no_await_after_snapshot_capture():
 def test_build_url_does_not_read_self_auth():
     """``RpcExecutor.build_url`` must consume only its ``snapshot`` parameter.
 
-    pre-fix, ``_build_url`` reached into ``self.auth``
+    pre-fix, ``RpcExecutor.build_url`` reached into ``self.auth``
     on every call to read ``session_id``, ``authuser``, and
-    ``account_email``. With ``_snapshot()`` and ``_build_url`` running
-    on separate Python statements, a concurrent ``refresh_auth`` could
+    ``account_email``. With ``AuthRefreshCoordinator.snapshot()`` and
+    ``RpcExecutor.build_url()`` running on separate Python statements, a concurrent ``refresh_auth`` could
     flip ``self.auth.session_id`` between snapshot capture and URL build
     — producing a request whose URL was stamped with the *new*
     generation while the body still carried the *old* CSRF.
@@ -323,10 +321,8 @@ def test_build_url_does_not_read_self_auth():
 def test_snapshot_acquires_auth_snapshot_lock():
     """``AuthRefreshCoordinator.snapshot`` must acquire ``_auth_snapshot_lock``.
 
-    Post-PR-8, the canonical implementation lives on the coordinator;
-    ``Session._snapshot`` is a one-line delegate. The lock-acquisition
-    contract is invariant under that move — this guard inspects the
-    coordinator method directly.
+    The lock-acquisition contract belongs to the coordinator, so this guard
+    inspects the coordinator method directly.
 
     The lock is the only thing that serializes the four-scalar snapshot
     read with the matching two-scalar write in
@@ -372,11 +368,9 @@ def test_snapshot_acquires_auth_snapshot_lock():
 def test_update_auth_tokens_has_no_await_inside_mutation_block():
     """``AuthRefreshCoordinator.update_auth_tokens`` must not await mid-mutation.
 
-    Post-PR-8, the canonical implementation lives on the coordinator;
-    ``Session.update_auth_tokens`` is a one-line delegate. The no-await
-    invariant inside the csrf/session_id mutation block is invariant
-    under that move — this guard inspects the coordinator method
-    directly. Lock acquisition may await; the mutation block itself may
+    The no-await invariant inside the csrf/session_id mutation block belongs to
+    the coordinator, so this guard inspects the coordinator method directly.
+    Lock acquisition may await; the mutation block itself may
     not, because any yield inside it would let a snapshot observe a
     torn (csrf, session_id) pair.
     """
@@ -466,8 +460,7 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
     # Build the same auth scaffold the unit conftest's ``make_core`` produces
     # (CSRF_OLD / SID_OLD / old_sid_cookie) so the OLD/NEW marker assertions
     # below stay valid. Routed through :func:`build_client_shell_for_tests` so the
-    # refresh client shell and one-wave Session forwarder share one composed
-    # runtime.
+    # refresh client shell and composed runtime share one auth snapshot provider.
     auth = AuthTokens(
         csrf_token="CSRF_OLD",
         session_id="SID_OLD",

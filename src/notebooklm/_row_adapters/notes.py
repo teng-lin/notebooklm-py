@@ -140,11 +140,10 @@ class NoteRow:
         return self._raw[self._CONTENT_POS] is None and not self.is_deleted
 
     # ---- Multi-shape content / title dispatch ----------------------------
-    # Both descents short-circuit on the legacy ``str``-at-position-1
-    # shape *before* invoking ``safe_index`` so the legitimate legacy
-    # path emits no DeprecationWarning. The current shape's inner
-    # descent flows through ``safe_index`` so strict mode raises on
-    # genuine inner-shape drift.
+    # Both descents short-circuit on the legacy ``str``-at-position-1 shape
+    # before invoking ``safe_index`` so legitimate legacy rows remain accepted
+    # shapes, not schema drift. The current shape's inner descent flows through
+    # ``safe_index`` so genuine inner-shape drift raises.
 
     @property
     def content(self) -> str | None:

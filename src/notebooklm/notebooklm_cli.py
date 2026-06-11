@@ -21,11 +21,12 @@ Architecture:
     - It imports command groups from the ``notebooklm.cli`` package and
       registers them on the top-level Click group ``notebooklm``.
     - The ``cli/`` package contains the actual command implementations
-      (one module per command group: ``session``, ``notebook``, ``source``,
-      ``artifact``, ``generate``, ``download``, ``chat``, ``note``,
-      ``doctor``, ``profile``, ``agent``).
-    - Editing CLI behavior: change ``cli/<group>.py``. Editing CLI surface
-      (adding a new top-level command): import + register here.
+      (``*_cmd.py`` modules for command groups and top-level command
+      registration; shared runtime helpers live in sibling modules such as
+      ``options.py``, ``runtime.py``, and ``auth_runtime.py``).
+    - Editing CLI behavior: change the relevant ``cli/*_cmd.py`` module or
+      shared helper. Editing CLI surface (adding a new top-level command):
+      import + register it here.
 
 LLM-friendly design:
   # Set context once, then use simple commands

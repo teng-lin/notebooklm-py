@@ -2,7 +2,7 @@
 
 Pure-RPC like ``SharingAPI``, but because ``sources()`` and the membership join
 expand into ``Source`` objects, the constructor also takes a narrow
-``list_sources`` callable (``client.sources.list``) — wired in ``client.py``
+``list_sources`` callable (``client.sources.list``) — wired in ``_client_assembly.py``
 after ``SourcesAPI`` is built (mirrors ``NotebooksAPI``). No ``LabelService``, no
 ``kind`` param, no artifact concepts — source labels only (see
 docs/design/source-labels/ §10).
@@ -41,7 +41,7 @@ class LabelsAPI:
 
     Usage::
 
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             labels = await client.labels.generate(nb)              # AI grouping
             mine = await client.labels.create(nb, "Papers", "\U0001f4c4")  # manual
             await client.labels.add_sources(nb, mine.id, [src_id])
@@ -50,7 +50,7 @@ class LabelsAPI:
     """
 
     def __init__(self, rpc: RpcCaller, *, list_sources: ListSources) -> None:
-        """``list_sources`` is ``client.sources.list`` (wired in ``client.py``
+        """``list_sources`` is ``client.sources.list`` (wired in ``_client_assembly.py``
         after the ``SourcesAPI`` is constructed) — needed for the
         membership→Source join in ``sources()``. Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""

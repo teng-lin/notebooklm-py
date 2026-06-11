@@ -356,8 +356,7 @@ class TestRegisterFileSource:
 
     @pytest.mark.asyncio
     async def test_register_file_source_extracts_id_from_nested_lists(self, sources_api, mock_core):
-        """Test that ID is extracted from arbitrarily nested lists."""
-        # The flexible parser should extract "source_id_123" from any nesting depth
+        """Test that ID is extracted from legacy singleton list envelopes."""
         mock_core.rpc_executor.rpc_call.return_value = [[["source_id_123"]]]
 
         result = await sources_api._register_file_source("nb_123", "test.pdf")
@@ -375,9 +374,8 @@ class TestRegisterFileSource:
 
     @pytest.mark.asyncio
     async def test_register_file_source_handles_leading_none_shape(self, sources_api, mock_core):
-        """Shape drift (#474): the new wrb.fr result_data starts with a None
-        element, so the legacy position-0 walk lands on None. The full-tree
-        scan should still find the UUID-shaped SOURCE_ID elsewhere.
+        """The trusted prefixed-singleton envelope path should unwrap the
+        UUID-shaped SOURCE_ID after the leading None.
         """
         uuid = "dc84ca28-2629-49ac-aec3-de45f0ec93e4"
         mock_core.rpc_executor.rpc_call.return_value = [None, [[[uuid]]]]
@@ -408,8 +406,9 @@ class TestRegisterFileSource:
     async def test_register_file_source_prefers_uuid_over_echoed_filename(
         self, sources_api, mock_core, filename, response, expected
     ):
-        """The extractor must skip the echoed filename and return the UUID,
-        regardless of where the filename sits in the structure (#474).
+        """The extractor must skip the echoed filename and return the paired UUID.
+
+        The filename provides context for the SOURCE_ID (#474).
         """
         mock_core.rpc_executor.rpc_call.side_effect = [
             [["", []]],
@@ -421,9 +420,9 @@ class TestRegisterFileSource:
 
     @pytest.mark.asyncio
     async def test_register_file_source_falls_back_to_non_uuid_string(self, sources_api, mock_core):
-        """Existing tests pass non-UUID IDs like 'src_pdf' — when no UUID
-        candidate is present, the extractor falls back to the first non-
-        filename string. Preserves backward compatibility with prior shapes.
+        """Legacy singleton envelopes still accept plausible id-like non-UUID strings.
+
+        This applies when no UUID candidate is present.
         """
         mock_core.rpc_executor.rpc_call.return_value = [[[["src_pdf"]]]]
 
@@ -542,8 +541,9 @@ class TestRegisterFileSource:
 
     @pytest.mark.asyncio
     async def test_register_file_source_walker_has_recursion_guard(self, sources_api, mock_core):
-        """A pathological deeply-nested response must not trigger
-        RecursionError — the depth guard caps recursion at ``max_depth=50``.
+        """A deeply-nested response must not trigger RecursionError.
+
+        The depth guard caps traversal at ``_SOURCE_ID_ENVELOPE_MAX_DEPTH``.
         """
         # 200-deep nest with a UUID at the bottom. Past the depth guard the
         # walker stops, so the UUID is unreachable and we raise — but we don't

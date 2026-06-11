@@ -16,20 +16,20 @@ so a headless caller can inject a silent / raising sink.
 **Shared core for two callers.** This is the single launch/capture/persist
 primitive used by BOTH:
 
-1. the existing **interactive** ``notebooklm login`` Playwright flow
-   (``interactive=True, headless=False`` — the only mode wired today); and
-2. a future **headless re-auth** layer (layer-3 auth recovery): when NotebookLM
-   cookies are fully dead but a persistent browser profile still holds a live
-   Google session, drive a *headless* browser to silently re-mint cookies.
+1. the interactive ``notebooklm login`` Playwright flow
+   (``interactive=True, headless=False`` - a human completes Google SSO in a
+   visible browser); and
+2. the layer-3 headless re-auth flow
+   (``interactive=False, headless=True``): when NotebookLM cookies are dead but
+   a persistent browser profile still holds a live Google session, drive a
+   headless browser to silently re-mint cookies.
 
-**Locked design decision for the future headless feature (inherited by P2).**
-Headless re-auth is EXPLICIT by default via
+Headless re-auth is explicit by default via
 ``client.refresh_auth(allow_headless=True)``; a mid-RPC auto-fire happens only
 when ``NOTEBOOKLM_HEADLESS_REAUTH=1`` is set in the environment. The
-``headless`` / ``interactive`` parameters and their branch points exist here so
-P2 can wire the headless arm without re-carving this core, but P1 ships
-refactor-only: the headless arm is an explicit guard
-(:func:`_reject_unsupported_mode`) and nothing changes for current callers.
+``headless`` / ``interactive`` parameters and their branch points are live for
+those two supported modes; any other combination is rejected by
+:func:`_reject_unsupported_mode`.
 
 ``playwright`` is imported lazily (function-local) so importing this module
 without the ``browser`` extra never fails — mirroring the deferral the CLI flow
@@ -72,9 +72,8 @@ class BrowserCaptureIO(Protocol):
     Note: :func:`run_browser_capture` itself never calls ``run_async`` — only
     the adapter's post-capture ``repair_playwright_account_metadata`` does.
     ``run_async`` stays on this Protocol purely to keep it shape-compatible with
-    ``LoginIO`` so one concrete sink satisfies both layers; a future
-    ``BrowserCaptureIO`` impl that never reaches account-metadata repair may
-    supply a trivial ``run_async``.
+    ``LoginIO``. Non-interactive sinks that never reach account-metadata repair
+    can provide a trivial or loudly-failing implementation.
     """
 
     def emit(self, *args: Any, **kwargs: Any) -> None: ...
@@ -433,8 +432,8 @@ def _reject_unsupported_mode(*, headless: bool, interactive: bool, io: BrowserCa
 
     * ``interactive=True, headless=False`` — the interactive ``notebooklm
       login`` flow (a human completes the Google SSO in a visible browser).
-    * ``interactive=False, headless=True`` — the layer-3 headless re-auth flow
-      (P2): an unattended browser harvests a still-live Google session from the
+    * ``interactive=False, headless=True`` - the layer-3 headless re-auth flow:
+      an unattended browser harvests a still-live Google session from the
       persistent profile, with NO human to wait on.
 
     Any other combination (interactive + headless, or non-interactive +
@@ -469,15 +468,13 @@ def run_browser_capture(
 ) -> CaptureResult:
     """Launch a browser, capture + filter + persist NotebookLM storage state.
 
-    The neutral core shared by the interactive CLI login and the future headless
-    re-auth layer. Imports Playwright lazily (``io.fail(1)`` + install hint on
-    ImportError), opens a persistent context against ``plan.browser_profile``,
-    retries navigation on transient connection errors, waits for login (in the
-    interactive arm), pins ``.google.com`` cookies, applies the cookie-domain
-    allowlist, and atomically writes ``storage_state.json``. Returns a
-    :class:`CaptureResult` carrying the final page HTML so the caller can repair
-    account metadata. ``io`` carries every presentation / exit / async-runner
-    side effect; presentation/interactive niceties stay in the adapter.
+    The neutral core shared by the interactive CLI login and the layer-3
+    headless re-auth profile-launch path. Imports Playwright lazily
+    (``io.fail(1)`` + install hint on ImportError), opens a persistent context
+    against ``plan.browser_profile``, retries navigation on transient connection
+    errors, waits for login in the interactive arm, classifies the landing in
+    the headless arm, pins ``.google.com`` cookies, applies the cookie-domain
+    allowlist, and atomically writes ``storage_state.json``.
 
     The chromium pre-flight (``playwright install``) is intentionally NOT run
     here — it is a CLI-install concern owned by the adapter, run before this

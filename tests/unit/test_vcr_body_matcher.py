@@ -38,10 +38,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-# Load ``tests/vcr_config.py`` by file path. ``tests/`` is not a package
-# (no ``__init__.py``) so ``from tests.vcr_config import ...`` only works
-# when the repo root happens to be on ``sys.path``. Loading by file path
-# mirrors the established idiom in ``tests/unit/test_vcr_config.py``.
+# Load ``tests/vcr_config.py`` by file path to keep the dependency localized to
+# this test module.
 _TESTS_DIR = Path(__file__).resolve().parent.parent
 
 

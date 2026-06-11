@@ -283,7 +283,7 @@ def _assemble_client(
     # compatibility wrapper. The executor satisfies the
     # ``RpcCaller`` Protocol and is the same instance the feature
     # APIs receive (``internals.executor`` is shared with
-    # ``SourcesAPI`` / ``NotebooksAPI`` / ``ArtifactsRuntimeAdapter``
+    # ``SourcesAPI`` / ``NotebooksAPI`` / ``ArtifactsAPI``
     # / ``ChatAPI`` / etc., so a test that swaps the executor's
     # ``rpc_call`` sees the swap on every feature consumer).
     client._rpc_executor = internals.executor

@@ -141,8 +141,10 @@ def wait_polling_options(
 ) -> Callable[[FC], FC]:
     """Bundle the shared ``--timeout`` / ``--interval`` polling flags.
 
-    Used by every long-running CLI command so the flag surface stays uniform
-    across ``generate <kind> --wait``, ``artifact wait``, and ``source wait``.
+    Used by the generate/artifact/source polling commands so their flag surface
+    stays uniform across ``generate <kind> --wait``, ``artifact wait``, and
+    ``source wait``. ``research wait`` declares its own flags but mirrors the
+    same positive-interval validation.
     Returns a decorator so each call site can supply its own historical
     defaults without diverging on flag name or help text.
 
@@ -226,8 +228,8 @@ def multi_source_option(f: FC) -> FC:
     Multi-valued, optional ``--source`` flag that collects source IDs into a
     ``source_ids`` tuple (matches the ``multiple=True`` shape used by every
     ``generate`` subcommand). Distinct from
-    :func:`source_option`, which is single-valued and required (used by
-    ``download source-content`` and friends).
+    :func:`source_option`, which is single-valued and required for callers that
+    need exactly one source ID.
 
     Tab completion follows the same notebook-resolution rules as
     :func:`source_option`.
@@ -402,7 +404,7 @@ def list_options(f: FC) -> FC:
 #
 # ``alias_command`` lives here rather than in ``cli.helpers`` because
 # ``cli.helpers`` is constrained to a compatibility-facade surface (see
-# ``tests/unit/test_cli_boundary.py::test_helpers_remains_compatibility_facade``);
+# ``tests/_guardrails/test_cli_boundary.py::test_helpers_remains_compatibility_facade``);
 # new implementations must own their module. ``options.py`` is the closest
 # fit: it is already the shared Click-surface utility module that command
 # modules import (for ``notebook_option``, ``json_option``, etc.), so adding

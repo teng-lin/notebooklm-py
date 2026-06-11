@@ -12,8 +12,7 @@ mutation prologue, and a URL builder that read
 CSRF and the URL's ``f.sid`` from different generations on the wire.
 
 The fix — which is what the current code implements (see
-``AuthRefreshCoordinator.snapshot`` in
-``src/notebooklm/_runtime/auth.py:182-207`` and
+``src/notebooklm/_runtime/auth.py::AuthRefreshCoordinator.snapshot`` and
 ``RpcExecutor.build_url`` in ``src/notebooklm/_rpc_executor.py``, the
 canonical homes since PR #4b inlined the Session-level
 ``_snapshot`` / ``_build_url`` thin wrappers) — introduces a dedicated
@@ -41,7 +40,7 @@ the design composes correctly under concurrent load. It does not, on
 its own, surface a pre-fix torn read against an unfixed code base —
 the original hazard (a URL builder reading ``self.auth`` live instead
 of consuming a frozen ``AuthSnapshot``) only materializes if a yield
-point slips into ``_perform_authed_post``'s prologue between snapshot
+point slips into the shared transport prologue between snapshot
 capture and request build, which is what the AST guards in
 ``tests/unit/test_concurrency_refresh_race.py`` lock down statically
 (``RpcExecutor.build_url`` is now AST-checked to consume the snapshot
@@ -131,44 +130,44 @@ def _extract_cookie_gen(cookie_header: str) -> int:
 async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
     """Fan 50 RPCs truly concurrently with a refresh, assert no torn triple.
 
-    Mechanism:
+        Mechanism:
 
-    - 50 ``rpc_call`` coroutines AND one refresh coroutine are dispatched
-      into a single ``asyncio.gather``. They all become ready at the
-      same time and the event loop schedules them onto the loop's task
-      queue together — there is no "first batch / second batch"
-      pre-serialization.
-    - The mock transport's handler captures the request and then yields
-      via ``asyncio.sleep(0)`` so the refresh task can interleave its
-      lock-acquired write block against any RPCs that are mid-
-      ``_perform_authed_post``. Each captured ``httpx.Request`` already
-      has its URL / body / cookie header frozen by the time the handler
-      runs (httpx builds the request synchronously before the transport
-      sees it), so the captured triple IS what crossed the wire.
-    - The refresh task is also dispatched via ``gather`` — same event-
-      loop scheduling as the RPCs. It acquires
-      ``_auth_snapshot_lock`` and writes csrf/sid/cookies atomically.
+        - 50 ``rpc_call`` coroutines AND one refresh coroutine are dispatched
+          into a single ``asyncio.gather``. They all become ready at the
+          same time and the event loop schedules them onto the loop's task
+          queue together — there is no "first batch / second batch"
+          pre-serialization.
+        - The mock transport's handler captures the request and then yields
+          via ``asyncio.sleep(0)`` so the refresh task can interleave its
+          lock-acquired write block against any RPCs that are mid-
+          ``RuntimeTransport.perform_authed_post``. Each captured ``httpx.Request`` already
+          has its URL / body / cookie header frozen by the time the handler
+          runs (httpx builds the request synchronously before the transport
+          sees it), so the captured triple IS what crossed the wire.
+        - The refresh task is also dispatched via ``gather`` — same event-
+          loop scheduling as the RPCs. It acquires
+          ``_auth_snapshot_lock`` and writes csrf/sid/cookies atomically.
 
-    The asserted invariant: for EVERY captured POST, the three
-    generation tags extracted from
-    ``(body's CSRF, URL's f.sid, Cookie header's SID)`` must agree.
+        The asserted invariant: for EVERY captured POST, the three
+        generation tags extracted from
+        ``(body's CSRF, URL's f.sid, Cookie header's SID)`` must agree.
 
-    Scope honestly: this test verifies the *new design works end-to-end
-    under concurrent load* — the lock serializes
-    ``AuthRefreshCoordinator.snapshot()`` reads with the refresh writes,
-    the snapshot consumer in ``RpcExecutor.build_url`` makes URL + body
-    share the same generation, and 50 concurrent RPCs
-    + 1 refresh produce 50 coherent captured triples. It does NOT, on
-    its own, surface the pre-fix torn read against an unfixed code
+        Scope honestly: this test verifies the *new design works end-to-end
+        under concurrent load* — the lock serializes
+        ``AuthRefreshCoordinator.snapshot()`` reads with the refresh writes,
+        the snapshot consumer in ``RpcExecutor.build_url`` makes URL + body
+        share the same generation, and 50 concurrent RPCs
+        + 1 refresh produce 50 coherent captured triples. It does NOT, on
+        its own, surface the pre-fix torn read against an unfixed code
     base — that requires a yield point between snapshot capture and
     request build (introduced via a future ``await`` slipping into the
-    prologue), which the AST guards
-    (``test_perform_authed_post_has_no_await_before_post_per_iteration``,
-    ``test_build_url_does_not_read_self_auth``,
-    ``test_snapshot_acquires_auth_snapshot_lock``) catch statically.
-    The three guards together form the regression net; this test is the
-    runtime smoke proof that the design composes correctly with real
-    concurrent traffic.
+    shared transport prologue), which the AST guards
+    (``test_kernel_post_terminal_has_no_await_before_post_per_attempt``,
+        ``test_build_url_does_not_read_self_auth``,
+        ``test_snapshot_acquires_auth_snapshot_lock``) catch statically.
+        The three guards together form the regression net; this test is the
+        runtime smoke proof that the design composes correctly with real
+        concurrent traffic.
     """
     fan_out = 50
 

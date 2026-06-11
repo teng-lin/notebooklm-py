@@ -1,9 +1,10 @@
 """Assert doc references into ``src/notebooklm`` stay fresh.
 
-Sibling to ``scripts/check_claude_md_freshness.py`` (which guards CLAUDE.md's
-module map). This gate turns the repo's "enforce, don't document" principle onto
-the *rest* of the docs: after the #1328 refactor promoted flat ``_*.py`` modules
-into subpackages (``_chat.py`` -> ``_chat/api.py``, ``_runtime_lifecycle.py`` ->
+Sibling to ``scripts/check_claude_md_freshness.py`` (which guards the
+``### Repository Structure`` map in ``docs/architecture.md``). This gate turns
+the repo's "enforce, don't document" principle onto the *rest* of the docs:
+after the #1328 refactor promoted flat ``_*.py`` modules into subpackages
+(``_chat.py`` -> ``_chat/api.py``, ``_runtime_lifecycle.py`` ->
 ``_runtime/lifecycle.py``, ...), ~25 stale flat references survived across the
 live docs because a hand audit and a scoped doc-sync PR both missed them. A gate
 is the only thing that makes that class of drift un-recurrable.
@@ -22,8 +23,8 @@ docs (``docs/**/*.md`` + root ``*.md`` MINUS the historical-prose docs —
 intentionally name historical modules in prose), every inline code span
 ```` `<ref>` ```` whose ``<ref>`` matches a ``src/notebooklm`` module shape MUST
 resolve to ``src/notebooklm/<ref>``. The rare intentional historical mention in
-a live doc is carried in :data:`_ALLOWLIST` (shrink-only). CLAUDE.md is covered
-by the sibling gate, so it is excluded here.
+a live doc is carried in :data:`_ALLOWLIST` (shrink-only). CLAUDE.md is excluded
+because it is an agent-instruction file, not part of the live docs set.
 
 The detector core (:func:`find_violations`) is pure and IO-free — it takes the
 already-read doc text plus a ``resolver(ref) -> bool`` — so the public test and
@@ -200,9 +201,10 @@ def _iter_docs(repo_root: Path):
     """Yield ``(path, relpath, is_live)`` for every doc the gate inspects.
 
     Docs = every ``docs/**/*.md`` plus every root-level ``*.md``. CLAUDE.md is
-    excluded (covered by the sibling gate). ``is_live`` is False for the
-    historical-prose docs (see :func:`_is_historical_prose`) so the inline check
-    skips them while the link check still applies.
+    excluded because it is an agent-instruction file, not part of the live docs
+    set. ``is_live`` is False for the historical-prose docs (see
+    :func:`_is_historical_prose`) so the inline check skips them while the link
+    check still applies.
     """
     docs_dir = repo_root / "docs"
     md_paths: list[Path] = []

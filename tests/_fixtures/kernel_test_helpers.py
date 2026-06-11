@@ -1,23 +1,22 @@
 """Test-only Kernel helpers for installing or replacing the live HTTP client.
 
-The retired ``Kernel.http_client`` setter (``src/notebooklm/_kernel.py``,
-removed in the same PR as this module's introduction — see
-``docs/improvement.md`` §4.2) used to absorb every post-construction
-``core._kernel.http_client = …`` swap. Production code never used it;
-the only callers were tests that needed to substitute a
-``MockTransport``-backed client either before or after ``Session.open()``.
+The retired ``Kernel.http_client`` setter (``src/notebooklm/_kernel.py``; see
+the constructor-DI notes in ``src/notebooklm/_runtime/init.py``) used to absorb
+every post-construction ``core._kernel.http_client = ...`` swap. Production code
+never used it; tests used it to substitute a ``MockTransport``-backed client
+either before or after the client runtime opened.
 
-The preferred replacement is **constructor-time injection** via
-``Session(..., async_client_factory=…)`` — that factory is forwarded into
-``Kernel.__init__`` and applied by ``Kernel.open()`` so the live client
-carries the test transport from birth. Most call sites can migrate to
-the factory pattern.
+The preferred replacement is constructor-time injection via the test client
+shell's ``async_client_factory`` — that factory is forwarded into
+``Kernel.__init__`` and applied by ``Kernel.open()`` so the live client carries
+the test transport from birth. Most call sites can migrate to the factory
+pattern.
 
 A small minority of tests cannot use the factory cleanly:
 
-- Tests that need to install a stand-in client BEFORE invoking ``open()``
-  (e.g. arbitration tests that stub out ``Session.open`` entirely and
-  only need a non-``None`` client for ``close()`` to operate on).
+- Tests that need to install a stand-in client BEFORE invoking the runtime open
+  path (e.g. arbitration tests that stub out client opening entirely and only
+  need a non-``None`` client for ``close()`` to operate on).
 - Tests that need to swap the client AFTER ``open()`` returned its real
   transport but BEFORE driving the next operation.
 

@@ -203,7 +203,7 @@ def _make_client(transport: httpx.AsyncBaseTransport, auth_tokens) -> NotebookLM
     """Build a ``NotebookLMClient`` wired to ``transport``.
 
     Mirrors ``test_idempotency_create._make_client_with_transport``: stub
-    ``_core._kernel.http_client`` with a pre-built ``AsyncClient`` so the chat
+    ``client._collaborators.kernel.http_client`` with a pre-built ``AsyncClient`` so the chat
     POSTs route through the mock instead of opening a real socket.
     """
     client = NotebookLMClient(auth_tokens)

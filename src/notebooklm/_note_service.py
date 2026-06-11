@@ -60,9 +60,9 @@ class NoteRowKind(Enum):
     """Private classification of rows from ``GET_NOTES_AND_MIND_MAPS``.
 
     Not part of the public API — kept private so the wire-shape
-    classification can evolve without a SemVer hit. Further variants
-    (e.g. distinct treatment for saved-from-chat notes) can be added
-    without breaking external callers.
+    classification can evolve without a SemVer hit. ``SAVED_CHAT`` is reserved
+    for future reliable saved-from-chat detection; current saved-chat rows fall
+    back to ``NOTE``.
     """
 
     NOTE = "note"
@@ -183,10 +183,9 @@ class NoteService:
           slot at position 2 is the soft-delete sentinel.
         * mind-map: content payload parses as JSON with ``"children":``
           or ``"nodes":`` keys (regardless of legacy vs current shape).
-        * saved-chat: a plain note row whose metadata flags chat mode.
-          That metadata is not reliably present on the wire, so when we
-          cannot positively confirm chat mode we fall through to
-          ``NOTE`` rather than ``UNKNOWN`` (refactor-history.md §Risks).
+        * saved-chat: reserved for future reliable saved-from-chat detection.
+          Current saved-chat rows do not carry a stable discriminator, so they
+          fall through to ``NOTE`` rather than ``UNKNOWN``.
         * plain note: default for any other content-bearing row.
 
         Position knowledge (the deletion sentinel and the

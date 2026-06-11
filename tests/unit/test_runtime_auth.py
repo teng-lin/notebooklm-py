@@ -102,8 +102,8 @@ def test_locks_unallocated_at_construction() -> None:
     """Both locks are ``None`` at construction.
 
     Lazy allocation is load-bearing: ``asyncio.Lock()`` binds to the running
-    loop in some Python versions, and a ``Session`` (which constructs a
-    coordinator) is routinely instantiated outside a running loop.
+    loop in some Python versions, and ``NotebookLMClient`` routinely constructs
+    the coordinator outside a running loop.
     """
     coord = AuthRefreshCoordinator()
     assert coord._refresh_lock is None

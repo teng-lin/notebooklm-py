@@ -36,8 +36,8 @@ def _make_api():
         rpc_call=AsyncMock(),
         operation_scope=MagicMock(side_effect=lambda _label: _noop_operation_scope()),
     )
-    # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally
-    # (``_artifacts.py:217``); the fake core does not need to provide one.
+    # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally; the fake
+    # core does not need to provide one.
     mind_maps = MagicMock(spec=NoteBackedMindMapService)
     note_service = MagicMock(spec=NoteService)
     notebooks = MagicMock()

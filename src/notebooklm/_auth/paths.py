@@ -19,9 +19,9 @@ Three categories of names live here:
    ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL``, ``_NOTEBOOKLM_REFRESH_ATTEMPTED``)
    read by :func:`notebooklm.auth._run_refresh_cmd` and friends.
 2. **Keepalive env var** (``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE``) read by
-   :func:`notebooklm.auth._poke_session` / ``_rotate_cookies``. Physically
-   adjacent to the keepalive block in ``auth.py`` but conceptually an
-   environment-variable name, not a keepalive parameter, so it lives here.
+   :func:`notebooklm._auth.keepalive._poke_session` / ``_rotate_cookies``.
+   It is conceptually an environment-variable name, not a keepalive parameter,
+   so it lives here with the other auth env-var constants.
 3. **Path helpers** (:func:`_storage_state_lock_path`,
    :func:`_rotation_lock_path`) that compute sentinel sibling files alongside
    the user's storage-state path.

@@ -265,7 +265,7 @@ async def test_retry_inherits_parent_request_id():
             )
         return "ok"
 
-    # Real Session — the executor's open-client guard
+    # Real NotebookLMClient shell — the executor's open-client guard
     # requires a truthy http_client, so we ``open()`` and let the lifecycle
     # construct one against the default httpx transport. ``fake_impl`` is
     # monkeypatched onto ``_execute_once`` so no actual HTTP call fires;

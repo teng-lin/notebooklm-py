@@ -2,10 +2,11 @@
 
 Hides the two backends (note-backed JSON vs interactive studio-artifact) behind a
 single surface that dispatches each operation to the correct RPC family
-(issue #1256). Note-backed maps use the note RPCs (``GENERATE_MIND_MAP`` /
-``UPDATE_NOTE`` / ``DELETE_NOTE``); interactive maps use the studio-artifact RPCs
-(``CREATE_ARTIFACT`` type-4/variant-4 / ``RENAME_ARTIFACT`` / ``DELETE_ARTIFACT`` /
-``GET_INTERACTIVE_HTML``).
+(issue #1256). Note-backed generation uses ``GENERATE_MIND_MAP`` and then
+persists with note RPCs (``CREATE_NOTE`` / ``UPDATE_NOTE``); note-backed
+rename/delete use ``UPDATE_NOTE`` / ``DELETE_NOTE``. Interactive maps use the
+studio-artifact RPCs (``CREATE_ARTIFACT`` type-4/variant-4 /
+``RENAME_ARTIFACT`` / ``DELETE_ARTIFACT`` / ``GET_INTERACTIVE_HTML``).
 """
 
 from __future__ import annotations
@@ -399,12 +400,9 @@ class MindMapsAPI:
                 across namespaces (ADR-0019; issues #1255, #1291).
 
         .. note::
-            Unlike ``notebooks``/``sources``/``artifacts`` rename — whose
-            absence detection rides on the hydrate re-fetch and is therefore
-            skipped under ``return_object=False`` — mind maps detect absence via
-            a content/list lookup *before* dispatching the rename RPC, so this
-            raises ``MindMapNotFoundError`` on a missing target **even with**
-            ``return_object=False``.
+            Mind maps detect absence via a content/list lookup before
+            dispatching the rename RPC, matching the v0.8.0 existence-preflight
+            contract for sources/artifacts rename.
 
         .. versionchanged:: 0.7.0
             **Breaking change:** previously returned ``None`` even on success.
@@ -448,7 +446,7 @@ class MindMapsAPI:
     ) -> MindMap | None:
         """Re-fetch the renamed map (or skip when ``return_object=False``).
 
-        A ``None`` from ``get`` here means the map is absent — surface it as
+        A ``None`` from ``_get_or_none`` here means the map is absent — surface it as
         the same ``MindMapNotFoundError`` the missing-target dispatch paths
         raise rather than returning a stale/absent object. For paths that
         pre-validate the id (auto-detect and explicit-interactive) this is a
@@ -458,9 +456,8 @@ class MindMapsAPI:
         """
         if not return_object:
             return None
-        # ``_get_or_none`` (not the public ``get``) so the internal re-fetch
-        # never trips ``get()``'s own None-on-miss deprecation warning when the
-        # map vanished between rename and re-fetch (issue #1358).
+        # ``_get_or_none`` is used so the internal re-fetch can convert a
+        # vanished map into ``MindMapNotFoundError`` itself.
         mind_map = await self._get_or_none(notebook_id, mind_map_id)
         if mind_map is None:
             raise MindMapNotFoundError(mind_map_id)

@@ -129,7 +129,7 @@ def _output_error(
     Note:
         Also exported as the public alias :func:`output_error`. The leading
         underscore name pre-dates the public-CLI-boundary contract enforced by
-        ``tests/unit/test_cli_boundary.py``; sibling ``cli/*`` modules may
+        ``tests/_guardrails/test_cli_boundary.py``; sibling ``cli/*`` modules may
         import the private name directly (intra-package, level-1 relative
         import), but ``cli/services/*`` and any other layer that crosses up
         through ``..error_handler`` must use the public alias to stay on the
@@ -150,7 +150,7 @@ def _output_error(
 #: Public alias for :func:`_output_error` — see the function docstring for the
 #: rationale. ``cli/services/*`` and other layers that must cross the CLI
 #: package boundary import this name to stay on the public side of the
-#: boundary contract enforced by ``tests/unit/test_cli_boundary.py``.
+#: boundary contract enforced by ``tests/_guardrails/test_cli_boundary.py``.
 output_error = _output_error
 
 

@@ -46,7 +46,7 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 
 
 # ---------------------------------------------------------------------------
-# Constructor-DI seams (``docs/improvement.md`` §4.1 + §4.2)
+# Constructor-DI seams (``src/notebooklm/_runtime/init.py`` + docs/architecture.md)
 #
 # These pin tests guard the post-refactor wiring shape so a future
 # refactor cannot silently re-introduce the retired module-level
@@ -60,18 +60,18 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
     """``compose_client_internals`` MUST expose the four constructor-DI seams.
 
     Stage B1 PR 2 of the post-refactoring plan moved the composition
-    root out of ``Session.__init__`` into
+    root out of ``NotebookLMClient.__init__`` into
     ``notebooklm._runtime.init.compose_client_internals``. The seams live
     on the helper (and on the canonical test builder
     ``build_client_shell_for_tests``), NOT on ``NotebookLMClient.__init__``
     (which preserves the production surface).
 
-    The seams replace the retired module-level late-binding wrappers
-    (see ``docs/improvement.md`` §4.1) and the retired
-    ``Kernel.http_client`` setter (§4.2). Each must be keyword-only and
-    default to ``None`` so the helper can resolve the canonical seam via
-    a fresh module-attribute lookup at construction time (preserving
-    pre-construction monkeypatch propagation).
+    The seams replace the retired module-level late-binding wrappers and the
+    retired ``Kernel.http_client`` setter. Each must be keyword-only and default
+    to ``None`` so the helper can resolve the canonical seam via a fresh
+    module-attribute lookup at construction time (preserving pre-construction
+    monkeypatch propagation). See ``docs/architecture.md`` for the ClientSeams
+    and Kernel entries.
     """
     import inspect
 
@@ -97,10 +97,10 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
 
     The ``RpcExecutor`` resolves ``decode_response`` / ``is_auth_error`` /
     ``sleep`` through closures over ``ClientSeams`` etc., so that
-    tests which rebind ``session._seams.decode_response = stub`` after
-    ``NotebookLMClient.__init__`` (which eagerly builds the executor via
-    the ``rpc_executor`` accessor wired into sub-APIs in Wave 7) still take
-    effect. This test pins both halves: constructor-injected callables
+    tests which rebind ``client._seams.decode_response = stub`` after
+    ``NotebookLMClient.__init__`` (which binds ``client._rpc_executor`` through
+    ``compose_client_internals`` during assembly) still take effect. This test
+    pins both halves: constructor-injected callables
     reach the executor, AND post-construction rebinds also take effect.
     """
     from notebooklm.auth import AuthTokens
@@ -145,7 +145,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
 
 
 def test_kernel_http_client_is_read_only_property() -> None:
-    """``Kernel.http_client`` MUST have no setter (``docs/improvement.md`` §4.2)."""
+    """``Kernel.http_client`` MUST have no setter."""
     from notebooklm._kernel import Kernel
 
     descriptor = Kernel.__dict__["http_client"]
@@ -153,7 +153,7 @@ def test_kernel_http_client_is_read_only_property() -> None:
     assert descriptor.fset is None, (
         "Kernel.http_client must remain read-only; the retired setter was a "
         "test-injection seam that constructor-time async_client_factory "
-        "injection now replaces (see docs/improvement.md §4.2)."
+        "injection now replaces (see docs/architecture.md Kernel wiring)."
     )
 
 

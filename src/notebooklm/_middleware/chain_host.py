@@ -20,16 +20,16 @@ itself:
 This module is intentionally narrow:
 
 * It does NOT know about metrics, the kernel, the http client, the
-  RPC semaphore, or the auth snapshot. Those live on :class:`NotebookLMClient`
-  (the auth-snapshot host) and the collaborator bundle.
-* The host has no back-reference to :class:`NotebookLMClient` — it is reachable
-  from :class:`NotebookLMClient` (via ``self._chain_host``) but not the other
-  way around. This avoids a client ↔ transport cycle, per ADR-0014 Rule 4.
+  RPC semaphore, or the auth snapshot. Those live in the collaborator
+  bundle and in explicit provider lambdas wired by the composition root.
+* The host has no back-reference to :class:`NotebookLMClient` — the client
+  reaches it through ``self._composed.chain_host``, but not the other way
+  around. This avoids a client ↔ transport cycle, per ADR-0014 Rule 4.
 
 The transport / wire helpers take the host directly via the
 ``chain_host`` parameter; the chain reads ``chain_host._<attr>`` on
 every attempt. Tests that need a mid-flight mutation rebind on the
-host (``core._chain_host._<attr> = ...``); there are no client-side
+host (``core._composed.chain_host._<attr> = ...``); there are no client-side
 forwards in front of the host.
 """
 
@@ -104,7 +104,7 @@ class MiddlewareChainHost:
         """Middleware-chain leaf — forwards to :meth:`RuntimeTransport.terminal`.
 
         Tests that install a fake terminal rebind directly on the host
-        (``core._chain_host._authed_post_chain_terminal = fake_terminal``)
+        (``core._composed.chain_host._authed_post_chain_terminal = fake_terminal``)
         and rebuild the chain around the new terminal.
 
         Raises :class:`RuntimeError` if the transport is not yet bound.

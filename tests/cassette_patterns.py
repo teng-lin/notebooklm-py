@@ -13,8 +13,8 @@ complementary halves:
    match membership in ``SCRUB_PLACEHOLDERS`` (closing a previous
    "starts with S" character-class hole). Before this consolidation the
    same patterns lived as an inline ``SENSITIVE_PATTERNS`` list in
-   :mod:`tests.vcr_config` and were duplicated piecemeal in
-   ``tests/check_cassettes_clean.sh`` — that drift risk is what motivated
+   :mod:`tests.vcr_config` and were duplicated piecemeal in the former
+   ``tests/check_cassettes_clean.sh`` shell guard — that drift risk is what motivated
    the consolidation.
 
 2. **Chunked-response byte-count re-derivation.** The
@@ -155,10 +155,10 @@ def recompute_chunk_prefix(body: str) -> str:
     the 17-char ``SCRUBBED_USER_ID`` placeholder), the advertised byte-count no
     longer matches the actual payload length, which causes:
 
-    1. ``test_cassette_shapes.py`` byte-count assertion failures.
+    1. ``tests/_guardrails/test_cassette_shapes.py`` byte-count assertion failures.
     2. ``decoder.py`` to emit ``Chunk at line N declares X bytes but payload is
-       Y bytes`` DEBUG logs during replay (the JSON is still parsed — see the
-       tolerance block at decoder.py:217-237 — but well-formed cassettes
+       Y bytes`` DEBUG logs during replay (the JSON is still parsed — see
+       ``notebooklm.rpc.decoder.parse_chunked_response`` — but well-formed cassettes
        shouldn't trip the log at all).
 
     This helper walks the body, identifies every digit-only "header" line that
@@ -1576,7 +1576,8 @@ def build_synthetic_error_response(
         body = (
             b'{"error": {"code": 429, "message": "Rate limited", "status": "RESOURCE_EXHAUSTED"}}'
         )
-        # Retry-After is honored by the 429 retry loop in ``_perform_authed_post``.
+        # Retry-After is honored by the 429 retry middleware in the shared
+        # authed transport.
         # Setting a small value keeps the recording-time loop short.
         headers = {
             "Content-Type": "application/json; charset=UTF-8",

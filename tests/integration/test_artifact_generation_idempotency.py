@@ -16,7 +16,7 @@ This file exercises that classification end-to-end:
 
 1. The registry classifies both methods as PROBE_THEN_CREATE.
 2. A 503 on the first POST surfaces as a single ``ServerError`` to the
-   caller — i.e. ``_perform_authed_post`` does NOT silently re-POST.
+   caller — i.e. the shared transport does NOT silently re-POST.
    This is the "commit-lost-response" safety property.
 3. Happy-path calls still return the artifact / mind-map cleanly.
 
@@ -117,7 +117,7 @@ def _make_client_with_transport(
 ) -> NotebookLMClient:
     """Construct a ``NotebookLMClient`` wired to a mock transport.
 
-    Bypasses the real ``Session.open()`` path (which would build a real
+    Bypasses the real ``ClientLifecycle.open()`` path (which would build a real
     ``httpx.AsyncClient`` + cookie jar) by stubbing in a pre-built
     ``AsyncClient`` whose transport is the test's mock. Mirrors the helper
     in ``tests/integration/concurrency/test_idempotency_create.py``.
@@ -198,8 +198,8 @@ class TestRegistryClassification:
 async def test_create_artifact_503_does_not_re_post(auth_tokens) -> None:
     """A 503 on CREATE_ARTIFACT surfaces as ServerError after a single POST.
 
-    Before classification: the inner ``_perform_authed_post`` retry loop
-    would re-POST CREATE_ARTIFACT on the 5xx, duplicating the
+    Before classification: the shared transport retry loop would re-POST
+    CREATE_ARTIFACT on the 5xx, duplicating the
     server-side commit (the original audit P0-3 failure mode).
 
     After classification (PROBE_THEN_CREATE):
@@ -241,8 +241,9 @@ async def test_create_artifact_503_does_not_re_post(auth_tokens) -> None:
 async def test_create_artifact_429_does_not_re_post(auth_tokens) -> None:
     """A 429 on CREATE_ARTIFACT surfaces as ``RateLimitError`` after one POST.
 
-    ``_perform_authed_post`` shares the same ``disable_internal_retries``
-    short-circuit for both 429 and 5xx paths through ``RetryMiddleware``.
+    ``RuntimeTransport.perform_authed_post`` shares the same
+    ``disable_internal_retries`` short-circuit for both 429 and 5xx paths
+    through ``RetryMiddleware``.
     The PROBE_THEN_CREATE
     classification must therefore prevent rate-limit retries from
     silently re-issuing a committed-but-throttled-response request.

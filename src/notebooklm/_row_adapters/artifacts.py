@@ -102,10 +102,8 @@ class ArtifactRow:
     )
 
     # ---- Top-level required positions ------------------------------------
-    # These use length guards (not ``safe_index``) so short rows continue
-    # to receive sensible defaults in BOTH soft and strict modes — that
-    # matches the historical ``Artifact.from_api_response`` contract and
-    # keeps minimal rows like ``["id", "title", 1, None, 3]`` working.
+    # These use length guards (not ``safe_index``) so short rows continue to
+    # receive sensible defaults under the current strict-only drift policy.
 
     @property
     def id(self) -> str:
@@ -160,12 +158,12 @@ class ArtifactRow:
         Returns ``None`` when:
 
         * position 9 is absent (short row), or
-        * descent through ``[1][0]`` returns ``None`` (soft-mode drift), or
+        * descent through ``[1][0]`` returns an actual ``None`` leaf, or
         * the resulting value is not an ``int``.
 
-        Raises :class:`UnknownRPCMethodError` in strict mode when position
-        9 is present but its inner shape does not match — that is the
-        signal that Google reshaped the options block.
+        Raises :class:`UnknownRPCMethodError` when position 9 is present but
+        its inner shape does not match — that is the signal that Google reshaped
+        the options block.
         """
         if len(self._raw) <= self._OPTIONS_POS:
             return None
@@ -198,7 +196,7 @@ class ArtifactRow:
         Returns ``None`` when:
 
         * position 15 is absent (short row), or
-        * descent through ``[0]`` returns ``None`` (soft-mode drift), or
+        * descent through ``[0]`` returns an actual ``None`` leaf, or
         * the resulting value is not numeric.
         """
         if len(self._raw) <= self._TIMESTAMP_POS:

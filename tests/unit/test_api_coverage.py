@@ -48,7 +48,7 @@ class TestNewEnums:
 
 
 class TestConfigureChat:
-    """Tests for configure_chat method."""
+    """Tests for ChatAPI.configure."""
 
     @pytest.fixture
     def rpc_call(self):
@@ -75,7 +75,7 @@ class TestConfigureChat:
 
     @pytest.mark.asyncio
     async def test_configure_chat_default(self, chat, rpc_call):
-        """Test configure_chat with default settings."""
+        """Test configure with default settings."""
         await chat.configure("notebook_123")
 
         rpc_call.assert_called_once()
@@ -88,7 +88,7 @@ class TestConfigureChat:
 
     @pytest.mark.asyncio
     async def test_configure_chat_custom_prompt(self, chat, rpc_call):
-        """Test configure_chat with custom prompt."""
+        """Test configure with custom prompt."""
         await chat.configure(
             "notebook_123",
             goal=ChatGoal.CUSTOM,
@@ -103,7 +103,7 @@ class TestConfigureChat:
 
     @pytest.mark.asyncio
     async def test_configure_chat_custom_requires_prompt(self, chat):
-        """Test configure_chat raises error when CUSTOM goal without prompt."""
+        """Test configure raises when CUSTOM goal has no prompt."""
         from notebooklm.exceptions import ValidationError
 
         with pytest.raises(ValidationError, match="custom_prompt is required"):
@@ -114,7 +114,7 @@ class TestConfigureChat:
 
     @pytest.mark.asyncio
     async def test_configure_chat_learning_guide(self, chat, rpc_call):
-        """Test configure_chat with learning guide mode."""
+        """Test configure with learning-guide mode."""
         await chat.configure(
             "notebook_123",
             goal=ChatGoal.LEARNING_GUIDE,
@@ -128,7 +128,7 @@ class TestConfigureChat:
 
 
 class TestGetSourceGuide:
-    """Tests for get_source_guide method."""
+    """Tests for SourcesAPI.get_guide."""
 
     def _make_sources(self, return_value):
         """Build a ``SourcesAPI`` with the RPC seam injected at construction.
@@ -145,7 +145,7 @@ class TestGetSourceGuide:
 
     @pytest.mark.asyncio
     async def test_get_source_guide_parses_response(self):
-        """Test get_source_guide correctly parses API response."""
+        """Test get_guide correctly parses API response."""
         # Real API returns 3 levels of nesting: [[[null, [summary], [[keywords]], []]]]
         mock_response = [
             [
@@ -167,7 +167,7 @@ class TestGetSourceGuide:
 
     @pytest.mark.asyncio
     async def test_get_source_guide_handles_empty(self):
-        """Test get_source_guide handles empty response."""
+        """Test get_guide handles an empty response."""
         sources, rpc_call = self._make_sources(None)
 
         result = await sources.get_guide("notebook_123", "source_456")
@@ -178,11 +178,11 @@ class TestGetSourceGuide:
 
 
 class TestGetSuggestedReportFormats:
-    """Tests for get_suggested_report_formats method."""
+    """Tests for ArtifactsAPI.suggest_reports."""
 
     @pytest.mark.asyncio
     async def test_get_suggested_report_formats_parses_response(self):
-        """Test get_suggested_report_formats correctly parses API response."""
+        """Test suggest_reports correctly parses API response."""
         # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
         mock_response = [
             [
@@ -211,11 +211,11 @@ class TestGetSuggestedReportFormats:
 
 
 class TestAddSourceDrive:
-    """Tests for add_source_drive method."""
+    """Tests for SourcesAPI.add_drive."""
 
     @pytest.mark.asyncio
     async def test_add_source_drive_payload_structure(self):
-        """Test add_source_drive creates correct payload."""
+        """Test add_drive creates the expected payload."""
         rpc_call = AsyncMock(return_value=[["source_id_123"]])
         core = make_fake_core(rpc_call=rpc_call)
         sources = SourcesAPI(core.rpc_executor, uploader=MagicMock())
@@ -243,11 +243,11 @@ class TestAddSourceDrive:
 
 
 class TestGetNotebookDescription:
-    """Tests for get_notebook_description method."""
+    """Tests for NotebooksAPI.get_description."""
 
     @pytest.mark.asyncio
     async def test_get_notebook_description_parses_response(self):
-        """Test get_notebook_description parses full response."""
+        """Test get_description parses the full response."""
         mock_response = [
             [
                 ["This notebook explores **AI** and **machine learning**."],

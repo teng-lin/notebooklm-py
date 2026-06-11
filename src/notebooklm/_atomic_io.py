@@ -1,10 +1,10 @@
 """Atomic JSON write helpers.
 
-Shared by :mod:`notebooklm.auth` and :mod:`notebooklm.cli.session_cmd` so both
-write sites for ``storage_state.json`` use the same crash- and concurrency-safe
-pattern (NamedTemporaryFile in the same directory, ``chmod 0o600``, ``flush`` +
-``fsync`` of the temp file, ``os.replace``, then a best-effort ``fsync`` of the
-parent directory).
+Shared by auth storage/account/capture writers and public CLI helpers (via
+:mod:`notebooklm.io`) so JSON state writes use the same crash- and
+concurrency-safe pattern (NamedTemporaryFile in the same directory,
+``chmod 0o600``, ``flush`` + ``fsync`` of the temp file, ``os.replace``, then a
+best-effort ``fsync`` of the parent directory).
 
 The write is both **rename-atomic** (a reader sees either the old or the new
 file, never a partial one) and, on POSIX, **fsync-durable** (the bytes are

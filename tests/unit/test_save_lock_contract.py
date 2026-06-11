@@ -60,11 +60,11 @@ def _make_core(tmp_path: Path, *, cookie_saver=None) -> NotebookLMClient:
 async def test_save_lock_acquired_off_event_loop_thread(
     tmp_path: Path,
 ) -> None:
-    """The thread that holds ``_save_lock`` MUST NOT be the event-loop thread.
+    """The thread that holds ``CookiePersistence.save_lock`` MUST NOT be the loop thread.
 
     We spy on ``save_cookies_to_storage`` — which the production ``_save()``
     closure calls from inside ``with lock:`` — and record the thread it runs
-    on. If a future refactor accidentally moves the ``with self._save_lock:``
+    on. If a future refactor accidentally moves the ``with lock:``
     onto the loop thread (e.g. by inlining the closure into ``save_cookies``
     without ``asyncio.to_thread``), the spy will see the loop thread holding
     the lock, and this assertion will fail.
@@ -79,7 +79,7 @@ async def test_save_lock_acquired_off_event_loop_thread(
     def spy(jar, path, **kwargs):  # type: ignore[no-untyped-def]
         # ``save_cookies_to_storage`` is called from inside ``with lock:``
         # in ``_save()``. Whichever thread runs this spy is, by definition,
-        # the thread currently holding ``_save_lock``.
+        # the thread currently holding ``CookiePersistence.save_lock``.
         observed["lock_held"] = core_ref[
             "core"
         ]._collaborators.cookie_persistence.save_lock.locked()
@@ -121,12 +121,12 @@ async def test_save_lock_acquired_off_event_loop_thread(
 async def test_save_lock_does_not_block_event_loop(
     tmp_path: Path,
 ) -> None:
-    """While ``_save_lock`` is held by a worker thread, the event loop must
+    """While ``CookiePersistence.save_lock`` is held by a worker, the event loop must
     remain responsive.
 
     Direct proof of the no-priority-inversion property: hold the worker
     inside ``save_cookies_to_storage`` (which is called from inside
-    ``with self._save_lock:``) and concurrently schedule loop work. If the
+    ``with lock:``) and concurrently schedule loop work. If the
     loop were blocked on the lock, the heartbeat coroutine wouldn't run
     until the worker released; with the contract intact, the heartbeat
     observes the lock IS held while the loop is still scheduling.
@@ -137,7 +137,7 @@ async def test_save_lock_does_not_block_event_loop(
 
     def spy(jar, path, **kwargs):  # type: ignore[no-untyped-def]
         in_save.set()
-        # Hold the worker thread (and thus _save_lock) until the loop has
+        # Hold the worker thread (and thus CookiePersistence.save_lock) until the loop has
         # demonstrated it can still schedule coroutines. Bounded to avoid a
         # hung test if the contract is ever violated and the loop deadlocks.
         assert release_save.wait(timeout=5.0), (
@@ -197,7 +197,7 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
 
     class _Visitor(ast.NodeVisitor):
         """Walk the module, tracking the enclosing function chain so any
-        ``with self._save_lock:`` site can be attributed to the function
+        ``with lock:`` site can be attributed to the function
         that contains it (lets us check whether it sits inside ``_save``).
         """
 
@@ -232,7 +232,7 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
 
         def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
             for item in node.items:
-                # An ``async with self._save_lock:`` would itself be a contract
+                # An ``async with CookiePersistence.save_lock:`` would itself be a contract
                 # violation (lock is sync), so flag it the same way.
                 self._record_if_save_lock(item.context_expr)
             self.generic_visit(node)

@@ -7,8 +7,8 @@ Click handler stays a thin orchestrator over this service.
 This module is the **CLI adapter** over the transport-neutral browser-capture
 core in :mod:`notebooklm._auth.browser_capture` (ADR-0021): the neutral
 launch -> navigate -> capture -> filter -> persist sequence lives in the
-``_auth`` core, reachable by the client runtime and by a future headless
-re-auth layer; the interactive / presentation concerns — the chromium install
+``_auth`` core, reachable by the client runtime and by the headless re-auth
+layer; the interactive / presentation concerns — the chromium install
 pre-flight, flag-conflict validation, path preparation, account-metadata
 repair, and the human-readable error hints — stay here. The neutral helpers and
 constants the core owns (``run_browser_capture``,

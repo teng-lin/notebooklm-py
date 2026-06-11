@@ -51,9 +51,8 @@ SourceAddResearchOutcome = Literal[
     "unknown_status",
 ]
 
-# Pinned at 5 seconds to match the legacy ``cli/source.py`` poll cadence
-# and the explanatory comment in the original ``source add-research``
-# handler. ``timeout`` is passed straight through as the wait budget; see
+# Pinned at 5 seconds to preserve the historical ``source add-research`` poll
+# cadence. ``timeout`` is passed straight through as the wait budget; see
 # :func:`execute_source_add_research`.
 _POLL_INTERVAL_S = 5
 

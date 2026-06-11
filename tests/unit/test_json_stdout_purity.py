@@ -908,12 +908,10 @@ def _success_covered_paths() -> set[tuple[str, ...]]:
 def _load_error_cases() -> list[tuple[str, list[str], object]]:
     """Side-load ``JSON_ERROR_CASES`` from the sibling test file.
 
-    ``tests/`` is collected by pytest but not exposed as a Python package
-    (no ``__init__.py``), so a plain ``from tests.unit.test_json_error_exit
-    import JSON_ERROR_CASES`` fails at runtime. Load the sibling module by
-    file path instead — this also keeps the import lazy so a parse error in
-    the sibling file surfaces here as a clear inventory-test failure
-    instead of polluting this module's collection.
+    Load by file path so this inventory check stays lazy and gets a fresh
+    sibling module instance; a parse error in the sibling file surfaces here as
+    a clear inventory-test failure instead of polluting this module's
+    collection.
     """
     import importlib.util
 

@@ -2,7 +2,7 @@
 
 These helpers let middleware tests build a chain with
 ``[middleware_under_test, ...]``, call it with a benign ``RpcRequest``, and
-assert behavior without opening a real ``Session`` or HTTP client.
+assert behavior without opening a real client/runtime HTTP stack.
 
 Three helpers live here:
 

@@ -1,6 +1,6 @@
 """Enforce v0.5.0 deprecation removals.
 
-This file is **passive at every version < 0.5.0**: the 6 removal-assertion
+This file is **passive at every version < 0.5.0**: the removal-assertion
 tests are skipped automatically and only the version-parse smoke test runs.
 Once ``notebooklm.__version__`` parses to ``Version("0.5.0")`` or higher,
 every gated test activates and asserts that the

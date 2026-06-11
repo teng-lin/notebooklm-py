@@ -22,7 +22,7 @@ When a builder IS wired AND the env var resolves to ``"429"`` / ``"5xx"`` /
 every chain invocation short-circuits with a synthetic :class:`httpx.Response`
 built by the injected callable (canonical implementation:
 ``tests/cassette_patterns.build_synthetic_error_response``) — the chain leaf
-(``_perform_authed_post``) is NOT called. The same env-var startup guard
+(``RuntimeTransport.terminal``) is NOT called. The same env-var startup guard
 (:func:`_error_injection._refuse_synthetic_error_outside_test_context`)
 still fires at client construction (``NotebookLMClient.__init__``) so a leaked
 deploy env never reaches production wiring; the builder-not-wired default is the

@@ -11,9 +11,9 @@ in one thread and then hands it to another thread's loop hits opaque
 httpx, or — worse — a hang on a never-acquired lock that belongs to
 a dead loop.
 
-Post-fix: ``NotebookLMClient.open()`` captures
-``asyncio.get_running_loop()`` on the lifecycle (read via
-``core._collaborators.lifecycle.get_bound_loop()``) and
+Post-fix: ``NotebookLMClient.__aenter__()`` calls ``ClientLifecycle.open()``,
+which captures ``asyncio.get_running_loop()`` on the lifecycle (read via
+``core._collaborators.lifecycle.get_bound_loop()``), and
 ``RuntimeTransport.perform_authed_post`` asserts the running loop matches
 via a cheap ``is`` comparison through ``assert_bound_loop``. On mismatch
 we raise an actionable ``RuntimeError`` at the call site instead of
@@ -31,11 +31,11 @@ The test exercises the surgical contract:
    confirm 100 fan-out calls succeed (no false positive on the
    ``is`` comparison).
 3. **No binding before open()** — a freshly-constructed ``NotebookLMClient``
-   that has never been ``open()``ed has
-   ``core._collaborators.lifecycle.get_bound_loop() is None``; the check inside
-   ``RuntimeTransport.perform_authed_post`` already asserts
-   ``self._kernel.http_client is not None``, so an "unopened client"
-   caller sees the existing assertion error, not the loop guard.
+   that has never entered its context has
+   ``core._collaborators.lifecycle.get_bound_loop() is None``.
+   ``RuntimeTransport.perform_authed_post``'s loop check is a no-op while
+   unbound; the later kernel access raises the existing not-open error, not
+   the loop guard.
 
 Why this lives under ``tests/integration/concurrency/`` and not
 ``tests/unit/``: the regression requires a real ``httpx.AsyncClient``
@@ -82,13 +82,14 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Noteb
     """Open a ``NotebookLMClient`` and swap in the mock transport.
 
     Mirrors the documented pattern from ``test_harness_smoke.py``:
-    ``NotebookLMClient.open()`` builds its own ``httpx.AsyncClient`` and we
-    can't override the transport via the constructor. So we open
+    ``NotebookLMClient.__aenter__()`` calls ``ClientLifecycle.open()``, which
+    builds its own ``httpx.AsyncClient`` and we can't override the transport via
+    the constructor. So we open
     normally — which is the moment the loop affinity is captured —
     then close-and-replace the underlying client with one that routes
     through our recording transport. The replacement keeps
-    ``self._lifecycle.get_bound_loop()`` unchanged because we don't call
-    ``open()`` again.
+    ``core._collaborators.lifecycle.get_bound_loop()`` unchanged because we
+    don't enter the client again.
     """
     core = build_client_shell_for_tests(auth=_make_auth())
     await core.__aenter__()
@@ -114,8 +115,8 @@ def test_cross_loop_use_raises_actionable_runtime_error(
     Two independent ``asyncio.run`` invocations give us two genuinely
     distinct event loops in the same thread (each ``asyncio.run`` builds
     a fresh loop, runs to completion, then closes it). The ``is``
-    comparison in ``_perform_authed_post`` is what we care about — these
-    two loops are not the same object, so the guard must fire.
+    comparison in ``RuntimeTransport.perform_authed_post`` is what we care
+    about — these two loops are not the same object, so the guard must fire.
 
     Note: this test is intentionally *not* ``async def``. We need to own
     the two ``asyncio.run`` calls explicitly so they construct distinct
@@ -140,7 +141,7 @@ def test_cross_loop_use_raises_actionable_runtime_error(
     # below will construct. Both ``open`` and ``call_under_loop_b`` must
     # see two distinct loop objects via ``is``.
     async def call_under_loop_b() -> None:
-        # The guard fires inside ``_perform_authed_post``. ``rpc_call``
+        # The guard fires inside ``RuntimeTransport.perform_authed_post``. ``rpc_call``
         # wraps transport errors into ``RPCError``-family exceptions —
         # but our ``RuntimeError`` is not a transport error, so it
         # propagates unchanged.

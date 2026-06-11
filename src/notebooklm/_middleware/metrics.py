@@ -21,7 +21,7 @@ per logical RPC:
 The emit fires only when ``RPC_CONTEXT_RPC_METHOD`` is present in
 ``request.context``.
 Other code paths through the chain (e.g. the chat streaming path in
-``_chat.transport.send_authed_post``, which calls
+``_chat.transport.chat_aware_authed_post``, which calls
 ``RuntimeTransport.perform_authed_post`` directly without minting an
 ``RpcExecutor`` telemetry frame) leave the key absent and skip emission —
 so chat-side requests do not appear in the RPC counters or telemetry

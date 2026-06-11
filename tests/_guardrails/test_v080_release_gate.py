@@ -31,10 +31,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# Relative import: ``tests/_guardrails`` is a package (has ``__init__.py``), so pytest
-# imports this module as ``_guardrails.test_v080_release_gate`` with ``tests/`` — not
-# the repo root — on ``sys.path``. ``from tests._guardrails...`` therefore fails to
-# resolve under CI's prepend import mode; the sibling-relative form is correct.
+# Sibling-relative import keeps this guard independent of pytest import-mode
+# details and avoids depending on the absolute ``tests._guardrails`` package
+# name.
 from .test_v080_deprecation_coverage import (
     PROJECT_ROOT,
     SRC_ROOT,

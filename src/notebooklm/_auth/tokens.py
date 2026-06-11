@@ -40,7 +40,8 @@ class AuthTokens:
             .googleusercontent.com vs .google.com).
         authuser: Google ``authuser`` index this profile authenticates as.
             ``0`` (the default account) is used when no account metadata is
-            present in ``context.json`` — matching pre-multi-account behavior.
+            present in ``storage_state.json`` (or legacy sibling
+            ``context.json``), matching pre-multi-account behavior.
         account_email: Stable Google account identity for routing. When set,
             NotebookLM requests use it as the ``authuser`` value instead of the
             integer index, because Google account indices can change when other
@@ -249,7 +250,9 @@ def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
     Loads authentication cookies with the following precedence:
     1. Explicit path argument (from --storage CLI flag)
     2. NOTEBOOKLM_AUTH_JSON environment variable (inline JSON, no file needed)
-    3. File at $NOTEBOOKLM_HOME/storage_state.json (or ~/.notebooklm/storage_state.json)
+    3. Profile storage path from :func:`notebooklm.paths.get_storage_path`
+       (``$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json`` with legacy
+       home-root fallback for the default profile)
 
     Duplicate-name resolution follows
     :func:`notebooklm._auth.cookie_policy._auth_domain_priority`, matching
@@ -266,7 +269,8 @@ def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
 
     Raises:
         FileNotFoundError: If storage file doesn't exist (when using file-based auth).
-        ValueError: If required cookies (SID) are missing or JSON is malformed.
+        ValueError: If required cookies (``SID`` + ``__Secure-1PSIDTS``) are
+            missing, or if storage JSON is malformed.
 
     Example::
 

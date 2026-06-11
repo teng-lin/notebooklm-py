@@ -19,8 +19,7 @@ Specifically pinned here:
 * :meth:`ClientLifecycle.save_cookies` **invokes** the
   :class:`CookiePersistence` collaborator's ``save`` method with the right
   ``jar`` and ``path`` arguments AND with the ``save_cookies_to_storage``
-  value resolved from ``notebooklm._core`` at call time (so the monkeypatch
-  surface keeps working).
+  value resolved from ``notebooklm._auth.storage`` at call time.
 * The httpx ``AsyncClient`` **always uses httpx's default transport** —
   Tier-12 PR 12.6 lifted synthetic-error injection into the chain
   (:class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`)
@@ -571,13 +570,11 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
 
 
 def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
-    """Cross-loop reuse of a single :class:`Session` raises a clean
-    ``RuntimeError`` on the second loop's first authed POST.
+    """Cross-loop reuse of a single NotebookLMClient raises cleanly.
 
-    Reaches through the ``Session`` facade (rather than ``ClientLifecycle``
-    in isolation) because the guard lives in ``Session`` and only fires from
-    inside an authed POST. The test runs two separate
-    ``asyncio.run`` invocations to materialise two distinct loops.
+    The ``RuntimeError`` appears on the second loop's first authed POST. The
+    test runs two separate ``asyncio.run`` invocations to materialise two
+    distinct loops.
     """
 
     auth = AuthTokens(csrf_token="CSRF", session_id="SID", cookies={"SID": "v1"})
@@ -624,7 +621,7 @@ def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_keepalive_interval clamping (stays in _core.py preamble)
+# _resolve_keepalive_interval clamping
 # ---------------------------------------------------------------------------
 
 
@@ -633,8 +630,8 @@ def test_resolve_keepalive_interval_clamps_to_min_floor() -> None:
     ``min_interval`` — preserving the "accidentally rate-limiting Google's
     identity surface" guard the lifecycle inherits from the resolver.
 
-    The resolver stays in ``_core.py``'s module preamble per the master
-    plan; this test belongs alongside the lifecycle suite because the
+    The resolver now lives in ``notebooklm._runtime.helpers``; this test belongs
+    alongside the lifecycle suite because the
     clamped value is what the lifecycle stores in ``_keepalive_interval``.
     """
     # User asks for 1s — much lower than the 60s default floor.
@@ -699,20 +696,19 @@ def test_init_is_event_loop_agnostic() -> None:
 #
 # Three load-bearing properties pinned here:
 #
-# 1. ``_default_cookie_saver`` performs a LATE-BOUND ``_core`` lookup inside
-#    its function body. Monkeypatching ``notebooklm._core.save_cookies_to_storage``
-#    AFTER the wrapper exists must still affect the wrapper's behavior.
-#    Without late-binding, the 8+ existing tests that patch ``_core.save_*``
-#    silently lose their effect under the seam refactor.
+# 1. ``_default_cookie_saver`` performs a late-bound
+#    ``_auth.storage.save_cookies_to_storage`` lookup inside its function body.
+#    Monkeypatching the canonical storage seam AFTER the wrapper exists must
+#    still affect the wrapper's behavior.
 #
 # 2. ``_default_cookie_rotator`` performs the same late-bound lookup for
-#    ``_core._rotate_cookies``. The keepalive-loop equivalent of (1).
+#    ``_auth.keepalive._rotate_cookies``. The keepalive-loop equivalent of (1).
 #
 # 3. ``ClientLifecycle.__init__`` wires the defaults when ``cookie_saver`` /
 #    ``cookie_rotator`` are ``None`` (or omitted), and accepts custom
-#    callables when supplied. The ``or _default_*`` resolution pattern is
-#    what lets ``_ensure_lifecycle`` (which does NOT pass the new kwargs)
-#    keep working unchanged.
+#    callables when supplied. The ``or _default_*`` resolution pattern is what
+#    lets the production assembly path omit custom seam callables when no
+#    override is supplied.
 # ---------------------------------------------------------------------------
 
 
@@ -771,10 +767,10 @@ def test_init_wires_default_seams_when_none_supplied() -> None:
     ``ClientLifecycle.__init__`` wires the module-level late-binding
     defaults; supplying custom callables overrides them.
 
-    This is what lets :meth:`Session._ensure_lifecycle` keep its existing
-    no-arg signature — it constructs ``ClientLifecycle(...)`` without the
-    new kwargs, and the ``or _default_*`` resolution preserves the legacy
-    ``_core`` monkeypatch surface.
+    This is what lets the production assembly path omit custom seam callables
+    when no override is supplied: it constructs ``ClientLifecycle(...)``
+    without the new kwargs, and the ``or _default_*`` resolution preserves the
+    canonical late-bound seams.
     """
     # Defaults: omit the kwargs entirely.
     default_lifecycle = ClientLifecycle(

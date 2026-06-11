@@ -1,5 +1,4 @@
 """Targeted coverage tests for ``notebooklm._source.upload``.
-
 These tests exercise the error handlers, edge-case branches, and
 streaming/finalize paths in the upload pipeline that the existing
 ``test_sources_upload.py`` / ``test_source_upload_pipeline.py`` suites do
@@ -41,20 +40,19 @@ from notebooklm.exceptions import (
 from notebooklm.rpc import RPCError
 from notebooklm.types import Source, SourceAddError
 
+
 # =============================================================================
 # Module-level helper functions
 # =============================================================================
-
-
 def test_default_port_for_scheme_unknown_scheme_returns_none() -> None:
-    """Non-http(s) schemes have no implicit default port (line 110)."""
+    """Non-http(s) schemes have no implicit default port ."""
     assert _default_port_for_scheme("https") == 443
     assert _default_port_for_scheme("http") == 80
     assert _default_port_for_scheme("ftp") is None
 
 
 def test_redacted_upload_authority_returns_none_when_host_missing() -> None:
-    """A URL with no hostname yields ``None`` authority (line 116)."""
+    """A URL with no hostname yields ``None`` authority ."""
     parsed = urlsplit("file:///local/path")
     assert parsed.hostname is None
     assert _redacted_upload_authority(parsed) is None
@@ -67,7 +65,7 @@ def test_redacted_upload_authority_brackets_ipv6_host() -> None:
 
 
 def test_redact_upload_url_returns_placeholder_when_scheme_missing() -> None:
-    """A scheme-less / authority-less URL redacts to the placeholder (line 134)."""
+    """A scheme-less / authority-less URL redacts to the placeholder ."""
     assert _redact_upload_url("not-a-url") == "[REDACTED_UPLOAD_URL]"
     assert _redact_upload_url("///just/a/path") == "[REDACTED_UPLOAD_URL]"
 
@@ -87,7 +85,7 @@ def test_redact_upload_url_value_error_returns_placeholder(
 def test_validate_resumable_upload_url_value_error_wrapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A urlsplit ValueError becomes a ValidationError (lines 146-147)."""
+    """A urlsplit ValueError becomes a ValidationError ."""
 
     def _boom(_url: str) -> SplitResult:
         raise ValueError("malformed")
@@ -102,8 +100,7 @@ def test_validate_resumable_upload_url_value_error_wrapped(
 
 
 def test_validate_resumable_upload_url_missing_host_raises() -> None:
-    """An https URL with no host is rejected (line 154).
-
+    """An https URL with no host is rejected .
     ``https:///path`` parses with scheme ``https`` but ``hostname is None``,
     so it reaches the host-missing guard rather than the scheme guard.
     """
@@ -112,7 +109,7 @@ def test_validate_resumable_upload_url_missing_host_raises() -> None:
 
 
 def test_register_response_shape_label_all_branches() -> None:
-    """Every shape label branch is exercised (lines 407, 414)."""
+    """Every shape label branch is exercised ."""
     assert _register_response_shape_label({"a": 1}) == "object"
     assert _register_response_shape_label([1, 2]) == "array"
     assert _register_response_shape_label("hi") == "string"
@@ -121,7 +118,7 @@ def test_register_response_shape_label_all_branches() -> None:
 
 
 def test_looks_like_id_string_rejects_whitespace_and_slash() -> None:
-    """Candidates containing space/tab/slash are not id-like (line 422)."""
+    """Candidates containing space/tab/slash are not id-like ."""
     assert _looks_like_id_string("has space1") is False
     assert _looks_like_id_string("has\ttab1") is False
     assert _looks_like_id_string("path/to/1") is False
@@ -130,19 +127,19 @@ def test_looks_like_id_string_rejects_whitespace_and_slash() -> None:
 
 
 def test_coerce_source_id_candidate_rejects_overlong_string() -> None:
-    """Strings longer than 1000 chars are rejected outright (line 380)."""
+    """Strings longer than 1000 chars are rejected outright ."""
     assert _coerce_source_id_candidate("x" * 1001, "f.pdf") is None
 
 
 def test_coerce_source_id_candidate_rejects_filename_echo() -> None:
-    """A value equal to the filename is rejected (line 383)."""
+    """A value equal to the filename is rejected ."""
     assert _coerce_source_id_candidate("report.pdf", "report.pdf") is None
     # Empty after strip is also rejected.
     assert _coerce_source_id_candidate("   ", "report.pdf") is None
 
 
 def test_resolve_upload_content_type_blank_mime_raises() -> None:
-    """A whitespace-only explicit mime_type is rejected (line 431)."""
+    """A whitespace-only explicit mime_type is rejected ."""
     from pathlib import Path
 
     with pytest.raises(ValidationError, match="cannot be empty or whitespace-only"):
@@ -150,8 +147,7 @@ def test_resolve_upload_content_type_blank_mime_raises() -> None:
 
 
 def test_extract_register_file_source_id_ambiguous_field_candidates() -> None:
-    """Two distinct context-matched SOURCE_IDs are ambiguous -> None (line 271).
-
+    """Two distinct context-matched SOURCE_IDs are ambiguous -> None .
     Each inner dict carries a matching ``SOURCE_NAME`` so both SOURCE_IDs are
     collected as field candidates; two distinct ids -> ambiguous -> None.
     """
@@ -169,8 +165,7 @@ def test_extract_register_file_source_id_ambiguous_field_candidates() -> None:
 
 
 def test_extract_register_file_source_id_ambiguous_row_candidates() -> None:
-    """Two distinct contextual row SOURCE_IDs are ambiguous -> None (line 277).
-
+    """Two distinct contextual row SOURCE_IDs are ambiguous -> None .
     No SOURCE_ID/id field candidates exist, so extraction falls through to
     the contextual-row walk, which finds two filename-paired ids.
     """
@@ -184,7 +179,7 @@ def test_extract_register_file_source_id_ambiguous_row_candidates() -> None:
 
 
 def test_extract_register_file_source_id_skips_non_string_dict_keys() -> None:
-    """Dict keys that are not strings are skipped during the walk (line 307)."""
+    """Dict keys that are not strings are skipped during the walk ."""
     uuid = "11111111-2222-3333-4444-555555555555"
     result = {1: "ignored", ("tuple",): "ignored", "SOURCE_ID": uuid}
     assert _extract_register_file_source_id(result, "report.pdf") == uuid
@@ -193,8 +188,6 @@ def test_extract_register_file_source_id_skips_non_string_dict_keys() -> None:
 # =============================================================================
 # _build_invalid_argument_source_limit_hint()
 # =============================================================================
-
-
 class TestSourceLimitHint:
     """Cover each branch of the ADD_SOURCE_FILE status-code-3 hint builder."""
 
@@ -211,18 +204,18 @@ class TestSourceLimitHint:
             get_source_limit=_boom,
             logger=logger,
         )
-        # No count and no usable limit -> empty hint (line 219).
+        # No count and no usable limit -> empty hint .
         assert hint == ""
         logger.debug.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_nonpositive_limit_coerced_to_none(self) -> None:
-        """A non-positive limit is treated as unavailable (line 188)."""
+        """A non-positive limit is treated as unavailable ."""
 
         async def _zero() -> int | None:
             return 0
 
-        # count below floor + no usable limit -> empty (line 219).
+        # count below floor + no usable limit -> empty .
         hint = await _build_invalid_argument_source_limit_hint(
             source_count=3,
             get_source_limit=_zero,
@@ -247,7 +240,7 @@ class TestSourceLimitHint:
 
     @pytest.mark.asyncio
     async def test_count_below_limit_returns_below_limit_hint(self) -> None:
-        """count < limit yields the 'below the advertised limit' hint (line 198)."""
+        """count < limit yields the 'below the advertised limit' hint ."""
 
         async def _limit() -> int | None:
             return 100
@@ -289,8 +282,6 @@ class TestSourceLimitHint:
 # =============================================================================
 # SourceUploadPipeline collaborator/instance branches
 # =============================================================================
-
-
 class _Lifecycle:
     def __init__(self) -> None:
         self.asserted = 0
@@ -361,7 +352,7 @@ def test_live_cookies_returns_empty_jar_when_cookies_is_none() -> None:
 
 
 def test_live_cookies_casts_non_cookies_truthy_value() -> None:
-    """A truthy non-Cookies ``cookies`` with no http client is cast through (line 524)."""
+    """A truthy non-Cookies ``cookies`` with no http client is cast through ."""
     sentinel = object()
 
     class KernelOddCookies:
@@ -374,7 +365,7 @@ def test_live_cookies_casts_non_cookies_truthy_value() -> None:
 
 @pytest.mark.asyncio
 async def test_list_sources_delegates_to_lister() -> None:
-    """``list_sources`` proxies to the internal SourceLister (line 915)."""
+    """``list_sources`` proxies to the internal SourceLister ."""
     pipeline = _make_pipeline()
     expected = [Source(id="s1", title="a.pdf")]
     pipeline._lister.list = AsyncMock(return_value=expected)  # type: ignore[method-assign]
@@ -410,15 +401,12 @@ async def test_add_file_asserts_bound_loop_before_work(tmp_path) -> None:
 # =============================================================================
 # register_file_source() probe / create branches
 # =============================================================================
-
-
 class TestRegisterFileSourceBranches:
     """Cover baseline-failure, probe, and missing-id recovery paths."""
 
     @pytest.mark.asyncio
     async def test_baseline_list_failure_logs_and_makes_baseline_unavailable(self) -> None:
         """A failing baseline list() leaves the baseline unavailable (772, 802-808).
-
         With baseline unavailable, a same-titled probe match is treated as an
         ambiguity rather than silently returned. We drive a create RPC failure
         (NetworkError) so idempotent_create runs the probe, which then finds a
@@ -426,7 +414,6 @@ class TestRegisterFileSourceBranches:
         """
         pipeline = _make_pipeline()
         logger = MagicMock()
-
         list_calls = {"n": 0}
 
         async def _list(_nb: str) -> list[Source]:
@@ -452,8 +439,7 @@ class TestRegisterFileSourceBranches:
 
     @pytest.mark.asyncio
     async def test_probe_returns_none_when_no_match(self) -> None:
-        """The probe returns None when no same-titled new source exists (line 828).
-
+        """The probe returns None when no same-titled new source exists .
         Baseline succeeds (empty), the create RPC fails transiently so the
         probe runs, finds nothing, and idempotent_create exhausts retries and
         re-raises the transport error.
@@ -478,14 +464,12 @@ class TestRegisterFileSourceBranches:
     @pytest.mark.asyncio
     async def test_missing_id_recovered_by_probe(self) -> None:
         """A successful create with an untrustworthy id is recovered via probe (873, 890).
-
         The create RPC returns a shape with no trustworthy SOURCE_ID, so
         ``_create`` runs the probe which finds a freshly committed (not in
         baseline) source and returns its id.
         """
         pipeline = _make_pipeline()
         logger = MagicMock()
-
         list_calls = {"n": 0}
 
         async def _list(_nb: str) -> list[Source]:
@@ -512,13 +496,11 @@ class TestRegisterFileSourceBranches:
     @pytest.mark.asyncio
     async def test_missing_id_probe_transport_failure_wrapped(self) -> None:
         """A probe transport failure after a successful create wraps to SourceAddError (around 876-889).
-
         The create RPC succeeds (no usable id), then the probe list() raises a
         transport error. Because the create already committed, this must NOT be
         re-POSTed; it is wrapped into SourceAddError.
         """
         pipeline = _make_pipeline()
-
         list_calls = {"n": 0}
 
         async def _list(_nb: str) -> list[Source]:
@@ -541,14 +523,12 @@ class TestRegisterFileSourceBranches:
 
     @pytest.mark.asyncio
     async def test_probe_multiple_new_matches_raises_ambiguity(self) -> None:
-        """The probe raising on >1 new same-titled source surfaces ambiguity (line 819).
-
+        """The probe raising on >1 new same-titled source surfaces ambiguity .
         Baseline is empty, the create RPC fails transiently so the probe runs;
         the probe then sees two new sources sharing the filename and raises
         SourceAddError rather than guessing.
         """
         pipeline = _make_pipeline()
-
         list_calls = {"n": 0}
 
         async def _list(_nb: str) -> list[Source]:
@@ -574,14 +554,12 @@ class TestRegisterFileSourceBranches:
 
     @pytest.mark.asyncio
     async def test_missing_id_probe_ambiguity_propagates(self) -> None:
-        """A SourceAddError raised by the post-create probe propagates (line 875).
-
+        """A SourceAddError raised by the post-create probe propagates .
         The create RPC succeeds with no usable id, then the probe finds two
         new same-titled sources and raises SourceAddError; ``_create`` must
         re-raise it unchanged rather than wrap it as a transport failure.
         """
         pipeline = _make_pipeline()
-
         list_calls = {"n": 0}
 
         async def _list(_nb: str) -> list[Source]:
@@ -634,8 +612,6 @@ class TestRegisterFileSourceBranches:
 # =============================================================================
 # upload_file_streaming() — file-object (non-Path) streaming + finalize
 # =============================================================================
-
-
 class TestUploadFileStreamingFileObject:
     """Drive the IO[bytes] branch of file_stream plus progress callbacks."""
 
@@ -646,7 +622,6 @@ class TestUploadFileStreamingFileObject:
         src = tmp_path / "payload.bin"
         src.write_bytes(data)
         file_obj = open(src, "rb")  # noqa: SIM115
-
         progress: list[tuple[int, int]] = []
 
         def _on_progress(done: int, total: int) -> None:
@@ -671,7 +646,6 @@ class TestUploadFileStreamingFileObject:
 
         factory = MagicMock(side_effect=lambda **kw: _factory_cm(**kw))
         pipeline = _make_pipeline(async_client_factory=factory)
-
         upload_url = "https://notebooklm.google.com/upload/_/?upload_id=session"
         try:
             await pipeline.upload_file_streaming(
@@ -684,7 +658,6 @@ class TestUploadFileStreamingFileObject:
         finally:
             if not file_obj.closed:
                 file_obj.close()
-
         assert captured["body"] == data
         # Initial 0-progress callback plus at least one chunk callback.
         assert progress[0] == (0, len(data))
@@ -701,7 +674,6 @@ class TestUploadFileStreamingFileObject:
         src = tmp_path / "payload.bin"
         src.write_bytes(data)
         file_obj = open(src, "rb")  # noqa: SIM115
-
         captured: dict[str, Any] = {}
 
         @asynccontextmanager
@@ -735,7 +707,6 @@ class TestUploadFileStreamingFileObject:
     @pytest.mark.asyncio
     async def test_pre_wire_exception_closes_file_object(self, tmp_path) -> None:
         """An exception before the finalize task is wired closes the caller FD (1143-1146).
-
         We pass an invalid upload URL so ``_validate_resumable_upload_url``
         raises before ``close_wired`` is set. The except-handler must close the
         caller-supplied file object.
@@ -743,7 +714,6 @@ class TestUploadFileStreamingFileObject:
         src = tmp_path / "payload.bin"
         src.write_bytes(b"data")
         file_obj = open(src, "rb")  # noqa: SIM115
-
         pipeline = _make_pipeline()
         with pytest.raises(ValidationError):
             await pipeline.upload_file_streaming(

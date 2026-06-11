@@ -1,9 +1,9 @@
 """Source CLI render/validation helpers (extracted from ``source_cmd.py``).
 
-This module holds the pure render and validation helpers used by the
-``source`` command group. They never reference :class:`NotebookLMClient`
-(so they are not patch seams) and are re-exported from ``source_cmd`` to
-preserve the historical ``source_cmd.<helper>`` import/patch surface.
+This module holds client-free render and validation helpers used by the
+``source`` command group. Selected names are re-exported from ``source_cmd``
+to preserve the historical ``source_cmd.<helper>`` import/patch surface, and a
+few wrappers remain explicit test patch points.
 """
 
 from __future__ import annotations

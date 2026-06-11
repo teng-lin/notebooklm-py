@@ -72,7 +72,7 @@ def _make_client_with_transport(
 ) -> NotebookLMClient:
     """Construct a ``NotebookLMClient`` wired to the supplied mock transport.
 
-    Bypasses the full ``Session.open()`` path so the test doesn't try
+    Bypasses the full ``ClientLifecycle.open()`` path so the test doesn't try
     to build a real ``httpx.AsyncClient`` with cookies + connection pool.
     """
     client = NotebookLMClient(

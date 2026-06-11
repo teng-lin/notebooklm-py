@@ -63,11 +63,7 @@ def mock_auth():
 
 @pytest.fixture
 def mock_fetch_tokens():
-    """Mock fetch_tokens and load_auth_from_storage at download module level.
-
-    Download.py imports these functions directly, so we must patch at the module
-    level where they're imported (not at helpers where they're defined).
-    """
+    """Mock ``fetch_tokens_with_domains`` for download CLI commands."""
     with (
         patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
     ):
@@ -372,11 +368,10 @@ class TestDownloadJsonOutputUnicode:
     def test_download_json_output_preserves_unicode(self, runner, mock_auth):
         """`download <type> --json` should emit CJK / emoji as real UTF-8, not \\uXXXX.
 
-        Patch target updated for P3.T2: the per-leaf generic helper was
-        extracted to ``cli/services/download.py::execute_download``. The
-        Click handler still calls it via ``services.download.execute_download``
-        — patching there short-circuits the entire async download pipeline
-        the same way patching ``_download_artifacts_generic`` did before.
+        The per-leaf generic helper now lives behind
+        ``services.download.execute_download``. Patching there short-circuits
+        the entire async download pipeline the same way the old generic-helper
+        patch did before.
         """
         fake_result = {
             "artifact_id": "audio_123",
@@ -2010,7 +2005,7 @@ class TestDownloadFlashcardsStandardFlags:
 #     <N>s" in text mode.
 #   - AuthError surfaces a re-authentication hint
 #     ("Run 'notebooklm login' to re-authenticate.") in text mode.
-#   - Typed exit codes from error_handler.py:64-67:
+#   - Typed exit codes from ``handle_errors``:
 #       1 = library/user error (RateLimit, Auth, Validation, Network, ...)
 #       2 = unexpected/system error (anything else)
 # =============================================================================
@@ -2022,10 +2017,10 @@ class TestDownloadTypedErrorPath:
     def _list_raises(self, exc: Exception):
         """Build a mock client whose `artifacts.list` raises ``exc``.
 
-        The exception fires at the first awaited call inside
-        ``_download_artifacts_generic``, which surfaces directly to the outer
-        ``_run_artifact_download`` exception handler — the exact site under
-        test. The single-download / --all per-artifact try/except
+        The exception fires at the first awaited artifact listing inside
+        ``notebooklm._app.download.execute_download``, which surfaces directly
+        to the outer ``_run_artifact_download`` exception handler — the exact
+        site under test. The single-download / --all per-artifact try/except
         blocks deliberately swallow API errors into ``{"error": ...}`` rows;
         forcing the failure on ``list`` exercises the *typed* handler path.
         """
@@ -2121,7 +2116,7 @@ class TestDownloadTypedErrorPath:
     # ----- Unexpected exceptions (typed exit code 2) ------------------------
 
     def test_unexpected_exception_exits_with_code_2(self, runner, mock_auth, mock_fetch_tokens):
-        """Unknown exceptions exit 2 per error_handler.py:64-67 policy."""
+        """Unknown exceptions exit 2 per ``handle_errors`` policy."""
         result = runner.invoke(
             cli,
             ["download", "audio", "-n", "nb_123"],
@@ -2188,13 +2183,12 @@ class TestDownloadTypedErrorPath:
     def test_json_returned_error_envelope_unchanged_exit_1(
         self, runner, mock_auth, mock_fetch_tokens
     ):
-        """The pre-existing "no completed artifacts" → JSON {"error": "..."} + exit 1
-        path (download.py:709-710) is preserved by the typed-handler refactor.
+        """The pre-existing "no completed artifacts" JSON error path is preserved.
 
         That branch surfaces a *returned* dict-shaped error from
-        ``_download_artifacts_generic`` (not a raised exception), so it must
-        NOT be re-routed through the typed handler — exit 1 with the legacy
-        ``error: "<msg>"`` JSON shape is the documented behavior.
+        the ``DownloadOutcome.NO_ARTIFACTS`` branch (not a raised exception),
+        so it must NOT be re-routed through the typed handler — exit 1 with
+        the legacy ``error: "<msg>"`` JSON shape is the documented behavior.
         """
         mock_client = create_mock_client()
         mock_client.artifacts.list = AsyncMock(return_value=[])

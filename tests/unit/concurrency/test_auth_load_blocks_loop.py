@@ -18,10 +18,8 @@ concurrently scheduled async task increments a counter every 50 ms.
 Pre-fix the counter is ~0–1 (loop frozen by the sync sleep); post-fix
 it is >= 5 (the sleep runs on a thread, loop keeps ticking).
 
-Why a unit-style test under ``tests/integration/concurrency/``: the
-wave-3 plan places every blocking-I/O regression under this directory
-even when the assertion is structural; the harness fixtures are
-re-usable but not required for this surface.
+These are unit-style regression tests under ``tests/unit/concurrency/`` so the
+blocking-I/O contract is exercised without the integration harness.
 """
 
 from __future__ import annotations
@@ -142,7 +140,7 @@ async def test_fetch_tokens_with_domains_save_does_not_block_event_loop(
     monkeypatch,
     httpx_mock: HTTPXMock,
 ) -> None:
-    """``fetch_tokens_with_domains`` (auth.py:3204) must offload its save too.
+    """``fetch_tokens_with_domains`` in ``notebooklm._auth.refresh`` must offload its save too.
 
     Same protocol as the from_storage test but exercises the second
     documented call site so a regression that fixes only one of the two
@@ -171,10 +169,9 @@ async def test_fetch_tokens_with_domains_save_does_not_block_event_loop(
         # return is fine; mirror the real function's None-by-default.
         time.sleep(_SLEEP_SECONDS)
 
-    # ``fetch_tokens_with_domains`` calls ``save_cookies_to_storage`` via
-    # the module-local alias in ``notebooklm._auth.refresh``
-    # (_auth/refresh.py:58 + :814), so patch the consumer-side name on
-    # that module rather than the canonical home in ``_auth.storage``.
+    # ``fetch_tokens_with_domains`` resolves ``save_cookies_to_storage`` through the
+    # module-local alias in ``notebooklm._auth.refresh``, so patch the consumer-side
+    # name rather than the canonical home in ``_auth.storage``.
     monkeypatch.setattr(_auth_refresh, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0

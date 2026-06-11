@@ -159,7 +159,7 @@ class NotFoundError(NotebookLMError):
     """Common base for resource-not-found exceptions.
 
     Catch this to handle any not-found case across notebooks, sources,
-    and artifacts in one ``except`` clause::
+    artifacts, notes, mind maps, and labels together::
 
         try:
             notebook = await client.notebooks.get(nb_id)
@@ -174,8 +174,8 @@ class NotFoundError(NotebookLMError):
     The example uses methods that *raise* a ``*NotFoundError`` on missing
     IDs. As of v0.8.0 (the #1247 flip) **every** namespace ``get()`` —
     :meth:`NotebooksAPI.get`, :meth:`SourcesAPI.get`, :meth:`ArtifactsAPI.get`,
-    :meth:`NotesAPI.get`, and :meth:`MindMapsAPI.get` — raises its matching
-    ``*NotFoundError`` on a miss; use the paired ``get_or_none()`` when you want
+    :meth:`NotesAPI.get`, :meth:`MindMapsAPI.get`, and :meth:`LabelsAPI.get` —
+    raises its matching ``*NotFoundError`` on a miss; use ``get_or_none()`` for
     a ``None``-on-miss lookup that does not trigger the umbrella.
     :class:`MindMapNotFoundError` is also raised by the ``client.mind_maps``
     mutation paths (issue #1291).
@@ -312,12 +312,13 @@ class RPCError(NotebookLMError):
 
     Note:
         Domain-level "not found" exceptions — :class:`NotebookNotFoundError`,
-        :class:`SourceNotFoundError`, :class:`ArtifactNotFoundError` — inherit
-        from :class:`RPCError` so that ``except RPCError`` keeps catching them
-        at transport-level call sites. The underlying RPC call succeeded but
-        returned a degenerate / empty payload identifying the resource as
-        missing. When writing ``except RPCError`` clauses, be aware these
-        domain errors may also flow through; catch the specific domain type
+        :class:`SourceNotFoundError`, :class:`ArtifactNotFoundError`,
+        :class:`NoteNotFoundError`, :class:`MindMapNotFoundError`, and
+        :class:`LabelNotFoundError` — inherit from :class:`RPCError` so that
+        ``except RPCError`` keeps catching them at transport-level call sites.
+        Absence may come from an empty/degenerate payload or an omitted ID in a
+        list/content lookup. When writing ``except RPCError`` clauses, be aware
+        these domain errors may also flow through; catch the specific domain type
         BEFORE the broad ``except RPCError`` clause if you want to handle them
         differently.
 
@@ -1412,10 +1413,9 @@ class NoteNotFoundError(NotFoundError, RPCError, NoteError):
 
     Inherits from :class:`NotFoundError` (cross-domain umbrella),
     :class:`RPCError` (transport-level catchability), and :class:`NoteError`
-    (domain base). The RPC base is what note read/mutation paths will raise when
-    the server returns an empty / degenerate payload for a missing note ID, so
-    ``except RPCError`` keeps working at call sites that handle transport-level
-    failures. ``except NoteError`` works at domain-level call sites that don't
+    (domain base). Note absence is detected via a note-list lookup that omits
+    the id (not a transport 404), while the RPCError base preserves broad catch
+    behavior. ``except NoteError`` works at domain-level call sites that don't
     care about the RPC layer. ``except NotFoundError`` catches it alongside
     :class:`NotebookNotFoundError` and :class:`SourceNotFoundError`.
 

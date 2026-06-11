@@ -1,10 +1,10 @@
 """Regression test for the ``max_concurrent_rpcs`` semaphore at
-``_perform_authed_post``.
+``RuntimeTransport.perform_authed_post``.
 
 Pre-fix, ``NotebookLMClient`` exposed no ceiling on simultaneous
 in-flight RPC POSTs. A FastAPI handler that fanned out a couple
 hundred ``client.notebooks.list()`` calls in parallel would push
-all of them through ``_perform_authed_post`` together, exceeding
+all of them through ``RuntimeTransport.perform_authed_post`` together, exceeding
 the underlying httpx connection-pool budget and tripping
 ``httpx.PoolTimeout``. The companion connection-pool tuning raised
 the default ``max_connections`` to 100, but a default *upstream*
@@ -14,7 +14,7 @@ surfaces as opaque timeouts rather than clear back-pressure, and
 knob lets callers tune for their account tier.
 
 Post-fix: a per-instance ``asyncio.Semaphore`` is acquired at
-the top of ``_perform_authed_post`` and released on every exit path.
+the top of ``RuntimeTransport.perform_authed_post`` and released on every exit path.
 Defaults to ``16`` — well below the default ``max_connections=100`` so
 there's headroom for short-lived helper requests (refresh GETs, upload
 preflights) that aren't gated by the same semaphore.
@@ -22,10 +22,10 @@ preflights) that aren't gated by the same semaphore.
 Architectural decision (locked iter-1):
 ---------------------------------------
 
-The semaphore is placed at ``_perform_authed_post`` **only**:
+The semaphore is placed at ``RuntimeTransport.perform_authed_post`` **only**:
 
 - NOT at ``rpc_call`` — the decode-time retry path recursively calls
-  ``rpc_call(..., _is_retry=True)`` (``_core.py:1642``). A semaphore
+  ``RpcExecutor.rpc_call(..., _is_retry=True)``. A semaphore
   there would have the outer call hold one permit while waiting for
   the inner call to release one → deadlock under any cap < 2, and
   permit-fragmentation risk under any cap.
@@ -36,8 +36,8 @@ The semaphore is placed at ``_perform_authed_post`` **only**:
 
 The semaphore is also lazily constructed (``asyncio.Semaphore()`` binds
 to the running loop in older Python versions; ``NotebookLMClient`` can be
-constructed outside one). Mirrors the lazy-init pattern of
-``_reqid_lock`` / ``_auth_snapshot_lock``.
+constructed outside one). Mirrors the lazy-init pattern used by the reqid and
+auth-refresh loop-bound collaborators.
 
 Test scenarios
 --------------
@@ -93,8 +93,9 @@ async def _open_core_with_transport(
     """Open a ``NotebookLMClient`` with the mock transport swapped in.
 
     Mirrors ``test_harness_smoke.py::_open_core_with_transport`` plus the
-    new ``max_concurrent_rpcs`` knob exercised here. ``NotebookLMClient.open()``
-    builds its own ``httpx.AsyncClient``; we close it and replace with
+    new ``max_concurrent_rpcs`` knob exercised here. ``NotebookLMClient.__aenter__()``
+    calls ``ClientLifecycle.open()``, which builds its own ``httpx.AsyncClient``;
+    we close it and replace with
     one routing through the recording transport so the in-flight peak
     is observable.
     """

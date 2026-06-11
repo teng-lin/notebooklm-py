@@ -6,9 +6,8 @@ programmatic users had to discover and opt in. Diverges from "smart
 retry" SDK norms.
 
 Post-fix:
-- ``Session.__init__`` defaults ``rate_limit_max_retries`` to ``3``.
-- ``NotebookLMClient.__init__`` and ``NotebookLMClient.from_storage``
-  match the new default.
+- ``NotebookLMClient.__init__`` and ``NotebookLMClient.from_storage`` default
+  ``rate_limit_max_retries`` to ``3``.
 - ``RuntimeTransport.perform_authed_post`` falls back to capped exponential backoff
   (start 1s, cap 30s, ±20% jitter) when a 429 lacks a parseable
   ``Retry-After`` header, so the new default is useful even when the
@@ -86,7 +85,7 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
     client = NotebookLMClient(auth_tokens)
     assert client._composed.chain_host._rate_limit_max_retries == 3, (
         "rate_limit_max_retries default must be 3; check that NotebookLMClient.__init__ "
-        "forwards the Session default."
+        "forwards the runtime default."
     )
 
     mock_http = AsyncMock(spec=httpx.AsyncClient)

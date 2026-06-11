@@ -145,10 +145,11 @@ def _synthetic_error_mode(request, monkeypatch):
     auto-reverted on teardown). Without the marker, the env var is left
     untouched — preserving the spec's "opt-in" contract.
 
-    Set BEFORE the client constructs its HTTP transport (markers are read at
-    setup time): the transport wrapper in ``_core.py:_get_error_injection_mode``
-    reads the env var only during ``Session.open()``, so the var must be
-    in place before the fixture under test enters its ``async with`` block.
+    Set before the client constructs its runtime and enters the middleware chain
+    (markers are read at setup time): ``_error_injection._get_error_injection_mode``
+    is consulted by the construction guard and by ``ErrorInjectionMiddleware``, so
+    the var must be in place before the fixture under test enters its
+    ``async with`` block.
 
     Production behavior is unchanged when the marker is absent.
     """
@@ -167,7 +168,7 @@ def _synthetic_error_mode(request, monkeypatch):
             f"@pytest.mark.synthetic_error: invalid mode {mode!r}; valid modes are {sorted(valid)}."
         )
     # Import the env-var name from the production module so a future rename
-    # in ``_core.py`` cascades automatically; the constant is also exposed
+    # in ``_error_injection.py`` cascades automatically; the constant is also exposed
     # from ``tests/vcr_config.py`` but importing from the canonical seam
     # is the production-faithful path.
     from notebooklm._error_injection import ERROR_INJECT_ENV_VAR

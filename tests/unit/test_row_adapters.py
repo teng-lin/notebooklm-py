@@ -1,4 +1,4 @@
-"""Tests for row-adapter behavior across the ``_row_adapters_*`` modules.
+"""Tests for row-adapter behavior across the ``notebooklm._row_adapters`` package.
 
 The adapters centralise position knowledge for the ``LIST_ARTIFACTS``,
 ``GET_NOTES_AND_MIND_MAPS``, and source row shapes so consumers
@@ -8,7 +8,7 @@ The adapters centralise position knowledge for the ``LIST_ARTIFACTS``,
 ``NotebooksAPI.get_source_ids``) read named properties instead of
 open-coding ``data[2]`` / ``data[4]`` / ``data[15]`` / ``row[1][1]`` /
 ``row[1][4]`` / ``data[0][0]`` / ``metadata[4]``. See
-``docs/improvement.md`` §6.2 for the motivation and
+``docs/architecture.md``'s ``_row_adapters/`` module map for the motivation and
 ``src/notebooklm/_row_adapters/artifacts.py``,
 ``src/notebooklm/_row_adapters/notes.py``, and
 ``src/notebooklm/_row_adapters/sources.py`` for the position contracts.

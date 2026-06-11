@@ -182,11 +182,10 @@ class Source:
         every code path produces identical :class:`Source` instances —
         including the decoded :attr:`status`.
 
-        The flat shape historically yields ``_type_code=None`` and skips
-        metadata-derived fields. That invariant is now an emergent
-        property of :class:`SourceRow` rather than an explicit early
-        return: a flat row (``[id, title, ...]``) has no list at
-        ``_raw[2]``, so :attr:`SourceRow.metadata` returns ``None`` and
+        Minimal flat rows historically yield ``_type_code=None`` and skip
+        metadata-derived fields. That invariant is now handled by SourceRow
+        when no metadata list is present at ``_raw[2]``, so
+        :attr:`SourceRow.metadata` returns ``None`` and
         :attr:`~SourceRow.type_code` / :attr:`~SourceRow.url` /
         :attr:`~SourceRow.created_at` all resolve to ``None`` while
         :attr:`~SourceRow.status` resolves to ``SourceStatus.READY``. The

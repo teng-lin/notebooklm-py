@@ -12,8 +12,8 @@ Why this script exists
 ----------------------
 The avatar-URL scrubber (PR #565) added
 ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` → ``SCRUBBED_AVATAR_URL`` to
-the canonical pattern registry, but the ~67 cassettes recorded BEFORE that
-pattern landed still embed the raw avatar URLs. They are listed in
+the canonical pattern registry, but the 61 cassettes recorded before that
+pattern landed still embed the raw ``/ogw/`` avatar URLs. They are listed in
 ``tests/scripts/cassette_repair_allowlist.txt`` under the "/ogw/ avatar URL
 group" header; this script is the one-off tool that walks each of those
 cassettes, re-scrubs them in place, and reports a byte-level diff so reviewers
@@ -118,8 +118,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TESTS_DIR = _REPO_ROOT / "tests"
 _CASSETTE_DIR = _TESTS_DIR / "cassettes"
 
-# ``tests/cassette_patterns.py`` lives under ``tests/`` (not a package) so we
-# insert that directory on sys.path rather than the repo root.
+# Import the cassette helper through the historical tests-dir path used by this
+# script; keeping the path narrow avoids adding the repo root to ``sys.path``.
 sys.path.insert(0, str(_TESTS_DIR))
 
 from cassette_patterns import (  # noqa: E402

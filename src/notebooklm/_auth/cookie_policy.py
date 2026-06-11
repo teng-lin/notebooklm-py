@@ -94,13 +94,15 @@ def _validate_required_cookies(
 ) -> None:
     """Enforce the Tier 1 cookie-set rule (raise) and warn on Tier 2 violation.
 
-    Hybrid rollout: Tier 1 (``MINIMUM_REQUIRED_COOKIES``) is a hard requirement
-    because its ablation evidence is unambiguous — Google rejects deterministically
-    and there is no recovery path inside the library. Tier 2 (secondary binding,
-    see ``_has_valid_secondary_binding``) is logged as a warning so partial
-    extractions surface in user logs without breaking edge-case auth flows we
-    haven't ablated yet (e.g. Workspace SSO). After one release of telemetry
-    this can be promoted to a hard raise.
+    Hybrid rollout: Tier 1 (``MINIMUM_REQUIRED_COOKIES``) is a hard validator
+    failure because callers that reach this function without a recovery wrapper
+    must not proceed with an unusable cookie set. The dedicated PSIDTS recovery
+    paths catch the recoverable missing/expired-PSIDTS case before retrying
+    validation; unrecoverable Tier-1 failures still raise here. Tier 2
+    (secondary binding, see ``_has_valid_secondary_binding``) is logged as a
+    warning so partial extractions surface in user logs without breaking
+    edge-case auth flows we have not ablated yet (e.g. Workspace SSO). After one
+    release of telemetry this can be promoted to a hard raise.
 
     Args:
         cookie_names: Names of cookies present in the loaded set (any domain).
@@ -226,20 +228,17 @@ def missing_cookies_hint(
 # ``notebooklm login --include-domains=...``. This narrows the blast
 # radius if ``storage_state.json`` is ever leaked.
 #
-# REQUIRED is also fed verbatim to ``rookiepy.load(domains=...)`` by
-# ``_login_with_browser_cookies`` (via
-# :func:`notebooklm.cli.session_cmd._build_google_cookie_domains`); adding a
-# domain here automatically extends what we ask the browser for at login.
+# ``REQUIRED_COOKIE_DOMAINS`` is included in the default extractor allowlist
+# built by ``_build_google_cookie_domains`` / ``build_cookie_domain_allowlist``.
+# Those builders also add regional ``.google.<ccTLD>`` variants by default.
 #
-# This frozenset is the single chokepoint for the cookie-domain
-# narrowing security control: extraction is restricted to
-# ``REQUIRED_COOKIE_DOMAINS`` so that a stolen ``storage_state.json``
-# cannot pivot the attacker into sibling Google products that we do not
-# need (YouTube, Mail, etc.). Enforcement happens at extraction time
-# (what ``rookiepy`` returns); the runtime gate stays permissive over
-# the ``REQUIRED ∪ OPTIONAL`` union so that ``--include-domains=...``
-# opt-ins survive downstream filters (see
-# :func:`_is_allowed_cookie_domain`).
+# This frozenset is the required-domain chokepoint for the cookie-domain
+# narrowing security control: extraction requests required domains plus regional
+# ccTLDs by default, while sibling Google product domains (YouTube, Mail, etc.)
+# are excluded unless the user opts in via ``--include-domains=...``. Enforcement
+# starts at extraction time (what ``rookiepy`` returns); the runtime gate stays
+# permissive over the ``REQUIRED | OPTIONAL`` union so opted-in cookies survive
+# downstream filters (see :func:`_is_allowed_cookie_domain`).
 REQUIRED_COOKIE_DOMAINS: frozenset[str] = frozenset(
     {
         ".google.com",
@@ -504,9 +503,9 @@ def _is_allowed_auth_domain(domain: str) -> bool:
     where ``save_cookies_to_storage`` would persist cookies that the next
     extraction would silently drop. Issue #360 collapsed both filters into
     this single policy. The cookie-domain narrowing control restricts the
-    *extraction* surface: ``rookiepy`` only requests
-    :data:`REQUIRED_COOKIE_DOMAINS` by default, so YouTube cookies are
-    never written to ``storage_state.json`` unless the user opts in via
+    *extraction* surface: ``rookiepy`` requests required domains plus regional
+    Google ccTLD variants by default, so YouTube cookies are never written to
+    ``storage_state.json`` unless the user opts in via
     ``--include-domains=youtube``. The runtime gate stays permissive over
     the full :data:`ALLOWED_COOKIE_DOMAINS` union so that opted-in cookies
     survive the downstream filters.
@@ -570,8 +569,8 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     :data:`ALLOWED_COOKIE_DOMAINS` union (REQUIRED ∪ OPTIONAL). The
     blast-radius reduction is enforced at **extraction time** —
     ``_build_google_cookie_domains`` defaults to
-    :data:`REQUIRED_COOKIE_DOMAINS` only, so rookiepy never returns
-    sibling-product cookies (e.g. ``.youtube.com``) unless the user
+    :data:`REQUIRED_COOKIE_DOMAINS` plus regional ``.google.<ccTLD>`` variants,
+    so rookiepy never returns sibling-product cookies (e.g. ``.youtube.com``) unless the user
     opts in via ``--include-domains=...``. The runtime gate must stay
     permissive over the full union so that opted-in cookies survive
     the downstream filters in :func:`convert_rookiepy_cookies_to_storage_state`,

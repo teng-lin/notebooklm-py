@@ -3,7 +3,7 @@
 Audit items:
 - §25: `NotebookLMClient.__aexit__` lacked try/except, so a `close()` exception
   masked the body's exception (and could leave the transport open).
-- §7: `_core.close()` did not shield `aclose()`, so a `CancelledError` arriving
+- §7: `client.close()` did not shield `aclose()`, so a `CancelledError` arriving
   mid-close could leak the underlying httpx client.
 
 Coverage:
@@ -86,7 +86,7 @@ async def test_body_raises_and_close_raises_body_wins(
         http_client_ref = client._collaborators.kernel.get_http_client()
         assert http_client_ref is not None
 
-        # Patch _core.close to raise after closing the transport, so we
+        # Patch client.close to raise after closing the transport, so we
         # exercise the exception-arbitration path. Forward to the original
         # close so the leak-shield path also runs.
         original_close = client.close
@@ -146,10 +146,10 @@ async def test_cancel_mid_close_does_not_leak_transport(
     auth_tokens,
     _stub_open: list[object],
 ) -> None:
-    """`asyncio.shield` in `_core.close()` keeps `aclose()` running through cancel.
+    """`asyncio.shield` in ``NotebookLMClient.close`` / ``ClientLifecycle.close`` keeps `aclose()` running through cancel.
 
     Strategy: open a client, capture the http_client ref, then call
-    `_core.close()` from within an outer task and cancel that outer task
+    `client.close()` from within an outer task and cancel that outer task
     immediately. Assert the underlying transport ends up closed despite
     the cancel.
     """

@@ -1,8 +1,8 @@
-"""Tests for auth cookie/token extraction and AuthTokens dataclass (split from tests/unit/test_auth.py for D1 PR-2).
+"""Tests for auth cookie/token extraction and AuthTokens dataclass (split in D1 PR-2).
 
 This file owns one concern from the auth subpackage. The original
-``tests/unit/test_auth.py`` (4090 LOC) was split into six concern-aligned
-files alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
+monolithic auth test module was split into six concern-aligned files
+alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
 (superseded) and ADR-0007 (test-monkeypatch policy) for the rationale.
 """
 
@@ -425,8 +425,8 @@ class TestCookieAttributePreservation:
         """Load → save (no mutation) → reload preserves attrs.
 
         This is the silent-erosion path users hit on idle calls: nothing
-        changes, but the save side appends fresh entries from the in-memory
-        jar (auth.py:1095). Without the load-side fix, those appended entries
+        changes, but the save side appends fresh entries from the in-memory jar
+        (``notebooklm._auth.storage.save_cookies_to_storage``). Without the load-side fix, those appended entries
         would carry default ``path=/``, ``secure=False``, ``httpOnly=False``.
         """
         storage_file = tmp_path / "storage_state.json"

@@ -59,8 +59,8 @@ DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
 # limit (``ulimit -n``).
 DEFAULT_MAX_CONCURRENT_UPLOADS = 4
 
-# Default ceiling on simultaneous in-flight ``_perform_authed_post``
-# RPC POSTs. Sits *below* the default httpx pool
+# Default ceiling on simultaneous in-flight
+# ``RuntimeTransport.perform_authed_post`` RPC POSTs. Sits *below* the default httpx pool
 # size (``ConnectionLimits.max_connections=100``) so short-lived helper
 # requests outside the RPC path — refresh GETs, resumable-upload
 # preflights — have pool headroom even when the RPC semaphore is

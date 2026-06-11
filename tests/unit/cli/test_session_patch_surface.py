@@ -1,13 +1,12 @@
 """Patch-surface preservation for the ``cli/services/login`` re-export block.
 
-The session command module (``notebooklm.cli.session_cmd`` post-T0, or
-``notebooklm.cli.session`` under option-z) re-exports a handful of
+The session command module (``notebooklm.cli.session_cmd``) re-exports a handful of
 internal helpers from ``cli/services/login`` so legacy test code can
 monkey-patch them through the session module's namespace
 (``notebooklm.cli.session_cmd._refresh_from_browser_cookies = …`` and
 friends).
 
-P3.T4 splits ``cli/services/login.py`` into a package. The split MUST
+P3.T4 split the former ``cli.services.login`` module into a package. The split MUST
 preserve every previously re-exported name so the patch sites that
 target the session module's namespace keep working byte-for-byte.
 
@@ -56,9 +55,9 @@ _BASELINE_PATH = (
 def _active_session_module_name() -> str:
     """Return the active session command module name.
 
-    Under T0 (post-rename) the module is ``notebooklm.cli.session_cmd``.
-    Under option-z (T0 dropped) it stays at ``notebooklm.cli.session``.
-    Mode is detected via ``importlib.util.find_spec`` — no import needed.
+    The active module in this tree is ``notebooklm.cli.session_cmd``. Keep the
+    legacy fallback so the fixture fails with a clear message if a downstream
+    branch still carries the old name.
     """
     if importlib.util.find_spec("notebooklm.cli.session_cmd") is not None:
         return "notebooklm.cli.session_cmd"
@@ -73,7 +72,7 @@ def _load_baseline_names() -> list[str]:
     if not _BASELINE_PATH.exists():
         raise RuntimeError(
             f"Golden baseline fixture missing: {_BASELINE_PATH}. "
-            "Re-capture it per the phase-3.md P3.T4 spec before running this test."
+            "Re-capture it before running this test."
         )
     return [
         line.strip()

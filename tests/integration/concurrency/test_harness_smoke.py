@@ -69,8 +69,9 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Noteb
     """Open a ``NotebookLMClient`` and swap in the mock transport.
 
     Mirrors the documented pattern from ``tests/unit/conftest.py``:
-    ``NotebookLMClient.open()`` builds its own ``httpx.AsyncClient`` and we
-    can't override the transport via the constructor. So we open
+    ``NotebookLMClient.__aenter__()`` calls ``ClientLifecycle.open()``, which
+    builds its own ``httpx.AsyncClient`` and we can't override the transport via
+    the constructor. So we open
     normally, then close-and-replace the underlying client with one
     that routes through our recording transport.
 

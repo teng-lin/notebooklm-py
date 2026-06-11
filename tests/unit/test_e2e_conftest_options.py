@@ -3,9 +3,9 @@
 Covers the --profile flag added in issue #339 without spinning up the full
 E2E suite (which requires real auth).
 
-The E2E conftest is loaded by file path because `tests/` is not a Python
-package (no `__init__.py`), so a normal `from tests.e2e import conftest`
-import would fail under pytest.
+The E2E conftest is loaded by file path so these unit tests can execute a fresh
+copy of the hook module without invoking pytest's conftest discovery or the
+authenticated E2E suite.
 """
 
 from __future__ import annotations

@@ -322,8 +322,8 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
     try:
         # Wave 2 of plan ``host-protocol-removal`` made every dependency
         # of :func:`refresh_auth_session` an explicit keyword-only
-        # collaborator. Drive the real Session's collaborators through
-        # the new entry point so the persistence path goes through the
+        # collaborator. Drive the real client collaborators through the
+        # new entry point so the persistence path goes through the
         # production ``ClientLifecycle.save_cookies`` → ``CookiePersistence``
         # → ``asyncio.to_thread(fake_save_cookies_to_storage)`` plumbing.
         await refresh_auth_session(

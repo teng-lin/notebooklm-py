@@ -12,7 +12,7 @@ from notebooklm.exceptions import NoteNotFoundError, RPCError
 
 @pytest.fixture
 def mock_core():
-    """Create a mocked Session for NotesAPI.
+    """Create a fake core for NotesAPI.
 
     ``NoteService`` and ``NoteBackedMindMapService`` are wired against
     this same mock, so a ``mock_core.rpc_executor.rpc_call`` stub drives both the

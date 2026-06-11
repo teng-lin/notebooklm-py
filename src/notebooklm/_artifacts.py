@@ -178,8 +178,10 @@ class ArtifactsAPI:
         Reports, Quizzes, Flashcards, Infographics, Slide Decks, Data Tables,
         and Mind Maps.
 
-        Note: Mind maps are stored in a separate system (notes) but are included
-        here since they are AI-generated studio content.
+        Note: Note-backed mind maps are stored in the notes collection, while
+        interactive mind maps are studio artifacts (type 4 / variant 4). This
+        listing merges both backings under ``ArtifactType.MIND_MAP`` because
+        both are AI-generated mind-map content.
 
         Args:
             notebook_id: The notebook ID.
@@ -590,14 +592,12 @@ class ArtifactsAPI:
         later terminal ``failed`` status (observed by polling).
 
         This method follows the ADR-0019 "async kickoff" contract: a
-        synchronous server refusal (``USER_DISPLAYABLE_ERROR`` — e.g. rate
+        synchronous server refusal (``USER_DISPLAYABLE_ERROR`` - e.g. rate
         limit, quota, or a non-retryable artifact) **raises** the underlying
         :class:`~notebooklm.exceptions.RateLimitError` /
         :class:`~notebooklm.exceptions.RPCError` rather than returning
-        ``status="failed"``. (As a brand-new method it is born on the right
-        side of the contract; the ``generate_*`` / :meth:`revise_slide` methods
-        still swallow refusals into ``status="failed"`` until v0.8.0, issue
-        #1342.)
+        ``status="failed"``. This now matches the v0.8.0 behavior of the
+        sibling ``generate_*`` / :meth:`revise_slide` methods (#1342).
 
         Args:
             notebook_id: The notebook ID. Routing-only — it sets the
@@ -619,9 +619,9 @@ class ArtifactsAPI:
                 missing-id result (no generation task was created).
         """
         params = build_retry_artifact_params(artifact_id)
-        # Unlike ``_call_generate`` / ``revise_slide``, a USER_DISPLAYABLE_ERROR
-        # refusal is intentionally NOT swallowed into status="failed" — it
-        # propagates as RateLimitError/RPCError per ADR-0019 "async kickoff".
+        # A USER_DISPLAYABLE_ERROR refusal propagates as RateLimitError/RPCError
+        # per ADR-0019 "async kickoff", matching _call_generate / revise_slide
+        # after v0.8.0 (#1342).
         #
         # ``allow_null=True`` lets a null decode through to the explicit
         # ``result is None`` guard below (the golden fixture pins the
@@ -639,12 +639,8 @@ class ArtifactsAPI:
                 "retry",
                 method_id=RPCMethod.RETRY_ARTIFACT.value,
             )
-        # Born ADR-0019-correct: a missing/empty artifact id means no
-        # generation task was created, so raise rather than return the
-        # synthesized ``status="failed"`` that ``_parse_generation_result``
-        # produces for a falsy id (a refusal must never masquerade as a
-        # started-then-failed task). This is stricter than ``revise_slide`` /
-        # ``generate_*``, which still soft-fail that case until v0.8.0 (#1342).
+        # This matches revise_slide / generate_* after v0.8.0 (#1342):
+        # no-task rows raise instead of being reported as started-then-failed.
         # A structurally-short row still raises ``UnknownRPCMethodError`` from
         # ``safe_index`` inside ``_parse_generation_result``.
         status = self._parse_generation_result(result, method_id=RPCMethod.RETRY_ARTIFACT.value)
@@ -688,7 +684,7 @@ class ArtifactsAPI:
         language: str | None = "en",
         instructions: str | None = None,
     ) -> MindMapResult:
-        """Generate an interactive mind map and persist it as a note.
+        """Generate a note-backed mind map and persist it as a note.
 
         Returns:
             A :class:`~notebooklm._types.research.MindMapResult` with
