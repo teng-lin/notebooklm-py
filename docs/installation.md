@@ -55,7 +55,7 @@ This is the canonical installation guide for `notebooklm-py`. The README has a q
 | **C — Library user** | `uv add notebooklm-py` (or `pip install notebooklm-py` inside your project venv) |
 | **D — Headless server / CI** | `pip install notebooklm-py` inside a venv/container; ship a `storage_state.json` (no Playwright) |
 | **E — Contributor** | `uv sync --frozen --extra browser --extra dev --extra markdown && uv run playwright install chromium && uv run pre-commit install` |
-| **F — Power user** | `uv tool install "notebooklm-py[browser,cookies,markdown]"` (Python ≤ 3.12 only) |
+| **F — Power user** | `uv tool install --python 3.12 "notebooklm-py[browser,cookies,markdown]"` (the `cookies` extra needs Python ≤ 3.12; `--python 3.12` makes uv provision a matching interpreter even if your default is 3.13+) |
 
 ---
 
