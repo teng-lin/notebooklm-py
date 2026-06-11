@@ -172,13 +172,13 @@ Two clocks run in parallel:
 - The **identity clock** (`*SID`) ticks in months. Google extends it
   silently as long as it sees activity; for a daily-active user it
   effectively never expires.
-- The **freshness clock** (`*PSIDTS`) ticks in **~10 minute** intervals.
-  The server self-reports the cadence in the `RotateCookies` response
-  body as `["identity.hfcr",600]` (`hfcr` = "high-frequency cookie
-  rotation"; `600` = seconds). Every active browser must hit an
-  identity surface roughly that often, or `*PSIDTS` ages out and every
-  subsequent RPC fails with a redirect to
-  `accounts.google.com/v3/signin/...`.
+- The **freshness clock** (`*PSIDTS`) has a recommended rotation cadence
+  of about **10 minutes**. The server self-reports the cadence in the
+  `RotateCookies` response body as `["identity.hfcr",600]` (`hfcr` =
+  "high-frequency cookie rotation"; `600` = seconds). This is a
+  rotation hint, not a hard expiration time: stale values can keep
+  working for hours or days depending on server-side state, but
+  long-idle sessions eventually drift into sign-in redirects.
 
 Server-driven, not client-driven: the client posts to a rotation
 endpoint, the server inspects the existing `*SID` (and optionally a
@@ -195,7 +195,7 @@ rotation; the cadence is the server's call.
 > [#203](https://github.com/HanaokaYuzu/Gemini-API/issues/203) reports
 > attribute "cookies expire after a few hours" to refresh-mechanism
 > failure (SID-class aging out once freshness rotation has stalled
-> entirely), not to a server-side TTL reduction.
+> entirely), not to a hard rejection TTL reduction.
 
 **Crucially: pure RPC traffic against `notebooklm.google.com` does not
 trigger rotation.** NotebookLM's `batchexecute` endpoint accepts the
@@ -243,10 +243,10 @@ The endpoint that enforces this is
 of the unsigned `RotateCookies` we currently use. It returns rotated
 cookies only if the signature checks out.
 
-The protective property: an attacker who exfiltrates the cookie jar
-gets nothing time-limited. Within ~10 minutes the freshness cookie ages
-out, the attacker can't sign the next rotation, and the stolen session
-is dead.
+The protective property: an attacker who exfiltrates the cookie jar gets
+nothing they can refresh indefinitely. Once Google requires the next
+bound-cookie rotation, the attacker cannot sign it, and the stolen
+session dies instead of being renewed.
 
 The [W3C DBSC spec](https://w3c.github.io/webappsec-dbsc/) is
 **deliberately structured** so that only browsers with hardware key
@@ -374,7 +374,7 @@ When reading code or issue threads, distinguish:
 Reports that "cookies are expiring faster" usually trace to either the
 session entering a risk-flagged state (§3.2) or to the rotation
 mechanism failing for hours and `*SID` finally aging out — not to a
-shorter server-side TTL.
+shorter hard rejection TTL.
 
 ### 2.6 Domain tiering: REQUIRED vs OPTIONAL cookie domains
 
@@ -464,9 +464,9 @@ where it's needed.
 
 ### 3.1 Cookie classes and their decay clocks
 
-| Cookie | Server-side TTL | Lifecycle |
+| Cookie | Rotation / expiry signal | Lifecycle |
 |---|---|---|
-| `__Secure-1PSIDTS` (and `*-3PSIDTS`) | ~10 min, declared by Google in `RotateCookies` response body as `[["identity.hfcr",600],...]` | Designed to be rotated frequently; the canonical "rotating freshness partner" of `*PSID` |
+| `__Secure-1PSIDTS` (and `*-3PSIDTS`) | Recommended rotation cadence ~10 min, declared by Google in `RotateCookies` response body as `[["identity.hfcr",600],...]`; not a hard TTL | Designed to be refreshed opportunistically; stale values can keep working for hours or days, but long-idle sessions eventually drift into sign-in redirects |
 | `SIDCC`, `__Secure-1PSIDCC`, `__Secure-3PSIDCC` | ~5 min sliding window | Rotates on nearly every request to Google; ephemeral, generally not load-bearing for auth |
 | `SID`, `HSID`, `SSID`, `APISID`, `SAPISID` | Months to ~1 year (issued `Max-Age`) | Long-lived identity; rotated by Chrome periodically through normal browsing but not by us |
 | `__Secure-1PSID`, `__Secure-3PSID`, `__Secure-1PAPISID`, `__Secure-3PAPISID` | Same as above, "Secure" cousins | Same lifecycle |
@@ -1668,10 +1668,12 @@ When to panic:
 
 Things we don't know that would inform future iterations:
 
-- **Exact `*PSIDTS` server-side TTL distribution.** We've seen the
-  `["identity.hfcr",600]` declared interval. Anecdotal data from
-  Gemini-API/Bard-API issue threads suggests 5-60 min variation by account.
-  Real longitudinal data would let us tune L2's 60s floor more precisely.
+- **Exact `*PSIDTS` stale-value acceptance distribution.** We've seen the
+  `["identity.hfcr",600]` declared interval, and local probes show stale
+  values can keep authenticating far beyond that cadence. Anecdotal data from
+  Gemini-API/Bard-API issue threads suggests acceptance still varies by
+  account, IP, Workspace policy, and extraction quality. Real longitudinal
+  data would let us tune L2's 60s floor more precisely.
 - **What kept Probe B alive past T+20m without `*PSIDTS` rotation?** B used
   `CheckCookie` GET as L1, which observably did *not* rotate `*PSIDTS`.
   Yet B's session survived hours past A's death (same cookies, no L1).

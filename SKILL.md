@@ -27,8 +27,15 @@ fi
 
 **From GitHub (use latest release tag, NOT main branch):**
 ```bash
-# Get the latest release tag (using curl)
-LATEST_TAG=$(curl -s https://api.github.com/repos/teng-lin/notebooklm-py/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+# Get the latest release tag (requires curl + jq)
+if ! command -v jq >/dev/null; then
+    echo "jq is required to read the latest release tag" >&2
+    exit 1
+fi
+LATEST_TAG=$(
+    curl -fsSL https://api.github.com/repos/teng-lin/notebooklm-py/releases/latest |
+    jq -r '.tag_name'
+)
 # Includes [browser] so the interactive `notebooklm login` flow works.
 pip install "notebooklm-py[browser] @ git+https://github.com/teng-lin/notebooklm-py@${LATEST_TAG}"
 ```

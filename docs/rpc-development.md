@@ -476,7 +476,7 @@ Document:
 ### Validation
 
 ```python
-async def validate_root_rpc_call(method_name: str, params: list, expected_action: str):
+async def validate_root_rpc_call(method_name: str, params: list):
     from notebooklm import NotebookLMClient
     from notebooklm.rpc import RPCMethod
 
@@ -487,7 +487,7 @@ async def validate_root_rpc_call(method_name: str, params: list, expected_action
         result = await client.rpc_call(RPCMethod[method_name], params)
 
     assert result is not None, f"RPC {method_name} returned None"
-    return {"method": method_name, "action": expected_action, "status": "verified"}
+    return {"method": method_name, "status": "verified"}
 ```
 
 ## RPC Health Check Triage Policy

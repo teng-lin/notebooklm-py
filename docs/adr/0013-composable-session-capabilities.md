@@ -73,9 +73,11 @@ identified two categories of capability:
 - **SHARED**: a capability used by ≥2 features today, justifying
   promotion to a module-level Protocol in `_runtime/contracts.py`.
   Examples: logical RPC dispatch (`rpc_call`) is used by every feature
-  API; loop-affinity assertion is used by chat plus artifact polling;
-  `operation_scope(...)` is used by sources upload plus artifact
-  polling.
+  API; loop-affinity assertion is used by chat plus artifact polling.
+  The concrete `TransportDrainTracker.operation_scope(...)` helper is
+  used by sources upload plus artifact polling, but the named
+  `OperationScopeProvider` Protocol is no longer a shared contract; it
+  lives beside artifact polling, its only Protocol consumer.
 - **FEATURE-LOCAL**: a capability used by exactly one feature, with no
   current second consumer. Examples: `transport_post(...)` + chat's
   manual `next_reqid(...)` bookkeeping (only chat needs them);

@@ -2,7 +2,7 @@
 
 ## Status
 
-One of: `Proposed`, `Proposed — <short explanation>`, `Accepted`, `Accepted (retroactive)`, `Accepted (#PR)`, `Accepted (Sunset = <event>)`, `Superseded by ADR-NNNN (#PR)`, `Deprecated`, `Rejected`.
+One of: `Proposed`, `Proposed — <short explanation>`, `Accepted`, `Accepted (retroactive)`, `Accepted (#PR)`, `Accepted (Sunset = <event>)`, `Superseded — <short explanation>`, `Superseded by ADR-NNNN (#PR)`, `Deprecated`, `Rejected`.
 
 A *sunset clause* records the conditions under which the decision is expected to be revisited (e.g. "Accepted (Sunset = D2 cutover)" means the ADR is in force today but will be re-statused when the named work lands).
 

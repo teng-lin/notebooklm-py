@@ -46,12 +46,20 @@ jobs:
         VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-    - name: Sync locked deps + canonical contributor extras
+    - name: Sync locked deps + non-cookies extras
       # Pull every runtime + tooling dep from `uv.lock` (the same lockfile
-      # contributors install from) so the verify step exercises the canonical
-      # dep tree rather than whatever pip happens to resolve at smoke time.
+      # contributors install from) so the verify step exercises the full
+      # non-cookies dep tree rather than whatever pip happens to resolve at
+      # smoke time. `cookies` stays excluded because rookiepy has Python
+      # 3.13+ install issues.
       # The published wheel itself is force-reinstalled in the next step.
-      run: uv sync --frozen --extra browser --extra dev --extra markdown
+      run: >
+        uv sync --frozen
+        --extra browser
+        --extra dev
+        --extra markdown
+        --extra mcp
+        --extra server
 
     - name: Install published wheel from TestPyPI (--no-deps)
       if: inputs.source == 'testpypi'
@@ -118,9 +126,9 @@ jobs:
       shell: bash
       run: |
         source .venv/bin/activate
-        # Test deps come from the `[browser,dev,markdown]` extras installed
-        # via `uv sync --frozen` above. Just need to provision the Chromium
-        # browser binary + Linux system libs.
+        # Test deps come from the non-cookies extras installed via
+        # `uv sync --frozen` above. Just need to provision the Chromium browser
+        # binary + Linux system libs.
         playwright install chromium
         playwright install-deps chromium
 

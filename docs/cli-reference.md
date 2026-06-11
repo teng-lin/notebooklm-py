@@ -147,7 +147,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
 | `list` | - | `--json`, `--limit N`, `--no-truncate` | `source list --limit 20 --no-truncate` |
-| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal`, `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
+| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal` (URL sources only), `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
 | `add-research [query]` | Search query (or `--prompt-file -` for stdin) | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--cited-only`, `--no-wait`, `--timeout`, `--prompt-file PATH` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | `--json` | `source get src123` |

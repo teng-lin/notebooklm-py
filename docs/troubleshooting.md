@@ -376,7 +376,7 @@ missing or untrusted source IDs raise `SourceAddError` instead of returning
 ```bash
 # Instead of: notebooklm source add ./notes.txt
 # Do:
-notebooklm source add "$(cat ./notes.txt)"
+notebooklm source add - --type text --title "My Notes" < ./notes.txt
 ```
 
 Or in Python:

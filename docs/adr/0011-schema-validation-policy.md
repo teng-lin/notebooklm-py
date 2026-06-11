@@ -93,13 +93,15 @@ not consult `_env`; it either returns the successfully descended value
 or raises `UnknownRPCMethodError` with `method_id`, `source`, `path`,
 and a truncated `data_at_failure` preview.
 
-### Opt-out lifecycle
+### Historical opt-out lifecycle
 
-- **PR 13.9a:** unset = strict; explicit `=0` = soft.
+- **PR 13.9a:** unset meant strict; explicit `=0` temporarily restored
+  soft mode.
 - **v0.5.0:** explicit soft-mode fallback logged the drift warning and
   emitted `DeprecationWarning` before returning `None`.
-- **v0.7.0:** soft-mode path removed. `NOTEBOOKLM_STRICT_DECODE` became
-  a no-op for schema-drift policy.
+- **v0.7.0:** soft-mode path was removed. `NOTEBOOKLM_STRICT_DECODE`
+  became a no-op for schema-drift policy and no longer affects decode
+  behavior.
 
 ### Test surface
 
@@ -126,8 +128,8 @@ pins the helper's structured diagnostics and import surface.
   every cassette playback as a drift canary.
 - Adding a new feature call site no longer requires the author to
   reason about "should this default to soft or strict?" — the answer
-  is always strict, and the env-var opt-out is documented for the
-  rare downstream user who needs it during migration.
+  is always strict, and the historical env-var opt-out is documented
+  only to explain why old environments that still set it see no effect.
 
 **Unwanted:**
 

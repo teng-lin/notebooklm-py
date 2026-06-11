@@ -7,7 +7,7 @@ This directory holds the canonical decisions that shape the `notebooklm-py` code
 - Read the relevant ADR before changing the pattern it describes. If you disagree, write a new ADR that supersedes it — do not edit the original past correcting typos.
 - Numbering is append-only. Retired ADR numbers are never re-used.
 - Filenames follow `NNNN-short-title.md` (lowercase, kebab-case).
-- Status values: `Proposed`, `Proposed — <short explanation>`, `Accepted`, `Accepted (retroactive)`, `Accepted (#PR)`, `Accepted (Sunset = <event>)`, `Superseded by ADR-NNNN (#PR)`, `Deprecated`, `Rejected`.
+- Status values: `Proposed`, `Proposed — <short explanation>`, `Accepted`, `Accepted (retroactive)`, `Accepted (#PR)`, `Accepted (Sunset = <event>)`, `Superseded — <short explanation>`, `Superseded by ADR-NNNN (#PR)`, `Deprecated`, `Rejected`.
 - Format: lightweight hybrid — six sections in this exact order: _Title heading_ (`# ADR-NNNN: <Title>`), _Status_, _Context_, _Decision_, _Consequences_, _Alternatives considered_. See [0000-template.md](0000-template.md).
 
 ## When an ADR is required
@@ -27,7 +27,7 @@ The ADR Index table utilizes five eras of Status notation to reflect the lifecyc
 
 1. **`Accepted` / `Accepted (retroactive)`** — The decision is currently active and adopted.
 2. **`Accepted (Tier X PR Y.Z)`** — Historical PR-naming convention from the early refactoring tiers (Tiers 11-12).
-3. **`Superseded by ADR-NNNN (#PR)`** — Canonical post-Tier-12 supersession form, linking to the replacing ADR and PR.
+3. **`Superseded — <note>` / `Superseded by ADR-NNNN (#PR)`** — Canonical supersession forms, either with a short inline explanation or a replacing ADR and PR.
 4. **`Accepted (#PR)` / `Accepted; <note>` / `Proposed — <note>`** — Short explanatory forms used when a status needs one compact qualifier.
 5. **`Superseded by <named-PR> (D1/D2 PR-X)`** — Pre-canonical historical supersession form, linking to specific branch-refactoring PRs.
 
