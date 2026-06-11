@@ -8,30 +8,38 @@ the historical narrative lives in
 ## Layered overview
 
 ```text
+            three thin, transport-specific adapters
++----------------+  +----------------+  +----------------+
+| CLI    (cli/)  |  | MCP    (mcp/)  |  | REST (server/) |
+| Click commands |  | FastMCP tools  |  | FastAPI routes |
++----------------+  +----------------+  +----------------+
+         \                  |                  /
+          \                 |                 /
+           +----------------+----------------+
+                            ▼
 +----------------------------------------------------------+
-| CLI Layer (src/notebooklm/cli/*)                         |
-|   Top-level commands (login, use, status, list, ask,     |
-|   doctor, completion, ...) registered by the session/    |
-|   notebook/chat/doctor modules; plus subcommand groups   |
-|   (source, artifact, agent, generate, download, note,    |
-|   share, skill, research, language, profile). Pure       |
-|   adapter — no RPC logic.                                |
+| Application Layer  (src/notebooklm/_app/*)               |
+|   Transport-neutral business logic shared by all three   |
+|   adapters: id validation/resolution, plan-building,     |
+|   status projection, retry/wait orchestration,           |
+|   errors.classify (the single failure-category source),  |
+|   diagnostics. Imports no click / rich / fastmcp /       |
+|   fastapi (boundary lint-enforced; ADR-0021).            |
 +----------------------------------------------------------+
-                          ▼
+                            ▼
 +----------------------------------------------------------+
 | Client Layer (client.py + feature APIs)                  |
 |   NotebookLMClient + namespaced sub-clients:             |
 |     .notebooks  .sources  .artifacts  .chat              |
 |     .notes      .research  .settings  .sharing           |
 +----------------------------------------------------------+
-                          ▼
+                            ▼
 +----------------------------------------------------------+
 | Runtime Layer (client-owned collaborators)               |
-|   NotebookLMClient owns ClientComposed plus focused       |
-|   collaborators such as RpcExecutor, RuntimeTransport,   |
-|   ClientLifecycle, and Kernel.                           |
+|   ClientComposed + RpcExecutor, RuntimeTransport,        |
+|   ClientLifecycle, Kernel.                               |
 +----------------------------------------------------------+
-                          ▼
+                            ▼
 +----------------------------------------------------------+
 | RPC Layer (src/notebooklm/rpc/*)                         |
 |   types.py    method IDs + enums (source of truth)       |
@@ -40,20 +48,34 @@ the historical narrative lives in
 +----------------------------------------------------------+
 ```
 
+Three thin **transport adapters** fan into that one shared core; everything below
+`_app/` is then identical regardless of which adapter drove the call — there is
+exactly one client runtime and one RPC stack:
+
+| Adapter | Package | Transport | Console script | Install | Failures render as |
+| --- | --- | --- | --- | --- | --- |
+| **CLI** | `cli/` | terminal (Click) | `notebooklm` | base | exit codes + the byte-stable `--json` error envelope (ADR-0015) |
+| **MCP** | `mcp/` | Model Context Protocol (FastMCP) | `notebooklm-mcp` | `mcp` extra · experimental | MCP tool error content (`CODE: message`) |
+| **REST** | `server/` | HTTP (FastAPI) | `notebooklm-server` | `server` extra · experimental | HTTP status + `{"error": {"category", "message"}}` |
+
 ### Transport-neutral application layer (`_app/`)
 
-The CLI is a thin adapter over `src/notebooklm/_app/` — transport-neutral
-business logic (id validation/resolution, plan-building, status projection,
-retry/wait orchestration, error classification, diagnostics) shared by the CLI
-and other front-ends (a FastMCP server, a future HTTP surface). Each adapter
-parses its own inputs into typed `Request`/`Plan`/`Result` dataclasses, calls
-the neutral core, and renders the typed result into its own envelope vocabulary
-(the CLI builds the byte-stable `--json` envelope; ADR-0015). The package imports
-no `click`/`rich`/`cli`/`fastmcp` — the boundary is lint-enforced — and raises
-only the public `notebooklm.exceptions` hierarchy, with `_app.errors.classify`
-as the single neutral source of the failure-category decision each adapter
-projects onto its own codes. See ADR-0021. The per-module index and the full
-tree are in [File map](#file-map) below.
+The CLI, the MCP server (`mcp/`), and the REST server (`server/`) are each thin
+adapters over `src/notebooklm/_app/` — transport-neutral business logic (id
+validation/resolution, plan-building, status projection, retry/wait
+orchestration, error classification, diagnostics) shared by all three
+front-ends. Each adapter parses its transport's inputs into typed
+`Request`/`Plan`/`Result` dataclasses, calls the neutral core (which receives the
+live client), and renders the typed result into its own envelope vocabulary;
+simple reads/mutations call the `client.*` namespaces directly, while multi-step
+flows go through the `_app/` cores. The package imports no transport framework —
+`click` / `rich` / `fastmcp` / `fastapi`, nor the `cli` / `server` / `rpc`
+sibling packages — with the boundary lint-enforced
+(`tests/_guardrails/test_app_boundary.py`). It raises only the public
+`notebooklm.exceptions` hierarchy, with `_app.errors.classify` as the single
+neutral source of the failure-category decision each adapter projects onto its
+own codes (CLI exit codes, MCP error shapes, REST HTTP statuses). See ADR-0021.
+The per-module index and the full tree are in [File map](#file-map) below.
 
 ## Library call flows
 
@@ -71,7 +93,7 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
 
 ```text
 +----------------------------------------------------------------+
-| CLI command or user code                                       |
+| CLI command / MCP tool / REST route / library call             |
 +----------------------------------------------------------------+
                                  |
                                  v
@@ -639,6 +661,38 @@ the CLI — the rest stays behind the `auth.py` facade. The same test keeps
 low-level helpers (`runtime`, `context`, `resolve`, `rendering`,
 `auth_runtime`, `options`) from growing upward dependencies on command modules
 or the `cli.helpers` compatibility facade.
+
+## MCP adapter (`mcp/`)
+
+The MCP server is a second thin adapter beside `cli/`, opt-in behind the `mcp`
+extra and **experimental** (preview). `create_server()` builds a FastMCP server
+that exposes the `_app/` cores as MCP tools driving a single long-lived
+`NotebookLMClient`; run it with the `notebooklm-mcp` console script (stdio or
+loopback HTTP). Like the CLI it imports no `click` / `rich` / `cli` — it is built
+on the `_app/` cores only (enforced by `tests/_guardrails/test_mcp_boundary.py`).
+Failures surface as `CODE: message` strings projected from `_app.errors.classify`,
+and mutating tools are confirmation-gated (they return a `needs_confirmation`
+preview unless called with `confirm=true`). `notebooklm mcp install <client>`
+wires it into Claude Desktop/Code, Cursor, or Windsurf, and `desktop-extension/`
+packages a one-click `.mcpb` bundle. Full guide:
+[`docs/mcp-guide.md`](./mcp-guide.md).
+
+## REST server (`server/`)
+
+The single-tenant REST server is the third adapter (ADR-0021), opt-in behind the
+`server` extra and **experimental**. A FastAPI app maps `/v1` routes onto the
+`_app/` cores and the public client namespaces, with one `NotebookLMClient` opened
+once at the ASGI lifespan inside the server loop (honoring the ADR-0004 loop-
+affinity contract). Every `/v1` request requires a static bearer token
+(constant-time compare) plus a loopback `Host` literal (a DNS-rebinding guard);
+`/healthz` is the one public route, and the `/docs` / `/openapi.json` schema
+surface is disabled. Long-running work (source ingest, artifact generation) uses
+the **poll-the-resource** model — the create call returns immediately and the
+matching `GET` reports `pending` / `200` / `404` / `409` / `410`. Failures project
+from `_app.errors.classify` onto an HTTP status plus the
+`{"error": {"category", "message"}}` envelope. It imports no `click` / `rich` /
+`cli` (enforced by `tests/_guardrails/test_server_boundary.py`). Launch and
+configuration: [`docs/installation.md`](./installation.md#rest-api-server).
 
 ## Middleware chain (ADR-0009)
 
