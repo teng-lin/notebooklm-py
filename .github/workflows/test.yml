@@ -113,6 +113,43 @@ jobs:
     - name: Verify e2e test fixtures
       run: uv run pytest tests/e2e --collect-only -q
 
+  mcp:
+    # The MCP server ships behind the optional `mcp` extra, so the canonical
+    # install (browser+dev+markdown) used by the main matrix omits fastmcp and the
+    # MCP suites (tests/unit/mcp, tests/integration/mcp_vcr) are skipped there via
+    # importorskip. This dedicated job installs the `mcp` extra and runs them, so
+    # the MCP adapter — including the research_import LBwxtb leg (#1541) — has real
+    # CI coverage across all three OSes.
+    name: MCP suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.custom_branch || github.ref }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Install dependencies (mcp extra)
+      run: uv sync --frozen --extra dev --extra mcp
+
+    - name: Run MCP suite
+      run: uv run pytest tests/unit/mcp tests/integration/mcp_vcr -q
+
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
