@@ -246,12 +246,32 @@ unset (still truncated).
 
 > **First, rule out a mis-decoded success.** Re-run the failing action, then check `notebooklm list`: if the resource was actually **created** despite the error, it's a *response*-decoding issue (share the **Response** below). If it was **not** created, Google rejected our **request** (share the **Payload** below).
 
-**Help us fix it — share the web UI's payload (no cookies needed).** DevTools already isolates the RPC payload from your cookies, so no special tooling is required:
+**Help us fix it — share the web UI's payload (no cookies needed).** Either option below leaks nothing: cookies, the `at=` CSRF token, and `Set-Cookie` live in request/response *headers*, never inside the `f.req` payload.
 
-1. Open DevTools → **Network**, then perform the action (e.g. create a notebook) in the NotebookLM web UI.
-2. Click the `batchexecute?rpcids=...` POST (e.g. `rpcids=CCqFvf` for create).
-3. Open the **Payload** tab (Chrome) / **Request** tab (Firefox). Copy **only** the decoded `f.req` value — **not** the `at=` field beside it (your CSRF token), and stay out of the **Cookies**/**Headers** tabs (cookies live there, never in `f.req`). For the mis-decode case instead, use the **Response** / **Preview** tab — the response body carries no cookies.
-4. Replace your notebook title (the only free-text value) with `REDACTED` and paste the array into the issue. We diff it against what the library sends — `["<title>", null, null, [2], [1]]` for create — and update the payload.
+**Option A — thorough, auto-scrubbed (recommended; captures every RPC + its response):**
+
+1. Open DevTools → **Network**, perform the failing action(s) in the web UI, then export the session: ⤓ **Export HAR** (Chrome) / **Save All As HAR** (Firefox) → `capture.har`.
+2. Run the scrubber. It reads **only** each request's `f.req` and the response body — never the headers/cookies arrays — and redacts every text value to its length:
+
+   ```bash
+   python scripts/scrub_rpc_har.py capture.har          # or: --rpcid CCqFvf
+   ```
+
+   Output (safe to paste verbatim):
+
+   ```text
+   CCqFvf  (CREATE_NOTEBOOK)
+     request : ["<str:7>",null,null,[2],[1]]
+     response: HTTP 200 | status_code=[3] | result=null
+   ```
+
+   `status_code=[3]` with `result=null` means Google rejected the **request** (share it). A non-null `result` means it actually worked — a **response**-decode issue.
+
+**Option B — quick, one RPC by hand (no script):**
+
+1. In DevTools → **Network**, click the `batchexecute?rpcids=...` POST (e.g. `rpcids=CCqFvf` for create, `izAoDd` for add-source).
+2. Open the **Payload** tab (Chrome) / **Request** tab (Firefox), copy **only** the `f.req` value — **not** the `at=` field beside it, and don't open the **Cookies**/**Headers** tabs.
+3. Replace any free text (title, URL) with `REDACTED` and paste it. We diff it against what the library sends — `["<title>", null, null, [2], [1]]` for create — and update the payload.
 
 ### Generation Failures
 
