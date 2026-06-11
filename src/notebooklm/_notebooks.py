@@ -12,9 +12,9 @@ from ._notebook_metadata import (
 )
 from ._row_adapters.sources import SourceRow
 from ._runtime.contracts import RpcCaller
-from ._source.upload_payloads import build_template_block
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
+from ._source.upload_payloads import build_template_block
 from .exceptions import (
     AuthError,
     DecodingError,
