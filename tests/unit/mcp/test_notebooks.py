@@ -48,7 +48,9 @@ async def test_notebook_list(mcp_call, mock_client) -> None:
 async def test_notebook_create(mcp_call, mock_client) -> None:
     mock_client.notebooks.create = AsyncMock(return_value=FakeNotebook(id=NB_ID, title="New"))
     result = await mcp_call("notebook_create", {"title": "New"})
-    assert result.structured_content == {"notebook": {"id": NB_ID, "title": "New"}}
+    # Flat shape with the id exposed as ``notebook_id`` (#1540), matching
+    # ``note_create`` / ``notebook_delete`` rather than nesting under "notebook".
+    assert result.structured_content == {"notebook_id": NB_ID, "title": "New"}
     mock_client.notebooks.create.assert_awaited_once_with("New")
 
 

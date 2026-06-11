@@ -157,10 +157,9 @@ class TestMcpLifecycle:
 
         # Create via MCP.
         created = await _call(client, "notebook_create", {"title": title})
-        notebook = created["notebook"]
-        nb_id = notebook["id"]
+        nb_id = created["notebook_id"]
         assert nb_id
-        assert notebook["title"] == title
+        assert created["title"] == title
         created_notebooks.append(nb_id)
 
         # Describe via MCP (resolves the full id directly — read path).
@@ -193,7 +192,7 @@ class TestMcpNameResolution:
         """A notebook created with a unique title is reachable by that title."""
         title = f"E2E-MCP-Name-{uuid4().hex[:8]}"
         created = await _call(client, "notebook_create", {"title": title})
-        nb_id = created["notebook"]["id"]
+        nb_id = created["notebook_id"]
         created_notebooks.append(nb_id)
 
         # Drive describe with the TITLE (not the id) — the MCP resolver must

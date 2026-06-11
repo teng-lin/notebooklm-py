@@ -15,8 +15,8 @@ value is decorative — reusing the recorded id keeps intent obvious.
 The point of these tests is to PIN the serialized ``structured_content`` wire
 shape an MCP client actually receives — which differs per tool:
 
-* ``notebook_create`` nests the created notebook under a ``notebook`` key
-  (``to_jsonable(NotebookCreateResult(notebook=...))``).
+* ``notebook_create`` is flat: the created notebook's fields at the top level
+  with its id exposed as ``notebook_id`` (#1540) — matching ``note_create``.
 * ``notebook_describe`` is flat: ``{"notebook_id", "description": {...}}``.
 * ``notebook_rename`` is flat: ``{"notebook_id", "new_title"}``.
 * ``notebook_delete`` (confirmed) is flat: ``{"status", "notebook_id"}``.
@@ -51,26 +51,32 @@ async def test_mcp_notebook_create_over_vcr() -> None:
     ``execute_notebook_create`` -> ``client.notebooks.create`` -> recorded
     ``CREATE_NOTEBOOK`` (``CCqFvf``) RPC.
 
-    Pins the *nested* wire shape: the tool serializes
-    ``NotebookCreateResult(notebook=...)`` via ``to_jsonable``, so the created
-    notebook lands UNDER a ``notebook`` key (NOT flat) — the asymmetry with
-    ``note_create`` (flat) this suite exists to catch.
+    Pins the *flat* wire shape: the created notebook's fields land at the top
+    level with its id exposed as ``notebook_id`` (matching ``note_create`` and
+    ``notebook_delete``), NOT nested under a ``notebook`` key (#1540).
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool("notebook_create", {"title": CREATE_TITLE})
 
     structured = result.structured_content
     assert isinstance(structured, dict)
-    # Nested under "notebook" — the load-bearing asymmetry vs. flat note_create.
-    assert "notebook" in structured
-    notebook = structured["notebook"]
-    assert isinstance(notebook, dict)
-    # The Notebook dataclass fields the RPC row decodes to.
-    assert notebook.get("id"), "created notebook is missing an id"
-    assert "title" in notebook
-    assert "created_at" in notebook
-    assert "sources_count" in notebook
-    assert "is_owner" in notebook
+    # Flat: the id is exposed as ``notebook_id`` and the record is NOT nested.
+    assert structured.get("notebook_id"), "created notebook is missing a notebook_id"
+    # Pin the EXACT flat key set — every ``Notebook`` dataclass field, with
+    # ``id`` renamed to ``notebook_id``. Asserting the exact set (not just
+    # ``in`` checks) is the load-bearing guard: it catches BOTH a regression
+    # back to the nested ``{"notebook": ...}`` shape AND a silently dropped
+    # field such as ``modified_at`` ("no metadata is dropped"). A new Notebook
+    # field will fail this assertion by design, forcing a conscious wire-shape
+    # decision.
+    assert set(structured) == {
+        "notebook_id",
+        "title",
+        "created_at",
+        "sources_count",
+        "is_owner",
+        "modified_at",
+    }
 
 
 @pytest.mark.asyncio

@@ -47,7 +47,15 @@ def register(mcp: Any) -> None:
         client = get_client(ctx)
         with mcp_errors():
             result = await core.execute_notebook_create(client, title)
-            return to_jsonable(result)
+            # Flatten the created notebook to a top-level shape consistent with
+            # the sibling create tool (``note_create``) and ``notebook_delete``,
+            # which key the notebook by ``notebook_id`` rather than nesting the
+            # record under a ``notebook`` key (#1540). The remaining Notebook
+            # fields (title, created_at, sources_count, is_owner, modified_at)
+            # stay at the top level so no metadata is dropped.
+            notebook = to_jsonable(result.notebook)
+            notebook_id = notebook.pop("id")
+            return {"notebook_id": notebook_id, **notebook}
 
     @mcp.tool(annotations=READ_ONLY)
     async def notebook_describe(ctx: Context, notebook: str) -> dict[str, Any]:

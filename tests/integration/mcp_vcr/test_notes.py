@@ -12,12 +12,11 @@ notebook/note ids, decoded from each ``f.req`` body) so :func:`resolve_notebook`
 body matcher is shape-only for batchexecute requests, so the id value itself is
 decorative.
 
-The point is to PIN the serialized ``structured_content`` wire shape — which is
-INCONSISTENT with the notebook tools:
+The point is to PIN the serialized ``structured_content`` wire shape — each note
+tool builds its dict BY HAND (not ``to_jsonable`` over a result dataclass):
 
 * ``note_create`` is FLAT with a ``created: true`` flag
-  (``{"notebook_id", "title", "note_id", "created"}``) — note the contrast with
-  ``notebook_create``, which nests under a ``notebook`` key.
+  (``{"notebook_id", "title", "note_id", "created"}``).
 * ``note_list`` is ``{"notebook_id", "notes": [...]}``.
 * ``note_delete`` (confirmed) is ``{"status", "notebook_id", "note_id"}``.
 
@@ -57,10 +56,9 @@ async def test_mcp_note_create_over_vcr() -> None:
     ``CREATE_NOTE`` (``CYK0Xb``) THEN finalizes title/content via ``UPDATE_NOTE``
     (``cYAfTb``) — both recorded in ``notes_create.yaml``.
 
-    Pins the FLAT ``created``-flag wire shape — the load-bearing asymmetry vs.
-    ``notebook_create``, which nests under a ``notebook`` key. The note tool
-    builds its dict by hand (not ``to_jsonable`` over a result dataclass), so the
-    shape is hand-authored and worth pinning verbatim.
+    Pins the FLAT ``created``-flag wire shape. The note tool builds its dict by
+    hand (not ``to_jsonable`` over a result dataclass), so the shape is
+    hand-authored and worth pinning verbatim.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
