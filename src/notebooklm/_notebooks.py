@@ -37,13 +37,8 @@ CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 def build_create_notebook_params(title: str) -> list[Any]:
     """Return the canonical CREATE_NOTEBOOK RPC payload.
 
-    The trailing "template" block migrated from a flat ``[2], [1]`` to the
-    nested :func:`build_template_block` shape that NotebookLM's web UI now sends
-    (gradual Gemini-3.5 rollout). Backends on migrated cohorts reject the old
-    flat shape with ``status=3`` (Invalid argument); the nested shape is
-    accepted by both migrated and not-yet-migrated cohorts (verified live
-    against an un-migrated account), so it is the safe convergence target.
-    See https://github.com/teng-lin/notebooklm-py/issues/1546.
+    The trailing :func:`build_template_block` replaced the old flat ``[2], [1]``
+    tail that migrated backends now reject with ``status=3`` (#1546).
     """
     return [title, None, None, build_template_block()]
 

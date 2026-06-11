@@ -137,9 +137,11 @@ class SourceAddService:
             )
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
         # Nested template block per the Gemini-3.5 wire migration (#1546): the
-        # text spec grew to 11 elements (slot 3 -> 2, trailing 1) and the flat
-        # [2],None,None tail collapsed into [2,None,None,[1,...,[1]]]. Verified
-        # live against an un-migrated account.
+        # text spec grew from 8 to 11 elements (slot 3 None -> 2, trailing 1) and
+        # the flat [2],None,None tail collapsed into the shared template block.
+        # The literal 2 at slot 3 is a source-type code taken verbatim from the
+        # web-UI capture; its exact meaning is undocumented. Verified live
+        # against an un-migrated account.
         params = [
             [[None, [title, content], None, 2, None, None, None, None, None, None, 1]],
             notebook_id,
@@ -213,6 +215,10 @@ class SourceAddService:
             None,
             1,
         ]
+        # TODO(#1546): Drive add is NOT yet migrated to the nested template
+        # block — no live Drive capture/probe yet, so it stays on the old
+        # [2], [1,...,[1]] tail. Migrate via build_template_block() once a Drive
+        # add is captured from the web UI and verified against a live account.
         params = [
             [source_data],
             notebook_id,
