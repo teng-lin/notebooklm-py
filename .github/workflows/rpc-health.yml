@@ -100,10 +100,10 @@ jobs:
       # — it never masks a genuine resolution error.
       shell: bash
       run: |
-        attempt=1
+        attempt=1; max=3
         until uv sync --frozen; do
-          if [ "$attempt" -ge 3 ]; then
-            echo "::error::uv sync failed after 3 attempts" >&2
+          if [ "$attempt" -ge "$max" ]; then
+            echo "::error::uv sync failed after $max attempts" >&2
             exit 1
           fi
           echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
