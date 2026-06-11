@@ -800,11 +800,11 @@ def test_source_upload_rpc_payload_builders_match_golden_envelopes() -> None:
     register_params = build_register_file_source_params("research.pdf", "nb_payload")
     rename_params = build_rename_source_params("src_payload", "Renamed source")
 
+    # Nested template block per the Gemini-3.5 wire migration (#1546).
     assert register_params == [
         [["research.pdf"]],
         "nb_payload",
-        [2],
-        [1, None, None, None, None, None, None, None, None, None, [1]],
+        [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
     ]
     assert encode_rpc_request(RPCMethod.ADD_SOURCE_FILE, register_params) == _expected_rpc_envelope(
         RPCMethod.ADD_SOURCE_FILE,

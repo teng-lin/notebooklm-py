@@ -17,12 +17,16 @@ class ResumableUploadStartRequest:
 
 
 def build_register_file_source_params(filename: str, notebook_id: str) -> list[Any]:
-    """Build ``ADD_SOURCE_FILE`` params for file source registration."""
+    """Build ``ADD_SOURCE_FILE`` params for file source registration.
+
+    The flat ``[2], [1,...,[1]]`` tail collapsed into the single nested
+    ``[2, None, None, [1, ..., [1]]]`` block per the Gemini-3.5 wire migration
+    (#1546). Verified live against an un-migrated account.
+    """
     return [
         [[filename]],
         notebook_id,
-        [2],
-        [1, None, None, None, None, None, None, None, None, None, [1]],
+        [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
     ]
 
 

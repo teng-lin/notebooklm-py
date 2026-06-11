@@ -135,12 +135,14 @@ class SourceAddService:
                 "docs/python-api.md#idempotency."
             )
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
+        # Nested template block per the Gemini-3.5 wire migration (#1546): the
+        # text spec grew to 11 elements (slot 3 -> 2, trailing 1) and the flat
+        # [2],None,None tail collapsed into [2,None,None,[1,...,[1]]]. Verified
+        # live against an un-migrated account.
         params = [
-            [[None, [title, content], None, None, None, None, None, None]],
+            [[None, [title, content], None, 2, None, None, None, None, None, None, 1]],
             notebook_id,
-            [2],
-            None,
-            None,
+            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
         ]
         try:
             result = await rpc.rpc_call(
@@ -354,12 +356,17 @@ class SourceAddService:
         *,
         rpc: RpcCaller,
     ) -> Any:
-        """Add a YouTube video as a source."""
+        """Add a YouTube video as a source.
+
+        The source entry is unchanged, but the flat ``[2], [1,...,[1]]`` tail
+        (4 outer elements) collapsed into the single nested
+        ``[2, None, None, [1, ..., [1]]]`` block (#1546). Verified live against
+        an un-migrated account.
+        """
         params = [
             [[None, None, None, None, None, None, None, [url], None, None, 1]],
             notebook_id,
-            [2],
-            [1, None, None, None, None, None, None, None, None, None, [1]],
+            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
         ]
         return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,

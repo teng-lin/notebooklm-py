@@ -166,12 +166,11 @@ async def test_add_text_uses_exact_rpc_shape_and_wait_hook(
     assert rpc.calls == [
         {
             "method": RPCMethod.ADD_SOURCE,
+            # Nested template block per the Gemini-3.5 wire migration (#1546).
             "params": [
-                [[None, ["Title", "content"], None, None, None, None, None, None]],
+                [[None, ["Title", "content"], None, 2, None, None, None, None, None, None, 1]],
                 "nb_1",
-                [2],
-                None,
-                None,
+                [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
             ],
             "source_path": "/notebook/nb_1",
             "allow_null": False,
