@@ -43,7 +43,7 @@ Issues = "https://github.com/teng-lin/notebooklm-py/issues"
 markdown = ["markdownify>=0.14.1,<2"]
 browser = ["playwright>=1.40.0,<2"]
 cookies = ["rookiepy>=0.1.0,<1"]
-mcp = ["fastmcp>=2.14,<3"]
+mcp = ["fastmcp>=2.14,<4"]
 # Optional single-tenant REST server (the third _app adapter, after cli/ and
 # mcp/). EXPERIMENTAL: the /v1 surface may change in a minor release; it is
 # excluded from the public-API compatibility gate. python-multipart is REQUIRED
