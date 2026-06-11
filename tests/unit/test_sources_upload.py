@@ -1782,6 +1782,13 @@ class TestAddUrlSource:
         # Verify structure: URL at position 2 (different from YouTube which uses position 7)
         assert params[0][0][2] == ["https://example.com/page"]
         assert params[1] == "nb_123"
-        assert params[2] == [2]
-        assert params[3] is None
-        assert params[4] is None
+        # Migrated to the nested trailing block (#1546): spec gains a trailing 1
+        # and [2],None,None collapses into [2,None,None,[1,...,[1]]].
+        assert params[0][0][-1] == 1
+        assert params[2] == [
+            2,
+            None,
+            None,
+            [1, None, None, None, None, None, None, None, None, None, [1]],
+        ]
+        assert len(params) == 3

@@ -20,6 +20,7 @@ from ..exceptions import (
 )
 from ..rpc import RPCError, RPCMethod
 from ..types import Source
+from .upload_payloads import build_template_block
 
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
@@ -135,12 +136,16 @@ class SourceAddService:
                 "docs/python-api.md#idempotency."
             )
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
+        # Nested template block per the Gemini-3.5 wire migration (#1546): the
+        # text spec grew from 8 to 11 elements (slot 3 None -> 2, trailing 1) and
+        # the flat [2],None,None tail collapsed into the shared template block.
+        # The literal 2 at slot 3 is a source-type code taken verbatim from the
+        # web-UI capture; its exact meaning is undocumented. Verified live
+        # against an un-migrated account.
         params = [
-            [[None, [title, content], None, None, None, None, None, None]],
+            [[None, [title, content], None, 2, None, None, None, None, None, None, 1]],
             notebook_id,
-            [2],
-            None,
-            None,
+            build_template_block(),
         ]
         try:
             result = await rpc.rpc_call(
@@ -203,6 +208,10 @@ class SourceAddService:
             None,
             1,
         ]
+        # TODO(#1546): Drive add is NOT yet migrated to the nested template
+        # block — no live Drive capture/probe yet, so it stays on the old
+        # [2], [1,...,[1]] tail. Migrate via build_template_block() once a Drive
+        # add is captured from the web UI and verified against a live account.
         params = [
             [source_data],
             notebook_id,
@@ -347,12 +356,17 @@ class SourceAddService:
         *,
         rpc: RpcCaller,
     ) -> Any:
-        """Add a YouTube video as a source."""
+        """Add a YouTube video as a source.
+
+        The source entry is unchanged, but the flat ``[2], [1,...,[1]]`` tail
+        (4 outer elements) collapsed into the single nested
+        ``[2, None, None, [1, ..., [1]]]`` block (#1546). Verified live against
+        an un-migrated account.
+        """
         params = [
             [[None, None, None, None, None, None, None, [url], None, None, 1]],
             notebook_id,
-            [2],
-            [1, None, None, None, None, None, None, None, None, None, [1]],
+            build_template_block(),
         ]
         return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,
@@ -370,13 +384,18 @@ class SourceAddService:
         *,
         rpc: RpcCaller,
     ) -> Any:
-        """Add a regular URL as a source."""
+        """Add a regular URL as a source.
+
+        The source spec gained a trailing ``1`` and the flat ``[2], None, None``
+        tail collapsed into the nested ``[2, None, None, [1, ..., [1]]]`` block
+        that NotebookLM's web UI now sends; migrated backends reject the old
+        shape (``status=5``/``9``). Verified live against an un-migrated account.
+        See https://github.com/teng-lin/notebooklm-py/issues/1546.
+        """
         params = [
-            [[None, None, [url], None, None, None, None, None]],
+            [[None, None, [url], None, None, None, None, None, None, None, 1]],
             notebook_id,
-            [2],
-            None,
-            None,
+            build_template_block(),
         ]
         return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,

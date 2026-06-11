@@ -1555,7 +1555,7 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: f.req=%5B%5B%5B%22izAoDd%22%2C%22%5B%5B%5Bnull%2Cnull%2C%5B%5C%22https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FArtificial_intelligence%5C%22%5D%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%5D%5D%2C%5C%22f66923f0-1df4-4ffe-9822-3ed63c558b1c%5C%22%2C%5B2%5D%2Cnull%2Cnull%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312224769&
+    body: f.req=%5B%5B%5B%22izAoDd%22%2C%22%5B%5B%5Bnull%2Cnull%2C%5B%5C%22https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FArtificial_intelligence%5C%22%5D%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C1%5D%5D%2C%5C%22f66923f0-1df4-4ffe-9822-3ed63c558b1c%5C%22%2C%5B2%2Cnull%2Cnull%2C%5B1%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%5D%5D%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312224769&
     headers:
       Accept:
       - '*/*'

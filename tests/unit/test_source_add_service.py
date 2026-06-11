@@ -159,12 +159,11 @@ async def test_add_text_uses_exact_rpc_shape_and_wait_hook(
     assert rpc.calls == [
         {
             "method": RPCMethod.ADD_SOURCE,
+            # Nested template block per the Gemini-3.5 wire migration (#1546).
             "params": [
-                [[None, ["Title", "content"], None, None, None, None, None, None]],
+                [[None, ["Title", "content"], None, 2, None, None, None, None, None, None, 1]],
                 "nb_1",
-                [2],
-                None,
-                None,
+                [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
             ],
             "source_path": "/notebook/nb_1",
             "allow_null": False,
@@ -342,6 +341,16 @@ async def test_raw_url_helpers_disable_internal_retries(service: SourceAddServic
 
     assert rpc.calls[0]["disable_internal_retries"] is True
     assert rpc.calls[0]["params"][0][0][2] == ["https://example.com"]
+    # URL add migrated to the nested trailing block (#1546): spec gains a
+    # trailing 1 and the flat [2],None,None tail becomes [2,None,None,[1,...,[1]]].
+    assert rpc.calls[0]["params"][0][0][-1] == 1
+    assert rpc.calls[0]["params"][2] == [
+        2,
+        None,
+        None,
+        [1, None, None, None, None, None, None, None, None, None, [1]],
+    ]
+    assert len(rpc.calls[0]["params"]) == 3
     assert rpc.calls[1]["disable_internal_retries"] is True
     assert rpc.calls[1]["allow_null"] is False
     assert rpc.calls[1]["params"][0][0][7] == ["https://youtu.be/video"]

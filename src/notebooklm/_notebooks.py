@@ -14,6 +14,7 @@ from ._row_adapters.sources import SourceRow
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
+from ._source.upload_payloads import build_template_block
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -33,8 +34,12 @@ CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 
 
 def build_create_notebook_params(title: str) -> list[Any]:
-    """Return the canonical CREATE_NOTEBOOK RPC payload."""
-    return [title, None, None, [2], [1]]
+    """Return the canonical CREATE_NOTEBOOK RPC payload.
+
+    The trailing :func:`build_template_block` replaced the old flat ``[2], [1]``
+    tail that migrated backends now reject with ``status=3`` (#1546).
+    """
+    return [title, None, None, build_template_block()]
 
 
 def _extract_summary(outer: Any) -> str:

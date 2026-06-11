@@ -1566,7 +1566,7 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: f.req=%5B%5B%5B%22izAoDd%22%2C%22%5B%5B%5Bnull%2C%5B%5C%22VCR%20Delete%20Test%20Source%5C%22%2C%5C%22This%20source%20will%20be%20deleted.%5C%22%5D%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%5D%5D%2C%5C%2206f0c5bd-108f-4c8b-8911-34b2acc656de%5C%22%2C%5B2%5D%2Cnull%2Cnull%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768963683911&
+    body: f.req=%5B%5B%5B%22izAoDd%22%2C%22%5B%5B%5Bnull%2C%5B%5C%22VCR%20Delete%20Test%20Source%5C%22%2C%5C%22This%20source%20will%20be%20deleted.%5C%22%5D%2Cnull%2C2%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C1%5D%5D%2C%5C%2206f0c5bd-108f-4c8b-8911-34b2acc656de%5C%22%2C%5B2%2Cnull%2Cnull%2C%5B1%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%5D%5D%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768963683911&
     headers:
       Accept:
       - '*/*'

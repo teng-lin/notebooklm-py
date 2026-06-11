@@ -540,11 +540,11 @@ async def test_register_file_source_uses_rpc_shape_and_wraps_rpc_error(
     assert rpc.calls == [
         {
             "method": RPCMethod.ADD_SOURCE_FILE,
+            # Nested template block per the Gemini-3.5 wire migration (#1546).
             "params": [
                 [["report.pdf"]],
                 "nb_123",
-                [2],
-                [1, None, None, None, None, None, None, None, None, None, [1]],
+                [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
             ],
             "source_path": "/notebook/nb_123",
             "allow_null": False,

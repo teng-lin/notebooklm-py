@@ -73,7 +73,13 @@ def _create_invalid_argument_error(
 
 
 def test_build_create_notebook_params_matches_live_payload() -> None:
-    assert build_create_notebook_params("Daily News") == ["Daily News", None, None, [2], [1]]
+    # Nested trailing block per the Gemini-3.5 wire-format migration (#1546).
+    assert build_create_notebook_params("Daily News") == [
+        "Daily News",
+        None,
+        None,
+        [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    ]
 
 
 def test_direct_notebooks_api_construction_remains_supported() -> None:
