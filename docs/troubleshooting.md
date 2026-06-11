@@ -248,10 +248,12 @@ unset (still truncated).
 
 **Help us fix it — share the web UI's payload (no cookies needed).** Either option below leaks nothing: cookies, the `at=` CSRF token, and `Set-Cookie` live in request/response *headers*, never inside the `f.req` payload.
 
+> **⚠️ Never paste the raw `.har` itself.** A HAR contains your cookies, the `at=` CSRF token, and the full NotebookLM page HTML — which embeds API keys, the CSRF token, and your account email. Only ever share the **scrubber's output** below (or the single `f.req` line from Option B). The scrubber processes only `/batchexecute` calls and redacts every value, so the page HTML never reaches its output.
+
 **Option A — thorough, auto-scrubbed (recommended; captures every RPC + its response):**
 
 1. Open DevTools → **Network**, perform the failing action(s) in the web UI, then export the session: ⤓ **Export HAR** (Chrome) / **Save All As HAR** (Firefox) → `capture.har`.
-2. Run the scrubber. It reads **only** each request's `f.req` and the response body — never the headers/cookies arrays — and redacts every text value to its length:
+2. Run the scrubber. It reads **only** each request's `f.req` and the response body — never the headers/cookies arrays, and never the non-`batchexecute` page HTML — and redacts every text value to its length:
 
    ```bash
    python scripts/scrub_rpc_har.py capture.har          # or: --rpcid CCqFvf

@@ -68,3 +68,31 @@ def test_response_frames_extracts_error_and_result() -> None:
     }
     assert frames["CCqFvf"] == (None, [3])  # rejected with status 3, null result
     assert frames["izAoDd"][0] == [["id", "title"]] and frames["izAoDd"][1] is None
+
+
+def test_html_in_response_result_is_redacted() -> None:
+    """A response whose result carries an HTML blob (the WIZ_global_data class)
+    with an API key + CSRF + email must be fully redacted to <str:N>."""
+    secret_html = (
+        "<div>AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456 "
+        "SNlM0e:secretcsrf user@gmail.com g.a000ABCDEF</div>"
+    )
+    red = har._redact([secret_html, ["nested", 7, None]])
+    rendered = json.dumps(red)
+    for token in ("AIza", "SNlM0e", "user@gmail.com", "g.a000", "nested"):
+        assert token not in rendered
+    assert red == ["<str:%d>" % len(secret_html), ["<str:6>", 7, None]]
+
+
+def test_leak_net_matches_page_html_credential_shapes() -> None:
+    for token in (
+        "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+        "SNlM0e",
+        "g.a000ABCDEF",
+        "person@example.com",
+        "LSID=abc",
+        "1//0abcdefghijklmnopqrstuv",
+    ):
+        assert har._LEAK.search(token), token
+    # A clean redacted line must NOT trip the net.
+    assert not har._LEAK.search('CCqFvf  request : ["<str:7>",null,[2],[1]]')

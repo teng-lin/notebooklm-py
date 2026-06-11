@@ -30,7 +30,15 @@ import re
 import sys
 from urllib.parse import unquote
 
-_LEAK = re.compile(r"SID=|SAPISID|__Secure-|ya29\.|AIza[0-9A-Za-z_-]{20}|SNlM0e")
+# Fail-closed net. Real safety is the string-redaction below (every string leaf
+# becomes ``<str:N>``); this is a belt-and-braces scan of the FINAL output for
+# credential shapes — incl. the ones embedded in NotebookLM's page-load HTML
+# (``WIZ_global_data``): the ``AIza…`` / ``g.a000…`` API keys, the ``SNlM0e``
+# CSRF token, OAuth tokens, session cookies, and account email.
+_LEAK = re.compile(
+    r"SID=|SAPISID|HSID=|LSID=|__Secure-|SNlM0e|ya29\.|1//[0-9A-Za-z_-]{20}"
+    r"|AIza[0-9A-Za-z_-]{20}|g\.a000[0-9A-Za-z_-]{6}|[\w.+-]+@[\w-]+\.[\w.]{2,}"
+)
 
 # A tiny rpcid → friendly-name map (write path + common reads); unknowns show raw.
 _NAMES = {
