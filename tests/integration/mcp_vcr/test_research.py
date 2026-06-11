@@ -15,14 +15,17 @@ real ``NotebookLMClient`` → VCR-replayed RPC) for the three research tools:
   leading ``START_FAST_RESEARCH`` leg; the status tool never starts research, so
   that recorded leg is simply unused on replay — VCR ``record_mode='none'`` does
   not require every interaction to play.)
-* ``research_import`` over ``research_import_sources.yaml``. The tool polls FOR
-  the requested task, then imports its sources. The recorded poll returns two
-  in-flight tasks BOTH carrying zero sources, so ``import_sources`` short-circuits
-  on its empty-sources guard and issues NO ``IMPORT_RESEARCH`` (``LBwxtb``) RPC —
-  the test therefore covers the poll→empty-import→empty-result wiring and the
-  ``{imported: [], sources_found: 0}`` wire shape. The actual ``LBwxtb`` import
-  RPC is NOT exercised here (no available cassette has BOTH a poll leg returning
-  importable sources AND the matching import leg — see the module's reuse notes).
+* ``research_import`` over two cassettes:
+  - ``research_import_sources.yaml`` (empty path): the recorded poll returns
+    in-flight tasks carrying zero sources, so ``import_sources`` short-circuits on
+    its empty-sources guard and issues NO ``IMPORT_RESEARCH`` (``LBwxtb``) RPC —
+    covering the poll→empty-import→empty-result wiring and the
+    ``{imported: [], sources_found: 0}`` wire shape.
+  - ``research_import_sources_populated.yaml`` (import leg, issue #1541): the
+    recorded poll returns a COMPLETED task with 10 importable url-bearing sources,
+    so ``import_sources`` issues the real ``IMPORT_RESEARCH`` (``LBwxtb``) RPC and
+    the tool returns a populated ``{imported: [...], sources_found: 10}`` — the
+    actual import RPC and its decode, end-to-end.
 
 Each cassette was recorded against a notebook UUID; the tools are invoked with
 that full UUID so the resolver skips its ``LIST_NOTEBOOKS`` preflight. The
@@ -50,6 +53,14 @@ EMPTY_RESEARCH_NOTEBOOK_ID = "4d79940d-5f20-4d77-a918-5d04d08ce789"
 # recorded poll (the "Python programming best practices" task). Pinning it makes
 # the otherwise-ambiguous two-task poll select one task deterministically.
 PINNED_TASK_ID = "ac0bc757-fa42-4a0d-8c22-755a9ff075a3"
+
+# ``research_import_sources_populated.yaml`` was recorded (issue #1541) from a
+# COMPLETED fast/web research task that yielded 10 importable url-bearing sources,
+# so it pairs a sources-bearing poll (``e3bVqc``) with the real ``IMPORT_RESEARCH``
+# (``LBwxtb``) leg. The pinned task id matches the sources' ``research_task_id`` so
+# ``import_sources``'s provenance check passes.
+POPULATED_RESEARCH_NOTEBOOK_ID = "c8ef7832-c110-4e56-a8fb-ab3e1968fc0e"
+POPULATED_TASK_ID = "8755b4ce-fa7f-4147-b1e6-665404d9097a"
 
 
 @pytest.mark.asyncio
@@ -176,9 +187,9 @@ async def test_mcp_research_import_empty_sources_over_vcr() -> None:
     ``client.research.import_sources``. The pinned task's recorded poll returns
     zero sources, so ``import_sources`` short-circuits on its empty-sources guard
     and issues NO ``IMPORT_RESEARCH`` (``LBwxtb``) RPC. Asserts the import wire
-    shape (``{imported: [], sources_found: 0}``) — the poll→import wiring, not the
-    ``LBwxtb`` RPC itself (no reusable cassette pairs a sources-bearing poll with
-    its matching import leg).
+    shape (``{imported: [], sources_found: 0}``) — the poll→empty-import wiring.
+    The populated import leg (the real ``LBwxtb`` RPC) is covered by
+    ``test_mcp_research_import_populated_sources_over_vcr``.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
@@ -192,3 +203,34 @@ async def test_mcp_research_import_empty_sources_over_vcr() -> None:
     assert structured["task_id"] == PINNED_TASK_ID
     assert structured["imported"] == []
     assert structured["sources_found"] == 0
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("research_import_sources_populated.yaml")
+async def test_mcp_research_import_populated_sources_over_vcr() -> None:
+    """``research_import`` imports a completed task's sources via the real LBwxtb leg.
+
+    Closes the #1541 gap. The recorded poll (``POLL_RESEARCH`` ``e3bVqc``) returns a
+    COMPLETED task carrying 10 url-bearing sources, so ``import_sources`` issues the
+    real ``IMPORT_RESEARCH`` (``LBwxtb``) RPC (not the empty-sources short-circuit)
+    and the tool returns a populated ``{imported: [...], sources_found: N}`` shape —
+    exercising the import RPC and its decode end-to-end.
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "research_import",
+            {"notebook": POPULATED_RESEARCH_NOTEBOOK_ID, "task_id": POPULATED_TASK_ID},
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    assert structured["notebook_id"] == POPULATED_RESEARCH_NOTEBOOK_ID
+    assert structured["task_id"] == POPULATED_TASK_ID
+    assert structured["sources_found"] == 10
+    imported = structured["imported"]
+    # The LBwxtb import returned real, decoded sources (the leg the empty cassette
+    # never reached). The API may return fewer rows than were imported (documented),
+    # so assert non-empty + well-formed rather than an exact count.
+    assert isinstance(imported, list) and imported
+    for src in imported:
+        assert src.get("id") and src.get("title")
