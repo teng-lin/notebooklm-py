@@ -244,8 +244,10 @@ esac
 
 ```bash
 # Standard — non-zero is failure
-if ! notebooklm ask -n "$NOTEBOOK_ID" "Summarize"; then
-    echo "ask failed (exit $?)" >&2
+notebooklm ask -n "$NOTEBOOK_ID" "Summarize"
+status=$?
+if [ "$status" -ne 0 ]; then
+    echo "ask failed (exit $status)" >&2
     exit 1
 fi
 
