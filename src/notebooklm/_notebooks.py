@@ -12,6 +12,7 @@ from ._notebook_metadata import (
 )
 from ._row_adapters.sources import SourceRow
 from ._runtime.contracts import RpcCaller
+from ._source.upload_payloads import build_template_block
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
 from .exceptions import (
@@ -37,19 +38,14 @@ def build_create_notebook_params(title: str) -> list[Any]:
     """Return the canonical CREATE_NOTEBOOK RPC payload.
 
     The trailing "template" block migrated from a flat ``[2], [1]`` to the
-    nested ``[2, None, None, [1, ..., [1]]]`` shape that NotebookLM's web UI
-    now sends (gradual Gemini-3.5 rollout). Backends on migrated cohorts reject
-    the old flat shape with ``status=3`` (Invalid argument); the nested shape is
+    nested :func:`build_template_block` shape that NotebookLM's web UI now sends
+    (gradual Gemini-3.5 rollout). Backends on migrated cohorts reject the old
+    flat shape with ``status=3`` (Invalid argument); the nested shape is
     accepted by both migrated and not-yet-migrated cohorts (verified live
     against an un-migrated account), so it is the safe convergence target.
     See https://github.com/teng-lin/notebooklm-py/issues/1546.
     """
-    return [
-        title,
-        None,
-        None,
-        [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
-    ]
+    return [title, None, None, build_template_block()]
 
 
 def _extract_summary(outer: Any) -> str:

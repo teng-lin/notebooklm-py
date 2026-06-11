@@ -20,6 +20,7 @@ from ..exceptions import (
 )
 from ..rpc import RPCError, RPCMethod
 from ..types import Source
+from .upload_payloads import build_template_block
 
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
@@ -142,7 +143,7 @@ class SourceAddService:
         params = [
             [[None, [title, content], None, 2, None, None, None, None, None, None, 1]],
             notebook_id,
-            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            build_template_block(),
         ]
         try:
             result = await rpc.rpc_call(
@@ -366,7 +367,7 @@ class SourceAddService:
         params = [
             [[None, None, None, None, None, None, None, [url], None, None, 1]],
             notebook_id,
-            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            build_template_block(),
         ]
         return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,
@@ -395,7 +396,7 @@ class SourceAddService:
         params = [
             [[None, None, [url], None, None, None, None, None, None, None, 1]],
             notebook_id,
-            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            build_template_block(),
         ]
         return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,
