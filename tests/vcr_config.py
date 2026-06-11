@@ -277,6 +277,26 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(cookies, str):
             headers["Set-Cookie"] = scrub_set_cookie(scrub_string(cookies))
 
+    # Scrub resumable-upload session tokens echoed in response headers. The
+    # ``X-Goog-Upload-(Control-)URL`` values embed ``upload_id=<token>`` (handled
+    # by ``scrub_string``'s upload_id pattern); ``X-GUploader-UploadID`` carries a
+    # bare token with no anchor, so its value is replaced wholesale. Without this
+    # a fresh recording leaks per-upload tokens past ``scrub_response`` (the guard
+    # catches them, but the scrubber should prevent them — not just detect).
+    for _name in ("X-Goog-Upload-URL", "X-Goog-Upload-Control-URL"):
+        if _name in headers:
+            _vals = headers[_name]
+            headers[_name] = (
+                [scrub_string(v) for v in _vals] if isinstance(_vals, list) else scrub_string(_vals)
+            )
+    if "X-GUploader-UploadID" in headers:
+        _vals = headers["X-GUploader-UploadID"]
+        headers["X-GUploader-UploadID"] = (
+            ["SCRUBBED_UPLOAD_ID" for _ in _vals]
+            if isinstance(_vals, list)
+            else "SCRUBBED_UPLOAD_ID"
+        )
+
     return response
 
 

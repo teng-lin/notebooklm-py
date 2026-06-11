@@ -128,6 +128,41 @@ def test_artifact_timeout_subclasses_also_classify_as_artifact_timeout() -> None
     assert classify(in_progress).category is ErrorCategory.ARTIFACT_TIMEOUT
 
 
+@pytest.mark.parametrize("code", [5, "5"])
+def test_client_error_status_5_classifies_as_not_found(code: int | str) -> None:
+    """gRPC status-5 (raised as ``ClientError(rpc_code=5)``) is NOT_FOUND, not RPC.
+
+    The decoder raises a bare ``ClientError`` (not a ``NotFoundError``) for a
+    status-5 result; ``classify`` must recover NOT_FOUND. Both the int and the
+    string form of ``rpc_code`` are normalized.
+    """
+    result = classify(exc.ClientError("missing", rpc_code=code))
+
+    assert result.category is ErrorCategory.NOT_FOUND
+    assert result.retriable is False
+
+
+def test_client_error_status_7_is_not_swept_into_not_found() -> None:
+    """Code 7 (permission-denied) from the same decoder site stays generic RPC."""
+    result = classify(exc.ClientError("denied", rpc_code=7))
+
+    assert result.category is ErrorCategory.RPC
+
+
+def test_client_error_without_rpc_code_stays_rpc() -> None:
+    """A ClientError carrying no rpc_code falls through to the RPC catch-all."""
+    assert classify(exc.ClientError("client 4xx")).category is ErrorCategory.RPC
+
+
+def test_bare_rpc_error_unaffected_by_status_5_branch() -> None:
+    """The RPC exemplar (a bare RPCError, no rpc_code) keeps classifying as RPC.
+
+    This is the exemplar the cross-adapter consistency gate uses; the additive
+    status-5 branch must not perturb it.
+    """
+    assert classify(exc.RPCError("decode failed")).category is ErrorCategory.RPC
+
+
 def test_not_found_wins_over_rpc_base() -> None:
     # *NotFoundError mixes in RPCError; classification must prefer NOT_FOUND.
     assert isinstance(exc.SourceNotFoundError("x"), exc.RPCError)

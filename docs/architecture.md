@@ -1119,7 +1119,7 @@ src/notebooklm/
 │   ├── decoder.py               # Response parsing
 │   ├── _safe_index.py           # Strict bounds-checked positional access for decoded RPC payloads
 │   └── overrides.py             # Runtime RPC ID override policy (env-driven)
-└── cli/                         # CLI implementation
+├── cli/                         # CLI implementation
     ├── __init__.py              # Re-exports click groups under historical names from *_cmd modules
     ├── _chromium_profiles.py    # Multi-user-data-profile cookie extraction for Chromium browsers
     ├── _download_specs.py       # Registry data for `download <type>` leaf commands
@@ -1192,6 +1192,21 @@ src/notebooklm/
         ├── source_mutations.py  # Source-mutation CLI adapter over `_app/source_mutations.py` — re-exports plan/result/error/helpers; injects cli.resolve validate_id + resolve_source_id (preserves the resolve_source_id monkeypatch seam) and the click.confirm confirmer
         ├── source_research.py   # `source add-research` CLI adapter — thin wrapper over `_app/source_research.py` (injects the rich-coupled importer; re-exports plan/result + validate_add_research_flags; preserves the import_research_sources monkeypatch seam)
         └── source_serializers.py # Shared JSON serializers for source CLI output
+└── server/                      # Single-tenant REST API adapter (the third _app adapter, after cli/ and mcp/; behind the optional `server` extra). EXPERIMENTAL: /v1 surface may change, excluded from the api-compat gate. Imports no click/rich/cli.
+    ├── __init__.py              # Re-exports create_app + SERVER_NAME; importing it without the `server` extra fails on the fastapi import
+    ├── __main__.py              # `notebooklm-server` entry: argparse + NOTEBOOKLM_SERVER_* env defaults + loopback-bind guard + fail-closed token check
+    ├── app.py                   # create_app(*, client_factory=None) -> FastAPI; ASGI lifespan binds one client; public /healthz; auth-gated /v1 mount (docs/redoc/openapi disabled)
+    ├── _context.py              # AppState (lifespan-bound client + pending registry) + get_client / get_pending FastAPI dependencies
+    ├── _auth.py                 # Bearer-token (constant-time, 401) + loopback-Host (DNS-rebinding guard, 403) dependency for /v1
+    ├── _errors.py               # ErrorCategory -> HTTP status table + _redact + the classify-once exception handler emitting {error:{category,message}}
+    ├── _pending.py              # In-process pending-id registry (per-notebook provenance for poll -> 200-pending vs 404)
+    └── routes/                  # Per-resource FastAPI routers; handlers call _app.serialize.to_jsonable directly
+        ├── __init__.py          # Aggregates the resource routers for the app factory
+        ├── _passthrough.py      # Pass-through resolvers handed to the _app cores (REST works in full ids)
+        ├── notebooks.py         # /v1/notebooks list/get/create/delete
+        ├── sources.py           # /v1/notebooks/{id}/sources list/get/add(url·text·file)/delete + poll-the-resource status
+        ├── chat.py              # POST /v1/notebooks/{id}/chat — blocking ask (no SSE)
+        └── artifacts.py         # /v1/notebooks/{id}/artifacts list/generate/poll/download (registry-projected poll; server-generated temp download path)
 ```
 
 ## ADR cross-references

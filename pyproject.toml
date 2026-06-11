@@ -44,6 +44,17 @@ markdown = ["markdownify>=0.14.1,<2"]
 browser = ["playwright>=1.40.0,<2"]
 cookies = ["rookiepy>=0.1.0,<1"]
 mcp = ["fastmcp>=2.14,<3"]
+# Optional single-tenant REST server (the third _app adapter, after cli/ and
+# mcp/). EXPERIMENTAL: the /v1 surface may change in a minor release; it is
+# excluded from the public-API compatibility gate. python-multipart is REQUIRED
+# for the file-upload route (FastAPI's UploadFile/File fails without it). Pinned
+# compatibly with the base install's httpx<0.29 / anyio<5 (resolved against
+# uv.lock at build time).
+server = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.34,<1",
+    "python-multipart>=0.0.20,<1",
+]
 dev = [
     "pytest>=8.0.0,<10",
     "pytest-asyncio>=0.23.0,<2",
@@ -62,11 +73,12 @@ dev = [
 ]
 # `all` deliberately excludes `cookies` — rookiepy has install issues on Python 3.13+
 # (see CHANGELOG [0.4.1]). Opt in explicitly via `pip install "notebooklm-py[cookies]"`.
-all = ["notebooklm-py[browser,dev,markdown,mcp]"]
+all = ["notebooklm-py[browser,dev,markdown,mcp,server]"]
 
 [project.scripts]
 notebooklm = "notebooklm.notebooklm_cli:main"
 notebooklm-mcp = "notebooklm.mcp.__main__:main"
+notebooklm-server = "notebooklm.server.__main__:main"
 
 [build-system]
 requires = ["hatchling", "hatch-fancy-pypi-readme"]
