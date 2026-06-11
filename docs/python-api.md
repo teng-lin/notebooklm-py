@@ -620,7 +620,7 @@ producing opaque `httpx.PoolTimeout` errors instead of clean
 back-pressure. The `NotebookLMClient.__init__` / `from_storage()`
 constructor raises `ValueError` if this constraint is violated. The
 semaphore floor (`max_concurrent_rpcs ≥ 1` when not `None`) is enforced
-inside `Session`.
+by the same constructor path.
 
 **`max_concurrent_uploads` knob**. Default `4`. Gates
 file-upload streaming independently from the RPC throttle because
