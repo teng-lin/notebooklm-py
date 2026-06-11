@@ -231,16 +231,31 @@ from notebooklm import NotebookLMClient
 The value must be exactly `"1"` — `"0"`, `"true"`, etc. are treated as
 unset (still truncated).
 
-#### "RPCError: [3]" or "UserDisplayableError"
+#### "RPCError: [3]" (Invalid argument) / "UserDisplayableError"
 
-**Cause:** Google API returned an error, typically:
-- Invalid parameters
-- Resource not found
+**Cause:** Google's API rejected the request. Common cases:
+- Invalid parameters or a not-found resource ID
+- Account quota exceeded (for `create`, status `[3]` is also the notebook-limit signal)
 - Rate limiting
 
 **Solution:**
 - Check that notebook/source IDs are valid
 - Add delays between operations (see Rate Limiting section)
+
+**If it only affects _write_ operations** (`create`, `source add`, `generate`) while reads (`list`, `ask`) keep working — **and the web UI still works** — the likely cause is that Google changed the request payload (wire format) for those RPCs and `notebooklm-py` is still sending the old shape. Google rolls these out gradually, so it can hit some accounts before others.
+
+**Help us fix it — capture the web UI's request *without leaking cookies*:**
+
+1. In your browser, open DevTools → **Network**, then perform the failing action (e.g. create a notebook) in the NotebookLM web UI.
+2. Find the `batchexecute?rpcids=...` POST (e.g. `rpcids=CCqFvf` for create) → right-click → **Copy → Copy as cURL**.
+3. Run it through the scrubber. It reads **only** the `f.req` payload and redacts every text value; cookies, the `at=` CSRF token, and headers are never parsed, so the output is safe by construction:
+
+   ```bash
+   pbpaste | python scripts/scrub_rpc_capture.py        # macOS clipboard (or: --file capture.txt)
+   ```
+
+   It prints just the payload _shape_, e.g. `CCqFvf  →  ["<str:7>",null,null,[2],[1]]`.
+4. Paste that one line into your GitHub issue. We diff it against what the library sends and update the payload.
 
 ### Generation Failures
 
