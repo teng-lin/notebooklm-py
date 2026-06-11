@@ -90,7 +90,7 @@ These features are available via API/CLI but not exposed in NotebookLM's web int
 
 The full install guide — six personas (agent, end-user, library, headless, contributor, power-user), optional extras matrix, platform notes — lives in **[docs/installation.md](docs/installation.md)**.
 
-**Quickest start** (CLI users and AI agents) — install in an isolated tool environment, which also sidesteps the locked-down system Python on modern macOS/Linux ([PEP 668](https://peps.python.org/pep-0668/)):
+**Quickest start** (CLI users and AI agents) — install the CLI with `uv tool` (recommended) or `pipx`:
 
 ```bash
 uv tool install "notebooklm-py[browser]"   # or: pipx install "notebooklm-py[browser]"
@@ -98,7 +98,14 @@ notebooklm login                           # first run auto-downloads Chromium (
 notebooklm auth check --test --json        # verify: expect "status": "ok"
 ```
 
-> Plain `pip install "notebooklm-py[browser]"` works **inside a virtualenv**. Outside one, modern macOS (Homebrew Python) and Debian/Ubuntu reject it with `error: externally-managed-environment` — use `uv tool` / `pipx` above, or a venv. (On Windows, python.org's Python is not externally-managed, so `pip install` is fine.)
+**Why `uv tool` / `pipx`?** They install the CLI into its own isolated environment and put `notebooklm` on your `PATH` — no dependency clashes with other tools, a one-line upgrade (`uv tool upgrade notebooklm-py`) or uninstall, and, crucially, they work on modern macOS (Homebrew Python) and Debian/Ubuntu where a system-wide `pip install` is blocked with `error: externally-managed-environment` ([PEP 668](https://peps.python.org/pep-0668/)). No `uv` yet? `curl -LsSf https://astral.sh/uv/install.sh | sh` (or `brew install uv` / `winget install astral-sh.uv`).
+
+**Prefer plain `pip`?** It works the same **inside a virtualenv** (and directly on Windows, where Python isn't externally-managed):
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install "notebooklm-py[browser]"
+```
 
 **As a library** (embedded in your app — no Playwright, no Chromium):
 
