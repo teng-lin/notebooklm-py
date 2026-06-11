@@ -8,17 +8,31 @@
       null,
       null,
       [
-        2
-      ],
-      [
-        1
+        2,
+        null,
+        null,
+        [
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1
+          ]
+        ]
       ]
     ],
     "expected_f_req": [
       [
         [
           "CCqFvf",
-          "[\"Scrubbed Notebook Title\",null,null,[2],[1]]",
+          "[\"Scrubbed Notebook Title\",null,null,[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]]]",
           null,
           "generic"
         ]

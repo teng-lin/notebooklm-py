@@ -393,7 +393,11 @@ async def test_setup_temp_resources_uses_canonical_create_notebook_payload(
     assert captured["method"] is check_rpc_health.RPCMethod.CREATE_NOTEBOOK
     assert captured["source_path"] == "/"
     assert captured["params"][0].startswith("RPC-Health-Check-")
-    assert captured["params"][1:] == [None, None, [2], [1]]
+    assert captured["params"][1:] == [
+        None,
+        None,
+        [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    ]
     assert results[0].status == CheckStatus.ERROR
     assert temp.notebook_id is None
 

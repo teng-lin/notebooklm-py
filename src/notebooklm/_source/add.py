@@ -377,13 +377,18 @@ class SourceAddService:
         *,
         rpc: RpcCaller,
     ) -> Any:
-        """Add a regular URL as a source."""
+        """Add a regular URL as a source.
+
+        The source spec gained a trailing ``1`` and the flat ``[2], None, None``
+        tail collapsed into the nested ``[2, None, None, [1, ..., [1]]]`` block
+        that NotebookLM's web UI now sends; migrated backends reject the old
+        shape (``status=5``/``9``). Verified live against an un-migrated account.
+        See https://github.com/teng-lin/notebooklm-py/issues/1546.
+        """
         params = [
-            [[None, None, [url], None, None, None, None, None]],
+            [[None, None, [url], None, None, None, None, None, None, None, 1]],
             notebook_id,
-            [2],
-            None,
-            None,
+            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
         ]
         return await rpc.rpc_call(
             RPCMethod.ADD_SOURCE,
