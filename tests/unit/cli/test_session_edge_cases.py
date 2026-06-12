@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock, patch
 import click
 import pytest
 
+import notebooklm.auth as auth_module
 import notebooklm.cli.services.playwright_login as _pl
+import notebooklm.cli.services.session_context as session_context_module
+import notebooklm.cli.session_cmd as session_cmd_module
 from notebooklm.notebooklm_cli import cli
 
 from .conftest import create_mock_client, inject_client
@@ -30,14 +33,14 @@ class TestSessionEdgeCases:
         mock_client = create_mock_client()
         mock_client.notebooks.get = AsyncMock(side_effect=Exception("API Error: Rate limited"))
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
 
             # Patch in session module where it's imported
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_error"
 
@@ -66,14 +69,14 @@ class TestSessionEdgeCases:
         """Test 'use' command re-raises ClickException from resolve_notebook_id."""
         mock_client = create_mock_client()
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
 
             # Patch resolve_notebook_id to raise ClickException (e.g., ambiguous ID)
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.side_effect = click.ClickException("Multiple notebooks match 'nb'")
 
@@ -92,7 +95,7 @@ class TestSessionEdgeCases:
         # ``read_status`` in the P3.T3 service layer imports
         # ``get_current_notebook`` from ``cli.context`` directly, so the
         # patch target follows the new call site.
-        with patch("notebooklm.cli.services.session_context.get_current_notebook") as mock_get_nb:
+        with patch.object(session_context_module, "get_current_notebook") as mock_get_nb:
             mock_get_nb.return_value = "nb_corrupted"
 
             result = runner.invoke(cli, ["status", "--json"])

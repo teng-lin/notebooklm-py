@@ -12,7 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
+import notebooklm.auth as auth_module
 import notebooklm.cli._chromium_profiles as chromium_profiles
+import notebooklm.paths as paths_module
 from notebooklm.notebooklm_cli import cli
 from tests._fixtures import patch_session_login_dual
 
@@ -212,7 +214,7 @@ class TestChromiumFanoutAllAccounts:
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts),
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
-            patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
+            patch.object(paths_module, "list_profiles", side_effect=fake_list_profiles),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -304,9 +306,9 @@ class TestChromiumFanoutAllAccounts:
                 "read_chromium_profile_cookies",
                 side_effect=fake_read,
             ),
-            patch("notebooklm.auth.enumerate_accounts", side_effect=fake_enumerate),
+            patch.object(auth_module, "enumerate_accounts", side_effect=fake_enumerate),
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
-            patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
+            patch.object(paths_module, "list_profiles", side_effect=fake_list_profiles),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -595,7 +597,7 @@ class TestChromiumFanoutBoundaryConditions:
                     "fan-out must NOT run when only 1 chromium profile exists"
                 ),
             ),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])
 
@@ -646,7 +648,7 @@ class TestChromiumFanoutBoundaryConditions:
                 "read_chromium_profile_cookies",
                 side_effect=fake_read,
             ),
-            patch("notebooklm.auth.enumerate_accounts", side_effect=fake_enumerate),
+            patch.object(auth_module, "enumerate_accounts", side_effect=fake_enumerate),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])
 

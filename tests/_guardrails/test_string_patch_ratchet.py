@@ -100,7 +100,6 @@ _PATTERN_STRING_PATCH = re.compile(
 # constructor injection via ``tests/_fixtures/make_fake_core(...)``.
 # DO lower a ceiling when a file sheds sites (the gate prints the value).
 STRING_PATCH_CEILINGS: dict[str, int] = {
-    "tests/integration/cli_vcr/conftest.py": 5,
     "tests/integration/test_settings_integration.py": 1,
     "tests/unit/app/test_app_auth_check.py": 3,
     "tests/unit/cli/_session_helpers.py": 1,
@@ -111,11 +110,9 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/cli/test_generate_characterization.py": 2,
     "tests/unit/cli/test_json_validation_contract.py": 2,
     "tests/unit/cli/test_language.py": 2,
-    "tests/unit/cli/test_login_chromium_fanout.py": 5,
     "tests/unit/cli/test_login_cookie_recovery.py": 1,
     "tests/unit/cli/test_quiet_flag.py": 2,
     "tests/unit/cli/test_resolver_characterization.py": 2,
-    "tests/unit/cli/test_session_edge_cases.py": 5,
     "tests/unit/cli/test_source_characterization.py": 2,
     "tests/unit/cli/test_source_cmd_coverage.py": 1,
     "tests/unit/cli/test_source_content_rendering.py": 1,

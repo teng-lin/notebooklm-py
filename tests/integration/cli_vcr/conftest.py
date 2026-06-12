@@ -29,6 +29,11 @@ from urllib.parse import urlparse
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.context as context_module
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.cli.resolve as resolve_module
+
 # Enum value *sets* only — an allowed-membership definition, NOT a decoder. Reading
 # the canonical enum values from the public ``notebooklm`` types keeps the membership
 # floor in lock-step with the source of truth without importing the decode path
@@ -90,9 +95,9 @@ def mock_context(tmp_path: Path):
     context_file.write_text(json.dumps({"notebook_id": PLACEHOLDER_NOTEBOOK_ID}), encoding="utf-8")
 
     with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+        patch.object(helpers_module, "get_context_path", return_value=context_file),
+        patch.object(context_module, "get_context_path", return_value=context_file),
+        patch.object(resolve_module, "get_context_path", return_value=context_file),
     ):
         yield context_file
 
@@ -129,9 +134,10 @@ def mock_auth_for_vcr():
         "SAPISID": "vcr_mock_sapisid",
     }
     with (
-        patch("notebooklm.cli.helpers.load_auth_from_storage", return_value=mock_cookies),
-        patch(
-            "notebooklm.auth.fetch_tokens_with_domains",
+        patch.object(helpers_module, "load_auth_from_storage", return_value=mock_cookies),
+        patch.object(
+            auth_module,
+            "fetch_tokens_with_domains",
             return_value=("vcr_mock_csrf", "vcr_mock_session"),
         ),
     ):
