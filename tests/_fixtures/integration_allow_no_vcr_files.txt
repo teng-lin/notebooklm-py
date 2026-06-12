@@ -28,6 +28,7 @@ tests/integration/test_notes_idempotency.py # existing mock-only integration exc
 tests/integration/test_notes_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_deep_poll_vcr.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_research_import_verification_vcr.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_save_chat_as_note_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
