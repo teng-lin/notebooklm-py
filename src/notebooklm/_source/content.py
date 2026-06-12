@@ -7,7 +7,7 @@ import logging
 import reprlib
 from typing import Any, Literal
 
-from .._row_adapters.sources import SourceRow
+from .._row_adapters.sources import SourceFulltextRow, SourceGuideRow
 from .._runtime.contracts import RpcCaller
 from .._types.research import SourceGuide
 from ..rpc import RPCMethod
@@ -31,29 +31,13 @@ class SourceContentRenderer:
             allow_null=True,
         )
 
-        summary = ""
-        keywords: list[str] = []
-
-        if result and isinstance(result, list) and len(result) > 0:
-            outer = result[0]
-            if isinstance(outer, list) and len(outer) > 0:
-                inner = outer[0]
-                if isinstance(inner, list):
-                    # Bind the ``[1]`` summary and ``[2]`` keywords blocks to locals
-                    # so each leaf read is single-level (not chained ``inner[1][0]`` /
-                    # ``inner[2][0]``). Absent blocks legitimately leave the defaults.
-                    summary_block = (
-                        inner[1] if len(inner) > 1 and isinstance(inner[1], list) else None
-                    )
-                    if summary_block:
-                        summary = summary_block[0] if isinstance(summary_block[0], str) else ""
-                    keyword_block = (
-                        inner[2] if len(inner) > 2 and isinstance(inner[2], list) else None
-                    )
-                    if keyword_block:
-                        keywords = keyword_block[0] if isinstance(keyword_block[0], list) else []
-
-        return SourceGuide(summary=summary, keywords=tuple(keywords))
+        # Position knowledge for the ``result[0][0]`` envelope unwrap and the
+        # summary / keyword block reads lives in ``SourceGuideRow`` (the
+        # sanctioned row-adapter layer); the adapter preserves the historical
+        # soft contract — an absent / non-list envelope or block leaves the
+        # ``""`` / ``[]`` defaults rather than raising.
+        guide_row = SourceGuideRow(result)
+        return SourceGuide(summary=guide_row.summary, keywords=tuple(guide_row.keywords))
 
     async def get_fulltext(
         self,
@@ -87,51 +71,44 @@ class SourceContentRenderer:
         if not result or not isinstance(result, list):
             raise SourceNotFoundError(f"Source {source_id} not found in notebook {notebook_id}")
 
-        title = ""
         source_type = None
         url = None
         content = ""
 
-        # ``result[0]`` is the source-descriptor row; bind it so the title and
-        # metadata reads are single-level indices instead of chained
-        # ``result[0][1]`` / ``result[0][2]`` descents.
-        descriptor = result[0]
-        if isinstance(descriptor, list) and len(descriptor) > 1:
-            title = descriptor[1] if isinstance(descriptor[1], str) else ""
-
-            if len(descriptor) > 2 and isinstance(descriptor[2], list):
-                metadata = descriptor[2]
-                # The type-code read is delegated to ``SourceRow.type_code``
-                # (the descriptor row has the adapter's normalized-entry
-                # layout: id-envelope, title, metadata, ...), which validates
-                # that ``metadata[4]`` holds an int. An absent / ``None`` slot
-                # keeps the silent ``None`` default; a present-but-non-int
-                # value also degrades to ``None`` (the "unknown type" default)
-                # but logs a WARNING instead of silently passing a malformed
-                # value into ``SourceFulltext._type_code`` (#1485
-                # absence-vs-malformed policy).
-                source_row = SourceRow.from_entry(descriptor, method_id=RPCMethod.GET_SOURCE.value)
-                source_type = source_row.type_code
-                if source_type is None and len(metadata) > 4 and metadata[4] is not None:
-                    self._logger.warning(
-                        "Source %s metadata type-code slot malformed (expected "
-                        "int at metadata[4], got %s); treating type as unknown: %s",
-                        source_id,
-                        type(metadata[4]).__name__,
-                        reprlib.repr(metadata),
-                    )
-                url = _extract_source_url(metadata, allow_bare_http=False)
+        # All positional knowledge for the ``GET_SOURCE`` envelope (descriptor
+        # row, metadata, HTML / text blocks) lives in ``SourceFulltextRow`` (the
+        # sanctioned row-adapter layer); every read preserves the historical
+        # soft contract (missing slots -> empty defaults, never a raise).
+        fulltext_row = SourceFulltextRow(result)
+        title = fulltext_row.title
+        metadata = fulltext_row.metadata
+        if metadata is not None:
+            # The type-code read is delegated to ``SourceRow.type_code``
+            # (the descriptor row has the adapter's normalized-entry
+            # layout: id-envelope, title, metadata, ...), which validates
+            # that ``metadata[4]`` holds an int. An absent / ``None`` slot
+            # keeps the silent ``None`` default; a present-but-non-int
+            # value also degrades to ``None`` (the "unknown type" default)
+            # but logs a WARNING instead of silently passing a malformed
+            # value into ``SourceFulltext._type_code`` (#1485
+            # absence-vs-malformed policy).
+            source_row = fulltext_row.source_row
+            source_type = source_row.type_code if source_row is not None else None
+            type_slot = fulltext_row.raw_metadata_type_slot
+            if source_type is None and type_slot is not None:
+                self._logger.warning(
+                    "Source %s metadata type-code slot malformed (expected "
+                    "int at metadata[4], got %s); treating type as unknown: %s",
+                    source_id,
+                    type(type_slot).__name__,
+                    reprlib.repr(metadata),
+                )
+            url = _extract_source_url(metadata, allow_bare_http=False)
 
         if output_format == "markdown":
-            html_content = None
-            # ``result[4]`` is the HTML-rendition block; bind it so the candidate
-            # read is a single-level ``html_block[1]`` index. An absent block
-            # legitimately means "no markdown rendition" (warned + empty below).
-            html_block = result[4] if len(result) > 4 and isinstance(result[4], list) else None
-            if html_block is not None and len(html_block) > 1:
-                candidate = html_block[1]
-                if isinstance(candidate, str):
-                    html_content = candidate
+            # An absent HTML rendition legitimately means "no markdown
+            # rendition" (warned + empty below).
+            html_content = fulltext_row.html_content
             if html_content is not None:
                 content = md(html_content, heading_style="ATX")
             else:
@@ -142,15 +119,12 @@ class SourceContentRenderer:
                     source_type,
                 )
         else:
-            # ``result[3]`` is the text-content block; bind it so the blocks read
-            # is a single-level ``text_block[0]`` index. An absent block
-            # legitimately means "no text content" (empty content + warning).
-            text_block = result[3] if len(result) > 3 and isinstance(result[3], list) else None
-            if text_block:
-                content_blocks = text_block[0]
-                if isinstance(content_blocks, list):
-                    texts = self.extract_all_text(content_blocks)
-                    content = "\n".join(texts)
+            # An absent text block legitimately means "no text content"
+            # (empty content + warning).
+            content_blocks = fulltext_row.text_content_blocks
+            if content_blocks is not None:
+                texts = self.extract_all_text(content_blocks)
+                content = "\n".join(texts)
 
         if not content:
             self._logger.warning(

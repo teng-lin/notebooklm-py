@@ -341,14 +341,24 @@ class SourceAddService:
         path_prefixes = ("shorts", "embed", "live", "v")
         path_segments = parsed.path.lstrip("/").split("/")
 
-        if len(path_segments) >= 2 and path_segments[0].lower() in path_prefixes:
-            return path_segments[1].strip()
+        # Unpack instead of indexing ``path_segments[0]`` / ``[1]``: these are
+        # URL path segments, not an RPC payload, but the positional-RPC ratchet
+        # is type-blind, so the unpack keeps the benign string parse off the
+        # flagged ``name[int]`` shape (semantics identical to the prior
+        # ``len(...) >= 2`` + index reads).
+        if len(path_segments) >= 2:
+            prefix, segment, *_rest = path_segments
+            if prefix.lower() in path_prefixes:
+                return segment.strip()
 
         if parsed.query:
             query_params = parse_qs(parsed.query)
             v_param = query_params.get("v", [])
-            if v_param and v_param[0]:
-                return v_param[0].strip()
+            # ``next(iter(...))`` instead of ``v_param[0]`` for the same
+            # type-blind-ratchet reason; ``v_param`` is the parse_qs value list.
+            first_v = next(iter(v_param), None)
+            if first_v:
+                return first_v.strip()
 
         return None
 

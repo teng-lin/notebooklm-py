@@ -170,13 +170,8 @@ SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "_note_service.py",
         "_notebooks.py",
         "_research.py",
-        "_source/add.py",
-        "_source/content.py",
-        "_source/listing.py",
-        "_source/upload.py",
         "_types/notebooks.py",
         "_types/sharing.py",
-        "_types/sources.py",
     }
 )
 

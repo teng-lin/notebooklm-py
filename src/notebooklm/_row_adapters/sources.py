@@ -12,7 +12,12 @@ from ..exceptions import DecodingError
 from ..rpc import RPCMethod, safe_index
 from ..rpc.types import SourceStatus
 
-__all__ = ["SourceRow", "SourceRowShape"]
+__all__ = [
+    "SourceFulltextRow",
+    "SourceGuideRow",
+    "SourceRow",
+    "SourceRowShape",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +501,88 @@ class SourceRow:
             return None
         return _datetime_from_timestamp(raw)
 
+    # ---- Metadata-only entry points (legacy ``_types.sources`` helpers) --
+    # ``_types/sources._extract_source_url`` / ``_extract_source_created_at``
+    # receive a **bare metadata sub-list** (``src[2]``) directly rather than a
+    # whole row. They are re-exported public surface
+    # (``notebooklm.types._extract_source_url`` /
+    # ``…_extract_source_created_at``) with a soft return-``None`` contract, so
+    # they cannot move their position knowledge into the strict row properties
+    # above without a behavior change. These entry points centralise that
+    # position knowledge here instead while preserving the EXACT legacy
+    # semantics (verified field-by-field against the originals).
+
+    @classmethod
+    def _from_metadata(cls, metadata: Any) -> SourceRow:
+        """Wrap a bare metadata sub-list as a row whose ``metadata`` is it.
+
+        Used only by :meth:`created_at_from_metadata` so the timestamp walk
+        reuses the strict :attr:`created_at` property unchanged. ``_raw[0]``
+        / ``_raw[1]`` are placeholders the timestamp path never reads.
+        """
+        return cls(_raw=[None, None, metadata])
+
+    @classmethod
+    def created_at_from_metadata(cls, metadata: Any) -> datetime | None:
+        """Creation timestamp from a bare ``src[2]`` metadata list.
+
+        Centralises the ``metadata[2][0]`` timestamp position for the legacy
+        ``_types.sources._extract_source_created_at`` helper. Behavior is
+        identical to that helper (verified exhaustively): a non-list metadata,
+        an absent / non-list / empty ``metadata[2]``, or a non-numeric inner
+        value all yield ``None`` (the latter via ``_datetime_from_timestamp``,
+        which both paths funnel through).
+        """
+        if not isinstance(metadata, list):
+            return None
+        return cls._from_metadata(metadata).created_at
+
+    @classmethod
+    def url_from_metadata(cls, metadata: Any, *, allow_bare_http: bool = True) -> str | None:
+        """URL from a bare ``src[2]`` metadata list (legacy soft contract).
+
+        Centralises the ``metadata[7][0]`` > ``metadata[5][0]`` >
+        ``metadata[0]`` precedence for the legacy
+        ``_types.sources._extract_source_url`` helper. This is DELIBERATELY a
+        separate path from the strict :attr:`url` property: the legacy helper
+        has a softer, looser contract that :attr:`url` intentionally tightened,
+        and this method must reproduce the legacy behavior BYTE-FOR-BYTE
+        because it backs re-exported public surface
+        (``notebooklm.types._extract_source_url``). Specifically, unlike
+        :attr:`url` it:
+
+        * returns the RAW ``metadata[7][0]`` value with NO ``str()`` coercion
+          and NO truthiness guard — a falsy or non-string canonical value
+          (``""`` / ``0`` / ``42``) is returned verbatim and short-circuits
+          (legacy assigns it to ``url`` then the ``if not url`` chain may fall
+          through, so a falsy canonical value can still be overridden by the
+          youtube / bare slots), whereas :attr:`url` coerces and falsy-guards.
+
+        Every other branch (youtube ``[5][0]`` string-only, bare ``[0]``
+        http-prefixed when ``allow_bare_http``) matches :attr:`url` exactly,
+        so only the canonical slot needs a bespoke read.
+        """
+        if not isinstance(metadata, list):
+            return None
+        url: str | None = None
+        if len(metadata) > cls._META_URL_POS:
+            url_list = metadata[cls._META_URL_POS]
+            if isinstance(url_list, list) and len(url_list) > 0:
+                url = url_list[cls._LIST_FIRST_POS]
+        if not url and len(metadata) > cls._META_YOUTUBE_POS:
+            yt_data = metadata[cls._META_YOUTUBE_POS]
+            if (
+                isinstance(yt_data, list)
+                and len(yt_data) > 0
+                and isinstance(yt_data[cls._LIST_FIRST_POS], str)
+            ):
+                url = yt_data[cls._LIST_FIRST_POS]
+        if not url and allow_bare_http and len(metadata) > cls._META_BARE_URL_POS:
+            candidate = metadata[cls._META_BARE_URL_POS]
+            if isinstance(candidate, str) and candidate.startswith("http"):
+                url = candidate
+        return url
+
     @property
     def status(self) -> SourceStatus:
         """Processing status from ``self._raw[3][1]``.
@@ -526,6 +613,207 @@ class SourceRow:
             return SourceStatus(status_code)
         except ValueError:
             return SourceStatus.READY
+
+
+@dataclass(frozen=True)
+class SourceGuideRow:
+    """Typed view of a ``GET_SOURCE_GUIDE`` response payload.
+
+    Shape: ``[[[ ..., summary_block, keyword_block, ... ]]]`` — the AI summary
+    and keyword data live one wrapper deep at ``result[0][0]``. This adapter
+    centralises the ``result[0]`` / ``[0][0]`` envelope unwrap and the
+    ``inner[1]`` summary-block / ``inner[2]`` keyword-block reads that
+    ``_source/content.get_guide`` previously open-coded.
+
+    Every read is a **soft length-guarded degrade** preserving the legacy
+    contract exactly: an absent / non-list envelope, summary block, or keyword
+    block leaves the default (``""`` summary / ``[]`` keywords) rather than
+    raising — the guide endpoint legitimately omits these for un-summarised
+    sources.
+    """
+
+    _raw: Any = field(repr=False)
+
+    _OUTER_POS: ClassVar[int] = 0
+    _INNER_POS: ClassVar[int] = 0
+    _SUMMARY_BLOCK_POS: ClassVar[int] = 1
+    _KEYWORD_BLOCK_POS: ClassVar[int] = 2
+    _LIST_FIRST_POS: ClassVar[int] = 0
+
+    @property
+    def _inner(self) -> list[Any] | None:
+        """The ``result[0][0]`` record carrying summary/keyword blocks, or ``None``.
+
+        Mirrors the legacy nested ``isinstance``/``len`` guards: a falsy or
+        non-list ``result``, ``result[0]``, or ``result[0][0]`` all yield
+        ``None`` (the "no guide content" default path).
+        """
+        result = self._raw
+        if not (isinstance(result, list) and len(result) > self._OUTER_POS):
+            return None
+        outer = result[self._OUTER_POS]
+        if not (isinstance(outer, list) and len(outer) > self._INNER_POS):
+            return None
+        inner = outer[self._INNER_POS]
+        return inner if isinstance(inner, list) else None
+
+    @property
+    def summary(self) -> str:
+        """AI summary at ``inner[1][0]`` — ``""`` when absent / non-string.
+
+        Preserves the legacy ``get_guide`` contract: an absent / non-list
+        summary block, or a present block whose first element is not a string,
+        both yield the empty summary.
+        """
+        inner = self._inner
+        if inner is None or len(inner) <= self._SUMMARY_BLOCK_POS:
+            return ""
+        block = inner[self._SUMMARY_BLOCK_POS]
+        if not isinstance(block, list) or not block:
+            return ""
+        first = block[self._LIST_FIRST_POS]
+        return first if isinstance(first, str) else ""
+
+    @property
+    def keywords(self) -> list[Any]:
+        """Keyword list at ``inner[2][0]`` — ``[]`` when absent / non-list.
+
+        Preserves the legacy ``get_guide`` contract: an absent / non-list
+        keyword block, or a present block whose first element is not a list,
+        both yield the empty keyword list.
+        """
+        inner = self._inner
+        if inner is None or len(inner) <= self._KEYWORD_BLOCK_POS:
+            return []
+        block = inner[self._KEYWORD_BLOCK_POS]
+        if not isinstance(block, list) or not block:
+            return []
+        first = block[self._LIST_FIRST_POS]
+        return first if isinstance(first, list) else []
+
+
+@dataclass(frozen=True)
+class SourceFulltextRow:
+    """Typed view of a ``GET_SOURCE`` response payload (fulltext fetch).
+
+    Shape: ``[descriptor, ?, ?, text_block, html_block, ...]`` where the
+    leading ``descriptor`` row carries ``[id_envelope, title, metadata, ...]``
+    (the same normalized-entry layout :class:`SourceRow` wraps), the text
+    content lives at ``result[3][0]`` and the HTML rendition at
+    ``result[4][1]``. This adapter centralises the ``result[0]`` /
+    ``descriptor[1]`` / ``descriptor[2]`` / ``result[3]`` / ``result[4]``
+    envelope reads that ``_source/content.get_fulltext`` previously open-coded.
+
+    Every read is a **soft length-guarded degrade** preserving the legacy
+    contract exactly: missing slots yield empty defaults (``""`` title, ``None``
+    metadata / html, ``None`` text-blocks) rather than raising — a partially
+    populated source response is normal.
+    """
+
+    _raw: Any = field(repr=False)
+
+    _DESCRIPTOR_POS: ClassVar[int] = 0
+    _TITLE_POS: ClassVar[int] = 1
+    _METADATA_POS: ClassVar[int] = 2
+    _TEXT_BLOCK_POS: ClassVar[int] = 3
+    _HTML_BLOCK_POS: ClassVar[int] = 4
+    _HTML_CANDIDATE_POS: ClassVar[int] = 1
+    _TEXT_CONTENT_POS: ClassVar[int] = 0
+    _METADATA_TYPE_POS: ClassVar[int] = 4
+
+    @property
+    def descriptor(self) -> list[Any] | None:
+        """The ``result[0]`` source-descriptor row, or ``None``.
+
+        ``None`` when ``result`` is non-list or the descriptor slot is absent /
+        non-list / too short to carry a title — mirrors the legacy
+        ``isinstance(descriptor, list) and len(descriptor) > 1`` guard.
+        """
+        result = self._raw
+        if not (isinstance(result, list) and len(result) > self._DESCRIPTOR_POS):
+            return None
+        descriptor = result[self._DESCRIPTOR_POS]
+        if not isinstance(descriptor, list) or len(descriptor) <= self._TITLE_POS:
+            return None
+        return descriptor
+
+    @property
+    def title(self) -> str:
+        """Source title at ``descriptor[1]`` — ``""`` when absent / non-string."""
+        descriptor = self.descriptor
+        if descriptor is None:
+            return ""
+        value = descriptor[self._TITLE_POS]
+        return value if isinstance(value, str) else ""
+
+    @property
+    def metadata(self) -> list[Any] | None:
+        """Metadata sub-list at ``descriptor[2]`` — ``None`` when absent / non-list."""
+        descriptor = self.descriptor
+        if descriptor is None or len(descriptor) <= self._METADATA_POS:
+            return None
+        value = descriptor[self._METADATA_POS]
+        return value if isinstance(value, list) else None
+
+    @property
+    def source_row(self) -> SourceRow | None:
+        """The descriptor wrapped as a :class:`SourceRow` (for ``type_code``).
+
+        ``None`` when there is no descriptor; otherwise the descriptor carries
+        the adapter's normalized-entry layout so ``SourceRow.type_code`` reads
+        ``metadata[4]`` with the standard int-validating soft contract.
+        """
+        descriptor = self.descriptor
+        if descriptor is None:
+            return None
+        return SourceRow.from_entry(descriptor, method_id=RPCMethod.GET_SOURCE.value)
+
+    @property
+    def raw_metadata_type_slot(self) -> Any:
+        """Raw ``metadata[4]`` value (for the malformed-type-code WARNING).
+
+        Returns ``None`` when metadata is absent or the type slot is missing.
+        The consumer logs a diagnostic when this is present-but-non-int while
+        :attr:`SourceRow.type_code` resolved to ``None`` (#1485 policy); the
+        raw value is surfaced so the consumer can name its type in the log.
+        """
+        metadata = self.metadata
+        if metadata is None or len(metadata) <= self._METADATA_TYPE_POS:
+            return None
+        return metadata[self._METADATA_TYPE_POS]
+
+    @property
+    def html_content(self) -> str | None:
+        """HTML rendition at ``result[4][1]`` — ``None`` when absent / non-string.
+
+        Mirrors the legacy markdown-path guard: an absent / non-list HTML block,
+        a block too short to carry the candidate, or a non-string candidate all
+        yield ``None`` ("no markdown rendition").
+        """
+        result = self._raw
+        if not (isinstance(result, list) and len(result) > self._HTML_BLOCK_POS):
+            return None
+        block = result[self._HTML_BLOCK_POS]
+        if not isinstance(block, list) or len(block) <= self._HTML_CANDIDATE_POS:
+            return None
+        candidate = block[self._HTML_CANDIDATE_POS]
+        return candidate if isinstance(candidate, str) else None
+
+    @property
+    def text_content_blocks(self) -> list[Any] | None:
+        """Text-content blocks at ``result[3][0]`` — ``None`` when absent / non-list.
+
+        Mirrors the legacy text-path guard: a falsy / non-list ``result[3]`` or
+        a non-list ``result[3][0]`` yields ``None`` (empty content + warning).
+        """
+        result = self._raw
+        if not (isinstance(result, list) and len(result) > self._TEXT_BLOCK_POS):
+            return None
+        block = result[self._TEXT_BLOCK_POS]
+        if not isinstance(block, list) or not block:
+            return None
+        blocks = block[self._TEXT_CONTENT_POS]
+        return blocks if isinstance(blocks, list) else None
 
 
 def interpret_source_freshness(result: Any) -> bool:

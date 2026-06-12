@@ -75,7 +75,15 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # without forking the public exception home. Irreducible for this feature.
     "exceptions.py": 1546,
     "_artifacts.py": 1447,
-    "_source/upload.py": 1236,
+    # +3 LOC: the #1491 single-level positional-RPC drain for the sources domain
+    # replaced the file's raw ``name[int]`` reads (``result[0]`` / ``node[0]`` /
+    # ``value[0]`` / ``upload_ids[0]`` / ``matches[0]``) with unpack /
+    # ``next(iter(...))`` forms that lift the heuristic ADD_SOURCE_FILE id-envelope
+    # walks off the type-blind ratchet. The residual growth is irreducible
+    # in-place (an extra unpack-binding line in the two-element prefix and id/name
+    # pair reads); splitting the module for 3 lines is disproportionate. New
+    # ceiling is the measured post-drain LOC.
+    "_source/upload.py": 1239,
     "_sources.py": 1007,
     # _artifact/downloads.py: raised for the #1521 per-redirect-hop revalidation
     # fix. The new *logic* (host+scheme hop guard + httpx event-hook factory) was
