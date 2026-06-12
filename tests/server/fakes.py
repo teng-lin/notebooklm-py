@@ -161,9 +161,20 @@ class FakeArtifacts:
         *,
         artifacts_data: Any = None,
     ) -> str:
+        return await self._do_download(output_path)
+
+    async def download_slide_deck(
+        self, notebook_id: str, output_path: str, artifact_id: str | None = None, **kwargs: Any
+    ) -> str:
+        # A format-bearing download kind (output_format → pdf/pptx).
+        return await self._do_download(output_path)
+
+    async def _do_download(self, output_path: str) -> str:
         with open(output_path, "wb") as fh:
             fh.write(self._s.download_bytes)
-        return output_path
+        # download_return_path lets a test force a path OUTSIDE the server's temp
+        # dir, exercising the route's served-path safety guard.
+        return self._s.download_return_path or output_path
 
 
 class FakeClient:
@@ -178,6 +189,7 @@ class FakeClient:
         self.new_source_status: SourceStatus = SourceStatus.PROCESSING
         self.hide_new_sources: bool = False
         self.download_bytes: bytes = b"FAKE-ARTIFACT-BYTES"
+        self.download_return_path: str | None = None
         self.chat_error: Exception | None = None
 
         self.next_task = 1

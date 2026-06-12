@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+
 from fastapi.testclient import TestClient
 
+from notebooklm._app.generate import GenerationExecutionResult
+from notebooklm._app.generate_retry import GenerationOutcome
 from notebooklm._types.artifacts import GenerationState
+from notebooklm.server._pending import PendingRegistry
+from notebooklm.server.routes import artifacts as artifacts_route
 from notebooklm.server.routes.artifacts import DOWNLOAD_SPECS, GENERATE_TYPES
 
 from .fakes import FakeClient, make_artifact
@@ -98,6 +105,122 @@ def test_list_artifacts(authed_client: TestClient, fake_client: FakeClient) -> N
     resp = authed_client.get("/v1/notebooks/nb-1/artifacts")
     assert resp.status_code == 200
     assert resp.json()["artifacts"][0]["title"] == "Pod"
+
+
+# --- generate: input validation (400s) --------------------------------------
+
+
+def test_generate_unknown_type_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts", json={"type": "bogus"})
+    assert resp.status_code == 400
+
+
+def test_generate_unsupported_language_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "language": "zz-bogus"}
+    )
+    assert resp.status_code == 400
+
+
+def test_generate_invalid_option_choice_is_400(authed_client: TestClient) -> None:
+    # A provided per-kind option is validated up front (clean 400, not a raw
+    # KeyError deeper in generate-core).
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "audio_format": "bogus"}
+    )
+    assert resp.status_code == 400
+
+
+def test_generate_explicit_valid_option_is_202(authed_client: TestClient) -> None:
+    # An explicit valid option flows through to the generation plan.
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "audio_format": "brief"}
+    )
+    assert resp.status_code == 202
+
+
+# --- download: input validation + format axis --------------------------------
+
+
+def test_download_unknown_type_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "bogus"})
+    assert resp.status_code == 400
+
+
+def test_download_output_format_on_unsupported_type_is_400(authed_client: TestClient) -> None:
+    # audio has no format axis, so an output_format is a clean 400.
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts/download",
+        json={"type": "audio", "output_format": "mp3"},
+    )
+    assert resp.status_code == 400
+
+
+def test_download_with_output_format_streams(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.artifacts_store["nb-1"] = {"d1": make_artifact("d1", "slide-deck")}
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts/download",
+        json={"type": "slide-deck", "output_format": "pdf"},
+    )
+    assert resp.status_code == 200
+    assert resp.content == fake_client.download_bytes
+
+
+def test_download_unexpected_output_path_is_rejected(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # If the core resolves a served path OUTSIDE the server's private temp dir,
+    # the route refuses to stream it (path-traversal safety guard).
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
+    outside = os.path.join(tempfile.gettempdir(), "nblm-outside-artifact.mp3")
+    fake_client.download_return_path = outside
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
+    assert resp.status_code == 400
+
+
+# --- helpers: _cleanup + _generation_payload ---------------------------------
+
+
+def test_cleanup_unlinks_a_file(tmp_path: object) -> None:
+    target = os.path.join(str(tmp_path), "leftover.bin")
+    with open(target, "wb") as fh:
+        fh.write(b"x")
+    artifacts_route._cleanup(target)
+    assert not os.path.exists(target)
+
+
+def test_cleanup_missing_path_is_noop() -> None:
+    # Already-gone path must not raise.
+    artifacts_route._cleanup(os.path.join(tempfile.gettempdir(), "nblm-does-not-exist-xyz"))
+
+
+def test_generation_payload_mind_map_returns_inline() -> None:
+    # A mind-map renders synchronously: no task_id, the map is inlined.
+    result = GenerationExecutionResult(
+        kind="mind-map", display_name="Mind map", mind_map={"root": 1}
+    )
+    payload = artifacts_route._generation_payload("nb-1", result, PendingRegistry())
+    assert payload["mind_map"] == {"root": 1}
+    assert "task_id" not in payload
+
+
+def test_generation_payload_without_outcome() -> None:
+    # No generation outcome and no mind map → bare {notebook_id, kind}.
+    result = GenerationExecutionResult(kind="audio", display_name="Audio", generation=None)
+    payload = artifacts_route._generation_payload("nb-1", result, PendingRegistry())
+    assert payload == {"notebook_id": "nb-1", "kind": "audio"}
+
+
+def test_generation_payload_outcome_without_task_id_is_not_recorded() -> None:
+    # A falsy task_id is projected but never recorded in the pending registry.
+    pending = PendingRegistry()
+    outcome = GenerationOutcome(status="ok", artifact_type="audio", task_id="")
+    result = GenerationExecutionResult(kind="audio", display_name="Audio", generation=outcome)
+    payload = artifacts_route._generation_payload("nb-1", result, pending)
+    assert payload["task_id"] == ""
+    assert not pending.knows("nb-1", "")
 
 
 def test_download_spec_exhaustiveness() -> None:
