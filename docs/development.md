@@ -580,6 +580,38 @@ the result with the cassette guard before committing:
 uv run python tests/scripts/check_cassettes_clean.py
 ```
 
+#### Long-running recordings (deep research, multi-minute polling)
+
+Recording a cassette that polls a multi-minute server-side operation — the Deep
+Research lifecycle (`test_research_deep_poll_vcr.py`) is the canonical example —
+hits a few non-obvious snags. Lessons from the v0.8 full-lifecycle re-record
+(PR #1566):
+
+- **`httpx.PoolTimeout` after ~15–20 min of idle polling.** The default
+  `ConnectionLimits(keepalive_expiry=30.0)` keeps an idle pooled connection
+  around long enough to be silently dropped server-side, and the next acquire
+  stalls. In **record mode only**, build the client with a shorter keepalive and
+  a generous read timeout:
+  `NotebookLMClient(auth, timeout=60.0, limits=ConnectionLimits(keepalive_expiry=10.0))`.
+  Note `async_client_factory` is **not** a public constructor kwarg — use the
+  public `timeout=` / `limits=` seams.
+- **`pytest-timeout` kills the run.** The global per-test timeout aborts a
+  ~30-min recording. Mark the recording test `@pytest.mark.timeout(3600)`.
+- **`start()` task_id ≠ the poll-reported task_id.** Deep Research's kickoff id
+  is not the id `POLL_RESEARCH` echoes back, so a filtered
+  `research.poll(task_id=…)` returns `NOT_FOUND` every poll. The record loop must
+  mirror `wait_for_completion`: first poll unfiltered, then pin the
+  *poll-reported* id.
+- **Trim with a byte-exact text slice, not `yaml.safe_dump`.** Long deep-research
+  poll bodies accumulate large markdown, so trim redundant middle `in_progress`
+  polls to stay under the cassette size cap. Re-serialising via `yaml.safe_dump`
+  re-wraps long scalars and breaks Windows YAML parsing (CI catches it) — slice
+  the VCR-native YAML text instead.
+- **Cleanliness is necessary-not-sufficient.** After recording, run the cassette
+  guard (above) *and* manually grep the new file for live cookie/token/email
+  shapes (`SID` / `HSID` / `SAPISIDHASH` / Bearer / the account email) — the
+  name-anchored scrubber can miss credentials in un-allowlisted fields.
+
 #### Synthetic error cassettes
 
 > [!WARNING]
