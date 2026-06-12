@@ -178,10 +178,14 @@ class ArtifactPollingService:
 
         existing = self._poll_registry.get(key)
         if existing is not None:
-            # Follower path. ``asyncio.shield`` ensures that *this* caller's
-            # cancellation does not propagate into the shared future; the
-            # leader's poll task continues on behalf of every other follower.
-            result = await asyncio.shield(existing[0])
+            # Follower path. ``existing`` is the typed ``PendingPoll`` tuple
+            # ``(shared_future, poll_task)`` — not a decoded RPC payload — so it
+            # is unpacked by name rather than indexed positionally.
+            # ``asyncio.shield`` ensures that *this* caller's cancellation does
+            # not propagate into the shared future; the leader's poll task
+            # continues on behalf of every other follower.
+            shared_future, _poll_task = existing
+            result = await asyncio.shield(shared_future)
             if on_status_change is not None:
                 await maybe_await_callback(on_status_change, result)
             return result

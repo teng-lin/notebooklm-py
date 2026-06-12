@@ -224,7 +224,17 @@ def _parse_data_table(
             if not isinstance(row_section, list) or len(row_section) < 3:
                 continue
 
-            cell_array = row_section[2]
+            # The ``len(row_section) < 3`` guard above guarantees the cell-array
+            # slot is present, so the ``safe_index`` seam is a no-op here; it
+            # keeps the position knowledge off a raw ``row_section[2]`` subscript
+            # (and any genuine drift it surfaced would be caught by the enclosing
+            # ``except`` and re-raised as ``ArtifactParseError``, as today).
+            cell_array = safe_index(
+                row_section,
+                2,
+                method_id=RPCMethod.LIST_ARTIFACTS.value,
+                source="_artifacts._parse_data_table",
+            )
             if not isinstance(cell_array, list):
                 continue
 

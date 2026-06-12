@@ -468,7 +468,7 @@ class ArtifactDownloadService:
             if not artifact:
                 raise ArtifactNotFoundError(artifact_id, artifact_type=artifact_type)
         else:
-            artifact = completed[0]
+            artifact = next(iter(completed))  # typed ``Artifact`` list head (newest-first)
 
         html_content = await self._get_artifact_content(notebook_id, artifact.id)
         if not html_content:
@@ -612,7 +612,7 @@ class ArtifactDownloadService:
             # No explicit id: the first note-backed mind map (if any) is used.
             if not mind_maps:
                 raise ArtifactNotReadyError("mind_map")
-            json_string = mind_maps_service.extract_content(mind_maps[0])
+            json_string = mind_maps_service.extract_content(next(iter(mind_maps)))
 
         try:
             if json_string is None:
@@ -954,7 +954,7 @@ class ArtifactDownloadService:
                             # to finish first.
                             await _await_writer_exit(writer_thread, re_raise_cancel=True)
                             if writer_error:
-                                raise writer_error[0]
+                                raise next(iter(writer_error))  # one-slot exception box
                         except BaseException:
                             # On producer-side failure (network error,
                             # cancellation, HTML payload), make sure the

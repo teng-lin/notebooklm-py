@@ -43,7 +43,7 @@ from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._row_adapters.artifacts import ReportSuggestionRow
+from ._row_adapters import artifacts as _artifact_rows
 from ._runtime.contracts import RpcCaller
 from ._types.artifacts import _status_from_code
 from ._types.research import MindMapResult
@@ -716,47 +716,49 @@ class ArtifactsAPI:
             operation_variant=None,
         )
 
-        if result and isinstance(result, list) and len(result) > 0:
-            inner = result[0]
-            if isinstance(inner, list) and len(inner) > 0:
-                mind_map_json = inner[0]
-
-                if isinstance(mind_map_json, str):
-                    try:
-                        mind_map_data = json_module.loads(mind_map_json)
-                    except json_module.JSONDecodeError:
-                        mind_map_data = mind_map_json
-                        mind_map_json = str(mind_map_json)
-                else:
+        # The two-level ``[[mind_map_json]]`` leaf descent is centralised behind
+        # ``unwrap_mind_map_generation_leaf`` (#1491); the sentinel marks absence
+        # (a present leaf, incl. ``None``, is processed as before).
+        mind_map_json = _artifact_rows.unwrap_mind_map_generation_leaf(
+            result, method_id=RPCMethod.GENERATE_MIND_MAP.value, source="ArtifactsAPI"
+        )
+        if mind_map_json is not _artifact_rows.MIND_MAP_LEAF_ABSENT:
+            if isinstance(mind_map_json, str):
+                try:
+                    mind_map_data = json_module.loads(mind_map_json)
+                except json_module.JSONDecodeError:
                     mind_map_data = mind_map_json
-                    mind_map_json = json_module.dumps(mind_map_json)
+                    mind_map_json = str(mind_map_json)
+            else:
+                mind_map_data = mind_map_json
+                mind_map_json = json_module.dumps(mind_map_json)
 
-                # Only accept ``name`` when it is a non-empty ``str`` — a
-                # malformed tree with a ``null``/numeric ``name`` would otherwise
-                # flow into the note title and frozen ``MindMap.title: str``
-                # (issue #1270).
-                title = "Mind Map"
-                if isinstance(mind_map_data, dict):
-                    name = mind_map_data.get("name")
-                    if isinstance(name, str) and name:
-                        title = name
+            # Only accept ``name`` when it is a non-empty ``str`` — a
+            # malformed tree with a ``null``/numeric ``name`` would otherwise
+            # flow into the note title and frozen ``MindMap.title: str``
+            # (issue #1270).
+            title = "Mind Map"
+            if isinstance(mind_map_data, dict):
+                name = mind_map_data.get("name")
+                if isinstance(name, str) and name:
+                    title = name
 
-                # ``NoteService.create_note`` raises ``RPCError`` when the
-                # server omits a usable row id (issue #1162); on success it
-                # always returns a ``Note`` with a non-empty id. The
-                # ``note.id or None`` below is therefore defensive only —
-                # it preserves the public dict contract ("note_id is None
-                # means persistence failed") for any future degenerate
-                # shape, but the empty-id case now surfaces as an error
-                # rather than a silent ``{"note_id": None}``.
-                note = await self._note_service.create_note(
-                    notebook_id, title=title, content=mind_map_json
-                )
-                return MindMapResult(
-                    mind_map=mind_map_data,
-                    note_id=note.id or None,
-                    created_at=note.created_at,
-                )
+            # ``NoteService.create_note`` raises ``RPCError`` when the
+            # server omits a usable row id (issue #1162); on success it
+            # always returns a ``Note`` with a non-empty id. The
+            # ``note.id or None`` below is therefore defensive only —
+            # it preserves the public dict contract ("note_id is None
+            # means persistence failed") for any future degenerate
+            # shape, but the empty-id case now surfaces as an error
+            # rather than a silent ``{"note_id": None}``.
+            note = await self._note_service.create_note(
+                notebook_id, title=title, content=mind_map_json
+            )
+            return MindMapResult(
+                mind_map=mind_map_data,
+                note_id=note.id or None,
+                created_at=note.created_at,
+            )
 
         return MindMapResult(mind_map=None, note_id=None)
 
@@ -1233,15 +1235,12 @@ class ArtifactsAPI:
         if not (result and isinstance(result, list)):
             return []
 
-        # GET_SUGGESTED_REPORTS returns a wrapped ``[[row1, ...]]`` envelope or an
-        # already-flat ``[row1, ...]``; only unwrap the wrapped case (single outer
-        # element whose first inner element is itself a row).
-        items = result
-        if len(result) == 1 and isinstance(result[0], list):
-            inner = result[0]
-            if not inner or isinstance(inner[0], list):
-                items = inner
-        # ``ReportSuggestionRow`` centralises the per-row position knowledge (#1491).
+        # GET_SUGGESTED_REPORTS returns a wrapped ``[[row1, ...]]`` envelope or a
+        # flat list; the wrap probe + per-row decode are centralised behind
+        # ``unwrap_artifact_rows`` / ``ReportSuggestionRow`` (#1491).
+        items = _artifact_rows.unwrap_artifact_rows(
+            result, method_id=RPCMethod.GET_SUGGESTED_REPORTS.value, source="suggest_reports"
+        )
         return [
             ReportSuggestion(
                 title=row.title,
@@ -1249,7 +1248,7 @@ class ArtifactsAPI:
                 prompt=row.prompt,
                 audience_level=row.audience_level,
             )
-            for row in map(ReportSuggestionRow, items)
+            for row in map(_artifact_rows.ReportSuggestionRow, items)
             if row.is_well_formed
         ]
 
@@ -1265,10 +1264,11 @@ class ArtifactsAPI:
         null_result_artifact_type: str | None = None,
     ) -> GenerationStatus:
         """Make a generation RPC call with error handling."""
-        # Best-effort debug label via single-level ``descriptor[2]`` (not chained).
-        descriptor = params[2] if len(params) > 2 else None
+        # Best-effort debug label over the OUTGOING request body; the ``[2:3]``
+        # slice-pick keeps it off ``name[int]`` (== old guarded ``params[2]``).
+        descriptor = next(iter(params[2:3]), None)
         artifact_type = (
-            descriptor[2] if isinstance(descriptor, list) and len(descriptor) > 2 else "unknown"
+            next(iter(descriptor[2:3]), "unknown") if isinstance(descriptor, list) else "unknown"
         )
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         # CREATE_ARTIFACT is PROBE_THEN_CREATE (``_idempotency.py``).

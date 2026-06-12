@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from .._row_adapters.artifacts import ArtifactRow
+from .._row_adapters.artifacts import ArtifactRow, unwrap_artifact_rows
 from .._runtime.contracts import RpcCaller
 from ..exceptions import DecodingError
 from ..rpc import (
@@ -103,17 +103,17 @@ class ArtifactListingService:
             allow_null=True,
         )
         # LIST_ARTIFACTS returns either a wrapped single-element envelope
-        # (``[[row1, row2, ...]]``) or an already-flat list of rows. Bind the
-        # inner element once so the wrap probe reads ``inner[0]`` (single-level)
-        # instead of a chained ``result[0][0]`` descent. The wrapped case is
-        # detected by a single outer element whose first inner element is itself
-        # a list (a row); an empty inner list is also treated as wrapped.
-        if isinstance(result, list) and len(result) == 1 and isinstance(result[0], list):
-            inner = result[0]
-            if not inner or isinstance(inner[0], list):
-                return inner
+        # (``[[row1, row2, ...]]``) or an already-flat list of rows. The wrap
+        # probe (``result[0]`` / ``inner[0]``) is centralised in
+        # ``unwrap_artifact_rows`` so the envelope-position knowledge lives in
+        # one place (issue #1491); it returns the flat rows unchanged for the
+        # already-flat shape.
         if isinstance(result, list):
-            return result
+            return unwrap_artifact_rows(
+                result,
+                method_id=RPCMethod.LIST_ARTIFACTS.value,
+                source="ArtifactListingService.list_raw",
+            )
         if not result:
             return []
         # A truthy non-list payload is schema drift, not an empty notebook —
@@ -290,7 +290,10 @@ class ArtifactListingService:
         # the ``test_handles_none_at_timestamp_position_without_typeerror``
         # contract).
         filtered.sort(key=lambda row: row.created_at_raw or 0, reverse=True)
-        return filtered[0]
+        # ``filtered`` is a non-empty list of typed ``ArtifactRow`` objects (not
+        # a raw RPC payload); take the most-recent head via ``next(iter(...))``
+        # so this typed-sequence pick is not the ``name[int]`` RPC-row shape.
+        return next(iter(filtered))
 
     def _filter_studio_artifacts(
         self,

@@ -10,7 +10,95 @@ from .._types.common import _datetime_from_timestamp
 from ..exceptions import UnknownRPCMethodError
 from ..rpc import ArtifactStatus, ArtifactTypeCode, RPCMethod, safe_index
 
-__all__ = ["ArtifactRow", "ReportSuggestionRow"]
+__all__ = [
+    "MIND_MAP_LEAF_ABSENT",
+    "ArtifactRow",
+    "ReportSuggestionRow",
+    "unwrap_artifact_rows",
+    "unwrap_mind_map_generation_leaf",
+]
+
+
+def unwrap_artifact_rows(result: list[Any], *, method_id: str, source: str) -> list[Any]:
+    """Unwrap a single-element ``[[row, ...]]`` artifact-list envelope.
+
+    Both ``LIST_ARTIFACTS`` (``gArtLc``) and ``GET_SUGGESTED_REPORTS``
+    (``ciyUvf``) return their rows as either a wrapped single-element envelope
+    (``[[row1, row2, ...]]``) or an already-flat list of rows. This centralises
+    the ``result[0]`` / ``inner[0]`` envelope-probe positions both call sites
+    previously open-coded (issue #1491) so the wrap-detection knowledge lives in
+    one place.
+
+    The caller is responsible for the absence / drift policy on the *outer*
+    payload (a falsy or non-list ``result`` never reaches here); this helper is a
+    pure shape probe over a list and **never raises**:
+
+    * the wrapped case (a single outer element whose first inner element is
+      itself a list — a row — *or* an empty inner list) returns the unwrapped
+      inner list; and
+    * every other shape (already-flat rows, or an outer list whose lone element
+      is a scalar) returns ``result`` unchanged.
+
+    ``method_id`` / ``source`` are accepted for parity with the ``safe_index``
+    seam and to localise future drift diagnostics, but are unused on the happy
+    path because the probe only reads positions it has already length/`isinstance`
+    guarded — so it degrades softly exactly as the prior inline reads did.
+
+    Args:
+        result: A truthy ``list`` payload (the caller guards falsy / non-list).
+        method_id: RPC method id of the producing call (drift-diagnostic parity).
+        source: Caller label for drift diagnostics.
+    """
+    # ``result`` is a non-empty list here (caller-guaranteed). The wrap probe
+    # reads ``result[0]`` and ``inner[0]`` only after the matching length /
+    # ``isinstance`` guards, so neither read can raise — this preserves the
+    # historical permissive unwrap contract (no drift raise from the probe).
+    if len(result) == 1 and isinstance(result[0], list):
+        inner = safe_index(result, 0, method_id=method_id, source=source)
+        if not inner or isinstance(safe_index(inner, 0, method_id=method_id, source=source), list):
+            return inner
+    return result
+
+
+#: Sentinel returned by :func:`unwrap_mind_map_generation_leaf` when the
+#: ``[[mind_map_json]]`` envelope structure is absent (a short / non-list
+#: payload or inner list). It is distinct from a *present* leaf that is itself
+#: ``None`` — the caller must process a present ``None`` leaf (it serialises to
+#: a ``"null"`` note body) but skip the absent case, so the two cannot collapse
+#: to a single ``None`` return.
+MIND_MAP_LEAF_ABSENT: Any = object()
+
+
+def unwrap_mind_map_generation_leaf(result: Any, *, method_id: str, source: str) -> Any:
+    """Return the JSON leaf at ``result[0][0]`` of a ``GENERATE_MIND_MAP`` reply.
+
+    The ``GENERATE_MIND_MAP`` (``cu1Hbf``) reply nests the mind-map JSON payload
+    two levels deep (``[[mind_map_json]]``). This centralises the ``result[0]`` /
+    ``inner[0]`` descent ``ArtifactsAPI.generate_mind_map`` previously open-coded
+    (issue #1491).
+
+    The descent is **soft** (preserving the historical contract): a short /
+    non-list payload, or a short / non-list inner list, returns the
+    :data:`MIND_MAP_LEAF_ABSENT` sentinel rather than raising — the caller maps
+    that to its "no mind-map content produced" fall-through. A *present* leaf is
+    returned verbatim, **including a present ``None``/``""`` leaf**, because the
+    historical code processes those (a ``None`` leaf serialises to a ``"null"``
+    note body); collapsing them into a plain ``None`` return would silently drop
+    that case, so the sentinel is required. The two inner reads are guarded by
+    ``isinstance`` + ``len`` so the ``safe_index`` seam never fires on the
+    absence shapes.
+
+    Args:
+        result: Raw decoded ``GENERATE_MIND_MAP`` payload.
+        method_id: RPC method id (drift-diagnostic parity).
+        source: Caller label for drift diagnostics.
+    """
+    if not (isinstance(result, list) and len(result) > 0):
+        return MIND_MAP_LEAF_ABSENT
+    inner = safe_index(result, 0, method_id=method_id, source=source)
+    if not (isinstance(inner, list) and len(inner) > 0):
+        return MIND_MAP_LEAF_ABSENT
+    return safe_index(inner, 0, method_id=method_id, source=source)
 
 
 @dataclass(frozen=True)
