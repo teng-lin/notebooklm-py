@@ -25,6 +25,7 @@ Fixture schema is documented in ``tests/fixtures/rpc_golden/README.md``.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import json
 import warnings
@@ -33,6 +34,7 @@ from typing import Any, cast
 
 import pytest
 
+from notebooklm._app.serialize import to_jsonable
 from notebooklm._artifact.payloads import (
     build_audio_artifact_params,
     build_cinematic_video_artifact_params,
@@ -1058,6 +1060,21 @@ def test_response_decoder_returns_expected_payload(method: RPCMethod) -> None:
     )
 
 
+def _mapper_item_repr(item: Any) -> Any:
+    """Project one mapped item into its fixture-comparable shape.
+
+    ``to_public_dict()`` wins when present (research-task models expose it);
+    otherwise a dataclass instance is run through the transport-neutral
+    :func:`to_jsonable` (the same serializer the public ``--json`` / MCP / HTTP
+    envelopes use), and anything else passes through unchanged.
+    """
+    if hasattr(item, "to_public_dict"):
+        return item.to_public_dict()
+    if dataclasses.is_dataclass(item) and not isinstance(item, type):
+        return to_jsonable(item)
+    return item
+
+
 @pytest.mark.parametrize("method", ALL_METHODS, ids=lambda m: m.name)
 def test_mapper_output_shape_when_documented(method: RPCMethod) -> None:
     """Methods that document a downstream mapper must also pin its output.
@@ -1087,17 +1104,74 @@ def test_mapper_output_shape_when_documented(method: RPCMethod) -> None:
     # Mappers commonly return dataclass instances or lists thereof; compare
     # via the fixture-recorded shape (typically the public dict form or a
     # list of public dicts). The fixture decides the representation.
-    if isinstance(mapped, list) and mapped and hasattr(mapped[0], "to_public_dict"):
-        mapped_repr: Any = [item.to_public_dict() for item in mapped]
-    elif hasattr(mapped, "to_public_dict"):
-        mapped_repr = mapped.to_public_dict()
+    #
+    # Resolution order, per item:
+    #   1. ``to_public_dict()`` when present (research-task models expose it);
+    #   2. otherwise the transport-neutral :func:`to_jsonable` projection for a
+    #      dataclass instance — the same serializer the CLI/MCP/HTTP adapters
+    #      use, so the golden shape matches the public ``--json`` envelope;
+    #   3. otherwise the raw return value (primitives / dicts / lists).
+    if isinstance(mapped, list) and mapped:
+        mapped_repr: Any = [_mapper_item_repr(item) for item in mapped]
     else:
-        mapped_repr = mapped
+        mapped_repr = _mapper_item_repr(mapped)
 
     assert mapped_repr == expected, (
         f"Mapper {mapper_ref!r} for {method.name} returned a shape that "
         f"does not match the fixture's mapper_expected.\n"
         f"Got: {mapped_repr!r}\nExpected: {expected!r}"
+    )
+
+
+# Methods whose fixtures are expected to carry a wired ``mapper`` /
+# ``mapper_expected`` pair so the decoder->dataclass seam is golden-pinned (not
+# merely skipped). The guard below fails loudly if any of them loses its mapper
+# wiring, converting the historical silent skip into a zero-cost ratchet.
+#
+# Only methods whose feature path has a CLEAN single-payload mapper are listed.
+# The remaining methods stay honestly skipped because their feature path either:
+#   * returns ``None`` on success (fire-and-forget mutations: CREATE_NOTE,
+#     DELETE_*, RENAME_*, SHARE_*, SET_USER_SETTINGS, REMOVE_RECENTLY_VIEWED,
+#     RETRY_ARTIFACT, REVISE_SLIDE, the *_RESEARCH starters, …);
+#   * extracts inline via ``safe_index`` with no centralised mapper
+#     (GET_SOURCE's field-by-field ``SourceFulltext`` build, GET_SOURCE_GUIDE,
+#     conversation/user-settings/tier reads, GET_INTERACTIVE_HTML, …);
+#   * has no decoded payload to map (UPDATE_SOURCE decodes to ``null``); or
+#   * reconciles the raw decode against client-side state rather than returning
+#     it directly (CREATE_NOTEBOOK feeds the payload to ``Notebook.from_api_response``
+#     but the feature return comes from a baseline-id-diff + ``_probe`` step, so
+#     the raw-decode shape is not the public return the fixture would pin).
+# Wiring those would require contorting the harness or adding production code
+# for tests, so they are deliberately exempt rather than forced.
+_MAPPER_COVERED_METHODS: tuple[RPCMethod, ...] = (
+    RPCMethod.POLL_RESEARCH,
+    RPCMethod.LIST_NOTEBOOKS,
+    RPCMethod.GET_NOTEBOOK,
+    RPCMethod.ADD_SOURCE,
+    RPCMethod.LIST_ARTIFACTS,
+    RPCMethod.LIST_LABELS,
+    RPCMethod.GET_SHARE_STATUS,
+    RPCMethod.GET_SUGGESTED_REPORTS,
+)
+
+
+def test_mapper_covered_methods_have_mappers() -> None:
+    """Methods listed as mapper-covered must keep their wired mapper goldens.
+
+    Mirrors ``test_drift_prone_methods_have_drift_cases``: if a future edit
+    drops the ``mapper`` / ``mapper_expected`` pair from one of these fixtures,
+    the suite fails loudly here rather than silently degrading the
+    ``test_mapper_output_shape_when_documented`` row back into a skip.
+    """
+    missing = []
+    for method in _MAPPER_COVERED_METHODS:
+        fixture = _load_fixture(method)
+        if not fixture.get("mapper") or "mapper_expected" not in fixture:
+            missing.append(method.name)
+    assert not missing, (
+        f"Mapper-covered methods missing a 'mapper' / 'mapper_expected' pair: "
+        f"{missing}. Restore the decoder->dataclass golden for each (see "
+        f"tests/unit/_golden_mappers.py)."
     )
 
 

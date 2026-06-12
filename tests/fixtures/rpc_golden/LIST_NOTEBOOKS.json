@@ -28,7 +28,7 @@
         [
           "wrb.fr",
           "wXbhsf",
-          "[[[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",null,null,null,null,0],[\"SCRUBBED_NB_002\",\"Scrubbed Notebook Two\",null,null,null,null,0]]]",
+          "[[[\"Scrubbed Notebook One\",[[\"SCRUBBED_SRC_001\"]],\"SCRUBBED_NB_001\",\"\\ud83d\\udcd3\",null,[null,false,null,null,null,[1704153600,0],null,null,[1704067200,0]]],[\"Scrubbed Notebook Two\",[],\"SCRUBBED_NB_002\",\"\\ud83d\\udcd8\",null,[null,true,null,null,null,[1704240000,0],null,null,[1704067200,0]]]]]",
           null,
           null,
           null,
@@ -40,22 +40,56 @@
     "expected_decoded": [
       [
         [
-          "SCRUBBED_NB_001",
           "Scrubbed Notebook One",
+          [
+            [
+              "SCRUBBED_SRC_001"
+            ]
+          ],
+          "SCRUBBED_NB_001",
+          "📓",
           null,
-          null,
-          null,
-          null,
-          0
+          [
+            null,
+            false,
+            null,
+            null,
+            null,
+            [
+              1704153600,
+              0
+            ],
+            null,
+            null,
+            [
+              1704067200,
+              0
+            ]
+          ]
         ],
         [
-          "SCRUBBED_NB_002",
           "Scrubbed Notebook Two",
+          [],
+          "SCRUBBED_NB_002",
+          "📘",
           null,
-          null,
-          null,
-          null,
-          0
+          [
+            null,
+            true,
+            null,
+            null,
+            null,
+            [
+              1704240000,
+              0
+            ],
+            null,
+            null,
+            [
+              1704067200,
+              0
+            ]
+          ]
         ]
       ]
     ]
@@ -107,7 +141,7 @@
           [
             "wrb.fr",
             "ZZdrift",
-            "[[[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",null,null,null,null,0]]]",
+            "[[[\"Scrubbed Notebook One\",[[\"SCRUBBED_SRC_001\"]],\"SCRUBBED_NB_001\",\"\\ud83d\\udcd3\",null,[null,false,null,null,null,[1704153600,0],null,null,[1704067200,0]]]]]",
             null,
             null,
             null,
@@ -137,7 +171,7 @@
           [
             "wrb.fr",
             "wXbhsf",
-            "[[[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",null,null,null,null,0]]]",
+            "[[[\"Scrubbed Notebook One\",[[\"SCRUBBED_SRC_001\"]],\"SCRUBBED_NB_001\",\"\\ud83d\\udcd3\",null,[null,false,null,null,null,[1704153600,0],null,null,[1704067200,0]]]]]",
             null,
             null,
             null,
@@ -148,16 +182,54 @@
       "expected_decoded": [
         [
           [
-            "SCRUBBED_NB_001",
             "Scrubbed Notebook One",
+            [
+              [
+                "SCRUBBED_SRC_001"
+              ]
+            ],
+            "SCRUBBED_NB_001",
+            "📓",
             null,
-            null,
-            null,
-            null,
-            0
+            [
+              null,
+              false,
+              null,
+              null,
+              null,
+              [
+                1704153600,
+                0
+              ],
+              null,
+              null,
+              [
+                1704067200,
+                0
+              ]
+            ]
           ]
         ]
       ]
+    }
+  ],
+  "mapper": "tests.unit._golden_mappers:list_notebooks",
+  "mapper_expected": [
+    {
+      "id": "SCRUBBED_NB_001",
+      "title": "Scrubbed Notebook One",
+      "created_at": "2024-01-01T00:00:00+00:00",
+      "sources_count": 1,
+      "is_owner": true,
+      "modified_at": "2024-01-02T00:00:00+00:00"
+    },
+    {
+      "id": "SCRUBBED_NB_002",
+      "title": "Scrubbed Notebook Two",
+      "created_at": "2024-01-01T00:00:00+00:00",
+      "sources_count": 0,
+      "is_owner": false,
+      "modified_at": "2024-01-03T00:00:00+00:00"
     }
   ]
 }

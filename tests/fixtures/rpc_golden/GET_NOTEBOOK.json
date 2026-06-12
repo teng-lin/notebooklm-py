@@ -29,7 +29,7 @@
         [
           "wrb.fr",
           "rLM1Ne",
-          "[\"SCRUBBED_NB_001\",\"Scrubbed Notebook One\",[[[\"SCRUBBED_SRC_001\"],\"Scrubbed Source\",[2,null]]]]",
+          "[[\"Scrubbed Notebook One\",[[\"SCRUBBED_SRC_001\"]],\"SCRUBBED_NB_001\",\"\\ud83d\\udcd3\",null,[null,false,null,null,null,[1704153600,0],null,null,[1704067200,0]]]]",
           null,
           null,
           null,
@@ -39,20 +39,43 @@
     ],
     "allow_null": false,
     "expected_decoded": [
-      "SCRUBBED_NB_001",
-      "Scrubbed Notebook One",
       [
+        "Scrubbed Notebook One",
         [
           [
             "SCRUBBED_SRC_001"
-          ],
-          "Scrubbed Source",
+          ]
+        ],
+        "SCRUBBED_NB_001",
+        "📓",
+        null,
+        [
+          null,
+          false,
+          null,
+          null,
+          null,
           [
-            2,
-            null
+            1704153600,
+            0
+          ],
+          null,
+          null,
+          [
+            1704067200,
+            0
           ]
         ]
       ]
     ]
+  },
+  "mapper": "tests.unit._golden_mappers:get_notebook",
+  "mapper_expected": {
+    "id": "SCRUBBED_NB_001",
+    "title": "Scrubbed Notebook One",
+    "created_at": "2024-01-01T00:00:00+00:00",
+    "sources_count": 1,
+    "is_owner": true,
+    "modified_at": "2024-01-02T00:00:00+00:00"
   }
 }

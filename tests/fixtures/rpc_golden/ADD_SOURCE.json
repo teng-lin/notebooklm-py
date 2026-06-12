@@ -140,5 +140,14 @@
         ]
       ]
     }
-  ]
+  ],
+  "mapper": "tests.unit._golden_mappers:add_source",
+  "mapper_expected": {
+    "id": "SCRUBBED_SRC_NEW_001",
+    "title": null,
+    "url": null,
+    "_type_code": null,
+    "created_at": null,
+    "status": 2
+  }
 }

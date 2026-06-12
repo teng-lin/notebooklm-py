@@ -69,5 +69,18 @@
         ]
       ]
     ]
-  }
+  },
+  "mapper": "tests.unit._golden_mappers:list_labels",
+  "mapper_expected": [
+    {
+      "id": "SCRUBBED_LABEL_001",
+      "name": "Scrubbed Topic A",
+      "notebook_id": "SCRUBBED_NB_001",
+      "emoji": null,
+      "source_ids": [
+        "SCRUBBED_SRC_001",
+        "SCRUBBED_SRC_002"
+      ]
+    }
+  ]
 }

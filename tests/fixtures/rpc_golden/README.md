@@ -62,8 +62,25 @@ ID changes without renaming the file.
 whose payload is consumed by inline feature-level extraction
 (`safe_index`-based) rather than a centralised mapper. When present, the
 mapper is imported via `module.path:attribute` form and applied to
-`expected_decoded`; the returned value (or its `to_public_dict()` form for
-dataclasses) is compared against `mapper_expected`.
+`expected_decoded`; the returned value is then projected to its
+fixture-comparable shape (`to_public_dict()` when the mapped object exposes
+it, otherwise the transport-neutral `to_jsonable()` projection used by the
+public `--json` / MCP / HTTP envelopes) and compared against
+`mapper_expected`.
+
+Because the golden harness calls the mapper with a single positional argument
+(`expected_decoded`), most fixtures point at a thin adapter in
+`tests/unit/_golden_mappers.py` that mirrors the extraction-then-factory path
+the feature layer runs — routing through the same production helpers where one
+exists (e.g. `LIST_ARTIFACTS` / `GET_SUGGESTED_REPORTS` reuse
+`unwrap_artifact_rows`; `LIST_NOTEBOOKS` extracts the `[[row, ...]]` envelope and
+maps each row through `Notebook.from_api_response`). Methods whose
+feature path has no clean single-payload mapper — fire-and-forget mutations
+that decode to `None`, inline `safe_index` reads, or `UPDATE_SOURCE` (decodes to
+`null`) — deliberately omit the pair and stay skipped. The wired set is pinned
+by `_MAPPER_COVERED_METHODS` + `test_mapper_covered_methods_have_mappers`, which
+fails loudly if a fixture loses its mapper rather than letting the row silently
+regress to a skip.
 
 `drift_cases` is **optional** — present only on the drift-prone methods
 (`CREATE_ARTIFACT`, `ADD_SOURCE`, `START_FAST_RESEARCH`, `LIST_NOTEBOOKS`)

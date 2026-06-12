@@ -1,7 +1,7 @@
 {
   "method_name": "GET_SHARE_STATUS",
   "method_id": "JFMDGd",
-  "description": "Get notebook share settings (production shape [notebook_id, [2]]).",
+  "description": "Get notebook share settings (restricted, two shared users).",
   "request": {
     "params": [
       "SCRUBBED_NB_001",
@@ -26,7 +26,7 @@
         [
           "wrb.fr",
           "JFMDGd",
-          "[1,0,[]]",
+          "[[[\"scrubbed.alice@example.invalid\",2,[],[\"Scrubbed Alice\",\"https://scrubbed.example.com/avatar/alice.png\"]],[\"scrubbed.bob@example.invalid\",3,[],[\"Scrubbed Bob\",\"https://scrubbed.example.com/avatar/bob.png\"]]],null,1000]",
           null,
           null,
           null,
@@ -36,9 +36,50 @@
     ],
     "allow_null": false,
     "expected_decoded": [
-      1,
-      0,
-      []
+      [
+        [
+          "scrubbed.alice@example.invalid",
+          2,
+          [],
+          [
+            "Scrubbed Alice",
+            "https://scrubbed.example.com/avatar/alice.png"
+          ]
+        ],
+        [
+          "scrubbed.bob@example.invalid",
+          3,
+          [],
+          [
+            "Scrubbed Bob",
+            "https://scrubbed.example.com/avatar/bob.png"
+          ]
+        ]
+      ],
+      null,
+      1000
     ]
+  },
+  "mapper": "tests.unit._golden_mappers:get_share_status",
+  "mapper_expected": {
+    "notebook_id": "SCRUBBED_NB_001",
+    "is_public": false,
+    "access": 0,
+    "view_level": 0,
+    "shared_users": [
+      {
+        "email": "scrubbed.alice@example.invalid",
+        "permission": 2,
+        "display_name": "Scrubbed Alice",
+        "avatar_url": "https://scrubbed.example.com/avatar/alice.png"
+      },
+      {
+        "email": "scrubbed.bob@example.invalid",
+        "permission": 3,
+        "display_name": "Scrubbed Bob",
+        "avatar_url": "https://scrubbed.example.com/avatar/bob.png"
+      }
+    ],
+    "share_url": null
   }
 }

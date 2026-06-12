@@ -54,5 +54,26 @@
         ]
       ]
     ]
-  }
+  },
+  "mapper": "tests.unit._golden_mappers:list_artifacts",
+  "mapper_expected": [
+    {
+      "id": "SCRUBBED_ARTIFACT_001",
+      "title": "Scrubbed Audio Overview",
+      "_artifact_type": 1,
+      "status": 3,
+      "created_at": null,
+      "url": null,
+      "_variant": null
+    },
+    {
+      "id": "SCRUBBED_ARTIFACT_002",
+      "title": "Scrubbed Briefing Doc",
+      "_artifact_type": 2,
+      "status": 3,
+      "created_at": null,
+      "url": null,
+      "_variant": null
+    }
+  ]
 }

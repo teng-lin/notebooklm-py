@@ -1,7 +1,7 @@
 {
   "method_name": "GET_SUGGESTED_REPORTS",
   "method_id": "ciyUvf",
-  "description": "Fetch AI-suggested report formats for a notebook.",
+  "description": "Fetch AI-suggested report formats (wrapped [[row,...]] envelope).",
   "request": {
     "params": [
       "SCRUBBED_NB_001"
@@ -23,7 +23,7 @@
         [
           "wrb.fr",
           "ciyUvf",
-          "[[\"Scrubbed Briefing Doc\",\"Briefing doc on scrubbed topic.\"],[\"Scrubbed Study Guide\",\"Study guide on scrubbed topic.\"]]",
+          "[[[\"Scrubbed Briefing Doc\",\"Briefing doc on scrubbed topic.\",null,null,\"Write a briefing doc on the scrubbed topic.\",2],[\"Scrubbed Study Guide\",\"Study guide on scrubbed topic.\",null,null,\"Write a study guide on the scrubbed topic.\",1]]]",
           null,
           null,
           null,
@@ -34,13 +34,38 @@
     "allow_null": false,
     "expected_decoded": [
       [
-        "Scrubbed Briefing Doc",
-        "Briefing doc on scrubbed topic."
-      ],
-      [
-        "Scrubbed Study Guide",
-        "Study guide on scrubbed topic."
+        [
+          "Scrubbed Briefing Doc",
+          "Briefing doc on scrubbed topic.",
+          null,
+          null,
+          "Write a briefing doc on the scrubbed topic.",
+          2
+        ],
+        [
+          "Scrubbed Study Guide",
+          "Study guide on scrubbed topic.",
+          null,
+          null,
+          "Write a study guide on the scrubbed topic.",
+          1
+        ]
       ]
     ]
-  }
+  },
+  "mapper": "tests.unit._golden_mappers:get_suggested_reports",
+  "mapper_expected": [
+    {
+      "title": "Scrubbed Briefing Doc",
+      "description": "Briefing doc on scrubbed topic.",
+      "prompt": "Write a briefing doc on the scrubbed topic.",
+      "audience_level": 2
+    },
+    {
+      "title": "Scrubbed Study Guide",
+      "description": "Study guide on scrubbed topic.",
+      "prompt": "Write a study guide on the scrubbed topic.",
+      "audience_level": 1
+    }
+  ]
 }
