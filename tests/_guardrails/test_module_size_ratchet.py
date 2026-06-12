@@ -107,7 +107,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # its ceiling entry was removed per the one-way-ratchet rule.
     # +1 LOC: PR #1557 (the #1491 positional drain + its gemini-review unpacking
     # of the typed ``parsed_tasks``/``list[ResearchTask]`` head). Irreducible.
-    "_research.py": 937,
+    "_research.py": 934,
     "_chat/api.py": 955,
 }
 

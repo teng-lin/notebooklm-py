@@ -676,14 +676,11 @@ class ResearchAPI:
             self._build_web_import_entry(src.url, src.title) for src in valid_sources
         )
 
-        params = [None, [1], effective_task_id, notebook_id, source_array]
-
         result = await self._rpc.rpc_call(
             RPCMethod.IMPORT_RESEARCH,
-            params,
+            [None, [1], effective_task_id, notebook_id, source_array],
             source_path=f"/notebook/{notebook_id}",
         )
-
         imported = []
         # ``unwrap_import_rows`` centralises the ``[[src1, ...]]`` envelope probe
         # (the former ``result[0]`` / ``first[0]`` reads) behind the research row

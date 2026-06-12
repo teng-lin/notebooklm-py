@@ -656,23 +656,9 @@ class TestImportSourcesEdgeCases:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """result[0][0] is not a list — no unwrap, loop runs on original result.
-        The unwrap condition requires result[0][0] to be a list. When result[0][0] is a
-        non-list value (e.g. None), the if-block is skipped and the for loop runs directly.
-        """
-        # result[0] = [None, "Flat Title"] so result[0][0] = None (not a list) → no unwrap
-        # The loop then processes each item in the original result directly.
-        # [None, "Flat Title"] has src_data[0]=None → src_id = None → skipped (covers 270->265)
-        # So we also include a valid entry to verify the loop ran:
-        # However, we need result[0][0] to NOT be a list to avoid unwrap.
-        # A valid entry looks like [["src_id"], "Title"] but result[0][0]=["src_id"] IS a list.
-        # The only way to avoid unwrap AND get results is if result[0] is a list but
-        # result[0][0] is not a list. Use result = ["not_a_list_entry", [["src_nw"], "Title"]].
-        # result[0] = "not_a_list_entry" → isinstance(result[0], list) is False → no unwrap.
+        """A non-list head skips envelope unwrapping and still parses later rows."""
         response = build_rpc_response(
             RPCMethod.IMPORT_RESEARCH,
-            # result[0] is a string, not a list → isinstance(result[0], list) is False
-            # condition fails → no unwrap → loop runs on the original result
             ["string_not_list", [["src_nw"], "No-Wrap Title"]],
         )
         httpx_mock.add_response(content=response.encode())
@@ -686,6 +672,48 @@ class TestImportSourcesEdgeCases:
         assert len(result) == 1
         assert result[0]["id"] == "src_nw"
         assert result[0]["title"] == "No-Wrap Title"
+
+    @pytest.mark.asyncio
+    async def test_import_sources_flat_single_row_with_id_envelope(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Regression for #1558: flat ``[[id], title]`` rows are not wrappers."""
+        response = build_rpc_response(
+            RPCMethod.IMPORT_RESEARCH,
+            [[["src_flat"], "Flat Title"]],
+        )
+        httpx_mock.add_response(content=response.encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources(
+                "nb_123",
+                "task_123",
+                [{"url": "https://flat.example.com", "title": "Flat Title"}],
+            )
+        assert result == [{"id": "src_flat", "title": "Flat Title"}]
+
+    @pytest.mark.asyncio
+    async def test_import_sources_wrapped_single_row_still_unwraps(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Matches ``research_import_sources_direct.yaml``'s one-row wrapper."""
+        response = build_rpc_response(
+            RPCMethod.IMPORT_RESEARCH,
+            [[[["src_wrapped"], "Wrapped Title"]]],
+        )
+        httpx_mock.add_response(content=response.encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.import_sources(
+                "nb_123",
+                "task_123",
+                [{"url": "https://wrapped.example.com", "title": "Wrapped Title"}],
+            )
+        assert result == [{"id": "src_wrapped", "title": "Wrapped Title"}]
 
     @pytest.mark.asyncio
     async def test_import_sources_src_data_too_short_skipped(

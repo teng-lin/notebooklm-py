@@ -267,11 +267,27 @@ class TestUnwrapImportRows:
         assert unwrap_import_rows([rows]) == rows
 
     def test_single_wrapped_row_is_unwrapped(self) -> None:
-        # ``[[["id"], "t"]]``: ``result[0] = [["id"], "t"]`` is a non-empty list
-        # whose first element ``["id"]`` is itself a list, so the historical
-        # probe treats it as a one-level envelope and unwraps to ``result[0]``.
-        wrapped = [[["id"], "t"]]
-        assert unwrap_import_rows(wrapped) == [["id"], "t"]
+        # Matches ``research_import_sources_direct.yaml``: the recorded single
+        # imported row still arrives under a one-element ``[[row]]`` envelope.
+        wrapped = [[[["id"], "t"]]]
+        assert unwrap_import_rows(wrapped) == [[["id"], "t"]]
+
+    def test_flat_single_row_with_id_envelope_is_returned_unchanged(self) -> None:
+        # Regression for #1558: flat ``[row]`` where row is ``[[id], title]``
+        # must not mistake the row's id envelope for a wrapper.
+        flat = [[["id"], "t"]]
+        assert unwrap_import_rows(flat) == flat
+
+    def test_flat_populated_row_with_metadata_is_returned_unchanged(self) -> None:
+        # Real imported rows may carry metadata arrays after the title. The
+        # envelope probe must look only at ``result[0][0]`` as a row candidate;
+        # scanning the whole row could mistake metadata arrays for rows.
+        flat = [[["id"], "Title", [None, 1, [2]], [None, 2]]]
+        assert unwrap_import_rows(flat) == flat
+
+    def test_wrapped_row_with_absent_id_envelope_is_unwrapped(self) -> None:
+        rows = [[None, "Missing id"], [["id_2"], "Imported"]]
+        assert unwrap_import_rows([rows]) == rows
 
     def test_flat_list_with_non_list_head_returned_unchanged(self) -> None:
         # ``result[0]`` is a list but its first element is NOT a list, so the
