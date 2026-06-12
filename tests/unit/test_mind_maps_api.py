@@ -610,3 +610,27 @@ async def test_delete_auto_detect_missing_is_idempotent():
     assert await api.delete("nb", "ghost") is None
     mind_maps.delete_mind_map.assert_not_awaited()
     artifacts.delete.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "create_response, expected",
+    [
+        ([["artifact_abc"]], "artifact_abc"),  # happy: [[id, ...]]
+        ([["artifact_abc", "extra"]], "artifact_abc"),  # id is slot 0
+        (None, None),  # null response
+        ([], None),  # empty response
+        ("nope", None),  # non-list response
+        ([[]], None),  # empty inner row
+        ([None], None),  # non-list inner row
+        ([[123]], None),  # non-str id
+    ],
+)
+def test_new_artifact_id_degenerate_shapes(create_response, expected):
+    """``_new_artifact_id`` keeps its soft ``CREATE_ARTIFACT`` contract after the
+    #1491 ``safe_index`` migration: every degenerate response shape returns
+    ``None`` (never raises ``UnknownRPCMethodError``), and a well-formed
+    ``[[id, ...]]`` yields the id. Pins the empty / non-list / non-str paths the
+    two guarded ``safe_index`` descents must keep soft."""
+    from notebooklm._mind_maps_api import _new_artifact_id
+
+    assert _new_artifact_id(create_response) == expected
