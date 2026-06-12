@@ -48,8 +48,17 @@ def _make_capturing_async_client(
     """Build an ``httpx.AsyncClient`` subclass that records the ``timeout`` kwarg.
 
     Returns a class so ``async with httpx.AsyncClient(...)`` continues to
-    work — replacing only the constructor argument capture, not the
-    instance behavior.
+    work and ``super().__init__`` builds a fully valid client — replacing
+    only request *dispatch*, not construction.
+
+    Crucially, ``__init__`` always runs to completion for **every**
+    construction (so all timeouts are captured — the finalize POST asserts
+    ``captured[-1]``), but ``send`` is overridden to raise a transport error
+    **before any socket I/O**. The upload helpers fail fast and
+    deterministically regardless of CI network egress: there is no real
+    ``connect()``/``read()`` to race ``pytest-timeout``. (``httpx``'s
+    ``post``/``request`` funnel through ``send``, so this intercepts the
+    one request path the upload sites use without opening a connection.)
     """
     real_async_client = httpx.AsyncClient
 
@@ -57,6 +66,12 @@ def _make_capturing_async_client(
         def __init__(self, *args: object, **kwargs: object) -> None:
             captured.append(kwargs.get("timeout"))  # type: ignore[arg-type]
             super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+
+        async def send(self, *args: object, **kwargs: object) -> httpx.Response:
+            # Fail before any network I/O. ``httpx.ConnectError`` is an
+            # ``httpx.HTTPError`` subclass, satisfying the ``pytest.raises``
+            # below without ever opening a socket.
+            raise httpx.ConnectError("network disabled in upload-timeout test")
 
     return CapturingClient
 
@@ -72,9 +87,9 @@ async def test_custom_upload_timeout_propagates_to_start(
     async with NotebookLMClient(auth_tokens, upload_timeout=custom) as client:
         with patch.object(httpx, "AsyncClient", capturing):
             # Call the helper directly — exercises the start-resumable-upload
-            # site in isolation. The actual network call will fail (no real
-            # server), but we only care that the timeout kwarg was captured
-            # at construction time, before any I/O.
+            # site in isolation. The patched client raises in ``send`` before
+            # opening a socket, so the POST fails fast and network-free; we
+            # only care that the timeout kwarg was captured at construction.
             with pytest.raises((httpx.HTTPError, OSError)):
                 await client.sources._start_resumable_upload(
                     notebook_id="nb-test",
