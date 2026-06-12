@@ -13,6 +13,9 @@ from unittest.mock import AsyncMock, patch
 
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.cli.session_cmd as session_cmd_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
 
@@ -50,14 +53,14 @@ class TestUseCommand:
             )
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
 
             # Patch in session module where it's imported
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_123"
 
@@ -78,14 +81,14 @@ class TestUseCommand:
             )
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
 
             # Patch in session module where it's imported
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_full_id_123"
 
@@ -102,8 +105,9 @@ class TestUseCommand:
         saved state for downstream commands. The new contract: refuse to write
         context.json and emit a clear "run notebooklm login" message.
         """
-        with patch(
-            "notebooklm.cli.helpers.load_auth_from_storage",
+        with patch.object(
+            helpers_module,
+            "load_auth_from_storage",
             side_effect=FileNotFoundError("No auth"),
         ):
             result = runner.invoke(cli, ["use", "nb_noauth"])
@@ -119,8 +123,9 @@ class TestUseCommand:
 
     def test_use_without_auth_force_persists(self, runner, mock_context_file):
         """`use --force` bypasses verification, mirrors offline/debug path."""
-        with patch(
-            "notebooklm.cli.helpers.load_auth_from_storage",
+        with patch.object(
+            helpers_module,
+            "load_auth_from_storage",
             side_effect=FileNotFoundError("No auth"),
         ):
             result = runner.invoke(cli, ["use", "--force", "nb_forced"])
@@ -143,14 +148,14 @@ class TestUseCommand:
             )
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
 
             # Patch in session module where it's imported
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_shared"
 
@@ -183,12 +188,12 @@ class TestUseJsonOutput:
             )
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_json_use"
 
@@ -265,8 +270,8 @@ class TestUseJsonOutput:
             )
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             # NOTE: intentionally do NOT patch resolve_notebook_id —
@@ -312,12 +317,12 @@ class TestUseAuthAwareError:
             side_effect=AuthError("Auth expired", method_id="rwIQyf"),
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_auth_expired"
 
@@ -342,12 +347,12 @@ class TestUseAuthAwareError:
             side_effect=AuthError("Auth expired", method_id="rwIQyf"),
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_auth_expired"
 

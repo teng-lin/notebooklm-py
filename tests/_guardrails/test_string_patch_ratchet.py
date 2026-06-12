@@ -105,7 +105,6 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/app/test_app_auth_check.py": 3,
     "tests/unit/cli/_session_helpers.py": 1,
     "tests/unit/cli/conftest.py": 7,
-    "tests/unit/cli/test_auth_subcommands.py": 16,
     "tests/unit/cli/test_cli_contract.py": 7,
     "tests/unit/cli/test_cookie_jar_enumerate.py": 3,
     "tests/unit/cli/test_cookie_writes.py": 4,
@@ -130,15 +129,12 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/cli/test_source_content_rendering.py": 1,
     "tests/unit/cli/test_source_refresh.py": 1,
     "tests/unit/cli/test_status_clear.py": 3,
-    "tests/unit/cli/test_use.py": 15,
-    "tests/unit/cli/test_use_fails_closed.py": 11,
     "tests/unit/test_chat_history.py": 4,
     "tests/unit/test_cli_source_delete.py": 6,
     "tests/unit/test_json_error_exit.py": 4,
     "tests/unit/test_json_stdout_purity.py": 2,
     "tests/unit/test_source_symlink.py": 2,
     "tests/unit/test_windows_compatibility.py": 1,
-    "tests/unit/test_with_client_handle_errors.py": 13,
 }
 
 # Shared remediation tail for the growth-side failures: the gate must steer

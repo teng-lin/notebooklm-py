@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm.auth as auth_module
 import notebooklm.cli._firefox_containers as firefox_containers
 import notebooklm.cli.services.session_context as _sc
 from notebooklm.notebooklm_cli import cli
@@ -272,8 +273,8 @@ class TestAuthCheckCommand:
         }
         mock_storage_path.write_text(json.dumps(storage_data))
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf_token_abc", "session_id_xyz")
 
@@ -293,8 +294,8 @@ class TestAuthCheckCommand:
         }
         mock_storage_path.write_text(json.dumps(storage_data))
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.side_effect = ValueError("Authentication expired")
 
@@ -315,8 +316,8 @@ class TestAuthCheckCommand:
         }
         mock_storage_path.write_text(json.dumps(storage_data))
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf_12345", "sess_67890")
 
@@ -1143,8 +1144,9 @@ class TestAuthLogoutCommand:
         monkeypatch.setattr(_sc, "get_browser_profile_dir", mock_browser_dir)
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.services.session_context.clear_context",
+            patch.object(
+                _sc,
+                "clear_context",
                 side_effect=OSError("file in use"),
             ),
         ):
@@ -1185,8 +1187,8 @@ class TestAuthRefreshCommand:
 
     def test_auth_refresh_success(self, runner, mock_storage_path):
         """auth refresh exits 0 and prints `ok` on a successful token fetch."""
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf_ok", "session_ok")
             result = runner.invoke(cli, ["auth", "refresh"])
@@ -1196,8 +1198,8 @@ class TestAuthRefreshCommand:
 
     def test_auth_refresh_quiet_suppresses_success_output(self, runner, mock_storage_path):
         """--quiet keeps stdout clean when refresh succeeds (cron-friendly)."""
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf_ok", "session_ok")
             result = runner.invoke(cli, ["auth", "refresh", "--quiet"])
@@ -1213,8 +1215,8 @@ class TestAuthRefreshCommand:
         (exit 2) and the user sees a friendly 'Unexpected error: <msg>' line
         rather than a Python traceback.
         """
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.side_effect = ValueError("Authentication expired or invalid.")
             result = runner.invoke(cli, ["auth", "refresh"])
@@ -1235,8 +1237,8 @@ class TestAuthRefreshCommand:
 
         Regression guard for the error-handler polish.
         """
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.side_effect = httpx.ConnectTimeout("")  # empty message
             result = runner.invoke(cli, ["auth", "refresh"])
@@ -1278,8 +1280,8 @@ class TestAuthRefreshCommand:
         """NOTEBOOKLM_AUTH_JSON has no writable backing store; refreshing it
         would silently rotate SIDTS but persist nothing. Refuse loudly."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies":[]}')
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             result = runner.invoke(cli, ["auth", "refresh"])
         assert result.exit_code == 1
@@ -1317,8 +1319,8 @@ class TestAuthRefreshCommand:
 
         with (
             patch_session_login_dual("get_storage_path", side_effect=fake_storage_path),
-            patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
         ):
             mock_fetch.return_value = ("csrf_ok", "session_ok")
@@ -1353,7 +1355,7 @@ class TestAuthRefreshCommand:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
             patch_session_login_dual("get_storage_path", return_value=storage),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
             patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
@@ -1398,7 +1400,7 @@ class TestAuthRefreshCommand:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
             patch_session_login_dual("get_storage_path", return_value=storage),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -1445,7 +1447,7 @@ class TestAuthInspect:
             return accounts
 
         io = make_recording_io(run_async=MagicMock(side_effect=fake_run_async))
-        with patch("notebooklm.auth.enumerate_accounts", return_value=object()):
+        with patch.object(auth_module, "enumerate_accounts", return_value=object()):
             result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None, io=io)
 
         assert result == accounts
@@ -1460,7 +1462,7 @@ class TestAuthInspect:
         async def fail_enumerate(*args, **kwargs):
             raise httpx.RequestError("offline")
 
-        with patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate):
+        with patch.object(auth_module, "enumerate_accounts", new=fail_enumerate):
             result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
 
         assert isinstance(result, NetworkFailure)
@@ -1531,7 +1533,7 @@ class TestAuthInspect:
         # enough — the real ``run_async`` drives the (already-async) stub.
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])
         assert result.exit_code == 0, result.output
@@ -1550,7 +1552,7 @@ class TestAuthInspect:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome", "--json"])
         assert result.exit_code == 0, result.output

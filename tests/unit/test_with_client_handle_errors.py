@@ -29,6 +29,8 @@ import pytest
 from click.testing import CliRunner
 
 import notebooklm.cli.auth_runtime as auth_runtime
+import notebooklm.cli.error_handler as error_handler_module
+import notebooklm.cli.helpers as helpers_module
 from notebooklm.cli.helpers import with_auth_and_errors, with_client
 from notebooklm.exceptions import AuthError, RateLimitError
 
@@ -53,7 +55,7 @@ def stubbed_auth(monkeypatch) -> Generator[None, None, None]:
     """
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
     fake_auth = MagicMock(name="AuthTokens-stub")
-    with patch("notebooklm.cli.helpers.get_auth_tokens", return_value=fake_auth):
+    with patch.object(helpers_module, "get_auth_tokens", return_value=fake_auth):
         yield
 
 
@@ -146,7 +148,7 @@ def test_with_auth_and_errors_default_auth_loader_is_looked_up_at_call_time() ->
     async def _body(auth):
         return auth
 
-    with patch("notebooklm.cli.helpers.get_auth_tokens", return_value=sentinel_auth) as loader:
+    with patch.object(helpers_module, "get_auth_tokens", return_value=sentinel_auth) as loader:
         result = with_auth_and_errors(
             ctx,
             command_name="run",
@@ -165,7 +167,7 @@ def test_auth_runtime_default_auth_loader_preserves_helpers_patch_seam() -> None
     async def _body(auth):
         return auth
 
-    with patch("notebooklm.cli.helpers.get_auth_tokens", return_value=sentinel_auth) as loader:
+    with patch.object(helpers_module, "get_auth_tokens", return_value=sentinel_auth) as loader:
         result = auth_runtime.with_auth_and_errors(
             ctx,
             command_name="run",
@@ -260,8 +262,8 @@ def test_with_auth_and_errors_passes_verbose_json_to_current_handle_errors() -> 
 
     # ``with_auth_and_errors`` imports this at call time, so patch the source module.
     with (
-        patch("notebooklm.cli.error_handler.handle_errors", fake_handle_errors),
-        patch("notebooklm.cli.helpers.run_async", side_effect=fake_run_async) as run_async,
+        patch.object(error_handler_module, "handle_errors", fake_handle_errors),
+        patch.object(helpers_module, "run_async", side_effect=fake_run_async) as run_async,
     ):
         result = with_auth_and_errors(
             ctx,
@@ -286,7 +288,7 @@ def test_with_auth_and_errors_auth_file_not_found_uses_auth_handler() -> None:
         raise FileNotFoundError("missing storage")
 
     with (
-        patch("notebooklm.cli.helpers.handle_auth_error", side_effect=SystemExit(1)) as auth_error,
+        patch.object(helpers_module, "handle_auth_error", side_effect=SystemExit(1)) as auth_error,
         pytest.raises(SystemExit) as exc_info,
     ):
         with_auth_and_errors(
@@ -308,7 +310,7 @@ def test_with_auth_and_errors_body_file_not_found_reaches_handle_errors(capsys) 
         raise FileNotFoundError("missing command input")
 
     with (
-        patch("notebooklm.cli.helpers.handle_auth_error") as auth_error,
+        patch.object(helpers_module, "handle_auth_error") as auth_error,
         pytest.raises(SystemExit) as exc_info,
     ):
         with_auth_and_errors(
@@ -337,7 +339,7 @@ def test_with_auth_and_errors_non_file_auth_failure_reaches_handle_errors(capsys
         raise ValueError("malformed storage JSON")
 
     with (
-        patch("notebooklm.cli.helpers.handle_auth_error") as auth_error,
+        patch.object(helpers_module, "handle_auth_error") as auth_error,
         pytest.raises(SystemExit) as exc_info,
     ):
         with_auth_and_errors(
@@ -396,8 +398,9 @@ def test_file_not_found_routes_to_auth_hint(runner: CliRunner, monkeypatch) -> N
     async def _never_called(_auth):
         raise AssertionError("body should not run when auth bootstrap fails")
 
-    with patch(
-        "notebooklm.cli.helpers.get_auth_tokens",
+    with patch.object(
+        helpers_module,
+        "get_auth_tokens",
         side_effect=FileNotFoundError("missing storage"),
     ):
         cli = _build_cli(_never_called)
@@ -426,8 +429,9 @@ def test_auth_bootstrap_non_filenotfound_routes_through_handle_errors(
         raise AssertionError("body should not run when auth bootstrap fails")
 
     # AuthError surfaces with the actionable "run notebooklm login" hint and exit 1.
-    with patch(
-        "notebooklm.cli.helpers.get_auth_tokens",
+    with patch.object(
+        helpers_module,
+        "get_auth_tokens",
         side_effect=AuthError("token refresh failed"),
     ):
         cli = _build_cli(_never_called)
@@ -450,8 +454,9 @@ def test_auth_bootstrap_malformed_json_routes_through_handle_errors(
     async def _never_called(_auth):
         raise AssertionError("body should not run when auth bootstrap fails")
 
-    with patch(
-        "notebooklm.cli.helpers.get_auth_tokens",
+    with patch.object(
+        helpers_module,
+        "get_auth_tokens",
         side_effect=ValueError("malformed storage JSON"),
     ):
         cli = _build_cli(_never_called)
@@ -484,8 +489,9 @@ def test_auth_bootstrap_non_filenotfound_logs_failed_result(
 
     with (
         caplog.at_level(logging.DEBUG, logger="notebooklm.cli"),
-        patch(
-            "notebooklm.cli.helpers.get_auth_tokens",
+        patch.object(
+            helpers_module,
+            "get_auth_tokens",
             side_effect=AuthError("token refresh failed"),
         ),
     ):
@@ -546,8 +552,9 @@ def test_file_not_found_json_payload(runner: CliRunner, monkeypatch) -> None:
     async def _never_called(_auth):
         raise AssertionError("body should not run when auth bootstrap fails")
 
-    with patch(
-        "notebooklm.cli.helpers.get_auth_tokens",
+    with patch.object(
+        helpers_module,
+        "get_auth_tokens",
         side_effect=FileNotFoundError("missing storage"),
     ):
         cli = _build_cli(_never_called)

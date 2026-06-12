@@ -25,6 +25,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.context as context_module
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.cli.resolve as resolve_module
+import notebooklm.cli.services.session_context as session_context_module
+import notebooklm.cli.session_cmd as session_cmd_module
 from notebooklm.exceptions import NotebookNotFoundError, RPCError
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
@@ -40,7 +46,7 @@ def runner() -> CliRunner:
 @pytest.fixture
 def mock_auth():
     """Patch storage auth so the `use` command sees real-looking cookies."""
-    with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock:
+    with patch.object(helpers_module, "load_auth_from_storage") as mock:
         mock.return_value = {
             "SID": "test",
             "__Secure-1PSIDTS": "test_1psidts",
@@ -63,11 +69,12 @@ def mock_context_file(tmp_path):
     """
     context_file = tmp_path / "context.json"
     with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch(
-            "notebooklm.cli.services.session_context.get_context_path",
+        patch.object(helpers_module, "get_context_path", return_value=context_file),
+        patch.object(context_module, "get_context_path", return_value=context_file),
+        patch.object(resolve_module, "get_context_path", return_value=context_file),
+        patch.object(
+            session_context_module,
+            "get_context_path",
             return_value=context_file,
         ),
     ):
@@ -111,12 +118,12 @@ class TestUseFailsClosedBadId:
             side_effect=NotebookNotFoundError("nb_missing", method_id="rwIQyf"),
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_missing"
 
@@ -136,12 +143,12 @@ class TestUseFailsClosedBadId:
             side_effect=RPCError("server hung up", method_id="rwIQyf"),
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_rpc_fail"
 
@@ -160,12 +167,12 @@ class TestUseFailsClosedGoodId:
             return_value=_make_notebook("nb_real", "Real Notebook"),
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
-            with patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
+            with patch.object(
+                session_cmd_module, "resolve_notebook_id", new_callable=AsyncMock
             ) as mock_resolve:
                 mock_resolve.return_value = "nb_real"
 
