@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 from ..rpc.types import SourceStatus
 from .common import (
     UnknownTypeWarning,
-    _datetime_from_timestamp,
 )
 
 if TYPE_CHECKING:
@@ -102,35 +101,33 @@ def _safe_source_type(type_code: int | None) -> SourceType:
 
 
 def _extract_source_url(metadata: Any, *, allow_bare_http: bool = True) -> str | None:
-    """Extract a source URL from a ``src[2]`` metadata array."""
-    if not isinstance(metadata, list):
-        return None
-    url: str | None = None
-    if len(metadata) > 7:
-        url_list = metadata[7]
-        if isinstance(url_list, list) and len(url_list) > 0:
-            url = url_list[0]
-    if not url and len(metadata) > 5:
-        yt_data = metadata[5]
-        if isinstance(yt_data, list) and len(yt_data) > 0 and isinstance(yt_data[0], str):
-            url = yt_data[0]
-    if not url and allow_bare_http and len(metadata) > 0:
-        candidate = metadata[0]
-        if isinstance(candidate, str) and candidate.startswith("http"):
-            url = candidate
-    return url
+    """Extract a source URL from a ``src[2]`` metadata array.
+
+    Thin compatibility shim over
+    :meth:`notebooklm._row_adapters.sources.SourceRow.url_from_metadata`,
+    which centralises the ``metadata[7]`` > ``metadata[5]`` > ``metadata[0]``
+    positional precedence in the sanctioned row-adapter layer. The adapter
+    method reproduces this helper's exact (soft, un-coerced) semantics, so this
+    re-exported public helper is behavior-preserved while its position
+    knowledge no longer lives here.
+    """
+    from .._row_adapters.sources import SourceRow
+
+    return SourceRow.url_from_metadata(metadata, allow_bare_http=allow_bare_http)
 
 
 def _extract_source_created_at(metadata: Any) -> datetime | None:
-    """Extract a source creation timestamp from a ``src[2]`` metadata array."""
-    if not isinstance(metadata, list) or len(metadata) <= 2:
-        return None
+    """Extract a source creation timestamp from a ``src[2]`` metadata array.
 
-    timestamp_list = metadata[2]
-    if not isinstance(timestamp_list, list) or not timestamp_list:
-        return None
+    Thin compatibility shim over
+    :meth:`notebooklm._row_adapters.sources.SourceRow.created_at_from_metadata`,
+    which owns the ``metadata[2][0]`` timestamp position. Behavior-identical to
+    the original inline walk (both funnel the inner value through
+    :func:`_datetime_from_timestamp`).
+    """
+    from .._row_adapters.sources import SourceRow
 
-    return _datetime_from_timestamp(timestamp_list[0])
+    return SourceRow.created_at_from_metadata(metadata)
 
 
 @dataclass

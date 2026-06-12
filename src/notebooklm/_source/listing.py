@@ -9,7 +9,7 @@ from typing import Any
 
 from .._row_adapters.sources import SourceRow
 from .._runtime.contracts import RpcCaller
-from ..rpc import RPCError, RPCMethod
+from ..rpc import RPCError, RPCMethod, safe_index
 from ..types import Source
 
 # Keep source-list warnings on the historical logger so existing log filters
@@ -80,7 +80,17 @@ class SourceLister:
                 strict=strict,
             )
 
-        nb_info = notebook[0]
+        # ``notebook`` is a non-empty list here (the guard above raises
+        # otherwise), so this ``[0]`` descent is a no-op on the happy path;
+        # routed through ``safe_index`` to keep the envelope position out of the
+        # raw ``name[int]`` shape while still failing loud if the envelope ever
+        # loses its leading slot.
+        nb_info = safe_index(
+            notebook,
+            0,
+            method_id=RPCMethod.GET_NOTEBOOK.value,
+            source="SourceLister.list",
+        )
         if not isinstance(nb_info, builtins.list) or len(nb_info) <= 1:
             return self._handle_malformed_list_response(
                 notebook_id,
@@ -89,7 +99,15 @@ class SourceLister:
                 strict=strict,
             )
 
-        sources_list = nb_info[1]
+        # ``nb_info`` has length > 1 here (guard above), so the ``[1]`` sources
+        # slot is always present; ``safe_index`` keeps the read off the raw
+        # ``name[int]`` shape.
+        sources_list = safe_index(
+            nb_info,
+            1,
+            method_id=RPCMethod.GET_NOTEBOOK.value,
+            source="SourceLister.list",
+        )
         if sources_list is None:
             # A genuinely empty notebook elides the sources slot (``None``
             # instead of an empty list). This is a valid empty state, NOT a
