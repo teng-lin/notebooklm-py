@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import notebooklm.cli.chat_cmd as chat_cmd_module
 from notebooklm._chat import ChatAPI
 from notebooklm.exceptions import UnknownRPCMethodError
 
@@ -331,7 +332,7 @@ class TestDetermineConversationId:
     def test_different_notebook_starts_new(self):
         from notebooklm.cli.chat_cmd import _determine_conversation_id
 
-        with patch("notebooklm.cli.chat_cmd.get_current_notebook", return_value="nb_old"):
+        with patch.object(chat_cmd_module, "get_current_notebook", return_value="nb_old"):
             result = _determine_conversation_id(
                 explicit_conversation_id=None,
                 explicit_notebook_id="nb_new",
@@ -344,8 +345,8 @@ class TestDetermineConversationId:
         from notebooklm.cli.chat_cmd import _determine_conversation_id
 
         with (
-            patch("notebooklm.cli.chat_cmd.get_current_notebook", return_value="nb_123"),
-            patch("notebooklm.cli.chat_cmd.get_current_conversation", return_value="conv_cached"),
+            patch.object(chat_cmd_module, "get_current_notebook", return_value="nb_123"),
+            patch.object(chat_cmd_module, "get_current_conversation", return_value="conv_cached"),
         ):
             result = _determine_conversation_id(
                 explicit_conversation_id=None,
@@ -358,7 +359,7 @@ class TestDetermineConversationId:
     def test_no_explicit_notebook_uses_cached(self):
         from notebooklm.cli.chat_cmd import _determine_conversation_id
 
-        with patch("notebooklm.cli.chat_cmd.get_current_conversation", return_value="conv_cached"):
+        with patch.object(chat_cmd_module, "get_current_conversation", return_value="conv_cached"):
             result = _determine_conversation_id(
                 explicit_conversation_id=None,
                 explicit_notebook_id=None,

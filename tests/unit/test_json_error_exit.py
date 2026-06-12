@@ -21,7 +21,9 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
 import notebooklm.cli._chromium_profiles as chromium_profiles
+import notebooklm.cli.helpers as helpers_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import (
     Artifact,
@@ -63,10 +65,12 @@ def mock_auth_env(monkeypatch) -> Generator[None, None, None]:
     # auth is never inspected.
     stub_auth = MagicMock(name="AuthTokens-stub")
     with (
-        patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
-        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
-        patch(
-            "notebooklm.auth.AuthTokens.from_storage", new_callable=AsyncMock
+        patch.object(helpers_module, "load_auth_from_storage") as mock_load,
+        patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch,
+        patch.object(
+            auth_module.AuthTokens, "from_storage", new_callable=AsyncMock
         ) as mock_from_storage,
     ):
         mock_load.return_value = {
@@ -744,7 +748,7 @@ def test_auth_inspect_network_failure(runner: CliRunner) -> None:
     with (
         patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
         patch.object(chromium_profiles, "discover_chromium_profiles", return_value=[]),
-        patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate),
+        patch.object(auth_module, "enumerate_accounts", new=fail_enumerate),
     ):
         result = runner.invoke(
             cli,

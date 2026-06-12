@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
+import notebooklm.auth as auth_module
 from notebooklm.cli.services.login import cookie_writes
 from notebooklm.cli.services.login.outcomes import CookieValidationFailure
 from tests._fixtures.login_io import RecordingLoginIO, make_recording_io
@@ -190,7 +191,7 @@ class TestWriteExtractedCookies:
             ),
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
-            patch("notebooklm.auth.write_account_metadata", side_effect=OSError("ro fs")),
+            patch.object(auth_module, "write_account_metadata", side_effect=OSError("ro fs")),
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -213,7 +214,7 @@ class TestWriteExtractedCookies:
             ),
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
-            patch("notebooklm.auth.write_account_metadata"),
+            patch.object(auth_module, "write_account_metadata"),
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -235,7 +236,7 @@ class TestWriteExtractedCookies:
             ),
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
-            patch("notebooklm.auth.write_account_metadata"),
+            patch.object(auth_module, "write_account_metadata"),
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -257,7 +258,7 @@ class TestWriteExtractedCookies:
             ),
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
-            patch("notebooklm.auth.write_account_metadata"),
+            patch.object(auth_module, "write_account_metadata"),
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
