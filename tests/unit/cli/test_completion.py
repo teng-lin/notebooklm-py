@@ -29,6 +29,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.client as client_module
 from notebooklm.notebooklm_cli import cli
 
 
@@ -161,8 +163,8 @@ class TestCompleteNotebooks:
         fake_client.notebooks.list = AsyncMock(side_effect=fake_list)
 
         with (
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_notebooks(ctx=None, param=None, incomplete="nb_abc")
 
@@ -179,8 +181,9 @@ class TestCompleteNotebooks:
         """
         from notebooklm.cli import options
 
-        with patch(
-            "notebooklm.cli.helpers.get_auth_tokens",
+        with patch.object(
+            helpers_module,
+            "get_auth_tokens",
             side_effect=FileNotFoundError("no auth"),
         ):
             items = options._complete_notebooks(ctx=None, param=None, incomplete="nb_")
@@ -199,8 +202,8 @@ class TestCompleteNotebooks:
         fake_client.notebooks.list = AsyncMock(side_effect=RuntimeError("offline"))
 
         with (
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_notebooks(ctx=None, param=None, incomplete="nb_")
 
@@ -224,8 +227,8 @@ class TestCompleteNotebooks:
         fake_client.notebooks.list = AsyncMock(side_effect=fake_list)
 
         with (
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_notebooks(ctx=None, param=None, incomplete="nb_good")
 
@@ -249,8 +252,8 @@ class TestCompleteNotebooks:
         fake_client.notebooks.list = AsyncMock(side_effect=fake_list)
 
         with (
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_notebooks(ctx=None, param=None, incomplete="nb_")
 
@@ -264,8 +267,9 @@ class TestCompletionProviderSilentFailures:
         from notebooklm.cli.completion import CompletionProvider
 
         provider = CompletionProvider()
-        with patch(
-            "notebooklm.cli.helpers.get_auth_tokens",
+        with patch.object(
+            helpers_module,
+            "get_auth_tokens",
             side_effect=FileNotFoundError("no auth"),
         ):
             items = provider.complete_notebooks(ctx=None, incomplete="nb_")
@@ -413,8 +417,9 @@ class TestResolveNotebookForCompletion:
         with (
             patch.dict(os.environ, {"NOTEBOOKLM_NOTEBOOK": "nb_from_env"}),
             # _resolve_notebook_for_completion imports get_current_notebook lazily
-            patch(
-                "notebooklm.cli.helpers.get_current_notebook",
+            patch.object(
+                helpers_module,
+                "get_current_notebook",
                 return_value="nb_from_context",
             ),
         ):
@@ -428,8 +433,9 @@ class TestResolveNotebookForCompletion:
         ctx = type("Ctx", (), {"params": {}, "parent": None})()
         with (
             patch.dict(os.environ, {"NOTEBOOKLM_NOTEBOOK": "nb_from_env"}),
-            patch(
-                "notebooklm.cli.helpers.get_current_notebook",
+            patch.object(
+                helpers_module,
+                "get_current_notebook",
                 return_value="nb_from_context",
             ),
         ):
@@ -446,8 +452,9 @@ class TestResolveNotebookForCompletion:
         # Ensure env var unset
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("NOTEBOOKLM_NOTEBOOK", None)
-            with patch(
-                "notebooklm.cli.helpers.get_current_notebook",
+            with patch.object(
+                helpers_module,
+                "get_current_notebook",
                 return_value="nb_from_context",
             ):
                 nid = options._resolve_notebook_for_completion(ctx)
@@ -460,8 +467,9 @@ class TestResolveNotebookForCompletion:
         ctx = type("Ctx", (), {"params": {}, "parent": None})()
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("NOTEBOOKLM_NOTEBOOK", None)
-            with patch(
-                "notebooklm.cli.helpers.get_current_notebook",
+            with patch.object(
+                helpers_module,
+                "get_current_notebook",
                 return_value=None,
             ):
                 nid = options._resolve_notebook_for_completion(ctx)
@@ -477,8 +485,9 @@ class TestResolveNotebookForCompletion:
         ctx = type("Ctx", (), {"params": {}, "parent": None})()
         with (
             patch.dict(os.environ, {"NOTEBOOKLM_NOTEBOOK": "   "}),
-            patch(
-                "notebooklm.cli.helpers.get_current_notebook",
+            patch.object(
+                helpers_module,
+                "get_current_notebook",
                 return_value="nb_from_context",
             ),
         ):
@@ -535,8 +544,8 @@ class TestCompleteSourcesAndArtifacts:
 
         with (
             patch.object(completion, "resolve_notebook", return_value="nb_x"),
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_sources(ctx=None, param=None, incomplete="src_0")
 
@@ -565,8 +574,8 @@ class TestCompleteSourcesAndArtifacts:
 
         with (
             patch.object(completion, "resolve_notebook", return_value="nb_x"),
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_artifacts(ctx=None, param=None, incomplete="art_a")
 
@@ -589,8 +598,8 @@ class TestCompleteSourcesAndArtifacts:
 
         with (
             patch.object(completion, "resolve_notebook", return_value="nb_x"),
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_sources(ctx=None, param=None, incomplete="src_")
 
@@ -610,8 +619,8 @@ class TestCompleteSourcesAndArtifacts:
 
         with (
             patch.object(completion, "resolve_notebook", return_value="nb_x"),
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_artifacts(ctx=None, param=None, incomplete="art_")
 
@@ -631,8 +640,8 @@ class TestCompleteSourcesAndArtifacts:
 
         with (
             patch.object(completion, "resolve_notebook", return_value="nb_x"),
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_sources(ctx=None, param=None, incomplete="src_")
 
@@ -654,8 +663,8 @@ class TestCompleteSourcesAndArtifacts:
 
         with (
             patch.object(completion, "resolve_notebook", return_value="nb_x"),
-            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+            patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+            patch.object(client_module, "NotebookLMClient", return_value=fake_client),
         ):
             items = options._complete_artifacts(ctx=None, param=None, incomplete="art_")
 

@@ -3,6 +3,7 @@
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
+import notebooklm.auth as auth_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import (
     Notebook,
@@ -49,8 +50,8 @@ class TestShareStatus:
             return_value=create_mock_share_status(is_public=False)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -72,8 +73,8 @@ class TestShareStatus:
             return_value=create_mock_share_status(is_public=True)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -102,8 +103,8 @@ class TestSharePublic:
             return_value=create_mock_share_status(is_public=True)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -126,8 +127,8 @@ class TestSharePublic:
             return_value=create_mock_share_status(is_public=False)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -156,8 +157,8 @@ class TestShareAdd:
         )
         mock_client.sharing.add_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -186,8 +187,8 @@ class TestShareAdd:
         )
         mock_client.sharing.add_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -222,8 +223,8 @@ class TestShareRemove:
         )
         mock_client.sharing.remove_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -245,8 +246,8 @@ class TestShareRemove:
         )
         mock_client.sharing.remove_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -269,8 +270,8 @@ class TestShareRemove:
         )
         mock_client.sharing.remove_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -292,8 +293,8 @@ class TestShareRemove:
         mock_client.sharing.remove_user = AsyncMock(return_value=create_mock_share_status())
 
         with (
-            patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
             patch("click.confirm") as mock_confirm,
         ):
@@ -334,8 +335,8 @@ class TestShareViewLevel:
         )
         mock_client.sharing.set_view_level = AsyncMock(return_value=mock_status)
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -366,8 +367,8 @@ class TestShareViewLevel:
         )
         mock_client.sharing.set_view_level = AsyncMock(return_value=mock_status)
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -398,8 +399,8 @@ class TestShareViewLevel:
         )
         mock_client.sharing.set_view_level = AsyncMock(return_value=mock_status)
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -427,8 +428,8 @@ class TestShareUpdate:
         )
         mock_client.sharing.update_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -453,8 +454,8 @@ class TestShareUpdate:
         )
         mock_client.sharing.update_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -494,8 +495,8 @@ class TestShareJsonOutput:
             return_value=create_mock_share_status(is_public=True)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -517,8 +518,8 @@ class TestShareJsonOutput:
             return_value=create_mock_share_status(is_public=True)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -538,8 +539,8 @@ class TestShareJsonOutput:
         )
         mock_client.sharing.add_user = AsyncMock(return_value=create_mock_share_status())
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
@@ -582,8 +583,8 @@ class TestShareStatusWithUsers:
             return_value=create_mock_share_status(is_public=False, shared_users=shared_users)
         )
 
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
