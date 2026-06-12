@@ -11,10 +11,10 @@ This test file is the explicit pin for that contract. Critical guarantees:
 
 1. Patching ``helpers.require_notebook`` intercepts calls made through the
    helpers module namespace.
-2. ``patch("notebooklm.cli.helpers.get_context_path", ...)`` still affects
+2. Patching ``helpers.get_context_path`` still affects
    ``helpers.require_notebook``'s context-file-fallback behavior. ~20
    existing tests in ``test_helpers.py`` rely on this.
-3. ``patch("notebooklm.cli.helpers.console", ...)`` still affects
+3. Patching ``helpers.console`` still affects
    ``helpers.require_notebook``'s no-notebook diagnostic. Several existing
    tests rely on this.
 4. ``helpers.validate_id`` and ``helpers._resolve_partial_id`` remain
@@ -83,8 +83,9 @@ class TestHelpersGetContextPathPatchSurface:
     def test_context_file_path_patch_steers_resolution(self, tmp_path):
         """An empty/non-existent context path leads to SystemExit."""
         with (
-            patch(
-                "notebooklm.cli.helpers.get_context_path",
+            patch.object(
+                helpers,
+                "get_context_path",
                 return_value=tmp_path / "nonexistent.json",
             ),
             pytest.raises(SystemExit),
@@ -96,7 +97,7 @@ class TestHelpersGetContextPathPatchSurface:
         context-fallback rung return its notebook id."""
         context_file = tmp_path / "context.json"
         context_file.write_text('{"notebook_id": "nb_from_context"}')
-        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+        with patch.object(helpers, "get_context_path", return_value=context_file):
             assert helpers.require_notebook(None) == "nb_from_context"
 
 
@@ -111,11 +112,12 @@ class TestHelpersConsolePatchSurface:
         message that ``require_notebook`` prints before raising
         ``SystemExit``."""
         with (
-            patch(
-                "notebooklm.cli.helpers.get_context_path",
+            patch.object(
+                helpers,
+                "get_context_path",
                 return_value=tmp_path / "nonexistent.json",
             ),
-            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch.object(helpers, "console") as mock_console,
         ):
             with pytest.raises(SystemExit):
                 helpers.require_notebook(None)

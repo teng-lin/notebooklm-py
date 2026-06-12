@@ -8,6 +8,10 @@ import pytest
 from click.testing import CliRunner
 from pytest_httpx import HTTPXMock
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.context as context_module
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.cli.resolve as resolve_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc import RPCMethod
 
@@ -27,8 +31,9 @@ def mock_auth():
     mock_jar.set("SID", "test", domain=".google.com")
 
     with (
-        patch(
-            "notebooklm.cli.helpers.load_auth_from_storage",
+        patch.object(
+            helpers_module,
+            "load_auth_from_storage",
             return_value={
                 "SID": "test",
                 "HSID": "test",
@@ -37,12 +42,14 @@ def mock_auth():
                 "SAPISID": "test",
             },
         ),
-        patch(
-            "notebooklm.auth.fetch_tokens_with_domains",
+        patch.object(
+            auth_module,
+            "fetch_tokens_with_domains",
             new_callable=AsyncMock,
         ) as mock_fetch,
-        patch(
-            "notebooklm.cli.helpers.build_cookie_jar",
+        patch.object(
+            helpers_module,
+            "build_cookie_jar",
             return_value=mock_jar,
         ),
     ):
@@ -60,9 +67,9 @@ def mock_context(tmp_path: Path):
     )
 
     with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+        patch.object(helpers_module, "get_context_path", return_value=context_file),
+        patch.object(context_module, "get_context_path", return_value=context_file),
+        patch.object(resolve_module, "get_context_path", return_value=context_file),
     ):
         yield context_file
 
