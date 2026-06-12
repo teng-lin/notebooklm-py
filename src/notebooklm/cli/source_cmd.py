@@ -48,11 +48,9 @@ from ..exceptions import ValidationError
 from ..types import Source
 
 # Render/validation helpers live in ``_source_render``; re-exported here so the
-# historical ``source_cmd.<helper>`` import/patch surface (and the retained command
-# bodies below) keep resolving them. The F401 suppression marks every name an
-# intentional re-export — three (``_available_output_path``,
-# ``_exit_with_add_research_status``, ``_print_add_research_task_ids``) are used
-# only by sibling helpers in ``_source_render`` and have no caller here.
+# historical ``source_cmd.<helper>`` import/patch surface keeps resolving them
+# (F401: every name is an intentional re-export, some used only by sibling
+# ``_source_render`` helpers).
 from ._source_render import (  # noqa: F401
     _available_output_path,
     _classify_junk_sources,
@@ -565,11 +563,9 @@ def source_add_research(
     ``--prompt-file``.
     """
     query = resolve_prompt(query, prompt_file, "query", required=True)
-    # Flag-combination rules live in the neutral ``_app`` core as a pure
-    # ``validate_*`` raising ``ValidationError``; the command maps that to the
-    # CLI conflict contract (ADR-0015 §2): under --json route through the typed
-    # envelope, otherwise preserve Click's parser-style ``UsageError`` (exit 2
-    # with usage text) so interactive callers still see the canonical prose.
+    # Flag-combination rules live in the neutral ``_app`` core (pure ``validate_*``
+    # raising ``ValidationError``); the command maps that to the CLI conflict
+    # contract (ADR-0015 §2): --json → typed envelope, else Click ``UsageError``.
     try:
         validate_add_research_flags(import_all=import_all, cited_only=cited_only, no_wait=no_wait)
     except ValidationError as exc:
@@ -831,10 +827,9 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 with cli_status("Fetching sources for cleanup...", ctx=ctx):
                     return await client.sources.list(notebook_id_inner)
 
-            # In --json mode, never prompt — automation cannot
-            # answer the question. Pass a non-interactive ``confirm_delete``
-            # that always declines; once the service returns ``cancelled`` we
-            # synthesize a structured ``CONFIRM_REQUIRED`` error below.
+            # In --json mode, never prompt: pass a ``confirm_delete`` that always
+            # declines, then synthesize a ``CONFIRM_REQUIRED`` error from the
+            # resulting ``cancelled`` status below.
             confirm_delete = (
                 (lambda count: False)
                 if json_output
@@ -939,11 +934,9 @@ def _dispatch_source_clean_result(
         return
 
     if result.failures:
-        # Failure summary is an error diagnostic, so it must remain visible
-        # under root ``--quiet`` (policy: errors are never silenced; see
-        # ``cli/rendering.py``). Use ``console.print`` directly here instead
-        # of ``cli_print`` so the diagnostic is not swallowed when the user
-        # passes ``--quiet``.
+        # Failure summary is an error diagnostic: use ``console.print`` (not
+        # ``cli_print``) so it stays visible under root ``--quiet`` — errors are
+        # never silenced (see ``cli/rendering.py``).
         console.print(
             f"[yellow]Cleaned {result.deleted_count} source(s). "
             f"{len(result.failures)} deletion(s) failed.[/yellow]",

@@ -122,43 +122,28 @@ class ChatAPI(LoopBoundPrimitive):
     ):
         """Initialize the chat API.
 
-        Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the
-        **direct** collaborators it actually exercises rather than a
-        chat-local Runtime Protocol that bundles them. ``ChatAPI`` takes
-        the four underlying collaborators (``rpc``, ``transport``,
-        ``reqid``, ``loop_guard``) by keyword argument.
+        Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the **direct**
+        collaborators it exercises (``rpc``, ``transport``, ``reqid``,
+        ``loop_guard``) rather than a chat-local Runtime Protocol bundling them.
 
         Args:
-            rpc: RPC dispatch collaborator (the client's
-                ``internals.executor`` / ``RpcExecutor``) for the
-                ``get_conversation_*``, ``configure``,
-                ``delete_conversation``, and ``save_answer_as_note``
-                round-trips.
-            transport: :class:`RuntimeTransport` collaborator (the client's
-                ``_composed.transport``) that owns the authed-POST entry
-                point used by :meth:`ask` via
-                :func:`chat_aware_authed_post`.
-            reqid: :class:`ReqidCounter` collaborator (the client's
-                ``internals.collaborators.reqid``) that mints the
-                per-attempt ``_reqid`` query parameter for the streamed
-                chat request.
-            loop_guard: :class:`LoopGuard` collaborator (the client's
-                ``internals.collaborators.lifecycle``) whose
-                :meth:`assert_bound_loop` fires before :meth:`ask`
-                acquires the per-conversation lock so a cross-loop
-                follow-up doesn't hang on a lock bound to a dead loop.
-            chat_timeout: Per-read HTTP timeout, in seconds, for the streamed
-                chat endpoint. Defaults to the chat-specific shared-notebook
-                first-byte window. ``None`` inherits the underlying transport
-                timeout.
+            rpc: RPC dispatch collaborator for the ``get_conversation_*``,
+                ``configure``, ``delete_conversation``, and
+                ``save_answer_as_note`` round-trips.
+            transport: :class:`RuntimeTransport` owning the authed-POST entry
+                point used by :meth:`ask` via :func:`chat_aware_authed_post`.
+            reqid: :class:`ReqidCounter` minting the per-attempt ``_reqid``
+                query parameter for the streamed chat request.
+            loop_guard: :class:`LoopGuard` whose :meth:`assert_bound_loop` fires
+                before :meth:`ask` acquires the per-conversation lock, so a
+                cross-loop follow-up doesn't hang on a lock bound to a dead loop.
+            chat_timeout: Per-read HTTP timeout (seconds) for the streamed chat
+                endpoint. ``None`` inherits the underlying transport timeout.
             conversation_cache: Optional injected cache; defaults to a fresh
-                per-instance ``ConversationCache`` (chat-domain state, no
-                other consumer).
-            notebooks: Optional source-id resolver. Defaults to a
-                ``NotebooksAPI`` wrapper around ``rpc`` so a bare
-                ``ChatAPI(rpc=..., transport=..., reqid=..., loop_guard=...)``
-                still has a default source-id resolver without callers
-                wiring the full NotebooksAPI graph.
+                per-instance ``ConversationCache``.
+            notebooks: Optional source-id resolver; defaults to a
+                ``NotebooksAPI`` around ``rpc`` so a bare ``ChatAPI(...)`` still
+                resolves source ids without callers wiring the full graph.
         """
         self._rpc = rpc
         self._transport = transport
@@ -171,20 +156,14 @@ class ChatAPI(LoopBoundPrimitive):
             notebooks = NotebooksAPI(rpc)
         self._notebooks = notebooks
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
-        # Per-``conversation_id`` lock that serializes follow-up asks on the
-        # same conversation. Without this, two
-        # ``asyncio.gather``'d ``ask`` calls on the same conversation read
-        # identical pre-update history at the top, both POST that history,
-        # then race to append to ``self._cache`` — the server sees two
-        # follow-ups both claiming to be turn N+1 and the local cache loses
-        # one turn's lineage.
+        # Per-``conversation_id`` lock serializing follow-up asks on the same
+        # conversation. Without it, two ``asyncio.gather``'d asks read identical
+        # pre-update history, both POST it, then race to append to ``self._cache``
+        # — the server sees two turn N+1 follow-ups and the cache loses lineage.
         #
-        # ``WeakValueDictionary`` keeps the map bounded automatically:
-        # callers hold a strong reference to the lock while inside
-        # ``async with lock:``; once every waiter releases, the entry GCs
-        # itself and the key is removed. The cost is per-key churn for
-        # one-shot conversations, which is negligible compared to the
-        # round-trip we're protecting.
+        # ``WeakValueDictionary`` keeps the map bounded: a caller holds a strong
+        # ref while inside ``async with lock:``; once all waiters release, the
+        # entry GCs itself. Per-key churn for one-shot conversations is negligible.
         self._conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
@@ -196,14 +175,11 @@ class ChatAPI(LoopBoundPrimitive):
         self._new_conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        # Event-loop binding for the two lazy lock maps above. ``_bound_loop``
-        # and the ``set_bound_loop`` template method come from the
-        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base; this API
-        # overrides :meth:`_on_loop_rebind` to clear the two lock maps on a
-        # loop change. Each lock in the maps binds to whichever loop is running
-        # the first time it is awaited; if the client is closed on loop A and
-        # reopened on loop B, a stale lock bound to the now-dead loop A must
-        # never be reused — see :meth:`_on_loop_rebind` / :meth:`reset_after_open`.
+        # Event-loop binding for the two lazy lock maps. ``set_bound_loop`` comes
+        # from :class:`~notebooklm._loop_bound.LoopBoundPrimitive`; this API
+        # overrides :meth:`_on_loop_rebind` to clear the maps on a loop change so
+        # a lock bound to a closed loop is never reused after a reopen — see
+        # :meth:`_on_loop_rebind` / :meth:`reset_after_open`.
 
     def _on_loop_rebind(
         self,
@@ -212,19 +188,12 @@ class ChatAPI(LoopBoundPrimitive):
     ) -> None:
         """Clear the lazy conversation lock maps when the bound loop changes.
 
-        Fires from :meth:`~notebooklm._loop_bound.LoopBoundPrimitive.set_bound_loop`
-        only on a real loop change (and before ``_bound_loop`` is updated), so
-        ``set_bound_loop`` is self-consistent even if called independently of
-        :meth:`reset_after_open` (e.g. directly in a test or a future caller):
-        a stale ``asyncio.Lock`` bound to the old loop must never be reused
-        after a rebind. The production ``open()`` path also calls
-        :meth:`reset_after_open` immediately after, so the clear is idempotent
-        there.
-
-        The cross-loop guard for :meth:`ask` is the injected
-        ``loop_guard.assert_bound_loop`` (already called at the top of
-        :meth:`ask` before any lock is acquired); this hook only governs when
-        the lazy locks are rebuilt.
+        Fires from ``LoopBoundPrimitive.set_bound_loop`` only on a real loop
+        change (before ``_bound_loop`` updates), so a stale ``asyncio.Lock``
+        bound to the old loop is never reused after a rebind even when called
+        independently of :meth:`reset_after_open`. The cross-loop guard for
+        :meth:`ask` is the injected ``loop_guard.assert_bound_loop``; this hook
+        only governs when the lazy locks are rebuilt.
         """
         self._conversation_locks.clear()
         self._new_conversation_locks.clear()
@@ -232,21 +201,13 @@ class ChatAPI(LoopBoundPrimitive):
     def reset_after_open(self) -> None:
         """Discard the lazy conversation locks so a reopened client rebinds them.
 
-        Called from :meth:`ClientLifecycle.open` (alongside the
-        per-collaborator ``set_bound_loop`` propagation) so a client that was
-        closed and reopened on a *different* event loop builds fresh
-        ``asyncio.Lock`` instances on the new loop instead of reusing stale
-        ones bound to the old (now-dead) loop. On Python 3.10/3.11 reusing a
-        stale lock can raise "bound to a different event loop" or mispark
-        waiters; on 3.12+ the breakage is largely masked, but resetting keeps
-        the behaviour consistent across versions.
-
-        Mirrors
-        :meth:`notebooklm._source.upload.SourceUploadPipeline.reset_after_open`.
-        Deliberately narrow: clearing the two ``WeakValueDictionary`` maps is
-        enough because each per-key lock is reconstructed lazily on the next
-        :meth:`_get_conversation_lock` / :meth:`_get_new_conversation_lock`
-        call from inside the new loop.
+        Called from :meth:`ClientLifecycle.open` so a client closed and reopened
+        on a *different* event loop builds fresh ``asyncio.Lock`` instances on
+        the new loop instead of reusing stale ones bound to the dead loop (which
+        on 3.10/3.11 can raise "bound to a different event loop" or mispark
+        waiters). Clearing the two ``WeakValueDictionary`` maps suffices — each
+        per-key lock is rebuilt lazily on the next ``_get_*_lock`` call. Mirrors
+        ``SourceUploadPipeline.reset_after_open``.
         """
         self._conversation_locks.clear()
         self._new_conversation_locks.clear()
@@ -254,17 +215,11 @@ class ChatAPI(LoopBoundPrimitive):
     def _get_conversation_lock(self, conversation_id: str) -> asyncio.Lock:
         """Return the (lazily created) lock for ``conversation_id``.
 
-        Single-threaded asyncio means ``WeakValueDictionary.get`` /
-        ``__setitem__`` are atomic w.r.t. coroutine interleaving — no
-        ``await`` between the lookup and the insert, so two concurrent
-        callers on the same conversation either both see the existing lock
-        or one creates it and the other reads it. Either way they share a
-        single lock instance.
-
-        Returning the bare lock (vs. an async-context-manager wrapper) so
-        callers use ``async with self._get_conversation_lock(cid):`` and
-        the strong reference to ``lock`` keeps the WeakValueDictionary
-        entry alive for the duration of the critical section.
+        Single-threaded asyncio makes the ``WeakValueDictionary`` get/set atomic
+        (no ``await`` between lookup and insert), so concurrent callers on the
+        same conversation share one lock instance. The bare lock is returned (not
+        a context-manager wrapper) so the caller's strong ref keeps the entry
+        alive for the critical section.
         """
         lock = self._conversation_locks.get(conversation_id)
         if lock is None:
@@ -318,17 +273,6 @@ class ChatAPI(LoopBoundPrimitive):
             NetworkError / ChatError: If the post-ask ``hPTbtc`` round-trip
                 itself fails (transient network or auth issue). Same
                 logging contract — answer is logged before the raise.
-
-        Example:
-            # New conversation — SDK fetches the real id post-ask via hPTbtc.
-            result = await client.chat.ask(notebook_id, "What is machine learning?")
-
-            # Follow-up — pass the real, hPTbtc-fetched conversation_id back.
-            result = await client.chat.ask(
-                notebook_id,
-                "How does it differ from deep learning?",
-                conversation_id=result.conversation_id
-            )
 
         Note:
             Repeated ``ask()`` calls without ``conversation_id`` all extend

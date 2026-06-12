@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import mimetypes
 import os
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast
-from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 import httpx
 
@@ -39,6 +36,33 @@ from ..exceptions import (
 from ..rpc import RPCError, RPCMethod, get_upload_url
 from ..rpc.types import SourceStatus
 from ..types import Source, SourceAddError
+
+# Decode/validation helpers live in ``_upload_decode``; re-exported here so the
+# historical ``notebooklm._source.upload.<helper>`` import/patch surface (and the
+# ``SourceUploadPipeline`` body below) keep resolving them.
+from ._upload_decode import (  # noqa: F401
+    _SOURCE_ID_UUID_PATTERN,
+    _coerce_filename_candidate,
+    _coerce_source_id_candidate,
+    _default_port_for_scheme,
+    _extract_contextual_source_id_row_candidates,
+    _extract_prefixed_singleton_source_id_envelope,
+    _extract_register_file_source_id,
+    _extract_singleton_source_id_envelope,
+    _extract_source_id_field_candidates,
+    _looks_like_id_string,
+    _normalize_content_type,
+    _normalize_upload_path,
+    _redact_upload_url,
+    _redacted_upload_authority,
+    _register_response_shape_label,
+    _resolve_upload_content_type,
+    _source_context_names,
+    _transient_error_types_for_upload,
+    _unwrap_singleton_envelope,
+    _validate_resumable_upload_url,
+    _validate_upload_file_supported,
+)
 from .listing import SourceLister
 from .polling import SourcePoller
 from .upload_payloads import (
@@ -50,16 +74,6 @@ from .upload_payloads import (
 if TYPE_CHECKING:
     from .._runtime.lifecycle import ClientLifecycle
     from .._transport_drain import TransportDrainTracker
-
-_SOURCE_ID_UUID_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-_SOURCE_ID_FIELD_NAMES = frozenset({"SOURCE_ID", "source_id", "sourceId"})
-_CONTEXTUAL_SOURCE_ID_FIELD_NAMES = frozenset({"id"})
-_SOURCE_NAME_FIELD_NAMES = frozenset(
-    {"SOURCE_NAME", "source_name", "sourceName", "filename", "fileName", "name", "title"}
-)
-_SOURCE_ID_ENVELOPE_MAX_DEPTH = 8
 
 
 class AuthMetadata(Protocol):
@@ -112,75 +126,6 @@ _TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
 # Preserve the historical ``notebooklm._sources`` log channel after moving
 # upload choreography into this module.
 module_logger = logging.getLogger("notebooklm").getChild("_sources")
-
-
-def _normalize_upload_path(path: str) -> str:
-    return (path or "/").rstrip("/") + "/"
-
-
-def _default_port_for_scheme(scheme: str) -> int | None:
-    if scheme == "https":
-        return 443
-    if scheme == "http":
-        return 80
-    return None
-
-
-def _redacted_upload_authority(parsed: SplitResult) -> str | None:
-    host = parsed.hostname
-    if host is None:
-        return None
-
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-
-    port = parsed.port
-    port_suffix = f":{port}" if port is not None else ""
-    return f"{host}{port_suffix}"
-
-
-def _redact_upload_url(upload_url: str) -> str:
-    """Return a log-safe representation of a resumable upload URL."""
-    try:
-        parsed = urlsplit(upload_url)
-        authority = _redacted_upload_authority(parsed)
-    except ValueError:
-        return "[REDACTED_UPLOAD_URL]"
-    if not parsed.scheme or authority is None:
-        return "[REDACTED_UPLOAD_URL]"
-    suffix = "?..." if parsed.query else ""
-    return f"{parsed.scheme}://{authority}{parsed.path}{suffix}"
-
-
-def _validate_resumable_upload_url(upload_url: str) -> str:
-    """Validate that a resumable upload URL targets the configured upload endpoint."""
-    try:
-        parsed = urlsplit(upload_url)
-        actual_port = parsed.port or _default_port_for_scheme(parsed.scheme)
-        expected = urlsplit(get_upload_url())
-        expected_port = expected.port or _default_port_for_scheme(expected.scheme)
-    except ValueError as exc:
-        raise ValidationError("Upload URL is not valid") from exc
-
-    if parsed.scheme != "https":
-        raise ValidationError("Upload URL must use https")
-    if parsed.username is not None or parsed.password is not None:
-        raise ValidationError("Upload URL must not contain credentials")
-    if parsed.hostname is None:
-        raise ValidationError("Upload URL must include a host")
-    if parsed.hostname != expected.hostname or actual_port != expected_port:
-        raise ValidationError("Upload URL host is not trusted")
-    if _normalize_upload_path(parsed.path) != _normalize_upload_path(expected.path):
-        raise ValidationError("Upload URL path is not trusted")
-    upload_ids = [
-        value
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key.lower() == "upload_id"
-    ]
-    if len(upload_ids) != 1 or not next(iter(upload_ids)):  # next(iter): ratchet
-        raise ValidationError("Upload URL must include exactly one non-empty upload_id")
-
-    return upload_url
 
 
 async def _build_invalid_argument_source_limit_hint(
@@ -249,19 +194,6 @@ class AsyncClientFactory(Protocol):
 ListSources = Callable[[str], Awaitable[list[Source]]]
 QueueWaitRecorder = Callable[[float], None]
 
-_MEDIA_CONTENT_TYPE_PREFIXES = ("audio/", "video/")
-_MEDIA_APPLICATION_CONTENT_TYPES = frozenset(
-    {
-        "application/mp4",
-        "application/ogg",
-        "application/x-matroska",
-    }
-)
-_MEDIA_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
-_STRICT_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = ()
-_HTML_UPLOAD_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".xht"})
-_HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
-
 
 # Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
@@ -270,218 +202,6 @@ _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
 def _retain_background_cancel_task(task: asyncio.Task[None]) -> None:
     _BACKGROUND_CANCEL_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_CANCEL_TASKS.discard)
-
-
-def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
-    """Locate the SOURCE_ID string in an ADD_SOURCE_FILE response.
-
-    Only trusted ADD_SOURCE_FILE shapes are accepted: explicit source-id fields
-    and the legacy singleton list envelope (``[[id]]`` / ``[[[[id]]]]``).
-    Arbitrary nested ids are intentionally ignored so ambiguous responses fall
-    through to the post-register source-list probe.
-    """
-    field_candidates = _extract_source_id_field_candidates(result, filename)
-    if len(field_candidates) == 1:
-        (candidate,) = field_candidates  # exactly one (guarded); unpack avoids name[int]
-        return candidate
-    if len(field_candidates) > 1:
-        return None
-
-    row_candidates = _extract_contextual_source_id_row_candidates(result, filename)
-    if len(row_candidates) == 1:
-        (candidate,) = row_candidates  # exactly one (guarded); unpack avoids name[int]
-        return candidate
-    if len(row_candidates) > 1:
-        return None
-
-    prefixed_candidate = _extract_prefixed_singleton_source_id_envelope(result, filename)
-    if prefixed_candidate is not None:
-        return prefixed_candidate
-
-    return _extract_singleton_source_id_envelope(result, filename)
-
-
-def _extract_source_id_field_candidates(result: Any, filename: str) -> list[str]:
-    candidates: list[str] = []
-    seen: set[str] = set()
-
-    def add_candidate(value: Any) -> None:
-        candidate = _coerce_source_id_candidate(value, filename)
-        if candidate is not None and candidate not in seen:
-            candidates.append(candidate)
-            seen.add(candidate)
-
-    def walk(node: Any, depth: int) -> None:
-        if depth > _SOURCE_ID_ENVELOPE_MAX_DEPTH:
-            return
-        if isinstance(node, dict):
-            names = _source_context_names(node)
-            matched_context = bool(names) and any(
-                _coerce_filename_candidate(name) == filename for name in names
-            )
-            mismatched_context = bool(names) and not matched_context
-            for key, value in node.items():
-                if not isinstance(key, str):
-                    continue
-                if (
-                    key in _SOURCE_ID_FIELD_NAMES
-                    and not mismatched_context
-                    and (depth == 0 or matched_context)
-                ) or (key in _CONTEXTUAL_SOURCE_ID_FIELD_NAMES and matched_context):
-                    add_candidate(value)
-            for value in node.values():
-                walk(value, depth + 1)
-        elif isinstance(node, list):
-            for child in node:
-                walk(child, depth + 1)
-
-    walk(result, 0)
-    return candidates
-
-
-def _extract_singleton_source_id_envelope(result: Any, filename: str) -> str | None:
-    node, depth = _unwrap_singleton_envelope(result)
-    if depth == 0:
-        return None
-
-    return _coerce_source_id_candidate(node, filename)
-
-
-def _extract_prefixed_singleton_source_id_envelope(result: Any, filename: str) -> str | None:
-    if not isinstance(result, list) or len(result) != 2:
-        return None
-    prefix, inner = result  # unpack ``[None, inner]``, not index it (ratchet)
-    if prefix is not None:
-        return None
-    return _extract_singleton_source_id_envelope(inner, filename)
-
-
-def _extract_contextual_source_id_row_candidates(result: Any, filename: str) -> list[str]:
-    candidates: list[str] = []
-    seen: set[str] = set()
-
-    def add_candidate(value: Any) -> None:
-        candidate = _coerce_source_id_candidate(value, filename)
-        if candidate is not None and candidate not in seen:
-            candidates.append(candidate)
-            seen.add(candidate)
-
-    def walk(node: Any, depth: int) -> None:
-        if depth > _SOURCE_ID_ENVELOPE_MAX_DEPTH:
-            return
-        if isinstance(node, list):
-            if len(node) >= 2:
-                first, second, *_rest = node  # unpack pair, not index (ratchet)
-                if _coerce_filename_candidate(second) == filename:
-                    add_candidate(first)
-                if _coerce_filename_candidate(first) == filename:
-                    add_candidate(second)
-            for child in node:
-                walk(child, depth + 1)
-        elif isinstance(node, dict):
-            for value in node.values():
-                walk(value, depth + 1)
-
-    walk(result, 0)
-    return candidates
-
-
-def _coerce_filename_candidate(value: Any) -> str | None:
-    value, _depth = _unwrap_singleton_envelope(value)
-    if not isinstance(value, str):
-        return None
-    return value.strip()
-
-
-def _coerce_source_id_candidate(value: Any, filename: str) -> str | None:
-    value, _depth = _unwrap_singleton_envelope(value)
-    if not isinstance(value, str):
-        return None
-    if len(value) > 1000:
-        return None
-    candidate = value.strip()
-    if not candidate or candidate == filename:
-        return None
-    if _SOURCE_ID_UUID_PATTERN.match(candidate) or _looks_like_id_string(candidate):
-        return candidate
-    return None
-
-
-def _source_context_names(node: dict[Any, Any]) -> list[Any]:
-    return [
-        value
-        for key, value in node.items()
-        if isinstance(key, str) and key in _SOURCE_NAME_FIELD_NAMES
-    ]
-
-
-def _unwrap_singleton_envelope(value: Any) -> tuple[Any, int]:
-    depth = 0
-    while isinstance(value, list) and len(value) == 1 and depth < _SOURCE_ID_ENVELOPE_MAX_DEPTH:
-        (value,) = value  # not ``value[0]`` (guard pins len 1): ratchet
-        depth += 1
-    return value, depth
-
-
-def _register_response_shape_label(result: Any) -> str:
-    if isinstance(result, dict):
-        return "object"
-    if isinstance(result, list):
-        return "array"
-    if isinstance(result, str):
-        return "string"
-    if result is None:
-        return "null"
-    return type(result).__name__
-
-
-def _looks_like_id_string(candidate: str) -> bool:
-    """Heuristic for the non-UUID fallback in file-source id extraction."""
-    if len(candidate) < 4:
-        return False
-    if any(c in candidate for c in " \t/"):
-        return False
-    return any(c.isdigit() or c in "-_" for c in candidate)
-
-
-def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
-    """Return the content type for the Scotty resumable-upload start request."""
-    if mime_type is not None:
-        content_type = mime_type.strip()
-        if not content_type:
-            raise ValidationError("mime_type cannot be empty or whitespace-only")
-        return content_type
-
-    guessed, _encoding = mimetypes.guess_type(file_path.name)
-    return guessed or "application/octet-stream"
-
-
-def _normalize_content_type(content_type: str) -> str:
-    return content_type.split(";", 1)[0].strip().lower()
-
-
-def _transient_error_types_for_upload(content_type: str) -> tuple[int | None, ...]:
-    """Return source status=ERROR transient policy for this upload."""
-    normalized = _normalize_content_type(content_type)
-    if (
-        normalized.startswith(_MEDIA_CONTENT_TYPE_PREFIXES)
-        or normalized in _MEDIA_APPLICATION_CONTENT_TYPES
-    ):
-        return _MEDIA_TRANSIENT_ERROR_TYPES
-    return _STRICT_TRANSIENT_ERROR_TYPES
-
-
-def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
-    """Reject local file types known to fail NotebookLM's upload endpoint."""
-    normalized = _normalize_content_type(content_type)
-    if (
-        file_path.suffix.lower() in _HTML_UPLOAD_SUFFIXES
-        or normalized in _HTML_UPLOAD_CONTENT_TYPES
-    ):
-        raise ValidationError(
-            "HTML file uploads are not supported by NotebookLM's upload endpoint: "
-            f"{file_path.name}. Convert the page to .txt, .md, or .pdf first, then retry."
-        )
 
 
 class SourceUploadPipeline(LoopBoundPrimitive):

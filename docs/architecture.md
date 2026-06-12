@@ -950,6 +950,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_source/listing.py` | Core service layer for listing notebook sources |
 | `_source/polling.py` | Poll coordination service for active source conversions |
 | `_source/upload.py` | Concurrency-gated upload pipeline for source files |
+| `_source/_upload_decode.py` | Pure decode/validation helpers for the upload pipeline (URL redaction, ADD_SOURCE_FILE source-id extraction, content-type policy), extracted from `upload.py` |
 | `_source/upload_payloads.py` | Stable source upload registration, rename, and resumable-upload request builders |
 | `_label/params.py` | Stable CREATE_LABEL / LIST_LABELS / UPDATE_LABEL / DELETE_LABEL request payload builders (with the shared `_opts()` request-options wrapper) |
 | `_notebook_metadata.py` | Metadata protocol schemas for sub-clients |
@@ -1084,6 +1085,7 @@ src/notebooklm/
 │   └── semaphore.py             # Concurrency semaphore middleware
 ├── _source/                     # Source-feature subpackage (promoted from flat _source_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public service classes
+│   ├── _upload_decode.py        # Pure URL/source-id/content-type decode + validation helpers (extracted from upload.py)
 │   ├── add.py                   # Source addition coordinator
 │   ├── content.py               # Source content fetcher
 │   ├── listing.py               # Source listing helper
