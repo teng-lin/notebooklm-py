@@ -44,7 +44,17 @@ from ..types import Source, SourceAddError
 # from ``_upload_decode``, so a test seam that patches such a global must target
 # ``_upload_decode`` — that is where the name is looked up — not this module.
 from ._upload_decode import (  # noqa: F401
+    _CONTEXTUAL_SOURCE_ID_FIELD_NAMES,
+    _HTML_UPLOAD_CONTENT_TYPES,
+    _HTML_UPLOAD_SUFFIXES,
+    _MEDIA_APPLICATION_CONTENT_TYPES,
+    _MEDIA_CONTENT_TYPE_PREFIXES,
+    _MEDIA_TRANSIENT_ERROR_TYPES,
+    _SOURCE_ID_ENVELOPE_MAX_DEPTH,
+    _SOURCE_ID_FIELD_NAMES,
     _SOURCE_ID_UUID_PATTERN,
+    _SOURCE_NAME_FIELD_NAMES,
+    _STRICT_TRANSIENT_ERROR_TYPES,
     _coerce_filename_candidate,
     _coerce_source_id_candidate,
     _default_port_for_scheme,

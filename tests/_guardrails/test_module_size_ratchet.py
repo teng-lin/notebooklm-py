@@ -23,12 +23,13 @@ splits):
 3. **No stale allowlist entries.** Every allowlisted path must still exist (a
    rename/delete must update the allowlist).
 
-The ceilings below were *measured*, not estimated. To regenerate them::
+The ceilings below were *measured*, not estimated. To regenerate them (the
+``> 1000`` filter must track ``MODULE_SIZE_BUDGET`` below)::
 
     python -c "from pathlib import Path; src=Path('src/notebooklm'); \
         [print(f\"{len(p.read_text(encoding='utf-8').splitlines()):>6}  {p.relative_to(src).as_posix()}\") \
          for p in sorted(src.rglob('*.py')) \
-         if len(p.read_text(encoding='utf-8').splitlines()) > 900]"
+         if len(p.read_text(encoding='utf-8').splitlines()) > 1000]"
 
 Line counting uses ``str.splitlines()`` to match the diagnostic in
 ``scripts/audit_test_suite.py`` (``big_files``), so the two never disagree.
