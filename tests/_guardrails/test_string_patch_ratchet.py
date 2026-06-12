@@ -114,7 +114,6 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/cli/test_helpers_compat.py": 6,
     "tests/unit/cli/test_json_validation_contract.py": 2,
     "tests/unit/cli/test_language.py": 2,
-    "tests/unit/cli/test_login.py": 12,
     "tests/unit/cli/test_login_chromium_fanout.py": 5,
     "tests/unit/cli/test_login_cookie_recovery.py": 1,
     "tests/unit/cli/test_login_refresh_coverage.py": 8,

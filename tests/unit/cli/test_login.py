@@ -12,7 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.playwright_login_io as playwright_login_io_module
 import notebooklm.cli.services.playwright_login as _pl
+import notebooklm.cli.session_cmd as session_cmd_module
 from notebooklm.notebooklm_cli import cli
 from tests._fixtures import patch_session_login_dual
 
@@ -704,7 +707,7 @@ class TestLoginCommand:
                 return_value=browser_dir,
             ),
             patch_session_login_dual("_sync_server_language_to_config"),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -775,10 +778,7 @@ class TestLoginCommand:
         with (
             patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright", side_effect=fake_sync_playwright),
-            patch(
-                "notebooklm.cli.services.playwright_login.repair_playwright_account_metadata",
-                side_effect=fake_repair,
-            ),
+            patch.object(_pl, "repair_playwright_account_metadata", side_effect=fake_repair),
         ):
             playwright_login.run_playwright_login(
                 playwright_login.PlaywrightLoginPlan(
@@ -822,7 +822,7 @@ class TestLoginCommand:
                 return_value=browser_dir,
             ),
             patch_session_login_dual("_sync_server_language_to_config"),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -869,7 +869,7 @@ class TestLoginCommand:
                 return_value=browser_dir,
             ),
             patch_session_login_dual("_sync_server_language_to_config"),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
             mock_page_stale = MagicMock()
@@ -938,7 +938,7 @@ class TestLoginCommand:
                 return_value=browser_dir,
             ),
             patch_session_login_dual("_sync_server_language_to_config"),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -971,9 +971,9 @@ class TestLoginCommand:
 
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
+            patch.object(
+                session_cmd_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
         ):
             mock_fetch.return_value = ("csrf_ok", "session_ok")
@@ -1008,9 +1008,9 @@ class TestLoginCommand:
 
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(auth_module, "enumerate_accounts", new=_enum),
+            patch.object(
+                session_cmd_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
         ):
             mock_fetch.return_value = ("csrf_ok", "session_ok")
@@ -1037,10 +1037,10 @@ class TestLoginCommand:
 
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch(
-                "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(
+                session_cmd_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
-            patch("notebooklm.cli.session_cmd.repair_after_refresh") as mock_repair,
+            patch.object(session_cmd_module, "repair_after_refresh") as mock_repair,
         ):
             mock_fetch.return_value = ("csrf_ok", "session_ok")
             result = runner.invoke(cli, ["auth", "refresh"])
@@ -1638,7 +1638,7 @@ class TestLoginLanguageSync:
             # The warning is now emitted through the injected ``LoginIO`` sink
             # (#1393); with no sink passed, the default ``PlaywrightLoginIO``
             # resolves and forwards ``emit`` to ``playwright_login_io.console``.
-            patch("notebooklm.cli.playwright_login_io.console") as mock_console,
+            patch.object(playwright_login_io_module, "console") as mock_console,
         ):
             # Raise from the sync `from_storage` call itself.
             mock_client_cls.from_storage = MagicMock(side_effect=Exception("Network error"))
