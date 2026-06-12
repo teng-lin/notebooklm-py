@@ -30,6 +30,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.helpers as helpers_module
 from notebooklm import paths as paths_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ShareAccess, ShareViewLevel
@@ -81,8 +83,10 @@ def runner() -> CliRunner:
 def mock_auth_env() -> Generator[None, None, None]:
     """Stub auth loading + token fetch so --json paths run offline."""
     with (
-        patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
-        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
+        patch.object(helpers_module, "load_auth_from_storage") as mock_load,
+        patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch,
     ):
         mock_load.return_value = {
             "SID": "test",

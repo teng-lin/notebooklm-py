@@ -15,6 +15,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.helpers as helpers_module
 from notebooklm.cli.grouped import SectionedGroup
 from notebooklm.notebooklm_cli import cli
 
@@ -28,8 +30,10 @@ def runner() -> CliRunner:
 @pytest.fixture
 def mock_auth_env() -> Iterator[None]:
     with (
-        patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
-        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
+        patch.object(helpers_module, "load_auth_from_storage") as mock_load,
+        patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch,
     ):
         mock_load.return_value = {
             "SID": "test",
