@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Source
 
@@ -42,8 +43,9 @@ def _stale_command_environment(*, is_fresh: bool):
     it into ``runner.invoke(cli, args, obj=obj)``. The ``fetch_tokens`` auth
     seam is still patched here.
     """
-    with patch(
-        "notebooklm.auth.fetch_tokens_with_domains",
+    with patch.object(
+        auth_module,
+        "fetch_tokens_with_domains",
         new_callable=AsyncMock,
         return_value=("csrf", "session"),
     ):

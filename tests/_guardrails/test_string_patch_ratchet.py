@@ -99,16 +99,7 @@ _PATTERN_STRING_PATCH = re.compile(
 # use ``patch.object`` on a PUBLIC attribute of a locally-imported alias, or
 # constructor injection via ``tests/_fixtures/make_fake_core(...)``.
 # DO lower a ceiling when a file sheds sites (the gate prints the value).
-STRING_PATCH_CEILINGS: dict[str, int] = {
-    "tests/integration/test_settings_integration.py": 1,
-    "tests/unit/cli/_session_helpers.py": 1,
-    "tests/unit/cli/test_doctor.py": 1,
-    "tests/unit/cli/test_login_cookie_recovery.py": 1,
-    "tests/unit/cli/test_source_cmd_coverage.py": 1,
-    "tests/unit/cli/test_source_content_rendering.py": 1,
-    "tests/unit/cli/test_source_refresh.py": 1,
-    "tests/unit/test_windows_compatibility.py": 1,
-}
+STRING_PATCH_CEILINGS: dict[str, int] = {}
 
 # Shared remediation tail for the growth-side failures: the gate must steer
 # violators toward the sanctioned seams and AWAY from the companion lint's

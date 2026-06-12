@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, patch
 import click
 import pytest
 
+import notebooklm.auth as auth_module
 from notebooklm._app.source_clean import SourceCleanResult
 from notebooklm.cli import source_cmd
 from notebooklm.cli.services.source_mutations import (
@@ -243,8 +244,8 @@ class TestDispatchSourceCleanResultTextFailures:
 # ---------------------------------------------------------------------------
 class TestSourceAddValidationErrorJson:
     def test_invalid_url_json_emits_validation_error(self, runner, mock_auth):
-        with patch(
-            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(

@@ -222,8 +222,9 @@ class TestLoginLanguageSync:
         # stand-in context manager wrapping a real ``NotebookLMClient``.
         real_client = NotebookLMClient(auth_tokens)
         with (
-            patch(
-                "notebooklm.client.NotebookLMClient.from_storage",
+            patch.object(
+                NotebookLMClient,
+                "from_storage",
                 new_callable=MagicMock,
                 return_value=_from_storage_cm(real_client),
             ),

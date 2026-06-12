@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import notebooklm.auth as auth_module
 import notebooklm.cli._chromium_profiles as chromium_profiles
 
 # ---------------------------------------------------------------------------
@@ -232,5 +233,7 @@ def _install_chromium_fanout_patches(
                 side_effect=fake_read,
             )
         )
-        stack.enter_context(patch("notebooklm.auth.enumerate_accounts", side_effect=fake_enumerate))
+        stack.enter_context(
+            patch.object(auth_module, "enumerate_accounts", side_effect=fake_enumerate)
+        )
         yield

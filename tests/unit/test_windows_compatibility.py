@@ -77,10 +77,9 @@ class TestPlaywrightEventLoopFix:
 
     def test_context_manager_is_noop_on_non_windows(self):
         """Verify context manager is a no-op on non-Windows platforms."""
-        # Mock sys.platform to non-Windows. ``windows_playwright_event_loop``
-        # now lives in :mod:`cli.services.playwright_login`, so the patch
-        # target follows the import (rev-1 CodeRabbit feedback on #962).
-        with patch("notebooklm.cli.services.playwright_login.sys.platform", "linux"):
+        # Mock ``sys.platform`` to non-Windows; the service reads the same
+        # process-wide ``sys`` module object.
+        with patch.object(sys, "platform", "linux"):
             original_policy = asyncio.get_event_loop_policy()
             with _windows_playwright_event_loop():
                 # Policy should remain unchanged on non-Windows
