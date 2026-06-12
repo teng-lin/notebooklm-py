@@ -44,6 +44,13 @@ logger = logging.getLogger(__name__)
 # options block is fully populated.
 _INTERACTIVE_TREE_LEAF_POS = 3
 
+# ``CREATE_ARTIFACT`` returns the new artifact id wrapped as ``[[id, …]]``: the
+# inner row sits at ``[0]`` of the envelope and the id is that row's ``[0]``
+# leaf. Both descents are guarded for presence before ``safe_index`` reads them
+# (see ``_new_artifact_id``).
+_CREATE_ARTIFACT_ENVELOPE_POS = 0
+_CREATE_ARTIFACT_ID_POS = 0
+
 
 def extract_interactive_tree_leaf(result: Any, *, source: str) -> Any | None:
     """Return the raw ``[0][9][3]`` interactive mind-map tree leaf, or ``None``.
@@ -130,16 +137,36 @@ def _new_artifact_id(create_response: Any) -> str | None:
     """Pull the new artifact id out of a ``CREATE_ARTIFACT`` response (``[[id, …]]``).
 
     Returns ``None`` for a null/degenerate response (no generation task created);
-    the caller turns that into ``ArtifactFeatureUnavailableError``. Bind the inner
-    row to a local so the id read is a single-level ``inner[0]`` index rather than
-    a chained ``create_response[0][0]`` descent.
+    the caller turns that into ``ArtifactFeatureUnavailableError``. The two
+    envelope descents both go through ``safe_index`` *behind* a length guard that
+    proves the slot present, so the strict helper is a no-op on every reachable
+    input (it can only raise when the guarded slot is genuinely absent) while
+    keeping the soft "degenerate response → ``None``" contract: an empty / non-list
+    response, an empty / non-list ``inner`` row, or a non-``str`` id all return
+    ``None`` rather than raising. This centralises the ``[0]`` / ``[0][0]``
+    position knowledge on the shared ``safe_index`` seam instead of open-coding
+    ``create_response[0]`` / ``inner[0]`` reads (issue #1491).
     """
     if not isinstance(create_response, list) or not create_response:
         return None
-    inner = create_response[0]
-    if isinstance(inner, list) and inner and isinstance(inner[0], str):
-        return inner[0]
-    return None
+    # ``create_response`` is a non-empty list here, so this descent never raises;
+    # it routes the read through the shared drift seam for telemetry parity.
+    inner = safe_index(
+        create_response,
+        _CREATE_ARTIFACT_ENVELOPE_POS,
+        method_id=RPCMethod.CREATE_ARTIFACT.value,
+        source="_mind_maps_api._new_artifact_id",
+    )
+    if not isinstance(inner, list) or not inner:
+        return None
+    # ``inner`` is a non-empty list here, so this descent never raises either.
+    head = safe_index(
+        inner,
+        _CREATE_ARTIFACT_ID_POS,
+        method_id=RPCMethod.CREATE_ARTIFACT.value,
+        source="_mind_maps_api._new_artifact_id",
+    )
+    return head if isinstance(head, str) else None
 
 
 class MindMapsAPI:

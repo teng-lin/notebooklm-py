@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 from . import research as _research_pub
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._research_task_parser import parse_research_task_models
+from ._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from ._runtime.contracts import RpcCaller
 from ._types.research import (
     ResearchSource,
@@ -375,14 +376,15 @@ class ResearchAPI:
         )
 
         if result and isinstance(result, list) and len(result) > 0:
-            task_id = result[0]
+            start_row = ResearchStartRow(result)
+            task_id = start_row.task_id_raw
             # v0.8.0 (#1342): a falsey ``task_id`` means no task was created —
             # raise (mirrors ``_parse_generation_result``'s missing id).
             if not task_id:
                 raise DecodingError(
                     f"research.start returned no task id: {result!r}", method_id=rpc_id.value
                 )
-            report_id = result[1] if len(result) > 1 else None
+            report_id = start_row.report_id
             return ResearchStart(
                 task_id=task_id,
                 report_id=report_id,
@@ -456,7 +458,9 @@ class ResearchAPI:
         )
 
         if parsed_tasks:
-            return self._public_poll_result(parsed_tasks[0], parsed_tasks)
+            # ``parsed_tasks`` is a typed ``list[ResearchTask]`` (not a decoded
+            # RPC payload); ``next(iter(...))`` takes the first without a subscript.
+            return self._public_poll_result(next(iter(parsed_tasks)), parsed_tasks)
 
         # A concrete pinned ``task_id`` that matched nothing is a poll-observed
         # absence of that specific task — a typed ``NOT_FOUND`` sentinel
@@ -549,7 +553,8 @@ class ResearchAPI:
                 task_id=pinned_task_id,
                 raise_on_ambiguous=pinned_task_id is None,
             )
-            selected_task = parsed_tasks[0] if parsed_tasks else None
+            # ``parsed_tasks`` is a typed ``list[ResearchTask]``: first or ``None``.
+            selected_task = next(iter(parsed_tasks), None)
             if pinned_task_id is None and selected_task is not None:
                 pinned_task_id = selected_task.task_id
 
@@ -679,22 +684,17 @@ class ResearchAPI:
         )
 
         imported = []
-        if result and isinstance(result, list):
-            # Unwrap an ``[[src1, ...]]`` envelope via ``first[0]`` (not chained).
-            if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 0:
-                first = result[0]
-                if isinstance(first[0], list):
-                    result = first
-
-            for src_data in result:
-                if isinstance(src_data, list) and len(src_data) >= 2:
-                    # Absent/non-list id envelope legitimately means "skip" (id None).
-                    id_envelope = src_data[0]
-                    src_id = (
-                        id_envelope[0] if id_envelope and isinstance(id_envelope, list) else None
-                    )
-                    if src_id:
-                        imported.append({"id": src_id, "title": src_data[1]})
+        # ``unwrap_import_rows`` centralises the ``[[src1, ...]]`` envelope probe
+        # (the former ``result[0]`` / ``first[0]`` reads) behind the research row
+        # adapter; an unrecognised shape falls through to ``[]``/unchanged.
+        for src_data in unwrap_import_rows(result):
+            row = ImportedSourceRow(src_data)
+            if not row.is_well_formed:
+                continue
+            # An absent / non-list id envelope legitimately means "skip" (id None).
+            src_id = row.source_id
+            if src_id:
+                imported.append({"id": src_id, "title": row.title_slot})
 
         return imported
 
