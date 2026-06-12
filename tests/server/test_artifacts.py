@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 
 from fastapi.testclient import TestClient
 
@@ -169,13 +168,13 @@ def test_download_with_output_format_streams(
 
 
 def test_download_unexpected_output_path_is_rejected(
-    authed_client: TestClient, fake_client: FakeClient
+    authed_client: TestClient, fake_client: FakeClient, tmp_path: object
 ) -> None:
     # If the core resolves a served path OUTSIDE the server's private temp dir,
-    # the route refuses to stream it (path-traversal safety guard).
+    # the route refuses to stream it (path-traversal safety guard). tmp_path is a
+    # distinct tree from the server's mkdtemp dir, so the guard fires.
     fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
-    outside = os.path.join(tempfile.gettempdir(), "nblm-outside-artifact.mp3")
-    fake_client.download_return_path = outside
+    fake_client.download_return_path = os.path.join(str(tmp_path), "nblm-outside-artifact.mp3")
     resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
     assert resp.status_code == 400
 
@@ -191,9 +190,10 @@ def test_cleanup_unlinks_a_file(tmp_path: object) -> None:
     assert not os.path.exists(target)
 
 
-def test_cleanup_missing_path_is_noop() -> None:
-    # Already-gone path must not raise.
-    artifacts_route._cleanup(os.path.join(tempfile.gettempdir(), "nblm-does-not-exist-xyz"))
+def test_cleanup_missing_path_is_noop(tmp_path: object) -> None:
+    # Already-gone path must not raise. tmp_path is unique per test, so the path
+    # is guaranteed absent (no risk of deleting unrelated state).
+    artifacts_route._cleanup(os.path.join(str(tmp_path), "nblm-does-not-exist-xyz"))
 
 
 def test_generation_payload_mind_map_returns_inline() -> None:
