@@ -1,1 +1,2 @@
 tests/integration/test_research_deep_poll_vcr.py::test_cassette_under_size_cap # existing vcr/allow_no_vcr overlap; normalize per test-suite taxonomy cleanup
+tests/integration/test_research_import_verification_vcr.py::test_cassette_under_size_cap # existing vcr/allow_no_vcr overlap; normalize per test-suite taxonomy cleanup

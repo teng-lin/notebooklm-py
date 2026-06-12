@@ -79,7 +79,6 @@ wait loop performs.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -92,7 +91,7 @@ from notebooklm import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ConnectionLimits, ResearchStatus
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
+from tests.vcr_config import _is_vcr_record_mode, notebooklm_vcr
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -193,8 +192,14 @@ _SCRATCH_SOURCES: tuple[tuple[str, str], ...] = (
 
 
 def _is_record_mode() -> bool:
-    """True when ``NOTEBOOKLM_VCR_RECORD`` enables record mode."""
-    return os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+    """True when ``NOTEBOOKLM_VCR_RECORD`` enables record mode.
+
+    Thin alias for :func:`tests.vcr_config._is_vcr_record_mode` so the
+    ``NOTEBOOKLM_VCR_RECORD`` parsing has a single source of truth (it is the
+    same env var and same truthy set the VCR record-mode selection uses).
+    Kept as a local name so the two call sites read clearly.
+    """
+    return _is_vcr_record_mode()
 
 
 def _recording_client_kwargs() -> dict[str, Any]:
