@@ -1,22 +1,48 @@
-"""VCR replay of the Deep Research polling loop (scoped-down).
+"""VCR replay of the full-lifecycle Deep Research polling loop.
 
-This module captures the Deep Research polling loop — START_DEEP_RESEARCH plus
-a handful of in-progress POLL_RESEARCH calls — and replays it with
-``asyncio.sleep`` monkey-patched to a no-op so the test runs in milliseconds.
+This module captures the Deep Research polling loop —
+``START_DEEP_RESEARCH`` plus a poll-until-terminal sequence of
+``POLL_RESEARCH`` calls that reaches the ``completed`` terminal state — and
+replays it with ``asyncio.sleep`` monkey-patched to a no-op so the test runs
+in milliseconds.
 
-Scope note
-----------
-The original recording goal was the full Deep Research lifecycle
-(START → 30+ polls → ``completed`` terminal state). In practice the local
-httpx connection pool can't sustain the multi-minute idle waits between
-polls — two consecutive recording attempts on 2026-05-15 both failed with
-``httpx.PoolTimeout`` mid-poll (after ~22 min / 31 polls captured the first
-time; after ~14 min the second). Per the plan's documented fallback option,
-this test scopes the recording down to :data:`RECORD_POLL_COUNT` in-progress
-polls, which is enough to exercise the polling loop's iteration path without
-requiring the cassette to reach a ``completed`` terminal state. The recording
-runs in ~1–2 minutes of wall-clock instead of ~30, well under the
-PoolTimeout threshold.
+Lifecycle scope
+---------------
+The recording goal is the **full** Deep Research lifecycle:
+``START → N polls → completed``. Earlier attempts to record this scoped the
+cassette down to a handful of in-progress polls because two consecutive
+recording attempts on 2026-05-15 both failed with ``httpx.PoolTimeout``
+mid-poll (after ~22 min / 31 polls the first time, ~14 min the second). The
+root cause was stale-connection reuse: the default 30 s keepalive expiry plus
+the multi-minute idle gaps between polls left the pool handing back a
+half-dead connection on a later poll, which then timed out acquiring from the
+pool.
+
+This recording dodges that with PoolTimeout-resilient client config applied
+**only in record mode** (see :func:`_recording_client_kwargs`): a generous
+pool-acquire timeout plus a short ``keepalive_expiry`` so a long-idle
+connection is closed proactively and a fresh one is opened on the next poll.
+Both knobs are reached through the **public** ``NotebookLMClient``
+constructor (``timeout`` maps to httpx's ``pool`` acquire timeout;
+``limits=ConnectionLimits(keepalive_expiry=...)`` controls idle-connection
+expiry), so no private seam is needed. Replay is unaffected — the resilient
+kwargs are only applied when ``NOTEBOOKLM_VCR_RECORD`` is set.
+
+Poll-until-terminal
+-------------------
+:func:`_poll_until_terminal` polls ``client.research.poll`` every
+:data:`_POLL_INTERVAL_SECONDS` until ``poll.status`` is a TERMINAL
+:class:`~notebooklm._types.research.ResearchStatus` (``COMPLETED`` or
+``FAILED``), with a hard cap of :data:`_MAX_POLLS` so a hung run can't spin
+forever. Task-id pinning mirrors
+:meth:`ResearchAPI.wait_for_completion`: the first poll is unfiltered, and the
+``task_id`` the POLL endpoint reports is captured and threaded through later
+polls. This is load-bearing for Deep Research — the id from
+:meth:`research.start` does NOT equal the poll-reported id (verified live), so
+threading start's id would make every poll return ``NOT_FOUND``. During replay
+the cassette plays each recorded response back in order, so the replay loop
+performs exactly the recorded number of polls and lands on the recorded
+terminal status.
 
 Source query
 ------------
@@ -29,12 +55,13 @@ than short-circuiting on a trivial answer.
 
 Sleep-mock pattern (reused from ``test_polling_vcr``)
 -----------------------------------------------------
-The poll loop here calls ``await asyncio.sleep(...)`` between polls to space
+The poll loop calls ``await asyncio.sleep(...)`` between polls to space
 requests out. During cassette replay those sleeps add nothing — the cassette
 already encodes the server's progression — so we patch ``asyncio.sleep`` to an
 immediate no-op via the ``fast_sleep`` fixture. The fixture is intentionally
 narrow: only ``asyncio.sleep`` is replaced; anything else that legitimately
-needs to wait is unaffected.
+needs to wait is unaffected. During RECORDING the patch is a no-op so the real
+poll cadence is preserved.
 
 Recording
 ---------
@@ -43,8 +70,8 @@ Recording captures (in a single cassette) the scratch-notebook lifecycle:
 1. ``CREATE_NOTEBOOK`` — fresh scratch notebook.
 2. Three ``ADD_TEXT_SOURCE`` calls — substantive Wikipedia paragraphs.
 3. ``START_DEEP_RESEARCH`` — kicks off Deep Research on the seeded notebook.
-4. :data:`RECORD_POLL_COUNT` ``POLL_RESEARCH`` interactions — exercises the
-   iteration path without waiting for completion.
+4. ``POLL_RESEARCH`` interactions — polled until the task reaches
+   ``completed`` (no_research → in_progress → completed progression).
 5. ``DELETE_NOTEBOOK`` — scratch notebook cleanup.
 
 To re-record::
@@ -52,17 +79,29 @@ To re-record::
     export NOTEBOOKLM_VCR_RECORD=1
     uv run pytest tests/integration/test_research_deep_poll_vcr.py -v -s
 
-The recording runs in ~1–2 minutes of real wall-clock time (no completion
-wait), so the default pytest timeout is plenty.
+Deep Research is a multi-minute server-side operation, so the recording can
+take 20–40 minutes of real wall-clock time. Use ``-s`` to watch the per-poll
+progress logging.
 
 Replay
 ------
 ``@notebooklm_vcr.use_cassette`` plus ``fast_sleep`` makes the full flow run
-in <10 seconds. The default VCR matcher uses ``rpcids`` so the
+in <30 seconds. The default VCR matcher uses ``rpcids`` so the
 create / add_text / start / poll / delete interactions are disambiguated by
 query string; the repeated ``POLL_RESEARCH`` interactions match by play-count
 order (VCR's default for same-key requests), which is exactly the sequential
 consumption the poll loop performs.
+
+Trimming
+--------
+If a full recording exceeds the 5 MB size cap (see
+:func:`test_cassette_under_size_cap`), redundant *middle* ``in_progress``
+polls may be removed by hand from the cassette, keeping
+``START_DEEP_RESEARCH`` + the first couple ``no_research`` / ``in_progress``
+polls + the ``completed`` poll + the notebook create / add_text / delete
+lifecycle. The trimmed sequence still replays a faithful
+no_research → in_progress → completed progression because the poll loop
+consumes exactly the polls present and stops on the terminal status.
 """
 
 from __future__ import annotations
@@ -71,12 +110,14 @@ import asyncio
 import os
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
 
 from notebooklm import NotebookLMClient
 from notebooklm.rpc import RPCMethod
+from notebooklm.types import ConnectionLimits, ResearchStatus
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 
@@ -85,18 +126,33 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 CASSETTE_NAME = "research_deep_poll_long.yaml"
 CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
 
-# Number of POLL_RESEARCH interactions to drive during recording. Picked to
-# (a) exercise the loop's iteration path (multiple polls, not just one),
-# (b) keep the cassette well under the 5 MB cap (~600 KB per poll body
-# observed empirically → 6 polls ≈ 3.6 MB), and (c) keep the recording
-# under ~2 minutes wall-clock so it doesn't trigger the httpx PoolTimeout
-# that aborted previous full-lifecycle recordings.
-RECORD_POLL_COUNT = 6
-
 # Minimum POLL_RESEARCH interactions the cassette must contain to be
-# meaningful. Matches RECORD_POLL_COUNT so a regression in the recording
-# script (e.g. accidentally only making 1 poll) trips this assertion.
-MIN_POLL_INTERACTIONS = RECORD_POLL_COUNT
+# meaningful. A full-lifecycle recording reaches ``completed`` after several
+# polls; this floor catches a recording-script regression that captured only
+# one or two polls before terminal. Kept low so legitimate hand-trimming of
+# redundant middle in_progress polls (down to a no_research → in_progress →
+# completed skeleton) stays above the floor.
+MIN_POLL_INTERACTIONS = 3
+
+# Terminal research states — the poll-until-terminal loop stops on either.
+_TERMINAL_STATUSES: frozenset[ResearchStatus] = frozenset(
+    {ResearchStatus.COMPLETED, ResearchStatus.FAILED}
+)
+
+# Hard cap on the number of polls during recording so a hung Deep Research run
+# can't spin forever. At :data:`_POLL_INTERVAL_SECONDS` (30 s) this is roughly
+# 40 minutes of wall-clock — comfortably longer than a typical deep run but
+# bounded.
+_MAX_POLLS = 80
+
+# Per-test timeout override. The suite sets a global 60 s ``pytest-timeout``
+# (CI hang safety net), which is far too short for the live recording — the
+# poll-until-terminal loop can run ~40 min against the live API. We override
+# with a wall-clock ceiling that covers the worst case
+# (``_MAX_POLLS`` polls × ``_POLL_INTERVAL_SECONDS`` + per-poll RPC time +
+# notebook setup) with headroom. During REPLAY the loop finishes in <30 s, so
+# the high ceiling is inert; it only matters when recording.
+_RECORD_TEST_TIMEOUT_SECONDS = 3600
 
 # Source content for the scratch notebook. Three substantive Wikipedia
 # paragraphs on distinct topics so Deep Research has something thematic to
@@ -159,9 +215,56 @@ _SCRATCH_SOURCES: tuple[tuple[str, str], ...] = (
 _RESEARCH_QUERY = "Compare the key themes across the sources"
 
 # Poll-loop tuning. During replay the sleeps are mocked out, so this only
-# affects the live recording: 5-second intervals between the
-# :data:`RECORD_POLL_COUNT` polls.
-_POLL_INTERVAL_SECONDS = 5.0
+# affects the live recording: 30-second intervals between polls so we don't
+# hammer the API across the multi-minute deep-research walk.
+_POLL_INTERVAL_SECONDS = 30.0
+
+# Generous pool-acquire / read timeout for the recording client. The public
+# ``NotebookLMClient(timeout=...)`` float maps to httpx's ``pool`` (connection-
+# acquire) timeout AND the read/write timeouts (``Kernel.open`` sets
+# ``read=write=pool=timeout``), so a single value covers both "don't raise
+# PoolTimeout on a brief pool-contention spike" and "tolerate a slow poll
+# response".
+_RECORD_TIMEOUT_SECONDS = 60.0
+
+# PoolTimeout-resilient connection limits for the recording client: a SHORT
+# ``keepalive_expiry`` (10 s) so a connection left idle across the multi-minute
+# gap between polls is closed proactively and the next poll opens a fresh one.
+# The previous full-lifecycle recordings died with ``httpx.PoolTimeout`` from
+# stale-connection reuse — the default 30 s keepalive let the pool hand back a
+# half-dead connection on a later poll.
+_RECORD_LIMITS = ConnectionLimits(
+    max_connections=100,
+    max_keepalive_connections=20,
+    keepalive_expiry=10.0,
+)
+
+
+def _is_record_mode() -> bool:
+    """True when ``NOTEBOOKLM_VCR_RECORD`` enables record mode."""
+    return os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+
+
+def _recording_client_kwargs() -> dict[str, Any]:
+    """PoolTimeout-resilient ``NotebookLMClient`` kwargs for RECORD mode.
+
+    Returns the public-constructor kwargs that harden the recording client
+    against the long idle poll window that aborted the previous full-lifecycle
+    recordings:
+
+    * ``timeout`` — a generous pool-acquire / read timeout
+      (:data:`_RECORD_TIMEOUT_SECONDS`) so a brief pool-contention spike or a
+      slow poll response doesn't raise ``PoolTimeout`` / ``ReadTimeout``.
+    * ``limits`` — :data:`_RECORD_LIMITS` with a SHORT ``keepalive_expiry`` so
+      a connection left idle across the multi-minute gap between polls is
+      closed proactively and the next poll opens a fresh one.
+
+    Returns an empty dict outside record mode, so replay uses the default
+    client config and the cassette plays back unchanged.
+    """
+    if not _is_record_mode():
+        return {}
+    return {"timeout": _RECORD_TIMEOUT_SECONDS, "limits": _RECORD_LIMITS}
 
 
 @pytest.fixture
@@ -176,7 +279,7 @@ def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     During RECORDING (``NOTEBOOKLM_VCR_RECORD=1``) the patch is a no-op so the
     live poll cadence is preserved — Deep Research is a multi-minute
     server-side operation and we want real spacing between polls so we don't
-    hammer the API with thousands of duplicate POLL_RESEARCH calls. Without
+    hammer the API with hundreds of duplicate POLL_RESEARCH calls. Without
     this guard, recording would behave like a tight spin-loop and likely
     trigger rate limiting before the research completed.
 
@@ -185,7 +288,7 @@ def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     library-internal awaits that don't go through ``asyncio.sleep``) is
     untouched.
     """
-    if os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes"):
+    if _is_record_mode():
         # Record mode — preserve real cadence so the live API isn't spammed.
         return
 
@@ -199,50 +302,74 @@ def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(asyncio, "sleep", instant_sleep)
 
 
-async def _poll_n_times(
+async def _poll_until_terminal(
     client: NotebookLMClient,
     notebook_id: str,
-    task_id: str,
-    n: int,
-) -> list[dict]:
-    """Poll Deep Research ``n`` times and return every result.
+) -> list[Any]:
+    """Poll Deep Research until a terminal status, returning every poll result.
 
-    This is the scoped-down replacement for the original
-    ``_poll_until_complete``. The recording was rescoped to exercise the polling
-    *iteration path* rather than the full lifecycle, because the full
-    lifecycle wait reliably trips ``httpx.PoolTimeout`` after ~15–20 min of
-    idle polling on the maintainer's connection.
+    Polls ``client.research.poll`` every :data:`_POLL_INTERVAL_SECONDS` until
+    ``poll.status`` is a TERMINAL :class:`ResearchStatus` (``COMPLETED`` or
+    ``FAILED``). A hard cap of :data:`_MAX_POLLS` bounds the loop so a hung run
+    can't spin forever.
 
-    The result list is returned in poll order. Status values can be
-    ``in_progress``, ``completed``, or anything else the API uses — callers
-    must not constrain on a terminal state since the recording deliberately
-    stops short of completion.
+    Task-id pinning mirrors :meth:`ResearchAPI.wait_for_completion`: the FIRST
+    poll is unfiltered (``task_id=None``), and the ``task_id`` the POLL
+    endpoint reports for the single in-flight task is captured and threaded
+    through subsequent polls as the discriminator. This is load-bearing for
+    Deep Research — the ``task_id`` returned by :meth:`research.start` does NOT
+    equal the one the poll endpoint reports (verified live: start returns one
+    UUID, poll reports a different UUID for the same task), so threading
+    start's id would make every poll return ``NOT_FOUND``. The unfiltered
+    first poll is unambiguous because the scratch notebook has exactly one
+    research task in flight.
+
+    The result list is returned in poll order. During replay the cassette
+    plays each recorded poll response back in order, so the loop performs
+    exactly the recorded number of polls and lands on the recorded terminal
+    status.
     """
-    results: list[dict] = []
-    for _ in range(n):
-        result = await client.research.poll(notebook_id, task_id=task_id)
-        results.append(result)
+    results: list[Any] = []
+    pinned_task_id: str | None = None
+    for poll_index in range(_MAX_POLLS):
+        poll = await client.research.poll(notebook_id, task_id=pinned_task_id)
+        results.append(poll)
+        # Capture the POLL-reported task id the first time the task surfaces,
+        # then pin it for every later poll (mirrors wait_for_completion).
+        if pinned_task_id is None and poll.task_id:
+            pinned_task_id = poll.task_id
+        if _is_record_mode():
+            print(  # noqa: T201 — record-mode progress, visible under pytest -s
+                f"[deep-research record] poll {poll_index + 1}/{_MAX_POLLS}: "
+                f"status={poll.status} task_id={poll.task_id or '<none>'}"
+            )
+        if poll.status in _TERMINAL_STATUSES:
+            break
         await asyncio.sleep(_POLL_INTERVAL_SECONDS)
     return results
 
 
 class TestDeepResearchPollReplay:
-    """Replays the deep-research polling-loop iteration path in <10 seconds."""
+    """Replays the full deep-research lifecycle to ``completed`` in <30 seconds."""
 
+    @pytest.mark.timeout(_RECORD_TEST_TIMEOUT_SECONDS)
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette(CASSETTE_NAME)
     async def test_deep_research_polling_loop(self, fast_sleep: None) -> None:
-        """Create scratch notebook → add sources → deep research → N polls → cleanup.
+        """Create scratch notebook → add sources → deep research → poll to completed → cleanup.
 
-        Scoped-down recording: drives :data:`RECORD_POLL_COUNT` polls instead
-        of waiting for completion. The cassette captures the polling loop's
-        iteration path; replay validates that the client correctly threads
-        ``task_id`` through each poll and returns shaped results, not that
-        Deep Research terminates with a particular final status.
+        Drives the poll-until-terminal loop: polls until the task reaches a
+        terminal :class:`ResearchStatus`, then asserts the final status is
+        ``COMPLETED``. Replay validates that the client correctly threads
+        ``task_id`` through each poll AND that the recorded lifecycle reaches
+        the ``completed`` terminal state (not just exercises the iteration
+        path).
         """
         auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        # PoolTimeout-resilient client config ONLY in record mode (empty kwargs
+        # in replay, so the cassette plays back against the default config).
+        async with NotebookLMClient(auth, **_recording_client_kwargs()) as client:
             # 1. Fresh scratch notebook. The UUID suffix keeps re-records
             #    distinct even if a previous run leaked an undeleted notebook
             #    into the account.
@@ -270,38 +397,59 @@ class TestDeepResearchPollReplay:
                     mode="deep",
                 )
                 assert start_result is not None
-                task_id = start_result.task_id
-                assert task_id, "research.start must return a task_id"
+                start_task_id = start_result.task_id
+                assert start_task_id, "research.start must return a task_id"
                 assert start_result.mode == "deep"
 
-                # 4. Polling iteration path. Drives RECORD_POLL_COUNT polls
-                #    in record mode; during replay the cassette plays each
-                #    recorded response in order. We do NOT wait for
-                #    completion — see module docstring "Scope note".
-                polls = await _poll_n_times(client, notebook_id, task_id, RECORD_POLL_COUNT)
-                assert len(polls) == RECORD_POLL_COUNT
+                # 4. Poll until terminal. Drives polls every
+                #    _POLL_INTERVAL_SECONDS in record mode; during replay the
+                #    cassette plays each recorded response in order until the
+                #    terminal status is consumed. The poll loop pins the
+                #    POLL-reported task id (NOT start's id — they differ for
+                #    Deep Research; see _poll_until_terminal).
+                polls = await _poll_until_terminal(client, notebook_id)
+                assert len(polls) >= 1, "poll loop must make at least one poll"
+
+                # Every poll must return a status-shaped result. We don't pin
+                # the intermediate statuses because the API emits several
+                # states across the loop:
+                #  * ``no_research`` — early polls before Deep Research has
+                #    registered the task in the poll endpoint (empty task_id).
+                #  * ``in_progress`` — once the task is visible the poll echoes
+                #    a task_id back so callers can correlate.
+                #  * ``completed`` — terminal.
+                #
+                # Once the task surfaces, its POLL-reported task_id must be
+                # stable across the rest of the loop (the same task, not a
+                # sibling). We assert internal consistency of the poll stream
+                # rather than equality with start's id, because Deep Research's
+                # start id and poll id differ by design.
+                seen_poll_task_id: str | None = None
                 for poll in polls:
-                    # Every poll must return a status-shaped dict. We don't
-                    # pin status to a specific value because the recording
-                    # deliberately stops short of completion and the API
-                    # emits several states across the loop:
-                    #  * ``no_research`` — early polls before Deep Research
-                    #    has registered the task in the poll endpoint (the
-                    #    response is ``{"status": "no_research",
-                    #    "tasks": []}`` with no ``task_id``).
-                    #  * ``in_progress`` / ``pending`` / ``running`` — once
-                    #    the task is visible the poll echoes ``task_id``
-                    #    back so callers can correlate.
                     assert poll.status
-                    # When ``task_id`` is present it must round-trip the
-                    # value returned by ``start()``. When absent (empty) the
-                    # poll is in the early ``no_research`` window before Deep
-                    # Research has populated the task entry. (#1251: the typed
-                    # return is attribute-only — ``no_research`` carries an
-                    # empty ``task_id`` rather than omitting the key.)
                     poll_task_id = poll.task_id
                     if poll_task_id:
-                        assert poll_task_id == task_id
+                        if seen_poll_task_id is None:
+                            seen_poll_task_id = poll_task_id
+                        else:
+                            assert poll_task_id == seen_poll_task_id, (
+                                "poll-reported task_id changed mid-loop: "
+                                f"{seen_poll_task_id!r} -> {poll_task_id!r}"
+                            )
+
+                # The recorded lifecycle MUST reach a terminal state, and that
+                # terminal state MUST be ``COMPLETED`` (enum membership, not a
+                # brittle string). This is the whole point of the full-
+                # lifecycle recording: the prior scoped cassette never reached
+                # a terminal poll.
+                final = polls[-1]
+                assert final.status in _TERMINAL_STATUSES, (
+                    f"poll loop ended on non-terminal status {final.status!r}; "
+                    "the cassette must record a poll reaching a terminal state."
+                )
+                assert final.status == ResearchStatus.COMPLETED, (
+                    f"expected the recorded lifecycle to reach COMPLETED, got {final.status!r}."
+                )
             finally:
                 # 5. Cleanup — runs in record AND replay (the cassette has a
                 #    DELETE_NOTEBOOK interaction for the replay to consume).
@@ -309,20 +457,29 @@ class TestDeepResearchPollReplay:
                 #    still drops the scratch notebook.
                 await client.notebooks.delete(notebook_id)
 
-    def test_cassette_has_polling_sequence(self) -> None:
-        """The cassette must capture the polling-iteration path.
+    def test_cassette_reaches_completed(self) -> None:
+        """The cassette must capture a poll-to-completion lifecycle.
 
         Asserts that the cassette contains at least
         :data:`MIN_POLL_INTERACTIONS` ``POLL_RESEARCH`` (``e3bVqc``)
         interactions plus the bookend RPCs (CREATE_NOTEBOOK, three
-        ADD_TEXT_SOURCE, START_DEEP_RESEARCH, DELETE_NOTEBOOK). A poll count
-        below the floor would indicate the recording was truncated before
-        the loop got to exercise its iteration path.
+        ADD_TEXT_SOURCE, START_DEEP_RESEARCH, DELETE_NOTEBOOK), and that the
+        final POLL_RESEARCH interaction decodes to a ``COMPLETED`` research
+        task.
 
-        The cassette is the source of truth — we parse it directly rather
-        than relying on the replay test's side effects so the assertion
-        is independent of the client implementation.
+        The terminal-status check decodes the last poll body through the
+        project's own ``decode_response`` + ``parse_research_task_models``
+        pipeline rather than grepping the raw body for the literal string
+        ``"completed"`` — the wire payload encodes the status numerically, so
+        a substring grep would never find the word. Decoding through the real
+        parser keeps the assertion faithful to what the client sees while
+        still parsing the cassette directly (independent of the live API).
         """
+        # Imported here (not at module top) to keep the decode/parse
+        # dependency local to this cassette-inspection helper.
+        from notebooklm._research_task_parser import parse_research_task_models
+        from notebooklm.rpc import decode_response
+
         assert CASSETTE_PATH.exists(), (
             f"cassette missing: {CASSETTE_PATH}. "
             "Re-record with NOTEBOOKLM_VCR_RECORD=1 — see module docstring."
@@ -332,10 +489,12 @@ class TestDeepResearchPollReplay:
             cassette = yaml.safe_load(fh)
 
         # Extract the rpcids query param from every batchexecute interaction
-        # in the order they were recorded.
+        # in the order they were recorded, tracking the last POLL_RESEARCH
+        # interaction so we can decode its response body.
         from urllib.parse import parse_qs, urlparse
 
         rpcids_sequence: list[str] = []
+        last_poll_body: str = ""
         for interaction in cassette.get("interactions", []):
             uri = interaction.get("request", {}).get("uri", "")
             if "/batchexecute" not in uri:
@@ -343,12 +502,18 @@ class TestDeepResearchPollReplay:
             qs = parse_qs(urlparse(uri).query)
             for rpc_id in qs.get("rpcids", []):
                 rpcids_sequence.append(rpc_id)
+                if rpc_id == RPCMethod.POLL_RESEARCH.value:
+                    body = interaction.get("response", {}).get("body", {})
+                    string = body.get("string", "")
+                    if isinstance(string, bytes):
+                        string = string.decode("utf-8", errors="replace")
+                    last_poll_body = string
 
         poll_count = rpcids_sequence.count(RPCMethod.POLL_RESEARCH.value)
         assert poll_count >= MIN_POLL_INTERACTIONS, (
             f"Cassette only has {poll_count} POLL_RESEARCH interactions; "
-            f"need at least {MIN_POLL_INTERACTIONS} to exercise the polling "
-            "loop. Re-record with NOTEBOOKLM_VCR_RECORD=1."
+            f"need at least {MIN_POLL_INTERACTIONS} to capture the poll-to-"
+            "completion lifecycle. Re-record with NOTEBOOKLM_VCR_RECORD=1."
         )
 
         # Sanity: the cassette MUST include at least one START_DEEP_RESEARCH
@@ -361,19 +526,33 @@ class TestDeepResearchPollReplay:
             f"{rpcids_sequence.count(RPCMethod.START_DEEP_RESEARCH.value)}"
         )
 
+        # The final POLL_RESEARCH response must decode to a COMPLETED research
+        # task — the terminal state the prior scoped-down cassette could never
+        # reach. Decode through the real pipeline and assert on the parsed
+        # ResearchStatus (enum membership, not a brittle string grep).
+        assert last_poll_body, "no POLL_RESEARCH interaction found in cassette"
+        result = decode_response(last_poll_body, RPCMethod.POLL_RESEARCH.value)
+        tasks = parse_research_task_models(result)
+        assert tasks, "final POLL_RESEARCH decoded to zero research tasks"
+        final_status = tasks[0].status
+        assert final_status == ResearchStatus.COMPLETED, (
+            f"final POLL_RESEARCH decodes to status {final_status!r}, not "
+            f"COMPLETED; the cassette does not reach the completed terminal "
+            "state. Re-record with NOTEBOOKLM_VCR_RECORD=1."
+        )
+
 
 @pytest.mark.allow_no_vcr
 def test_cassette_under_size_cap() -> None:
     """The cassette must stay under the 5 MB cap.
 
-    The cassette is explicitly capped at 5 MB. If a recording grows past
-    that, the original plan documented three options in order: (1) try
-    lossless body compression, (2) scope down to a 20-poll subset
-    (documented in the PR description), (3) ship as-is with a
-    ``defer-followup: cassette-size`` note in the PR. Whichever route is
-    taken, this assertion MUST pass once mitigations are applied —
-    keeping the test green here is the gate that enforces the cap on
-    future re-records.
+    The cassette is explicitly capped at 5 MB. If a full-lifecycle recording
+    grows past that, trim redundant middle ``in_progress`` polls by hand —
+    keep START_DEEP_RESEARCH + the first couple no_research / in_progress
+    polls + the completed poll + the create / add_text / delete lifecycle (see
+    the module docstring "Trimming" section). This assertion MUST pass once
+    mitigations are applied — keeping it green is the gate that enforces the
+    cap on future re-records.
     """
     if not CASSETTE_PATH.exists():
         pytest.skip(f"Cassette not present at {CASSETTE_PATH}; nothing to size-check.")
@@ -383,7 +562,6 @@ def test_cassette_under_size_cap() -> None:
     # exactly 5 MB also fails — the cap is intentionally a hard ceiling.
     assert size_mb < 5.0, (
         f"Cassette {CASSETTE_PATH.name} is {size_mb:.2f} MB, over the 5 MB "
-        "cap. Apply size mitigations: lossless body compression, "
-        "scope-down to 20 polls (document in PR), or call out the breach "
-        "with a defer-followup note."
+        "cap. Trim redundant middle in_progress polls (see module docstring "
+        "'Trimming') and re-verify replay."
     )
