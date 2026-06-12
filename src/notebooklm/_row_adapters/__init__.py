@@ -21,9 +21,12 @@ from .chat import (
 from .labels import LabelRow
 from .notes import NoteRow
 from .research import (
+    ImportedSourceRow,
     ResearchResultRow,
+    ResearchStartRow,
     ResearchTaskInfoRow,
     ResearchTaskRow,
+    unwrap_import_rows,
     unwrap_poll_tasks,
 )
 from .sources import SourceRow, SourceRowShape
@@ -41,11 +44,13 @@ __all__ = [
     "CitationRow",
     "ConversationTurnRow",
     "ErrorPayloadRow",
+    "ImportedSourceRow",
     "LabelRow",
     "NoteRow",
     "PassageRow",
     "ReportSuggestionRow",
     "ResearchResultRow",
+    "ResearchStartRow",
     "ResearchTaskInfoRow",
     "ResearchTaskRow",
     "SourceRow",
@@ -53,5 +58,6 @@ __all__ = [
     "StreamFrameRow",
     "TextLeafRow",
     "unwrap_conversation_turns",
+    "unwrap_import_rows",
     "unwrap_poll_tasks",
 ]

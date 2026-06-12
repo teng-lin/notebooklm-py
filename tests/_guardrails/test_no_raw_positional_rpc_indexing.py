@@ -158,8 +158,6 @@ SINGLE_LEVEL_EXCLUDED_FILES = frozenset({"utils.py", "_version_check.py"})
 # already-guarded inner list to a named local) is a follow-up to #1491.
 SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "_mind_maps_api.py",
-        "_research.py",
         "_types/sharing.py",
     }
 )

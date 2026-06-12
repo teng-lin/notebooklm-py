@@ -17,9 +17,12 @@ from __future__ import annotations
 import pytest
 
 from notebooklm._row_adapters.research import (
+    ImportedSourceRow,
     ResearchResultRow,
+    ResearchStartRow,
     ResearchTaskInfoRow,
     ResearchTaskRow,
+    unwrap_import_rows,
     unwrap_poll_tasks,
 )
 from notebooklm.exceptions import UnknownRPCMethodError
@@ -212,3 +215,108 @@ class TestUnwrapPollTasks:
         # treated as wrapped; a flat list of task rows (first element's first is
         # a str id) is returned unchanged.
         assert unwrap_poll_tasks(flat) == flat
+
+
+# ---------------------------------------------------------------------------
+# 6. ResearchStartRow — START_*_RESEARCH kickoff result
+# ---------------------------------------------------------------------------
+
+
+class TestResearchStartRowPositionContract:
+    def test_positions_pinned(self) -> None:
+        assert (ResearchStartRow._TASK_ID_POS, ResearchStartRow._REPORT_ID_POS) == (0, 1)
+
+
+class TestResearchStartRow:
+    def test_task_id_and_report_id(self) -> None:
+        row = ResearchStartRow(["task_abc", "report_xyz"])
+        assert row.task_id_raw == "task_abc"
+        assert row.report_id == "report_xyz"
+
+    def test_report_id_absent_returns_none(self) -> None:
+        # A fast-research start legitimately omits the report id — soft default.
+        row = ResearchStartRow(["task_only"])
+        assert row.task_id_raw == "task_only"
+        assert row.report_id is None
+
+    def test_task_id_returned_verbatim(self) -> None:
+        # The adapter only reads the slot; the caller validates truthiness.
+        assert ResearchStartRow([None]).task_id_raw is None
+        assert ResearchStartRow([""]).task_id_raw == ""
+
+    def test_missing_task_id_slot_raises(self) -> None:
+        # The caller guards a non-empty list before wrapping; an absent id slot
+        # on a wrapped row is genuine drift and RAISES (strict ``safe_index``).
+        with pytest.raises(UnknownRPCMethodError):
+            _ = ResearchStartRow([]).task_id_raw
+
+
+# ---------------------------------------------------------------------------
+# 7. IMPORT_RESEARCH adapters — envelope probe + per-row reads (soft)
+# ---------------------------------------------------------------------------
+
+
+class TestUnwrapImportRows:
+    def test_empty_and_non_list_return_empty(self) -> None:
+        assert unwrap_import_rows(None) == []
+        assert unwrap_import_rows([]) == []
+        assert unwrap_import_rows("not rows") == []
+
+    def test_wrapped_envelope_is_unwrapped(self) -> None:
+        rows = [[["id_1"], "Title"]]
+        assert unwrap_import_rows([rows]) == rows
+
+    def test_single_wrapped_row_is_unwrapped(self) -> None:
+        # ``[[["id"], "t"]]``: ``result[0] = [["id"], "t"]`` is a non-empty list
+        # whose first element ``["id"]`` is itself a list, so the historical
+        # probe treats it as a one-level envelope and unwraps to ``result[0]``.
+        wrapped = [[["id"], "t"]]
+        assert unwrap_import_rows(wrapped) == [["id"], "t"]
+
+    def test_flat_list_with_non_list_head_returned_unchanged(self) -> None:
+        # ``result[0]`` is a list but its first element is NOT a list, so the
+        # probe falls through and returns ``result`` unchanged — this is the
+        # already-flat row list ``[row, row, ...]`` shape.
+        flat = [["id_str_head", "t"]]
+        assert unwrap_import_rows(flat) == flat
+
+
+class TestImportedSourceRowPositionContract:
+    def test_positions_pinned(self) -> None:
+        assert (
+            ImportedSourceRow._ID_ENVELOPE_POS,
+            ImportedSourceRow._ID_POS,
+            ImportedSourceRow._TITLE_POS,
+            ImportedSourceRow._MIN_LEN,
+        ) == (0, 0, 1, 2)
+
+
+class TestImportedSourceRow:
+    def test_happy_path(self) -> None:
+        row = ImportedSourceRow([["src_id_1"], "My Title"])
+        assert row.is_well_formed is True
+        assert row.source_id == "src_id_1"
+        assert row.title_slot == "My Title"
+
+    def test_short_row_not_well_formed(self) -> None:
+        row = ImportedSourceRow([["src_id_1"]])
+        assert row.is_well_formed is False
+        assert row.source_id is None
+        assert row.title_slot is None
+
+    def test_non_list_not_well_formed(self) -> None:
+        row = ImportedSourceRow(None)
+        assert row.is_well_formed is False
+        assert row.source_id is None
+        assert row.title_slot is None
+
+    def test_absent_id_envelope_short_circuits(self) -> None:
+        # A falsy / non-list id envelope legitimately means "skip this row".
+        assert ImportedSourceRow([None, "Title"]).source_id is None
+        assert ImportedSourceRow([[], "Title"]).source_id is None
+        assert ImportedSourceRow(["not_a_list", "Title"]).source_id is None
+
+    def test_id_returned_verbatim(self) -> None:
+        # The adapter reads the slot; the caller checks truthiness.
+        assert ImportedSourceRow([[None], "Title"]).source_id is None
+        assert ImportedSourceRow([[42], "Title"]).source_id == 42
