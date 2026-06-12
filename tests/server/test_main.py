@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -158,8 +159,6 @@ def test_main_seeds_token_env_from_flag(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv(SERVER_TOKEN_ENV, raising=False)
     launcher.main(["--host", "127.0.0.1", "--token", "flag-token"])
     # The --token flag seeds the env the auth dependency later reads.
-    import os
-
     assert os.environ[SERVER_TOKEN_ENV] == "flag-token"
 
 
