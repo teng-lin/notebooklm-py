@@ -477,7 +477,7 @@ class NotebooksAPI:
             matches = [nb for nb in current if nb.id not in baseline_ids and nb.title == title]
             if len(matches) == 1:
                 # ``matches`` is a list of typed ``Notebook`` objects (NOT a raw
-                # RPC payload) — ``next(iter(...))`` reads the single match
+                # RPC payload) — tuple unpacking reads the single match
                 # without the ``name[int]`` shape that the positional-decode gate
                 # (rightly) flags only for genuine payload descents.
                 (match,) = matches  # exactly one (len==1 guard); unpack avoids name[int]

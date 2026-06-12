@@ -458,8 +458,8 @@ class ResearchAPI:
         )
 
         if parsed_tasks:
-            # ``parsed_tasks`` is a typed ``list[ResearchTask]`` (not a decoded
-            # RPC payload); ``next(iter(...))`` takes the first without a subscript.
+            # ``parsed_tasks`` is a typed ``list[ResearchTask]`` (not a decoded RPC
+            # payload); ``first_task, *_ = parsed_tasks`` avoids a ``name[int]`` read.
             first_task, *_ = parsed_tasks  # typed list[ResearchTask] head; unpack avoids name[int]
             return self._public_poll_result(first_task, parsed_tasks)
 

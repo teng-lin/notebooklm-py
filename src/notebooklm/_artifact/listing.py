@@ -291,7 +291,7 @@ class ArtifactListingService:
         # contract).
         filtered.sort(key=lambda row: row.created_at_raw or 0, reverse=True)
         # ``filtered`` is a non-empty list of typed ``ArtifactRow`` objects (not
-        # a raw RPC payload); take the most-recent head via ``next(iter(...))``
+        # a raw RPC payload); take the most-recent head via ``head, *_ = filtered``
         # so this typed-sequence pick is not the ``name[int]`` RPC-row shape.
         head, *_ = filtered  # typed ArtifactRow head; unpack avoids the name[int] ratchet
         return head
