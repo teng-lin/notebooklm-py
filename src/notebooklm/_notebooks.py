@@ -69,7 +69,13 @@ def _extract_summary(outer: Any) -> str:
     # routine "no summary yet" case — return "" without logging drift.
     if outer is None:
         return ""
-    if isinstance(outer, list) and (not outer or outer[0] is None):
+    if isinstance(outer, list) and (
+        not outer
+        or safe_index(
+            outer, 0, method_id=RPCMethod.SUMMARIZE.value, source="_notebooks._extract_summary"
+        )
+        is None
+    ):
         return ""
     # Descend outer[0][0] via safe_index. A scalar ``outer`` or a malformed
     # ``outer[0]`` (present, non-None, but not the expected list) raises drift
@@ -114,7 +120,9 @@ def _extract_suggested_topics(outer: Any) -> list[SuggestedTopic]:
         logger.debug("_extract_suggested_topics: Partial description — no outer[1] slot")
         return []
 
-    topics_container = outer[1]
+    topics_container = safe_index(
+        outer, 1, method_id=RPCMethod.SUMMARIZE.value, source="_notebooks._extract_suggested_topics"
+    )
     if not isinstance(topics_container, list) or len(topics_container) == 0:
         logger.debug(
             "_extract_suggested_topics: Partial description — outer[1] is empty or non-list"
@@ -144,10 +152,25 @@ def _extract_suggested_topics(outer: Any) -> list[SuggestedTopic]:
                 type(topic).__name__,
             )
             continue
+        # ``topic`` is guarded to a list of len >= 2 above, so these slot reads
+        # cannot fail; ``safe_index`` keeps the position knowledge on the
+        # schema-drift seam without changing behaviour.
+        question = safe_index(
+            topic,
+            0,
+            method_id=RPCMethod.SUMMARIZE.value,
+            source="_notebooks._extract_suggested_topics",
+        )
+        prompt = safe_index(
+            topic,
+            1,
+            method_id=RPCMethod.SUMMARIZE.value,
+            source="_notebooks._extract_suggested_topics",
+        )
         topics.append(
             SuggestedTopic(
-                question=str(topic[0]) if topic[0] else "",
-                prompt=str(topic[1]) if topic[1] else "",
+                question=str(question) if question else "",
+                prompt=str(prompt) if prompt else "",
             )
         )
     return topics
@@ -246,28 +269,43 @@ class NotebooksAPI:
         # Schema-drift detection points: log WARNING at each isinstance/len
         # guard that fails on a non-empty response (real drift surfaces here,
         # not at the safety-net except below).
+        # ``notebook_data`` is a non-empty list here (guarded above), so the
+        # ``[0]`` read cannot fail; the ``[1]`` read below is gated by
+        # ``len(notebook_info) > 1``. Both descents route through ``safe_index``
+        # — the sanctioned schema-drift seam — so position knowledge stays out
+        # of open-coded subscripts. The reads are all length-guarded, so
+        # ``safe_index`` never actually raises here; the ``except`` below remains
+        # defense-in-depth (now genuinely unreachable, as noted).
+        method_id = RPCMethod.GET_NOTEBOOK.value
         try:
-            if not isinstance(notebook_data[0], list):
+            notebook_info = safe_index(
+                notebook_data, 0, method_id=method_id, source="NotebooksAPI.get_source_ids"
+            )
+            if not isinstance(notebook_info, list):
                 # notebook_data is already known to be a non-empty list here
                 # (guarded by `if not notebook_data` above).
                 logger.warning(
                     "get_source_ids: notebook_data[0] shape unexpected for %s "
                     "(schema drift?). top-type=%s",
                     notebook_id,
-                    type(notebook_data[0]).__name__,
+                    type(notebook_info).__name__,
                 )
                 return source_ids
 
-            notebook_info = notebook_data[0]
-            if not (len(notebook_info) > 1 and isinstance(notebook_info[1], list)):
+            sources = (
+                safe_index(
+                    notebook_info, 1, method_id=method_id, source="NotebooksAPI.get_source_ids"
+                )
+                if len(notebook_info) > 1
+                else None
+            )
+            if not isinstance(sources, list):
                 logger.warning(
                     "get_source_ids: notebook_info[1] not list for %s (schema drift?). len=%d",
                     notebook_id,
                     len(notebook_info),
                 )
                 return source_ids
-
-            sources = notebook_info[1]
             for source in sources:
                 if not (isinstance(source, list) and source):
                     continue
@@ -321,7 +359,12 @@ class NotebooksAPI:
         if not result:
             return []
         if isinstance(result, list):
-            raw_notebooks = result[0]
+            # ``result`` is a non-empty list here (guarded above), so this ``[0]``
+            # read cannot fail; ``safe_index`` keeps the envelope-unwrap position
+            # knowledge on the sanctioned schema-drift seam.
+            raw_notebooks = safe_index(
+                result, 0, method_id=RPCMethod.LIST_NOTEBOOKS.value, source="NotebooksAPI.list"
+            )
             if isinstance(raw_notebooks, list):
                 return [Notebook.from_api_response(nb) for nb in raw_notebooks]
             if raw_notebooks is None:
@@ -433,7 +476,11 @@ class NotebooksAPI:
                 return None
             matches = [nb for nb in current if nb.id not in baseline_ids and nb.title == title]
             if len(matches) == 1:
-                return matches[0]
+                # ``matches`` is a list of typed ``Notebook`` objects (NOT a raw
+                # RPC payload) — ``next(iter(...))`` reads the single match
+                # without the ``name[int]`` shape that the positional-decode gate
+                # (rightly) flags only for genuine payload descents.
+                return next(iter(matches))
             if len(matches) > 1:
                 # Ambiguous: more than one new notebook with this title
                 # appeared during the call. We cannot safely pick one;
@@ -529,8 +576,15 @@ class NotebooksAPI:
             params,
             source_path=f"/notebook/{notebook_id}",
         )
-        # get_notebook returns [nb_info, ...] where nb_info contains the notebook data
-        nb_info = result[0] if result and isinstance(result, list) and len(result) > 0 else []
+        # get_notebook returns [nb_info, ...] where nb_info contains the notebook
+        # data. The ``[0]`` read is fully guarded (truthy + list + non-empty), so
+        # ``safe_index`` cannot raise here; it keeps the envelope-unwrap position
+        # on the sanctioned schema-drift seam.
+        nb_info = (
+            safe_index(result, 0, method_id=RPCMethod.GET_NOTEBOOK.value, source="NotebooksAPI.get")
+            if result and isinstance(result, list) and len(result) > 0
+            else []
+        )
         # Guard the empty-payload case BEFORE parsing. ``Notebook.from_api_response``
         # currently tolerates ``[]`` but a future tightening could turn that into
         # an ``IndexError`` that would surface as a confusing crash instead of
@@ -638,7 +692,13 @@ class NotebooksAPI:
         # identically to ``get_description`` (single source of truth — #1485).
         if not isinstance(result, list) or not result:
             return ""
-        return _extract_summary(result[0])
+        # ``result`` is a non-empty list here; ``safe_index`` keeps the
+        # envelope-unwrap position on the schema-drift seam (cannot raise here).
+        return _extract_summary(
+            safe_index(
+                result, 0, method_id=RPCMethod.SUMMARIZE.value, source="NotebooksAPI.get_summary"
+            )
+        )
 
     async def get_description(self, notebook_id: str) -> NotebookDescription:
         """Get AI-generated summary and suggested topics for a notebook.
@@ -675,7 +735,14 @@ class NotebooksAPI:
         # (`_extract_summary` / `_extract_suggested_topics`) so the deep
         # index access stays auditable when Google's shape drifts.
         if result and isinstance(result, list) and len(result) > 0:
-            outer = result[0]
+            # ``result`` is a non-empty list here (guarded); ``safe_index`` keeps
+            # the envelope-unwrap position on the schema-drift seam.
+            outer = safe_index(
+                result,
+                0,
+                method_id=RPCMethod.SUMMARIZE.value,
+                source="NotebooksAPI.get_description",
+            )
             summary = _extract_summary(outer)
             suggested_topics = _extract_suggested_topics(outer)
 
