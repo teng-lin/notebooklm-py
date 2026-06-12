@@ -534,10 +534,14 @@ class ArtifactGenerationService:
         """Make a generation RPC call with error handling."""
         # Best-effort debug label over the OUTGOING request body; the ``[2:3]``
         # slice-pick keeps it off ``name[int]`` (== old guarded ``params[2]``).
-        descriptor = next(iter(params[2:3]), None)
-        artifact_type = (
-            next(iter(descriptor[2:3]), "unknown") if isinstance(descriptor, list) else "unknown"
-        )
+        # Unpack the at-most-one-element slice rather than ``next(iter(...))`` so
+        # the single-element invariant is explicit (no StopIteration path).
+        descriptor = None
+        if params[2:3]:
+            (descriptor,) = params[2:3]
+        artifact_type = "unknown"
+        if isinstance(descriptor, list) and descriptor[2:3]:
+            (artifact_type,) = descriptor[2:3]
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         # CREATE_ARTIFACT is PROBE_THEN_CREATE (``_idempotency.py``).
         # ``operation_variant=None`` marks this call site as the no-variant
