@@ -42,7 +42,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.context as context_module
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.cli.resolve as resolve_module
+import notebooklm.cli.services.auth_source as auth_source_module
+import notebooklm.cli.services.playwright_login as playwright_login_module
+import notebooklm.cli.services.session_context as session_context_module
 import notebooklm.cli.session_cmd as session_cmd
+import notebooklm.paths as paths_module
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
 from tests._fixtures import patch_session_login_dual
@@ -90,9 +98,9 @@ def char_context_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_session_context, "get_context_path", _return_context_file)
     with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+        patch.object(helpers_module, "get_context_path", return_value=context_file),
+        patch.object(context_module, "get_context_path", return_value=context_file),
+        patch.object(resolve_module, "get_context_path", return_value=context_file),
     ):
         yield context_file
 
@@ -107,19 +115,22 @@ def char_storage_file(tmp_path, monkeypatch):
     """
     storage_file = tmp_path / "storage_state.json"
     with (
-        patch("notebooklm.paths.get_storage_path", return_value=storage_file),
-        patch("notebooklm.cli.session_cmd.get_storage_path", return_value=storage_file),
-        patch(
-            "notebooklm.cli.services.auth_source.get_storage_path",
+        patch.object(paths_module, "get_storage_path", return_value=storage_file),
+        patch.object(session_cmd, "get_storage_path", return_value=storage_file),
+        patch.object(
+            auth_source_module,
+            "get_storage_path",
             return_value=storage_file,
         ),
-        patch(
-            "notebooklm.cli.services.session_context.get_storage_path",
+        patch.object(
+            session_context_module,
+            "get_storage_path",
             return_value=storage_file,
             create=True,
         ),
-        patch(
-            "notebooklm.cli.services.playwright_login.get_storage_path",
+        patch.object(
+            playwright_login_module,
+            "get_storage_path",
             return_value=storage_file,
         ),
     ):
@@ -147,8 +158,9 @@ class TestLoginCharacterization:
         with (
             patch.object(session_cmd, "run_login") as mock_run_login,
             patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
-            patch(
-                "notebooklm.cli.session_cmd.prepare_paths_or_exit",
+            patch.object(
+                session_cmd,
+                "prepare_paths_or_exit",
                 return_value=(
                     tmp_path / "storage_state.json",
                     tmp_path / "browser_profile",
@@ -210,11 +222,12 @@ class TestUseCharacterization:
             )
         )
         with (
-            patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
-            patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id",
+            patch.object(
+                session_cmd,
+                "resolve_notebook_id",
                 new_callable=AsyncMock,
             ) as mock_resolve,
         ):
@@ -238,11 +251,12 @@ class TestUseCharacterization:
             )
         )
         with (
-            patch(
-                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
-            patch(
-                "notebooklm.cli.session_cmd.resolve_notebook_id",
+            patch.object(
+                session_cmd,
+                "resolve_notebook_id",
                 new_callable=AsyncMock,
             ) as mock_resolve,
         ):
@@ -356,7 +370,7 @@ class TestStatusCharacterization:
         }
 
     def test_status_paths_json(self, char_runner, char_context_file):
-        with patch("notebooklm.cli.services.session_context.get_path_info") as mock_path_info:
+        with patch.object(session_context_module, "get_path_info") as mock_path_info:
             mock_path_info.return_value = {
                 "home_dir": "/tmp/.notebooklm",
                 "home_source": "default",
@@ -489,8 +503,9 @@ class TestAuthRefreshCharacterization:
     def test_auth_refresh_default_path_success(self, char_runner, char_storage_file):
         """Default path (no --browser-cookies) calls ``fetch_tokens_with_domains``."""
         char_storage_file.write_text(json.dumps({"cookies": [{"name": "SID", "value": "x"}]}))
-        with patch(
-            "notebooklm.cli.session_cmd.fetch_tokens_with_domains",
+        with patch.object(
+            session_cmd,
+            "fetch_tokens_with_domains",
             new_callable=AsyncMock,
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
@@ -501,8 +516,9 @@ class TestAuthRefreshCharacterization:
         assert "refreshed" in result.output
 
     def test_auth_refresh_quiet_suppresses_success_output(self, char_runner, char_storage_file):
-        with patch(
-            "notebooklm.cli.session_cmd.fetch_tokens_with_domains",
+        with patch.object(
+            session_cmd,
+            "fetch_tokens_with_domains",
             new_callable=AsyncMock,
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")

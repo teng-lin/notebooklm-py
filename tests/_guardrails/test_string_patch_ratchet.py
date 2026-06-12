@@ -122,7 +122,6 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/cli/test_playwright_login_render_contract.py": 14,
     "tests/unit/cli/test_quiet_flag.py": 2,
     "tests/unit/cli/test_resolver_characterization.py": 2,
-    "tests/unit/cli/test_session_characterization.py": 16,
     "tests/unit/cli/test_session_edge_cases.py": 5,
     "tests/unit/cli/test_source_characterization.py": 2,
     "tests/unit/cli/test_source_cmd_coverage.py": 1,
