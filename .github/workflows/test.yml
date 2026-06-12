@@ -179,7 +179,17 @@ jobs:
         done
 
     - name: Run MCP suite
-      run: uv run pytest tests/unit/mcp tests/integration/mcp_vcr -q
+      # The MCP package is invisible to the main coverage job: that job installs
+      # only browser+dev+markdown (no `mcp` extra), so every `tests/unit/mcp`
+      # test is skipped there and `src/notebooklm/mcp/**` lands in coverage.json
+      # at 0%. This job is the only one that exercises the adapter, so it owns
+      # the coverage gate too. The threshold is the project-wide 90% floor (the
+      # same value `scripts/check_coverage_thresholds.py` pins everywhere — keep
+      # it identical or that drift guard fails); the adapter currently sits at
+      # ~96%, so this gate catches a regression back toward the old 0% blind spot.
+      run: >-
+        uv run pytest tests/unit/mcp tests/integration/mcp_vcr -q
+        --cov=src/notebooklm/mcp --cov-report=term-missing --cov-fail-under=90
 
   server:
     # The REST server ships behind the optional ``server`` extra, so the
@@ -230,7 +240,15 @@ jobs:
         done
 
     - name: Run REST server suite
-      run: uv run pytest tests/server -q
+      # Same blind spot as the MCP job: the main coverage job omits the `server`
+      # extra, so `tests/server` is skipped there and `src/notebooklm/server/**`
+      # registers 0% in coverage.json. This dedicated job owns the server
+      # coverage gate. The threshold is the project-wide 90% floor (kept
+      # identical everywhere so `check_coverage_thresholds.py` stays green); the
+      # adapter currently sits at ~92%, so this catches a slide back toward 0%.
+      run: >-
+        uv run pytest tests/server -q
+        --cov=src/notebooklm/server --cov-report=term-missing --cov-fail-under=90
 
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
