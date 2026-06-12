@@ -8,10 +8,24 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from ..rpc import RPCMethod, safe_index
 from .common import _datetime_from_timestamp
 from .sources import SourceType
 
 logger = logging.getLogger(__name__)
+
+# ``Notebook.from_api_response`` decodes rows from BOTH ``LIST_NOTEBOOKS`` (each
+# row in the list envelope) and ``GET_NOTEBOOK`` (the single ``nb_info`` row).
+# The positional descents below route through ``safe_index`` purely for the
+# shared schema-drift telemetry seam; every descent is *length-guarded first*
+# so ``safe_index`` is only ever invoked on a slot the guard already proved
+# present — it therefore cannot raise here, preserving the historical
+# "short / malformed rows soft-degrade to a default" contract (the same
+# length-guard-then-``safe_index`` style ``NoteRow`` uses). ``LIST_NOTEBOOKS``
+# is used as the representative ``method_id`` for diagnostics since the list
+# path is the primary producer; a drift diagnostic would still point at the
+# notebook-row family.
+_NOTEBOOK_METHOD_ID = RPCMethod.LIST_NOTEBOOKS.value
 
 
 @dataclass
@@ -33,7 +47,11 @@ class SourceSummary:
 
 def _extract_notebook_sources_count(data: list[Any]) -> int:
     """Extract the embedded source count from a notebook API payload."""
-    sources = data[1] if len(data) > 1 else None
+    sources = (
+        safe_index(data, 1, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.sources_count")
+        if len(data) > 1
+        else None
+    )
     return len(sources) if isinstance(sources, list) else 0
 
 
@@ -53,7 +71,12 @@ class Notebook:
     @classmethod
     def from_api_response(cls, data: list[Any]) -> Notebook:
         """Parse notebook from API response."""
-        raw_title = data[0] if len(data) > 0 and isinstance(data[0], str) else ""
+        title_slot = (
+            safe_index(data, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.title")
+            if len(data) > 0
+            else None
+        )
+        raw_title = title_slot if isinstance(title_slot, str) else ""
         title = raw_title.replace("thought\n", "").strip()
         sources_count = _extract_notebook_sources_count(data)
         # ``data[2]`` is the notebook id. A short row / ``None`` slot keeps
@@ -65,7 +88,7 @@ class Notebook:
         # (#1485 absence-vs-malformed policy).
         notebook_id = ""
         if len(data) > 2:
-            raw_id = data[2]
+            raw_id = safe_index(data, 2, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.id")
             if isinstance(raw_id, str):
                 notebook_id = raw_id
             elif raw_id is not None:
@@ -78,8 +101,15 @@ class Notebook:
 
         # ``data[5]`` is the metadata block; bind it once so the timestamp and
         # owner-flag descents read a single named local instead of re-chaining
-        # ``data[5][...]`` (the legitimately-absent block defaults below).
-        meta = data[5] if len(data) > 5 and isinstance(data[5], list) else None
+        # ``data[5][...]`` (the legitimately-absent block defaults below). The
+        # slot read goes through ``safe_index`` (length-guarded first, so it
+        # cannot raise) and the result is only retained when it is a list.
+        meta_slot = (
+            safe_index(data, 5, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.metadata")
+            if len(data) > 5
+            else None
+        )
+        meta = meta_slot if isinstance(meta_slot, list) else None
 
         # ``meta[8]`` (``data[5][8][0]``) is the CREATION instant: a controlled
         # probe (create → add source @T0 → add source @T1) showed this slot
@@ -90,20 +120,35 @@ class Notebook:
         # surfaced as ``modified_at``.
         created_at = None
         if meta is not None and len(meta) > 8:
-            created_ts = meta[8]
+            created_ts = safe_index(
+                meta, 8, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.created_at"
+            )
             if isinstance(created_ts, list) and len(created_ts) > 0:
-                created_at = _datetime_from_timestamp(created_ts[0])
+                created_at = _datetime_from_timestamp(
+                    safe_index(
+                        created_ts, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.created_at"
+                    )
+                )
 
         modified_at = None
         if meta is not None and len(meta) > 5:
-            modified_ts = meta[5]
+            modified_ts = safe_index(
+                meta, 5, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.modified_at"
+            )
             if isinstance(modified_ts, list) and len(modified_ts) > 0:
-                modified_at = _datetime_from_timestamp(modified_ts[0])
+                modified_at = _datetime_from_timestamp(
+                    safe_index(
+                        modified_ts, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.modified_at"
+                    )
+                )
 
         is_owner = True
         if meta is not None and len(meta) > 1:
             # The API sends False in this slot for owner notebooks; truthy values mean shared.
-            is_owner = meta[1] is False
+            is_owner = (
+                safe_index(meta, 1, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.is_owner")
+                is False
+            )
 
         return cls(
             id=notebook_id,

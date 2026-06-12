@@ -162,10 +162,7 @@ SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "_chat/notes.py",
         "_labels.py",
         "_mind_maps_api.py",
-        "_note_service.py",
-        "_notebooks.py",
         "_research.py",
-        "_types/notebooks.py",
         "_types/sharing.py",
     }
 )
