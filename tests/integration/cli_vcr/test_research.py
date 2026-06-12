@@ -39,10 +39,20 @@ import json
 import pytest
 
 from notebooklm.notebooklm_cli import cli
+from notebooklm.types import ResearchStatus
 
 from .conftest import notebooklm_vcr, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
+
+# Allowed ``status`` values for a *populated* research poll -- every canonical
+# ``ResearchStatus`` value except ``no_research`` (which is the empty-poll
+# sentinel). Derived from the enum as a set-membership floor, NOT a pin on the
+# recorded value, so the assertion survives a re-record into any populated state
+# (issue #1452 re-record-safe convention).
+_POPULATED_STATUS_VALUES = frozenset(
+    member.value for member in ResearchStatus if member is not ResearchStatus.NO_RESEARCH
+)
 
 
 class TestResearchStatusCommand:
@@ -72,11 +82,12 @@ class TestResearchStatusCommand:
 
         Asserts the envelope *shape* (a JSON object carrying a ``status`` key
         whose value is a string) plus the populated-cassette invariant that the
-        status is NOT ``no_research`` -- catching a short-circuit / wrong-cassette
-        regression where the command never reached the recorded in-flight poll.
-        The recorded value happens to be ``in_progress``; the floor assertion
-        (``!= "no_research"``) is the re-record-safe part, the equality is a
-        tighter pin on today's recording.
+        status is a known *active-or-terminal* :class:`ResearchStatus` value (NOT
+        ``no_research``). That catches a short-circuit / wrong-cassette regression
+        where the command never reached the recorded in-flight poll, while staying
+        re-record-safe: it is a set-membership check against the canonical enum
+        (not a pin on the recorded value), so a re-record that lands in any
+        populated state (today it is ``in_progress``) still passes.
         """
         with notebooklm_vcr.use_cassette("research_poll.yaml") as cassette:
             result = runner.invoke(cli, ["research", "status", "--json"])
@@ -85,8 +96,9 @@ class TestResearchStatusCommand:
         data = json.loads(result.output)
         assert isinstance(data, dict), f"expected a JSON object, got: {result.output!r}"
         assert isinstance(data.get("status"), str), f"missing/invalid status: {data!r}"
-        assert data["status"] != "no_research", f"populated poll must not be no_research: {data!r}"
-        assert data["status"] == "in_progress", f"recorded poll is in_progress: {data!r}"
+        assert data["status"] in _POPULATED_STATUS_VALUES, (
+            f"populated poll status must be a known non-no_research value: {data!r}"
+        )
         assert cassette.play_count == 1, "expected exactly one recorded poll RPC to replay"
 
     def test_status_no_research_text(self, runner, mock_auth_for_vcr, mock_context) -> None:
