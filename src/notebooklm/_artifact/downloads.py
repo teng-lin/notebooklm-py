@@ -10,7 +10,6 @@ import os
 import queue
 import tempfile
 import threading
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -43,7 +42,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleapis.com")
-
 # Bounded queue between the async chunk producer and the single writer
 # thread. Small enough to provide back-pressure (the producer awaits when
 # the writer falls behind) but large enough to keep the writer hot across
@@ -175,13 +173,12 @@ class ArtifactDownloadService:
         listing: ArtifactListingService,
         mind_maps: NoteBackedMindMapService,
         storage_path: Path | None = None,
-        cookie_loader: Callable[[Any], Any] = _load_httpx_cookies,
+        cookie_loader: Any = _load_httpx_cookies,
     ) -> None:
         self._rpc = rpc
         self._listing = listing
         self._mind_maps = mind_maps
-        self._storage_path = storage_path
-        self._cookie_loader = cookie_loader
+        self._storage_path, self._cookie_loader = storage_path, cookie_loader
 
     async def _list_raw(self, notebook_id: str) -> list[Any]:
         """List raw artifacts through the injected listing service."""

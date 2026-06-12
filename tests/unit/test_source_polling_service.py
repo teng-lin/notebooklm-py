@@ -390,7 +390,7 @@ async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic
 
     sleep = AsyncMock()
     monotonic = MagicMock(return_value=0.0)
-    monkeypatch.setattr(api, "_get_or_none", AsyncMock(side_effect=[processing, ready]))
+    monkeypatch.setattr(api, "get_or_none", AsyncMock(side_effect=[processing, ready]))
     # Object-form patches against the locally-imported `_sources` seam alias:
     # the production code resolves `asyncio.sleep`/`monotonic` from this module
     # namespace (see `_sources.SourcesAPI.wait_until_ready`), so substituting them here
