@@ -10,6 +10,7 @@ import os
 import queue
 import tempfile
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -47,7 +48,6 @@ _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleap
 # the writer falls behind) but large enough to keep the writer hot across
 # a brief read stall. 8 slots × 64 KiB ≈ 512 KiB of in-flight buffering.
 _DOWNLOAD_WRITER_QUEUE_SIZE = 8
-
 # ``_PREFETCH_NOTE`` — referenced by the per-method docstrings below. Each
 # ``download_<x>`` accepts an optional pre-fetched list (``artifacts_data`` raw
 # studio rows / ``artifacts`` typed list / ``mind_maps`` note-backed rows). When
@@ -173,7 +173,7 @@ class ArtifactDownloadService:
         listing: ArtifactListingService,
         mind_maps: NoteBackedMindMapService,
         storage_path: Path | None = None,
-        cookie_loader: Any = _load_httpx_cookies,
+        cookie_loader: Callable[[Any], Any] = _load_httpx_cookies,
     ) -> None:
         self._rpc = rpc
         self._listing = listing
