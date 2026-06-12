@@ -604,7 +604,7 @@ hits a few non-obvious snags. Lessons from the v0.8 full-lifecycle re-record
   *poll-reported* id.
 - **Trim with a byte-exact text slice, not `yaml.safe_dump`.** Long deep-research
   poll bodies accumulate large markdown, so trim redundant middle `in_progress`
-  polls to stay under the cassette size cap. Re-serialising via `yaml.safe_dump`
+  polls to stay under the cassette size cap. Re-serializing via `yaml.safe_dump`
   re-wraps long scalars and breaks Windows YAML parsing (CI catches it) — slice
   the VCR-native YAML text instead.
 - **Cleanliness is necessary-not-sufficient.** After recording, run the cassette
