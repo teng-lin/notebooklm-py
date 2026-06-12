@@ -105,7 +105,10 @@ def _validate_resumable_upload_url(upload_url: str) -> str:
         for key, value in parse_qsl(parsed.query, keep_blank_values=True)
         if key.lower() == "upload_id"
     ]
-    if len(upload_ids) != 1 or not next(iter(upload_ids)):  # next(iter): ratchet
+    if len(upload_ids) != 1:
+        raise ValidationError("Upload URL must include exactly one non-empty upload_id")
+    (upload_id,) = upload_ids  # exactly one (guarded); unpack avoids next(iter()): ratchet
+    if not upload_id:
         raise ValidationError("Upload URL must include exactly one non-empty upload_id")
 
     return upload_url
