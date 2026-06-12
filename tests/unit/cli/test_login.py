@@ -199,7 +199,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -294,7 +294,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -628,7 +628,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             mock_context = MagicMock()
@@ -665,7 +665,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             mock_context = MagicMock()
@@ -703,7 +703,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
@@ -821,7 +821,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
@@ -868,7 +868,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
@@ -937,7 +937,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
         ):
             mock_context = MagicMock()
@@ -1077,7 +1077,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             mock_context = MagicMock()
@@ -1152,7 +1152,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             from playwright.sync_api import Error as PlaywrightError
@@ -1205,7 +1205,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             from playwright.sync_api import Error as PlaywrightError
@@ -1261,7 +1261,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             from playwright.sync_api import Error as PlaywrightError
@@ -1316,7 +1316,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             from playwright.sync_api import Error as PlaywrightError
@@ -1363,7 +1363,7 @@ class TestLoginCommand:
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch("builtins.input", return_value=""),
         ):
             from playwright.sync_api import Error as PlaywrightError
@@ -1492,7 +1492,7 @@ class TestLoginNoTraceback:
                 "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
         ):
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context

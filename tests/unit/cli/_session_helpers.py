@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import notebooklm.cli._chromium_profiles as chromium_profiles
+
 # ---------------------------------------------------------------------------
 # Account-metadata read helpers (D1 PR-3: session-CLI tests read account
 # metadata via the canonical reader; both the legacy sibling-``context.json``
@@ -217,14 +219,16 @@ def _install_chromium_fanout_patches(
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch.dict("sys.modules", {"rookiepy": MagicMock()}))
         stack.enter_context(
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 side_effect=fake_discover,
             )
         )
         stack.enter_context(
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=fake_read,
             )
         )

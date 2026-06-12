@@ -747,7 +747,7 @@ class TestHandleError:
 
         with (
             patch("notebooklm.cli.helpers.console") as mock_console,
-            patch("notebooklm.cli._encoding.click.echo", side_effect=flaky_echo),
+            patch.object(encoding_module.click, "echo", side_effect=flaky_echo),
             patch.object(encoding_module.sys, "stderr", DummyStderr()),
         ):
             mock_console.print.side_effect = UnicodeEncodeError(

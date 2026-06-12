@@ -51,6 +51,7 @@ import pytest
 import notebooklm._auth.browser_capture as _bc
 import notebooklm.cli.services.playwright_login as _pl
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 # Fixed, synthetic paths keep the snapshots byte-stable across the OS test matrix
 # (ubuntu / macos / windows). They are rendered only through :func:`_fake_path`
@@ -240,7 +241,7 @@ def _drive_login(
         stack.enter_context(
             patch.object(_bc, "get_base_host", return_value="notebooklm.google.com")
         )
-        stack.enter_context(patch("notebooklm.cli.session_cmd._sync_server_language_to_config"))
+        stack.enter_context(patch_session_login_dual("_sync_server_language_to_config"))
         if patch_repair:
             stack.enter_context(
                 patch("notebooklm.cli.services.playwright_login.repair_playwright_account_metadata")

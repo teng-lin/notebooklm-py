@@ -42,8 +42,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli.session_cmd as session_cmd
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
+from tests._fixtures import patch_session_login_dual
 
 from .conftest import create_mock_client, inject_client
 
@@ -143,8 +145,8 @@ class TestLoginCharacterization:
     def test_login_browser_chrome_invokes_playwright(self, char_runner, tmp_path):
         """``login --browser chrome`` reaches the Playwright entry point."""
         with (
-            patch("notebooklm.cli.session_cmd._run_playwright_login") as mock_run,
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config") as mock_sync,
+            patch.object(session_cmd, "run_login") as mock_run_login,
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
             patch(
                 "notebooklm.cli.session_cmd.prepare_paths_or_exit",
                 return_value=(
@@ -156,9 +158,11 @@ class TestLoginCharacterization:
             result = char_runner.invoke(cli, ["login", "--browser", "chrome"])
 
         assert result.exit_code == 0
-        mock_run.assert_called_once()
-        kwargs = mock_run.call_args.kwargs
-        assert kwargs["browser"] == "chrome"
+        mock_run_login.assert_called_once()
+        plan = mock_run_login.call_args.args[0]
+        assert plan.browser == "chrome"
+        assert plan.storage_path == tmp_path / "storage_state.json"
+        assert plan.browser_profile == tmp_path / "browser_profile"
         mock_sync.assert_called_once_with(
             storage_path=tmp_path / "storage_state.json",
             profile=None,
@@ -169,8 +173,8 @@ class TestLoginCharacterization:
     def test_login_no_browser_via_browser_cookies(self, char_runner):
         """``login --browser-cookies`` skips Playwright (no-browser path)."""
         with (
-            patch("notebooklm.cli.session_cmd._login_browser_cookies_single") as mock_single,
-            patch("notebooklm.cli.session_cmd._warn_missing_optional_domains"),
+            patch_session_login_dual("_login_browser_cookies_single") as mock_single,
+            patch_session_login_dual("_warn_missing_optional_domains"),
         ):
             result = char_runner.invoke(cli, ["login", "--browser-cookies", "chrome"])
 
@@ -507,7 +511,7 @@ class TestAuthRefreshCharacterization:
         assert result.output.strip() == ""
 
     def test_auth_refresh_browser_cookies_path(self, char_runner, char_storage_file):
-        with patch("notebooklm.cli.session_cmd._refresh_from_browser_cookies") as mock_refresh:
+        with patch_session_login_dual("_refresh_from_browser_cookies") as mock_refresh:
             result = char_runner.invoke(cli, ["auth", "refresh", "--browser-cookies", "chrome"])
         assert result.exit_code == 0
         mock_refresh.assert_called_once()
@@ -531,7 +535,7 @@ class TestAuthInspectCharacterization:
         """``auth inspect`` (text) lists accounts in a table."""
         fake_account_1 = MagicMock(email="a@example.com", is_default=True, browser_profile=None)
         fake_account_2 = MagicMock(email="b@example.com", is_default=False, browser_profile=None)
-        with patch("notebooklm.cli.session_cmd._enumerate_browser_accounts") as mock_enum:
+        with patch_session_login_dual("_enumerate_browser_accounts") as mock_enum:
             mock_enum.return_value = ("chrome", [fake_account_1, fake_account_2])
             result = char_runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])
         assert result.exit_code == 0
@@ -543,7 +547,7 @@ class TestAuthInspectCharacterization:
         fake_account = MagicMock(
             email="primary@example.com", is_default=True, browser_profile="Default"
         )
-        with patch("notebooklm.cli.session_cmd._enumerate_browser_accounts") as mock_enum:
+        with patch_session_login_dual("_enumerate_browser_accounts") as mock_enum:
             mock_enum.return_value = ("chrome", [fake_account])
             result = char_runner.invoke(cli, ["auth", "inspect", "--browser", "chrome", "--json"])
         assert result.exit_code == 0

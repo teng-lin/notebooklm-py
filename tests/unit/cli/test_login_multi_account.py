@@ -886,7 +886,7 @@ class TestStaleAccountMetadataCleanup:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,

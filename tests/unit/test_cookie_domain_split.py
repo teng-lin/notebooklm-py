@@ -47,6 +47,7 @@ from notebooklm.cli.services.login import (
 )
 from notebooklm.cli.session_cmd import _parse_include_domains
 from notebooklm.notebooklm_cli import cli
+from tests._fixtures import patch_session_login_dual
 
 
 class TestNeutralBuilderMatchesCliBuilder:
@@ -525,7 +526,7 @@ class TestLoginCliFlag:
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session_cmd._login_browser_cookies_single") as login_single:
+        with patch_session_login_dual("_login_browser_cookies_single") as login_single:
             result = runner.invoke(
                 cli,
                 [
@@ -547,7 +548,7 @@ class TestLoginCliFlag:
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session_cmd._login_browser_cookies_single"):
+        with patch_session_login_dual("_login_browser_cookies_single"):
             result = runner.invoke(
                 cli,
                 ["login", "--browser-cookies", "chrome"],
@@ -561,7 +562,7 @@ class TestLoginCliFlag:
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session_cmd._login_browser_cookies_single"):
+        with patch_session_login_dual("_login_browser_cookies_single"):
             result = runner.invoke(
                 cli,
                 [
@@ -626,7 +627,7 @@ class TestAuthRefreshCliFlag:
         monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session_cmd._refresh_from_browser_cookies") as helper:
+        with patch_session_login_dual("_refresh_from_browser_cookies") as helper:
             result = runner.invoke(
                 cli,
                 [
@@ -657,7 +658,7 @@ class TestAuthInspectCliFlag:
         """``--include-domains=youtube`` reaches ``_enumerate_browser_accounts``."""
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session_cmd._enumerate_browser_accounts") as enum:
+        with patch_session_login_dual("_enumerate_browser_accounts") as enum:
             enum.return_value = ([], [])
             result = runner.invoke(
                 cli,

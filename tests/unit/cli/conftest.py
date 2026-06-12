@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli._chromium_profiles as chromium_profiles
 from notebooklm.types import (
     MindMapResult,
     ResearchSource,
@@ -192,8 +193,9 @@ def _disable_chromium_profile_fanout():
     target relocates. Now uses ``patch(...)`` which raises
     ``AttributeError`` on missing targets.
     """
-    with patch(
-        "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+    with patch.object(
+        chromium_profiles,
+        "discover_chromium_profiles",
         lambda *a, **kw: [],
     ):
         yield

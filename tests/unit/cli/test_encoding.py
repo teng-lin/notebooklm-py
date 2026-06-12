@@ -30,7 +30,7 @@ class TestReplaceUnencodable:
 
 class TestSafeEcho:
     def test_echoes_original_message_when_first_write_succeeds(self):
-        with patch("notebooklm.cli._encoding.click.echo") as mock_echo:
+        with patch.object(encoding_module.click, "echo") as mock_echo:
             safe_echo("web 🌐")
 
         mock_echo.assert_called_once_with("web 🌐", err=False)
@@ -54,7 +54,7 @@ class TestSafeEcho:
             calls.append((message, kwargs.get("err", False)))
 
         with (
-            patch("notebooklm.cli._encoding.click.echo", side_effect=flaky_echo),
+            patch.object(encoding_module.click, "echo", side_effect=flaky_echo),
             patch.object(encoding_module.sys, "stdout", DummyStdout()),
         ):
             safe_echo("web 🌐")
@@ -80,7 +80,7 @@ class TestSafeEcho:
             calls.append((message, kwargs.get("err", False)))
 
         with (
-            patch("notebooklm.cli._encoding.click.echo", side_effect=flaky_echo),
+            patch.object(encoding_module.click, "echo", side_effect=flaky_echo),
             patch.object(encoding_module.sys, "stderr", DummyStderr()),
         ):
             safe_echo("web 🌐", err=True)

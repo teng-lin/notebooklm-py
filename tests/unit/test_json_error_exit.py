@@ -21,6 +21,7 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli._chromium_profiles as chromium_profiles
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import (
     Artifact,
@@ -742,7 +743,7 @@ def test_auth_inspect_network_failure(runner: CliRunner) -> None:
 
     with (
         patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-        patch("notebooklm.cli._chromium_profiles.discover_chromium_profiles", return_value=[]),
+        patch.object(chromium_profiles, "discover_chromium_profiles", return_value=[]),
         patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate),
     ):
         result = runner.invoke(

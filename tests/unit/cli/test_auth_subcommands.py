@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm.cli._firefox_containers as firefox_containers
 import notebooklm.cli.services.session_context as _sc
 from notebooklm.notebooklm_cli import cli
 from tests._fixtures import patch_session_login_dual
@@ -479,7 +480,7 @@ class TestLoginBrowserCookies:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -620,7 +621,7 @@ class TestLoginBrowserCookies:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -684,20 +685,23 @@ class TestLoginBrowserCookies:
         mock_rookiepy = MagicMock()
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch(
-                "notebooklm.cli._firefox_containers.find_firefox_profile_path",
+            patch.object(
+                firefox_containers,
+                "find_firefox_profile_path",
                 return_value=tmp_path / "ff_profile",
             ),
-            patch(
-                "notebooklm.cli._firefox_containers.resolve_container_id",
+            patch.object(
+                firefox_containers,
+                "resolve_container_id",
                 return_value=2,
             ),
-            patch(
-                "notebooklm.cli._firefox_containers.extract_firefox_container_cookies",
+            patch.object(
+                firefox_containers,
+                "extract_firefox_container_cookies",
                 return_value=mock_cookies,
             ) as mock_extract,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -741,16 +745,18 @@ class TestLoginBrowserCookies:
         ]
         with (
             patch.dict("sys.modules", {"rookiepy": MagicMock()}),
-            patch(
-                "notebooklm.cli._firefox_containers.find_firefox_profile_path",
+            patch.object(
+                firefox_containers,
+                "find_firefox_profile_path",
                 return_value=tmp_path / "ff_profile",
             ),
-            patch(
-                "notebooklm.cli._firefox_containers.extract_firefox_container_cookies",
+            patch.object(
+                firefox_containers,
+                "extract_firefox_container_cookies",
                 return_value=mock_cookies,
             ) as mock_extract,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -769,12 +775,14 @@ class TestLoginBrowserCookies:
         """Unknown container name shows a helpful error and exits non-zero."""
         with (
             patch.dict("sys.modules", {"rookiepy": MagicMock()}),
-            patch(
-                "notebooklm.cli._firefox_containers.find_firefox_profile_path",
+            patch.object(
+                firefox_containers,
+                "find_firefox_profile_path",
                 return_value=tmp_path / "ff_profile",
             ),
-            patch(
-                "notebooklm.cli._firefox_containers.resolve_container_id",
+            patch.object(
+                firefox_containers,
+                "resolve_container_id",
                 side_effect=ValueError(
                     "Firefox container 'Nope' not found. Available containers: 'Work', 'Personal'."
                 ),
@@ -793,8 +801,9 @@ class TestLoginBrowserCookies:
         """Missing Firefox install shows a friendly error, not a stack trace."""
         with (
             patch.dict("sys.modules", {"rookiepy": MagicMock()}),
-            patch(
-                "notebooklm.cli._firefox_containers.find_firefox_profile_path",
+            patch.object(
+                firefox_containers,
+                "find_firefox_profile_path",
                 return_value=None,
             ),
             patch_session_login_dual(
@@ -855,16 +864,18 @@ class TestLoginBrowserCookies:
         mock_rookiepy.firefox = MagicMock(return_value=mock_cookies)
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch(
-                "notebooklm.cli._firefox_containers.find_firefox_profile_path",
+            patch.object(
+                firefox_containers,
+                "find_firefox_profile_path",
                 return_value=tmp_path / "ff_profile",
             ),
-            patch(
-                "notebooklm.cli._firefox_containers.has_container_cookies_in_use",
+            patch.object(
+                firefox_containers,
+                "has_container_cookies_in_use",
                 return_value=True,
             ),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -904,16 +915,18 @@ class TestLoginBrowserCookies:
         mock_rookiepy.firefox = MagicMock(return_value=mock_cookies)
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch(
-                "notebooklm.cli._firefox_containers.find_firefox_profile_path",
+            patch.object(
+                firefox_containers,
+                "find_firefox_profile_path",
                 return_value=tmp_path / "ff_profile",
             ),
-            patch(
-                "notebooklm.cli._firefox_containers.has_container_cookies_in_use",
+            patch.object(
+                firefox_containers,
+                "has_container_cookies_in_use",
                 return_value=False,
             ),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
+import notebooklm.cli._chromium_profiles as chromium_profiles
 from notebooklm.notebooklm_cli import cli
 from tests._fixtures import patch_session_login_dual
 
@@ -154,12 +155,14 @@ class TestChromiumFanoutAuthInspect:
             raise RuntimeError(f"locked {profile.directory_name}")
 
         with (
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 side_effect=fake_discover,
             ),
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=fake_read,
             ),
         ):
@@ -291,12 +294,14 @@ class TestChromiumFanoutAllAccounts:
 
         with (
             patch.dict("sys.modules", {"rookiepy": MagicMock()}),
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 side_effect=fake_discover,
             ),
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=fake_read,
             ),
             patch("notebooklm.auth.enumerate_accounts", side_effect=fake_enumerate),
@@ -345,7 +350,7 @@ class TestChromiumFanoutAccountSelector:
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts),
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -422,7 +427,7 @@ class TestChromiumExplicitProfileSelector:
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -488,12 +493,14 @@ class TestChromiumExplicitProfileSelector:
         )
 
         with (
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 return_value=profiles,
             ),
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=AssertionError("must not read cookies for an unknown selector"),
             ),
         ):
@@ -516,12 +523,14 @@ class TestChromiumExplicitProfileSelector:
         )
 
         with (
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 return_value=profiles,
             ),
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=AssertionError("must not read cookies for an ambiguous selector"),
             ),
         ):
@@ -533,8 +542,9 @@ class TestChromiumExplicitProfileSelector:
         assert "Profile 2" in result.output
 
     def test_empty_profile_selector_is_rejected_before_cookie_read(self, runner):
-        with patch(
-            "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+        with patch.object(
+            chromium_profiles,
+            "read_chromium_profile_cookies",
             side_effect=AssertionError("must not read cookies for an empty selector"),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome::"])
@@ -573,12 +583,14 @@ class TestChromiumFanoutBoundaryConditions:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 return_value=only_default,
             ),
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=AssertionError(
                     "fan-out must NOT run when only 1 chromium profile exists"
                 ),
@@ -624,12 +636,14 @@ class TestChromiumFanoutBoundaryConditions:
 
         with (
             patch.dict("sys.modules", {"rookiepy": MagicMock()}),
-            patch(
-                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            patch.object(
+                chromium_profiles,
+                "discover_chromium_profiles",
                 side_effect=fake_discover,
             ),
-            patch(
-                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            patch.object(
+                chromium_profiles,
+                "read_chromium_profile_cookies",
                 side_effect=fake_read,
             ),
             patch("notebooklm.auth.enumerate_accounts", side_effect=fake_enumerate),
