@@ -731,6 +731,10 @@ class TestLoginErrorRender:
             "Waiting for login (up to 5 minutes)...\n"
             "Login not detected within 5 minutes.\n"
             "Try again with: notebooklm login\n"
+            "Already signed in to Google in Chrome? Retry with "
+            "notebooklm login --browser chrome to reuse that session "
+            "(often detects immediately; also avoids bundled-Chromium "
+            "issues on macOS).\n"
         )
 
     @pytest.mark.requires_playwright

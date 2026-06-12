@@ -284,6 +284,13 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
             "\n[yellow]Cookies may be expired. Run 'notebooklm login' to refresh.[/yellow]"
         )
 
+    # Exit non-zero when any executed check failed so text mode shares the
+    # same process contract as --json mode. Unattended automation (systemd /
+    # cron health checks) relies on the exit code, not on parsing the table
+    # (issue #1569). Skipped (``None``) checks do not count as failures.
+    if not all_passed:
+        exit_with_code(1)
+
 
 def _render_auth_inspect(
     browser_name: str,

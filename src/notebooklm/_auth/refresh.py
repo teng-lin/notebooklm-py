@@ -46,6 +46,11 @@ logger = logging.getLogger("notebooklm.auth")
 # need to substitute one of these dependencies should patch the alias on
 # ``notebooklm._auth.refresh`` directly.
 build_httpx_cookies_from_storage = _auth_cookies.build_httpx_cookies_from_storage
+# No-recovery loader: validates and raises on missing cookies, but never fires
+# the inline ``RotateCookies`` PSIDTS recovery (network POST + disk write) that
+# ``build_httpx_cookies_from_storage`` does. Used by the passive probe so it
+# stays strictly read-only (issue #1569).
+_build_httpx_cookies_from_storage_strict = _auth_cookies._build_httpx_cookies_from_storage_strict
 _replace_cookie_jar = _auth_cookies._replace_cookie_jar
 _cookie_map_from_jar = _auth_cookies._cookie_map_from_jar
 build_cookie_jar = _auth_cookies.build_cookie_jar
@@ -684,6 +689,7 @@ async def _fetch_tokens_with_jar(
     authuser: int = 0,
     account_email: str | None = None,
     force_authuser_query: bool = False,
+    poke: bool = True,
 ) -> tuple[str, str]:
     """Internal: fetch CSRF and session tokens using a pre-built cookie jar.
 
@@ -706,6 +712,11 @@ async def _fetch_tokens_with_jar(
         force_authuser_query: Append ``?authuser=0`` when callers explicitly
             requested account index 0. Implicit default-account calls leave the
             URL byte-identical to pre-multi-account behavior.
+        poke: When ``False``, skip the layer-1 ``_poke_session`` rotation POST
+            entirely. The passive read-only validation path
+            (:func:`fetch_tokens_passive`) sets this so a readiness probe does
+            not rotate ``__Secure-1PSIDTS`` server-side without persisting the
+            result (which would stale the on-disk jar).
 
     Returns:
         Tuple of (csrf_token, session_id)
@@ -717,7 +728,8 @@ async def _fetch_tokens_with_jar(
     logger.debug("Fetching CSRF and session tokens from NotebookLM")
 
     async with httpx.AsyncClient(cookies=cookie_jar) as client:
-        await _poke_session(client, storage_path)
+        if poke:
+            await _poke_session(client, storage_path)
 
         url = f"{get_base_url()}/"
         if account_email or authuser or force_authuser_query:
@@ -853,3 +865,59 @@ async def fetch_tokens_with_domains(
     # slow filesystems.
     await asyncio.to_thread(save_cookies_to_storage, jar, path, original_snapshot=snapshot)
     return csrf, session_id
+
+
+async def fetch_tokens_passive(
+    path: Path | None = None,
+    profile: str | None = None,
+    *,
+    authuser: int | None = None,
+    account_email: str | None = None,
+) -> tuple[str, str]:
+    """Validate the auth cookies on disk without any side effects.
+
+    Performs the same token-fetch round-trip (a homepage GET that re-mints
+    CSRF / session) as :func:`fetch_tokens_with_domains`, but is strictly
+    read-only. Unlike that function it:
+
+    * never runs ``NOTEBOOKLM_REFRESH_CMD`` (no re-auth hook / subprocess);
+    * never fires the layer-1 keepalive poke that rotates ``__Secure-1PSIDTS``
+      server-side;
+    * never fires the inline ``RotateCookies`` PSIDTS recovery (it loads the jar
+      with the no-recovery strict loader, so a missing/expired PSIDTS surfaces as
+      a plain ``ValueError`` instead of a network POST + disk write); and
+    * never writes rotated cookies back to ``storage_state.json``.
+
+    This is the readiness probe an unattended monitor (systemd / cron health
+    check) wants: it answers "do the cookies currently on disk authenticate?"
+    without mutating state, spawning a refresh subprocess, or racing concurrent
+    real work (issue #1569). Pair it with a passive ``auth check --test`` or
+    ``auth refresh --verify``.
+
+    Args:
+        path: Path to storage_state.json. If provided, takes precedence over env vars.
+        profile: Optional profile name used to resolve the storage path.
+        authuser: Optional explicit Google account index. Defaults to the
+            persisted profile value, or 0 when none exists.
+        account_email: Optional explicit Google account email. When provided,
+            it is used as the auth routing value instead of the integer index.
+
+    Returns:
+        Tuple of (csrf_token, session_id)
+
+    Raises:
+        FileNotFoundError: If storage file doesn't exist.
+        httpx.HTTPError: If request fails.
+        ValueError: If tokens cannot be extracted (e.g. redirected to sign-in).
+    """
+    if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
+        path = get_storage_path(profile=profile)
+    # Strict (no-recovery) loader: a missing/expired PSIDTS raises ``ValueError``
+    # here rather than triggering the inline ``RotateCookies`` rotation + save
+    # that ``build_httpx_cookies_from_storage`` would. A readiness probe reports
+    # "not authenticated" — it does not heal cookies.
+    jar = _build_httpx_cookies_from_storage_strict(path)
+    route_kwargs = _resolve_token_route_kwargs(path, authuser=authuser, account_email=account_email)
+    # poke=False + no save_cookies_to_storage ⇒ zero side effects on disk or
+    # on the server-side cookie rotation state.
+    return await _fetch_tokens_with_jar(jar, path, poke=False, **route_kwargs)

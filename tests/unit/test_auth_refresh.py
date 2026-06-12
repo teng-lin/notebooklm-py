@@ -22,6 +22,7 @@ from notebooklm.auth import (
     AuthTokens,
     extract_cookies_with_domains,
     fetch_tokens,
+    fetch_tokens_passive,
     fetch_tokens_with_domains,
     save_cookies_to_storage,
     snapshot_cookie_jar,
@@ -310,6 +311,169 @@ class TestFetchTokens:
             if c["name"] == "SID" and c["domain"] == ".google.com"
         )
         assert sid_cookie["value"] == "new"
+
+
+class TestFetchTokensPassive:
+    """``fetch_tokens_passive`` is the strictly read-only readiness probe.
+
+    It must validate the cookies on disk without any side effect: no
+    ``_poke_session`` rotation, no ``NOTEBOOKLM_REFRESH_CMD`` subprocess, and
+    no write back to ``storage_state.json`` (issue #1569).
+    """
+
+    @staticmethod
+    def _storage_with_sid(tmp_path: Path) -> Path:
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "sid_value", "domain": ".google.com"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": "test_1psidts",
+                            "domain": ".google.com",
+                        },
+                    ]
+                }
+            )
+        )
+        return storage_file
+
+    @pytest.mark.asyncio
+    async def test_passive_fetch_success(self, tmp_path, httpx_mock: HTTPXMock):
+        """Happy path: returns the tokens from the homepage GET."""
+        storage_file = self._storage_with_sid(tmp_path)
+        html = '"SNlM0e":"csrf_passive" "FdrFJe":"sess_passive"'
+        httpx_mock.add_response(url="https://notebooklm.google.com/", content=html.encode())
+
+        csrf, session_id = await fetch_tokens_passive(storage_file)
+
+        assert csrf == "csrf_passive"
+        assert session_id == "sess_passive"
+
+    @pytest.mark.asyncio
+    async def test_passive_skips_keepalive_poke(self, tmp_path, monkeypatch, httpx_mock: HTTPXMock):
+        """The layer-1 rotation poke must never fire on the passive path."""
+        storage_file = self._storage_with_sid(tmp_path)
+        html = '"SNlM0e":"csrf" "FdrFJe":"sess"'
+        httpx_mock.add_response(url="https://notebooklm.google.com/", content=html.encode())
+
+        poke_calls = 0
+
+        async def spy_poke(client, storage_path=None):
+            nonlocal poke_calls
+            poke_calls += 1
+
+        # Seam-aliased patch (ADR-0007): patch the owning ``_auth.refresh``
+        # module so the bare-name call inside ``_fetch_tokens_with_jar`` is seen.
+        monkeypatch.setattr(_auth_refresh, "_poke_session", spy_poke)
+
+        await fetch_tokens_passive(storage_file)
+
+        assert poke_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_passive_does_not_write_storage(self, tmp_path, httpx_mock: HTTPXMock):
+        """A rotated redirect cookie must NOT be persisted (read-only)."""
+        storage_file = self._storage_with_sid(tmp_path)
+        before = storage_file.read_bytes()
+
+        html = '"SNlM0e":"csrf" "FdrFJe":"sess"'
+        # Redirect through accounts.google.com with a Set-Cookie rotation, just
+        # like the active path's persistence test — but passive must drop it.
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/start"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/start",
+            status_code=302,
+            headers={
+                "Location": "https://notebooklm.google.com/",
+                "Set-Cookie": "__Secure-1PSIDTS=rotated; Domain=.google.com; Path=/",
+            },
+        )
+        httpx_mock.add_response(url="https://notebooklm.google.com/", content=html.encode())
+
+        await fetch_tokens_passive(storage_file)
+
+        assert storage_file.read_bytes() == before
+
+    @pytest.mark.asyncio
+    async def test_passive_does_not_trigger_psidts_recovery(self, tmp_path, monkeypatch):
+        """A missing PSIDTS must NOT fire inline RotateCookies recovery.
+
+        ``build_httpx_cookies_from_storage`` heals a missing/expired
+        ``__Secure-1PSIDTS`` with a ``RotateCookies`` POST + disk write. The
+        passive probe must instead surface a plain ``ValueError`` (no network,
+        no write) — it uses the no-recovery strict loader. Regression guard for
+        the side-effect leak through the loader (issue #1569).
+        """
+        from notebooklm._auth import psidts_recovery
+
+        # SID present but __Secure-1PSIDTS absent ⇒ recoverable on the active
+        # path, must stay read-only on the passive path.
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(
+            json.dumps(
+                {"cookies": [{"name": "SID", "value": "sid_value", "domain": ".google.com"}]}
+            )
+        )
+
+        recovery_calls = 0
+
+        def spy_recover(path):
+            nonlocal recovery_calls
+            recovery_calls += 1
+            return False
+
+        monkeypatch.setattr(psidts_recovery, "_recover_psidts_inline", spy_recover)
+
+        # No httpx_mock fixture here: if a RotateCookies POST escaped, the real
+        # network call would fail loudly rather than silently "pass".
+        with pytest.raises(ValueError):
+            await fetch_tokens_passive(storage_file)
+
+        assert recovery_calls == 0
+        # The stored cookies are untouched (no rotated PSIDTS written back).
+        assert "__Secure-1PSIDTS" not in storage_file.read_text()
+
+    @pytest.mark.asyncio
+    async def test_passive_does_not_run_refresh_cmd(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """Even with NOTEBOOKLM_REFRESH_CMD set, the passive path never runs it."""
+        storage_file = self._storage_with_sid(tmp_path)
+        monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage_file)
+
+        marker = tmp_path / "refresh_ran.marker"
+        refresh_script = tmp_path / "refresh.py"
+        refresh_script.write_text(f"open({str(marker)!r}, 'w').close()\n")
+        cmd = (
+            shlex.join([sys.executable, str(refresh_script)])
+            if os.name != "nt"
+            else subprocess.list2cmdline([sys.executable, str(refresh_script)])
+        )
+        monkeypatch.setenv("NOTEBOOKLM_REFRESH_CMD", cmd)
+
+        # Homepage redirects to sign-in → auth is expired.
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/signin"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/signin",
+            content=b"<html>Login</html>",
+        )
+
+        with pytest.raises(ValueError, match="Authentication expired"):
+            await fetch_tokens_passive(storage_file)
+
+        # The refresh subprocess must never have spawned.
+        assert not marker.exists()
 
 
 class TestFetchTokensAutoRefresh:

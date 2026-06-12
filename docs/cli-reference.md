@@ -644,6 +644,7 @@ notebooklm auth check [OPTIONS]
 
 **Options:**
 - `--test` - Also test token fetch from NotebookLM (makes network request)
+- `--passive` - With `--test`, validate read-only: never run `NOTEBOOKLM_REFRESH_CMD`, rotate cookies, or write to disk. Use for unattended readiness/health checks that must not mutate state or race real work. No effect without `--test`.
 - `--json` - Output as JSON (useful for scripts)
 
 **Examples:**
@@ -653,6 +654,9 @@ notebooklm auth check
 
 # Full validation with network test
 notebooklm auth check --test
+
+# Read-only readiness probe (no refresh cmd, no cookie write) for a health check
+notebooklm auth check --test --passive
 
 # JSON output for automation
 notebooklm auth check --json
@@ -677,6 +681,14 @@ notebooklm auth check --json
 - Check if cookies are from correct domain (regional vs .google.com)
 - Diagnose NOTEBOOKLM_AUTH_JSON environment variable issues
 
+**Exit codes:** `auth check` exits `0` only when every *executed* check passes
+and non-zero (`1`) when any executed check fails — in **both** text and `--json`
+modes. A skipped check does not count as a failure: without `--test`, the token
+fetch is skipped, so the exit status reflects only the local cookie checks.
+Unattended monitors should therefore rely on the exit code (not on parsing the
+table). To gate readiness on a real token fetch, run `notebooklm auth check
+--test` and check the exit status. See [CLI Exit-Code Convention](cli-exit-codes.md).
+
 ### Authentication: `auth refresh`
 
 One-shot keepalive: open a session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist the rotated cookies to `storage_state.json`, and exit. When a file-backed Playwright storage state has cookies but lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs that metadata if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed to be invoked by the OS scheduler (launchd / systemd / cron / Task Scheduler / k8s CronJob) so an otherwise-idle profile does not stale out between user-driven calls.
@@ -689,6 +701,7 @@ notebooklm auth refresh [OPTIONS]
 - `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
 - `--include-domains LABEL[,LABEL...]` - Forward to the browser-cookie reader (only meaningful with `--browser-cookies`). Same syntax as `notebooklm login --include-domains`.
 - `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
+- `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A successful refresh command alone does not prove the post-refresh cookies work — they may still redirect to sign-in. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
 
 **Cadence:** 15-20 minutes is the recommended interval. Tighter is wasteful (the 60 s mtime guard would skip it anyway); significantly looser may cross the `__Secure-1PSIDTS` server-side validity window for your account/region.
 
@@ -696,7 +709,7 @@ notebooklm auth refresh [OPTIONS]
 
 **Exit codes:**
 - `0` - the auth path completed without raising. The rotation POST is **best-effort**: exit 0 also covers (a) the 60 s mtime guard skipping the POST, (b) `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` being set, (c) another process holding the cross-process rotate lock, and (d) a transient `httpx` error during the POST being caught and logged at DEBUG. Treat exit 0 as "no error" rather than "rotation occurred." For verification, enable `NOTEBOOKLM_LOG_LEVEL=DEBUG` and check for the `RotateCookies` log line.
-- `1` - a fatal error reached the CLI layer (e.g. `NOTEBOOKLM_AUTH_JSON` set, missing `storage_state.json`, invalid profile, `httpx.RequestError` not swallowed by the rotate guard). The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
+- `1` - a fatal error reached the CLI layer (e.g. `NOTEBOOKLM_AUTH_JSON` set, missing `storage_state.json`, invalid profile, `httpx.RequestError` not swallowed by the rotate guard), **or** `--verify` was passed and the post-refresh passive token fetch failed. The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
 
 **Examples:**
 ```bash

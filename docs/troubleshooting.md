@@ -131,6 +131,18 @@ Or re-run `notebooklm login` if session cookies are also expired. If the failure
 3. Complete any CAPTCHA or security challenges Google presents
 4. Ensure you're using a real mouse/keyboard (not pasting credentials via script)
 
+#### "Login not detected within 5 minutes" (especially on macOS)
+
+**Cause:** The bundled Chromium that `notebooklm login` launches by default opened a fresh, signed-out browser, and its login-detection wait timed out — common on macOS where bundled Chromium can also be flaky (macOS 15+).
+
+**Solution:** If you are already signed in to Google in **system Chrome**, retry with that browser so the existing session is reused instead of starting a fresh sign-in:
+
+```bash
+notebooklm login --browser chrome --storage <path>
+```
+
+`--browser chrome` drives your installed Google Chrome (with its signed-in profile), which usually detects the account immediately and sidesteps bundled-Chromium issues. `--browser msedge` is the equivalent for organizations that require Microsoft Edge for SSO.
+
 ### RPC Errors
 
 #### "RPCError: No result found for RPC ID: XyZ123"

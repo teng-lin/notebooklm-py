@@ -612,7 +612,11 @@ def run_browser_capture(
                 except PlaywrightTimeout:
                     io.emit(
                         "[red]Login not detected within 5 minutes.[/red]\n"
-                        "Try again with: notebooklm login"
+                        "Try again with: notebooklm login\n"
+                        "Already signed in to Google in Chrome? Retry with "
+                        "[cyan]notebooklm login --browser chrome[/cyan] to reuse that "
+                        "session (often detects immediately; also avoids "
+                        "bundled-Chromium issues on macOS)."
                     )
                     io.fail(1)
                 except PlaywrightError as exc:

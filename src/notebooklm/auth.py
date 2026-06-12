@@ -139,6 +139,7 @@ __all__ = [
     "extract_session_id_from_html",
     "extract_wiz_field",
     "fetch_tokens",
+    "fetch_tokens_passive",
     "fetch_tokens_with_domains",
     "format_authuser_value",
     "get_account_email_for_storage",
@@ -329,3 +330,4 @@ _fetch_tokens_with_refresh = _auth_refresh._fetch_tokens_with_refresh
 _fetch_tokens_with_jar = _auth_refresh._fetch_tokens_with_jar
 fetch_tokens = _auth_refresh.fetch_tokens
 fetch_tokens_with_domains = _auth_refresh.fetch_tokens_with_domains
+fetch_tokens_passive = _auth_refresh.fetch_tokens_passive

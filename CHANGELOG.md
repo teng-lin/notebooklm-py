@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Passive auth validation for unattended monitors** (#1569). New
+  `notebooklm.auth.fetch_tokens_passive(...)` validates the cookies on disk with
+  a strictly read-only token fetch — it never runs `NOTEBOOKLM_REFRESH_CMD`,
+  never fires the layer-1 keepalive rotation poke, and never writes
+  `storage_state.json` (additive public symbol; the active
+  `fetch_tokens_with_domains` is unchanged). `notebooklm auth check --test
+  --passive` routes the token probe through it, so a systemd/cron health check
+  can answer "do the cookies currently authenticate?" without mutating state,
+  spawning a subprocess, or racing real work. The transport-neutral
+  `run_auth_check(AuthCheckPlan(..., passive=True))` exposes the same probe to
+  the MCP/HTTP adapters.
+
+- **`notebooklm auth refresh --verify`** (#1569). After a refresh completes,
+  runs the passive token probe to confirm the resulting cookies actually
+  authenticate, exiting non-zero if they still redirect to sign-in. A successful
+  refresh command alone does not prove the post-refresh cookies work — this is
+  especially valuable with `--browser-cookies`, which rewrites the cookie jar
+  but does not otherwise verify it.
+
+- **macOS login recovery hint.** When the bundled-Chromium interactive login
+  times out (`Login not detected within 5 minutes`), the message now suggests
+  retrying with `notebooklm login --browser chrome` to reuse an already
+  signed-in system Chrome session — which often detects immediately and sidesteps
+  bundled-Chromium issues on macOS.
+
 - **Layer-3 headless re-auth: `client.refresh_auth(allow_headless=True)`** (#1525,
   P2; P1 was #1512). When NotebookLM's first-party cookies are fully dead — the
   homepage GET 302s to the Google login page and neither token refresh (L1) nor
@@ -76,6 +101,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See [docs/mcp-guide.md](docs/mcp-guide.md).
 
 ### Fixed
+
+- **`notebooklm auth check` text mode now exits non-zero when an executed check
+  fails, matching `--json` mode** (#1569). Previously the Rich-table renderer
+  printed the failed checks but always exited `0`, so an unattended health check
+  using `auth check --test` (without `--json`) silently treated expired auth as
+  healthy — text and JSON modes had different process contracts. Both modes now
+  exit `0` only when every *executed* check passes (skipped checks — e.g. the
+  token fetch without `--test` — do not count as failures) and non-zero (`1`)
+  otherwise. Behavioral fix to the CLI exit-code contract; no API change.
 
 - **`Notebook.created_at` now reflects the true creation time instead of the
   last-modified time; `Notebook.modified_at` is newly exposed.** The notebook

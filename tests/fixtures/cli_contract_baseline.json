@@ -1087,6 +1087,24 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "With --test, validate read-only: never run NOTEBOOKLM_REFRESH_CMD, rotate cookies, or write to disk. For unattended health checks.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "passive",
+          "opts": [
+            "--passive"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output as JSON",
           "is_flag": true,
           "kind": "option",
@@ -1240,6 +1258,24 @@
           "opts": [
             "--quiet",
             "-q"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "After refreshing, confirm a token fetch actually succeeds (read-only passive probe). Exit non-zero if the post-refresh cookies still fail.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "verify",
+          "opts": [
+            "--verify"
           ],
           "required": false,
           "secondary_opts": [],

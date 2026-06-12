@@ -419,7 +419,7 @@ class TestAuthCheckCharacterization:
     def test_auth_check_text_storage_missing(self, char_runner, char_storage_file):
         # storage file does not exist
         result = char_runner.invoke(cli, ["auth", "check"])
-        assert result.exit_code == 0  # text mode does not exit non-zero
+        assert result.exit_code == 1  # failed check ⇒ non-zero, matches --json (issue #1569)
         assert "Authentication Check" in result.output
         assert "Storage file not found" in result.output
 
@@ -467,12 +467,17 @@ class TestAuthCheckCharacterization:
         assert data["checks"]["json_valid"] is False
 
     def test_auth_check_oserror_text_p1t3(self, char_runner, char_storage_file):
-        """P1.T3 regression: OSError on read does not raise; reports error gracefully."""
+        """P1.T3 regression: OSError on read does not raise; reports error gracefully.
+
+        The read failure surfaces as a failed ``json_valid`` check, so text
+        mode exits non-zero (cleanly, no traceback) like --json (issue #1569).
+        """
         # File exists but read raises OSError (permission denied simulation).
         char_storage_file.write_text("{}")
         with patch("pathlib.Path.read_text", side_effect=OSError("Permission denied")):
             result = char_runner.invoke(cli, ["auth", "check"])
-        assert result.exit_code == 0
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "Storage unreadable" in result.output or "Permission denied" in result.output
 
     def test_auth_check_oserror_json_p1t3(self, char_runner, char_storage_file):

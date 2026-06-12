@@ -66,7 +66,9 @@ def format_auth_source(plan: AuthCheckPlan) -> str:
     )
 
 
-def plan_from_click_context(ctx, *, test_fetch: bool, json_output: bool) -> AuthCheckPlan:
+def plan_from_click_context(
+    ctx, *, test_fetch: bool, json_output: bool, passive: bool = False
+) -> AuthCheckPlan:
     """Build an :class:`AuthCheckPlan` from a Click context + flags.
 
     The profile + storage path come from the same :class:`AuthSource` resolver
@@ -90,6 +92,7 @@ def plan_from_click_context(ctx, *, test_fetch: bool, json_output: bool) -> Auth
         ),
         test_fetch=test_fetch,
         json_output=json_output,
+        passive=passive,
     )
 
 

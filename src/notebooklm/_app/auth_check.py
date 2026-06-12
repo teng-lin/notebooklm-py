@@ -60,6 +60,13 @@ class AuthCheckPlan:
             and propagate non-zero exit on failure. Carried on the plan so the
             renderer (in the adapter) picks the right shape without re-resolving
             the flag.
+        passive: When ``True``, the optional ``test_fetch`` token round-trip uses
+            the strictly read-only :func:`~notebooklm.auth.fetch_tokens_passive`
+            path — it never runs ``NOTEBOOKLM_REFRESH_CMD``, never fires the
+            keepalive rotation poke, and never writes cookies back to disk. This
+            is what an unattended readiness probe wants (issue #1569). No effect
+            without ``test_fetch`` (the local cookie checks are already
+            side-effect-free).
     """
 
     storage_path: Path
@@ -69,6 +76,7 @@ class AuthCheckPlan:
     auth_source_label: str
     test_fetch: bool
     json_output: bool
+    passive: bool = False
 
 
 @dataclass
@@ -191,13 +199,16 @@ async def run_auth_check(
         details["error"] = str(exc)
         return AuthCheckResult(plan=plan, checks=checks, details=details)
 
-    # Check 4: optional token-fetch round-trip.
+    # Check 4: optional token-fetch round-trip. ``passive`` selects the
+    # strictly read-only fetch (no refresh cmd, no rotation poke, no save) so a
+    # readiness probe never mutates state or spawns a subprocess (issue #1569).
     if plan.test_fetch:
         try:
-            from ..auth import fetch_tokens_with_domains
+            from ..auth import fetch_tokens_passive, fetch_tokens_with_domains
 
+            fetch = fetch_tokens_passive if plan.passive else fetch_tokens_with_domains
             token_path = None if plan.has_env_auth else plan.storage_path
-            csrf, session_id = await fetch_tokens_with_domains(token_path, plan.profile)
+            csrf, session_id = await fetch(token_path, plan.profile)
             checks["token_fetch"] = True
             details["csrf_length"] = len(csrf)
             details["session_id_length"] = len(session_id)

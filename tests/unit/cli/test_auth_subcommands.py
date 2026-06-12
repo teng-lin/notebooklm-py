@@ -43,7 +43,8 @@ class TestAuthCheckCommand:
 
         result = runner.invoke(cli, ["auth", "check"])
 
-        assert result.exit_code == 0
+        # Failed check ⇒ non-zero exit in text mode too (issue #1569).
+        assert result.exit_code != 0
         assert "Storage exists" in result.output
         assert "fail" in result.output.lower() or "✗" in result.output
 
@@ -70,7 +71,8 @@ class TestAuthCheckCommand:
 
         result = runner.invoke(cli, ["auth", "check"])
 
-        assert result.exit_code == 0
+        # Failed check ⇒ non-zero exit in text mode too (issue #1569).
+        assert result.exit_code != 0
         assert "JSON valid" in result.output
         assert "fail" in result.output.lower() or "✗" in result.output
 
@@ -104,8 +106,9 @@ class TestAuthCheckCommand:
         directory as text raises ``IsADirectoryError``, a subclass of
         ``OSError``.
 
-        Contract: text mode shows the checks table (no traceback) and
-        exits 0 just like the existing invalid-JSON case.
+        Contract: text mode shows the checks table (no traceback) and exits
+        non-zero on the failed ``json_valid`` check, matching --json mode and
+        the invalid-JSON case (issue #1569).
         """
         # The fixture yields a path under tmp_path but does not create the
         # file. Make the path a directory so `read_text` raises
@@ -116,9 +119,10 @@ class TestAuthCheckCommand:
 
         result = runner.invoke(cli, ["auth", "check"])
 
-        # No traceback should leak.
-        assert result.exit_code == 0, (
-            f"unexpected traceback / non-zero text-mode exit: "
+        # Failed check ⇒ non-zero exit, but via a clean SystemExit — no
+        # traceback should leak to the caller.
+        assert result.exit_code != 0, (
+            f"expected non-zero text-mode exit on failed check: "
             f"stdout={result.output!r} exc={result.exception!r}"
         )
         assert result.exception is None or isinstance(result.exception, SystemExit), (
@@ -191,7 +195,8 @@ class TestAuthCheckCommand:
 
         result = runner.invoke(cli, ["auth", "check"])
 
-        assert result.exit_code == 0
+        # Missing SID cookie is a failed check ⇒ non-zero exit (issue #1569).
+        assert result.exit_code != 0
         assert "SID" in result.output or "cookie" in result.output.lower()
 
     def test_auth_check_valid_storage(self, runner, mock_storage_path):
@@ -301,7 +306,9 @@ class TestAuthCheckCommand:
 
             result = runner.invoke(cli, ["auth", "check", "--test"])
 
-        assert result.exit_code == 0
+        # Text mode must exit non-zero on a failed executed check, matching
+        # --json mode, so unattended automation can fail-fast (issue #1569).
+        assert result.exit_code != 0
         assert "Token fetch" in result.output
         assert "fail" in result.output.lower() or "✗" in result.output
         assert "expired" in result.output.lower() or "refresh" in result.output.lower()
@@ -329,6 +336,78 @@ class TestAuthCheckCommand:
         assert output["checks"]["token_fetch"] is True
         assert output["details"]["csrf_length"] == 10
         assert output["details"]["session_id_length"] == 10
+
+    def test_auth_check_passive_uses_passive_fetch(self, runner, mock_storage_path):
+        """``--test --passive`` routes through the read-only passive fetch.
+
+        The passive path must NOT touch ``fetch_tokens_with_domains`` (which
+        runs NOTEBOOKLM_REFRESH_CMD, rotates cookies, and persists to disk).
+        Issue #1569: a readiness probe must be side-effect-free.
+        """
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        with (
+            patch.object(
+                auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+            ) as mock_passive,
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_active,
+        ):
+            mock_passive.return_value = ("csrf_token_abc", "session_id_xyz")
+
+            result = runner.invoke(cli, ["auth", "check", "--test", "--passive"])
+
+        assert result.exit_code == 0
+        mock_passive.assert_awaited_once()
+        mock_active.assert_not_called()
+        assert "Token fetch" in result.output
+        assert "pass" in result.output.lower() or "✓" in result.output
+
+    def test_auth_check_passive_failure_exits_nonzero(self, runner, mock_storage_path):
+        """``--test --passive`` still fails loud (non-zero) when the probe fails."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        with patch.object(
+            auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+        ) as mock_passive:
+            mock_passive.side_effect = ValueError("Authentication expired")
+
+            result = runner.invoke(cli, ["auth", "check", "--test", "--passive", "--json"])
+
+        assert result.exit_code != 0
+        output = json.loads(result.output)
+        assert output["status"] == "error"
+        assert output["checks"]["token_fetch"] is False
+
+    def test_auth_check_passive_without_test_warns_no_effect(self, runner, mock_storage_path):
+        """``--passive`` without ``--test`` is a no-op on already-passive local
+        checks; warn (not fail) so the caller is not misled."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check", "--passive"])
+
+        # Still succeeds (local checks all pass), but the note is surfaced.
+        assert result.exit_code == 0
+        assert "no effect without --test" in result.output
 
     def test_auth_check_env_var_takes_precedence(self, runner, mock_storage_path, monkeypatch):
         """Test auth check uses NOTEBOOKLM_AUTH_JSON when set."""
@@ -1275,6 +1354,59 @@ class TestAuthRefreshCommand:
         # Friendly Unexpected-error message + the original detail.
         assert "Unexpected error" in result.output
         assert "rookiepy could not read cookies" in result.output
+
+    def test_auth_refresh_verify_success(self, runner, mock_storage_path):
+        """``--verify`` runs a passive token fetch after refresh; exit 0 on success."""
+        with (
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch.object(
+                auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+            ) as mock_passive,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            mock_passive.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh", "--verify"])
+        assert result.exit_code == 0
+        mock_passive.assert_awaited_once()
+        assert "verified" in result.output.lower()
+
+    def test_auth_refresh_verify_failure_exits_nonzero(self, runner, mock_storage_path):
+        """Refresh can succeed while the post-refresh token fetch still fails.
+
+        ``--verify`` makes that fail loud (exit 1) so a scheduler can rely on
+        the exit code rather than trusting refresh success alone (issue #1569).
+        """
+        with (
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch.object(
+                auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+            ) as mock_passive,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            mock_passive.side_effect = ValueError("Authentication expired or invalid.")
+            result = runner.invoke(cli, ["auth", "refresh", "--verify"])
+        assert result.exit_code == 1
+        assert "post-refresh token fetch failed" in result.output.lower()
+        assert "Traceback (most recent call last)" not in result.output
+
+    def test_auth_refresh_verify_after_browser_cookies(self, runner, mock_storage_path):
+        """``--verify`` also gates the ``--browser-cookies`` rewrite path."""
+        with (
+            patch_session_login_dual("_refresh_from_browser_cookies"),
+            patch.object(
+                auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+            ) as mock_passive,
+        ):
+            mock_passive.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(
+                cli, ["auth", "refresh", "--browser-cookies", "chrome", "--verify"]
+            )
+        assert result.exit_code == 0
+        mock_passive.assert_awaited_once()
 
     def test_auth_refresh_rejects_env_var_auth(self, runner, monkeypatch, mock_storage_path):
         """NOTEBOOKLM_AUTH_JSON has no writable backing store; refreshing it
