@@ -134,33 +134,20 @@ SINGLE_LEVEL_EXCLUDED_FILES = frozenset({"utils.py", "_version_check.py"})
 
 # Baseline of BELOW-FACADE feature files that open-code a *single-level*
 # integer-literal subscript (``x[i]``) of a decoded RPC payload (issue #1491).
-# Many of these reads are genuine but already-guarded inner reads -- the
-# single-level gate is a RATCHET, not an immediate ban: these files are
-# grandfathered so the gate is green on ``main``, but a single-level subscript
-# in any in-scope file NOT on this list fails the gate. Above-facade files
-# (``cli/`` / ``_app/`` / ``_auth/`` / ``utils.py`` / ``_version_check.py``)
-# are excluded from the scan entirely (see the scope constants above) and MUST
-# NOT appear here (pinned by
+# FULLY DRAINED (#1501 burndown): every below-facade file that open-coded a
+# ``name[int]`` read has been migrated behind ``_row_adapters/`` + ``safe_index``
+# (or had its already-guarded inner read routed through ``safe_index`` so the leaf
+# can no longer drift silently), so this list is now EMPTY and the single-level
+# gate re-protects the whole below-facade feature tree with no exceptions.
+# Above-facade files (``cli/`` / ``_app/`` / ``_auth/`` / ``utils.py`` /
+# ``_version_check.py``) remain excluded from the scan entirely (see the scope
+# constants above) and MUST NOT appear here (pinned by
 # ``test_single_level_allowlist_has_no_above_facade_entries``).
 #
-# The chat wire parser (``_chat/wire.py``) and the ``suggest_reports`` row decode
-# in ``_artifacts.py`` were the largest un-adapted surfaces; ``_chat/wire.py`` is
-# fully migrated behind ``_row_adapters/chat.py`` and is DELIBERATELY ABSENT from
-# this list so the gate re-protects it. ``_artifacts.py`` keeps its remaining
-# envelope-unwrap / request-param reads (only its ``suggest_reports`` row decode
-# moved behind ``ReportSuggestionRow``), so it stays listed for now.
-# ``_types/artifacts.py`` is likewise ABSENT: ``Artifact.from_mind_map``'s last
-# inline ``[1][2][2][0]`` timestamp descent moved behind ``NoteRow.created_at``
-# (issue #1529), so the gate re-protects it.
-#
-# DO NOT add new entries to grow the debt. The burndown (drain this list by
-# migrating each file behind ``_row_adapters/`` + ``safe_index``, or binding the
-# already-guarded inner list to a named local) is a follow-up to #1491.
-SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "_types/sharing.py",
-    }
-)
+# DO NOT add new entries to grow the debt -- a new ``name[int]`` read in an
+# in-scope file means new code that should decode through ``safe_index`` / a row
+# adapter instead.
+SINGLE_LEVEL_ALLOWLIST: frozenset[str] = frozenset()
 
 # The enumerated facade methods that return RAW (untyped / positional) RPC
 # payloads instead of typed objects. Verified by introspection at
