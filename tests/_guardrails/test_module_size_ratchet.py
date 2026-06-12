@@ -83,7 +83,11 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # in-place (an extra unpack-binding line in the two-element prefix and id/name
     # pair reads); splitting the module for 3 lines is disproportionate. New
     # ceiling is the measured post-drain LOC.
-    "_source/upload.py": 1239,
+    # +3 LOC: PR #1557 review (gemini) — the three guaranteed-single id picks
+    # switched from ``next(iter(x))`` to explicit ``(x,) = ...`` unpacking (one
+    # extra binding line each), which makes the single-element invariant explicit
+    # and sidesteps the PEP 479 ``StopIteration`` nuance. Irreducible in-place.
+    "_source/upload.py": 1242,
     "_sources.py": 1007,
     # _artifact/downloads.py: raised for the #1521 per-redirect-hop revalidation
     # fix. The new *logic* (host+scheme hop guard + httpx event-hook factory) was
@@ -95,11 +99,15 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # parser-differential bypass the re-review caught (dropping the ``unquote``
     # decode + rejecting any ``%`` in the host). New ceiling is the measured
     # post-fix LOC.
-    "_artifact/downloads.py": 1041,
+    # +2 LOC: PR #1557 (the #1491 positional drain + its gemini-review unpacking
+    # of the typed ``completed``/``Artifact`` list heads). Irreducible in-place.
+    "_artifact/downloads.py": 1043,
     # client.py dropped below the budget when its ``__init__`` body moved to
     # ``_client_assembly.py`` (the shared constructor/test-factory seam), so
     # its ceiling entry was removed per the one-way-ratchet rule.
-    "_research.py": 936,
+    # +1 LOC: PR #1557 (the #1491 positional drain + its gemini-review unpacking
+    # of the typed ``parsed_tasks``/``list[ResearchTask]`` head). Irreducible.
+    "_research.py": 937,
     "_chat/api.py": 955,
 }
 
