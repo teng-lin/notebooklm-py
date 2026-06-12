@@ -175,12 +175,12 @@ async def test_download_report_runs_write_off_loop_thread(
         captured.append(threading.get_ident())
         return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
 
-    with (
-        patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list,
-        patch.object(Path, "write_text", recording_write_text),
-    ):
-        mock_list.return_value = report_artifact_list
-        result = await api.download_report("nb_t7d4", str(output_path))
+    with patch.object(Path, "write_text", recording_write_text):
+        result = await api.download_report(
+            "nb_t7d4",
+            str(output_path),
+            artifacts_data=report_artifact_list,
+        )
 
     assert result == str(output_path)
     assert output_path.exists(), "download_report should still produce the file"
@@ -332,7 +332,6 @@ async def test_concurrent_downloads_both_offload_writes(
         return original_json_dump(*args, **kwargs)  # type: ignore[arg-type]
 
     with (
-        patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list,
         patch.object(
             api._mind_maps,
             "list_mind_maps",
@@ -341,10 +340,9 @@ async def test_concurrent_downloads_both_offload_writes(
         patch.object(Path, "write_text", recording_write_text),
         patch.object(artifact_downloads.json, "dump", recording_json_dump),
     ):
-        mock_list.return_value = report_artifact_list
         report_result, mindmap_result = await asyncio.gather(
-            api.download_report("nb_t7d4", str(report_path)),
-            api.download_mind_map("nb_t7d4", str(mindmap_path)),
+            api.download_report("nb_t7d4", str(report_path), artifacts_data=report_artifact_list),
+            api.download_mind_map("nb_t7d4", str(mindmap_path), artifacts_data=[]),
         )
 
     assert report_result == str(report_path)

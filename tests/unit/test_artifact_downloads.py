@@ -202,28 +202,27 @@ class TestDownloadVideo:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "video.mp4")
-
-            # Patch _list_raw to return video artifact data
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Type 3 (video), status 3 (completed), metadata at index 8
-                mock_list.return_value = [
-                    [
-                        "video_001",
-                        "Video Title",
-                        3,
-                        None,
-                        3,
-                        None,
-                        None,
-                        None,
-                        [[["https://example.com/video.mp4", 4, "video/mp4"]]],
-                    ]
+            # Type 3 (video), status 3 (completed), metadata at index 8
+            artifacts_data = [
+                [
+                    "video_001",
+                    "Video Title",
+                    3,
+                    None,
+                    3,
+                    None,
+                    None,
+                    None,
+                    [[["https://example.com/video.mp4", 4, "video/mp4"]]],
                 ]
+            ]
 
-                with patch.object(
-                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
-                ):
-                    result = await api.download_video("nb_123", output_path)
+            with patch.object(
+                api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
+            ):
+                result = await api.download_video(
+                    "nb_123", output_path, artifacts_data=artifacts_data
+                )
 
             assert result == output_path
 
@@ -232,22 +231,19 @@ class TestDownloadVideo:
         """Test error when no video artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = []
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_video("nb_123", "/tmp/video.mp4")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_video("nb_123", "/tmp/video.mp4", artifacts_data=[])
 
     @pytest.mark.asyncio
     async def test_download_video_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific video ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = [["other_id", "Video", 3, None, 3, None, None, None, []]]
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_video("nb_123", "/tmp/video.mp4", artifact_id="video_001")
+        artifacts_data = [["other_id", "Video", 3, None, 3, None, None, None, []]]
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_video(
+                "nb_123", "/tmp/video.mp4", artifact_id="video_001", artifacts_data=artifacts_data
+            )
 
 
 class TestDownloadInfographic:
@@ -261,28 +257,28 @@ class TestDownloadInfographic:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "infographic.png")
 
-            # Patch _list_raw to return infographic data
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Type 7 (infographic), status 3, metadata with nested URL structure
-                mock_list.return_value = [
-                    [
-                        "infographic_001",
-                        "Infographic Title",
-                        7,
-                        None,
-                        3,
-                        None,
-                        None,
-                        None,
-                        None,
-                        [[], [], [[None, ["https://example.com/infographic.png"]]]],
-                    ]
+            # Type 7 (infographic), status 3, metadata with nested URL structure
+            artifacts_data = [
+                [
+                    "infographic_001",
+                    "Infographic Title",
+                    7,
+                    None,
+                    3,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [[], [], [[None, ["https://example.com/infographic.png"]]]],
                 ]
+            ]
 
-                with patch.object(
-                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
-                ):
-                    result = await api.download_infographic("nb_123", output_path)
+            with patch.object(
+                api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
+            ):
+                result = await api.download_infographic(
+                    "nb_123", output_path, artifacts_data=artifacts_data
+                )
 
             assert result == output_path
 
@@ -291,11 +287,8 @@ class TestDownloadInfographic:
         """Test error when no infographic artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = []
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_infographic("nb_123", "/tmp/info.png")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_infographic("nb_123", "/tmp/info.png", artifacts_data=[])
 
     @pytest.mark.asyncio
     async def test_download_infographic_prefers_first_matching_url(self, mock_artifacts_api):
@@ -307,28 +300,29 @@ class TestDownloadInfographic:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "infographic.png")
 
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Artifact with two URL-bearing metadata entries at different indices
-                mock_list.return_value = [
-                    [
-                        "infographic_001",
-                        "Infographic Title",
-                        7,
-                        None,
-                        3,
-                        None,
-                        None,
-                        None,
-                        None,
-                        [[], [], [[None, [canonical_url]]]],
-                        [[], [], [[None, [later_url]]]],
-                    ]
+            # Artifact with two URL-bearing metadata entries at different indices
+            artifacts_data = [
+                [
+                    "infographic_001",
+                    "Infographic Title",
+                    7,
+                    None,
+                    3,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [[], [], [[None, [canonical_url]]]],
+                    [[], [], [[None, [later_url]]]],
                 ]
+            ]
 
-                with patch.object(
-                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
-                ) as mock_dl:
-                    result = await api.download_infographic("nb_123", output_path)
+            with patch.object(
+                api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
+            ) as mock_dl:
+                result = await api.download_infographic(
+                    "nb_123", output_path, artifacts_data=artifacts_data
+                )
 
             assert result == output_path
             mock_dl.assert_awaited_once_with(canonical_url, output_path)
@@ -345,28 +339,27 @@ class TestDownloadSlideDeck:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "slides.pdf")
 
-            # Patch _list_raw to return slide deck artifact data
             # Structure: artifact[16] = [config, title, slides_list, pdf_url]
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Create artifact with 17+ elements, type 8 (slide deck), status 3
-                artifact = ["slide_001", "Slide Deck Title", 8, None, 3]
-                # Pad to index 16
-                artifact.extend([None] * 11)
-                # Index 16: metadata with PDF URL at position 3
-                artifact.append(
-                    [
-                        ["config"],
-                        "Slide Deck Title",
-                        [["slide1"], ["slide2"]],  # slides_list
-                        "https://contribution.usercontent.google.com/download?filename=test.pdf",
-                    ]
-                )
-                mock_list.return_value = [artifact]
+            # Create artifact with 17+ elements, type 8 (slide deck), status 3
+            artifact = ["slide_001", "Slide Deck Title", 8, None, 3]
+            # Pad to index 16
+            artifact.extend([None] * 11)
+            # Index 16: metadata with PDF URL at position 3
+            artifact.append(
+                [
+                    ["config"],
+                    "Slide Deck Title",
+                    [["slide1"], ["slide2"]],  # slides_list
+                    "https://contribution.usercontent.google.com/download?filename=test.pdf",
+                ]
+            )
 
-                with patch.object(
-                    api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
-                ):
-                    result = await api.download_slide_deck("nb_123", output_path)
+            with patch.object(
+                api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
+            ):
+                result = await api.download_slide_deck(
+                    "nb_123", output_path, artifacts_data=[artifact]
+                )
 
             assert result == output_path
 
@@ -375,41 +368,36 @@ class TestDownloadSlideDeck:
         """Test error when no slide deck artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = []
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_slide_deck("nb_123", "/tmp/slides.pdf")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_slide_deck("nb_123", "/tmp/slides.pdf", artifacts_data=[])
 
     @pytest.mark.asyncio
     async def test_download_slide_deck_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific slide deck ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            # Need at least 17 elements for valid structure
-            artifact = ["other_id", "Slides", 8, None, 3]
-            artifact.extend([None] * 11)
-            artifact.append([["config"], "title", [], "http://example.com/test.pdf"])
-            mock_list.return_value = [artifact]
+        # Need at least 17 elements for valid structure
+        artifact = ["other_id", "Slides", 8, None, 3]
+        artifact.extend([None] * 11)
+        artifact.append([["config"], "title", [], "http://example.com/test.pdf"])
 
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_slide_deck("nb_123", "/tmp/slides.pdf", artifact_id="slides_001")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_slide_deck(
+                "nb_123", "/tmp/slides.pdf", artifact_id="slides_001", artifacts_data=[artifact]
+            )
 
     @pytest.mark.asyncio
     async def test_download_slide_deck_invalid_metadata(self, mock_artifacts_api):
         """Test error on invalid metadata structure."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            # Create artifact with invalid metadata (less than 4 elements)
-            artifact = ["slide_001", "Slides", 8, None, 3]
-            artifact.extend([None] * 11)
-            artifact.append(["only", "two"])  # Invalid: needs 4 elements
-            mock_list.return_value = [artifact]
+        # Create artifact with invalid metadata (less than 4 elements)
+        artifact = ["slide_001", "Slides", 8, None, 3]
+        artifact.extend([None] * 11)
+        artifact.append(["only", "two"])  # Invalid: needs 4 elements
 
-            with pytest.raises(ArtifactParseError):
-                await api.download_slide_deck("nb_123", "/tmp/slides.pdf")
+        with pytest.raises(ArtifactParseError):
+            await api.download_slide_deck("nb_123", "/tmp/slides.pdf", artifacts_data=[artifact])
 
 
 class TestMindMapGeneration:
@@ -602,23 +590,21 @@ class TestDownloadReport:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "report.md")
 
-            # Patch _list_raw to return report artifact data
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Type 2 (report), status 3 (completed), markdown at index 7 (wrapped in list)
-                mock_list.return_value = [
-                    [
-                        "report_001",
-                        "Report Title",
-                        2,  # type (report)
-                        None,
-                        3,  # status (completed)
-                        None,
-                        None,
-                        ["# Test Report\n\nThis is the report content."],  # markdown in list
-                    ]
+            # Type 2 (report), status 3 (completed), markdown at index 7 (wrapped in list)
+            artifacts_data = [
+                [
+                    "report_001",
+                    "Report Title",
+                    2,  # type (report)
+                    None,
+                    3,  # status (completed)
+                    None,
+                    None,
+                    ["# Test Report\n\nThis is the report content."],  # markdown in list
                 ]
+            ]
 
-                result = await api.download_report("nb_123", output_path)
+            result = await api.download_report("nb_123", output_path, artifacts_data=artifacts_data)
 
             assert result == output_path
             # Verify file was written
@@ -631,22 +617,19 @@ class TestDownloadReport:
         """Test error when no report artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = []
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_report("nb_123", "/tmp/report.md")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_report("nb_123", "/tmp/report.md", artifacts_data=[])
 
     @pytest.mark.asyncio
     async def test_download_report_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific report ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = [["other_id", "Report", 2, None, 3, None, None, ["content"]]]
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_report("nb_123", "/tmp/report.md", artifact_id="report_001")
+        artifacts_data = [["other_id", "Report", 2, None, 3, None, None, ["content"]]]
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_report(
+                "nb_123", "/tmp/report.md", artifact_id="report_001", artifacts_data=artifacts_data
+            )
 
     @pytest.mark.asyncio
     async def test_download_report_direct_string_content(self, mock_artifacts_api):
@@ -656,22 +639,21 @@ class TestDownloadReport:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "report.md")
 
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Type 2 (report), status 3 (completed), markdown as direct string
-                mock_list.return_value = [
-                    [
-                        "report_002",
-                        "Direct String Report",
-                        2,  # type (report)
-                        None,
-                        3,  # status (completed)
-                        None,
-                        None,
-                        "# Direct String Report\n\nContent as string, not list.",  # direct string
-                    ]
+            # Type 2 (report), status 3 (completed), markdown as direct string
+            artifacts_data = [
+                [
+                    "report_002",
+                    "Direct String Report",
+                    2,  # type (report)
+                    None,
+                    3,  # status (completed)
+                    None,
+                    None,
+                    "# Direct String Report\n\nContent as string, not list.",  # direct string
                 ]
+            ]
 
-                result = await api.download_report("nb_123", output_path)
+            result = await api.download_report("nb_123", output_path, artifacts_data=artifacts_data)
 
             assert result == output_path
             with open(output_path, encoding="utf-8") as f:
@@ -750,12 +732,14 @@ class TestDownloadMindMap:
             ),
             # The studio backend is empty; the requested id is absent from the
             # note-backed list above, so the lookup misses across both backends.
-            # (_list_raw must resolve to a real empty list, not the fixture's bare
-            # AsyncMock, which now reads as drift -> DecodingError per #1344.)
-            patch.object(api._downloads, "_list_raw", new=AsyncMock(return_value=[])),
             pytest.raises(ArtifactNotFoundError),
         ):
-            await api.download_mind_map("nb_123", "/tmp/mindmap.json", artifact_id="mindmap_001")
+            await api.download_mind_map(
+                "nb_123",
+                "/tmp/mindmap.json",
+                artifact_id="mindmap_001",
+                artifacts_data=[],
+            )
 
 
 class TestDownloadDataTable:
@@ -769,43 +753,40 @@ class TestDownloadDataTable:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "data.csv")
 
-            # Patch _list_raw to return data table artifact
-            with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-                # Create the complex nested structure for data table
-                # artifact[18] contains the rich-text structure
-                artifact = ["table_001", "Data Table Title", 9, None, 3]
-                artifact.extend([None] * 13)  # Pad to index 18
+            # Create the complex nested structure for data table.
+            # artifact[18] contains the rich-text structure.
+            artifact = ["table_001", "Data Table Title", 9, None, 3]
+            artifact.extend([None] * 13)  # Pad to index 18
 
-                # Create minimal valid data table structure
-                # Structure: raw_data[0][0][0][0][4][2] = rows array
-                rows_data = [
-                    # Header row
+            # Create minimal valid data table structure
+            # Structure: raw_data[0][0][0][0][4][2] = rows array
+            rows_data = [
+                # Header row
+                [
+                    0,
+                    20,
                     [
-                        0,
-                        20,
-                        [
-                            [0, 5, [[0, 5, [[0, 5, [["Col1"]]]]]]],
-                            [5, 10, [[5, 10, [[5, 10, [["Col2"]]]]]]],
-                            [10, 20, [[10, 20, [[10, 20, [["Col3"]]]]]]],
-                        ],
+                        [0, 5, [[0, 5, [[0, 5, [["Col1"]]]]]]],
+                        [5, 10, [[5, 10, [[5, 10, [["Col2"]]]]]]],
+                        [10, 20, [[10, 20, [[10, 20, [["Col3"]]]]]]],
                     ],
-                    # Data row
+                ],
+                # Data row
+                [
+                    20,
+                    40,
                     [
-                        20,
-                        40,
-                        [
-                            [20, 25, [[20, 25, [[20, 25, [["A"]]]]]]],
-                            [25, 30, [[25, 30, [[25, 30, [["B"]]]]]]],
-                            [30, 40, [[30, 40, [[30, 40, [["C"]]]]]]],
-                        ],
+                        [20, 25, [[20, 25, [[20, 25, [["A"]]]]]]],
+                        [25, 30, [[25, 30, [[25, 30, [["B"]]]]]]],
+                        [30, 40, [[30, 40, [[30, 40, [["C"]]]]]]],
                     ],
-                ]
-                # Build the nested structure: [0][0][0][0][4][2]
-                data_table_structure = [[[[[0, 100, None, None, [6, 7, rows_data]]]]]]
-                artifact.append(data_table_structure)
-                mock_list.return_value = [artifact]
+                ],
+            ]
+            # Build the nested structure: [0][0][0][0][4][2]
+            data_table_structure = [[[[[0, 100, None, None, [6, 7, rows_data]]]]]]
+            artifact.append(data_table_structure)
 
-                result = await api.download_data_table("nb_123", output_path)
+            result = await api.download_data_table("nb_123", output_path, artifacts_data=[artifact])
 
             assert result == output_path
             # Verify CSV was written correctly
@@ -822,45 +803,40 @@ class TestDownloadDataTable:
         """Test error when no data table artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = []
-
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_data_table("nb_123", "/tmp/data.csv")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_data_table("nb_123", "/tmp/data.csv", artifacts_data=[])
 
     @pytest.mark.asyncio
     async def test_download_data_table_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific data table ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            # Need at least 19 elements for valid structure
-            artifact = ["other_id", "Table", 9, None, 3]
-            artifact.extend([None] * 14)  # Pad to 19 elements
-            mock_list.return_value = [artifact]
+        # Need at least 19 elements for valid structure
+        artifact = ["other_id", "Table", 9, None, 3]
+        artifact.extend([None] * 14)  # Pad to 19 elements
 
-            with pytest.raises(ArtifactNotReadyError):
-                await api.download_data_table("nb_123", "/tmp/data.csv", artifact_id="table_001")
+        with pytest.raises(ArtifactNotReadyError):
+            await api.download_data_table(
+                "nb_123", "/tmp/data.csv", artifact_id="table_001", artifacts_data=[artifact]
+            )
 
     @pytest.mark.asyncio
     async def test_download_data_table_empty_headers(self, mock_artifacts_api):
         """Test error when data table has invalid structure resulting in empty headers."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list:
-            artifact = ["table_001", "Data Table", 9, None, 3]
-            artifact.extend([None] * 13)  # Pad to index 18
+        artifact = ["table_001", "Data Table", 9, None, 3]
+        artifact.extend([None] * 13)  # Pad to index 18
 
-            # Create structure with invalid row format (missing cell array)
-            invalid_rows = [
-                [0, 20],  # Missing third element (cell array)
-            ]
-            data_table_structure = [[[[[0, 100, None, None, [6, 7, invalid_rows]]]]]]
-            artifact.append(data_table_structure)
-            mock_list.return_value = [artifact]
+        # Create structure with invalid row format (missing cell array)
+        invalid_rows = [
+            [0, 20],  # Missing third element (cell array)
+        ]
+        data_table_structure = [[[[[0, 100, None, None, [6, 7, invalid_rows]]]]]]
+        artifact.append(data_table_structure)
 
-            with pytest.raises(ArtifactParseError):
-                await api.download_data_table("nb_123", "/tmp/data.csv")
+        with pytest.raises(ArtifactParseError):
+            await api.download_data_table("nb_123", "/tmp/data.csv", artifacts_data=[artifact])
 
 
 class TestStoragePathEncapsulation:

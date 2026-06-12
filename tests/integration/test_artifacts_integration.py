@@ -451,9 +451,16 @@ class TestArtifactsAPI:
         assert result == artifact_rows
 
     @pytest.mark.asyncio
-    async def test_list_uses_facade_list_raw_callback_and_mind_map_service(self):
-        """list() resolves facade _list_raw and the injected mind-map service."""
-        core = MagicMock()
+    async def test_list_uses_rpc_listing_and_mind_map_service(self):
+        """list() combines studio artifacts from RPC with the injected mind-map service."""
+        from tests._fixtures.fake_core import make_fake_core
+
+        studio_artifact = ["art_001", "My Report", 2, None, 3]
+        mind_map = [
+            "mind_map_001",
+            ["mind_map_001", '{"name":"Map"}', [1, "user", [1704067200, 0]], None, "Map"],
+        ]
+        core = make_fake_core(rpc_call=AsyncMock(return_value=[[studio_artifact]]))
         api = ArtifactsAPI(
             rpc=core,
             drain=core,
@@ -462,32 +469,26 @@ class TestArtifactsAPI:
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
         )
-        studio_artifact = ["art_001", "My Report", 2, None, 3]
-        mind_map = [
-            "mind_map_001",
-            ["mind_map_001", '{"name":"Map"}', [1, "user", [1704067200, 0]], None, "Map"],
-        ]
 
-        with (
-            patch.object(
-                api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])
-            ) as list_raw,
-            patch.object(
-                api._mind_maps,
-                "list_mind_maps",
-                new=AsyncMock(return_value=[mind_map]),
-            ) as list_mind_maps,
-        ):
+        with patch.object(
+            api._mind_maps,
+            "list_mind_maps",
+            new=AsyncMock(return_value=[mind_map]),
+        ) as list_mind_maps:
             artifacts = await api.list("nb_123")
 
-        list_raw.assert_awaited_once_with("nb_123")
+        core.rpc_call.assert_awaited_once()
         list_mind_maps.assert_awaited_once_with("nb_123")
         assert [artifact.id for artifact in artifacts] == ["art_001", "mind_map_001"]
 
     @pytest.mark.asyncio
     async def test_list_skips_mind_map_callback_for_non_mind_map_filter(self):
         """Filtering to studio-only kinds must not fetch mind maps."""
-        core = MagicMock()
+        from tests._fixtures.fake_core import make_fake_core
+
+        core = make_fake_core(
+            rpc_call=AsyncMock(return_value=[[["art_001", "My Report", 2, None, 3]]])
+        )
         api = ArtifactsAPI(
             rpc=core,
             drain=core,
@@ -496,20 +497,16 @@ class TestArtifactsAPI:
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
         )
-        studio_artifact = ["art_001", "My Report", 2, None, 3]
 
-        with (
-            patch.object(api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])),
-            patch.object(
-                api._mind_maps,
-                "list_mind_maps",
-                new=AsyncMock(),
-            ) as list_mind_maps,
-        ):
+        with patch.object(
+            api._mind_maps,
+            "list_mind_maps",
+            new=AsyncMock(),
+        ) as list_mind_maps:
             artifacts = await api.list("nb_123", ArtifactType.REPORT)
 
-        list_mind_maps.assert_not_awaited()
         assert [artifact.id for artifact in artifacts] == ["art_001"]
+        list_mind_maps.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_get_uses_public_list_callback(self):
@@ -1579,16 +1576,16 @@ class TestExtractAppData:
 
         # HTML that has NO data-app-data attribute
         html_without_data = "<html><body><div>No app data here</div></body></html>"
+        html_response = build_rpc_response(
+            RPCMethod.GET_INTERACTIVE_HTML,
+            [[None, None, None, None, None, None, None, None, None, [html_without_data]]],
+        )
+        httpx_mock.add_response(content=html_response.encode())
 
         output_path = str(tmp_path / "quiz.json")
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.artifacts._downloads,
-                "_get_artifact_content",
-                AsyncMock(return_value=html_without_data),
-            ):
-                with pytest.raises(ArtifactParseError, match="data-app-data"):
-                    await client.artifacts.download_quiz("nb_123", output_path)
+            with pytest.raises(ArtifactParseError, match="data-app-data"):
+                await client.artifacts.download_quiz("nb_123", output_path)
 
 
 class TestListMindMapErrorHandling:
@@ -2863,15 +2860,15 @@ class TestDownloadQuizFlashcardParsing:
         httpx_mock.add_response(content=list_response.encode())
 
         html_without_data = "<html><body><p>No app data</p></body></html>"
+        html_response = build_rpc_response(
+            RPCMethod.GET_INTERACTIVE_HTML,
+            [[None, None, None, None, None, None, None, None, None, [html_without_data]]],
+        )
+        httpx_mock.add_response(content=html_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.artifacts._downloads,
-                "_get_artifact_content",
-                AsyncMock(return_value=html_without_data),
-            ):
-                with pytest.raises(ArtifactParseError, match="data-app-data"):
-                    await client.artifacts.download_flashcards("nb_123", "/tmp/flashcards.json")
+            with pytest.raises(ArtifactParseError, match="data-app-data"):
+                await client.artifacts.download_flashcards("nb_123", "/tmp/flashcards.json")
 
     @pytest.mark.asyncio
     async def test_download_quiz_invalid_output_format_raises_validation_error(
@@ -3020,17 +3017,17 @@ class TestDownloadQuizFlashcardParsing:
         httpx_mock.add_response(content=list_response.encode())
 
         raw_html = '<html><body data-app-data="{&quot;quiz&quot;:[]}">content</body></html>'
+        html_response = build_rpc_response(
+            RPCMethod.GET_INTERACTIVE_HTML,
+            [[None, None, None, None, None, None, None, None, None, [raw_html]]],
+        )
+        httpx_mock.add_response(content=html_response.encode())
 
         output_path = str(tmp_path / "quiz.html")
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.artifacts._downloads,
-                "_get_artifact_content",
-                AsyncMock(return_value=raw_html),
-            ):
-                result = await client.artifacts.download_quiz(
-                    "nb_123", output_path, output_format="html"
-                )
+            result = await client.artifacts.download_quiz(
+                "nb_123", output_path, output_format="html"
+            )
 
         assert result == output_path
         from pathlib import Path

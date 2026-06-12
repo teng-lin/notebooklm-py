@@ -316,24 +316,7 @@ _ALLOWLIST: frozenset[str] = frozenset()
 _DEEP_LEAF_ALLOWLIST: frozenset[str] = frozenset()
 
 # Files containing private-attribute ``patch.object`` patches (pattern g).
-_PATCH_OBJECT_PRIVATE_ATTR_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "tests/integration/concurrency/test_download_blocks_loop.py",
-        "tests/integration/test_artifacts_integration.py",
-        "tests/integration/test_sources_integration.py",
-        "tests/unit/cli/conftest.py",
-        "tests/unit/cli/test_agent.py",
-        "tests/unit/cli/test_cli_contract.py",
-        "tests/unit/cli/test_completion.py",
-        "tests/unit/cli/test_cookie_writes.py",
-        "tests/unit/cli/test_firefox_accounts.py",
-        "tests/unit/cli/test_playwright_login_render_contract.py",
-        "tests/unit/cli/test_profile.py",
-        "tests/unit/test_artifact_downloads.py",
-        "tests/unit/test_artifact_downloads_coverage.py",
-        "tests/unit/test_source_status.py",
-    }
-)
+_PATCH_OBJECT_PRIVATE_ATTR_ALLOWLIST: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------

@@ -49,6 +49,7 @@ def _read_firefox_container_cookies(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
+    firefox_containers: Any | None = None,
 ) -> list[dict[str, Any]] | BrowserCookieOutcome:
     """Load Google cookies from a specific Firefox Multi-Account Container.
 
@@ -75,7 +76,7 @@ def _read_firefox_container_cookies(
         renders ``outcome.message`` and exits, keeping presentation + exit
         policy out of ``cli/services``.
     """
-    firefox_containers = _firefox_containers_module()
+    firefox_containers = firefox_containers or _firefox_containers_module()
 
     profile_path = firefox_containers.find_firefox_profile_path()
     if profile_path is None:
@@ -123,7 +124,11 @@ def _read_firefox_container_cookies(
         )
 
 
-def _maybe_warn_firefox_containers_in_use(io: LoginIO) -> None:
+def _maybe_warn_firefox_containers_in_use(
+    io: LoginIO,
+    *,
+    firefox_containers: Any | None = None,
+) -> None:
     """Emit a one-line warning when unscoped ``firefox`` is risky.
 
     Triggers when ``cookies.sqlite`` has at least one row whose
@@ -135,7 +140,7 @@ def _maybe_warn_firefox_containers_in_use(io: LoginIO) -> None:
 
     Any probe failure is swallowed inside ``has_container_cookies_in_use``.
     """
-    firefox_containers = _firefox_containers_module()
+    firefox_containers = firefox_containers or _firefox_containers_module()
 
     profile_path = firefox_containers.find_firefox_profile_path()
     if profile_path is None:

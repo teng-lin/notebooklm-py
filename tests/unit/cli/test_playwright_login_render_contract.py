@@ -44,9 +44,10 @@ import time
 from contextlib import ExitStack
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
+from rich.console import Console, ConsoleDimensions
 
 import notebooklm._auth.browser_capture as _bc
 import notebooklm.cli.services.playwright_login as _pl
@@ -78,18 +79,16 @@ def _fixed_console_width():
     contract. The single shared ``console`` instance is reused by the service,
     ``session_cmd`` and the error paths, so pinning its size once covers every
     render site while still writing through to ``CliRunner``'s captured stdout.
-    Rich's ``Console.size`` only honours the pinned dimensions when **both**
-    ``_width`` and ``_height`` are set (otherwise it falls back to terminal /
-    ``COLUMNS`` detection — exactly the OS-divergent path being avoided), so both
-    are patched. The wide 400 keeps every rendered line on one physical row even
-    after the ``- legacy_windows`` adjustment Rich applies on Windows, so nothing
-    ever reflows.
+    Patching ``Console.size`` at the class level pins the dimensions observed by
+    every shared console. The wide 400 keeps every rendered line on one physical
+    row even after the ``- legacy_windows`` adjustment Rich applies on Windows,
+    so nothing ever reflows.
     """
-    from notebooklm.cli import rendering
-
-    with (
-        patch.object(rendering.console, "_width", 400),
-        patch.object(rendering.console, "_height", 100),
+    with patch.object(
+        Console,
+        "size",
+        new_callable=PropertyMock,
+        return_value=ConsoleDimensions(400, 100),
     ):
         yield
 

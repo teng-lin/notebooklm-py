@@ -2,10 +2,11 @@
 
 import math
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console, ConsoleDimensions
 
 import notebooklm.cli._chromium_profiles as chromium_profiles
 from notebooklm.types import (
@@ -32,9 +33,8 @@ def _pin_cli_console_width():
     (the real render contract). The single shared ``console`` is reused by the
     services, ``session_cmd`` and the error paths, so pinning its size once
     covers every render site while still writing through to ``CliRunner``'s
-    captured stdout. ``Console.size`` only honours the pinned dimensions when
-    **both** ``_width`` and ``_height`` are set (otherwise it falls back to the
-    OS-divergent terminal/``COLUMNS`` detection), so both are patched.
+    captured stdout. Patch ``Console.size`` at the class level so every shared
+    console observes the same deterministic dimensions.
 
     ``rendering`` exposes a *second* console — ``stderr_console`` (a
     ``Console(stderr=True)`` for diagnostic/status output in ``--json`` mode) —
@@ -42,13 +42,11 @@ def _pin_cli_console_width():
     the same way (#1410). Pin both consoles to the same wide, fixed dimensions
     so stderr assertions are as deterministic as stdout ones.
     """
-    from notebooklm.cli import rendering
-
-    with (
-        patch.object(rendering.console, "_width", 400),
-        patch.object(rendering.console, "_height", 100),
-        patch.object(rendering.stderr_console, "_width", 400),
-        patch.object(rendering.stderr_console, "_height", 100),
+    with patch.object(
+        Console,
+        "size",
+        new_callable=PropertyMock,
+        return_value=ConsoleDimensions(400, 100),
     ):
         yield
 
@@ -69,13 +67,11 @@ def narrow_console():
     width-dependent stderr rendering exercised by these tests stays
     deterministic too (#1410).
     """
-    from notebooklm.cli import rendering
-
-    with (
-        patch.object(rendering.console, "_width", 80),
-        patch.object(rendering.console, "_height", 100),
-        patch.object(rendering.stderr_console, "_width", 80),
-        patch.object(rendering.stderr_console, "_height", 100),
+    with patch.object(
+        Console,
+        "size",
+        new_callable=PropertyMock,
+        return_value=ConsoleDimensions(80, 100),
     ):
         yield
 

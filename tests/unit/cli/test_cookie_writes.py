@@ -69,14 +69,13 @@ class TestSelectAccount:
     def test_no_default_marker_warns_and_returns_first(self):
         first = _Acct(0, "a@gmail.com", False)
         second = _Acct(1, "b@gmail.com", False)
-        with patch.object(cookie_writes, "_emit_warning") as emit:
-            out = cookie_writes._select_account(
-                make_recording_io(), [first, second], account_email=None
-            )
+        io = make_recording_io()
+
+        out = cookie_writes._select_account(io, [first, second], account_email=None)
+
         assert out is first
-        emit.assert_called_once()
-        # ``_emit_warning`` now takes ``(io, message)`` — message is arg index 1.
-        assert "did not mark a default" in emit.call_args[0][1]
+        assert len(io.emitted) == 1
+        assert "did not mark a default" in io.emitted[0]
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +191,6 @@ class TestWriteExtractedCookies:
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
             patch("notebooklm.auth.write_account_metadata", side_effect=OSError("ro fs")),
-            patch.object(cookie_writes, "_emit_warning") as emit,
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -204,7 +202,7 @@ class TestWriteExtractedCookies:
             )
         # Cookies were written; metadata failure only warns.
         assert out is None
-        assert any("metadata write failed" in c.args[1] for c in emit.call_args_list)
+        assert any("metadata write failed" in message for message in io.emitted)
 
     def test_verification_value_error_warns(self, tmp_path):
         storage_path = tmp_path / "storage_state.json"
@@ -216,7 +214,6 @@ class TestWriteExtractedCookies:
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
             patch("notebooklm.auth.write_account_metadata"),
-            patch.object(cookie_writes, "_emit_warning") as emit,
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -227,7 +224,7 @@ class TestWriteExtractedCookies:
                 email="a@gmail.com",
             )
         assert out is None
-        assert any("failed verification" in c.args[1] for c in emit.call_args_list)
+        assert any("failed verification" in message for message in io.emitted)
 
     def test_verification_network_error_warns(self, tmp_path):
         storage_path = tmp_path / "storage_state.json"
@@ -239,7 +236,6 @@ class TestWriteExtractedCookies:
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
             patch("notebooklm.auth.write_account_metadata"),
-            patch.object(cookie_writes, "_emit_warning") as emit,
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -250,7 +246,7 @@ class TestWriteExtractedCookies:
                 email="a@gmail.com",
             )
         assert out is None
-        assert any("could not verify" in c.args[1] for c in emit.call_args_list)
+        assert any("could not verify" in message for message in io.emitted)
 
     def test_happy_path_returns_none(self, tmp_path):
         storage_path = tmp_path / "storage_state.json"
@@ -262,7 +258,6 @@ class TestWriteExtractedCookies:
             patch.object(cookie_writes, "atomic_write_json"),
             patch.object(cookie_writes, "fetch_tokens_with_domains", MagicMock()),
             patch("notebooklm.auth.write_account_metadata"),
-            patch.object(cookie_writes, "_emit_warning") as emit,
         ):
             out = cookie_writes._write_extracted_cookies(
                 io,
@@ -273,4 +268,4 @@ class TestWriteExtractedCookies:
                 email="a@gmail.com",
             )
         assert out is None
-        emit.assert_not_called()
+        assert io.emitted == []

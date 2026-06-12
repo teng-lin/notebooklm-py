@@ -265,7 +265,7 @@ class TestProfileSwitchCommand:
         config_path = tmp_path / "config.json"
 
         with patch.object(
-            profile_module, "_atomic_write_config", side_effect=OSError("permission denied")
+            profile_module, "atomic_update_json", side_effect=OSError("permission denied")
         ):
             result = runner.invoke(
                 cli,

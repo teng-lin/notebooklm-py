@@ -18,6 +18,7 @@ from pytest_httpx import HTTPXMock
 
 import notebooklm._sources as _sources_mod
 from notebooklm import NotebookLMClient, Source, SourceType
+from notebooklm._source.add import SourceAddService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import SourceAddError, SourceNotFoundError
@@ -1638,74 +1639,85 @@ class TestAddUrlErrorPaths:
         self,
         auth_tokens,
     ):
-        """Test add_url() wraps RPCError from _add_url_source in SourceAddError (lines 327-329)."""
-        async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources,
-                "_add_url_source",
-                side_effect=RPCError("RPC call failed"),
-            ):
-                with pytest.raises(SourceAddError):
-                    await client.sources.add_url("nb_123", "https://example.com")
+        """Test add_url() wraps RPCError from the regular URL adder in SourceAddError."""
+        service = SourceAddService()
+
+        with pytest.raises(SourceAddError):
+            await service.add_url(
+                "nb_123",
+                "https://example.com",
+                add_youtube_source=AsyncMock(),
+                add_url_source=AsyncMock(side_effect=RPCError("RPC call failed")),
+                list_sources=AsyncMock(return_value=[]),
+                wait_until_ready=AsyncMock(),
+                extract_youtube_video_id=lambda _url: None,
+                is_youtube_url=lambda _url: False,
+                logger=_sources_mod.logger,
+            )
 
     @pytest.mark.asyncio
     async def test_add_url_youtube_rpc_error_raises_source_add_error(
         self,
         auth_tokens,
     ):
-        """Test add_url() wraps RPCError from _add_youtube_source in SourceAddError (lines 327-329)."""
-        async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources,
-                "_add_youtube_source",
-                side_effect=RPCError("YouTube RPC failed"),
-            ):
-                with pytest.raises(SourceAddError):
-                    await client.sources.add_url(
-                        "nb_123", "https://youtube.com/watch?v=dQw4w9WgXcQ"
-                    )
+        """Test add_url() wraps RPCError from the YouTube adder in SourceAddError."""
+        service = SourceAddService()
+
+        with pytest.raises(SourceAddError):
+            await service.add_url(
+                "nb_123",
+                "https://youtube.com/watch?v=dQw4w9WgXcQ",
+                add_youtube_source=AsyncMock(side_effect=RPCError("YouTube RPC failed")),
+                add_url_source=AsyncMock(),
+                list_sources=AsyncMock(return_value=[]),
+                wait_until_ready=AsyncMock(),
+                extract_youtube_video_id=lambda _url: "dQw4w9WgXcQ",
+                is_youtube_url=lambda _url: True,
+                logger=_sources_mod.logger,
+            )
 
     @pytest.mark.asyncio
     async def test_add_url_none_result_raises_source_add_error(
         self,
         auth_tokens,
     ):
-        """Test add_url() raises SourceAddError when API returns None (line 332)."""
-        async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources,
-                "_add_url_source",
-                new_callable=AsyncMock,
-                return_value=None,
-            ):
-                with pytest.raises(SourceAddError, match="API returned no data"):
-                    await client.sources.add_url("nb_123", "https://example.com")
+        """Test add_url() raises SourceAddError when API returns None."""
+        service = SourceAddService()
+
+        with pytest.raises(SourceAddError, match="API returned no data"):
+            await service.add_url(
+                "nb_123",
+                "https://example.com",
+                add_youtube_source=AsyncMock(),
+                add_url_source=AsyncMock(return_value=None),
+                list_sources=AsyncMock(return_value=[]),
+                wait_until_ready=AsyncMock(),
+                extract_youtube_video_id=lambda _url: None,
+                is_youtube_url=lambda _url: False,
+                logger=_sources_mod.logger,
+            )
 
     @pytest.mark.asyncio
     async def test_add_url_wait_true(
         self,
         auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
     ):
         """Test add_url() with wait=True calls wait_until_ready (lines 335-336)."""
         source_data = [[[["src_wait_url"], "Example", [None, 11], [None, 2]]]]
         ready_source = Source(id="src_wait_url", title="Example")
+        response = build_rpc_response(RPCMethod.ADD_SOURCE, source_data)
+        httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
                 client.sources,
-                "_add_url_source",
+                "wait_until_ready",
                 new_callable=AsyncMock,
-                return_value=source_data,
-            ):
-                with patch.object(
-                    client.sources,
-                    "wait_until_ready",
-                    new_callable=AsyncMock,
-                    return_value=ready_source,
-                ) as mock_wait:
-                    result = await client.sources.add_url(
-                        "nb_123", "https://example.com", wait=True
-                    )
+                return_value=ready_source,
+            ) as mock_wait:
+                result = await client.sources.add_url("nb_123", "https://example.com", wait=True)
 
         mock_wait.assert_called_once()
         assert result.id == "src_wait_url"
@@ -1726,14 +1738,9 @@ class TestAddUrlErrorPaths:
 
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(_sources_mod, "is_youtube_url", return_value=True) as mock_is_yt:
-                with patch.object(
-                    client.sources,
-                    "_extract_youtube_video_id",
-                    return_value=None,
-                ):
-                    source = await client.sources.add_url(
-                        "nb_123", "https://youtube.com/channel/UCxxxxxxx"
-                    )
+                source = await client.sources.add_url(
+                    "nb_123", "https://youtube.com/channel/UCxxxxxxx"
+                )
 
         assert source is not None
         mock_is_yt.assert_called_once()
@@ -2933,7 +2940,7 @@ class TestWaitUntilReadyErrorPaths:
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
                 client.sources,
-                "_get_or_none",
+                "get_or_none",
                 new_callable=AsyncMock,
                 return_value=processing_source,
             ):
@@ -2979,7 +2986,7 @@ class TestWaitUntilReadyMidLoopTimeout:
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
                 client.sources,
-                "_get_or_none",
+                "get_or_none",
                 new_callable=AsyncMock,
                 return_value=processing_source,
             ):

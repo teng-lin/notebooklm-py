@@ -276,7 +276,7 @@ def test_representative_help_snippets_remain_visible(path: str, snippets: tuple[
 
 
 def test_completion_callbacks_return_value_help_shape_and_50_row_caps() -> None:
-    from notebooklm.cli import options
+    from notebooklm.cli import completion, options
 
     fake_client = AsyncMock()
     fake_client.__aenter__.return_value = fake_client
@@ -289,7 +289,7 @@ def test_completion_callbacks_return_value_help_shape_and_50_row_caps() -> None:
     )
 
     with (
-        patch.object(options, "_resolve_notebook_for_completion", return_value="nb_contract"),
+        patch.object(completion, "resolve_notebook", return_value="nb_contract"),
         patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
         patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
     ):
@@ -305,7 +305,7 @@ def test_completion_callbacks_return_value_help_shape_and_50_row_caps() -> None:
 
 
 def test_completion_callbacks_are_silent_on_failures(capsys: pytest.CaptureFixture[str]) -> None:
-    from notebooklm.cli import options
+    from notebooklm.cli import completion, options
 
     with patch("notebooklm.cli.helpers.get_auth_tokens", side_effect=RuntimeError("no auth")):
         assert options._complete_notebooks(_ctx_with_notebook(), None, "nb_") == []
@@ -317,7 +317,7 @@ def test_completion_callbacks_are_silent_on_failures(capsys: pytest.CaptureFixtu
     fake_client.artifacts.list = AsyncMock(side_effect=RuntimeError("offline"))
 
     with (
-        patch.object(options, "_resolve_notebook_for_completion", return_value="nb_contract"),
+        patch.object(completion, "resolve_notebook", return_value="nb_contract"),
         patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
         patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
     ):

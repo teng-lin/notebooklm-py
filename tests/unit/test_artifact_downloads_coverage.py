@@ -401,11 +401,10 @@ async def test_download_flashcards_delegates():
 @pytest.mark.asyncio
 async def test_download_urls_batch_non_https_recorded_as_failure(tmp_path):
     """http:// URL is rejected and aggregated into ``failed``."""
-    service = _make_service(storage_path=tmp_path / "storage.json")
-    with patch.object(artifact_downloads, "_load_httpx_cookies", return_value={}):
-        result = await service.download_urls_batch(
-            [("http://storage.googleapis.com/x.bin", str(tmp_path / "out.bin"))]
-        )
+    service = _make_service(storage_path=tmp_path / "storage.json", cookie_loader=lambda _path: {})
+    result = await service.download_urls_batch(
+        [("http://storage.googleapis.com/x.bin", str(tmp_path / "out.bin"))]
+    )
     assert result.succeeded == []
     assert len(result.failed) == 1
     url, exc = result.failed[0]
