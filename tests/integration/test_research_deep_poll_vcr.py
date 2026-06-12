@@ -324,6 +324,12 @@ async def _poll_until_terminal(
     first poll is unambiguous because the scratch notebook has exactly one
     research task in flight.
 
+    Only ``COMPLETED`` and ``FAILED`` break the loop. ``NOT_FOUND`` /
+    ``NO_RESEARCH`` are NOT treated as terminal — they continue polling
+    (mirrors ``wait_for_completion``'s replication-lag policy: a pinned task
+    temporarily absent from a poll is a transient condition, not an end
+    state), bounded by :data:`_MAX_POLLS`.
+
     The result list is returned in poll order. During replay the cassette
     plays each recorded poll response back in order, so the loop performs
     exactly the recorded number of polls and lands on the recorded terminal
@@ -333,6 +339,10 @@ async def _poll_until_terminal(
     pinned_task_id: str | None = None
     for poll_index in range(_MAX_POLLS):
         poll = await client.research.poll(notebook_id, task_id=pinned_task_id)
+        # Defensive narrowing: poll() returns a ResearchTask (never None), but
+        # asserting keeps the fail-fast invariant explicit and guards the
+        # attribute access below against an unexpected empty response.
+        assert poll is not None, "research.poll must return a ResearchTask, not None"
         results.append(poll)
         # Capture the POLL-reported task id the first time the task surfaces,
         # then pin it for every later poll (mirrors wait_for_completion).
@@ -352,8 +362,9 @@ async def _poll_until_terminal(
 class TestDeepResearchPollReplay:
     """Replays the full deep-research lifecycle to ``completed`` in <30 seconds."""
 
+    # ``pytest.mark.vcr`` is applied module-wide via ``pytestmark`` — no need
+    # to repeat it here.
     @pytest.mark.timeout(_RECORD_TEST_TIMEOUT_SECONDS)
-    @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette(CASSETTE_NAME)
     async def test_deep_research_polling_loop(self, fast_sleep: None) -> None:
@@ -425,10 +436,12 @@ class TestDeepResearchPollReplay:
                 # rather than equality with start's id, because Deep Research's
                 # start id and poll id differ by design.
                 seen_poll_task_id: str | None = None
+                polls_with_task_id = 0
                 for poll in polls:
                     assert poll.status
                     poll_task_id = poll.task_id
                     if poll_task_id:
+                        polls_with_task_id += 1
                         if seen_poll_task_id is None:
                             seen_poll_task_id = poll_task_id
                         else:
@@ -436,6 +449,18 @@ class TestDeepResearchPollReplay:
                                 "poll-reported task_id changed mid-loop: "
                                 f"{seen_poll_task_id!r} -> {poll_task_id!r}"
                             )
+
+                # The cassette must actually EXERCISE the task-id pinning path
+                # this PR introduces: at least two polls must surface the same
+                # non-empty task_id, so a later filtered poll reuses the id the
+                # first sighting captured. A cassette where task_id only appears
+                # on the final terminal poll would pass the consistency check
+                # above without the pinned-filter path ever running.
+                assert polls_with_task_id >= 2, (
+                    "expected the cassette to include at least two polls with "
+                    "the same non-empty task_id so replay exercises task-id "
+                    f"pinning; saw {polls_with_task_id}."
+                )
 
                 # The recorded lifecycle MUST reach a terminal state, and that
                 # terminal state MUST be ``COMPLETED`` (enum membership, not a
