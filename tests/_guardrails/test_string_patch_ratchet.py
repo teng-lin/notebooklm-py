@@ -126,7 +126,6 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/cli/test_login_multi_account.py": 22,
     "tests/unit/cli/test_login_refresh_coverage.py": 8,
     "tests/unit/cli/test_note.py": 35,
-    "tests/unit/cli/test_notebook.py": 62,
     "tests/unit/cli/test_playwright_login_coverage.py": 8,
     "tests/unit/cli/test_playwright_login_render_contract.py": 14,
     "tests/unit/cli/test_quiet_flag.py": 2,
