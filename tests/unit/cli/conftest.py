@@ -8,7 +8,12 @@ import pytest
 from click.testing import CliRunner
 from rich.console import Console, ConsoleDimensions
 
+import notebooklm.auth as auth_module
 import notebooklm.cli._chromium_profiles as chromium_profiles
+import notebooklm.cli.context as context_module
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.cli.resolve as resolve_module
+import notebooklm.cli.services.session_context as session_context_module
 from notebooklm.types import (
     MindMapResult,
     ResearchSource,
@@ -210,7 +215,7 @@ def mock_auth():
     After CLI refactoring, auth is loaded via cli.helpers module.
     We patch both the main CLI and the helpers module for full coverage.
     """
-    with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock:
+    with patch.object(helpers_module, "load_auth_from_storage") as mock:
         mock.return_value = {
             "SID": "test",
             # ``__Secure-1PSIDTS`` is required by ``MINIMUM_REQUIRED_COOKIES``
@@ -242,8 +247,8 @@ def mock_fetch_tokens():
     mock_jar.set("SID", "test", domain=".google.com")
 
     with (
-        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock,
-        patch("notebooklm.cli.helpers.build_cookie_jar", return_value=mock_jar),
+        patch.object(auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock) as mock,
+        patch.object(helpers_module, "build_cookie_jar", return_value=mock_jar),
     ):
         mock.return_value = ("csrf_token", "session_id")
         yield mock
@@ -461,11 +466,12 @@ def mock_context_file(tmp_path):
     """
     context_file = tmp_path / "context.json"
     with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch(
-            "notebooklm.cli.services.session_context.get_context_path",
+        patch.object(helpers_module, "get_context_path", return_value=context_file),
+        patch.object(context_module, "get_context_path", return_value=context_file),
+        patch.object(resolve_module, "get_context_path", return_value=context_file),
+        patch.object(
+            session_context_module,
+            "get_context_path",
             return_value=context_file,
         ),
     ):

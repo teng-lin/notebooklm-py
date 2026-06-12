@@ -17,6 +17,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli.helpers as helpers_module
+import notebooklm.client as client_module
 from notebooklm.notebooklm_cli import cli
 
 ROOT_COMMAND = "notebooklm"
@@ -290,8 +292,8 @@ def test_completion_callbacks_return_value_help_shape_and_50_row_caps() -> None:
 
     with (
         patch.object(completion, "resolve_notebook", return_value="nb_contract"),
-        patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-        patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+        patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+        patch.object(client_module, "NotebookLMClient", return_value=fake_client),
     ):
         source_items = options._complete_sources(_ctx_with_notebook(), None, "src_")
         artifact_items = options._complete_artifacts(_ctx_with_notebook(), None, "art_")
@@ -307,7 +309,7 @@ def test_completion_callbacks_return_value_help_shape_and_50_row_caps() -> None:
 def test_completion_callbacks_are_silent_on_failures(capsys: pytest.CaptureFixture[str]) -> None:
     from notebooklm.cli import completion, options
 
-    with patch("notebooklm.cli.helpers.get_auth_tokens", side_effect=RuntimeError("no auth")):
+    with patch.object(helpers_module, "get_auth_tokens", side_effect=RuntimeError("no auth")):
         assert options._complete_notebooks(_ctx_with_notebook(), None, "nb_") == []
 
     fake_client = AsyncMock()
@@ -318,8 +320,8 @@ def test_completion_callbacks_are_silent_on_failures(capsys: pytest.CaptureFixtu
 
     with (
         patch.object(completion, "resolve_notebook", return_value="nb_contract"),
-        patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
-        patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+        patch.object(helpers_module, "get_auth_tokens", return_value=object()),
+        patch.object(client_module, "NotebookLMClient", return_value=fake_client),
     ):
         assert options._complete_sources(_ctx_with_notebook(), None, "src_") == []
         assert options._complete_artifacts(_ctx_with_notebook(), None, "art_") == []
@@ -369,7 +371,7 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
     elif setup == "runtime_error":
         mock_client.artifacts.list = AsyncMock(side_effect=RuntimeError("boom"))
 
-    with patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens:
+    with patch.object(helpers_module, "get_auth_tokens") as mock_get_auth_tokens:
         if setup == "missing_storage":
             mock_get_auth_tokens.side_effect = FileNotFoundError("Storage file not found")
         else:
@@ -558,8 +560,9 @@ def test_json_error_envelope_and_exit_code_are_uniform(command_path: str) -> Non
     argv = _build_json_invocation(command_path)
     runner = _split_stderr_runner()
 
-    with patch(
-        "notebooklm.cli.helpers.get_auth_tokens",
+    with patch.object(
+        helpers_module,
+        "get_auth_tokens",
         side_effect=FileNotFoundError("Storage file not found"),
     ):
         result = runner.invoke(cli, argv, catch_exceptions=False)
