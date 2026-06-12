@@ -9,6 +9,7 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 import json
 from unittest.mock import patch
 
+import notebooklm.cli.services.session_context as session_context_module
 from notebooklm.notebooklm_cli import cli
 
 
@@ -140,7 +141,7 @@ class TestStatusPaths:
 
     def test_status_paths_flag_shows_table(self, runner, mock_context_file):
         """Test status --paths shows configuration paths table."""
-        with patch("notebooklm.cli.services.session_context.get_path_info") as mock_path_info:
+        with patch.object(session_context_module, "get_path_info") as mock_path_info:
             mock_path_info.return_value = {
                 "home_dir": "/home/test/.notebooklm",
                 "home_source": "default",
@@ -158,7 +159,7 @@ class TestStatusPaths:
 
     def test_status_paths_json_output(self, runner, mock_context_file):
         """Test status --paths --json outputs path info as JSON."""
-        with patch("notebooklm.cli.services.session_context.get_path_info") as mock_path_info:
+        with patch.object(session_context_module, "get_path_info") as mock_path_info:
             mock_path_info.return_value = {
                 "home_dir": "/custom/path/.notebooklm",
                 "home_source": "NOTEBOOKLM_HOME",
@@ -179,7 +180,7 @@ class TestStatusPaths:
         """Test status --paths shows note when NOTEBOOKLM_AUTH_JSON is set."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies":[]}')
 
-        with patch("notebooklm.cli.services.session_context.get_path_info") as mock_path_info:
+        with patch.object(session_context_module, "get_path_info") as mock_path_info:
             mock_path_info.return_value = {
                 "home_dir": "/home/test/.notebooklm",
                 "home_source": "default",

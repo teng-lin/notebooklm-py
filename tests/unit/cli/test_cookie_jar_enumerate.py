@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm.auth as auth_module
 from notebooklm.cli.services.login import cookie_jar
 from notebooklm.cli.services.login.outcomes import (
     CookieValidationFailure,
@@ -55,10 +56,12 @@ def _enumerate_env(*, validate_return, run_async_side_effect=None, run_async_ret
         stack.enter_context(
             patch.object(cookie_jar, "validate_with_recovery", return_value=validate_return)
         )
-        stack.enter_context(patch("notebooklm.auth.extract_cookies_with_domains", return_value={}))
-        stack.enter_context(patch("notebooklm.auth.build_cookie_jar", return_value=object()))
         stack.enter_context(
-            patch("notebooklm.auth.enumerate_accounts", MagicMock(return_value=object()))
+            patch.object(auth_module, "extract_cookies_with_domains", return_value={})
+        )
+        stack.enter_context(patch.object(auth_module, "build_cookie_jar", return_value=object()))
+        stack.enter_context(
+            patch.object(auth_module, "enumerate_accounts", MagicMock(return_value=object()))
         )
         yield RecordingLoginIO(run_async=run_async)
 

@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import notebooklm.auth as auth_module
 from notebooklm._app.auth_check import (
     AuthCheckPlan,
     AuthCheckResult,
@@ -210,10 +211,8 @@ async def test_token_fetch_success(tmp_path: Path) -> None:
 
     fetch = AsyncMock(return_value=("csrf-token-value", "session-id-value"))
     # ``run_auth_check`` does ``from ..auth import fetch_tokens_with_domains``
-    # at call time, so patch the public facade name it resolves. ``notebooklm.auth``
-    # is public, so this string-target ``patch`` is allowed by ADR-0007's lint
-    # (which only bars ``monkeypatch.setattr(notebooklm…)`` + private ``patch``).
-    with patch("notebooklm.auth.fetch_tokens_with_domains", fetch):
+    # at call time, so patch the public facade name it resolves.
+    with patch.object(auth_module, "fetch_tokens_with_domains", fetch):
         result = await run_auth_check(plan, read_env_auth_json=_never_read_env)
 
     assert result.checks["token_fetch"] is True
@@ -231,7 +230,7 @@ async def test_token_fetch_failure_sets_false(tmp_path: Path) -> None:
     plan = _plan(storage_path=storage, test_fetch=True)
 
     fetch = AsyncMock(side_effect=RuntimeError("network down"))
-    with patch("notebooklm.auth.fetch_tokens_with_domains", fetch):
+    with patch.object(auth_module, "fetch_tokens_with_domains", fetch):
         result = await run_auth_check(plan, read_env_auth_json=_never_read_env)
 
     assert result.checks["token_fetch"] is False
@@ -250,7 +249,7 @@ async def test_token_fetch_env_auth_passes_none_path(tmp_path: Path) -> None:
         test_fetch=True,
     )
     fetch = AsyncMock(return_value=("c", "s"))
-    with patch("notebooklm.auth.fetch_tokens_with_domains", fetch):
+    with patch.object(auth_module, "fetch_tokens_with_domains", fetch):
         result = await run_auth_check(
             plan, read_env_auth_json=lambda: json.dumps(_valid_storage_state())
         )

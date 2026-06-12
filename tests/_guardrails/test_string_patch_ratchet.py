@@ -101,9 +101,7 @@ _PATTERN_STRING_PATCH = re.compile(
 # DO lower a ceiling when a file sheds sites (the gate prints the value).
 STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/integration/test_settings_integration.py": 1,
-    "tests/unit/app/test_app_auth_check.py": 3,
     "tests/unit/cli/_session_helpers.py": 1,
-    "tests/unit/cli/test_cookie_jar_enumerate.py": 3,
     "tests/unit/cli/test_doctor.py": 1,
     "tests/unit/cli/test_download_characterization.py": 2,
     "tests/unit/cli/test_generate_characterization.py": 2,
@@ -116,7 +114,6 @@ STRING_PATCH_CEILINGS: dict[str, int] = {
     "tests/unit/cli/test_source_cmd_coverage.py": 1,
     "tests/unit/cli/test_source_content_rendering.py": 1,
     "tests/unit/cli/test_source_refresh.py": 1,
-    "tests/unit/cli/test_status_clear.py": 3,
     "tests/unit/test_json_stdout_purity.py": 2,
     "tests/unit/test_source_symlink.py": 2,
     "tests/unit/test_windows_compatibility.py": 1,
