@@ -92,7 +92,9 @@ __all__ = [
     "PassageRow",
     "StreamFrameRow",
     "TextLeafRow",
+    "SavedChatNoteRow",
     "unwrap_conversation_turns",
+    "unwrap_last_conversation_id",
 ]
 
 # ``GET_CONVERSATION_TURNS`` method id, threaded into ``safe_index`` /
@@ -102,6 +104,42 @@ _TURNS_METHOD_ID = RPCMethod.GET_CONVERSATION_TURNS.value
 # Envelope-unwrap position: ``GET_CONVERSATION_TURNS`` wraps the turn list as
 # the first element of a single-element envelope (``[[turn, ...], ...]``).
 _TURNS_CONTAINER_POS = 0
+
+# Position of the conversation id inside one innermost ``[conv_id]`` row of the
+# ``GET_LAST_CONVERSATION_ID`` (``hPTbtc``) ``[[[conv_id]]]`` payload.
+_LAST_CONVERSATION_ID_POS = 0
+
+
+def unwrap_last_conversation_id(raw: Any) -> str | None:
+    """Return the most-recent conversation id from a ``GET_LAST_CONVERSATION_ID`` payload.
+
+    The wire shape is the nested ``[[[conv_id]]]`` envelope: an outer list of
+    groups, each a list of rows, each row an innermost ``[conv_id]`` list whose
+    first element is the id string. This centralises the ``conv[0]`` descent
+    ``_chat/api.py`` previously open-coded, and is **deliberately SOFT** —
+    mirroring the historical ``get_conversation_id`` contract:
+
+    * a non-list / falsy payload, or a payload that yields no innermost
+      ``[str]`` row, returns ``None`` (no conversation exists yet);
+    * the first innermost ``[str]`` row found wins, and its id is returned.
+
+    Unlike :func:`unwrap_conversation_turns`, this read does NOT raise on a
+    truthy non-list payload: the caller (``ChatAPI.get_conversation_id``)
+    retains its own WARNING-then-``None`` diagnostics for unexpected shapes, so
+    moving the position knowledge here must not change that return contract. The
+    inner ``conv[_LAST_CONVERSATION_ID_POS]`` read is a single-level index taken
+    only AFTER the ``conv and isinstance(conv[0], str)`` guard proves the slot
+    present, so it can never raise.
+    """
+    if not isinstance(raw, list):
+        return None
+    for group in raw:
+        if not isinstance(group, list):
+            continue
+        for conv in group:
+            if isinstance(conv, list) and conv and isinstance(conv[_LAST_CONVERSATION_ID_POS], str):
+                return conv[_LAST_CONVERSATION_ID_POS]
+    return None
 
 
 def unwrap_conversation_turns(turns_data: Any, *, source: str) -> list[Any]:
@@ -162,6 +200,81 @@ def unwrap_conversation_turns(turns_data: Any, *, source: str) -> list[Any]:
             data_at_failure=reprlib.repr(turns_data),
         )
     return turns
+
+
+@dataclass(frozen=True)
+class SavedChatNoteRow:
+    """Typed view of the ``CREATE_NOTE`` (saved-from-chat) response envelope.
+
+    The captured server response wraps the note in an outer list
+    (``[[note_id, ..., title, rich_content]]``), but some response paths return
+    the note flat (``[note_id, ...]``). This adapter centralises the unwrap +
+    the ``note_data[0]`` id / ``note_data[4]`` server-title position knowledge
+    that ``_chat/notes.py`` previously open-coded, so a future reshape is a
+    one-place fix here.
+
+    Every read is **SOFT** — it preserves the historical
+    ``save_chat_answer_as_note`` degrade exactly: an unrecognised / short /
+    wrong-typed shape leaves :attr:`note_id` ``None`` (the caller raises a
+    ``RuntimeError`` from that), :attr:`server_title` falls back to ``None``
+    (the caller keeps the requested title), and :attr:`note_data` is ``None``.
+    Nothing here raises ``UnknownRPCMethodError``: the saved-chat create path
+    has always treated these as best-effort reads, not strict drift points.
+    """
+
+    _raw: Any = field(repr=False)
+
+    # ---- Position constants (the canary contract) ------------------------
+    # If any of these change,
+    # ``tests/unit/test_chat_row_adapter.py::TestSavedChatNoteRowPositionContract``
+    # MUST be updated in the same commit — that failure is the wire-shape
+    # change signal.
+    _OUTER_NOTE_POS: ClassVar[int] = 0
+    _ID_POS: ClassVar[int] = 0
+    _SERVER_TITLE_POS: ClassVar[int] = 4
+
+    @property
+    def note_data(self) -> list[Any] | None:
+        """The inner note envelope (``[id, content, metadata, ...]``) or ``None``.
+
+        Unwraps the two captured shapes: the outer-wrapped
+        ``[[note_id, ...]]`` (the inner list at position 0) and the flat
+        ``[note_id, ...]`` (a leading ``str`` id). Any other shape — empty
+        result, non-list/non-str leading slot — is an unusable response and
+        degrades to ``None``.
+        """
+        if not isinstance(self._raw, list) or len(self._raw) <= self._OUTER_NOTE_POS:
+            return None
+        first = self._raw[self._OUTER_NOTE_POS]
+        if isinstance(first, list):
+            return first
+        if isinstance(first, str):
+            return self._raw
+        return None
+
+    @property
+    def note_id(self) -> str | None:
+        """Note id at ``note_data[0]`` — ``None`` when absent or not a string."""
+        data = self.note_data
+        if data is None or len(data) <= self._ID_POS:
+            return None
+        value = data[self._ID_POS]
+        return value if isinstance(value, str) else None
+
+    @property
+    def server_title(self) -> str | None:
+        """Server-stored title at ``note_data[4]`` — ``None`` when absent.
+
+        Slot 4 of the note carries the server-stored title, which may differ
+        from the requested title (smart-title generation). ``None`` (the caller
+        keeps the requested title) when the row is too short or the slot is not
+        a string.
+        """
+        data = self.note_data
+        if data is None or len(data) <= self._SERVER_TITLE_POS:
+            return None
+        value = data[self._SERVER_TITLE_POS]
+        return value if isinstance(value, str) else None
 
 
 @dataclass(frozen=True)

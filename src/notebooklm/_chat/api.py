@@ -17,7 +17,11 @@ from .._logging import get_request_id, reset_request_id, set_request_id
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._request_types import AuthSnapshot
-from .._row_adapters.chat import ConversationTurnRow, unwrap_conversation_turns
+from .._row_adapters.chat import (
+    ConversationTurnRow,
+    unwrap_conversation_turns,
+    unwrap_last_conversation_id,
+)
 from .._runtime.config import DEFAULT_CHAT_TIMEOUT
 from .._runtime.contracts import LoopGuard, RpcCaller
 from ..exceptions import ChatError, NetworkError, ValidationError
@@ -564,18 +568,14 @@ class ChatAPI(LoopBoundPrimitive):
             params,
             source_path=f"/notebook/{notebook_id}",
         )
-        # Response structure: [[[conv_id]]]
+        # Response [[[conv_id]]]: SOFT walk in
+        # ``_row_adapters.chat.unwrap_last_conversation_id`` (None if no row).
         if raw and isinstance(raw, list):
-            for group in raw:
-                if isinstance(group, list):
-                    for conv in group:
-                        if isinstance(conv, list) and conv and isinstance(conv[0], str):
-                            return conv[0]
-            # Promoted from DEBUG to WARNING:
-            # the response shape is the actionable diagnostic when callers
-            # (notably ``ChatAPI.ask`` post-issue-#659) raise ChatError on a
-            # ``None`` return. Truncate to keep log volume bounded; the
-            # ``repr`` keeps the shape visible (lists vs. dicts vs. ints).
+            conversation_id = unwrap_last_conversation_id(raw)
+            if conversation_id is not None:
+                return conversation_id
+            # WARNING (not DEBUG): the shape is the actionable diagnostic when
+            # ``ChatAPI.ask`` raises ChatError on a ``None`` return (issue #659).
             logger.warning(
                 "hPTbtc returned an unexpected response shape; no "
                 "conversation_id extracted (notebook=%s, raw=%r)",

@@ -17,6 +17,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .._row_adapters.chat import SavedChatNoteRow
 from .._row_adapters.notes import NoteRow
 from ..rpc import RPCMethod
 from ..types import Note
@@ -331,23 +332,16 @@ async def save_chat_answer_as_note(
 
     # The captured server response wraps the 6-element note in an outer
     # list (``[[note_id, ..., title, rich_content]]``), but some response
-    # paths return the note flat (``[note_id, ...]``) — see existing
-    # ``create_note`` which handles both. Unwrap defensively.
-    note_data: list[Any] | None = None
-    if isinstance(result, list) and len(result) > 0:
-        if isinstance(result[0], list):
-            note_data = result[0]
-        elif isinstance(result[0], str):
-            note_data = result
-
-    note_id: str | None = None
-    server_title = title
-    if note_data is not None and len(note_data) > 0 and isinstance(note_data[0], str):
-        note_id = note_data[0]
-        # Slot [4] of the note carries the server-stored title, which
-        # may differ from the requested title (smart-title generation).
-        if len(note_data) > 4 and isinstance(note_data[4], str):
-            server_title = note_data[4]
+    # paths return the note flat (``[note_id, ...]``). The unwrap + the
+    # ``note_data[0]`` id / ``note_data[4]`` server-title position knowledge
+    # lives in ``_row_adapters.chat.SavedChatNoteRow`` (SOFT — see
+    # ``create_note`` which handles both shapes). Slot [4] of the note carries
+    # the server-stored title, which may differ from the requested title
+    # (smart-title generation); absent → keep the requested ``title``.
+    create_row = SavedChatNoteRow(result)
+    note_data = create_row.note_data
+    note_id = create_row.note_id
+    server_title = create_row.server_title if create_row.server_title is not None else title
 
     if not note_id:
         raise RuntimeError("CREATE_NOTE returned no note ID for saved-from-chat request")

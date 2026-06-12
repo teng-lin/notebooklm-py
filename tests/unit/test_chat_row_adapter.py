@@ -25,9 +25,11 @@ from notebooklm._row_adapters.chat import (
     ConversationTurnRow,
     ErrorPayloadRow,
     PassageRow,
+    SavedChatNoteRow,
     StreamFrameRow,
     TextLeafRow,
     unwrap_conversation_turns,
+    unwrap_last_conversation_id,
 )
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
@@ -442,3 +444,99 @@ class TestUnwrapConversationTurns:
             unwrap_conversation_turns(payload, source="test-source")
         assert exc_info.value.method_id == RPCMethod.GET_CONVERSATION_TURNS.value
         assert exc_info.value.source == "test-source"
+
+
+class TestUnwrapLastConversationId:
+    """``GET_LAST_CONVERSATION_ID`` (``hPTbtc``) ``[[[conv_id]]]`` SOFT walk.
+
+    Pins the historical ``ChatAPI.get_conversation_id`` contract: the first
+    innermost ``[str]`` row wins, and ANY shape that yields no such row returns
+    ``None`` (never raises — the caller keeps its own WARNING diagnostics).
+    """
+
+    def test_extracts_first_innermost_id(self) -> None:
+        assert unwrap_last_conversation_id([[["conv-abc"]]]) == "conv-abc"
+
+    def test_returns_first_match_when_multiple_rows(self) -> None:
+        assert unwrap_last_conversation_id([[["first"], ["second"]]]) == "first"
+
+    def test_skips_non_list_groups_and_rows(self) -> None:
+        # A non-list group is skipped; a non-list/empty/non-str-leading row is
+        # skipped; the first usable ``[str]`` row wins.
+        raw = ["noise", [None, [], [42], ["winner"]]]
+        assert unwrap_last_conversation_id(raw) == "winner"
+
+    @pytest.mark.parametrize("raw", [None, [], "str", 42, {}, [[]], [[[]]], [[[42]]]])
+    def test_no_id_returns_none_softly(self, raw: object) -> None:
+        """Any payload yielding no innermost ``[str]`` row degrades to None."""
+        assert unwrap_last_conversation_id(raw) is None
+
+    def test_does_not_raise_on_truthy_non_list(self) -> None:
+        # Unlike unwrap_conversation_turns, this stays soft for a truthy
+        # non-list payload (the caller owns the WARNING-then-None contract).
+        assert unwrap_last_conversation_id({"unexpected": "dict"}) is None
+        assert unwrap_last_conversation_id("conv-abc") is None
+
+
+class TestSavedChatNoteRowPositionContract:
+    """Canary for the ``CREATE_NOTE`` saved-from-chat envelope positions.
+
+    If these change, ``_chat/notes.py`` decoding has silently moved — update
+    this pin in the same commit.
+    """
+
+    def test_positions_pinned(self) -> None:
+        assert SavedChatNoteRow._OUTER_NOTE_POS == 0
+        assert SavedChatNoteRow._ID_POS == 0
+        assert SavedChatNoteRow._SERVER_TITLE_POS == 4
+
+
+class TestSavedChatNoteRow:
+    """SOFT unwrap of the ``CREATE_NOTE`` saved-from-chat response envelope."""
+
+    def test_outer_wrapped_shape(self) -> None:
+        inner = ["note-1", "content", None, None, "Server Title", "rich"]
+        row = SavedChatNoteRow([inner])
+        assert row.note_data is inner
+        assert row.note_id == "note-1"
+        assert row.server_title == "Server Title"
+
+    def test_flat_shape(self) -> None:
+        flat = ["note-2", "content", None, None, "Flat Title"]
+        row = SavedChatNoteRow(flat)
+        assert row.note_data is flat
+        assert row.note_id == "note-2"
+        assert row.server_title == "Flat Title"
+
+    def test_present_id_without_server_title_slot(self) -> None:
+        # Short note (no slot 4): id present, server_title falls back to None
+        # (the caller keeps the requested title).
+        row = SavedChatNoteRow([["note-3", "content"]])
+        assert row.note_id == "note-3"
+        assert row.server_title is None
+
+    def test_non_string_server_title_is_none(self) -> None:
+        row = SavedChatNoteRow([["note-4", "c", None, None, 99]])
+        assert row.note_id == "note-4"
+        assert row.server_title is None
+
+    @pytest.mark.parametrize("raw", [None, [], "str", 42, {}, [None], [42]])
+    def test_unrecognized_shape_degrades_to_none(self, raw: object) -> None:
+        """Empty / wrong-typed leading slot → no note_data / id / title."""
+        row = SavedChatNoteRow(raw)
+        assert row.note_data is None
+        assert row.note_id is None
+        assert row.server_title is None
+
+    def test_empty_inner_list_has_no_id(self) -> None:
+        # Outer-wrapped but the inner note is empty — usable note_data, no id.
+        row = SavedChatNoteRow([[]])
+        assert row.note_data == []
+        assert row.note_id is None
+        assert row.server_title is None
+
+    def test_does_not_raise_on_any_shape(self) -> None:
+        # Saved-chat create reads are best-effort: never UnknownRPCMethodError.
+        for raw in (None, "x", 7, {"k": 1}, [[7]], [["id", 1, 2]]):
+            # Reading every property must not raise on any malformed shape.
+            assert SavedChatNoteRow(raw).note_id in (None, "id")
