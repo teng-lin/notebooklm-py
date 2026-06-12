@@ -222,7 +222,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 |------|---------------|
 | Source file upload | `SourcesAPI.add_file()` delegates to `SourceUploadPipeline.add_file()`. The pipeline opens an `operation_scope`, takes its own upload semaphore, registers the file source through `runtime.rpc_call(ADD_SOURCE_FILE)`, then uses a dedicated `httpx.AsyncClient` and live Kernel cookies for the Scotty resumable-upload start/finalize calls. Optional wait/rename steps return to `rpc_call`. |
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
-| Artifact generation | `ArtifactsAPI` builds `CREATE_ARTIFACT` params (via the `_artifact/payloads.py` builders) and uses the normal `rpc_call` path directly — the former `ArtifactGenerationService` was folded into the facade (#1205). `ArtifactPollingService` owns leader/follower polling with `operation_scope(...)` and a feature-local `PollRegistry`; `ArtifactsAPI` registers a close-time drain hook for poll cleanup. |
+| Artifact generation | `ArtifactsAPI` delegates the `generate_*` / `revise_slide` / `retry_failed` kickoff paths to `ArtifactGenerationService` (`_artifact/generation.py`), which builds `CREATE_ARTIFACT` params (via the `_artifact/payloads.py` builders) and uses the normal `rpc_call` path; the facade keeps thin signature-preserving delegators. `ArtifactPollingService` owns leader/follower polling with `operation_scope(...)` and a feature-local `PollRegistry`; `ArtifactsAPI` registers a close-time drain hook for poll cleanup. |
 | Artifact download | `ArtifactDownloadService` lists/selects artifacts through `RpcCaller`, but media downloads use a separate streaming `httpx.AsyncClient` with storage cookies, trusted-host checks, and a producer/writer split. They do not go through `RpcExecutor` or `Kernel.post`. |
 | Notes and mind maps | `NoteService` owns note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` adapts those note rows for artifact-facing mind-map behavior so notes and artifacts do not import each other. |
 
@@ -502,6 +502,7 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Service layer managing note CRUD, note-backed content generation, and sync. |
 | `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Specific adapter service representing mind-maps, backed by standard notebook notes. |
 | `ArtifactDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Asynchronous download coordinator for finished artifacts. |
+| `ArtifactGenerationService` | [`_artifact/generation.py`](../src/notebooklm/_artifact/generation.py) | Generation kickoff service (`generate_*`, `revise_slide`, `retry_failed`) extracted from `ArtifactsAPI`. |
 | `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
 | `_artifact/listing` | [`_artifact/listing.py`](../src/notebooklm/_artifact/listing.py) | Listing and filtering operations for notebook artifacts. |
 | `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/labels.py`](../src/notebooklm/_row_adapters/labels.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/research.py`](../src/notebooklm/_row_adapters/research.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `LabelRow`, `NoteRow`, `SourceRow`, the `POLL_RESEARCH` rows) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, labels, research, and the chat parser don't open-code positional indices. Strict decode behavior is pinned in `tests/unit/test_row_adapters.py`, `tests/unit/test_chat_row_adapter.py`, and `tests/unit/test_research_row_adapter.py`. |
@@ -943,6 +944,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
 | `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
 | `_artifact/payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
+| `_artifact/generation.py` | Generation kickoff service (`generate_*`, `revise_slide`, `retry_failed`) extracted from `ArtifactsAPI`; the facade keeps thin delegators |
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
 | `_artifact/polling.py` | Poll coordination service for artifact generation tasks |
 | `_source/add.py` | Core service layer for adding text, URL, or Google Drive sources |
@@ -1097,6 +1099,7 @@ src/notebooklm/
 │   ├── _redirect_guard.py       # Per-redirect-hop host/scheme revalidation for downloads (#1521)
 │   ├── downloads.py             # Artifact download coordinator
 │   ├── formatters.py            # Artifact formatting helpers
+│   ├── generation.py            # Artifact generation kickoff service (generate_*, revise_slide, retry_failed)
 │   ├── payloads.py              # Stable artifact request payload builders
 │   ├── listing.py               # Artifact listing helper
 │   └── polling.py               # Artifact polling coordinator

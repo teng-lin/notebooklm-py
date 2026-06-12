@@ -60,21 +60,20 @@ MODULE_SIZE_BUDGET = 1000
 # DO NOT raise a ceiling to make room for new code in a fat module — split it.
 # DO lower a ceiling when a module shrinks (the gate will tell you the value).
 ALLOWLISTED_CEILINGS: dict[str, int] = {
-    # The two remaining oversized modules, pinned at their measured LOC. Each is a
-    # cohesive unit whose split is a larger refactor than a line-count nudge
-    # warrants. ``_chat/api.py``, ``_research.py``, ``cli/source_cmd.py``,
-    # ``_sources.py``, ``_artifact/downloads.py``, and ``_source/upload.py`` were
-    # drained below the 1000-line budget and removed (one-way ratchet); ``client.py``
-    # dropped out earlier when its ``__init__`` body moved to ``_client_assembly.py``.
+    # The single remaining oversized module, pinned at its measured LOC.
+    # ``_chat/api.py``, ``_research.py``, ``cli/source_cmd.py``, ``_sources.py``,
+    # ``_artifact/downloads.py``, and ``_source/upload.py`` were drained below the
+    # 1000-line budget and removed (one-way ratchet); ``client.py`` dropped out
+    # earlier when its ``__init__`` body moved to ``_client_assembly.py``.
     # ``_source/upload.py`` shed its pure decode/validation helpers to the sibling
-    # ``_source/_upload_decode.py``.
+    # ``_source/_upload_decode.py``. ``_artifacts.py`` dropped out once its
+    # ``generate_*`` / ``revise_slide`` / ``retry_failed`` kickoff paths moved to
+    # the sibling ``_artifact/generation.py`` (``ArtifactGenerationService``).
     #
     # ``exceptions.py`` is the canonical public exception home — ``__all__`` and
     # the public-surface manifest pin every class to ``notebooklm.exceptions``, so
     # the classes cannot move to sibling files without forking that home.
-    # ``_artifacts.py`` is the single ``ArtifactsAPI`` facade.
     "exceptions.py": 1546,
-    "_artifacts.py": 1447,
 }
 
 
