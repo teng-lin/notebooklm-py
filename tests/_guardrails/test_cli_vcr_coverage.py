@@ -38,7 +38,10 @@ command module for a ``NotebookLMClient`` / ``run_client_workflow`` RPC path):
 
 * ``"Phase-3: needs maintainer recording (#1452)"`` — the group hits the RPC API
   but has no cassettes yet; it flips on when a maintainer records (issue #1452
-  Phase 3). These are the only entries expected to drain.
+  Phase 3). No group currently carries this reason (``research`` / ``auth`` drained
+  out of it once their cassettes were wired up — see ``test_research.py`` /
+  ``test_auth.py``); it is kept as a sanctioned reason for any future RPC-path
+  group that lands before its cassette does.
 * ``"local-only, no RPC path"`` — the group never builds a client (filesystem /
   package-data only), so a VCR cassette would record nothing. These are
   permanent by design.
@@ -70,28 +73,27 @@ _REASON_LOCAL_ONLY = "local-only, no RPC path"
 # name), so the mapping is explicit. Each path is relative to ``CLI_VCR_DIR``.
 GROUP_COVERAGE: dict[str, str] = {
     "artifact": "test_artifacts.py",
+    "auth": "test_auth.py",  # `auth check`/`refresh` token-fetch paths over reused cassettes
     "download": "test_downloads.py",
     "generate": "test_generate.py",
     "label": "test_label.py",
     "language": "test_settings.py",  # `language` commands live in test_settings.py
     "note": "test_notes.py",
     "profile": "test_profile.py",
+    "research": "test_research.py",  # `research status`/`wait` over reused poll cassettes
     "share": "test_share.py",
     "source": "test_sources.py",
 }
 
 # Groups with no cli_vcr coverage today → reason. Shrink-only: a group leaves
 # this map ONLY by gaining real coverage (move it to GROUP_COVERAGE). Verified
-# by reading each command module:
-#   * ``research``/``auth`` build a NotebookLMClient (RPC path) but have no
-#     cassettes yet — they flip on when a maintainer records (#1452 Phase 3).
-#   * ``agent``/``skill``/``mcp`` never touch the RPC API (``agent show`` prints
-#     packaged prompt templates; ``skill`` reads/writes skill files on disk;
-#     ``mcp install`` reads/writes the MCP client's config file on disk), so a VCR
-#     cassette would capture nothing — permanently local-only.
+# by reading each command module: ``agent``/``skill``/``mcp`` never touch the RPC
+# API (``agent show`` prints packaged prompt templates; ``skill`` reads/writes
+# skill files on disk; ``mcp install`` reads/writes the MCP client's config file
+# on disk), so a VCR cassette would capture nothing — permanently local-only.
+# (``research`` / ``auth`` left this map for GROUP_COVERAGE once their cassettes
+# were wired up; see the module docstring for the now-unused needs-recording reason.)
 COVERAGE_EXEMPT: dict[str, str] = {
-    "research": _REASON_NEEDS_RECORDING,
-    "auth": _REASON_NEEDS_RECORDING,
     "agent": _REASON_LOCAL_ONLY,
     "skill": _REASON_LOCAL_ONLY,
     "mcp": _REASON_LOCAL_ONLY,

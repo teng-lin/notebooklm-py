@@ -37,7 +37,7 @@ synthetic error recordings used by error-replay tests, and
 | `chat`         | `chat_ask.yaml`, `chat_ask_with_references.yaml` |
 | `notes`        | `notes_create.yaml`, `notes_list_mind_maps.yaml` |
 | `auth`         | `auth_rotate_cookies_refresh.yaml` |
-| `cli`          | `cli_doctor.yaml`, `cli_login_browser_cookies_check.yaml` |
+| `cli`          | `cli_doctor.yaml`, `cli_auth.yaml`, `cli_login_browser_cookies_check.yaml` |
 
 `<operation>` is the method or CLI verb being exercised (`list`, `add`,
 `download`, `generate`, `rename`, etc.).

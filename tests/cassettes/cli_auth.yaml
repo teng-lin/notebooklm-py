@@ -1,0 +1,15 @@
+# VCR cassette for the local `notebooklm auth check` CLI integration tests.
+#
+# The default `auth check` path is a local-only diagnostic — it reads the
+# profile's storage_state.json and validates the cookie jar, making NO HTTP
+# requests. This cassette is therefore intentionally empty: the matched tests
+# exist to guard that the no-network `auth check` path never starts emitting
+# HTTP traffic in a future refactor (VCR in record_mode='none' raises on any
+# unmatched request). If a network call is ever added to the default path, the
+# cli_vcr test fails loudly with a CannotOverwriteExistingCassetteException and
+# forces the author to re-record this cassette intentionally.
+#
+# The token-fetch (`auth check --test`) and `auth refresh` paths DO make HTTP
+# and reuse `auth_rotate_cookies_refresh.yaml` instead.
+interactions: []
+version: 1
