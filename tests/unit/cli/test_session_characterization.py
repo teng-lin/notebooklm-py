@@ -473,7 +473,7 @@ class TestAuthCheckCharacterization:
         mode exits non-zero (cleanly, no traceback) like --json (issue #1569).
         """
         # File exists but read raises OSError (permission denied simulation).
-        char_storage_file.write_text("{}")
+        char_storage_file.write_text("{}", encoding="utf-8")
         with patch("pathlib.Path.read_text", side_effect=OSError("Permission denied")):
             result = char_runner.invoke(cli, ["auth", "check"])
         assert result.exit_code == 1

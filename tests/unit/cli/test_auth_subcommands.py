@@ -350,7 +350,7 @@ class TestAuthCheckCommand:
                 {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
             ]
         }
-        mock_storage_path.write_text(json.dumps(storage_data))
+        mock_storage_path.write_text(json.dumps(storage_data), encoding="utf-8")
 
         with (
             patch.object(
@@ -378,7 +378,7 @@ class TestAuthCheckCommand:
                 {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
             ]
         }
-        mock_storage_path.write_text(json.dumps(storage_data))
+        mock_storage_path.write_text(json.dumps(storage_data), encoding="utf-8")
 
         with patch.object(
             auth_module, "fetch_tokens_passive", new_callable=AsyncMock
@@ -401,7 +401,7 @@ class TestAuthCheckCommand:
                 {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
             ]
         }
-        mock_storage_path.write_text(json.dumps(storage_data))
+        mock_storage_path.write_text(json.dumps(storage_data), encoding="utf-8")
 
         result = runner.invoke(cli, ["auth", "check", "--passive"])
 
@@ -429,6 +429,35 @@ class TestAuthCheckCommand:
         output = json.loads(result.output)
         assert output["status"] == "ok"
         assert output["details"]["auth_source"] == "NOTEBOOKLM_AUTH_JSON"
+
+    def test_auth_check_passive_with_env_auth_passes_none_path(
+        self, runner, mock_storage_path, monkeypatch
+    ):
+        """``--test --passive`` under NOTEBOOKLM_AUTH_JSON routes the passive
+        probe with ``token_path=None`` (read-from-env), like the active path."""
+        if mock_storage_path.exists():
+            mock_storage_path.unlink()
+        env_storage = {
+            "cookies": [
+                {"name": "SID", "value": "env_sid", "domain": ".google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(env_storage))
+
+        with patch.object(
+            auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+        ) as mock_passive:
+            mock_passive.return_value = ("csrf_env", "session_env")
+
+            result = runner.invoke(cli, ["auth", "check", "--test", "--passive", "--json"])
+
+        assert result.exit_code == 0
+        # has_env_auth ⇒ token_path is None (the env-var read signal), profile arg follows.
+        mock_passive.assert_awaited_once()
+        assert mock_passive.await_args.args[0] is None
+        output = json.loads(result.output)
+        assert output["checks"]["token_fetch"] is True
 
     def test_auth_check_shows_cookie_domains(self, runner, mock_storage_path):
         """Test auth check displays cookie domains."""

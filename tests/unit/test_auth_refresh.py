@@ -336,7 +336,8 @@ class TestFetchTokensPassive:
                         },
                     ]
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         return storage_file
 
@@ -419,7 +420,8 @@ class TestFetchTokensPassive:
         storage_file.write_text(
             json.dumps(
                 {"cookies": [{"name": "SID", "value": "sid_value", "domain": ".google.com"}]}
-            )
+            ),
+            encoding="utf-8",
         )
 
         recovery_calls = 0
@@ -438,7 +440,7 @@ class TestFetchTokensPassive:
 
         assert recovery_calls == 0
         # The stored cookies are untouched (no rotated PSIDTS written back).
-        assert "__Secure-1PSIDTS" not in storage_file.read_text()
+        assert "__Secure-1PSIDTS" not in storage_file.read_text(encoding="utf-8")
 
     @pytest.mark.asyncio
     async def test_passive_does_not_run_refresh_cmd(
@@ -450,7 +452,7 @@ class TestFetchTokensPassive:
 
         marker = tmp_path / "refresh_ran.marker"
         refresh_script = tmp_path / "refresh.py"
-        refresh_script.write_text(f"open({str(marker)!r}, 'w').close()\n")
+        refresh_script.write_text(f"open({str(marker)!r}, 'w').close()\n", encoding="utf-8")
         cmd = (
             shlex.join([sys.executable, str(refresh_script)])
             if os.name != "nt"
