@@ -21,6 +21,8 @@ future reshape that silently changes them fails here.
 
 from __future__ import annotations
 
+import pytest
+
 from notebooklm._row_adapters.sources import (
     SourceFulltextRow,
     SourceGuideRow,
@@ -140,22 +142,22 @@ _URL_CASES = [
 ]
 
 
-def test_url_from_metadata_matches_legacy_extract() -> None:
+@pytest.mark.parametrize(("metadata", "allow"), _URL_CASES)
+def test_url_from_metadata_matches_legacy_extract(metadata, allow) -> None:
     """``SourceRow.url_from_metadata`` reproduces the legacy walk byte-for-byte."""
-    for metadata, allow in _URL_CASES:
-        expected = _legacy_extract_source_url(metadata, allow_bare_http=allow)
-        actual = SourceRow.url_from_metadata(metadata, allow_bare_http=allow)
-        assert actual == expected, f"url mismatch for {metadata!r} allow={allow}"
-        # Type identity matters too (legacy returns raw, un-coerced values).
-        assert type(actual) is type(expected), f"type mismatch for {metadata!r}"
+    expected = _legacy_extract_source_url(metadata, allow_bare_http=allow)
+    actual = SourceRow.url_from_metadata(metadata, allow_bare_http=allow)
+    assert actual == expected, f"url mismatch for {metadata!r} allow={allow}"
+    # Type identity matters too (legacy returns raw, un-coerced values).
+    assert type(actual) is type(expected), f"type mismatch for {metadata!r}"
 
 
-def test_url_public_helper_routes_through_adapter() -> None:
+@pytest.mark.parametrize(("metadata", "allow"), _URL_CASES)
+def test_url_public_helper_routes_through_adapter(metadata, allow) -> None:
     """The re-exported ``_extract_source_url`` shim delegates with no drift."""
-    for metadata, allow in _URL_CASES:
-        assert _extract_source_url(metadata, allow_bare_http=allow) == _legacy_extract_source_url(
-            metadata, allow_bare_http=allow
-        )
+    assert _extract_source_url(metadata, allow_bare_http=allow) == _legacy_extract_source_url(
+        metadata, allow_bare_http=allow
+    )
 
 
 def test_url_from_metadata_canonical_precedence_over_youtube() -> None:
@@ -192,18 +194,18 @@ _CREATED_CASES = [
 ]
 
 
-def test_created_at_from_metadata_matches_legacy_extract() -> None:
+@pytest.mark.parametrize("metadata", _CREATED_CASES)
+def test_created_at_from_metadata_matches_legacy_extract(metadata) -> None:
     """``SourceRow.created_at_from_metadata`` reproduces the legacy walk exactly."""
-    for metadata in _CREATED_CASES:
-        assert SourceRow.created_at_from_metadata(metadata) == _legacy_extract_source_created_at(
-            metadata
-        ), f"created_at mismatch for {metadata!r}"
+    assert SourceRow.created_at_from_metadata(metadata) == _legacy_extract_source_created_at(
+        metadata
+    ), f"created_at mismatch for {metadata!r}"
 
 
-def test_created_at_public_helper_routes_through_adapter() -> None:
+@pytest.mark.parametrize("metadata", _CREATED_CASES)
+def test_created_at_public_helper_routes_through_adapter(metadata) -> None:
     """The re-exported ``_extract_source_created_at`` shim delegates with no drift."""
-    for metadata in _CREATED_CASES:
-        assert _extract_source_created_at(metadata) == _legacy_extract_source_created_at(metadata)
+    assert _extract_source_created_at(metadata) == _legacy_extract_source_created_at(metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -229,13 +231,13 @@ _GUIDE_CASES = [
 ]
 
 
-def test_source_guide_row_matches_legacy() -> None:
+@pytest.mark.parametrize("result", _GUIDE_CASES)
+def test_source_guide_row_matches_legacy(result) -> None:
     """``SourceGuideRow`` summary/keywords reproduce the legacy ``get_guide`` decode."""
-    for result in _GUIDE_CASES:
-        row = SourceGuideRow(result)
-        exp_summary, exp_keywords = _legacy_guide(result)
-        assert row.summary == exp_summary, f"summary mismatch for {result!r}"
-        assert row.keywords == exp_keywords, f"keywords mismatch for {result!r}"
+    row = SourceGuideRow(result)
+    exp_summary, exp_keywords = _legacy_guide(result)
+    assert row.summary == exp_summary, f"summary mismatch for {result!r}"
+    assert row.keywords == exp_keywords, f"keywords mismatch for {result!r}"
 
 
 def test_source_guide_row_present() -> None:
@@ -272,15 +274,15 @@ _FULLTEXT_CASES = [
 ]
 
 
-def test_source_fulltext_row_matches_legacy() -> None:
+@pytest.mark.parametrize("result", _FULLTEXT_CASES)
+def test_source_fulltext_row_matches_legacy(result) -> None:
     """``SourceFulltextRow`` reproduces the legacy ``get_fulltext`` positional decode."""
-    for result in _FULLTEXT_CASES:
-        row = SourceFulltextRow(result)
-        exp_title, exp_meta, exp_html, exp_text = _legacy_fulltext(result)
-        assert row.title == exp_title, f"title mismatch for {result!r}"
-        assert row.metadata == exp_meta, f"metadata mismatch for {result!r}"
-        assert row.html_content == exp_html, f"html mismatch for {result!r}"
-        assert row.text_content_blocks == exp_text, f"text mismatch for {result!r}"
+    row = SourceFulltextRow(result)
+    exp_title, exp_meta, exp_html, exp_text = _legacy_fulltext(result)
+    assert row.title == exp_title, f"title mismatch for {result!r}"
+    assert row.metadata == exp_meta, f"metadata mismatch for {result!r}"
+    assert row.html_content == exp_html, f"html mismatch for {result!r}"
+    assert row.text_content_blocks == exp_text, f"text mismatch for {result!r}"
 
 
 def test_source_fulltext_row_present() -> None:
