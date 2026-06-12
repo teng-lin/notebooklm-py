@@ -468,7 +468,9 @@ class ArtifactDownloadService:
             if not artifact:
                 raise ArtifactNotFoundError(artifact_id, artifact_type=artifact_type)
         else:
-            artifact = next(iter(completed))  # typed ``Artifact`` list head (newest-first)
+            artifact, *_ = (
+                completed  # typed Artifact list head (newest-first); unpack avoids name[int]
+            )
 
         html_content = await self._get_artifact_content(notebook_id, artifact.id)
         if not html_content:

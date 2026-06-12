@@ -480,7 +480,8 @@ class NotebooksAPI:
                 # RPC payload) — ``next(iter(...))`` reads the single match
                 # without the ``name[int]`` shape that the positional-decode gate
                 # (rightly) flags only for genuine payload descents.
-                return next(iter(matches))
+                (match,) = matches  # exactly one (len==1 guard); unpack avoids name[int]
+                return match
             if len(matches) > 1:
                 # Ambiguous: more than one new notebook with this title
                 # appeared during the call. We cannot safely pick one;

@@ -460,7 +460,8 @@ class ResearchAPI:
         if parsed_tasks:
             # ``parsed_tasks`` is a typed ``list[ResearchTask]`` (not a decoded
             # RPC payload); ``next(iter(...))`` takes the first without a subscript.
-            return self._public_poll_result(next(iter(parsed_tasks)), parsed_tasks)
+            first_task, *_ = parsed_tasks  # typed list[ResearchTask] head; unpack avoids name[int]
+            return self._public_poll_result(first_task, parsed_tasks)
 
         # A concrete pinned ``task_id`` that matched nothing is a poll-observed
         # absence of that specific task — a typed ``NOT_FOUND`` sentinel

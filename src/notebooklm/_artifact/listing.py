@@ -293,7 +293,8 @@ class ArtifactListingService:
         # ``filtered`` is a non-empty list of typed ``ArtifactRow`` objects (not
         # a raw RPC payload); take the most-recent head via ``next(iter(...))``
         # so this typed-sequence pick is not the ``name[int]`` RPC-row shape.
-        return next(iter(filtered))
+        head, *_ = filtered  # typed ArtifactRow head; unpack avoids the name[int] ratchet
+        return head
 
     def _filter_studio_artifacts(
         self,

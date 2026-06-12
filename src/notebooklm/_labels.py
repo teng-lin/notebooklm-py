@@ -191,7 +191,8 @@ class LabelsAPI:
         # ``_labels_from_envelope``/``LabelRow``. ``next(iter(...))`` avoids the
         # type-blind single-level ``name[int]`` guardrail false-positive that a
         # ``new[0]`` index would trip.
-        return next(iter(new))
+        (label,) = new  # exactly one (guarded); unpack avoids the name[int] ratchet
+        return label
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 

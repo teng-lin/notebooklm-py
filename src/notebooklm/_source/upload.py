@@ -282,13 +282,15 @@ def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
     """
     field_candidates = _extract_source_id_field_candidates(result, filename)
     if len(field_candidates) == 1:
-        return next(iter(field_candidates))  # next(iter): type-blind ratchet
+        (candidate,) = field_candidates  # exactly one (guarded); unpack avoids name[int]
+        return candidate
     if len(field_candidates) > 1:
         return None
 
     row_candidates = _extract_contextual_source_id_row_candidates(result, filename)
     if len(row_candidates) == 1:
-        return next(iter(row_candidates))
+        (candidate,) = row_candidates  # exactly one (guarded); unpack avoids name[int]
+        return candidate
     if len(row_candidates) > 1:
         return None
 
@@ -857,7 +859,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     ),
                 )
             if len(matches) == 1:
-                return next(iter(matches)).id  # not ``matches[0]``: ratchet
+                (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
+                return match.id
             if len(matches) > 1:
                 raise SourceAddError(
                     filename,
