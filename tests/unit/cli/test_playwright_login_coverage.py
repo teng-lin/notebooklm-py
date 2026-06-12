@@ -25,6 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import notebooklm.auth as auth_module
 from notebooklm.cli.playwright_login_io import make_login_io
 from notebooklm.cli.services import playwright_login
 from notebooklm.cli.services.playwright_login import (
@@ -130,9 +131,9 @@ def test_repair_metadata_clear_failure_is_logged(tmp_path, caplog) -> None:
         raise OSError("cannot clear")
 
     with (
-        patch("notebooklm.auth.build_httpx_cookies_from_storage", side_effect=_boom_build),
-        patch("notebooklm.auth.clear_account_metadata", side_effect=_boom_clear),
-        patch("notebooklm.auth.extract_email_from_html", return_value=None),
+        patch.object(auth_module, "build_httpx_cookies_from_storage", side_effect=_boom_build),
+        patch.object(auth_module, "clear_account_metadata", side_effect=_boom_clear),
+        patch.object(auth_module, "extract_email_from_html", return_value=None),
         caplog.at_level(logging.WARNING, logger="notebooklm.cli.services.playwright_login"),
     ):
         result = repair_playwright_account_metadata(
@@ -382,15 +383,14 @@ def test_run_playwright_login_capture_html_error_is_swallowed(tmp_path) -> None:
 
     repair_calls: list[Any] = []
     with (
-        patch(
-            "notebooklm.cli.services.playwright_login.ensure_chromium_installed",
-        ),
+        patch.object(playwright_login, "ensure_chromium_installed"),
         patch(
             "playwright.sync_api.sync_playwright",
             side_effect=lambda: _FakeSyncPlaywright(),
         ),
-        patch(
-            "notebooklm.cli.services.playwright_login.repair_playwright_account_metadata",
+        patch.object(
+            playwright_login,
+            "repair_playwright_account_metadata",
             side_effect=lambda storage_path, io, *, page_html=None, quiet=False: (
                 repair_calls.append(page_html)
             ),
@@ -450,7 +450,7 @@ def test_run_playwright_login_cookie_forcing_inner_recovery_reraises(tmp_path) -
             return False
 
     with (
-        patch("notebooklm.cli.services.playwright_login.ensure_chromium_installed"),
+        patch.object(playwright_login, "ensure_chromium_installed"),
         patch(
             "playwright.sync_api.sync_playwright",
             side_effect=lambda: _FakeSyncPlaywright(),
@@ -594,7 +594,7 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
             return False
 
     with (
-        patch("notebooklm.cli.services.playwright_login.ensure_chromium_installed"),
+        patch.object(playwright_login, "ensure_chromium_installed"),
         patch(
             "playwright.sync_api.sync_playwright",
             side_effect=lambda: _FakeSyncPlaywright(),
@@ -649,7 +649,7 @@ def test_run_playwright_login_io_fail_inside_block_still_closes_context(tmp_path
             return False
 
     with (
-        patch("notebooklm.cli.services.playwright_login.ensure_chromium_installed"),
+        patch.object(playwright_login, "ensure_chromium_installed"),
         patch(
             "playwright.sync_api.sync_playwright",
             side_effect=lambda: _FakeSyncPlaywright(),

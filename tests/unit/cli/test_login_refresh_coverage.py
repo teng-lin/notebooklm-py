@@ -24,6 +24,9 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm.auth as auth_module
+import notebooklm.cli.playwright_login_io as playwright_login_io_module
+import notebooklm.paths as paths_module
 from notebooklm.cli.services.login import refresh
 from notebooklm.cli.services.login.outcomes import BrowserCookieOutcome
 
@@ -34,7 +37,6 @@ REFRESH = "notebooklm.cli.services.login.refresh"
 # binds ``cli.playwright_login_io.run_async``. Patching it here intercepts the
 # async probe while leaving ``emit`` → ``console.print`` intact so ``capsys``
 # still captures the rendered warning lines.
-IO_RUN_ASYNC = "notebooklm.cli.playwright_login_io.run_async"
 
 
 def _account(email: str, *, authuser: int = 0, browser_profile: str = "Default") -> Any:
@@ -112,7 +114,7 @@ def test_login_all_accounts_no_accounts_returns(capsys) -> None:
     with (
         patch(f"{REFRESH}._enumerate_browser_accounts", return_value=({}, [])),
         # list_profiles is imported lazily inside the function; patch source.
-        patch("notebooklm.paths.list_profiles", return_value=[]),
+        patch.object(paths_module, "list_profiles", return_value=[]),
     ):
         refresh._login_all_accounts_from_browser("chrome")
     out = capsys.readouterr().out
@@ -128,7 +130,7 @@ def test_login_all_accounts_write_outcome_exits(tmp_path) -> None:
             f"{REFRESH}._enumerate_browser_accounts",
             return_value=(per_profile, [account]),
         ),
-        patch("notebooklm.paths.list_profiles", return_value=[]),
+        patch.object(paths_module, "list_profiles", return_value=[]),
         patch(f"{REFRESH}._profiles_by_account_email", return_value={}),
         patch(f"{REFRESH}._resolve_all_accounts_target", return_value="alice"),
         patch(f"{REFRESH}.email_to_profile_name", return_value="alice"),
@@ -293,12 +295,13 @@ def test_login_with_cookies_write_metadata_oserror_warns(tmp_path, capsys) -> No
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
         stack.enter_context(
-            patch(
-                "notebooklm.auth.write_account_metadata",
+            patch.object(
+                auth_module,
+                "write_account_metadata",
                 side_effect=OSError("metadata write fail"),
             )
         )
-        stack.enter_context(patch(IO_RUN_ASYNC))
+        stack.enter_context(patch.object(playwright_login_io_module, "run_async"))
         refresh._login_with_browser_cookies(
             tmp_path / "storage.json", "chrome", authuser=1, email="x@example.com"
         )
@@ -314,9 +317,9 @@ def test_login_with_cookies_clear_metadata_oserror_logged(tmp_path, caplog) -> N
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
         stack.enter_context(
-            patch("notebooklm.auth.clear_account_metadata", side_effect=OSError("clear fail"))
+            patch.object(auth_module, "clear_account_metadata", side_effect=OSError("clear fail"))
         )
-        stack.enter_context(patch(IO_RUN_ASYNC))
+        stack.enter_context(patch.object(playwright_login_io_module, "run_async"))
         stack.enter_context(caplog.at_level(logging.WARNING, logger=REFRESH))
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     assert any(
@@ -329,8 +332,8 @@ def test_login_with_cookies_account_line_printed(tmp_path, capsys) -> None:
     with ExitStack() as stack:
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
-        stack.enter_context(patch("notebooklm.auth.write_account_metadata"))
-        stack.enter_context(patch(IO_RUN_ASYNC))
+        stack.enter_context(patch.object(auth_module, "write_account_metadata"))
+        stack.enter_context(patch.object(playwright_login_io_module, "run_async"))
         refresh._login_with_browser_cookies(
             tmp_path / "storage.json", "chrome", authuser=2, email="dave@example.com"
         )
@@ -343,8 +346,14 @@ def test_login_with_cookies_verify_valueerror_warns(tmp_path, capsys) -> None:
     with ExitStack() as stack:
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
-        stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
-        stack.enter_context(patch(IO_RUN_ASYNC, side_effect=ValueError("invalid cookies")))
+        stack.enter_context(patch.object(auth_module, "clear_account_metadata"))
+        stack.enter_context(
+            patch.object(
+                playwright_login_io_module,
+                "run_async",
+                side_effect=ValueError("invalid cookies"),
+            )
+        )
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     out = capsys.readouterr().out
     assert "failed validation" in out
@@ -355,8 +364,14 @@ def test_login_with_cookies_verify_network_error_warns(tmp_path, capsys) -> None
     with ExitStack() as stack:
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
-        stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
-        stack.enter_context(patch(IO_RUN_ASYNC, side_effect=httpx.RequestError("connect failed")))
+        stack.enter_context(patch.object(auth_module, "clear_account_metadata"))
+        stack.enter_context(
+            patch.object(
+                playwright_login_io_module,
+                "run_async",
+                side_effect=httpx.RequestError("connect failed"),
+            )
+        )
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     out = capsys.readouterr().out
     assert "network issue" in out
@@ -367,8 +382,14 @@ def test_login_with_cookies_verify_unexpected_error_warns(tmp_path, capsys) -> N
     with ExitStack() as stack:
         _enter_login_base(stack)
         stack.enter_context(patch(f"{REFRESH}.atomic_write_json"))
-        stack.enter_context(patch("notebooklm.auth.clear_account_metadata"))
-        stack.enter_context(patch(IO_RUN_ASYNC, side_effect=RuntimeError("boom")))
+        stack.enter_context(patch.object(auth_module, "clear_account_metadata"))
+        stack.enter_context(
+            patch.object(
+                playwright_login_io_module,
+                "run_async",
+                side_effect=RuntimeError("boom"),
+            )
+        )
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome")
     out = capsys.readouterr().out
     assert "Unexpected error during verification" in out
