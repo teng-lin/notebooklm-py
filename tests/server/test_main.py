@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -117,8 +118,10 @@ def _stub_uvicorn_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     """Stub out ``main()``'s side effects and capture the ``uvicorn.run`` call.
 
     Replaces ``uvicorn.run`` (so no server actually binds), ``create_app`` (so no
-    real app is built), and ``basicConfig`` (so ``main()`` does not mutate the
-    process-global logging config). Returns the dict the run call is captured into.
+    real app is built), and the consumer-side ``logging`` binding with a wrapper
+    whose ``basicConfig`` is a no-op (so ``main()`` does not reconfigure logging
+    — without mutating the real ``logging`` module). Returns the dict the
+    ``uvicorn.run`` call is captured into.
     """
     import uvicorn
 
@@ -128,9 +131,14 @@ def _stub_uvicorn_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         captured["app"] = app
         captured.update(kwargs)
 
+    # Wrap the real module so getLogger()/level constants still work, but swallow
+    # basicConfig — patching launcher's binding, not the global logging module.
+    mock_logging = MagicMock(wraps=logging)
+    mock_logging.basicConfig = lambda **_kwargs: None
+
     monkeypatch.setattr(uvicorn, "run", _capture)
-    monkeypatch.setattr(launcher, "create_app", lambda: "APP")
-    monkeypatch.setattr(launcher.logging, "basicConfig", lambda **_kwargs: None)
+    monkeypatch.setattr(launcher, "create_app", MagicMock(return_value="APP"))
+    monkeypatch.setattr(launcher, "logging", mock_logging)
     return captured
 
 
