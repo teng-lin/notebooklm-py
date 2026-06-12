@@ -186,7 +186,12 @@ class LabelsAPI:
                 f"create(name={name!r}) expected exactly 1 new label, found {len(new)} "
                 f"(concurrent label creation can cause this — retry from a fresh list)"
             )
-        return new[0]
+        # ``new`` is a list[Label] (typed dataclass instances), not a decoded
+        # RPC payload — positional RPC-row decode already happened in
+        # ``_labels_from_envelope``/``LabelRow``. ``next(iter(...))`` avoids the
+        # type-blind single-level ``name[int]`` guardrail false-positive that a
+        # ``new[0]`` index would trip.
+        return next(iter(new))
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 
