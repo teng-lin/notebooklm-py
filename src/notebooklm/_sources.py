@@ -455,7 +455,8 @@ class SourcesAPI:
         issues a follow-up ``UPDATE_SOURCE`` rename (the file-add RPC has no title
         slot). Uploads run under the Sources-owned semaphore
         (``max_concurrent_uploads``, default 4), which also caps open file
-        descriptors; the path is resolved before admission and opened exactly once.
+        descriptors; the path is resolved before admission and opened exactly once
+        (a single open pins the bytes, so a later path swap cannot alter the upload).
 
         Args:
             notebook_id: The notebook ID.

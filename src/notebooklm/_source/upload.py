@@ -38,8 +38,11 @@ from ..rpc.types import SourceStatus
 from ..types import Source, SourceAddError
 
 # Decode/validation helpers live in ``_upload_decode``; re-exported here so the
-# historical ``notebooklm._source.upload.<helper>`` import/patch surface (and the
-# ``SourceUploadPipeline`` body below) keep resolving them.
+# historical ``notebooklm._source.upload.<helper>`` import surface (and the
+# ``SourceUploadPipeline`` body below) keep resolving them. Note: each helper
+# reads its module-level globals (e.g. ``urlsplit``, ``_SOURCE_ID_UUID_PATTERN``)
+# from ``_upload_decode``, so a test seam that patches such a global must target
+# ``_upload_decode`` — that is where the name is looked up — not this module.
 from ._upload_decode import (  # noqa: F401
     _SOURCE_ID_UUID_PATTERN,
     _coerce_filename_candidate,
