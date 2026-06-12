@@ -360,18 +360,6 @@ class ResearchStartRow:
 # envelope probe + per-row reads ``import_sources`` previously open-coded.
 _IMPORT_ENVELOPE_OUTER_POS = 0
 _IMPORT_ENVELOPE_PROBE_POS = 0
-_IMPORT_ROW_ID_ENVELOPE_POS = 0
-_IMPORT_ROW_ID_POS = 0
-_IMPORT_ROW_TITLE_POS = 1
-_IMPORT_ROW_MIN_LEN = 2
-
-
-def _looks_like_import_row(value: Any) -> bool:
-    """Whether ``value`` has the leading slots of an ``IMPORT_RESEARCH`` row."""
-    if not isinstance(value, list) or len(value) < _IMPORT_ROW_MIN_LEN:
-        return False
-    id_envelope = value[_IMPORT_ROW_ID_ENVELOPE_POS]
-    return id_envelope is None or isinstance(id_envelope, list)
 
 
 def unwrap_import_rows(result: Any) -> list[Any]:
@@ -381,10 +369,9 @@ def unwrap_import_rows(result: Any) -> list[Any]:
     already-flat list of rows. This centralises the ``result[0]`` / ``result[0][0]``
     envelope probe so ``import_sources`` stops open-coding it; the reads are soft
     (an unrecognised shape falls through to ``result`` unchanged or ``[]``),
-    with one extra disambiguation: the wrap is recognised only when
-    ``result[0][0]`` itself looks like an imported-source row. That preserves
-    flat single-row responses like ``[[[id], title]]`` instead of mistaking the
-    row's id envelope for a wrapper.
+    preserving the historical inline-unwrap contract exactly — the wrap is
+    recognised only when ``result[0]`` is a non-empty list whose own first
+    element is also a list.
     """
     if not result or not isinstance(result, list):
         return []
@@ -392,7 +379,7 @@ def unwrap_import_rows(result: Any) -> list[Any]:
     if (
         isinstance(first, list)
         and len(first) > 0
-        and _looks_like_import_row(first[_IMPORT_ENVELOPE_PROBE_POS])
+        and isinstance(first[_IMPORT_ENVELOPE_PROBE_POS], list)
     ):
         return first
     return result
@@ -414,12 +401,12 @@ class ImportedSourceRow:
 
     _raw: Any = field(repr=False)
 
-    _ID_ENVELOPE_POS: ClassVar[int] = _IMPORT_ROW_ID_ENVELOPE_POS
-    _ID_POS: ClassVar[int] = _IMPORT_ROW_ID_POS
-    _TITLE_POS: ClassVar[int] = _IMPORT_ROW_TITLE_POS
+    _ID_ENVELOPE_POS: ClassVar[int] = 0
+    _ID_POS: ClassVar[int] = 0
+    _TITLE_POS: ClassVar[int] = 1
     # A usable row must carry at least ``[id_envelope, title]`` — mirrors the
     # historical ``len(src_data) >= 2`` guard.
-    _MIN_LEN: ClassVar[int] = _IMPORT_ROW_MIN_LEN
+    _MIN_LEN: ClassVar[int] = 2
 
     @property
     def is_well_formed(self) -> bool:
