@@ -70,7 +70,7 @@ class RPCMethod(str, Enum):
     CHECK_SOURCE_FRESHNESS = "yR9Yof"
     UPDATE_SOURCE = "b7Wfje"
 
-    # Source label operations (AI topic grouping; see docs/design/source-labels/)
+    # Source label operations (AI topic grouping)
     CREATE_LABEL = "agX4Bc"  # Multi-mode: AI auto-group (generate) AND manual create
     LIST_LABELS = "I3xc3c"
     UPDATE_LABEL = "le8sX"  # Rename / set emoji / add sources (fieldmask)

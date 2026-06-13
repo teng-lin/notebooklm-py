@@ -1,6 +1,6 @@
 """FastAPI application factory for the single-tenant REST server.
 
-Design highlights (see ``docs/plans/2026-06-10-002-feat-rest-api-server-plan.md``):
+Design highlights:
 
 - **One client per process, bound at lifespan.** The ASGI lifespan opens a
   single :class:`~notebooklm.client.NotebookLMClient` via ``from_storage()``

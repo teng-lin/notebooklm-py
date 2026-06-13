@@ -12,8 +12,6 @@ other than the test dir itself, it shadows that module and breaks
 
 It also covers namespace packages (``spec.origin is None`` but
 ``submodule_search_locations`` is populated) and built-in/frozen modules.
-
-See docs/plans/2026-06-08-mcp-server-redesign-design.md section 6.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """FastMCP server construction for notebooklm-py.
 
-Design highlights (see ``docs/plans/2026-06-08-mcp-server-redesign-design.md``):
+Design highlights:
 
 - **One client per process, bound at lifespan.** The FastMCP lifespan opens a
   single :class:`~notebooklm.client.NotebookLMClient` via

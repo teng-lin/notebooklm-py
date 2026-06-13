@@ -935,7 +935,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research.py` | `client.research` API |
 | `_notes.py` | `client.notes` API |
 | `_sharing.py` | `client.sharing` API |
-| `_labels.py` | `client.labels` API — source labels (topic groupings); pure-RPC like `SharingAPI`, plus a narrow `list_sources` callable for the membership→`Source` join in `sources()` (see docs/design/source-labels/) |
+| `_labels.py` | `client.labels` API — source labels (topic groupings); pure-RPC like `SharingAPI`, plus a narrow `list_sources` callable for the membership→`Source` join in `sources()` |
 | `_settings.py` | `client.settings` API |
 | `_note_service.py` | Service layer managing note CRUD, note-backed content generation, and sync |
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |

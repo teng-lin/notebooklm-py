@@ -2,7 +2,7 @@
 
 Re-exported from ``notebooklm.types``. A source ``Label`` describes source
 membership only — **no ``kind``, no ``artifact_ids``** (a future artifact-label
-surface is a separate type; see docs/design/source-labels/ §10).
+surface is a separate type).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class Label:
 
     Notebook-scoped. Membership is many-to-many: a source may belong to multiple
     labels, and a label owns a list of source IDs (the source carries no
-    back-reference). See docs/design/source-labels/rpc.md for the wire model.
+    back-reference).
     """
 
     id: str

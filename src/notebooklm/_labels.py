@@ -4,8 +4,7 @@ Pure-RPC like ``SharingAPI``, but because ``sources()`` and the membership join
 expand into ``Source`` objects, the constructor also takes a narrow
 ``list_sources`` callable (``client.sources.list``) — wired in ``_client_assembly.py``
 after ``SourcesAPI`` is built (mirrors ``NotebooksAPI``). No ``LabelService``, no
-``kind`` param, no artifact concepts — source labels only (see
-docs/design/source-labels/ §10).
+``kind`` param, no artifact concepts — source labels only.
 """
 
 from __future__ import annotations

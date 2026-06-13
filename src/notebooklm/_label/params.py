@@ -4,7 +4,7 @@ Two differences from the source RPCs: the request-options wrapper is slot ``[0]`
 and ``notebook_id`` rides in the params (slot ``[1]``) in addition to the
 ``source-path`` query arg. Every builder returns a **fresh** structure per call
 so callers never alias a shared mutable wrapper (cf.
-``_settings.build_get_user_settings_params``). See docs/design/source-labels/.
+``_settings.build_get_user_settings_params``).
 """
 
 from __future__ import annotations

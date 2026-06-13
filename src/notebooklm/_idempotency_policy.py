@@ -431,7 +431,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # Source labels (multi-mode CREATE_LABEL / batch DELETE_LABEL / fieldmask
     # UPDATE_LABEL add_sources). LIST_LABELS and the default rename/emoji
     # UPDATE_LABEL are idempotent set-ops registered above; the writes below have
-    # no caller-supplied client-token slot. See docs/design/source-labels/.
+    # no caller-supplied client-token slot.
     # ----------------------------------------------------------------------------
     registry.register(
         RPCMethod.CREATE_LABEL,
