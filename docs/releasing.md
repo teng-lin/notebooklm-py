@@ -75,7 +75,7 @@ Proceed with release preparation?
 - [ ] Update `Last Updated` dates in modified docs
 - [ ] Verify example scripts have valid syntax:
   ```bash
-  uv run python -m py_compile docs/examples/*.py
+  uv run python -m py_compile examples/*.py
   ```
 
 **Related docs to check/update if relevant:**

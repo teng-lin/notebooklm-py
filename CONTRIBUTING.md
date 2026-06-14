@@ -220,7 +220,7 @@ Agents should ignore files marked `Deprecated`.
 
 1. **Link, Don't Copy** - Reference README.md sections instead of repeating commands. Prevents drift between docs.
 
-2. **Scoped Instructions** - Subfolders like `docs/examples/` may have their own README.md with folder-specific rules.
+2. **Scoped Instructions** - Subfolders like `examples/` may have their own README.md with folder-specific rules.
 
 ---
 
@@ -244,8 +244,9 @@ docs/
 ├── rpc-development.md     # RPC capture and debugging
 ├── rpc-reference.md       # RPC payload structures and Content Type Codes
 ├── stability.md           # API versioning and stability policy
-├── troubleshooting.md     # Common issues and solutions
-└── examples/              # Runnable example scripts
+└── troubleshooting.md     # Common issues and solutions
 ```
+
+Runnable example scripts live at the repository root under `examples/`.
 
 > When adding or modifying a CLI command, follow the [CLI Exit-Code Convention](docs/cli-exit-codes.md) — the policy table and the two intentional exceptions (`source stale`, `source wait`) are binding.

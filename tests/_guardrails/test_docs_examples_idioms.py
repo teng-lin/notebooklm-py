@@ -1,6 +1,6 @@
 """Guardrail tests for copy-paste documentation idioms.
 
-The README and the runnable ``docs/examples/*.py`` are the snippets users copy
+The README and the runnable ``examples/*.py`` are the snippets users copy
 first. They must demonstrate the *canonical* client idiom, not a deprecated one
 that warns at runtime.
 
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.repo_lint
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README_MD = REPO_ROOT / "README.md"
-EXAMPLES_DIR = REPO_ROOT / "docs" / "examples"
+EXAMPLES_DIR = REPO_ROOT / "examples"
 # Prose docs that carry copy-paste quickstarts and were corrected to the
 # canonical idiom — guarded so they can't regress. (``docs/python-api.md``
 # deliberately keeps the deprecated form as a *labeled* example, and

@@ -5,7 +5,7 @@
 
 ## Project Structure & Module Organization
 
-`src/notebooklm/` contains the async client and typed APIs. Internal feature modules use `_` prefixes such as `_sources.py`, `_artifacts.py`, `_app/`, and `_runtime/`; `src/notebooklm/cli/` holds Click adapters, `src/notebooklm/mcp/` and `src/notebooklm/server/` hold the opt-in MCP and REST adapters, and `src/notebooklm/rpc/` handles protocol encoding and decoding. Tests are split by scope: `tests/unit/`, `tests/integration/`, `tests/server/`, and `tests/e2e/`. Recorded HTTP fixtures live in `tests/cassettes/`. Examples are in `docs/examples/`, and diagnostics live in `scripts/`.
+`src/notebooklm/` contains the async client and typed APIs. Internal feature modules use `_` prefixes such as `_sources.py`, `_artifacts.py`, `_app/`, and `_runtime/`; `src/notebooklm/cli/` holds Click adapters, `src/notebooklm/mcp/` and `src/notebooklm/server/` hold the opt-in MCP and REST adapters, and `src/notebooklm/rpc/` handles protocol encoding and decoding. Tests are split by scope: `tests/unit/`, `tests/integration/`, `tests/server/`, and `tests/e2e/`. Recorded HTTP fixtures live in `tests/cassettes/`. Examples are in `examples/`, and diagnostics live in `scripts/`.
 
 ## Build, Test, and Development Commands
 
