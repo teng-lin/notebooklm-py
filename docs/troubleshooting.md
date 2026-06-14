@@ -255,6 +255,21 @@ unset (still truncated).
 - Check that notebook/source IDs are valid
 - Add delays between operations (see Rate Limiting section)
 
+**Notebook / source limits.** A quota-related `create` failure usually means the account is at its
+**notebooks-per-account** limit; a quota-related `source add` failure means a notebook is at its
+**sources-per-notebook** limit (these are two different caps — don't confuse them). For the notebook
+case `notebooklm-py` verifies your owned notebook count against the account's server-reported limit and
+raises a clear `NotebookLimitError` instead of an opaque RPC error; deleting old notebooks (or sources)
+frees the quota. Documented limits (per Google, **subject to change** — see the
+[official limits page](https://support.google.com/notebooklm/answer/16213268)):
+
+| Tier | Notebooks / account | Sources / notebook |
+|---|---|---|
+| Standard (free) | 100 | 50 |
+| Plus | 200 | 100 |
+| Pro | 500 | 300 |
+| AI Ultra | 500 | 500–600 |
+
 **If it only affects _write_ operations** (`create`, `source add`, `generate`) while reads (`list`, `ask`) keep working — **and the web UI still works** — the likely cause is that Google changed the request payload (wire format) for those RPCs and `notebooklm-py` is still sending the old shape. Google rolls these out gradually, so it can hit some accounts before others.
 
 > **First, rule out a mis-decoded success.** Re-run the failing action, then check `notebooklm list`: if the resource was actually **created** despite the error, it's a *response*-decoding issue (share the **Response** below). If it was **not** created, Google rejected our **request** (share the **Payload** below).
