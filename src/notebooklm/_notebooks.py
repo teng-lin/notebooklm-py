@@ -31,7 +31,44 @@ from .types import AccountLimits, Notebook, NotebookDescription, NotebookMetadat
 logger = logging.getLogger(__name__)
 
 
-CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
+# gRPC status codes under which a CREATE_NOTEBOOK failure *may* signal that the
+# account has exhausted its notebook quota. Different backend cohorts report the
+# same exhaustion under different codes:
+#   3 = INVALID_ARGUMENT  — the legacy backend's quota code (established in #328).
+#   7 = PERMISSION_DENIED — the "Discovery Engine" backend's code (#1546: the
+#                           reporter hit a notebook limit, the AzXHBd create
+#                           returned status=7, and freeing space fixed it).
+#   8 = RESOURCE_EXHAUSTED — the canonical gRPC quota code; insurance for if
+#                            Google ever adopts the "correct" one.
+# Membership here only *gates* the quota path — it never decides it. The actual
+# disambiguator is the count-vs-limit check in
+# :meth:`NotebooksAPI._raise_quota_error_if_detected`, which fetches the
+# account's advertised notebook limit and only raises ``NotebookLimitError``
+# when the owned count is at/near it. That gate is why this set can safely span
+# broad codes (3 also covers wire-format drift, 7 also covers genuine
+# permission errors) without risking a false ``NotebookLimitError``.
+CREATE_NOTEBOOK_QUOTA_RPC_CODES = frozenset({3, 7, 8})
+
+
+def _normalize_rpc_code(code: str | int | None) -> int | None:
+    """Coerce an ``RPCError.rpc_code`` to ``int`` for set membership tests.
+
+    ``RPCError.rpc_code`` is typed ``str | int | None`` — the decoder usually
+    populates the gRPC status as a bare integer, but a string (e.g. ``"7"``) or
+    a non-numeric sentinel (e.g. ``"USER_DISPLAYABLE_ERROR"``) is possible, and a
+    string ``"7"`` would silently fail an ``in {3, 7, 8}`` test against an
+    int-only set. This coerces a numeric code to ``int`` and maps anything
+    absent/non-numeric to ``None`` (no match) instead of raising. Mirrors
+    ``notebooklm._app.errors._normalized_rpc_code`` — duplicated rather than
+    imported because ``_app`` sits *above* this client-runtime module in the
+    layering (``tests/_guardrails/test_app_boundary.py``).
+    """
+    if code is None:
+        return None
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_create_notebook_params(title: str) -> list[Any]:
@@ -501,16 +538,19 @@ class NotebooksAPI:
         )
 
     async def _raise_quota_error_if_detected(self, error: RPCError) -> None:
-        """Convert CREATE_NOTEBOOK invalid-argument failures into quota errors."""
+        """Convert a quota-shaped CREATE_NOTEBOOK failure into a quota error."""
         if (
             error.method_id != RPCMethod.CREATE_NOTEBOOK.value
-            or error.rpc_code != CREATE_NOTEBOOK_QUOTA_RPC_CODE
+            or _normalize_rpc_code(error.rpc_code) not in CREATE_NOTEBOOK_QUOTA_RPC_CODES
         ):
             return
 
-        # The backend reports quota exhaustion as code 3 rather than a typed
-        # limit error, so verify against the account's advertised limit before
-        # changing the exception type.
+        # A quota-suspect status code (see ``CREATE_NOTEBOOK_QUOTA_RPC_CODES``)
+        # only *gates* this path — those codes also cover unrelated failures, so
+        # verify against the account's advertised limit before changing the
+        # exception type. The count-vs-limit check below is the real
+        # disambiguator between true quota exhaustion and a same-coded non-quota
+        # error.
         try:
             account_limits = await self._get_account_limits()
         except Exception:

@@ -63,10 +63,12 @@ def _shared_notebooks(count: int) -> list[Notebook]:
 
 
 def _create_invalid_argument_error(
-    *, method_id: str = RPCMethod.CREATE_NOTEBOOK.value, rpc_code: int = 3
+    *, method_id: str = RPCMethod.CREATE_NOTEBOOK.value, rpc_code: str | int = 3
 ) -> RPCError:
+    # Mirror the code into the message so a failing assertion shows the real
+    # status (the helper is exercised with 3/7/8/"7"), not a hardcoded "3".
     return RPCError(
-        "RPC CCqFvf returned null result with status code 3 (Invalid argument).",
+        f"RPC CCqFvf returned null result with status code {rpc_code}.",
         method_id=method_id,
         rpc_code=rpc_code,
     )
@@ -359,6 +361,58 @@ class TestCreateNotebookQuotaDetection:
         assert exc_info.value.limit == 100
 
     @pytest.mark.asyncio
+    async def test_create_permission_denied_at_limit_raises_limit_error(self):
+        # The "Discovery Engine" backend reports notebook-quota exhaustion as
+        # gRPC code 7 (PERMISSION_DENIED) instead of the legacy code 3 (#1546).
+        # With the owned count at the advertised limit, the count-vs-limit gate
+        # confirms quota and the raw RPCError is converted to NotebookLimitError.
+        original = _create_invalid_argument_error(rpc_code=7)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(NotebookLimitError) as exc_info:
+            await api.create("Discovery Engine At Limit")
+
+        assert exc_info.value.current_count == 500
+        assert exc_info.value.limit == 500
+        assert exc_info.value.original_error is original
+
+    @pytest.mark.asyncio
+    async def test_create_string_form_quota_code_at_limit_raises_limit_error(self):
+        # ``RPCError.rpc_code`` is typed ``str | int | None``; a string-form code
+        # ("7") must still match the int-only quota set, so the membership check
+        # normalizes the code to int first. Without that coercion a string code
+        # would silently skip quota detection (gemini-code-assist on #1574).
+        original = _create_invalid_argument_error(rpc_code="7")
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(NotebookLimitError) as exc_info:
+            await api.create("String Code At Limit")
+
+        assert exc_info.value.current_count == 500
+        assert exc_info.value.limit == 500
+        assert exc_info.value.original_error is original
+
+    @pytest.mark.asyncio
+    async def test_create_resource_exhausted_at_limit_raises_limit_error(self):
+        # Code 8 (RESOURCE_EXHAUSTED) is the canonical gRPC quota code; carried
+        # as insurance for if Google ever adopts the "correct" one (#1546).
+        original = _create_invalid_argument_error(rpc_code=8)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(500))
+
+        with pytest.raises(NotebookLimitError) as exc_info:
+            await api.create("Resource Exhausted At Limit")
+
+        assert exc_info.value.current_count == 500
+        assert exc_info.value.limit == 500
+        assert exc_info.value.original_error is original
+
+    @pytest.mark.asyncio
     async def test_create_invalid_argument_uses_account_limit_not_free_boundary(self):
         original = _create_invalid_argument_error()
         api = _make_api(rpc_call=AsyncMock(side_effect=original))
@@ -383,6 +437,41 @@ class TestCreateNotebookQuotaDetection:
         assert exc_info.value is original
 
     @pytest.mark.asyncio
+    async def test_create_permission_denied_under_limit_preserves_rpc_error(self):
+        # The count-vs-limit gate still protects against false positives when a
+        # broad quota code is in play: a code-7 (PERMISSION_DENIED) failure on
+        # an account well under its limit is a *genuine* permission error, NOT
+        # quota exhaustion, so the raw RPCError must propagate unchanged. This
+        # mirrors the code-3 under-limit case above and is the critical guard
+        # added alongside the #1546 code-7/8 broadening.
+        original = _create_invalid_argument_error(rpc_code=7)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(20))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Genuine Permission Error")
+
+        assert exc_info.value is original
+        assert not isinstance(exc_info.value, NotebookLimitError)
+
+    @pytest.mark.asyncio
+    async def test_create_resource_exhausted_under_limit_preserves_rpc_error(self):
+        # Symmetrical to the code-7 under-limit guard: even the canonical quota
+        # code (8) does not convert when the account is well under its limit —
+        # the count-vs-limit gate, not the code, is what decides.
+        original = _create_invalid_argument_error(rpc_code=8)
+        api = _make_api(rpc_call=AsyncMock(side_effect=original))
+        _set_account_limit(api, 500)
+        api.list = AsyncMock(return_value=_owned_notebooks(20))
+
+        with pytest.raises(RPCError) as exc_info:
+            await api.create("Genuine Exhausted Error")
+
+        assert exc_info.value is original
+        assert not isinstance(exc_info.value, NotebookLimitError)
+
+    @pytest.mark.asyncio
     async def test_non_quota_rpc_code_preserves_rpc_error_without_listing(self):
         original = _create_invalid_argument_error(rpc_code=13)
         api = _make_api(rpc_call=AsyncMock(side_effect=original))
@@ -396,9 +485,9 @@ class TestCreateNotebookQuotaDetection:
 
         assert exc_info.value is original
         api._get_account_limits.assert_not_awaited()
-        # baseline list runs once before CREATE_NOTEBOOK; no
-        # quota-check list because the RPC code (13) is not the
-        # quota-exhausted code (3).
+        # baseline list runs once before CREATE_NOTEBOOK; no quota-check list
+        # because RPC code 13 (INTERNAL) is not one of the quota-suspect codes
+        # ({3, 7, 8}), so the quota path is skipped before any limit lookup.
         assert api.list.await_count == 1
 
     @pytest.mark.asyncio

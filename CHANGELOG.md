@@ -102,6 +102,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Notebook-quota exhaustion is now detected on the "Discovery Engine" backend,
+  not just the legacy one** (#1546). `notebooks.create()` converts a quota-shaped
+  `CREATE_NOTEBOOK` failure into the actionable `NotebookLimitError`, but the
+  trigger was gated on a single gRPC status code (`3` / INVALID_ARGUMENT — the
+  legacy backend's quota code). Google's newer Discovery Engine backend reports
+  the same notebook-limit exhaustion as code `7` (PERMISSION_DENIED), so affected
+  accounts got a raw, confusing RPC error instead of the "delete old notebooks"
+  guidance. The detector now matches a set of quota-suspect codes —
+  `{3, 7, 8}` (3 = legacy INVALID_ARGUMENT, 7 = Discovery Engine
+  PERMISSION_DENIED, 8 = canonical gRPC RESOURCE_EXHAUSTED as insurance). This
+  cannot cause false positives: a matched code only *gates* the quota path, after
+  which the existing count-vs-limit verification (fetch the account's advertised
+  `notebook_limit`, raise only when the owned count is at/near it) is what
+  actually decides — a code-7 failure on an account well under its limit (a
+  genuine permission error) still propagates unchanged. The membership check also
+  normalizes the code to `int` first, so a string-form `rpc_code` (the field is
+  typed `str | int | None`) still matches.
+
 - **`notebooklm auth check` text mode now exits non-zero when an executed check
   fails, matching `--json` mode** (#1569). Previously the Rich-table renderer
   printed the failed checks but always exited `0`, so an unattended health check
