@@ -209,6 +209,7 @@ async def execute_generation(
                     source_ids=sources,
                     kind=MindMapKind.INTERACTIVE,
                     language=plan.language,
+                    instructions=plan.params.get("instructions"),
                 )
         else:
             _generate_mind_map = _generate

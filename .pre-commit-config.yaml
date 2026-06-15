@@ -1,7 +1,19 @@
+# Ruff is pinned once in pyproject.toml ([project.optional-dependencies].dev:
+# `ruff==…`).
+# These local hooks invoke that same interpreter's ruff via `uv run`, so the
+# pre-commit version can never drift from the version used by CI and locally.
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.15
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix]
+        name: ruff
+        entry: uv run ruff check --force-exclude --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: ruff-format
+        name: ruff-format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true

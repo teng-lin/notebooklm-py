@@ -239,8 +239,7 @@ class GenerationPlan:
             so they never pollute machine-readable output.
         stderr_warnings: Behavioral warnings that must surface even under
             ``--json`` because they describe an input the CLI actually dropped
-            (e.g. ``--instructions`` ignored for interactive mind maps).
-            Always written to stderr; stdout stays pure JSON.
+            or altered. Always written to stderr; stdout stays pure JSON.
     """
 
     kind: GenerationKind
@@ -667,20 +666,13 @@ def _build_mind_map_plan(
 ) -> GenerationPlan:
     common = _common(raw_args)
     map_kind = raw_args.get("map_kind") or "interactive"
-    interactive = map_kind == "interactive"
     instructions = raw_args.get("instructions")
-    # The interactive (studio-artifact) generator takes only sources — it has no
-    # custom-instruction slot in its CREATE_ARTIFACT payload. This warning is
-    # *behavioral* (we actually drop the user's --instructions), so it goes to
-    # stderr_warnings and surfaces even under --json — silently ignoring an
-    # explicit input would be a nasty surprise for scripted callers.
-    stderr_warnings: list[str] = []
-    if interactive and instructions:
-        stderr_warnings.append(
-            "Warning: --instructions is ignored for interactive mind maps "
-            "(the interactive generator does not accept custom instructions)."
-        )
-        instructions = None
+    # Both kinds accept a free-text prompt and it is threaded through unchanged:
+    # note-backed sends it via GENERATE_MIND_MAP, and the interactive studio
+    # artifact carries it at the [9][1][2] CREATE_ARTIFACT prompt slot (the same
+    # slot quiz/flashcards use; server-verified to steer the generated tree for
+    # variant 4). Earlier this layer dropped --instructions for interactive on
+    # the assumption its payload had no prompt slot — it does.
     return GenerationPlan(
         kind="mind-map",
         display_name=_DISPLAY_NAME["mind-map"],
@@ -694,7 +686,6 @@ def _build_mind_map_plan(
         max_retries=0,
         json_output=common["json_output"],
         params={"instructions": instructions, "kind": map_kind},
-        stderr_warnings=tuple(stderr_warnings),
     )
 
 

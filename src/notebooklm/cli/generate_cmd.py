@@ -790,7 +790,10 @@ def generate_data_table(
 @multi_source_option
 @language_option
 @click.option(
-    "--instructions", default=None, help="Custom instructions for the mind map (note-backed only)"
+    "--instructions",
+    default=None,
+    help="Custom prompt to steer the mind map. Applied reliably for the "
+    "interactive kind; sent for note-backed too, but the server may ignore it.",
 )
 @click.option(
     "--kind",
@@ -815,7 +818,9 @@ def generate_mind_map(
       --kind interactive   interactive studio artifact, polled to completion (default)
       --kind note-backed   JSON tree, synchronous
     Both export the same JSON node tree via 'download mind-map'.
-    --instructions applies to note-backed only.
+    --instructions is a free-text prompt that steers generation; the
+    interactive kind applies it reliably (the note-backed kind passes it
+    through, but the server may not always honor it).
 
     \b
     Use --json for machine-readable output.

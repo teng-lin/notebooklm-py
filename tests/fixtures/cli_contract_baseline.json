@@ -5018,7 +5018,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Custom instructions for the mind map (note-backed only)",
+          "help": "Custom prompt to steer the mind map. Applied reliably for the interactive kind; sent for note-backed too, but the server may ignore it.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,

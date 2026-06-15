@@ -316,6 +316,8 @@ def build_flashcards_artifact_params(
 def build_interactive_mind_map_artifact_params(
     notebook_id: str,
     source_ids: list[str],
+    *,
+    instructions: str | None = None,
 ) -> list[Any]:
     """Build ``CREATE_ARTIFACT`` params for the interactive mind map.
 
@@ -324,8 +326,23 @@ def build_interactive_mind_map_artifact_params(
     from the note-backed mind map built by :func:`build_mind_map_params`
     (which uses ``GENERATE_MIND_MAP``). Shape verified live against the
     captured GUI ``CREATE_ARTIFACT`` request (issue #1256).
+
+    The options block mirrors quiz/flashcards: the variant sits at
+    ``[9][1][0]`` and the free-text generation prompt at ``[9][1][2]``. The
+    server honours that prompt for variant 4 too (verified live — it steers the
+    generated tree), so ``instructions`` is emitted into that slot when a
+    non-empty prompt is given. When it is ``None`` (or empty / whitespace-only)
+    the bare ``[variant]`` options list is kept, so the default no-prompt
+    request stays byte-identical to the original shape.
     """
     source_ids_triple = nest_source_ids(source_ids, 2)
+    options: list[Any] = [INTERACTIVE_MIND_MAP_VARIANT]
+    if instructions and instructions.strip():
+        # Match the quiz/flashcards layout: prompt at index 2 of the options
+        # list. Empty / whitespace-only instructions are treated as no prompt so
+        # the request stays byte-identical to the bare ``[variant]`` shape (and a
+        # blank prompt is never sent to the server).
+        options = [INTERACTIVE_MIND_MAP_VARIANT, None, instructions]
     return [
         [2],
         notebook_id,
@@ -339,7 +356,7 @@ def build_interactive_mind_map_artifact_params(
             None,
             None,
             None,
-            [None, [INTERACTIVE_MIND_MAP_VARIANT]],
+            [None, options],
         ],
     ]
 
