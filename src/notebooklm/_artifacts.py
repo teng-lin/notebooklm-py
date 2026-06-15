@@ -215,7 +215,7 @@ class ArtifactsAPI:
 
         .. versionadded:: 0.8.0
         """
-        return await self._listing.get_prompt(notebook_id, artifact_id, list_raw=self._list_raw, list_mind_maps=self._mind_maps.list_mind_maps)  # fmt: skip
+        return await self._listing.get_prompt(notebook_id, artifact_id, list_raw=self._list_raw, list_mind_maps=self._list_mind_maps)  # fmt: skip
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
