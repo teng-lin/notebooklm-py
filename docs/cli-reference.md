@@ -1137,10 +1137,10 @@ notebooklm generate report --prompt-file custom_report.txt
 
 Manage existing artifacts (audio, video, slide decks, quizzes, reports, etc.). Every subcommand resolves the notebook via the standard precedence (`-n/--notebook` flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
-> **Python equivalent:** [`client.artifacts.list/get/rename/delete/poll_status/wait_for_completion/retry_failed/suggest_reports(...)`](python-api.md#artifactsapi-clientartifacts) for management; [`export_report` / `export_data_table` / `export(...)`](python-api.md#export-methods) for export.
+> **Python equivalent:** [`client.artifacts.list/get/get_prompt/rename/delete/poll_status/wait_for_completion/retry_failed/suggest_reports(...)`](python-api.md#artifactsapi-clientartifacts) for management; [`export_report` / `export_data_table` / `export(...)`](python-api.md#export-methods) for export.
 
 ```bash
-notebooklm artifact <list|get|rename|delete|export|poll|wait|retry|suggestions> [OPTIONS]
+notebooklm artifact <list|get|get-prompt|rename|delete|export|poll|wait|retry|suggestions> [OPTIONS]
 ```
 
 **Common options (all subcommands):**
@@ -1152,6 +1152,7 @@ notebooklm artifact <list|get|rename|delete|export|poll|wait|retry|suggestions> 
 |---|---|---|
 | `list` | (none) | `--type [all\|audio\|video\|slide-deck\|quiz\|flashcard\|infographic\|data-table\|mind-map\|report]`, `--limit N` (default: unlimited), `--no-truncate`, `--json` |
 | `get` | `ARTIFACT_ID` | `--json` |
+| `get-prompt` | `ARTIFACT_ID` | `--json` |
 | `rename` | `ARTIFACT_ID NEW_TITLE` | `--json` |
 | `delete` | `ARTIFACT_ID` | `-y/--yes` (skip confirmation), `--json` |
 | `export` | `ARTIFACT_ID` | `--title TEXT` (**required**), `--type [docs\|sheets]` (default: docs), `--json` |
