@@ -239,6 +239,7 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 |---------|-----------|---------|---------|
 | `list` | - | `--type [all\|audio\|video\|slide-deck\|quiz\|flashcard\|infographic\|data-table\|mind-map\|report]`, `--limit N`, `--no-truncate`, `--json` | `artifact list --type audio --limit 5` |
 | `get <id>` | Artifact ID | `--json` | `artifact get art123` |
+| `get-prompt <id>` | Artifact ID | `--json` | `artifact get-prompt art123` |
 | `rename <id> <title>` | Artifact ID, title | `--json` | `artifact rename art123 "Title"` |
 | `delete <id>` | Artifact ID | `-y/--yes`, `--json` | `artifact delete art123 -y` |
 | `export <id>` | Artifact ID | `--title TEXT` (required), `--type [docs\|sheets]`, `--json` | `artifact export art123 --title "My Doc" --type sheets` |
@@ -1132,7 +1133,7 @@ notebooklm generate report --format briefing-doc --append "Focus on AI trends, k
 notebooklm generate report --prompt-file custom_report.txt
 ```
 
-### Artifact: `list`, `get`, `rename`, `delete`, `export`, `poll`, `wait`, `retry`, `suggestions`
+### Artifact: `list`, `get`, `get-prompt`, `rename`, `delete`, `export`, `poll`, `wait`, `retry`, `suggestions`
 
 Manage existing artifacts (audio, video, slide decks, quizzes, reports, etc.). Every subcommand resolves the notebook via the standard precedence (`-n/--notebook` flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
@@ -1166,6 +1167,9 @@ notebooklm artifact list --notebook nb_abc --type audio --json
 
 # Inspect a single artifact (partial ID OK)
 notebooklm artifact get art123 --json
+
+# Show the prompt an artifact was generated from
+notebooklm artifact get-prompt art123 --json
 
 # Rename an artifact
 notebooklm artifact rename art123 "Final cut"

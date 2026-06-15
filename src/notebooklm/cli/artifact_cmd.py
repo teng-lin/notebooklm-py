@@ -3,6 +3,7 @@
 Commands:
     list        List all artifacts
     get         Get artifact details
+    get-prompt  Show the generation prompt behind an artifact
     rename      Rename an artifact
     delete      Delete an artifact
     export      Export to Google Docs/Sheets
@@ -23,6 +24,7 @@ from .._app.artifacts import (
     delete_artifact,
     export_artifact,
     get_artifact,
+    get_artifact_prompt,
     poll_artifact,
     rename_artifact,
     retry_artifact,
@@ -61,6 +63,7 @@ def artifact():
     Commands:
       list         List all artifacts (or by type)
       get          Get artifact details
+      get-prompt   Show the generation prompt behind an artifact
       rename       Rename an artifact
       delete       Delete an artifact
       export       Export to Google Docs/Sheets
@@ -225,6 +228,58 @@ def artifact_get(ctx, artifact_id, notebook_id, json_output, client_auth):
             console.print(f"[bold]Status:[/bold] {art.status_str}")
             if art.created_at:
                 console.print(f"[bold]Created:[/bold] {art.created_at.strftime('%Y-%m-%d %H:%M')}")
+
+    return _run()
+
+
+@artifact.command("get-prompt")
+@click.argument("artifact_id")
+@notebook_option
+@json_option
+@with_client
+def artifact_get_prompt(ctx, artifact_id, notebook_id, json_output, client_auth):
+    """Show the generation prompt that produced an artifact.
+
+    Prints the free-text prompt the artifact was generated from. ARTIFACT_ID
+    can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    A missing artifact exits 1 with a typed NOT_FOUND error.
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_artifact_id(
+                client, nb_id_resolved, artifact_id, json_output=json_output
+            )
+
+            # The neutral ``get_artifact_prompt`` raises ``ArtifactNotFoundError``
+            # for an id absent from the studio listing; render the same
+            # ``NOT_FOUND`` envelope + exit 1 contract as ``artifact get``.
+            try:
+                prompt = await get_artifact_prompt(client, nb_id_resolved, resolved_id)
+            except ArtifactNotFoundError:
+                _output_error(
+                    "Artifact not found",
+                    code="NOT_FOUND",
+                    json_output=json_output,
+                    exit_code=1,
+                    extra={"id": resolved_id, "notebook_id": nb_id_resolved},
+                )
+                raise AssertionError("unreachable") from None  # pragma: no cover
+
+            if json_output:
+                json_output_response(
+                    {"notebook_id": nb_id_resolved, "id": resolved_id, "prompt": prompt}
+                )
+                return
+
+            if prompt is None:
+                console.print("[yellow]This artifact has no stored prompt.[/yellow]")
+                return
+            # Print the prompt verbatim with no Rich markup interpretation so a
+            # prompt containing literal brackets is shown exactly as authored.
+            console.print(prompt, markup=False)
 
     return _run()
 

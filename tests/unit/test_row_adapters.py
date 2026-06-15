@@ -86,6 +86,9 @@ class TestPositionContract:
     def test_options_position_is_9(self) -> None:
         assert ArtifactRow._OPTIONS_POS == 9
 
+    def test_infographic_metadata_position_is_14(self) -> None:
+        assert ArtifactRow._INFOGRAPHIC_METADATA_POS == 14
+
     def test_timestamp_position_is_15(self) -> None:
         assert ArtifactRow._TIMESTAMP_POS == 15
 
@@ -110,10 +113,11 @@ class TestPositionContract:
             ArtifactRow._REPORT_MARKDOWN_POS,
             ArtifactRow._VIDEO_METADATA_POS,
             ArtifactRow._OPTIONS_POS,
+            ArtifactRow._INFOGRAPHIC_METADATA_POS,
             ArtifactRow._TIMESTAMP_POS,
             ArtifactRow._SLIDE_DECK_METADATA_POS,
             ArtifactRow._DATA_TABLE_PAYLOAD_POS,
-        ) == (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 18)
+        ) == (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 18)
 
 
 # ---------------------------------------------------------------------------

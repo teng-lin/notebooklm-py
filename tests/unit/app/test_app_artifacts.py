@@ -21,6 +21,7 @@ from notebooklm._app.artifacts import (
     delete_artifact,
     export_artifact,
     get_artifact,
+    get_artifact_prompt,
     poll_artifact,
     rename_artifact,
     retry_artifact,
@@ -70,6 +71,35 @@ async def test_get_artifact_raises_not_found() -> None:
     # No list call — the neutral get is a single get_or_none (the partial-id
     # resolution + full-id fast path live in the CLI resolver, not here).
     client.artifacts.list.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_artifact_prompt — delegates to the client, propagates not-found
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_prompt_returns_prompt() -> None:
+    client = _client()
+    client.artifacts.get_prompt = AsyncMock(return_value="Explain the technique.")
+    result = await get_artifact_prompt(client, "nb", "art_1")
+    assert result == "Explain the technique."
+    client.artifacts.get_prompt.assert_awaited_once_with("nb", "art_1")
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_prompt_returns_none_when_no_prompt() -> None:
+    client = _client()
+    client.artifacts.get_prompt = AsyncMock(return_value=None)
+    assert await get_artifact_prompt(client, "nb", "art_1") is None
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_prompt_propagates_not_found() -> None:
+    client = _client()
+    client.artifacts.get_prompt = AsyncMock(side_effect=ArtifactNotFoundError("art_gone"))
+    with pytest.raises(ArtifactNotFoundError):
+        await get_artifact_prompt(client, "nb", "art_gone")
 
 
 # ---------------------------------------------------------------------------

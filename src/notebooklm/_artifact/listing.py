@@ -19,7 +19,7 @@ from ..rpc import (
     RPCError,
     RPCMethod,
 )
-from ..types import Artifact, ArtifactNotReadyError, ArtifactType
+from ..types import Artifact, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactType
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +226,30 @@ class ArtifactListingService:
             if artifact.id == artifact_id:
                 return artifact
         return None
+
+    async def get_prompt(
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        *,
+        list_raw: ListRawCallback,
+    ) -> str | None:
+        """Return the generation prompt for a single studio artifact.
+
+        Looks the artifact up in the studio listing (any status — the prompt is
+        stored at creation, so failed artifacts carry it too) and reads its
+        prompt through :attr:`ArtifactRow.generation_prompt`.
+
+        Returns ``None`` when the artifact exists but has no readable prompt
+        (e.g. a type whose prompt slot is absent). Raises
+        :class:`ArtifactNotFoundError` when no studio artifact matches
+        ``artifact_id`` — note-backed mind-map ids are absent from the studio
+        listing and so are reported not-found here.
+        """
+        row = find_artifact_row_by_id(await list_raw(notebook_id), artifact_id)
+        if row is None:
+            raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.LIST_ARTIFACTS.value)
+        return row.generation_prompt
 
     def select_artifact(
         self,

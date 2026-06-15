@@ -207,6 +207,16 @@ class ArtifactsAPI:
     # sites and tests use the ``None``-on-miss lookup rather than the raising get().
     _get_or_none = get_or_none
 
+    async def get_prompt(self, notebook_id: str, artifact_id: str) -> str | None:
+        """Get the free-text prompt an artifact was generated from (any studio type).
+
+        Returns ``None`` when the artifact stores no prompt (e.g. a note-backed
+        mind map); raises :class:`ArtifactNotFoundError` for an unknown id.
+
+        .. versionadded:: 0.8.0
+        """
+        return await self._listing.get_prompt(notebook_id, artifact_id, list_raw=self._list_raw)
+
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
         return await self.list(notebook_id, ArtifactType.AUDIO)

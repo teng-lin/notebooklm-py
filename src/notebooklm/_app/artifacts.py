@@ -81,6 +81,26 @@ async def get_artifact(
 
 
 # ---------------------------------------------------------------------------
+# get-prompt
+# ---------------------------------------------------------------------------
+
+
+async def get_artifact_prompt(
+    client: NotebookLMClient,
+    notebook_id: str,
+    artifact_id: str,
+) -> str | None:
+    """Fetch the free-text prompt an artifact was generated from.
+
+    Returns the prompt string, or ``None`` when the artifact stores no prompt
+    (e.g. a note-backed mind map). Raises :class:`ArtifactNotFoundError` when no
+    studio artifact matches ``artifact_id`` — the adapter maps that to its own
+    not-found policy (the CLI emits a ``NOT_FOUND`` envelope + exit 1).
+    """
+    return await client.artifacts.get_prompt(notebook_id, artifact_id)
+
+
+# ---------------------------------------------------------------------------
 # rename (kind-aware mind-map dispatch)
 # ---------------------------------------------------------------------------
 
@@ -333,6 +353,7 @@ __all__ = [
     "delete_artifact",
     "export_artifact",
     "get_artifact",
+    "get_artifact_prompt",
     "poll_artifact",
     "rename_artifact",
     "retry_artifact",

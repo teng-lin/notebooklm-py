@@ -503,6 +503,95 @@ class TestArtifactGet:
 
 
 # =============================================================================
+# ARTIFACT GET-PROMPT TESTS
+# =============================================================================
+
+
+class TestArtifactGetPrompt:
+    def test_artifact_get_prompt(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
+        )
+        mock_client.artifacts.get_prompt = AsyncMock(return_value="Explain the technique.")
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["artifact", "get-prompt", "art_123", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0
+        assert "Explain the technique." in result.output
+
+    def test_artifact_get_prompt_json(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
+        )
+        mock_client.artifacts.get_prompt = AsyncMock(return_value="Explain the technique.")
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["artifact", "get-prompt", "art_123", "-n", "nb_123", "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["id"] == "art_123"
+        assert data["notebook_id"] == "nb_123"
+        assert data["prompt"] == "Explain the technique."
+
+    def test_artifact_get_prompt_none_message(self, runner, mock_auth):
+        """An artifact with no stored prompt prints a friendly notice, exit 0."""
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[Artifact(id="art_123", title="Note Mind Map", _artifact_type=5, status=3)]
+        )
+        mock_client.artifacts.get_prompt = AsyncMock(return_value=None)
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["artifact", "get-prompt", "art_123", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0
+        assert "no stored prompt" in result.output
+
+    def test_artifact_get_prompt_not_found(self, runner, mock_auth):
+        """A partial id that resolves to nothing exits 1 via resolve_artifact_id."""
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(return_value=[])
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["artifact", "get-prompt", "nonexistent", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 1
+        assert "No artifact found" in result.output
+
+
+# =============================================================================
 # ARTIFACT RENAME TESTS
 # =============================================================================
 
@@ -1624,8 +1713,14 @@ class TestArtifactCommandsExist:
         assert result.exit_code == 0
         assert "list" in result.output
         assert "get" in result.output
+        assert "get-prompt" in result.output
         assert "delete" in result.output
         assert "wait" in result.output
+
+    def test_artifact_get_prompt_command_exists(self, runner):
+        result = runner.invoke(cli, ["artifact", "get-prompt", "--help"])
+        assert result.exit_code == 0
+        assert "generation prompt" in result.output
 
     def test_artifact_list_command_exists(self, runner):
         result = runner.invoke(cli, ["artifact", "list", "--help"])

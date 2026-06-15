@@ -122,13 +122,22 @@ class ArtifactRow:
     8      video metadata; nested media variants
     9      options block; ``[9][1][0]`` is the variant code (used to
            distinguish among QUIZ, FLASHCARDS, and the interactive mind map
-           (variant 4) when type == 4)
+           (variant 4) when type == 4); ``[9][1][2]`` is the generation prompt
+    14     infographic metadata; ``[14][0][0]`` is the generation prompt
     15     timestamp block; ``[15][0]`` is the creation timestamp
            (seconds since epoch)
-    16     slide deck metadata; ``[16][3]`` is PDF URL and ``[16][4]``
-           is PPTX URL
-    18     data table raw rich-text payload
+    16     slide deck metadata; ``[16][3]`` is PDF URL, ``[16][4]`` is PPTX
+           URL, and ``[16][0][0]`` is the generation prompt
+    18     data table raw rich-text payload; ``[18][1][0]`` is the
+           generation prompt
     =====  ============================================================
+
+    Each artifact also carries the free-text prompt that produced it, at a
+    type-specific position inside the same top-level block that holds its
+    rendered content (audio ``[6][1][0]``, report ``[7][1][5]``, video
+    ``[8][2][2]``, type-4 ``[9][1][2]``, infographic ``[14][0][0]``, slide
+    deck ``[16][0][0]``, data table ``[18][1][0]``). These are read through
+    :attr:`generation_prompt`.
 
     Position knowledge is centralised here. Consumer sites should NEVER
     open-code ``data[2]`` / ``data[4]`` / ``data[15]`` — wrap the row in
@@ -166,9 +175,26 @@ class ArtifactRow:
     _REPORT_MARKDOWN_POS: ClassVar[int] = 7
     _VIDEO_METADATA_POS: ClassVar[int] = 8
     _OPTIONS_POS: ClassVar[int] = 9
+    _INFOGRAPHIC_METADATA_POS: ClassVar[int] = 14
     _TIMESTAMP_POS: ClassVar[int] = 15
     _SLIDE_DECK_METADATA_POS: ClassVar[int] = 16
     _DATA_TABLE_PAYLOAD_POS: ClassVar[int] = 18
+
+    # Per-type location of the user's generation prompt: the top-level block
+    # index that holds the artifact's content, followed by the sub-path to the
+    # prompt leaf inside it. The type-4 key (QUIZ) covers quizzes, flashcards,
+    # and the interactive mind map, which share one options block. Verified live
+    # across every studio artifact type; note-backed mind maps (synthetic type
+    # 5) are absent here and therefore have no prompt.
+    _PROMPT_LOCATION: ClassVar[dict[int, tuple[int, ...]]] = {
+        ArtifactTypeCode.AUDIO.value: (_AUDIO_METADATA_POS, 1, 0),
+        ArtifactTypeCode.REPORT.value: (_REPORT_MARKDOWN_POS, 1, 5),
+        ArtifactTypeCode.VIDEO.value: (_VIDEO_METADATA_POS, 2, 2),
+        ArtifactTypeCode.QUIZ.value: (_OPTIONS_POS, 1, 2),
+        ArtifactTypeCode.INFOGRAPHIC.value: (_INFOGRAPHIC_METADATA_POS, 0, 0),
+        ArtifactTypeCode.SLIDE_DECK.value: (_SLIDE_DECK_METADATA_POS, 0, 0),
+        ArtifactTypeCode.DATA_TABLE.value: (_DATA_TABLE_PAYLOAD_POS, 1, 0),
+    }
 
     _AUDIO_MEDIA_LIST_POS: ClassVar[int] = 5
     _MEDIA_URL_POS: ClassVar[int] = 0
@@ -487,6 +513,41 @@ class ArtifactRow:
         if len(self._raw) <= self._DATA_TABLE_PAYLOAD_POS:
             return None
         return self._raw[self._DATA_TABLE_PAYLOAD_POS]
+
+    @property
+    def generation_prompt(self) -> str | None:
+        """The free-text prompt that generated this artifact, or ``None``.
+
+        Every studio artifact stores the prompt it was generated from at a
+        type-specific position inside its content block (see
+        :data:`_PROMPT_LOCATION`). This returns that prompt verbatim.
+
+        Returns ``None`` when:
+
+        * the type has no known prompt location (e.g. note-backed mind maps,
+          synthetic type 5, or an unrecognised type code), or
+        * the content block is absent (a short or minimal row), or
+        * the prompt leaf is present but not a string.
+
+        Raises :class:`UnknownRPCMethodError` in the same circumstance as the
+        other nested accessors: the content block is present but its inner
+        shape no longer matches the recorded path — the signal that Google
+        reshaped the artifact payload.
+        """
+        location = self._PROMPT_LOCATION.get(self.type_code)
+        if location is None:
+            return None
+        top_pos, *sub_path = location
+        block = self._list_at_top_level(top_pos)
+        if block is None:
+            return None
+        value = safe_index(
+            block,
+            *sub_path,
+            method_id=self.method_id,
+            source="ArtifactRow.generation_prompt",
+        )
+        return value if isinstance(value, str) else None
 
     @property
     def failed_error_text(self) -> str | None:
