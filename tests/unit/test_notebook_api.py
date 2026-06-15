@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._notebooks import NotebooksAPI, build_create_notebook_params
+from notebooklm._notebooks import (
+    NotebooksAPI,
+    build_create_notebook_params,
+    build_get_notebook_params,
+)
 from notebooklm._source.listing import SourceLister
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -79,6 +83,20 @@ def test_build_create_notebook_params_matches_live_payload() -> None:
         None,
         None,
         [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    ]
+
+
+def test_build_get_notebook_params_matches_live_payload() -> None:
+    # #1549: the read-path tail also migrated to the nested template block.
+    # Live-verified forward-compatible (decoded notebook + sources byte-identical
+    # to the old flat ``[2]`` on an un-migrated account). The trailing ``None, 0``
+    # is unchanged — only position 2 migrates.
+    assert build_get_notebook_params("nb_abc") == [
+        "nb_abc",
+        None,
+        [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+        None,
+        0,
     ]
 
 

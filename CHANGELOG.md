@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of #1530). Logs and exception previews now scrub session cookies, secure
   host-cookie names, `LSOLH` / `__Host-GAPS`-style cookies, and Google API key
   token shapes consistently before diagnostics can include them.
+- **`notebooks.get()` / `sources.list()` now use the nested `GET_NOTEBOOK`
+  read payload shape** (backport of #1582). This matches the nested write-path
+  backport from 0.7.2, so migrated Google cohorts no longer break read calls
+  while create/add-url calls keep working.
 
 ## [0.7.3] - 2026-06-29
 
