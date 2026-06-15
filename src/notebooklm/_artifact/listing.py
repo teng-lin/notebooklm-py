@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from .._row_adapters.artifacts import ArtifactRow, unwrap_artifact_rows
+from .._row_adapters.notes import NoteRow
 from .._runtime.contracts import RpcCaller
 from ..exceptions import DecodingError
 from ..rpc import (
@@ -233,6 +234,7 @@ class ArtifactListingService:
         artifact_id: str,
         *,
         list_raw: ListRawCallback,
+        list_mind_maps: ListMindMapsCallback | None = None,
     ) -> str | None:
         """Return the generation prompt for a single studio artifact.
 
@@ -241,15 +243,22 @@ class ArtifactListingService:
         prompt through :attr:`ArtifactRow.generation_prompt`.
 
         Returns ``None`` when the artifact exists but has no readable prompt
-        (e.g. a type whose prompt slot is absent). Raises
-        :class:`ArtifactNotFoundError` when no studio artifact matches
-        ``artifact_id`` — note-backed mind-map ids are absent from the studio
-        listing and so are reported not-found here.
+        (e.g. a type whose prompt slot is absent), or when ``artifact_id``
+        belongs to a note-backed mind map (not in the studio listing) and
+        ``list_mind_maps`` is provided and confirms the id exists there.
+
+        Raises :class:`ArtifactNotFoundError` when no studio artifact matches
+        ``artifact_id`` and either ``list_mind_maps`` is ``None`` or the id is
+        absent from the mind-map listing too.
         """
         row = find_artifact_row_by_id(await list_raw(notebook_id), artifact_id)
-        if row is None:
-            raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.LIST_ARTIFACTS.value)
-        return row.generation_prompt
+        if row is not None:
+            return row.generation_prompt
+        if list_mind_maps is not None:
+            mind_map_rows = await list_mind_maps(notebook_id)
+            if any(NoteRow(m).id == artifact_id for m in mind_map_rows):
+                return None
+        raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.LIST_ARTIFACTS.value)
 
     def select_artifact(
         self,
