@@ -7,13 +7,13 @@ repos:
     hooks:
       - id: ruff
         name: ruff
-        entry: uv run ruff check --fix
+        entry: uv run ruff check --force-exclude --fix
         language: system
         types_or: [python, pyi]
         require_serial: true
       - id: ruff-format
         name: ruff-format
-        entry: uv run ruff format
+        entry: uv run ruff format --force-exclude
         language: system
         types_or: [python, pyi]
         require_serial: true
