@@ -255,9 +255,12 @@ class TestGenerationPromptRealWireShapes:
     @pytest.mark.parametrize(("variant", "options"), _TYPE4_CASES)
     def test_type4_prompt_read_past_variant_and_options(self, variant, options) -> None:
         prompt = "Focus only on the three astronauts."
+        # Timestamp block sits at index 15 (_TIMESTAMP_POS) on the real wire, so
+        # indices 10-14 are padded before it — keeping the row faithful.
         row = [
             "art_1", "Title", ArtifactTypeCode.QUIZ.value, [[["s"]]], 3,
-            None, None, None, None, [None, options(prompt)], [1700000000, 0],
+            None, None, None, None, [None, options(prompt)],
+            None, None, None, None, None, [1700000000, 0],
         ]  # fmt: skip
         adapter = ArtifactRow(row)
         # The prompt is at [9][1][2]; the variant at [9][1][0] and the
@@ -271,7 +274,8 @@ class TestGenerationPromptRealWireShapes:
         row = [
             "art_1", "Title", ArtifactTypeCode.QUIZ.value, [[["s"]]], 3,
             None, None, None, None,
-            [None, [2, None, None, "en", None, None, None, [2, 2], True]], [1700000000, 0],
+            [None, [2, None, None, "en", None, None, None, [2, 2], True]],
+            None, None, None, None, None, [1700000000, 0],
         ]  # fmt: skip
         assert ArtifactRow(row).generation_prompt is None
 
