@@ -792,8 +792,8 @@ def generate_data_table(
 @click.option(
     "--instructions",
     default=None,
-    help="Custom prompt to steer the mind map (works for both kinds; "
-    "the interactive kind applies it most reliably)",
+    help="Custom prompt to steer the mind map. Applied reliably for the "
+    "interactive kind; sent for note-backed too, but the server may ignore it.",
 )
 @click.option(
     "--kind",

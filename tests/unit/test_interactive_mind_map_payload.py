@@ -42,3 +42,13 @@ def test_none_instructions_keeps_bare_variant_shape():
     assert build_interactive_mind_map_artifact_params(
         "nb1", ["s1"], instructions=None
     ) == build_interactive_mind_map_artifact_params("nb1", ["s1"])
+
+
+def test_empty_or_whitespace_instructions_keeps_bare_variant_shape():
+    # Empty / whitespace-only instructions are treated as no prompt: same bare
+    # [None, [4]] shape as None, so a blank prompt is never sent to the server.
+    baseline = build_interactive_mind_map_artifact_params("nb1", ["s1"])
+    for blank in ("", "   ", "\n\t "):
+        assert build_interactive_mind_map_artifact_params("nb1", ["s1"], instructions=blank) == (
+            baseline
+        )
