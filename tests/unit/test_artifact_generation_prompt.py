@@ -173,3 +173,51 @@ class TestArtifactsAPIGetPrompt:
     async def test_raises_not_found_for_absent_id(self, artifacts_api: ArtifactsAPI) -> None:
         with pytest.raises(ArtifactNotFoundError):
             await artifacts_api.get_prompt("nb_1", "missing")
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_note_backed_mind_map_id(self) -> None:
+        # A note-backed mind map ID is not in the studio listing, so
+        # ``_listing.get_prompt`` raises ArtifactNotFoundError. The public
+        # API should catch that and return None when the ID belongs to a
+        # note-backed mind map.
+        from tests._fixtures.fake_core import make_fake_core
+
+        studio_rows: list = []  # no studio artifacts
+        core = make_fake_core(rpc_call=AsyncMock(return_value=studio_rows))
+        mind_map_row = ["mm_1", "some content"]  # minimal raw note row; NoteRow(row).id == "mm_1"
+        mind_maps = MagicMock(spec=NoteBackedMindMapService)
+        mind_maps.list_mind_maps = AsyncMock(return_value=[mind_map_row])
+        notebooks = MagicMock()
+        notebooks.get_source_ids = AsyncMock(return_value=[])
+        api = ArtifactsAPI(
+            rpc=core,
+            drain=core,
+            lifecycle=core,
+            notebooks=notebooks,
+            mind_maps=mind_maps,
+            note_service=MagicMock(spec=NoteService),
+        )
+        result = await api.get_prompt("nb_1", "mm_1")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_when_id_absent_from_both_listings(self) -> None:
+        # ID is in neither the studio listing nor the mind-map listing.
+        from tests._fixtures.fake_core import make_fake_core
+
+        studio_rows: list = []
+        core = make_fake_core(rpc_call=AsyncMock(return_value=studio_rows))
+        mind_maps = MagicMock(spec=NoteBackedMindMapService)
+        mind_maps.list_mind_maps = AsyncMock(return_value=[])
+        notebooks = MagicMock()
+        notebooks.get_source_ids = AsyncMock(return_value=[])
+        api = ArtifactsAPI(
+            rpc=core,
+            drain=core,
+            lifecycle=core,
+            notebooks=notebooks,
+            mind_maps=mind_maps,
+            note_service=MagicMock(spec=NoteService),
+        )
+        with pytest.raises(ArtifactNotFoundError):
+            await api.get_prompt("nb_1", "ghost")

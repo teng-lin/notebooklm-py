@@ -28,6 +28,7 @@ from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._row_adapters import artifacts as _artifact_rows
+from ._row_adapters.notes import NoteRow
 from ._runtime.contracts import RpcCaller
 from ._types.research import MindMapResult
 from .exceptions import ArtifactNotFoundError
@@ -213,9 +214,19 @@ class ArtifactsAPI:
         Returns ``None`` when the artifact stores no prompt (e.g. a note-backed
         mind map); raises :class:`ArtifactNotFoundError` for an unknown id.
 
+        Note-backed mind maps are not in the studio listing, so if ``artifact_id``
+        matches one, this returns ``None`` rather than propagating the
+        ``ArtifactNotFoundError`` that the listing layer raises for a miss.
+
         .. versionadded:: 0.8.0
         """
-        return await self._listing.get_prompt(notebook_id, artifact_id, list_raw=self._list_raw)
+        try:
+            return await self._listing.get_prompt(notebook_id, artifact_id, list_raw=self._list_raw)
+        except ArtifactNotFoundError:
+            mind_map_rows = await self._mind_maps.list_mind_maps(notebook_id)
+            if any(NoteRow(m).id == artifact_id for m in mind_map_rows):
+                return None
+            raise
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
