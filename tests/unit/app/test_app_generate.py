@@ -236,7 +236,12 @@ class TestExecuteGenerationMindMap:
         client.mind_maps.generate = AsyncMock(return_value=mind_map_obj)
         plan = build_generation_plan(
             "mind-map",
-            {"notebook_id": "nb_1", "map_kind": "interactive", "source_ids": ["s1"]},
+            {
+                "notebook_id": "nb_1",
+                "map_kind": "interactive",
+                "source_ids": ["s1"],
+                "instructions": "focus on the astronauts",
+            },
         )
         result = await execute_generation(
             plan,
@@ -250,6 +255,8 @@ class TestExecuteGenerationMindMap:
         client.mind_maps.generate.assert_awaited_once()
         _args, kwargs = client.mind_maps.generate.await_args
         assert kwargs["kind"] == MindMapKind.INTERACTIVE
+        # The interactive path must forward the custom prompt (server applies it).
+        assert kwargs["instructions"] == "focus on the astronauts"
 
     @pytest.mark.asyncio
     async def test_note_backed_routes_through_generate_mind_map(self):

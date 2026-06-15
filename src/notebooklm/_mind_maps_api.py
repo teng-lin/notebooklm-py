@@ -310,9 +310,11 @@ class MindMapsAPI:
         a uniform surface). With ``wait=False`` it returns a pending
         :class:`MindMap` whose ``tree`` is ``None`` until completed.
 
-        ``language`` and ``instructions`` only apply to ``NOTE_BACKED`` maps; the
-        interactive ``CREATE_ARTIFACT`` payload does not accept them, so they are
-        ignored when ``kind=INTERACTIVE``.
+        ``instructions`` is a free-text prompt that steers generation; it is sent
+        for both kinds — note-backed via ``GENERATE_MIND_MAP`` and interactive at
+        the ``[9][1][2]`` prompt slot of ``CREATE_ARTIFACT`` (the same slot
+        quiz/flashcards use; the server honours it for variant 4, verified live).
+        ``language`` applies to the note-backed payload only.
 
         Raises:
             ArtifactFeatureUnavailableError: if the interactive
@@ -346,7 +348,9 @@ class MindMapsAPI:
         # kwarg documents the no-variant default).
         create_response = await self._rpc.rpc_call(
             RPCMethod.CREATE_ARTIFACT,
-            build_interactive_mind_map_artifact_params(notebook_id, source_ids),
+            build_interactive_mind_map_artifact_params(
+                notebook_id, source_ids, instructions=instructions
+            ),
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
             operation_variant=None,

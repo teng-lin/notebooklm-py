@@ -256,6 +256,30 @@ async def test_generate_interactive_wait_false_skips_tree():
 
 
 @pytest.mark.asyncio
+async def test_generate_interactive_threads_instructions_into_create_params():
+    # The interactive CREATE_ARTIFACT payload carries a free-text prompt at
+    # [9][1][2] (the slot quiz/flashcards use; server-verified to steer variant
+    # 4). generate(instructions=...) must thread it there rather than drop it.
+    api, rpc, _, _, _ = _make_api(interactive=[_interactive_artifact("new_int")])
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[["new_int", "T", 4]]))
+    await api.generate(
+        "nb", ["s1"], kind=MindMapKind.INTERACTIVE, instructions="focus on X", wait=False
+    )
+    create_params = rpc.rpc_call.call_args_list[0][0][1]
+    assert create_params[2][9] == [None, [4, None, "focus on X"]]
+
+
+@pytest.mark.asyncio
+async def test_generate_interactive_without_instructions_keeps_bare_variant():
+    # No prompt → byte-identical [None, [4]] options block (unchanged request).
+    api, rpc, _, _, _ = _make_api(interactive=[_interactive_artifact("new_int")])
+    rpc.configure_mock(rpc_call=AsyncMock(return_value=[["new_int", "T", 4]]))
+    await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE, wait=False)
+    create_params = rpc.rpc_call.call_args_list[0][0][1]
+    assert create_params[2][9] == [None, [4]]
+
+
+@pytest.mark.asyncio
 async def test_generate_interactive_raises_feature_unavailable_when_no_artifact_id():
     # ADR-0019 async-kickoff null contract (issue #1359): a null/degenerate
     # CREATE_ARTIFACT raises ArtifactFeatureUnavailableError (no task created),

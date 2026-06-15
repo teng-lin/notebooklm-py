@@ -23,3 +23,22 @@ def test_distinct_from_quiz_and_flashcards_variants():
     # type-4 family, but variant 4 (not 2=quiz / 1=flashcards) and no config tail.
     assert spec[2] == 4
     assert spec[9] == [None, [4]]
+
+
+def test_instructions_injected_at_prompt_slot():
+    # A custom prompt goes to [9][1][2] — the same slot quiz/flashcards use and
+    # the slot ArtifactRow.generation_prompt reads back (server-verified to steer
+    # the generated tree for variant 4).
+    spec = build_interactive_mind_map_artifact_params(
+        "nb1", ["s1"], instructions="focus only on the astronauts"
+    )[2]
+    assert spec[9] == [None, [4, None, "focus only on the astronauts"]]
+    assert spec[9][1][0] == 4  # variant still at [9][1][0]
+
+
+def test_none_instructions_keeps_bare_variant_shape():
+    # Default / explicit None must stay byte-identical to the original request so
+    # the no-prompt path (and its recorded cassettes / idempotency key) is unchanged.
+    assert build_interactive_mind_map_artifact_params(
+        "nb1", ["s1"], instructions=None
+    ) == build_interactive_mind_map_artifact_params("nb1", ["s1"])

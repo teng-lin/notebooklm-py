@@ -1000,6 +1000,13 @@ params = [
         [None, [4]],                              # 9: [_, [variant]] → variant 4 = interactive mind map
     ],
 ]
+
+# With a custom prompt: variant at [9][1][0], free-text prompt at [9][1][2] —
+# the same options-block layout quiz/flashcards use. The server honors it for
+# variant 4 (verified live: it steers the generated node tree), and the prompt
+# reads back from the LIST_ARTIFACTS [9][1][2] slot that
+# ``ArtifactRow.generation_prompt`` decodes.
+params[2][9] = [None, [4, None, "focus only on the three astronauts"]]
 ```
 
 **Reading the tree:** the interactive map exposes its `{"name", "children"}`

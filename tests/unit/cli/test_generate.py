@@ -728,8 +728,13 @@ class TestGenerateMindMap:
         assert data["kind"] == "interactive"
         assert data["mind_map"] == {"name": "Root", "children": []}
 
-    def test_generate_mind_map_interactive_warns_on_instructions(self, runner, mock_auth):
-        """--kind interactive with --instructions warns and drops the instructions."""
+    def test_generate_mind_map_interactive_forwards_instructions(self, runner, mock_auth):
+        """--kind interactive with --instructions forwards the prompt (no drop/warning).
+
+        The interactive CREATE_ARTIFACT payload carries a prompt slot at
+        ``[9][1][2]`` that the server honors for variant 4 (verified live), so the
+        CLI must thread ``--instructions`` through instead of dropping it.
+        """
         from notebooklm.types import MindMap, MindMapKind
 
         mock_client = create_mock_client()
@@ -760,20 +765,17 @@ class TestGenerateMindMap:
                 obj=inject_client(mock_client),
             )
         assert result.exit_code == 0
-        assert "--instructions is ignored" in result.output
-        # The warning must be backed by behaviour: the interactive
-        # generator call must not forward the dropped instructions.
+        assert "--instructions is ignored" not in result.output
+        # Behaviour: the interactive generator call forwards the prompt.
         mock_client.mind_maps.generate.assert_awaited_once()
         call_kwargs = mock_client.mind_maps.generate.await_args.kwargs
-        assert not call_kwargs.get("instructions")
+        assert call_kwargs.get("instructions") == "focus on chapter 3"
 
-    def test_generate_mind_map_interactive_json_warns_on_instructions_via_stderr(
-        self, runner, mock_auth
-    ):
-        """Under --json the dropped-instructions warning goes to stderr, stdout stays pure JSON.
-        Silently ignoring an explicit --instructions in JSON mode would surprise
-        scripted callers, so the behavioral warning must surface on stderr — while
-        stdout remains a parseable JSON payload (no warning text leaking in).
+    def test_generate_mind_map_interactive_json_forwards_instructions(self, runner, mock_auth):
+        """Under --json the interactive prompt is forwarded and stdout stays pure JSON.
+
+        No behavioral warning is emitted anymore (the prompt is applied, not
+        dropped), and stdout remains a parseable JSON payload.
         """
         from notebooklm.types import MindMap, MindMapKind
 
@@ -806,15 +808,18 @@ class TestGenerateMindMap:
                 obj=inject_client(mock_client),
             )
         assert result.exit_code == 0
-        # Warning surfaces on stderr even in JSON mode...
-        assert "--instructions is ignored" in result.stderr
-        # ...but stdout stays pure, parseable JSON (no warning text leaked in).
+        # No dropped-instructions warning anywhere (the prompt is applied now).
+        assert "--instructions is ignored" not in result.stderr
         assert "--instructions is ignored" not in result.stdout
+        # stdout stays pure, parseable JSON.
         payload = json.loads(result.stdout)
         assert payload["kind"] == "interactive"
-        # Behaviour still backs the warning: instructions are not forwarded.
+        # Behaviour: instructions ARE forwarded to the interactive generator.
         mock_client.mind_maps.generate.assert_awaited_once()
-        assert not mock_client.mind_maps.generate.await_args.kwargs.get("instructions")
+        assert (
+            mock_client.mind_maps.generate.await_args.kwargs.get("instructions")
+            == "focus on chapter 3"
+        )
 
     def test_generate_mind_map_default_routes_interactive(self, runner, mock_auth):
         """Omitting --kind now defaults to the interactive studio-artifact path (#1272)."""

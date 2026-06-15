@@ -345,7 +345,7 @@ class TestReportPlan:
 
 
 # ---------------------------------------------------------------------------
-# Mind-map plan: interactive default + dropped-instructions behavioral warning.
+# Mind-map plan: interactive default + instructions threaded for both kinds.
 # ---------------------------------------------------------------------------
 
 
@@ -361,14 +361,16 @@ class TestMindMapPlan:
         assert plan.max_retries == 0
         assert plan.description == ""
 
-    def test_interactive_drops_instructions_with_stderr_warning(self):
+    def test_interactive_keeps_instructions(self):
+        # The interactive CREATE_ARTIFACT payload DOES carry a prompt slot
+        # ([9][1][2], server-verified), so --instructions must be threaded
+        # through rather than dropped with a warning (the old behavior).
         plan = build_generation_plan(
             "mind-map",
             {"notebook_id": "nb_1", "map_kind": "interactive", "instructions": "focus on X"},
         )
-        assert plan.params["instructions"] is None
-        assert len(plan.stderr_warnings) == 1
-        assert "--instructions is ignored for interactive mind maps" in plan.stderr_warnings[0]
+        assert plan.params["instructions"] == "focus on X"
+        assert plan.stderr_warnings == ()
 
     def test_note_backed_keeps_instructions(self):
         plan = build_generation_plan(

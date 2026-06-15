@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Custom prompt for interactive mind maps.** `instructions` is now sent for
+  interactive (studio-artifact) mind maps, not just note-backed ones. The
+  interactive `CREATE_ARTIFACT` payload carries the free-text prompt at the
+  `[9][1][2]` slot of its options block — the same slot quizzes and flashcards
+  use — and the NotebookLM server honors it for variant 4 (verified live: the
+  prompt steers the generated node tree, and reads back via
+  `artifacts.get_prompt`). Previously `client.mind_maps.generate(...,
+  kind=INTERACTIVE, instructions=...)` and `notebooklm generate mind-map --kind
+  interactive --instructions ...` silently dropped the prompt with a warning;
+  both now apply it. The no-prompt request shape is unchanged. (Note-backed maps
+  still pass `instructions` through `GENERATE_MIND_MAP`, but the server does not
+  reliably act on them.)
+
 - **Passive auth validation for unattended monitors** (#1569). New
   `notebooklm.auth.fetch_tokens_passive(...)` validates the cookies on disk with
   a strictly read-only token fetch — it never runs `NOTEBOOKLM_REFRESH_CMD`,

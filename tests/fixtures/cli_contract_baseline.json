@@ -4964,7 +4964,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Custom instructions for the mind map (note-backed only)",
+          "help": "Custom prompt to steer the mind map (works for both kinds; the interactive kind applies it most reliably)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
