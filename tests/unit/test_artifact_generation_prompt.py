@@ -25,7 +25,12 @@ from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._row_adapters.artifacts import ArtifactRow
 from notebooklm.exceptions import ArtifactNotFoundError, UnknownRPCMethodError
-from notebooklm.rpc import ArtifactTypeCode
+from notebooklm.rpc import (
+    FLASHCARDS_VARIANT,
+    INTERACTIVE_MIND_MAP_VARIANT,
+    QUIZ_VARIANT,
+    ArtifactTypeCode,
+)
 
 # (artifact type code, top-level block index, sub-path inside the block).
 # An independent restatement of the verified position map.
@@ -221,3 +226,60 @@ class TestArtifactsAPIGetPrompt:
         )
         with pytest.raises(ArtifactNotFoundError):
             await api.get_prompt("nb_1", "ghost")
+
+
+class TestGenerationPromptRealWireShapes:
+    """Pin ``generation_prompt`` against the REAL ``LIST_ARTIFACTS`` shapes.
+
+    :class:`TestGenerationPromptByType` above nests the prompt at the very path
+    the adapter reads (derived from the same position map), so it proves the map
+    is *self-consistent* but cannot catch a position that is wrong on the wire.
+    These cases instead encode the actual recorded options-block layouts — the
+    variant, language, and difficulty/quantity present *alongside* the prompt —
+    with the prompt at a **literal** index, so they fail if ``_PROMPT_LOCATION``
+    drifts and confirm the prompt is read past the variant rather than confused
+    with a sibling slot. Shapes verified live against a notebook holding a
+    prompted artifact of each kind (the basis for PR #1580).
+    """
+
+    # (variant, real ``data[9][1]`` options array with the prompt at index 2).
+    # Quiz/flashcards/interactive-mind-map share the type-4 family but differ in
+    # the surrounding options (quiz [2,2] at idx 7, flashcards at idx 6, mind map
+    # none) — exactly the layout that makes a fixed (9, 1, 2) non-obvious.
+    _TYPE4_CASES = [
+        (QUIZ_VARIANT, lambda p: [2, None, p, "en", None, None, None, [2, 2], True]),
+        (FLASHCARDS_VARIANT, lambda p: [1, None, p, "en", None, None, [2, 2], None, True]),
+        (INTERACTIVE_MIND_MAP_VARIANT, lambda p: [4, None, p, "en", None, None, None, None, True]),
+    ]
+
+    @pytest.mark.parametrize(("variant", "options"), _TYPE4_CASES)
+    def test_type4_prompt_read_past_variant_and_options(self, variant, options) -> None:
+        prompt = "Focus only on the three astronauts."
+        row = [
+            "art_1", "Title", ArtifactTypeCode.QUIZ.value, [[["s"]]], 3,
+            None, None, None, None, [None, options(prompt)], [1700000000, 0],
+        ]  # fmt: skip
+        adapter = ArtifactRow(row)
+        # The prompt is at [9][1][2]; the variant at [9][1][0] and the
+        # difficulty/quantity tuple must NOT be mistaken for it.
+        assert adapter.variant == variant
+        assert adapter.generation_prompt == prompt
+
+    def test_type4_no_prompt_real_shape_returns_none(self) -> None:
+        # Real no-prompt quiz row: [9][1][2] is ``None`` (a "no prompt was set"
+        # case, distinct from a wrong position) — must read as None, not raise.
+        row = [
+            "art_1", "Title", ArtifactTypeCode.QUIZ.value, [[["s"]]], 3,
+            None, None, None, None,
+            [None, [2, None, None, "en", None, None, None, [2, 2], True]], [1700000000, 0],
+        ]  # fmt: skip
+        assert ArtifactRow(row).generation_prompt is None
+
+    def test_infographic_prompt_real_config_block(self) -> None:
+        prompt = "Highlight the crew and the landing site."
+        # Real infographic config block: ``data[14][0] == [<prompt>, 'en', None, 1, 2]``.
+        row: list = ["art_1", "Title", ArtifactTypeCode.INFOGRAPHIC.value, None, 3]
+        while len(row) <= 14:
+            row.append(None)
+        row[14] = [[prompt, "en", None, 1, 2]]
+        assert ArtifactRow(row).generation_prompt == prompt
