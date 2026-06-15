@@ -1555,7 +1555,7 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: f.req=%5B%5B%5B%22rLM1Ne%22%2C%22%5B%5C%22f66923f0-1df4-4ffe-9822-3ed63c558b1c%5C%22%2Cnull%2C%5B2%5D%2Cnull%2C0%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312248942&
+    body: f.req=%5B%5B%5B%22rLM1Ne%22%2C%22%5B%5C%22f66923f0-1df4-4ffe-9822-3ed63c558b1c%5C%22%2Cnull%2C%5B2%2Cnull%2Cnull%2C%5B1%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%5D%5D%5D%2Cnull%2C0%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312248942&
     headers:
       Accept:
       - '*/*'

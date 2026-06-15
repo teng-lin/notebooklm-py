@@ -43,6 +43,20 @@ def build_create_notebook_params(title: str) -> list[Any]:
     return [title, None, None, build_template_block()]
 
 
+def build_get_notebook_params(notebook_id: str) -> list[Any]:
+    """Return the canonical GET_NOTEBOOK (``rLM1Ne``) RPC payload.
+
+    The Gemini-3.5 rollout migrated the read path's trailing template block from
+    the flat ``[2]`` to the same nested :func:`build_template_block` wrapper the
+    write path adopted in #1548 (issue #1549). Live-verified forward-compatible:
+    the nested shape returns a byte-identical decoded notebook (notebook id /
+    title and every ``SourceRow``) as the flat ``[2]`` on an un-migrated account,
+    so it is safe across cohorts. The trailing ``None, 0`` is unchanged — only
+    the template block at position 2 is migrated (the narrow scope #1549 tracks).
+    """
+    return [notebook_id, None, build_template_block(), None, 0]
+
+
 def _extract_summary(outer: Any) -> str:
     """Extract the summary string from a SUMMARIZE ``result[0]`` payload.
 
@@ -571,7 +585,7 @@ class NotebooksAPI:
                 ``title``) for unknown IDs rather than a proper RPC error, so
                 this method post-validates the parsed response.
         """
-        params = [notebook_id, None, [2], None, 0]
+        params = build_get_notebook_params(notebook_id)
         result = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
             params,
@@ -774,7 +788,7 @@ class NotebooksAPI:
         Returns:
             Raw API response data.
         """
-        params = [notebook_id, None, [2], None, 0]
+        params = build_get_notebook_params(notebook_id)
         return await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
             params,

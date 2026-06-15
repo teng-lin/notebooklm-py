@@ -180,7 +180,14 @@ async def test_default_source_lister_uses_phase8_listing_service() -> None:
     assert rpc.calls == [
         (
             RPCMethod.GET_NOTEBOOK,
-            ["nb_123", None, [2], None, 0],
+            # #1549: GET_NOTEBOOK tail migrated to the nested template block.
+            [
+                "nb_123",
+                None,
+                [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+                None,
+                0,
+            ],
             "/notebook/nb_123",
         )
     ]

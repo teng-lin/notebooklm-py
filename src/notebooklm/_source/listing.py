@@ -11,6 +11,7 @@ from .._row_adapters.sources import SourceRow
 from .._runtime.contracts import RpcCaller
 from ..rpc import RPCError, RPCMethod, safe_index
 from ..types import Source
+from .upload_payloads import build_template_block
 
 # Keep source-list warnings on the historical logger so existing log filters
 # continue to see the same channel after the service extraction.
@@ -35,7 +36,12 @@ class SourceLister:
         ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out into warn-and-return-``[]``
         was retired in v0.7.0; strict decoding is now the only mode.
         """
-        params = [notebook_id, None, [2], None, 0]
+        # GET_NOTEBOOK read-path tail migrated to the nested template block
+        # (#1549; live-verified forward-compatible). Mirrors
+        # ``_notebooks.build_get_notebook_params`` — inlined here because
+        # importing ``_notebooks`` from this module would cycle (``_notebooks``
+        # imports ``_source.upload_payloads``, which runs ``_source/__init__``).
+        params = [notebook_id, None, build_template_block(), None, 0]
         notebook = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
             params,
